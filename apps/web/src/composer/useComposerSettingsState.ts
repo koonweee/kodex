@@ -1,18 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import {
   getComposerSettings,
   listModels,
   type ModelSummary,
-  type ThreadSummary,
   type Project,
 } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { singleProjectRoot } from "../projects/roots";
 import type { ComposerSettings } from "../ComposerFooterControls";
 import {
-  composerSettingsFromThread,
   DEFAULT_COMPOSER_SETTINGS,
   normalizePersistedComposerSettings,
   sameComposerSettings,
@@ -20,44 +18,16 @@ import {
 
 type UseComposerSettingsStateParams = {
   onError: (error: unknown) => void;
-  draftChatThreadSelected: boolean;
-  selectedProjectId: string | null;
-  selectedThread: ThreadSummary | null;
   projects: Project[];
 };
 
 export function useComposerSettingsState({
   onError,
-  draftChatThreadSelected,
-  selectedProjectId,
-  selectedThread,
   projects,
 }: UseComposerSettingsStateParams) {
   const queryClient = useQueryClient();
   const [models, setModels] = useState<ModelSummary[]>([]);
   const [composerDefaults, setComposerDefaults] = useState<ComposerSettings>(DEFAULT_COMPOSER_SETTINGS);
-  const [globalComposerDefaults, setGlobalComposerDefaults] = useState<ComposerSettings>(DEFAULT_COMPOSER_SETTINGS);
-  const [draftComposerSettings, setDraftComposerSettings] = useState<ComposerSettings>(DEFAULT_COMPOSER_SETTINGS);
-  const [selectedThreadComposerOverride, setSelectedThreadComposerOverride] = useState<ComposerSettings | null>(null);
-  const draftComposerEditedRef = useRef(false);
-
-  useEffect(() => {
-    setSelectedThreadComposerOverride(null);
-  }, [
-    selectedThread?.id,
-    selectedThread?.model,
-    selectedThread?.reasoningEffort,
-    selectedThread?.serviceTier,
-  ]);
-
-  const selectedThreadSettings = selectedThread ? composerSettingsFromThread(selectedThread) : null;
-  const composerSettings = selectedThread
-    ? selectedThreadComposerOverride ??
-      selectedThreadSettings ??
-      (selectedProjectId === null ? globalComposerDefaults : composerDefaults)
-    : draftChatThreadSelected && !draftComposerEditedRef.current
-      ? globalComposerDefaults
-      : draftComposerSettings;
 
   const hydrateComposerDefaults = useCallback(async (projectId: string | null, cwd?: string | null): Promise<ComposerSettings | null> => {
     try {
@@ -77,10 +47,6 @@ export function useComposerSettingsState({
       const normalized = normalizePersistedComposerSettings(settings, nextModels);
       if (projectId === null && !executionCwd) {
         setComposerDefaults((current) => (sameComposerSettings(current, normalized) ? current : normalized));
-        setGlobalComposerDefaults((current) => (sameComposerSettings(current, normalized) ? current : normalized));
-        if (!draftComposerEditedRef.current) {
-          setDraftComposerSettings((current) => (sameComposerSettings(current, normalized) ? current : normalized));
-        }
       }
       return normalized;
     } catch (error) {
@@ -96,24 +62,10 @@ export function useComposerSettingsState({
     }
   }, [models.length, onError, projects, queryClient]);
 
-  function handleComposerSettingsChange(nextSettings: ComposerSettings) {
-    if (selectedThread) {
-      setSelectedThreadComposerOverride(nextSettings);
-      return;
-    }
-
-    draftComposerEditedRef.current = true;
-    setDraftComposerSettings(nextSettings);
-  }
-
   return {
-    composerSettings,
-    composerSettingsError: null,
-    draftComposerEditedRef,
-    handleComposerSettingsChange,
+    composerDefaults,
     hydrateComposerDefaults,
     models,
-    workspaceComposerDefaults: globalComposerDefaults,
   };
 }
 

@@ -77,6 +77,11 @@ function AccountProbe({ read }: { read: () => Promise<string> }) {
   return <p>{account.data}</p>;
 }
 
+function ThreadSettingsProbe({ read }: { read: (signal: AbortSignal) => Promise<string> }) {
+  const settings = useQuery({ queryKey: queryKeys.threadSettings("native-chat"), queryFn: ({ signal }) => read(signal) });
+  return <p>{settings.data}</p>;
+}
+
 function threadDetail(id: string): ThreadViewResponse {
   return {
     liveState: "idle",
@@ -370,6 +375,38 @@ describe("gateway instance bootstrap", () => {
     expect(await screen.findByText("Updated account state")).toBeInTheDocument();
     expect(screen.queryByText("Previous account state")).not.toBeInTheDocument();
     expect(readAccount).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["stream open", "foreground"])("cancels a pre-recovery settings read on %s while preserving the same-instance draft", async (trigger) => {
+    const queryClient = createKodexQueryClient();
+    let finishOld!: (value: string) => void;
+    let oldSignal: AbortSignal | undefined;
+    const readSettings = vi.fn<(signal: AbortSignal) => Promise<string>>()
+      .mockImplementationOnce((signal) => {
+        oldSignal = signal;
+        return new Promise((resolve) => { finishOld = resolve; });
+      }).mockResolvedValue("Current native settings");
+    vi.mocked(getCapabilities).mockResolvedValue(capabilities("first"));
+    render(
+      <GatewayInstanceBoundary queryClient={queryClient}>
+        <QueryClientProvider client={queryClient}>
+          <ThreadSettingsProbe read={readSettings} /><WorkspaceProbe /><StreamProbe />
+        </QueryClientProvider>
+      </GatewayInstanceBoundary>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "fresh draft" }));
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    expect(readSettings).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      if (trigger === "stream open") FakeEventSource.instances[0].onopen?.();
+      else window.dispatchEvent(new Event("focus"));
+    });
+    expect(await screen.findByText("Current native settings")).toBeInTheDocument();
+    expect(oldSignal?.aborted).toBe(true);
+    await act(async () => finishOld("Obsolete native settings"));
+    expect(screen.queryByText("Obsolete native settings")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "edited draft" })).toBeInTheDocument();
+    expect(readSettings).toHaveBeenCalledTimes(2);
   });
 
   it("refetches active account state on focus without resetting a same-instance draft", async () => {

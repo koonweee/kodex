@@ -10,6 +10,8 @@ pub mod health;
 pub mod kodex_control_plugin;
 pub mod mcp;
 pub mod models;
+#[cfg(test)]
+mod native_thread_settings_tests;
 pub mod notifications;
 pub mod permission_profiles;
 pub mod projects;
@@ -19,6 +21,7 @@ pub mod self_control;
 pub mod skills;
 pub mod terminals;
 pub mod thread_presence;
+pub mod thread_settings;
 pub mod threads;
 pub mod turns;
 pub mod uploads;
@@ -67,7 +70,7 @@ mod tests {
         store::{
             EventEnvelope, NewApproval, NewAutomation, NewEvent, NewNotificationDelivery,
             NewPushSubscription, NotificationDeliveryStatus, PushSubscription, Store,
-            ThreadLocalSettingsOverlay, ThreadRuntimeState, ThreadRuntimeStatus,
+            ThreadRuntimeState, ThreadRuntimeStatus,
         },
         thread_view,
     };
@@ -2208,7 +2211,11 @@ mod tests {
             let response = app.clone().oneshot(request).await.unwrap();
             assert_eq!(
                 response.status(),
-                StatusCode::OK,
+                if path == "settings" {
+                    StatusCode::ACCEPTED
+                } else {
+                    StatusCode::OK
+                },
                 "{method} /{path} should succeed"
             );
         }
@@ -2226,7 +2233,7 @@ mod tests {
             "self_control.thread_resumed",
             "self_control.thread_forked",
             "self_control.thread_renamed",
-            "self_control.thread_settings_updated",
+            "self_control.thread_settings_update_queued",
             "self_control.thread_archived",
             "self_control.thread_pinned",
             "self_control.thread_unpinned",
@@ -2585,7 +2592,9 @@ mod tests {
                 "createdAt": 1_767_225_600_i64,
                 "updatedAt": 1_767_225_600_i64
             },
-            "cwd": "/workspace"
+            "cwd": "/workspace",
+            "model":"native-effective-model", "reasoningEffort":"medium", "serviceTier":null,
+            "approvalPolicy":"never", "approvalsReviewer":"user", "sandbox":{"type":"readOnly"}
         }));
         let app = build_router(state.clone());
 
@@ -2617,12 +2626,12 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
-        assert_eq!(body["thread"]["model"], "gpt-5.4");
-        assert_eq!(body["thread"]["reasoningEffort"], "high");
-        assert_eq!(body["thread"]["serviceTier"], "fast");
-        assert_eq!(body["thread"]["approvalPolicy"], "on-request");
-        assert_eq!(body["thread"]["approvalsReviewer"], "auto_review");
-        assert_eq!(body["thread"]["sandbox"], "workspace-write");
+        assert_eq!(body["thread"]["model"], "native-effective-model");
+        assert_eq!(body["thread"]["reasoningEffort"], "medium");
+        assert!(body["thread"]["serviceTier"].is_null());
+        assert_eq!(body["thread"]["approvalPolicy"], "never");
+        assert_eq!(body["thread"]["approvalsReviewer"], "user");
+        assert_eq!(body["thread"]["sandbox"]["type"], "readOnly");
 
         *app_server.next_response.lock().unwrap() = Some(json!({
             "data": [{
@@ -2650,9 +2659,9 @@ mod tests {
         assert_eq!(listed["threads"][0]["model"], Value::Null);
         assert_eq!(listed["threads"][0]["reasoningEffort"], Value::Null);
         assert_eq!(listed["threads"][0]["serviceTier"], Value::Null);
-        assert_eq!(listed["threads"][0]["approvalPolicy"], "on-request");
-        assert_eq!(listed["threads"][0]["approvalsReviewer"], "auto_review");
-        assert_eq!(listed["threads"][0]["sandbox"], "workspace-write");
+        assert!(listed["threads"][0]["approvalPolicy"].is_null());
+        assert!(listed["threads"][0]["approvalsReviewer"].is_null());
+        assert!(listed["threads"][0]["sandbox"].is_null());
 
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "project/read");
@@ -2671,7 +2680,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn thread_settings_update_forwards_native_partial_patch_and_returns_refreshed_thread() {
+    async fn thread_settings_update_forwards_native_partial_patch_without_readback() {
         let (state, app_server) = test_state().await;
         app_server.queued_responses.lock().unwrap().extend([
             json!({}),
@@ -2715,14 +2724,8 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["thread"]["model"], "gpt-5.4-mini");
-        assert!(body["thread"]["reasoningEffort"].is_null());
-        assert_eq!(body["thread"]["serviceTier"], "fast");
-        assert_eq!(body["thread"]["approvalPolicy"], "on-request");
-        assert_eq!(body["thread"]["approvalsReviewer"], "auto_review");
-        assert_eq!(body["thread"]["sandbox"]["type"], "workspaceWrite");
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(response_json(response).await, json!({}));
 
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "thread/settings/update");
@@ -2733,93 +2736,7 @@ mod tests {
         assert_eq!(requests[0].1["approvalPolicy"], "on-request");
         assert_eq!(requests[0].1["approvalsReviewer"], "auto_review");
         assert_eq!(requests[0].1["sandboxPolicy"]["type"], "workspaceWrite");
-        assert_eq!(requests[1].0, "thread/read");
-        assert_eq!(requests[1].1["threadId"], "thread-1");
-        assert_eq!(requests[1].1["includeTurns"], false);
-    }
-
-    #[tokio::test]
-    async fn thread_settings_update_preserves_selected_xhigh_after_lossy_readback() {
-        let (state, app_server) = test_state().await;
-        app_server.queued_responses.lock().unwrap().extend([
-            json!({}),
-            json!({
-                "thread": {
-                    "id": "thread-1",
-                    "cwd": "/workspace",
-                    "status": {"type": "idle"},
-                    "source": "cli",
-                    "preview": "hello",
-                    "model": "gpt-5.4",
-                    "reasoningEffort": "high",
-                    "serviceTier": null,
-                    "createdAt": 1_767_225_600_i64,
-                    "updatedAt": 1_767_225_601_i64
-                }
-            }),
-            json!({
-                "data": [{
-                    "id": "thread-1",
-                    "cwd": "/workspace",
-                    "status": {"type": "idle"},
-                    "source": "cli",
-                    "preview": "hello",
-                    "model": "gpt-5.4",
-                    "reasoningEffort": "high",
-                    "serviceTier": null,
-                    "createdAt": 1_767_225_600_i64,
-                    "updatedAt": 1_767_225_601_i64
-                }],
-                "nextCursor": null,
-                "backwardsCursor": null
-            }),
-        ]);
-        let app = build_router(state);
-
-        let response = app
-            .clone()
-            .oneshot(
-                Request::patch("/v1/threads/thread-1/settings")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        json!({
-                            "model": "gpt-5.4",
-                            "effort": "xhigh"
-                        })
-                        .to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["thread"]["model"], "gpt-5.4");
-        assert_eq!(body["thread"]["reasoningEffort"], "xhigh");
-        assert_eq!(body["thread"]["rawPayload"]["reasoningEffort"], "xhigh");
-
-        let listed = app
-            .oneshot(Request::get("/v1/threads").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(listed.status(), StatusCode::OK);
-        let listed = response_json(listed).await;
-        assert_eq!(listed["threads"][0]["model"], "gpt-5.4");
-        assert_eq!(listed["threads"][0]["reasoningEffort"], "xhigh");
-        assert_eq!(
-            listed["threads"][0]["rawPayload"]["reasoningEffort"],
-            "xhigh"
-        );
-        assert_eq!(listed["rawPayload"]["data"][0]["reasoningEffort"], "xhigh");
-
-        let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests[0].0, "thread/settings/update");
-        assert_eq!(requests[0].1["threadId"], "thread-1");
-        assert_eq!(requests[0].1["model"], "gpt-5.4");
-        assert_eq!(requests[0].1["effort"], "xhigh");
-        assert_eq!(requests[1].0, "thread/read");
-        assert_eq!(requests[2].0, "thread/list");
+        assert_eq!(requests.len(), 1);
     }
 
     #[tokio::test]
@@ -2845,121 +2762,6 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         assert!(app_server.requests.lock().unwrap().is_empty());
-    }
-
-    #[tokio::test]
-    async fn thread_settings_update_preserves_permissions_when_refreshed_thread_omits_profile() {
-        let (state, app_server) = test_state().await;
-        state
-            .store
-            .save_thread_local_settings_overlay(
-                "thread-1",
-                &ThreadLocalSettingsOverlay {
-                    approval_policy: Some("on-request".to_string()),
-                    approvals_reviewer: Some("auto_review".to_string()),
-                    permissions: Some("old-profile".to_string()),
-                    sandbox: Some(json!({"type": "dangerFullAccess"})),
-                    ..ThreadLocalSettingsOverlay::default()
-                },
-            )
-            .await
-            .unwrap();
-        app_server.queued_responses.lock().unwrap().extend([
-            json!({}),
-            json!({
-                "thread": {
-                    "id": "thread-1",
-                    "cwd": "/workspace",
-                    "status": {"type": "idle"},
-                    "source": "cli",
-                    "preview": "hello",
-                    "createdAt": 1_767_225_600_i64,
-                    "updatedAt": 1_767_225_601_i64
-                }
-            }),
-            json!({}),
-            json!({
-                "thread": {
-                    "id": "thread-1",
-                    "cwd": "/workspace",
-                    "status": {"type": "idle"},
-                    "source": "cli",
-                    "preview": "hello",
-                    "createdAt": 1_767_225_600_i64,
-                    "updatedAt": 1_767_225_602_i64
-                }
-            }),
-        ]);
-        let app = build_router(state.clone());
-
-        let select = app
-            .clone()
-            .oneshot(
-                Request::patch("/v1/threads/thread-1/settings")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        json!({"permissions": "auto-review"}).to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(select.status(), StatusCode::OK);
-        let body = response_json(select).await;
-        assert_eq!(
-            body["thread"]["activePermissionProfile"]["id"],
-            "auto-review"
-        );
-        let events = state.store.replay_events(None, None, None).await.unwrap();
-        assert_eq!(
-            events[0].payload["thread"]["activePermissionProfile"]["id"],
-            "auto-review"
-        );
-        let stored = state
-            .store
-            .thread_local_settings_overlays(&["thread-1".to_string()])
-            .await
-            .unwrap();
-        assert_eq!(
-            stored["thread-1"].permissions.as_deref(),
-            Some("auto-review")
-        );
-        assert!(stored["thread-1"].approval_policy.is_none());
-        assert!(stored["thread-1"].approvals_reviewer.is_none());
-        assert!(stored["thread-1"].sandbox.is_none());
-
-        let clear = app
-            .oneshot(
-                Request::patch("/v1/threads/thread-1/settings")
-                    .header("content-type", "application/json")
-                    .body(Body::from(json!({"permissions": null}).to_string()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(clear.status(), StatusCode::OK);
-        let body = response_json(clear).await;
-        assert!(body["thread"]["activePermissionProfile"].is_null());
-        let events = state.store.replay_events(None, None, None).await.unwrap();
-        assert!(events[1].payload["thread"]["activePermissionProfile"].is_null());
-
-        let stored = state
-            .store
-            .thread_local_settings_overlays(&["thread-1".to_string()])
-            .await
-            .unwrap();
-        assert!(stored["thread-1"].permissions.is_none());
-        assert!(stored["thread-1"].sandbox.is_none());
-
-        let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests[0].0, "thread/settings/update");
-        assert_eq!(requests[0].1["permissions"], "auto-review");
-        assert_eq!(requests[1].0, "thread/read");
-        assert_eq!(requests[2].0, "thread/settings/update");
-        assert!(requests[2].1["permissions"].is_null());
-        assert_eq!(requests[3].0, "thread/read");
     }
 
     #[tokio::test]
@@ -3143,124 +2945,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn thread_settings_updated_notification_applies_gateway_owned_overlays() {
-        let (state, app_server) = test_state().await;
-        let pin = state.store.pin_thread("thread-1").await.unwrap();
-        state
-            .store
-            .set_thread_notifications_enabled("thread-1", false)
-            .await
-            .unwrap();
-        state
-            .store
-            .save_thread_local_settings_overlay(
-                "thread-1",
-                &ThreadLocalSettingsOverlay {
-                    approval_policy: Some("on-request".to_string()),
-                    approvals_reviewer: Some("auto_review".to_string()),
-                    ..ThreadLocalSettingsOverlay::default()
-                },
-            )
-            .await
-            .unwrap();
-        app_server
-            .queued_responses
-            .lock()
-            .unwrap()
-            .push(json!({"thread": thread_summary("thread-1")}));
-        let mut receiver = state.events.subscribe();
-
-        ingest_inbound(
-            InboundMessage::Notification {
-                method: "thread/settings/updated".to_string(),
-                params: json!({"threadId": "thread-1"}),
-            },
-            &state,
-        )
-        .await
-        .unwrap();
-
-        let event = timeout(Duration::from_secs(1), receiver.recv())
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(event.kind, "timeline.thread_metadata");
-        assert_eq!(
-            event.codex_method.as_deref(),
-            Some("thread/settings/updated")
-        );
-        assert_eq!(event.payload["thread"]["pinnedAt"], json!(pin.pinned_at));
-        assert_eq!(
-            event.payload["thread"]["notificationsEnabled"],
-            json!(false)
-        );
-        assert!(event.payload["thread"]["model"].is_null());
-        assert!(event.payload["thread"]["reasoningEffort"].is_null());
-        assert_eq!(
-            event.payload["thread"]["approvalPolicy"],
-            json!("on-request")
-        );
-        assert_eq!(
-            event.payload["thread"]["approvalsReviewer"],
-            json!("auto_review")
-        );
-    }
-
-    #[tokio::test]
-    async fn thread_settings_updated_notification_clears_active_permission_profile() {
-        let (state, app_server) = test_state().await;
-        state
-            .store
-            .save_thread_local_settings_overlay(
-                "thread-1",
-                &ThreadLocalSettingsOverlay {
-                    permissions: Some("stale-profile".to_string()),
-                    ..ThreadLocalSettingsOverlay::default()
-                },
-            )
-            .await
-            .unwrap();
-        app_server
-            .queued_responses
-            .lock()
-            .unwrap()
-            .push(json!({"thread": thread_summary("thread-1")}));
-        let mut receiver = state.events.subscribe();
-
-        ingest_inbound(
-            InboundMessage::Notification {
-                method: "thread/settings/updated".to_string(),
-                params: json!({
-                    "threadId": "thread-1",
-                    "threadSettings": {
-                        "activePermissionProfile": null
-                    }
-                }),
-            },
-            &state,
-        )
-        .await
-        .unwrap();
-
-        let event = timeout(Duration::from_secs(1), receiver.recv())
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(event.kind, "timeline.thread_metadata");
-        assert!(event.payload["thread"]["activePermissionProfile"].is_null());
-        assert!(event.payload["thread"]["rawPayload"]
-            .get("activePermissionProfile")
-            .is_none());
-
-        let stored = state
-            .store
-            .thread_local_settings_overlays(&["thread-1".to_string()])
-            .await
-            .unwrap();
-        assert!(stored["thread-1"].permissions.is_none());
-    }
-
-    #[tokio::test]
     async fn chat_thread_start_creates_dated_slug_cwd_and_maps_to_app_server() {
         let (mut state, app_server) = test_state().await;
         let home = tempdir().unwrap();
@@ -3275,7 +2959,9 @@ mod tests {
                 "createdAt": 1_767_225_600_i64,
                 "updatedAt": 1_767_225_600_i64
             },
-            "cwd": "/workspace/chat"
+            "cwd": "/workspace/chat",
+            "model":"gpt-5.4", "reasoningEffort":"high", "serviceTier":"fast",
+            "approvalPolicy":"on-request", "approvalsReviewer":"auto_review", "sandbox":{"type":"workspaceWrite"}
         }));
         let app = build_router(state);
 
@@ -3307,12 +2993,13 @@ mod tests {
         assert_eq!(body["thread"]["serviceTier"], "fast");
         assert_eq!(body["thread"]["approvalPolicy"], "on-request");
         assert_eq!(body["thread"]["approvalsReviewer"], "auto_review");
-        assert_eq!(body["thread"]["sandbox"], "workspace-write");
+        assert_eq!(body["thread"]["sandbox"]["type"], "workspaceWrite");
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "thread/start");
         assert_eq!(requests[0].1.get("projectId"), Some(&Value::Null));
         assert_eq!(requests[0].1["model"], "gpt-5.4");
         assert!(requests[0].1.get("effort").is_none());
+        assert_eq!(requests[0].1["config"]["model_reasoning_effort"], "high");
         assert_eq!(requests[0].1["serviceTier"], "fast");
         assert_eq!(requests[0].1["approvalPolicy"], "on-request");
         assert_eq!(requests[0].1["approvalsReviewer"], "auto_review");
@@ -3549,24 +3236,6 @@ mod tests {
         let pinned_thread = state.store.pin_thread("pinned-thread").await.unwrap();
         state
             .store
-            .save_thread_local_settings_overlay(
-                "project-one-thread",
-                &ThreadLocalSettingsOverlay {
-                    approval_policy: Some("on-request".to_string()),
-                    approvals_reviewer: Some("auto_review".to_string()),
-                    permissions: None,
-                    sandbox: Some(json!({
-                        "type": "workspaceWrite",
-                        "networkAccess": false,
-                        "writableRoots": ["/workspace"]
-                    })),
-                    ..ThreadLocalSettingsOverlay::default()
-                },
-            )
-            .await
-            .unwrap();
-        state
-            .store
             .mark_thread_seen_completed_agent_turns("project-one-thread", 3)
             .await
             .unwrap();
@@ -3586,6 +3255,10 @@ mod tests {
         project_one_thread["model"] = json!("gpt-5.4-mini");
         project_one_thread["reasoningEffort"] = json!("high");
         project_one_thread["serviceTier"] = json!("fast");
+        project_one_thread["approvalPolicy"] = json!("on-request");
+        project_one_thread["approvalsReviewer"] = json!("auto_review");
+        project_one_thread["sandbox"] =
+            json!({"type":"workspaceWrite","networkAccess":false,"writableRoots":["/workspace"]});
         project_one_thread["gitInfo"] = json!({
             "branch": "feature/sidebar-trim",
             "originUrl": "https://example.test/kodex.git",
@@ -4930,215 +4603,6 @@ mod tests {
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests.len(), 3);
         assert_eq!(requests[0].0, "thread/loaded/list");
-    }
-
-    #[tokio::test]
-    async fn fork_thread_copies_gateway_owned_local_settings_overlay() {
-        let (state, app_server) = test_state().await;
-        state
-            .store
-            .save_thread_local_settings_overlay(
-                "thread-1",
-                &ThreadLocalSettingsOverlay {
-                    approval_policy: Some("on-request".to_string()),
-                    approvals_reviewer: Some("auto_review".to_string()),
-                    permissions: Some("auto-review".to_string()),
-                    sandbox: Some(json!({"type": "workspaceWrite", "networkAccess": false, "writableRoots": []})),
-                    ..ThreadLocalSettingsOverlay::default()
-                },
-            )
-            .await
-            .unwrap();
-        *app_server.next_response.lock().unwrap() = Some(json!({
-            "thread": {
-                "id": "thread-fork",
-                "cwd": "/workspace",
-                "status": {"type": "idle"},
-                "source": "cli",
-                "preview": "hello",
-                "createdAt": 1_767_225_600_i64,
-                "updatedAt": 1_767_225_600_i64
-            },
-            "cwd": "/workspace"
-        }));
-        let app = build_router(state);
-
-        let response = app
-            .clone()
-            .oneshot(
-                Request::post("/v1/threads/thread-1/fork")
-                    .header("content-type", "application/json")
-                    .body(Body::from(r#"{"fromItemId":"item-1"}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["thread"]["id"], "thread-fork");
-        assert!(body["thread"]["model"].is_null());
-        assert!(body["thread"]["reasoningEffort"].is_null());
-        assert!(body["thread"]["serviceTier"].is_null());
-        assert_eq!(body["thread"]["approvalPolicy"], "on-request");
-        assert_eq!(body["thread"]["approvalsReviewer"], "auto_review");
-        assert_eq!(
-            body["thread"]["sandbox"],
-            json!({"type": "workspaceWrite", "networkAccess": false, "writableRoots": []})
-        );
-
-        *app_server.next_response.lock().unwrap() = Some(json!({
-            "data": [{
-                "id": "thread-fork",
-                "cwd": "/workspace",
-                "status": {"type": "idle"},
-                "source": "cli",
-                "preview": "hello",
-                "createdAt": 1_767_225_600_i64,
-                "updatedAt": 1_767_225_600_i64
-            }],
-            "nextCursor": null,
-            "backwardsCursor": null
-        }));
-        let listed = app
-            .oneshot(Request::get("/v1/threads").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(listed.status(), StatusCode::OK);
-        let listed = response_json(listed).await;
-        assert!(listed["threads"][0]["model"].is_null());
-        assert!(listed["threads"][0]["reasoningEffort"].is_null());
-        assert!(listed["threads"][0]["serviceTier"].is_null());
-        assert_eq!(listed["threads"][0]["approvalPolicy"], "on-request");
-        assert_eq!(listed["threads"][0]["approvalsReviewer"], "auto_review");
-        assert_eq!(
-            listed["threads"][0]["sandbox"],
-            json!({"type": "workspaceWrite", "networkAccess": false, "writableRoots": []})
-        );
-    }
-
-    #[tokio::test]
-    async fn stored_local_settings_do_not_fill_app_server_model_or_reasoning_fields() {
-        let (state, app_server) = test_state().await;
-        state
-            .store
-            .save_thread_local_settings_overlay(
-                "thread-1",
-                &ThreadLocalSettingsOverlay {
-                    approval_policy: Some("on-request".to_string()),
-                    approvals_reviewer: Some("auto_review".to_string()),
-                    permissions: None,
-                    sandbox: None,
-                    ..ThreadLocalSettingsOverlay::default()
-                },
-            )
-            .await
-            .unwrap();
-        app_server.queued_responses.lock().unwrap().push(json!({
-            "data": [{
-                "id": "thread-1",
-                "cliVersion": "0.130.0",
-                "cwd": "/workspace",
-                "status": {"type": "idle"},
-                "source": "cli",
-                "preview": "hello",
-                "model": "app-server-model",
-                "createdAt": 1_767_225_600_i64,
-                "updatedAt": 1_767_225_600_i64
-            }],
-            "nextCursor": null,
-            "backwardsCursor": null
-        }));
-        let app = build_router(state);
-
-        let response = app
-            .oneshot(Request::get("/v1/threads").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["threads"][0]["model"], "app-server-model");
-        assert!(body["threads"][0]["reasoningEffort"].is_null());
-        assert!(body["threads"][0]["serviceTier"].is_null());
-        assert_eq!(body["threads"][0]["approvalPolicy"], "on-request");
-        assert_eq!(body["threads"][0]["approvalsReviewer"], "auto_review");
-        assert_eq!(
-            body["threads"][0]["rawPayload"]["model"],
-            "app-server-model"
-        );
-        assert!(body["threads"][0]["rawPayload"]
-            .get("reasoningEffort")
-            .is_none());
-    }
-
-    #[tokio::test]
-    async fn existing_thread_input_options_do_not_overwrite_local_settings_overlay() {
-        let (state, _) = test_state().await;
-        state
-            .store
-            .save_thread_local_settings_overlay(
-                "thread-1",
-                &ThreadLocalSettingsOverlay {
-                    approval_policy: Some("on-request".to_string()),
-                    approvals_reviewer: Some("auto_review".to_string()),
-                    permissions: None,
-                    sandbox: Some(json!({"type": "workspaceWrite", "networkAccess": false, "writableRoots": []})),
-                    ..ThreadLocalSettingsOverlay::default()
-                },
-            )
-            .await
-            .unwrap();
-        state
-            .store
-            .upsert_thread_runtime_state(ThreadRuntimeState {
-                thread_id: "thread-1".to_string(),
-                status: ThreadRuntimeStatus::Starting,
-                active_turn_id: None,
-                updated_at: chrono::Utc::now(),
-                last_event_seq: Some(0),
-            })
-            .await
-            .unwrap();
-        let app = build_router(state.clone());
-
-        let response = app
-            .clone()
-            .oneshot(
-                Request::post("/v1/threads/thread-1/input")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        r#"{
-                            "input":[{"type":"text","text":"queued from stale tab"}],
-                            "model":"stale-model",
-                            "effort":"low",
-                            "serviceTier":null,
-                            "approvalPolicy":"never",
-                            "approvalsReviewer":"human",
-                            "sandboxPolicy":{"type":"readOnly"}
-                        }"#,
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let settings = state
-            .store
-            .thread_local_settings_overlays(&["thread-1".to_string()])
-            .await
-            .unwrap();
-        let settings = settings.get("thread-1").unwrap();
-        assert_eq!(settings.approval_policy.as_deref(), Some("on-request"));
-        assert_eq!(settings.approvals_reviewer.as_deref(), Some("auto_review"));
-        assert_eq!(
-            settings.sandbox,
-            Some(json!({"type": "workspaceWrite", "networkAccess": false, "writableRoots": []}))
-        );
-        let queued = state.store.list_queued_inputs("thread-1").await.unwrap();
-        assert_eq!(queued.len(), 1);
-        assert_eq!(queued[0].options.model.as_deref(), Some("stale-model"));
-        assert_eq!(queued[0].options.service_tier, Some(None));
     }
 
     #[tokio::test]
@@ -10300,22 +9764,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn due_automation_queues_source_labeled_input_with_local_execution_overrides() {
+    async fn due_automation_queues_source_labeled_input_without_execution_overrides() {
         let (state, app_server) = test_state().await;
-        state
-            .store
-            .save_thread_local_settings_overlay(
-                "thread-1",
-                &ThreadLocalSettingsOverlay {
-                    approval_policy: Some("on-request".to_string()),
-                    approvals_reviewer: Some("auto_review".to_string()),
-                    permissions: None,
-                    sandbox: Some(json!({"type": "workspaceWrite"})),
-                    ..ThreadLocalSettingsOverlay::default()
-                },
-            )
-            .await
-            .unwrap();
         let start_at = chrono::Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
         let automation = state
             .store
@@ -10381,12 +9831,10 @@ mod tests {
         assert!(turn_start.1.get("model").is_none());
         assert!(turn_start.1.get("effort").is_none());
         assert!(turn_start.1.get("serviceTier").is_none());
-        assert_eq!(turn_start.1["approvalPolicy"], "on-request");
-        assert_eq!(turn_start.1["approvalsReviewer"], "auto_review");
-        assert_eq!(
-            turn_start.1["sandboxPolicy"],
-            json!({"type": "workspaceWrite"})
-        );
+        assert!(turn_start.1.get("approvalPolicy").is_none());
+        assert!(turn_start.1.get("approvalsReviewer").is_none());
+        assert!(turn_start.1.get("permissions").is_none());
+        assert!(turn_start.1.get("sandboxPolicy").is_none());
         automations::recover_automations_after_restart(&state)
             .await
             .unwrap();

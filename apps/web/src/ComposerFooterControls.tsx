@@ -13,6 +13,7 @@ export type ComposerSettings = {
   fast: boolean;
   serviceTier?: string | null;
 };
+export type ComposerSettingsChange = Partial<ComposerSettings>;
 
 export type ContextUsage = {
   contextTokens?: number | null;
@@ -22,16 +23,18 @@ export type ContextUsage = {
 type ComposerFooterControlsProps = {
   contextUsage?: ContextUsage | null;
   disabled?: boolean;
+  forNextTurn?: boolean;
   models: ModelSummary[];
   showContextUsage?: boolean;
   settingsError?: string | null;
-  settings: ComposerSettings;
-  onSettingsChange: (settings: ComposerSettings) => void;
+  settings: ComposerSettings | null;
+  onSettingsChange: (settings: ComposerSettingsChange) => void;
 };
 
 export function ComposerFooterControls({
   contextUsage,
   disabled = false,
+  forNextTurn = false,
   models,
   showContextUsage = true,
   settingsError,
@@ -39,15 +42,15 @@ export function ComposerFooterControls({
   onSettingsChange,
 }: ComposerFooterControlsProps) {
   const defaultModel = models.find((model) => model.isDefault) ?? models[0] ?? null;
-  const selectedModel = models.find((model) => model.id === settings.model) ?? defaultModel;
-  const selectedModelLabel = modelFullLabel(selectedModel);
-  const selectedModelShortLabel = modelShortLabel(selectedModel);
-  const selectedEffort = settings.effort ?? selectedModel?.defaultReasoningEffort ?? null;
+  const selectedModel = settings?.model ? models.find((model) => model.id === settings.model) ?? null : defaultModel;
+  const selectedModelLabel = selectedModel ? modelFullLabel(selectedModel) : settings?.model ?? "Model";
+  const selectedModelShortLabel = selectedModelLabel.replace(/^gpt-/i, "");
+  const selectedEffort = settings?.effort ?? (forNextTurn ? null : selectedModel?.defaultReasoningEffort ?? null);
   const supportedEfforts = selectedModel?.supportedReasoningEfforts ?? [];
   const [modelMenuOpened, setModelMenuOpened] = useState(false);
 
   function updateSettings(next: Partial<ComposerSettings>) {
-    onSettingsChange({ ...settings, ...next });
+    onSettingsChange(next);
   }
 
   function toggleFast(checked: boolean) {
@@ -67,7 +70,7 @@ export function ComposerFooterControls({
 
       <Group className="kodex-composer-footer-right" gap={6} wrap="nowrap">
         {showContextUsage ? <ContextUsageIndicator usage={contextUsage} /> : null}
-        {settings.fast ? (
+        {settings?.fast ? (
           <Tooltip label="Fast responses enabled">
             <Box aria-label="Fast responses enabled" className="kodex-composer-fast-indicator" component="span" role="img">
               <SolidBoltIcon />
@@ -78,15 +81,15 @@ export function ComposerFooterControls({
         <Menu position="top-start" withinPortal opened={modelMenuOpened} onChange={setModelMenuOpened}>
           <Menu.Target>
             <Button
-              aria-label={`Model: ${selectedModelLabel}${selectedEffort ? `, ${selectedEffort}` : ""}`}
+              aria-label={settings ? `Model: ${selectedModelLabel}${selectedEffort ? `, ${selectedEffort}` : ""}` : settingsError ? "Chat settings unavailable" : "Loading chat settings"}
               className="kodex-composer-control kodex-composer-model-control"
-              disabled={disabled || models.length === 0}
+              disabled={disabled || settings === null || models.length === 0}
               size="compact-sm"
               type="button"
               variant="subtle"
             >
-              <span className="kodex-composer-model-name">{selectedModelShortLabel}</span>
-              {selectedEffort ? (
+              <span className="kodex-composer-model-name">{settings ? selectedModelShortLabel : settingsError ? "Settings unavailable" : "Loading settings"}</span>
+              {settings && selectedEffort ? (
                 <>
                   {" "}
                   <span className="kodex-composer-model-effort">{reasoningEffortLabel(selectedEffort)}</span>
@@ -96,6 +99,7 @@ export function ComposerFooterControls({
           </Menu.Target>
           <Menu.Dropdown aria-label="Model and speed controls" className="kodex-composer-menu kodex-run-settings-menu">
             <MobileMenuHeader title="Run settings" onClose={() => setModelMenuOpened(false)} />
+            {forNextTurn ? <Menu.Label>Settings for the next turn. Queued messages use these settings when executed.</Menu.Label> : null}
             <Menu.Label>Model</Menu.Label>
             <Box className="kodex-run-settings-chip-row" data-section="model">
               {models.map((model) => (
@@ -105,14 +109,7 @@ export function ComposerFooterControls({
                   data-active={selectedModel?.id === model.id ? "true" : undefined}
                   leftSection={selectedModel?.id === model.id ? <Check size={14} /> : undefined}
                   onClick={() => {
-                    updateSettings({
-                      model: model.id,
-                      effort: model.supportedReasoningEfforts.some(
-                        (effort) => effort.reasoningEffort === settings.effort,
-                      )
-                        ? settings.effort
-                        : undefined,
-                    });
+                    updateSettings({ model: model.id });
                     setModelMenuOpened(false);
                   }}
                 >
@@ -132,7 +129,7 @@ export function ComposerFooterControls({
                       data-active={selectedEffort === effort.reasoningEffort ? "true" : undefined}
                       leftSection={selectedEffort === effort.reasoningEffort ? <Check size={14} /> : <Gauge size={14} />}
                       onClick={() => {
-                        updateSettings({ model: selectedModel?.id, effort: effort.reasoningEffort });
+                        updateSettings({ effort: effort.reasoningEffort });
                         setModelMenuOpened(false);
                       }}
                     >
@@ -144,16 +141,17 @@ export function ComposerFooterControls({
             ) : null}
             <Menu.Divider />
             <CheckboxMenuItem
-              checked={settings.fast}
+              checked={settings?.fast ?? false}
               className="kodex-composer-fast-row"
               leftSection={<SolidBoltIcon />}
               onChange={toggleFast}
-              rightSection={<Switch aria-hidden="true" checked={settings.fast} readOnly size="xs" tabIndex={-1} />}
+              rightSection={<Switch aria-hidden="true" checked={settings?.fast ?? false} readOnly size="xs" tabIndex={-1} />}
             >
               Fast
             </CheckboxMenuItem>
           </Menu.Dropdown>
         </Menu>
+        {forNextTurn ? <Text c="dimmed" size="xs">Next turn</Text> : null}
       </Group>
     </Group>
   );
@@ -206,11 +204,6 @@ function ContextUsageIndicator({ usage }: { usage?: ContextUsage | null }) {
 
 function modelFullLabel(model: ModelSummary | null) {
   return model?.model || model?.displayName || model?.id || "Model";
-}
-
-function modelShortLabel(model: ModelSummary | null) {
-  const label = modelFullLabel(model);
-  return label.replace(/^gpt-/i, "");
 }
 
 function reasoningEffortLabel(value: string) {

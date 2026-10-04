@@ -1,10 +1,10 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { Autocomplete, Box } from "@mantine/core";
+import { Alert, Autocomplete, Box, Button } from "@mantine/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { listQueuedInputs, type Project, type QueuedInput } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
-import type { ComposerSettings, ContextUsage } from "../ComposerFooterControls";
+import type { ComposerSettings, ComposerSettingsChange, ContextUsage } from "../ComposerFooterControls";
 import type { ImageLightboxImage } from "../images/types";
 import { mergeQueuedInputData } from "../queuedInputs/cache";
 import { createClientRequestId } from "../shared/id";
@@ -12,17 +12,17 @@ import { singleProjectRoot } from "../projects/roots";
 import { useWorkspace, type ThreadComposerState } from "../workspace/WorkspaceProvider";
 import { paneTargetRecord, type WorkspacePane } from "../workspace/paneTypes";
 import { ComposerPanel } from "./ComposerPanel";
-import { composerSettingsFromThread, sameComposerSettings } from "./settings";
+import { applyDraftComposerSettingsChange, sameComposerSettings } from "./settings";
 import type { ComposerDraftStore } from "./useComposerDraftState";
 import { useComposerOrchestration } from "./useComposerOrchestration";
 import type { useComposerSettingsState } from "./useComposerSettingsState";
+import { useThreadSettings } from "./useThreadSettings";
 
 const EMPTY_QUEUED_INPUTS: QueuedInput[] = [];
 
 type ThreadPaneComposerBridgeProps = {
   composerDefaults: ComposerSettings;
   contextUsageByThreadId: Record<string, ContextUsage>;
-  composerSettingsError: string | null;
   composerDraftStore: ComposerDraftStore;
   hydrateComposerDefaults: (projectId: string | null, cwd?: string | null) => Promise<ComposerSettings | null>;
   isDraftComposerTransitioning: boolean;
@@ -33,23 +33,19 @@ type ThreadPaneComposerBridgeProps = {
   onImagePreviewUrlsChanged: (previewUrls: Record<string, string>) => void;
   onQueuedInputDeleted: (threadId: string, queueId: string) => void;
   onQueuedInputUpsert: (row: QueuedInput) => void;
-  onPaneComposerSettingsChange: (paneId: string, settings: ComposerSettings) => void;
   onThreadMaterialized: (threadId: string) => void;
   onThreadTurnStartFailed: (threadId: string) => void;
   onThreadTurnStarted: (threadId: string) => void;
-  paneComposerSettingsByPaneId: Record<string, ComposerSettings>;
   pane: WorkspacePane;
   paneState: ThreadComposerState;
   projects: Project[];
   skillsInvalidationGeneration: number;
-  threadComposerDefaults: ComposerSettings;
 };
 
 export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
   composerDefaults,
   contextUsageByThreadId,
   composerDraftStore,
-  composerSettingsError,
   hydrateComposerDefaults,
   isDraftComposerTransitioning,
   models,
@@ -59,22 +55,20 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
   onImagePreviewUrlsChanged,
   onQueuedInputDeleted,
   onQueuedInputUpsert,
-  onPaneComposerSettingsChange,
   onThreadMaterialized,
   onThreadTurnStartFailed,
   onThreadTurnStarted,
-  paneComposerSettingsByPaneId,
   pane,
   paneState,
   projects,
   skillsInvalidationGeneration,
-  threadComposerDefaults,
 }: ThreadPaneComposerBridgeProps) {
   const queryClientForPane = useQueryClient();
   const { publishThreadPaneTimelineAction, updatePane } = useWorkspace();
   const target = paneTargetRecord(pane);
   const existingThreadId = target.mode === "existing" && typeof target.threadId === "string" ? target.threadId : null;
   const isDraftPane = existingThreadId === null;
+  const threadSettings = useThreadSettings(existingThreadId);
   const draftProjectId = target.mode === "draft" && typeof target.projectId === "string" ? target.projectId : null;
   const thread = paneState.thread ?? null;
   const currentProject = draftProjectId ? projects.find((project) => project.id === draftProjectId) ?? null : null;
@@ -83,50 +77,24 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
   const canCompose = !isDraftPane || draftProjectId === null || (currentProject !== null && composerCwd !== null);
   const [draftComposerEdited, setDraftComposerEdited] = useState(false);
   const [draftComposerSettings, setDraftComposerSettings] = useState<ComposerSettings>(composerDefaults);
-  const [threadCwdDefaults, setThreadCwdDefaults] = useState<ComposerSettings | null>(null);
   const composerShellRef = useRef<HTMLDivElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
-  const createdDraftThreadRef = useRef<{ composerSettings: ComposerSettings; threadId: string } | null>(null);
+  const createdDraftThreadRef = useRef<{ threadId: string } | null>(null);
 
   useEffect(() => {
-    if ((isDraftPane && (draftComposerEdited || (draftProjectId !== null && composerCwd === null))) ||
-      (!isDraftPane && (!thread || composerSettingsFromThread(thread)))) {
+    if (!isDraftPane || draftComposerEdited || (draftProjectId !== null && composerCwd === null)) {
       return;
     }
     let cancelled = false;
-    void hydrateComposerDefaults(isDraftPane ? draftProjectId : thread?.projectId ?? null, composerCwd).then((settings) => {
+    void hydrateComposerDefaults(draftProjectId, composerCwd).then((settings) => {
       if (!cancelled && settings) {
-        if (isDraftPane) setDraftComposerSettings((current) => (sameComposerSettings(current, settings) ? current : settings));
-        else setThreadCwdDefaults((current) => current && sameComposerSettings(current, settings) ? current : settings);
+        setDraftComposerSettings((current) => (sameComposerSettings(current, settings) ? current : settings));
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [composerCwd, draftComposerEdited, draftProjectId, hydrateComposerDefaults, isDraftPane, thread?.id, thread?.model, thread?.projectId, thread?.reasoningEffort, thread?.serviceTier]);
-
-  useEffect(() => {
-    if (!thread?.id) {
-      return;
-    }
-    const canonicalSettings = composerSettingsFromThread(thread);
-    if (canonicalSettings) {
-      createdDraftThreadRef.current = null;
-      onPaneComposerSettingsChange(pane.id, canonicalSettings);
-      return;
-    }
-    const createdThread = createdDraftThreadRef.current;
-    if (createdThread?.threadId === thread.id) {
-      onPaneComposerSettingsChange(pane.id, createdThread.composerSettings);
-    }
-  }, [
-    onPaneComposerSettingsChange,
-    pane.id,
-    thread?.id,
-    thread?.model,
-    thread?.reasoningEffort,
-    thread?.serviceTier,
-  ]);
+  }, [composerCwd, draftComposerEdited, draftProjectId, hydrateComposerDefaults, isDraftPane]);
 
   useEffect(() => {
     createdDraftThreadRef.current = null;
@@ -148,14 +116,12 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
     },
   });
 
-  const baseThreadComposerSettings = thread ? composerSettingsFromThread(thread) : null;
-  const storedPaneComposerSettings = paneComposerSettingsByPaneId[pane.id];
   const paneComposerSettings = isDraftPane
     ? draftComposerSettings
-    : storedPaneComposerSettings ?? baseThreadComposerSettings ?? threadCwdDefaults ?? threadComposerDefaults;
+    : threadSettings.settings;
   const activeThreadId = existingThreadId;
   const queuedSteerRows = existingThreadId ? queuedInputsQuery.data ?? EMPTY_QUEUED_INPUTS : EMPTY_QUEUED_INPUTS;
-  const composerSettingsErrorMessage = composerSettingsError;
+  const composerSettingsErrorMessage = isDraftPane ? null : threadSettings.error;
   const composerDraftKey = existingThreadId
     ? `pane:${pane.id}:thread:${existingThreadId}`
     : `pane:${pane.id}:draft:${draftProjectId ?? "chat"}`;
@@ -177,16 +143,15 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
         ...(draftProjectId && composerCwd ? { cwd: composerCwd } : {}),
       });
       createdDraftThreadRef.current = createdThread;
-      onPaneComposerSettingsChange(pane.id, createdThread.composerSettings);
       return createdThread;
     },
-    [composerCwd, draftComposerEdited, draftProjectId, hydrateComposerDefaults, isDraftPane, onCreateDraftThread, onPaneComposerSettingsChange, pane.id],
+    [composerCwd, draftComposerEdited, draftProjectId, hydrateComposerDefaults, isDraftPane, onCreateDraftThread],
   );
 
   const orchestration = useComposerOrchestration({
     activeSelectedTurnId: paneState.activeTurnId,
     canCompose,
-    composerSettings: paneComposerSettings,
+    composerSettings: draftComposerSettings,
     draftChatThreadSelected: isDraftPane && draftProjectId === null,
     draftThreadProjectId: isDraftPane ? draftProjectId : null,
     isDraftThreadSelected: isDraftPane,
@@ -224,13 +189,13 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
     selectedThreadId: activeThreadId,
   });
 
-  function handleComposerSettingsChange(nextSettings: ComposerSettings) {
+  function handleComposerSettingsChange(change: ComposerSettingsChange) {
     if (!existingThreadId) {
       setDraftComposerEdited(true);
-      setDraftComposerSettings(nextSettings);
+      setDraftComposerSettings((current) => applyDraftComposerSettingsChange(current, change, models));
       return;
     }
-    onPaneComposerSettingsChange(pane.id, nextSettings);
+    threadSettings.update(change);
   }
 
   function handleDraftProjectChange(projectId: string | null) {
@@ -250,6 +215,12 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
         }} />
       </Box>
     ) : null}
+    {!isDraftPane && threadSettings.error ? (
+      <Alert color="red" title="Chat settings error" mx="md" mt="xs">
+        {threadSettings.error}
+        <Button variant="subtle" size="compact-sm" onClick={threadSettings.reload}>Reload settings</Button>
+      </Alert>
+    ) : null}
     <ComposerPanel
       activeSelectedTurnId={paneState.activeTurnId}
       attachmentInputRef={attachmentInputRef}
@@ -258,6 +229,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
       composerDraftStore={composerDraftStore}
       composerResetToken={0}
       composerSettings={paneComposerSettings}
+      composerSettingsDisabled={!isDraftPane && threadSettings.pending}
       composerSettingsError={composerSettingsErrorMessage}
       composerCwd={composerCwd}
       composerShellRef={composerShellRef}

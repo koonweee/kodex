@@ -50,6 +50,9 @@ export function mockGateway(routes: GatewayRouteMap) {
     ) {
       return new Response(null, { status: 204 });
     }
+    if (request.method === "PATCH" && /^\/v1\/threads\/[^/]+\/settings$/.test(url.pathname)) {
+      return jsonResponse({}, 202);
+    }
     return jsonResponse(body, request.method === "POST" && key === "POST /v1/projects" ? 201 : 200);
   });
 

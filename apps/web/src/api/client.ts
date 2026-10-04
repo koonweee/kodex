@@ -44,7 +44,7 @@ export type SkillsCatalogResponse = components["schemas"]["SkillsCatalogResponse
 export type ThreadRead = components["schemas"]["ThreadRead"];
 export type ThreadReadStateUpdate = components["schemas"]["ThreadReadStateUpdate"];
 export type ThreadSettingsUpdateRequest = components["schemas"]["ThreadSettingsUpdateRequest"];
-export type ThreadSettingsUpdateResponse = components["schemas"]["ThreadSettingsUpdateResponse"];
+export type ThreadSettingsResponse = components["schemas"]["ThreadSettingsResponse"];
 export type ThreadNotificationSettingsResponse = components["schemas"]["ThreadNotificationSettingsResponse"];
 export type ThreadViewPresenceSnapshotRequest = components["schemas"]["ThreadViewPresenceSnapshotRequest"];
 export type ThreadAttachResponse = components["schemas"]["ThreadAttachResponse"];
@@ -71,7 +71,6 @@ export type UserInput = components["schemas"]["UserInput"];
 export type ImageUpload = components["schemas"]["ImageUpload"];
 export type TimelineFileAttachment = components["schemas"]["TimelineFileAttachment"];
 export type CreateThreadOptions = Omit<components["schemas"]["CreateThreadRequest"], "payload" | "projectId">;
-export type TurnStartOptions = Omit<components["schemas"]["TurnStartRequest"], "input" | "attachments">;
 export type NotificationStatusResponse = components["schemas"]["NotificationStatusResponse"];
 export type PushSubscriptionUpsertResponse = components["schemas"]["PushSubscriptionUpsertResponse"];
 export type CurrentPushSubscriptionStatusResponse = components["schemas"]["CurrentPushSubscriptionResponse"];
@@ -294,11 +293,17 @@ export async function setThreadNotificationsEnabled(
   );
 }
 
+export async function getThreadSettings(threadId: string, signal?: AbortSignal): Promise<ThreadSettingsResponse> {
+  return unwrap(api.GET("/v1/threads/{threadId}/settings", {
+    params: { path: { threadId } }, signal, cache: "no-store",
+  }));
+}
+
 export async function updateThreadSettings(
   threadId: string,
   input: ThreadSettingsUpdateRequest,
-): Promise<ThreadSettingsUpdateResponse> {
-  return unwrap(
+): Promise<void> {
+  await unwrapNoContent(
     api.PATCH("/v1/threads/{threadId}/settings", {
       params: { path: { threadId } },
       body: input,
@@ -397,12 +402,11 @@ export async function submitThreadInput(
   threadId: string,
   input: UserInput[],
   attachments: TimelineFileAttachment[] = [],
-  options: TurnStartOptions = {},
 ): Promise<ThreadInputResponse> {
   return unwrap(
     api.POST("/v1/threads/{threadId}/input", {
       params: { path: { threadId } },
-      body: { input, ...(attachments.length > 0 ? { attachments } : {}), ...options },
+      body: { input, ...(attachments.length > 0 ? { attachments } : {}) },
     }),
   );
 }
@@ -426,12 +430,11 @@ export async function createQueuedInput(
   threadId: string,
   input: UserInput[],
   attachments: TimelineFileAttachment[] = [],
-  options: TurnStartOptions = {},
 ): Promise<QueuedInput> {
   const response = await unwrap(
     api.POST("/v1/threads/{threadId}/queued-inputs", {
       params: { path: { threadId } },
-      body: { input, ...(attachments.length > 0 ? { attachments } : {}), ...options },
+      body: { input, ...(attachments.length > 0 ? { attachments } : {}) },
     }),
   );
   return response.queuedInput;

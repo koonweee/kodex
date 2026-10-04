@@ -49,6 +49,8 @@ Native approvals belong to the current app-server connection. Kodex mirrors outs
 
 Projects use native IDs, ordered roots and metadata. Roots organize a project; they do not create directories, grant workspace access or change an existing chat's working directory. New chats default to a project's sole root; projects with zero or multiple roots require a chosen execution directory. Configuration, permissions, skills and terminal context follow that choice. Changing project membership preserves chat history and its working directory; deleting a project leaves its chats unassigned. Kodex no longer provides direct database/rollout rewriting for moving old project paths.
 
+Existing-chat controls edit shared native settings for the next turn using only the selected field. Send and Queue submit input and attachments without replaying browser settings. Native update acceptance is not application confirmation. Fresh chats expose full settings after their first native turn starts; unavailable reads refill at the canonical turn-start boundary. The pinned 0.160.0 native runtime restores model, reasoning effort and permission profile after restart, while service tier returns to the configured default. Kodex accepts that native behavior rather than preserving a duplicate settings record.
+
 ## Validation commands
 
 Backend:

@@ -28,7 +28,7 @@ import {
 } from "../api/client";
 import type { ComposerSettings } from "../ComposerFooterControls";
 import { errorMessageFrom } from "../shared/values";
-import { composerTurnOptions, sameComposerContext, type ComposerContext } from "./settings";
+import { sameComposerContext, type ComposerContext } from "./settings";
 import { slashCommandFromSubmittedText } from "./slashCommands";
 import {
   createObjectUrl,
@@ -41,7 +41,7 @@ import { isTouchInputDevice } from "../shared/inputCapabilities";
 import type { PendingAttachment, QueuedSteerRow } from "./types";
 
 type DraftThreadCreateRequest = { composerSettings?: ComposerSettings; firstMessageText: string; projectId?: string; cwd?: string };
-type DraftThreadCreateResult = { threadId: string; composerSettings: ComposerSettings };
+type DraftThreadCreateResult = { threadId: string };
 type QueuedInputMutation = {
   queueId: string;
   threadId: string;
@@ -223,9 +223,8 @@ export function useComposerOrchestration({
       if (selectedThreadId) {
         draftControls.clearText();
         const payload = await buildTurnPayload(selectedThreadId, text, attachments, skillInputs, skillTextElements);
-        const options = composerTurnOptions(composerSettings);
         if (effectiveActiveSelectedTurnId) {
-          const queuedInput = await createQueuedInput(selectedThreadId, payload.input, payload.attachments, options);
+          const queuedInput = await createQueuedInput(selectedThreadId, payload.input, payload.attachments);
           onQueuedInputUpsert(queuedInput);
           clearPendingAttachments();
           setIsComposerSubmitting(false);
@@ -241,7 +240,7 @@ export function useComposerOrchestration({
             threadId: selectedThreadId,
           }) ?? null;
         }
-        const response = await submitThreadInput(selectedThreadId, payload.input, payload.attachments, options);
+        const response = await submitThreadInput(selectedThreadId, payload.input, payload.attachments);
         if (response.queuedInput) {
           if (optimisticClientRequestId) {
             onOptimisticUserMessageRemoved?.(optimisticClientRequestId);
@@ -288,7 +287,6 @@ export function useComposerOrchestration({
         threadId,
         payload.input,
         payload.attachments,
-        composerTurnOptions(createdThread.composerSettings),
       );
       if (response.queuedInput) {
         onQueuedInputUpsert(response.queuedInput);

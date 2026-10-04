@@ -1228,6 +1228,17 @@ test("restores selected thread model settings when switching threads", async ({ 
       return;
     }
 
+    const settingsMatch = /^GET \/v1\/threads\/([^/]+)\/settings$/.exec(key);
+    if (settingsMatch && threadsById[settingsMatch[1]]) {
+      await route.fulfill({ json: {
+        model: threadsById[settingsMatch[1]].model,
+        effort: "medium",
+        serviceTier: null,
+        activePermissionProfile: null,
+      } });
+      return;
+    }
+
     if (key.startsWith("GET /v1/threads/") && !key.endsWith("/resume") && !key.endsWith("/queued-inputs")) {
       const threadId = url.pathname.split("/").at(-1);
       const thread = threadId ? threadsById[threadId] : null;
@@ -1260,7 +1271,8 @@ test("restores selected thread model settings when switching threads", async ({ 
     if (key === "POST /v1/chats/threads") {
       const nextName = createCount === 0 ? "mini" : "spark";
       const threadId = createCount === 0 ? miniThreadId : sparkThreadId;
-      const model = createCount === 0 ? "gpt-5.4mini" : "gpt-5.3spark";
+      const input = request.postDataJSON() as { model?: string };
+      const model = input.model ?? "gpt-5.4mini";
       createCount += 1;
       const modelEffort = "medium";
       threadsById[threadId] = { id: threadId, name: nextName, model };
@@ -1359,7 +1371,7 @@ test("restores selected thread model settings when switching threads", async ({ 
   await expect(modelButtonInActiveThreadPane(page, /model: gpt-5\.4mini/i)).toBeVisible();
 });
 
-test("composer fast toggle clears fast service tier for next send", async ({ page }) => {
+test("composer clears native fast service tier without replaying settings on send", async ({ page }) => {
   await page.unroute("**/v1/**");
   const fastThread = {
     ...thread,
@@ -1369,6 +1381,8 @@ test("composer fast toggle clears fast service tier for next send", async ({ pag
     rawPayload: { model: "gpt-5.4", reasoningEffort: "medium", serviceTier: "fast" },
   };
   let submittedBody: Record<string, unknown> | null = null;
+  const settingsUpdates: Record<string, unknown>[] = [];
+  const nativeSettings = { model: "gpt-5.4", effort: "medium", serviceTier: "fast" as string | null, activePermissionProfile: null };
 
   await page.route("**/v1/**", async (route) => {
     const request = route.request();
@@ -1393,6 +1407,17 @@ test("composer fast toggle clears fast service tier for next send", async ({ pag
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(threadDetailBody(fastThread)),
       });
+      return;
+    }
+    if (key === "GET /v1/threads/thread-1/settings") {
+      await route.fulfill({ json: nativeSettings });
+      return;
+    }
+    if (key === "PATCH /v1/threads/thread-1/settings") {
+      const patch = request.postDataJSON() as Record<string, unknown>;
+      settingsUpdates.push(patch);
+      Object.assign(nativeSettings, patch);
+      await route.fulfill({ status: 202, json: {} });
       return;
     }
     if (key === "GET /v1/composer-settings") {
@@ -1433,15 +1458,13 @@ test("composer fast toggle clears fast service tier for next send", async ({ pag
   }
   await page.mouse.click(fastRowBox.x + fastRowBox.width - 18, fastRowBox.y + fastRowBox.height / 2);
   await expect(page.getByRole("img", { name: /fast responses enabled/i })).toBeHidden();
+  expect(settingsUpdates).toEqual([{ serviceTier: null }]);
 
   await composerInActiveThreadPane(page).fill("Use normal speed");
   await sendButtonInActiveThreadPane(page).click();
 
-  await expect.poll(() => submittedBody?.serviceTier).toBe(null);
-  expect(submittedBody).toMatchObject({
+  await expect.poll(() => submittedBody).toEqual({
     input: [{ type: "text", text: "Use normal speed" }],
-    model: "gpt-5.4",
-    effort: "medium",
   });
 });
 
@@ -1498,6 +1521,10 @@ async function mockGateway(page: Page) {
 }
 
 async function responseFor(key: string, route: Route, projects = [project], threads = [thread]): Promise<{ status?: number; body: unknown }> {
+  const settingsMatch = /^GET \/v1\/threads\/([^/]+)\/settings$/.exec(key);
+  if (settingsMatch && threads.some((entry) => entry.id === settingsMatch[1])) {
+    return { body: { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null } };
+  }
   if (key === "GET /v1/capabilities") {
     return {
       body: {

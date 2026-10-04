@@ -44,12 +44,12 @@ use crate::{
         },
         events::{EventListResponse, EventsQuery},
         projects::{Project, ProjectListResponse},
+        thread_settings::ThreadSettingsUpdateResponse,
         threads::{
             apply_thread_command_response_state, broadcast_thread_upserted, create_thread_payload,
-            overlay_thread_creation_options, save_thread_creation_options, MarkThreadSeenRequest,
-            MarkThreadSeenResponse, RenameThreadRequest, RenameThreadResponse,
-            SidebarThreadsResponse, ThreadAttachResponse, ThreadCreationOptions, ThreadListQuery,
-            ThreadPinResponse, ThreadSettingsUpdateResponse, ThreadSubagentListResponse,
+            MarkThreadSeenRequest, MarkThreadSeenResponse, RenameThreadRequest,
+            RenameThreadResponse, SidebarThreadsResponse, ThreadAttachResponse,
+            ThreadCreationOptions, ThreadListQuery, ThreadPinResponse, ThreadSubagentListResponse,
             ThreadTimelinePageQuery, ThreadUpsertScope,
         },
         turns::{
@@ -712,12 +712,10 @@ pub async fn create_self_control_thread(
         payload: request.payload,
     };
     options.validate()?;
-    let payload = create_thread_payload(&options);
+    let payload = create_thread_payload(&options)?;
     let mut response = app_server_api::client(&state.app_server)
         .thread_start(request.project_id.clone(), cwd, payload)
         .await?;
-    save_thread_creation_options(&state, &response.thread.id, &options).await?;
-    overlay_thread_creation_options(&mut response.thread, &options);
     apply_thread_command_response_state(&state, &mut response).await?;
     broadcast_thread_upserted(
         &state,
@@ -1005,15 +1003,15 @@ pub async fn rename_self_control_thread(
     path = "/v1/self-control/threads/{threadId}/settings",
     summary = "Update thread settings through self-control",
     request_body = SelfControlThreadSettingsUpdateRequest,
-    responses((status = 200, body = ThreadSettingsUpdateResponse))
+    responses((status = 202, body = ThreadSettingsUpdateResponse))
 )]
 pub async fn update_self_control_thread_settings(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
     Json(request): Json<SelfControlThreadSettingsUpdateRequest>,
-) -> ApiResult<Json<ThreadSettingsUpdateResponse>> {
+) -> ApiResult<(axum::http::StatusCode, Json<ThreadSettingsUpdateResponse>)> {
     let source = request.source;
-    let response = crate::routes::threads::update_thread_settings(
+    let response = crate::routes::thread_settings::update_thread_settings(
         State(state.clone()),
         Path(thread_id.clone()),
         Json(request.update),
@@ -1022,7 +1020,7 @@ pub async fn update_self_control_thread_settings(
     audit_thread_mutation(
         &state,
         &thread_id,
-        "self_control.thread_settings_updated",
+        "self_control.thread_settings_update_queued",
         source,
     )
     .await?;

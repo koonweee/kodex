@@ -1009,6 +1009,11 @@ async function handleApi({ activeScenario, request, response, terminalSessions, 
     });
     return;
   }
+  const threadSettingsMatch = url.pathname.match(/^\/v1\/threads\/([^/]+)\/settings$/);
+  if (request.method === "GET" && threadSettingsMatch && threadSummaries.some((thread) => thread.id === decodeURIComponent(threadSettingsMatch[1]))) {
+    json(response, { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null });
+    return;
+  }
   const threadDetailMatch = url.pathname.match(/^\/v1\/threads\/([^/]+)$/);
   if (request.method === "GET" && threadDetailMatch) {
     const threadId = decodeURIComponent(threadDetailMatch[1]);

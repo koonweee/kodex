@@ -365,29 +365,6 @@ pub struct ThreadNotificationSetting {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct ThreadLocalSettingsOverlay {
-    pub model: Option<String>,
-    pub reasoning_effort: Option<String>,
-    pub service_tier: Option<String>,
-    pub approval_policy: Option<String>,
-    pub approvals_reviewer: Option<String>,
-    pub permissions: Option<String>,
-    pub sandbox: Option<Value>,
-}
-
-impl ThreadLocalSettingsOverlay {
-    pub fn has_any_setting(&self) -> bool {
-        self.model.is_some()
-            || self.reasoning_effort.is_some()
-            || self.service_tier.is_some()
-            || self.approval_policy.is_some()
-            || self.approvals_reviewer.is_some()
-            || self.permissions.is_some()
-            || self.sandbox.is_some()
-    }
-}
-
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum QueuedInputStatus {

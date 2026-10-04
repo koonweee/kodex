@@ -21,8 +21,7 @@ use crate::{
         self, enrich_timeline_skill_mentions, timeline_skill_mentions_from_text,
         visible_text_from_thread_item, GitInfo, RawAppServerResponse, ThreadCommandResponse,
         ThreadDetailResponse, ThreadItemSnapshot, ThreadListResponse, ThreadLiveState,
-        ThreadSettingsUpdateRequest, ThreadStatus, ThreadSummary, ThreadViewResponse,
-        TimelineSkillMention, TimelineThreadMetadataPayload, TimelineUpdateSource,
+        ThreadStatus, ThreadSummary, ThreadViewResponse, TimelineSkillMention,
     },
     app_surfaces,
     error::{ApiError, ApiResult},
@@ -30,10 +29,7 @@ use crate::{
         app_surfaces::{broadcast_app_surface_event, APP_SURFACE_UPSERTED_EVENT},
         projects::Project,
     },
-    store::{
-        EventEnvelope, NewEvent, ThreadLocalSettingsOverlay, ThreadNotificationSetting, ThreadRead,
-    },
-    thread_settings_projection::{self, ActivePermissionProfilePatch},
+    store::{EventEnvelope, NewEvent, ThreadNotificationSetting, ThreadRead},
     thread_view,
 };
 
@@ -61,10 +57,6 @@ pub fn router() -> Router<AppState> {
         .route(
             "/v1/threads/{thread_id}/project",
             patch(update_thread_project),
-        )
-        .route(
-            "/v1/threads/{thread_id}/settings",
-            patch(update_thread_settings),
         )
         .route(
             "/v1/threads/{thread_id}/notifications",
@@ -311,13 +303,6 @@ pub struct ThreadNotificationSettingsUpdateRequest {
     pub enabled: bool,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ThreadSettingsUpdateResponse {
-    pub thread: ThreadSummary,
-    pub raw_payload: Value,
-}
-
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadNotificationSettingsResponse {
@@ -505,12 +490,10 @@ pub async fn create_thread(
         payload: request.payload,
     };
     options.validate()?;
-    let payload = create_thread_payload(&options);
+    let payload = create_thread_payload(&options)?;
     let mut response = app_server_api::client(&state.app_server)
         .thread_start(project_id.clone(), cwd, payload)
         .await?;
-    save_thread_creation_options(&state, &response.thread.id, &options).await?;
-    overlay_thread_creation_options(&mut response.thread, &options);
     apply_thread_command_response_state(&state, &mut response).await?;
     broadcast_thread_upserted(
         &state,
@@ -639,12 +622,10 @@ pub async fn create_chat_thread(
         payload: request.payload,
     };
     options.validate()?;
-    let payload = create_thread_payload(&options);
+    let payload = create_thread_payload(&options)?;
     let mut response = app_server_api::client(&state.app_server)
         .thread_start_in_cwd(cwd, payload)
         .await?;
-    save_thread_creation_options(&state, &response.thread.id, &options).await?;
-    overlay_thread_creation_options(&mut response.thread, &options);
     apply_thread_command_response_state(&state, &mut response).await?;
     broadcast_thread_upserted(&state, ThreadUpsertScope::Chat, None, &response.thread).await?;
     Ok(Json(response))
@@ -672,11 +653,25 @@ impl ThreadCreationOptions {
     }
 }
 
-pub(crate) fn create_thread_payload(options: &ThreadCreationOptions) -> Value {
+pub(crate) fn create_thread_payload(options: &ThreadCreationOptions) -> ApiResult<Value> {
     let mut payload = options.payload.clone();
-    if let Some(object) = payload.as_object_mut() {
-        object.remove("effort");
-        object.remove("reasoningEffort");
+    if payload.is_null() {
+        payload = json!({});
+    }
+    let object = payload
+        .as_object_mut()
+        .ok_or_else(|| ApiError::BadRequest("thread creation payload must be an object".into()))?;
+    object.remove("effort");
+    object.remove("reasoningEffort");
+    if let Some(effort) = options.effort.as_ref() {
+        let config = object.entry("config").or_insert_with(|| json!({}));
+        if config.is_null() {
+            *config = json!({});
+        }
+        config
+            .as_object_mut()
+            .ok_or_else(|| ApiError::BadRequest("thread creation config must be an object".into()))?
+            .insert("model_reasoning_effort".into(), json!(effort));
     }
     if let Some(model) = options.model.as_ref() {
         payload["model"] = Value::String(model.clone());
@@ -699,67 +694,7 @@ pub(crate) fn create_thread_payload(options: &ThreadCreationOptions) -> Value {
     if let Some(sandbox) = options.sandbox.as_ref() {
         payload["sandbox"] = Value::String(sandbox.clone());
     }
-    payload
-}
-
-pub(crate) fn overlay_thread_creation_options(
-    thread: &mut ThreadSummary,
-    options: &ThreadCreationOptions,
-) {
-    if thread.model.is_none() {
-        thread.model = options.model.clone();
-    }
-    if thread.reasoning_effort.is_none() {
-        thread.reasoning_effort = options.effort.clone();
-    }
-    if thread.service_tier.is_none() {
-        thread.service_tier = options.service_tier.clone().flatten();
-    }
-    if thread.approval_policy.is_none() {
-        thread.approval_policy = options.approval_policy.clone();
-    }
-    if thread.approvals_reviewer.is_none() {
-        thread.approvals_reviewer = options.approvals_reviewer.clone();
-    }
-    if thread.active_permission_profile.is_none() {
-        thread.active_permission_profile = options.permissions.as_ref().map(|permissions| {
-            app_server_api::ActivePermissionProfile {
-                id: permissions.clone(),
-                extends: None,
-            }
-        });
-    }
-    if thread.sandbox.is_none() {
-        thread.sandbox = options
-            .sandbox
-            .as_ref()
-            .map(|sandbox| Value::String(sandbox.clone()));
-    }
-}
-
-pub(crate) async fn save_thread_creation_options(
-    state: &AppState,
-    thread_id: &str,
-    options: &ThreadCreationOptions,
-) -> ApiResult<()> {
-    let settings = ThreadLocalSettingsOverlay {
-        approval_policy: options.approval_policy.clone(),
-        approvals_reviewer: options.approvals_reviewer.clone(),
-        permissions: options.permissions.clone(),
-        sandbox: options
-            .sandbox
-            .as_ref()
-            .map(|sandbox| Value::String(sandbox.clone())),
-        ..ThreadLocalSettingsOverlay::default()
-    };
-    if !settings.has_any_setting() {
-        return Ok(());
-    }
-
-    state
-        .store
-        .save_thread_local_settings_overlay(thread_id, &settings)
-        .await
+    Ok(payload)
 }
 
 fn dated_chat_cwd(
@@ -1046,36 +981,6 @@ pub async fn rename_thread(
     Ok(Json(RenameThreadResponse { thread }))
 }
 
-#[utoipa::path(patch, path = "/v1/threads/{threadId}/settings", request_body = ThreadSettingsUpdateRequest, responses((status = 200, body = ThreadSettingsUpdateResponse)))]
-pub async fn update_thread_settings(
-    State(state): State<AppState>,
-    Path(thread_id): Path<String>,
-    Json(request): Json<ThreadSettingsUpdateRequest>,
-) -> ApiResult<Json<ThreadSettingsUpdateResponse>> {
-    request.validate()?;
-    let permissions_patch =
-        ActivePermissionProfilePatch::from_permissions_update(&request.permissions);
-    let client = app_server_api::client(&state.app_server);
-    let raw_response = client
-        .thread_update_settings(thread_id.clone(), request.clone())
-        .await?;
-    thread_settings_projection::save_thread_settings_overlay_patch(
-        &state,
-        &thread_id,
-        &request,
-        &permissions_patch,
-    )
-    .await?;
-    let mut thread = client.thread_read_summary(thread_id).await?;
-    apply_thread_summary_state(&state, std::slice::from_mut(&mut thread)).await?;
-    permissions_patch.apply_to_thread_summary(&mut thread)?;
-    broadcast_thread_metadata_update(&state, &thread).await?;
-    Ok(Json(ThreadSettingsUpdateResponse {
-        thread,
-        raw_payload: raw_response.payload,
-    }))
-}
-
 #[utoipa::path(patch, path = "/v1/threads/{threadId}/notifications", request_body = ThreadNotificationSettingsUpdateRequest, responses((status = 200, body = ThreadNotificationSettingsResponse)))]
 pub async fn update_thread_notifications(
     State(state): State<AppState>,
@@ -1162,7 +1067,6 @@ pub async fn fork_thread(
     let mut response = app_server_api::client(&state.app_server)
         .thread_fork(thread_id.clone(), payload)
         .await?;
-    save_forked_thread_local_settings_overlay(&state, &thread_id, &response.thread.id).await?;
     apply_thread_command_response_state(&state, &mut response).await?;
     Ok(Json(response))
 }
@@ -1410,7 +1314,6 @@ pub(crate) async fn apply_thread_summary_state(
     threads: &mut [ThreadSummary],
 ) -> ApiResult<()> {
     apply_thread_pin_state(state, threads).await?;
-    apply_thread_local_settings_overlays(state, threads).await?;
     apply_thread_notification_settings(state, threads).await?;
     apply_thread_read_state(state, threads).await?;
     for thread in threads {
@@ -1451,20 +1354,6 @@ fn sync_thread_command_response(response: &mut ThreadCommandResponse) {
     response.sandbox = response.thread.sandbox.clone();
 
     sync_raw_response_thread(&mut response.raw_payload, &response.thread);
-    let settings = ThreadLocalSettingsOverlay {
-        model: response.thread.model.clone(),
-        reasoning_effort: response.thread.reasoning_effort.clone(),
-        service_tier: response.thread.service_tier.clone(),
-        approval_policy: response.thread.approval_policy.clone(),
-        approvals_reviewer: response.thread.approvals_reviewer.clone(),
-        permissions: response
-            .thread
-            .active_permission_profile
-            .as_ref()
-            .map(|profile| profile.id.clone()),
-        sandbox: response.thread.sandbox.clone(),
-    };
-    sync_raw_thread_local_settings_overlay(&mut response.raw_payload, &settings);
 }
 
 fn normalize_thread_name(name: &str) -> Option<String> {
@@ -1545,32 +1434,6 @@ fn sync_raw_thread_notifications_enabled(raw_payload: &mut Value, enabled: bool)
         return;
     };
     raw_payload.insert("notificationsEnabled".to_string(), json!(enabled));
-}
-
-async fn apply_thread_local_settings_overlays(
-    state: &AppState,
-    threads: &mut [ThreadSummary],
-) -> ApiResult<()> {
-    if threads.is_empty() {
-        return Ok(());
-    }
-
-    let thread_ids = threads
-        .iter()
-        .map(|thread| thread.id.clone())
-        .collect::<Vec<_>>();
-    let settings = state
-        .store
-        .thread_local_settings_overlays(&thread_ids)
-        .await?;
-    for thread in threads {
-        let Some(settings) = settings.get(&thread.id) else {
-            continue;
-        };
-        overlay_stored_thread_local_settings(thread, settings);
-    }
-
-    Ok(())
 }
 
 async fn broadcast_thread_pin_update(
@@ -1678,155 +1541,6 @@ pub(crate) async fn broadcast_thread_upserted(
     Ok(event)
 }
 
-async fn broadcast_thread_metadata_update(
-    state: &AppState,
-    thread: &ThreadSummary,
-) -> ApiResult<EventEnvelope> {
-    let payload = TimelineThreadMetadataPayload {
-        source: TimelineUpdateSource::GatewayStream,
-        thread_id: thread.id.clone(),
-        thread: Some(thread.clone()),
-        git_info: None,
-    };
-    let event = state
-        .store
-        .append_event(NewEvent {
-            project_id: None,
-            thread_id: Some(thread.id.clone()),
-            turn_id: None,
-            item_id: None,
-            kind: "timeline.thread_metadata".to_string(),
-            codex_method: Some("thread/settings/updated".to_string()),
-            payload: serde_json::to_value(payload)?,
-        })
-        .await?;
-    let _ = state.events.send(event.clone());
-    Ok(event)
-}
-
-fn overlay_stored_thread_local_settings(
-    thread: &mut ThreadSummary,
-    settings: &ThreadLocalSettingsOverlay,
-) {
-    let mut overlay = ThreadLocalSettingsOverlay::default();
-    if settings.model.is_some() {
-        thread.model = settings.model.clone();
-        overlay.model = settings.model.clone();
-    }
-    if settings.reasoning_effort.is_some() {
-        thread.reasoning_effort = settings.reasoning_effort.clone();
-        overlay.reasoning_effort = settings.reasoning_effort.clone();
-    }
-    if settings.service_tier.is_some() {
-        thread.service_tier = settings.service_tier.clone();
-        overlay.service_tier = settings.service_tier.clone();
-    }
-    if thread.approval_policy.is_none() {
-        thread.approval_policy = settings.approval_policy.clone();
-        overlay.approval_policy = settings.approval_policy.clone();
-    }
-    if thread.approvals_reviewer.is_none() {
-        thread.approvals_reviewer = settings.approvals_reviewer.clone();
-        overlay.approvals_reviewer = settings.approvals_reviewer.clone();
-    }
-    if thread.active_permission_profile.is_none() {
-        thread.active_permission_profile = settings.permissions.as_ref().map(|permissions| {
-            app_server_api::ActivePermissionProfile {
-                id: permissions.clone(),
-                extends: None,
-            }
-        });
-        overlay.permissions = settings.permissions.clone();
-    }
-    if thread.sandbox.is_none() {
-        thread.sandbox = settings.sandbox.clone();
-        overlay.sandbox = settings.sandbox.clone();
-    }
-    sync_raw_thread_local_settings_overlay_present(&mut thread.raw_payload, &overlay);
-}
-
-fn sync_raw_thread_local_settings_overlay_present(
-    raw_payload: &mut Value,
-    settings: &ThreadLocalSettingsOverlay,
-) {
-    let Some(raw_payload) = raw_payload.as_object_mut() else {
-        return;
-    };
-
-    sync_raw_optional_string_present(raw_payload, "model", &settings.model);
-    sync_raw_optional_string_present(raw_payload, "reasoningEffort", &settings.reasoning_effort);
-    sync_raw_optional_string_present(raw_payload, "serviceTier", &settings.service_tier);
-    sync_raw_optional_string_present(raw_payload, "approvalPolicy", &settings.approval_policy);
-    sync_raw_optional_string_present(
-        raw_payload,
-        "approvalsReviewer",
-        &settings.approvals_reviewer,
-    );
-    if let Some(permissions) = settings.permissions.as_ref() {
-        raw_payload.insert(
-            "activePermissionProfile".to_string(),
-            json!({ "id": permissions }),
-        );
-    }
-    if let Some(sandbox) = settings.sandbox.as_ref() {
-        raw_payload.insert("sandbox".to_string(), sandbox.clone());
-    }
-}
-
-fn sync_raw_thread_local_settings_overlay(
-    raw_payload: &mut Value,
-    settings: &ThreadLocalSettingsOverlay,
-) {
-    let Some(raw_payload) = raw_payload.as_object_mut() else {
-        return;
-    };
-
-    sync_raw_optional_string(raw_payload, "model", &settings.model);
-    sync_raw_optional_string(raw_payload, "reasoningEffort", &settings.reasoning_effort);
-    sync_raw_optional_string(raw_payload, "serviceTier", &settings.service_tier);
-    sync_raw_optional_string(raw_payload, "approvalPolicy", &settings.approval_policy);
-    sync_raw_optional_string(
-        raw_payload,
-        "approvalsReviewer",
-        &settings.approvals_reviewer,
-    );
-    if let Some(permissions) = settings.permissions.as_ref() {
-        raw_payload.insert(
-            "activePermissionProfile".to_string(),
-            json!({ "id": permissions }),
-        );
-    } else {
-        raw_payload.remove("activePermissionProfile");
-    }
-    if let Some(sandbox) = settings.sandbox.as_ref() {
-        raw_payload.insert("sandbox".to_string(), sandbox.clone());
-    } else {
-        raw_payload.remove("sandbox");
-    }
-}
-
-fn sync_raw_optional_string_present(
-    raw_payload: &mut serde_json::Map<String, Value>,
-    key: &str,
-    value: &Option<String>,
-) {
-    if let Some(value) = value.as_ref() {
-        raw_payload.insert(key.to_string(), Value::String(value.clone()));
-    }
-}
-
-fn sync_raw_optional_string(
-    raw_payload: &mut serde_json::Map<String, Value>,
-    key: &str,
-    value: &Option<String>,
-) {
-    if let Some(value) = value.as_ref() {
-        raw_payload.insert(key.to_string(), Value::String(value.clone()));
-    } else {
-        raw_payload.remove(key);
-    }
-}
-
 fn thread_is_archived(thread: &ThreadSummary) -> bool {
     thread
         .raw_payload
@@ -1850,31 +1564,6 @@ fn message_mentions_missing_thread(message: &str) -> bool {
             || message.contains("does not exist")
             || message.contains("unknown")))
         || message.contains("no rollout found for thread id")
-}
-
-async fn save_forked_thread_local_settings_overlay(
-    state: &AppState,
-    source_thread_id: &str,
-    forked_thread_id: &str,
-) -> ApiResult<()> {
-    if source_thread_id == forked_thread_id {
-        return Ok(());
-    }
-
-    let source_ids = vec![source_thread_id.to_string()];
-    if let Some(settings) = state
-        .store
-        .thread_local_settings_overlays(&source_ids)
-        .await?
-        .remove(source_thread_id)
-    {
-        state
-            .store
-            .save_thread_local_settings_overlay(forked_thread_id, &settings)
-            .await?;
-    }
-
-    Ok(())
 }
 
 async fn apply_thread_read_state(state: &AppState, threads: &mut [ThreadSummary]) -> ApiResult<()> {

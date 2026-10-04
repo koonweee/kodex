@@ -59,7 +59,6 @@ export type ShellSelectionRefs = {
 export function useShellSelection({
   onSelectThread,
   chatThreadsRef,
-  composerDefaultsRef,
   initialRoute,
   pinnedThreadsRef,
   resetComposerDraft,
@@ -67,10 +66,6 @@ export function useShellSelection({
 }: {
   onSelectThread: (threadId: string) => void;
   chatThreadsRef: CurrentRef<ThreadSummary[]>;
-  composerDefaultsRef: CurrentRef<{
-    draftComposerEditedRef: CurrentRef<boolean>;
-    hydrateComposerDefaults: (projectId: string | null) => void | Promise<unknown>;
-  }>;
   initialRoute: KodexRoute;
   pinnedThreadsRef: CurrentRef<ThreadSummary[]>;
   resetComposerDraft: () => void;
@@ -135,11 +130,6 @@ export function useShellSelection({
     if (selectedProjectIdRef.current === null && threadId === selectedThreadIdRef.current) {
       return;
     }
-    const { draftComposerEditedRef, hydrateComposerDefaults } = composerDefaultsRef.current;
-    draftComposerEditedRef.current = false;
-    if (!draftComposerEditedRef.current) {
-      void hydrateComposerDefaults(null);
-    }
     setSelectedProjectIdWithRef(null);
     setDraftChatThreadSelected(false);
     setDraftThreadProjectId(null);
@@ -149,7 +139,6 @@ export function useShellSelection({
     onSelectThread(threadId);
   }, [
     onSelectThread,
-    composerDefaultsRef,
     setRouteSelectedThreadState,
     setSelectedProjectIdWithRef,
     setSelectedThreadIdWithRef,
@@ -237,11 +226,6 @@ export function useShellSelection({
     setSelectedProjectPaneId(null);
     pushKodexRoute({ panel: null, threadId: null });
     setMobilePanel("chat");
-    const { draftComposerEditedRef, hydrateComposerDefaults } = composerDefaultsRef.current;
-    draftComposerEditedRef.current = false;
-    if (!draftComposerEditedRef.current) {
-      void hydrateComposerDefaults(null);
-    }
     setSelectedProjectIdWithRef(null);
     setDraftChatThreadSelected(true);
     setDraftThreadProjectId(null);
@@ -250,7 +234,6 @@ export function useShellSelection({
     setUnavailableThreadId(null);
     resetComposerDraft();
   }, [
-      composerDefaultsRef,
     resetComposerDraft,
     setRouteSelectedThreadState,
     setSelectedProjectIdWithRef,
@@ -266,26 +249,18 @@ export function useShellSelection({
     setSelectedThreadIdWithRef(null);
     setRouteSelectedThreadState(null);
     setUnavailableThreadId(null);
-    const { draftComposerEditedRef, hydrateComposerDefaults } = composerDefaultsRef.current;
 
     if (projectId === null) {
       setSelectedProjectIdWithRef(null);
       setDraftChatThreadSelected(true);
       setDraftThreadProjectId(null);
-      if (!draftComposerEditedRef.current) {
-        void hydrateComposerDefaults(null);
-      }
       return;
     }
 
     setSelectedProjectIdWithRef(projectId);
     setDraftChatThreadSelected(false);
     setDraftThreadProjectId(projectId);
-    if (!draftComposerEditedRef.current) {
-      void hydrateComposerDefaults(projectId);
-    }
   }, [
-      composerDefaultsRef,
     setRouteSelectedThreadState,
     setSelectedProjectIdWithRef,
     setSelectedThreadIdWithRef,
@@ -358,18 +333,11 @@ export function useShellSelection({
     setRouteSelectedThreadState(null);
     setUnavailableThreadId(null);
     if (projectId) {
-      const { draftComposerEditedRef, hydrateComposerDefaults } = composerDefaultsRef.current;
       setDraftChatThreadSelected(false);
       setDraftThreadProjectId(projectId);
-      if (!draftComposerEditedRef.current) {
-        void hydrateComposerDefaults(projectId);
-      }
     } else {
-      const { draftComposerEditedRef, hydrateComposerDefaults } = composerDefaultsRef.current;
-      draftComposerEditedRef.current = false;
       setDraftChatThreadSelected(true);
       setDraftThreadProjectId(null);
-      void hydrateComposerDefaults(null);
     }
     if (resetDraftComposer) {
       resetComposerDraft();
@@ -378,7 +346,6 @@ export function useShellSelection({
       replaceKodexRoute({ panel: null, threadId: null });
     }
   }, [
-      composerDefaultsRef,
     resetComposerDraft,
     setRouteSelectedThreadState,
     setSelectedThreadIdWithRef,

@@ -168,6 +168,7 @@ export async function nativeProjectsFixture(context: BrowserContext) {
       }
       if (target && action === "attach" && request.method() === "POST") return respond(route, { disposition: "resumed", thread: target });
       if (target && action === "app-surface" && request.method() === "GET") return respond(route, { session: null });
+      if (target && action === "settings" && request.method() === "GET") return respond(route, { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null });
       if (target && action === "queued-inputs" && request.method() === "GET") return respond(route, { queuedInputs: [] });
       if (target && action === "subagents" && request.method() === "GET") return respond(route, { subagents: [] });
     }

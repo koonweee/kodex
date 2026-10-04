@@ -210,7 +210,6 @@ describe("Mobile composer panel", () => {
     await userEvent.click(await screen.findByText("Fast"));
 
     expect(onComposerSettingsChange).toHaveBeenCalledWith({
-      ...composerSettings,
       fast: true,
       serviceTier: "fast",
     });

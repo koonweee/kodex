@@ -4,7 +4,7 @@ import { memo } from "react";
 import type { RefObject } from "react";
 
 import { ComposerFooterControls } from "../ComposerFooterControls";
-import type { ComposerSettings, ContextUsage } from "../ComposerFooterControls";
+import type { ComposerSettings, ComposerSettingsChange, ContextUsage } from "../ComposerFooterControls";
 import type { ModelSummary } from "../api/client";
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 
@@ -25,10 +25,11 @@ type ComposerToolbarProps = {
   disabled: boolean;
   models: ModelSummary[];
   onExpandComposer?: () => void;
-  onSettingsChange: (settings: ComposerSettings) => void;
+  onSettingsChange: (settings: ComposerSettingsChange) => void;
   onStopTurn: () => void;
   selectedThreadPresent: boolean;
-  settings: ComposerSettings;
+  settings: ComposerSettings | null;
+  settingsDisabled?: boolean;
   settingsError?: string | null;
   shouldShowStopAction: boolean;
   isSubmitting: boolean;
@@ -46,6 +47,7 @@ export const ComposerToolbar = memo(function ComposerToolbar({
   onStopTurn,
   selectedThreadPresent,
   settings,
+  settingsDisabled,
   settingsError,
   shouldShowStopAction,
   isSubmitting,
@@ -83,7 +85,8 @@ export const ComposerToolbar = memo(function ComposerToolbar({
         </Menu>
         <ComposerFooterControls
           contextUsage={contextUsage}
-          disabled={disabled}
+          disabled={disabled || settingsDisabled}
+          forNextTurn={selectedThreadPresent}
           models={models}
           showContextUsage={showContextUsage}
           settingsError={settingsError}

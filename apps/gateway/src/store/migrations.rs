@@ -175,7 +175,6 @@ impl Store {
         )
         .execute(&self.pool)
         .await?;
-        self.migrate_thread_local_settings_overlay().await?;
         sqlx::query(
             r#"
             create table if not exists thread_pins (
@@ -419,66 +418,6 @@ impl Store {
         Ok(())
     }
 
-    async fn migrate_thread_local_settings_overlay(&self) -> ApiResult<()> {
-        sqlx::query(
-            r#"
-            create table if not exists thread_local_settings_overlays (
-                thread_id text primary key,
-                model text,
-                reasoning_effort text,
-                service_tier text,
-                approval_policy text,
-                approvals_reviewer text,
-                permissions text,
-                sandbox_json text,
-                created_at text not null,
-                updated_at text not null
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-
-        self.add_column_if_missing("thread_local_settings_overlays", "model", "text")
-            .await?;
-        self.add_column_if_missing("thread_local_settings_overlays", "reasoning_effort", "text")
-            .await?;
-        self.add_column_if_missing("thread_local_settings_overlays", "service_tier", "text")
-            .await?;
-
-        if self.table_exists("thread_composer_settings").await? {
-            self.add_column_if_missing("thread_composer_settings", "permissions", "text")
-                .await?;
-            sqlx::query(
-                r#"
-                insert or replace into thread_local_settings_overlays (
-                    thread_id, approval_policy, approvals_reviewer, permissions,
-                    sandbox_json, created_at, updated_at
-                )
-                select thread_id, approval_policy, approvals_reviewer, permissions,
-                    sandbox_json, created_at, updated_at
-                from thread_composer_settings
-                "#,
-            )
-            .execute(&self.pool)
-            .await?;
-            sqlx::query("drop table thread_composer_settings")
-                .execute(&self.pool)
-                .await?;
-        }
-
-        Ok(())
-    }
-
-    pub(crate) async fn table_exists(&self, table: &str) -> ApiResult<bool> {
-        let exists: Option<String> =
-            sqlx::query_scalar("select name from sqlite_master where type = 'table' and name = ?")
-                .bind(table)
-                .fetch_optional(&self.pool)
-                .await?;
-        Ok(exists.is_some())
-    }
-
     pub async fn assert_wal(&self) -> ApiResult<()> {
         let mode: String = sqlx::query_scalar("pragma journal_mode")
             .fetch_one(&self.pool)
@@ -502,6 +441,22 @@ mod tests {
     use crate::store::{NewEvent, Store};
 
     #[tokio::test]
+    async fn fresh_database_has_no_thread_settings_authority() {
+        let store = Store::in_memory().await.unwrap();
+        let tables: Vec<String> = sqlx::query_scalar(
+            "select name from sqlite_master where type = 'table' and name in ('thread_composer_settings', 'thread_local_settings_overlays') order by name",
+        )
+        .fetch_all(store.pool())
+        .await
+        .unwrap();
+
+        assert!(
+            tables.is_empty(),
+            "superseded thread settings tables: {tables:?}"
+        );
+    }
+
+    #[tokio::test]
     async fn file_database_migration_creates_tables_and_enables_wal() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("gateway.db");
@@ -509,7 +464,7 @@ mod tests {
 
         store.assert_wal().await.unwrap();
         let tables: Vec<String> = sqlx::query_scalar(
-            "select name from sqlite_master where type = 'table' and name in ('events', 'app_surface_sessions', 'app_surface_resources', 'approvals', 'thread_reads', 'push_subscriptions', 'notification_deliveries', 'thread_notification_settings', 'thread_local_settings_overlays', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
+            "select name from sqlite_master where type = 'table' and name in ('events', 'app_surface_sessions', 'app_surface_resources', 'approvals', 'thread_reads', 'push_subscriptions', 'notification_deliveries', 'thread_notification_settings', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
         )
         .fetch_all(store.pool())
         .await
@@ -527,7 +482,6 @@ mod tests {
                 "pending_timeline_skill_mentions",
                 "push_subscriptions",
                 "queued_turn_inputs",
-                "thread_local_settings_overlays",
                 "thread_notification_settings",
                 "thread_pins",
                 "thread_reads",
@@ -622,84 +576,5 @@ mod tests {
         let thread_ids = vec!["thread-1".to_string()];
         let states = store.thread_read_states(&thread_ids).await.unwrap();
         assert!(!states.contains_key("thread-1"));
-    }
-
-    #[tokio::test]
-    async fn migration_moves_legacy_thread_composer_settings_without_model_fields() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("gateway.db");
-        let url = format!("sqlite://{}?mode=rwc", path.display());
-        let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect(&url)
-            .await
-            .unwrap();
-        sqlx::query(
-            r#"
-            create table thread_composer_settings (
-                thread_id text primary key,
-                model text,
-                reasoning_effort text,
-                service_tier text,
-                approval_policy text,
-                approvals_reviewer text,
-                permissions text,
-                sandbox_json text,
-                created_at text not null,
-                updated_at text not null
-            )
-            "#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        sqlx::query(
-            r#"
-            insert into thread_composer_settings (
-                thread_id, model, reasoning_effort, service_tier, approval_policy,
-                approvals_reviewer, permissions, sandbox_json, created_at, updated_at
-            )
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind("thread-1")
-        .bind("gpt-5.5")
-        .bind("xhigh")
-        .bind("fast")
-        .bind("on-request")
-        .bind("auto_review")
-        .bind("auto-review")
-        .bind(r#"{"type":"workspaceWrite"}"#)
-        .bind("2026-06-01T00:00:00Z")
-        .bind("2026-06-01T01:00:00Z")
-        .execute(&pool)
-        .await
-        .unwrap();
-        drop(pool);
-
-        let store = Store::connect(&path).await.unwrap();
-        assert!(!store
-            .table_exists("thread_composer_settings")
-            .await
-            .unwrap());
-        assert!(store
-            .table_exists("thread_local_settings_overlays")
-            .await
-            .unwrap());
-        let settings = store
-            .thread_local_settings_overlays(&["thread-1".to_string()])
-            .await
-            .unwrap();
-        let settings = settings.get("thread-1").unwrap();
-        assert!(settings.model.is_none());
-        assert!(settings.reasoning_effort.is_none());
-        assert!(settings.service_tier.is_none());
-        assert_eq!(settings.approval_policy.as_deref(), Some("on-request"));
-        assert_eq!(settings.approvals_reviewer.as_deref(), Some("auto_review"));
-        assert_eq!(settings.permissions.as_deref(), Some("auto-review"));
-        assert_eq!(
-            settings.sandbox.as_ref(),
-            Some(&json!({"type": "workspaceWrite"}))
-        );
     }
 }

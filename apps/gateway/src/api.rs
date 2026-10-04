@@ -94,6 +94,9 @@ use crate::{
         skills::{SkillIconQuery, SkillsQuery},
         terminals::TerminalDeleteResponse,
         thread_presence::{ThreadViewPresenceRequest, ThreadViewPresenceSnapshotRequest},
+        thread_settings::{
+            ThreadSettingsResponse, ThreadSettingsUpdateResponse, ThreadSettingsUpdated,
+        },
         threads::{
             ChatThreadListQuery, CreateChatThreadRequest, CreateThreadRequest,
             MarkThreadSeenRequest, RenameThreadRequest, RenameThreadResponse,
@@ -101,8 +104,8 @@ use crate::{
             ThreadAttachDisposition, ThreadAttachResponse, ThreadListQuery,
             ThreadNotificationSettingsResponse, ThreadNotificationSettingsUpdate,
             ThreadNotificationSettingsUpdateRequest, ThreadPinResponse, ThreadProjectUpdateRequest,
-            ThreadReadStateUpdate, ThreadSettingsUpdateResponse, ThreadSubagentListResponse,
-            ThreadSubagentSummary, ThreadTimelinePageQuery,
+            ThreadReadStateUpdate, ThreadSubagentListResponse, ThreadSubagentSummary,
+            ThreadTimelinePageQuery,
         },
         turns::{
             ThreadCompactDisposition, ThreadCompactResponse, ThreadInputDisposition,
@@ -212,7 +215,8 @@ impl AppState {
         crate::routes::threads::attach_thread,
         crate::routes::threads::rename_thread,
         crate::routes::threads::update_thread_project,
-        crate::routes::threads::update_thread_settings,
+        crate::routes::thread_settings::get_thread_settings,
+        crate::routes::thread_settings::update_thread_settings,
         crate::routes::threads::update_thread_notifications,
         crate::routes::threads::resume_thread,
         crate::routes::threads::fork_thread,
@@ -387,6 +391,8 @@ impl AppState {
         RenameThreadResponse,
         ThreadSettingsUpdateRequest,
         ThreadSettingsUpdateResponse,
+        ThreadSettingsResponse,
+        ThreadSettingsUpdated,
         ThreadNotificationSettingsResponse,
         ThreadNotificationSettingsUpdate,
         ThreadNotificationSettingsUpdateRequest,
@@ -550,6 +556,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::events::router())
         .merge(routes::projects::router())
         .merge(routes::threads::router())
+        .merge(routes::thread_settings::router())
         .merge(routes::turns::router())
         .merge(routes::app_surfaces::router())
         .merge(crate::queue::router())

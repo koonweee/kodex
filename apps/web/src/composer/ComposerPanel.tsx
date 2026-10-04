@@ -10,6 +10,7 @@ import type {
 
 import {
   type ComposerSettings,
+  type ComposerSettingsChange,
   type ContextUsage,
 } from "../ComposerFooterControls";
 import type { ModelSummary, TextElement, TimelineSkillMention, UserInput } from "../api/client";
@@ -38,7 +39,8 @@ export type ComposerPanelProps = {
   activeSelectedTurnId: string | null;
   attachmentInputRef: RefObject<HTMLInputElement | null>;
   canCompose: boolean;
-  composerSettings: ComposerSettings;
+  composerSettings: ComposerSettings | null;
+  composerSettingsDisabled?: boolean;
   composerSettingsError: string | null;
   composerResetToken: number;
   composerDraftKey?: string;
@@ -68,7 +70,7 @@ export type ComposerPanelProps = {
   onComposerDrop: (event: ReactDragEvent<HTMLElement>) => void;
   onComposerKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
   onComposerPaste: (event: ReactClipboardEvent<HTMLTextAreaElement>) => void;
-  onComposerSettingsChange: (settings: ComposerSettings) => void;
+  onComposerSettingsChange: (settings: ComposerSettingsChange) => void;
   onImageOpen: (image: ImageLightboxImage) => void;
   onRemovePendingAttachment: (id: string) => void;
   onStopTurn: () => void;
@@ -91,6 +93,7 @@ export function ComposerPanel({
   attachmentInputRef,
   canCompose,
   composerSettings,
+  composerSettingsDisabled,
   composerSettingsError,
   composerResetToken,
   composerDraftKey,
@@ -309,6 +312,7 @@ export function ComposerPanel({
     composerCwd,
     composerResetToken,
     composerSettings,
+    composerSettingsDisabled,
     composerSettingsError,
     composerShellRef,
     contextUsage,

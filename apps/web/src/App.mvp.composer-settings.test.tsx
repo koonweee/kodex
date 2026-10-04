@@ -2,12 +2,14 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { ThreadSettingsResponse } from "./api/client";
 import {
   App,
   FakeEventSource,
   baseRoutes,
   clickMenuItem as clickMenuItemWithDeps,
   highReasoningModel,
+  model,
   mockGateway,
   project,
   requestJson,
@@ -66,6 +68,14 @@ function getActiveModelButton(name: RegExp) {
   return within(activeThreadPane()).getByRole("button", { name });
 }
 
+function alternateModel(id: string, isDefault = false) {
+  return { ...model, id, model: id, displayName: id, isDefault };
+}
+
+function settingsFor(model: string, effort = "medium", serviceTier: string | null = null): ThreadSettingsResponse {
+  return { model, effort, serviceTier, activePermissionProfile: null };
+}
+
 describe("MVP composer settings flows", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -74,13 +84,18 @@ describe("MVP composer settings flows", () => {
     FakeEventSource.instances = [];
   });
 
-  it("sends composer footer model, speed, and context settings as next-send options without permission overrides", async () => {
+  it("saves sparse native model choices and sends input without replaying settings", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
-    let latestThread: Record<string, unknown> = { ...thread, model: "gpt-5.4", reasoningEffort: "medium", serviceTier: null, rawPayload: {} };
+    const storageSpy = vi.spyOn(Storage.prototype, "setItem");
+    const nativeSettings = settingsFor("gpt-5.4");
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
-        "GET /v1/threads": { threads: [latestThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        "GET /v1/threads/thread-1/settings": () => ({ ...nativeSettings }),
+        "PATCH /v1/threads/thread-1/settings": async (request: Request) => {
+          Object.assign(nativeSettings, await requestJson(request));
+          return new Response("{}", { status: 202, headers: { "Content-Type": "application/json" } });
+        },
         "GET /v1/events": { events: [] },
         "POST /v1/threads/thread-1/input": { payload: {} },
       }),
@@ -116,9 +131,11 @@ describe("MVP composer settings flows", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i }));
     await clickMenuItem(/^high$/i);
-    await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, high/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /model: gpt-5\.4, high/i }));
     await clickFastSwitch();
-    expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")).toHaveLength(0);
+    await waitFor(() => expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")).toHaveLength(2));
+    expect(await Promise.all(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings").map(requestJson)))
+      .toEqual([{ effort: "high" }, { serviceTier: "fast" }]);
     expect(gateway.callsFor("PATCH", "/v1/composer-settings")).toHaveLength(0);
 
     await userEvent.type(screen.getByLabelText(/message composer/i), "Use the selected controls");
@@ -132,28 +149,29 @@ describe("MVP composer settings flows", () => {
     });
 
     const turnBody = await requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0]);
-    expect(turnBody).toMatchObject({
-      effort: "high",
+    expect(turnBody).toEqual({
       input: [{ text: "Use the selected controls", type: "text" }],
-      model: "gpt-5.4",
-      serviceTier: "fast",
     });
-    expect(turnBody).not.toHaveProperty("permissions");
+    // Theme and presence identity are browser-local; shared choices stay native.
+    expect(storageSpy.mock.calls.filter(([key]) =>
+      key !== "kodex-color-scheme" && key !== "kodex.threadViewPresenceClientId",
+    )).toEqual([]);
   }, 20_000);
 
-  it("includes selected-thread turn options from rendered composer settings", async () => {
+  it("reads native settings independently of stale thread metadata without resubmitting them", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const latestThread: Record<string, unknown> = {
       ...thread,
       model: "gpt-5.4",
-      rawPayload: { model: "gpt-5.4", reasoningEffort: "xhigh" },
-      reasoningEffort: "xhigh",
+      rawPayload: { model: "gpt-5.4", reasoningEffort: "medium" },
+      reasoningEffort: "medium",
       serviceTier: null,
     };
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
         "GET /v1/threads": { threads: [latestThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        "GET /v1/threads/thread-1/settings": settingsFor("gpt-5.4", "xhigh"),
         "GET /v1/events": { events: [] },
         "POST /v1/threads/thread-1/input": { payload: {} },
       }),
@@ -170,60 +188,9 @@ describe("MVP composer settings flows", () => {
 
     const turnBody = await requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0]);
     expect(turnBody).toEqual({
-      effort: "xhigh",
       input: [{ text: "Use app-server thread defaults", type: "text" }],
-      model: "gpt-5.4",
     });
   }, 20_000);
-
-  it("hydrates and updates composer model effort and fast mode without storing shared settings or writing permissions", async () => {
-    vi.stubGlobal("EventSource", FakeEventSource);
-    const storageSpy = vi.spyOn(Storage.prototype, "setItem");
-    let latestThread: Record<string, unknown> = { ...thread, model: "gpt-5.4", reasoningEffort: "high", serviceTier: "fast", rawPayload: {} };
-    const gateway = mockGateway(
-      baseRoutes({
-        "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
-        "GET /v1/threads": { threads: [latestThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-        "GET /v1/composer-settings": {
-          model: "gpt-5.4",
-          effort: "high",
-          serviceTier: "fast",
-          permissionProfileId: null,
-        },
-        "GET /v1/events": { events: [] },
-        "POST /v1/threads/thread-1/input": { payload: {} },
-      }),
-    );
-
-    render(<App />);
-
-    expect(await screen.findByRole("button", { name: /model: gpt-5\.4, high/i })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, high/i }));
-    await clickMenuItem(/^medium$/i);
-    await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i }));
-    await clickFastSwitch();
-    expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")).toHaveLength(0);
-
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Use normal speed");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
-    await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
-    });
-
-    const turnBody = await requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0]);
-    expect(turnBody).toMatchObject({
-      effort: "medium",
-      input: [{ text: "Use normal speed", type: "text" }],
-      model: "gpt-5.4",
-      serviceTier: null,
-    });
-    // Theme and presence identity are browser-local; shared composer choices are not.
-    expect(storageSpy.mock.calls.filter(([key]) =>
-      key !== "kodex-color-scheme" && key !== "kodex.threadViewPresenceClientId",
-    )).toEqual([]);
-  });
 
   it("does not show a global error banner when composer settings are unavailable on first load", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
@@ -242,26 +209,6 @@ describe("MVP composer settings flows", () => {
     await waitFor(() => {
       expect(gateway.callsFor("GET", "/v1/composer-settings")).toHaveLength(1);
     });
-    expect(screen.queryByText("Gateway request failed")).not.toBeInTheDocument();
-  });
-
-  it("does not persist pane picker changes or show a save failure before submit", async () => {
-    vi.stubGlobal("EventSource", FakeEventSource);
-    const gateway = mockGateway(
-      baseRoutes({
-        "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
-        "GET /v1/events": { events: [] },
-        "PATCH /v1/threads/thread-1/settings": undefined,
-      }),
-    );
-
-    render(<App />);
-
-    await userEvent.click(await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i }));
-    await clickMenuItem(/^high$/i);
-
-    expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")).toHaveLength(0);
-    expect(screen.queryByLabelText(/thread settings were not saved/i)).not.toBeInTheDocument();
     expect(screen.queryByText("Gateway request failed")).not.toBeInTheDocument();
   });
 
@@ -427,12 +374,13 @@ describe("MVP composer settings flows", () => {
     });
   });
 
-  it("forwards draft thread composer settings to thread start and first turn", async () => {
+  it("forwards draft choices once to thread creation and sends the first input without settings", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
         "POST /v1/threads": { thread: { ...thread, id: "thread-2", name: "New thread", preview: null }, rawPayload: {} },
+        "GET /v1/threads/thread-2/settings": settingsFor("gpt-5.4", "high", "fast"),
         "POST /v1/threads/thread-2/input": { payload: {} },
       }),
     );
@@ -441,6 +389,8 @@ describe("MVP composer settings flows", () => {
 
     await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i });
     await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
+    await userEvent.click(getActiveModelButton(/model: gpt-5\.4, medium/i));
+    await clickMenuItem(/^gpt-5\.4$/i);
     await userEvent.click(getActiveModelButton(/model: gpt-5\.4, medium/i));
     await clickMenuItem(/^high$/i);
     await userEvent.click(getActiveModelButton(/model: gpt-5\.4, high/i));
@@ -467,9 +417,8 @@ describe("MVP composer settings flows", () => {
       serviceTier: "fast",
     });
     const inputBody = await requestJson(gateway.callsFor("POST", "/v1/threads/thread-2/input")[0]);
-    expect(inputBody).toMatchObject({
-      effort: "high",
-      serviceTier: "fast",
+    expect(inputBody).toEqual({
+      input: [{ type: "text", text: "Start with toolbar settings" }],
     });
     expect(createThreadBody).not.toHaveProperty("permissions");
     expect(inputBody).not.toHaveProperty("permissions");
@@ -496,6 +445,7 @@ describe("MVP composer settings flows", () => {
         },
         "POST /v1/chats/threads": { thread: chatThread, rawPayload: {} },
         "GET /v1/threads/chat-thread-1": threadDetail(chatThread),
+        "GET /v1/threads/chat-thread-1/settings": settingsFor("gpt-5.4"),
         "POST /v1/threads/chat-thread-1/input": { payload: {} },
       }),
     );
@@ -528,8 +478,9 @@ describe("MVP composer settings flows", () => {
     expect(turnBody).not.toHaveProperty("permissions");
   });
 
-  it("hydrates global composer defaults when selecting an existing chat without a snapshot", async () => {
+  it("sends existing chat input without guessed settings while native settings are loading", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
+    const nativeSettings = deferred<ThreadSettingsResponse>();
     const chatThread = {
       ...thread,
       projectId: null,
@@ -541,52 +492,7 @@ describe("MVP composer settings flows", () => {
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
-        "GET /v1/composer-settings": (request: Request) => {
-          const projectId = new URL(request.url).searchParams.get("projectId");
-          return projectId === project.id
-            ? { model: "gpt-5.4", effort: "high", serviceTier: "fast", permissionProfileId: "auto-review" }
-            : { model: null, effort: null, serviceTier: null, permissionProfileId: null };
-        },
-        "GET /v1/chats/threads": { threads: [chatThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-        "GET /v1/threads/chat-thread-1": threadDetail(chatThread),
-      }),
-    );
-
-    render(<App />);
-
-    expect(await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /^chats$/i }));
-    await userEvent.click(await screen.findByRole("button", { name: /chat without settings/i }));
-
-    expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
-    expect(gateway.callsFor("GET", "/v1/composer-settings").some((request) => !new URL(request.url).searchParams.has("projectId"))).toBe(true);
-  });
-
-  it("uses default chat settings for an immediate send after selecting a chat while global hydration is delayed", async () => {
-    vi.stubGlobal("EventSource", FakeEventSource);
-    const globalSettings = deferred<{
-      model: null;
-      effort: null;
-      serviceTier: null;
-    }>();
-    const chatThread = {
-      ...thread,
-      projectId: null,
-      id: "chat-thread-1",
-      name: "Chat without settings",
-      cwd: "/home/example/Documents/Codex/2026-05-05/chat-without-settings",
-      preview: "No thread-specific settings",
-    };
-    const gateway = mockGateway(
-      baseRoutes({
-        "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
-        "GET /v1/composer-settings": (request: Request) => {
-          const projectId = new URL(request.url).searchParams.get("projectId");
-          return projectId === project.id
-            ? { model: "gpt-5.4", effort: "high", serviceTier: "fast", permissionProfileId: "auto-review" }
-            : globalSettings.promise;
-        },
+        "GET /v1/threads/chat-thread-1/settings": () => nativeSettings.promise,
         "GET /v1/chats/threads": { threads: [chatThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
         "GET /v1/threads/chat-thread-1": threadDetail(chatThread),
         "POST /v1/threads/chat-thread-1/input": { payload: {} },
@@ -599,21 +505,21 @@ describe("MVP composer settings flows", () => {
     expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /^chats$/i }));
     await userEvent.click(await screen.findByRole("button", { name: /chat without settings/i }));
-    await userEvent.type(getActiveComposer(), "Send before global hydration");
+    expect(await within(activeThreadPane()).findByRole("button", { name: "Loading chat settings" })).toBeDisabled();
+    await userEvent.type(getActiveComposer(), "Send before native settings load");
     await userEvent.click(getActiveSendButton());
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/chat-thread-1/input")).toHaveLength(1);
     });
     const turnBody = await requestJson(gateway.callsFor("POST", "/v1/threads/chat-thread-1/input")[0]);
-    expect(turnBody).not.toHaveProperty("model");
-    expect(turnBody).not.toHaveProperty("effort");
-    expect(turnBody).not.toHaveProperty("serviceTier");
-    expect(turnBody).not.toHaveProperty("permissions");
-    expect(gateway.callsFor("GET", "/v1/composer-settings").some((request) => !new URL(request.url).searchParams.has("projectId"))).toBe(true);
+    expect(turnBody).toEqual({ input: [{ type: "text", text: "Send before native settings load" }] });
+    expect(gateway.callsFor("GET", "/v1/threads/chat-thread-1/settings")).toHaveLength(1);
+    await act(async () => nativeSettings.resolve(settingsFor("gpt-5.4", "high", "fast")));
+    expect(await within(activeThreadPane()).findByRole("button", { name: /model: gpt-5\.4, high/i })).toBeInTheDocument();
   });
 
-  it("uses resumed thread composer state before durable new-thread defaults", async () => {
+  it("reads native settings for a resumed chat instead of new-chat defaults", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     mockGateway(
       baseRoutes({
@@ -624,6 +530,7 @@ describe("MVP composer settings flows", () => {
           serviceTier: null,
           permissionProfileId: null,
         },
+        "GET /v1/threads/thread-1/settings": settingsFor("gpt-5.4", "high", "fast"),
         "GET /v1/threads": {
           threads: [{ ...thread, status: "notLoaded" }],
           nextCursor: null,
@@ -659,34 +566,12 @@ describe("MVP composer settings flows", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     mockGateway(
       baseRoutes({
+        "GET /v1/threads/thread-1/settings": settingsFor("gpt-5.4mini"),
+        "GET /v1/threads/thread-2/settings": settingsFor("gpt-5.3spark"),
         "GET /v1/models": {
           models: [
-            {
-              id: "gpt-5.4mini",
-              model: "gpt-5.4mini",
-              displayName: "GPT-5.4 Mini",
-              description: "Fast coding model",
-              defaultReasoningEffort: "medium",
-              hidden: false,
-              inputModalities: ["text"],
-              isDefault: true,
-              rawPayload: {},
-              supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced" }],
-              upgrade: null,
-            },
-            {
-              id: "gpt-5.3spark",
-              model: "gpt-5.3spark",
-              displayName: "GPT-5.3 Spark",
-              description: "Balanced coding model",
-              defaultReasoningEffort: "medium",
-              hidden: false,
-              inputModalities: ["text"],
-              isDefault: false,
-              rawPayload: {},
-              supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced" }],
-              upgrade: null,
-            },
+            alternateModel("gpt-5.4mini", true),
+            alternateModel("gpt-5.3spark"),
           ],
           nextCursor: null,
           rawPayload: {},
@@ -721,32 +606,22 @@ describe("MVP composer settings flows", () => {
 
     expect(await screen.findByRole("button", { name: /model: gpt-5\.4mini, medium/i })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "spark" }));
-    expect(getActiveModelButton(/model: gpt-5\.3spark, medium/i)).toBeInTheDocument();
+    await waitFor(() => expect(getActiveModelButton(/model: gpt-5\.3spark, medium/i)).toBeInTheDocument());
 
     await userEvent.click(screen.getByRole("button", { name: "mini" }));
-    expect(getActiveModelButton(/model: gpt-5\.4mini, medium/i)).toBeInTheDocument();
+    await waitFor(() => expect(getActiveModelButton(/model: gpt-5\.4mini, medium/i)).toBeInTheDocument());
   });
 
-  it("falls back to durable defaults when the selected thread has no model metadata", async () => {
+  it("loads native settings when the selected thread has no model metadata", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     mockGateway(
       baseRoutes({
+        "GET /v1/threads/thread-1/settings": settingsFor("gpt-5.4-mini"),
+        "GET /v1/threads/thread-2/settings": settingsFor("gpt-5.4", "high"),
         "GET /v1/models": {
           models: [
             highReasoningModel,
-            {
-              id: "gpt-5.4-mini",
-              model: "gpt-5.4-mini",
-              displayName: "GPT-5.4 Mini",
-              description: "Fast coding model",
-              defaultReasoningEffort: "medium",
-              hidden: false,
-              inputModalities: ["text"],
-              isDefault: false,
-              rawPayload: {},
-              supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced" }],
-              upgrade: null,
-            },
+            alternateModel("gpt-5.4-mini"),
           ],
           nextCursor: null,
           rawPayload: {},
@@ -782,19 +657,17 @@ describe("MVP composer settings flows", () => {
     expect(await screen.findByRole("button", { name: /model: gpt-5\.4-mini, medium/i })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "plain" }));
     await waitFor(() => {
-      expect(getActiveModelButton(/model: gpt-5\.4, medium/i)).toBeInTheDocument();
+      expect(getActiveModelButton(/model: gpt-5\.4, high/i)).toBeInTheDocument();
     });
   });
 
-  it("restores model settings for newly created threads from gateway create metadata", async () => {
+  it("reloads native settings for newly created chats across selection and remount", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const miniThread = {
       ...thread,
       id: "thread-mini",
       name: "mini",
       preview: "",
-      model: "gpt-5.4-mini",
-      reasoningEffort: "medium",
       rawPayload: {},
     };
     const sparkThread = {
@@ -802,8 +675,6 @@ describe("MVP composer settings flows", () => {
       id: "thread-spark",
       name: "spark",
       preview: "",
-      model: "gpt-5.3-codex-spark",
-      reasoningEffort: "medium",
       rawPayload: {},
     };
     const createdThreads = [miniThread, sparkThread];
@@ -812,37 +683,13 @@ describe("MVP composer settings flows", () => {
     const modelRoutes = {
       models: [
         highReasoningModel,
-        {
-          id: "gpt-5.4-mini",
-          model: "gpt-5.4-mini",
-          displayName: "GPT-5.4 Mini",
-          description: "Fast coding model",
-          defaultReasoningEffort: "medium",
-          hidden: false,
-          inputModalities: ["text"],
-          isDefault: false,
-          rawPayload: {},
-          supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced" }],
-          upgrade: null,
-        },
-        {
-          id: "gpt-5.3-codex-spark",
-          model: "gpt-5.3-codex-spark",
-          displayName: "GPT-5.3 Spark",
-          description: "Small coding model",
-          defaultReasoningEffort: "medium",
-          hidden: false,
-          inputModalities: ["text"],
-          isDefault: false,
-          rawPayload: {},
-          supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced" }],
-          upgrade: null,
-        },
+        alternateModel("gpt-5.4-mini"),
+        alternateModel("gpt-5.3-codex-spark"),
       ],
       nextCursor: null,
       rawPayload: {},
     };
-    mockGateway(
+    const gateway = mockGateway(
       baseRoutes({
         "GET /v1/models": modelRoutes,
         "GET /v1/threads": () => ({
@@ -853,6 +700,8 @@ describe("MVP composer settings flows", () => {
         }),
         "GET /v1/threads/thread-mini": () => threadDetail(createdThreads[0]),
         "GET /v1/threads/thread-spark": () => threadDetail(createdThreads[1]),
+        "GET /v1/threads/thread-mini/settings": settingsFor("gpt-5.4-mini"),
+        "GET /v1/threads/thread-spark/settings": settingsFor("gpt-5.3-codex-spark"),
         "POST /v1/threads/thread-mini/attach": () => ({
           disposition: "resumed",
           thread: createdThreads[0],
@@ -903,105 +752,14 @@ describe("MVP composer settings flows", () => {
     await waitFor(() => expect(getActiveModelButton(/model: gpt-5\.3-codex-spark, medium/i)).toBeInTheDocument());
     await userEvent.click(screen.getByRole("button", { name: /^mini$/i }));
     await waitFor(() => expect(getActiveModelButton(/model: gpt-5\.4-mini, medium/i)).toBeInTheDocument());
-  });
 
-  it("replaces local next-send thread settings from refreshed metadata in two clients", async () => {
-    vi.stubGlobal("EventSource", FakeEventSource);
-    const models = [
-      highReasoningModel,
-      {
-        id: "gpt-5.4-mini",
-        model: "gpt-5.4-mini",
-        displayName: "GPT-5.4 Mini",
-        description: "Fast coding model",
-        defaultReasoningEffort: "medium",
-        hidden: false,
-        inputModalities: ["text"],
-        isDefault: false,
-        rawPayload: {},
-        supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced" }],
-        upgrade: null,
-      },
-      {
-        id: "gpt-5.3spark",
-        model: "gpt-5.3spark",
-        displayName: "GPT-5.3 Spark",
-        description: "Balanced coding model",
-        defaultReasoningEffort: "medium",
-        hidden: false,
-        inputModalities: ["text"],
-        isDefault: false,
-        rawPayload: {},
-        supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced" }],
-        upgrade: null,
-      },
-    ];
-    const initialThread = {
-      ...thread,
-      model: "gpt-5.4",
-      reasoningEffort: "medium",
-      serviceTier: null,
-      rawPayload: {},
-    };
-    const refreshedThread = {
-      ...initialThread,
-      model: "gpt-5.3spark",
-      updatedAt: initialThread.updatedAt + 1,
-      rawPayload: { model: "gpt-5.3spark", reasoningEffort: "medium" },
-    };
-    const gateway = mockGateway(
-      baseRoutes({
-        "GET /v1/models": { models, nextCursor: null, rawPayload: {} },
-        "GET /v1/threads": {
-          threads: [initialThread],
-          nextCursor: null,
-          backwardsCursor: null,
-          rawPayload: {},
-        },
-        "GET /v1/threads/thread-1": threadDetail(initialThread),
-      }),
-    );
-
-    const firstClient = render(<App />);
-    const secondClient = render(<App />);
-
-    expect(
-      await within(firstClient.container).findByRole("button", { name: /model: gpt-5\.4, medium/i }),
-    ).toBeInTheDocument();
-    expect(
-      await within(secondClient.container).findByRole("button", { name: /model: gpt-5\.4, medium/i }),
-    ).toBeInTheDocument();
-
-    await userEvent.click(within(firstClient.container).getByRole("button", { name: /model: gpt-5\.4, medium/i }));
-    await clickMenuItem(/^gpt-5\.4-mini$/i);
-    expect(
-      await within(firstClient.container).findByRole("button", { name: /model: gpt-5\.4-mini, medium/i }),
-    ).toBeInTheDocument();
-    expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")).toHaveLength(0);
-
-    const selectedThreadStreams = FakeEventSource.instances.filter((instance) => streamIncludesThread(instance, "thread-1"));
-    expect(selectedThreadStreams).toHaveLength(2);
-    act(() => {
-      for (const stream of selectedThreadStreams) {
-        stream.emitNamed("timeline.thread_metadata", {
-          id: `event-refreshed-${stream.url}`,
-          seq: 12,
-          kind: "timeline.thread_metadata",
-          codexMethod: "thread/metadata",
-          projectId: project.id,
-          threadId: thread.id,
-          payload: { thread: refreshedThread },
-          receivedAt: "2026-05-15T00:00:00Z",
-        });
-      }
-    });
-
-    expect(
-      await within(firstClient.container).findByRole("button", { name: /model: gpt-5\.3spark, medium/i }),
-    ).toBeInTheDocument();
-    expect(
-      await within(secondClient.container).findByRole("button", { name: /model: gpt-5\.3spark, medium/i }),
-    ).toBeInTheDocument();
+    expect(await Promise.all(gateway.callsFor("POST", "/v1/threads").map(requestJson)))
+      .toEqual([
+        expect.objectContaining({ model: "gpt-5.4-mini" }),
+        expect.objectContaining({ model: "gpt-5.3-codex-spark" }),
+      ]);
+    expect(gateway.callsFor("GET", "/v1/threads/thread-mini/settings").length).toBeGreaterThanOrEqual(2);
+    expect(gateway.callsFor("GET", "/v1/threads/thread-spark/settings").length).toBeGreaterThanOrEqual(2);
   });
 
   it("shows sidebar account settings without model or status summaries", async () => {

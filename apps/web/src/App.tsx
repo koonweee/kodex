@@ -62,7 +62,7 @@ import { refreshProjectState } from "./projects/cache";
 import type { ComposerSettings } from "./ComposerFooterControls";
 import type { ComposerDraftStore } from "./composer/useComposerDraftState";
 import { automationThreadOptions } from "./automations/threadOptions";
-import { createThreadOptions, sameComposerSettings } from "./composer/settings";
+import { createThreadOptions } from "./composer/settings";
 import { useComposerSettingsState } from "./composer/useComposerSettingsState";
 import { installLiveLongTaskObserver } from "./events/liveDiagnostics";
 import { routeGlobalLiveEvent } from "./events/liveRouting";
@@ -224,7 +224,6 @@ function KodexShell({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lightboxImage, setLightboxImage] = useState<ImageLightboxImage | null>(null);
   const [markdownPreview, setMarkdownPreview] = useState<MarkdownPreviewRequest | null>(null);
-  const [paneComposerSettingsByPaneId, setPaneComposerSettingsByPaneId] = useState<Record<string, ComposerSettings>>({});
   const [paneImagePreviewUrlsByPath, setPaneImagePreviewUrlsByPath] = useState<Record<string, string>>({});
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferencesSection, setPreferencesSection] = useState<PreferenceSection>("appearance");
@@ -240,10 +239,6 @@ function KodexShell({
   const pinnedThreadsRef = useRef<ThreadSummary[]>([]);
   const pendingTitleThreadIdsRef = useRef<Set<string>>(new Set());
   const threadsByProjectIdRef = useRef<ThreadsByProjectId>({});
-  const composerDefaultsRef = useRef({
-    draftComposerEditedRef: { current: false },
-    hydrateComposerDefaults: (_projectId: string | null) => undefined as void | Promise<unknown>,
-  });
   const chatThreadsLoadingCursorRef = useRef<string | null>(null);
   const projectThreadLoadingCursorsRef = useRef<Record<string, string>>({});
   const composerShellRef = useRef<HTMLDivElement | null>(null);
@@ -294,7 +289,6 @@ function KodexShell({
   } = useShellSelection({
     onSelectThread: handleThreadSelectionRead,
     chatThreadsRef,
-    composerDefaultsRef,
     initialRoute,
     pinnedThreadsRef,
     resetComposerDraft,
@@ -557,21 +551,10 @@ function KodexShell({
     setRouteSelectedThreadState,
     threadsByProjectIdRef,
   });
-  const {
-    composerSettings,
-    composerSettingsError,
-    draftComposerEditedRef,
-    hydrateComposerDefaults,
-    models,
-    workspaceComposerDefaults,
-  } = useComposerSettingsState({
-    draftChatThreadSelected,
+  const { composerDefaults, hydrateComposerDefaults, models } = useComposerSettingsState({
     onError: reportError,
-    selectedProjectId,
-    selectedThread,
     projects,
   });
-  composerDefaultsRef.current = { draftComposerEditedRef, hydrateComposerDefaults };
   const publishThreadPaneTimelineAction = useEventCallback((action: ThreadPaneTimelineAction) => {
     for (const handler of threadPaneTimelineActionHandlersRef.current) {
       handler(action);
@@ -646,11 +629,10 @@ function KodexShell({
       if (projectThreads.some((thread) => thread.id === selectedId)) {
         selectedProjectIdRef.current = projectId;
         setSelectedProjectId(projectId);
-        void hydrateComposerDefaults(projectId);
         return;
       }
     }
-  }, [hydrateComposerDefaults, threadsByProjectId]);
+  }, [threadsByProjectId]);
 
   useEffect(() => {
     setSubagentSidebarOpen(false);
@@ -783,11 +765,7 @@ function KodexShell({
     cwd?: string;
   }) {
     draftComposerTransitionOriginRef.current = composerShellRef.current?.getBoundingClientRect() ?? null;
-    const threadSettings =
-      paneComposerSettings ??
-      (projectId || draftComposerEditedRef.current
-        ? composerSettings
-        : (await hydrateComposerDefaults(null)) ?? composerSettings);
+    const threadSettings = paneComposerSettings ?? composerDefaults;
     const thread = optimisticThreadSummary(
       projectId
         ? await createThread(projectId, { ...createThreadOptions(threadSettings), cwd })
@@ -810,7 +788,7 @@ function KodexShell({
     setIsDraftComposerTransitioning(draftComposerTransitionOriginRef.current !== null);
     selectMaterializedThread({ projectId: projectId ?? null, thread });
     setDraftComposerTransitionToken((current) => current + 1);
-    return { threadId: thread.id, composerSettings: threadSettings };
+    return { threadId: thread.id };
   }
 
   function markThreadMaterialized(threadId: string) {
@@ -1182,25 +1160,12 @@ function KodexShell({
     }
     handleFocusWorkspaceThreadPane(threadId);
   });
-  const handlePaneComposerSettingsChange = useEventCallback((paneId: string, settings: ComposerSettings) => {
-    setPaneComposerSettingsByPaneId((current) => {
-      const existing = current[paneId];
-      if (existing && sameComposerSettings(existing, settings)) {
-        return current;
-      }
-      return {
-        ...current,
-        [paneId]: settings,
-      };
-    });
-  });
   const renderWorkspaceThreadComposer = useCallback(
     (pane: WorkspacePane, paneState: ThreadComposerState) => (
       <ThreadPaneComposerBridge
-        composerDefaults={composerSettings}
+        composerDefaults={composerDefaults}
         contextUsageByThreadId={contextUsageByThreadId}
         composerDraftStore={composerDraftStoreRef.current}
-        composerSettingsError={composerSettingsError}
         hydrateComposerDefaults={hydrateComposerDefaults}
         isDraftComposerTransitioning={isDraftComposerTransitioning}
         models={models}
@@ -1210,25 +1175,20 @@ function KodexShell({
         onImagePreviewUrlsChanged={handlePaneImagePreviewUrlsChanged}
         onQueuedInputDeleted={removeQueuedInput}
         onQueuedInputUpsert={upsertQueuedInput}
-        onPaneComposerSettingsChange={handlePaneComposerSettingsChange}
         onThreadMaterialized={markThreadMaterialized}
         onThreadTurnStartFailed={markThreadIdle}
         onThreadTurnStarted={markThreadActive}
-        paneComposerSettingsByPaneId={paneComposerSettingsByPaneId}
         pane={pane}
         paneState={paneState}
         projects={orderedProjects}
         skillsInvalidationGeneration={skillsInvalidationGeneration}
-        threadComposerDefaults={workspaceComposerDefaults}
       />
     ),
     [
-      composerSettingsError,
-      composerSettings,
+      composerDefaults,
       contextUsageByThreadId,
       createDraftThreadFromComposer,
       handlePaneImagePreviewUrlsChanged,
-      handlePaneComposerSettingsChange,
       hydrateComposerDefaults,
       isDraftComposerTransitioning,
       markThreadActive,
@@ -1236,12 +1196,10 @@ function KodexShell({
       markThreadMaterialized,
       models,
       orderedProjects,
-      paneComposerSettingsByPaneId,
       removeQueuedInput,
       reportError,
       skillsInvalidationGeneration,
       upsertQueuedInput,
-      workspaceComposerDefaults,
     ],
   );
   const renderWorkspaceThreadPaneAside = useCallback<

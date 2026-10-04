@@ -13,6 +13,7 @@ import {
 export type LiveEventRouteHandlers = {
   applyAccountEvent: (event: EventEnvelope) => void;
   applyProjectEvent: (event: EventEnvelope) => void;
+  applyThreadSettingsEvent: (event: EventEnvelope) => void;
   applyAutomationStreamEvent: (event: EventEnvelope) => void;
   applyQueuedInputUpsert: (row: QueuedInput) => void;
   applyQueuedInputDeleted: (threadId: string, id: string) => void;
@@ -35,6 +36,9 @@ export function routeGlobalLiveEvent(event: EventEnvelope, handlers: LiveEventRo
   routeSharedLiveEvent(event, handlers);
   if (event.kind === "project.changed" || event.kind === "thread.project_updated") {
     handlers.applyProjectEvent(event);
+  }
+  if (event.kind === "thread.settings_updated" || event.kind === "thread_view.patch") {
+    handlers.applyThreadSettingsEvent(event);
   }
   if (event.kind === "account.updated" || event.kind === "account.login_completed") {
     handlers.applyAccountEvent(event);

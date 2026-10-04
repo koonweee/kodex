@@ -5,10 +5,7 @@ use sqlx::{QueryBuilder, Row, Sqlite};
 
 use crate::error::{ApiError, ApiResult};
 
-use super::{
-    row_to_thread_pin, row_to_thread_read, Store, ThreadLocalSettingsOverlay, ThreadPin,
-    ThreadRead, ThreadReadState,
-};
+use super::{row_to_thread_pin, row_to_thread_read, Store, ThreadPin, ThreadRead, ThreadReadState};
 
 impl Store {
     pub async fn thread_read_states(
@@ -41,94 +38,6 @@ impl Store {
         }
 
         Ok(states)
-    }
-
-    pub async fn save_thread_local_settings_overlay(
-        &self,
-        thread_id: &str,
-        settings: &ThreadLocalSettingsOverlay,
-    ) -> ApiResult<()> {
-        let now = Utc::now();
-        let sandbox_json = settings
-            .sandbox
-            .as_ref()
-            .map(serde_json::to_string)
-            .transpose()?;
-        sqlx::query(
-            r#"
-            insert into thread_local_settings_overlays (
-                thread_id, model, reasoning_effort, service_tier,
-                approval_policy, approvals_reviewer, permissions, sandbox_json,
-                created_at, updated_at
-            )
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            on conflict(thread_id) do update set
-                model = excluded.model,
-                reasoning_effort = excluded.reasoning_effort,
-                service_tier = excluded.service_tier,
-                approval_policy = excluded.approval_policy,
-                approvals_reviewer = excluded.approvals_reviewer,
-                permissions = excluded.permissions,
-                sandbox_json = excluded.sandbox_json,
-                updated_at = excluded.updated_at
-            "#,
-        )
-        .bind(thread_id)
-        .bind(&settings.model)
-        .bind(&settings.reasoning_effort)
-        .bind(&settings.service_tier)
-        .bind(&settings.approval_policy)
-        .bind(&settings.approvals_reviewer)
-        .bind(&settings.permissions)
-        .bind(sandbox_json)
-        .bind(now)
-        .bind(now)
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
-    }
-
-    pub async fn thread_local_settings_overlays(
-        &self,
-        thread_ids: &[String],
-    ) -> ApiResult<HashMap<String, ThreadLocalSettingsOverlay>> {
-        if thread_ids.is_empty() {
-            return Ok(HashMap::new());
-        }
-
-        let mut builder = QueryBuilder::<Sqlite>::new(
-            "select thread_id, model, reasoning_effort, service_tier, approval_policy, approvals_reviewer, permissions, sandbox_json from thread_local_settings_overlays where thread_id in (",
-        );
-        {
-            let mut separated = builder.separated(", ");
-            for thread_id in thread_ids {
-                separated.push_bind(thread_id);
-            }
-        }
-        builder.push(")");
-
-        let mut settings = HashMap::new();
-        for row in builder.build().fetch_all(&self.pool).await? {
-            let thread_id: String = row.try_get("thread_id")?;
-            let sandbox_json: Option<String> = row.try_get("sandbox_json")?;
-            settings.insert(
-                thread_id,
-                ThreadLocalSettingsOverlay {
-                    model: row.try_get("model")?,
-                    reasoning_effort: row.try_get("reasoning_effort")?,
-                    service_tier: row.try_get("service_tier")?,
-                    approval_policy: row.try_get("approval_policy")?,
-                    approvals_reviewer: row.try_get("approvals_reviewer")?,
-                    permissions: row.try_get("permissions")?,
-                    sandbox: sandbox_json
-                        .map(|value| serde_json::from_str(&value))
-                        .transpose()?,
-                },
-            );
-        }
-
-        Ok(settings)
     }
 
     pub async fn pin_thread(&self, thread_id: &str) -> ApiResult<ThreadPin> {
@@ -253,44 +162,7 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
-
-    use crate::store::{Store, ThreadLocalSettingsOverlay};
-
-    #[tokio::test]
-    async fn thread_local_settings_overlays_round_trip_by_thread_id() {
-        let store = Store::in_memory().await.unwrap();
-        store
-            .save_thread_local_settings_overlay(
-                "thread-1",
-                &ThreadLocalSettingsOverlay {
-                    model: Some("gpt-5.5".to_string()),
-                    reasoning_effort: Some("xhigh".to_string()),
-                    service_tier: Some("fast".to_string()),
-                    approval_policy: Some("on-request".to_string()),
-                    approvals_reviewer: Some("auto_review".to_string()),
-                    permissions: Some("auto-review".to_string()),
-                    sandbox: Some(json!("workspace-write")),
-                },
-            )
-            .await
-            .unwrap();
-
-        let thread_ids = vec!["thread-1".to_string(), "missing-thread".to_string()];
-        let settings = store
-            .thread_local_settings_overlays(&thread_ids)
-            .await
-            .unwrap();
-        let settings = settings.get("thread-1").unwrap();
-
-        assert_eq!(settings.model.as_deref(), Some("gpt-5.5"));
-        assert_eq!(settings.reasoning_effort.as_deref(), Some("xhigh"));
-        assert_eq!(settings.service_tier.as_deref(), Some("fast"));
-        assert_eq!(settings.approval_policy.as_deref(), Some("on-request"));
-        assert_eq!(settings.approvals_reviewer.as_deref(), Some("auto_review"));
-        assert_eq!(settings.permissions.as_deref(), Some("auto-review"));
-        assert_eq!(settings.sandbox.as_ref(), Some(&json!("workspace-write")));
-    }
+    use crate::store::Store;
 
     #[tokio::test]
     async fn thread_pins_round_trip_idempotently_and_order_by_pinned_at() {

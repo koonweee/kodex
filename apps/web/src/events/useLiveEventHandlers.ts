@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { applyAccountEvent } from "../account/cache";
+import { applyThreadSettingsEvent } from "../composer/threadSettingsCache";
 import type { EventEnvelope, QueuedInput, RateLimitSnapshot } from "../api/client";
 import { applyMcpLifecycleEvent } from "../api/mcpCache";
 import { queryKeys } from "../api/queryKeys";
@@ -68,6 +69,7 @@ export function useLiveEventHandlers({
     const liveRouteHandlers: LiveEventRouteHandlers = {
       applyAccountEvent: (event) => applyAccountEvent(queryClient, event),
       applyProjectEvent: (event) => applyProjectEvent(queryClient, event),
+      applyThreadSettingsEvent: (event) => applyThreadSettingsEvent(queryClient, event),
       applyAutomationStreamEvent,
       applyQueuedInputUpsert,
       applyQueuedInputDeleted,

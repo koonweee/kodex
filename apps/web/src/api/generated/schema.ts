@@ -1699,7 +1699,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        get: operations["get_thread_settings"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3105,6 +3105,12 @@ export interface components {
             threadId: string;
             unreadCompletedAgentTurn: boolean;
         };
+        ThreadSettingsResponse: {
+            activePermissionProfile?: null | components["schemas"]["ActivePermissionProfile"];
+            effort?: string | null;
+            model: string;
+            serviceTier?: string | null;
+        };
         ThreadSettingsUpdateRequest: {
             approvalPolicy?: string | null;
             approvalsReviewer?: string | null;
@@ -3114,9 +3120,10 @@ export interface components {
             sandboxPolicy?: unknown;
             serviceTier?: string | null;
         };
-        ThreadSettingsUpdateResponse: {
-            rawPayload: unknown;
-            thread: components["schemas"]["ThreadSummary"];
+        ThreadSettingsUpdateResponse: Record<string, never>;
+        /** @description An invalidation marker, never a replayable settings snapshot. */
+        ThreadSettingsUpdated: {
+            threadId: string;
         };
         /** @enum {string} */
         ThreadStatus: "notLoaded" | "idle" | "systemError" | "active";
@@ -5480,7 +5487,7 @@ export interface operations {
             };
         };
         responses: {
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6260,6 +6267,27 @@ export interface operations {
             };
         };
     };
+    get_thread_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadSettingsResponse"];
+                };
+            };
+        };
+    };
     update_thread_settings: {
         parameters: {
             query?: never;
@@ -6275,7 +6303,8 @@ export interface operations {
             };
         };
         responses: {
-            200: {
+            /** @description Native update queued; application is reported by thread.settings_updated */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };

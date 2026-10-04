@@ -22,6 +22,8 @@ export const queryKeys = {
   projectThreadsRoot: ["threads", "project"] as const,
   projects: ["projects"] as const,
   threadPages: ["thread-pages"] as const,
+  threadSettingsRoot: ["thread-settings"] as const,
+  threadSettings: (threadId: string | null) => ["thread-settings", threadId] as const,
   queuedInputs: (threadId: string) => ["queued-inputs", threadId] as const,
   queuedInputTombstones: (threadId: string) => ["queued-inputs", threadId, "tombstones"] as const,
   rateLimits: ["account", "rate-limits"] as const,

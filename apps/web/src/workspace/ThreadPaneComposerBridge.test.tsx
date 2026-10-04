@@ -2,11 +2,11 @@ import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useCallback, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { ThreadPaneComposerBridge } from "../composer/ThreadPaneComposerBridge";
 import type { ComposerSettings } from "../ComposerFooterControls";
+import type { ThreadSettingsResponse } from "../api/client";
 import {
   baseRoutes,
   clickMenuItem as clickMenuItemWithDeps,
@@ -42,9 +42,9 @@ function pane(threadId: string, title: string, paneId = `pane-${threadId}`): Wor
   };
 }
 
-function paneComposerState(summary: ThreadComposerState["thread"] = thread as ThreadComposerState["thread"]): ThreadComposerState {
+function paneComposerState(summary: ThreadComposerState["thread"] = thread as ThreadComposerState["thread"], activeTurnId: string | null = null): ThreadComposerState {
   return {
-    activeTurnId: null,
+    activeTurnId,
     isActive: true,
     isReady: true,
     publishThreadPaneTimelineAction: () => undefined,
@@ -56,12 +56,14 @@ function paneComposerState(summary: ThreadComposerState["thread"] = thread as Th
 function renderBridgePair({
   firstPane = pane("thread-1", "Implement frontend"),
   firstThread = thread as ThreadComposerState["thread"],
+  firstActiveTurnId = null,
   models = [model],
   secondPane = pane("thread-2", "Second thread"),
   secondThreadSummary = secondThread as ThreadComposerState["thread"],
 }: {
   firstPane?: WorkspacePane;
   firstThread?: ThreadComposerState["thread"];
+  firstActiveTurnId?: string | null;
   models?: typeof model[];
   secondPane?: WorkspacePane;
   secondThreadSummary?: ThreadComposerState["thread"];
@@ -71,27 +73,10 @@ function renderBridgePair({
   });
 
   function BridgePair() {
-    const [paneComposerSettingsByPaneId, setPaneComposerSettingsByPaneId] = useState<Record<string, ComposerSettings>>({});
-    const handlePaneComposerSettingsChange = useCallback((paneId: string, settings: ComposerSettings) => {
-      setPaneComposerSettingsByPaneId((current) => {
-        const existing = current[paneId];
-        if (
-          existing &&
-          existing.fast === settings.fast &&
-          existing.model === settings.model &&
-          existing.effort === settings.effort &&
-          existing.serviceTier === settings.serviceTier
-        ) {
-          return current;
-        }
-        return { ...current, [paneId]: settings };
-      });
-    }, []);
     const bridgeProps = {
       composerDefaults: composerSettings,
       contextUsageByThreadId: {},
       composerDraftStore: new Map(),
-      composerSettingsError: null,
       hydrateComposerDefaults: async () => composerSettings,
       isDraftComposerTransitioning: false,
       models,
@@ -101,14 +86,11 @@ function renderBridgePair({
       onImagePreviewUrlsChanged: vi.fn(),
       onQueuedInputDeleted: vi.fn(),
       onQueuedInputUpsert: vi.fn(),
-      onPaneComposerSettingsChange: handlePaneComposerSettingsChange,
       onThreadMaterialized: vi.fn(),
       onThreadTurnStartFailed: vi.fn(),
       onThreadTurnStarted: vi.fn(),
-      paneComposerSettingsByPaneId,
       projects: [],
       skillsInvalidationGeneration: 0,
-      threadComposerDefaults: composerSettings,
     };
 
     return (
@@ -117,7 +99,7 @@ function renderBridgePair({
           <ThreadPaneComposerBridge
             {...bridgeProps}
             pane={firstPane}
-            paneState={paneComposerState(firstThread)}
+            paneState={paneComposerState(firstThread, firstActiveTurnId)}
           />
         </section>
         <section aria-label="Second thread pane">
@@ -143,6 +125,44 @@ function renderBridgePair({
 }
 
 describe("ThreadPaneComposerBridge", () => {
+  it("keeps rejected picker intent out of shared settings and retains draft text for an options-free send", async () => {
+    const gateway = mockGateway(baseRoutes({
+      "GET /v1/threads/thread-1/settings": { model: model.id, effort: "medium", serviceTier: null, activePermissionProfile: null },
+      "PATCH /v1/threads/thread-1/settings": () => new Response(JSON.stringify({ message: "Native change rejected", code: "rejected", retryable: false }), { status: 400, headers: { "content-type": "application/json" } }),
+    }));
+    renderBridgePair({ models: [multiEffortModel] });
+    const first = within(screen.getByRole("region", { name: /first thread pane/i }));
+    await userEvent.type(first.getByLabelText(/message composer/i), "Keep my unsent text");
+    await userEvent.click(await first.findByRole("button", { name: "Model: gpt-5.4, medium" }));
+    await clickMenuItem(/^high$/i);
+    expect(await first.findByRole("alert")).toHaveTextContent("Native change rejected");
+    expect(first.getByRole("button", { name: "Model: gpt-5.4, medium" })).toBeInTheDocument();
+    expect(first.getByLabelText(/message composer/i)).toHaveValue("Keep my unsent text");
+    await userEvent.click(first.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1));
+    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toEqual({ input: [{ text: "Keep my unsent text", type: "text" }] });
+    expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")).toHaveLength(1);
+    await userEvent.click(first.getByRole("button", { name: "Reload settings" }));
+    await waitFor(() => expect(first.queryByRole("alert")).not.toBeInTheDocument());
+  });
+
+  it.each([
+    { activeTurnId: null, endpoint: "input" },
+    { activeTurnId: "native-active-turn", endpoint: "queued-inputs" },
+  ])("allows $endpoint without settings options when the native settings read fails", async ({ activeTurnId, endpoint }) => {
+    const gateway = mockGateway(baseRoutes({
+      "GET /v1/threads/thread-1/settings": () => new Response(JSON.stringify({ message: "Settings offline", code: "offline", retryable: true }), { status: 503, headers: { "content-type": "application/json" } }),
+    }));
+    renderBridgePair({ firstActiveTurnId: activeTurnId });
+    const first = within(screen.getByRole("region", { name: /first thread pane/i }));
+    expect(await first.findByRole("button", { name: "Chat settings unavailable" })).toBeDisabled();
+    await userEvent.type(first.getByLabelText(/message composer/i), "Use native execution settings");
+    await userEvent.click(first.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(gateway.callsFor("POST", `/v1/threads/thread-1/${endpoint}`)).toHaveLength(1));
+    await expect(requestJson(gateway.callsFor("POST", `/v1/threads/thread-1/${endpoint}`)[0])).resolves.toEqual({ input: [{ text: "Use native execution settings", type: "text" }] });
+    expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")).toHaveLength(0);
+  });
+
   it("keeps open thread panes independently composable", async () => {
     const gateway = mockGateway(
       baseRoutes({
@@ -167,109 +187,63 @@ describe("ThreadPaneComposerBridge", () => {
     });
   });
 
-  it("keeps pane model settings local until each pane submits", async () => {
-    const firstThread = {
-      ...thread,
-      model: multiEffortModel.id,
-      reasoningEffort: "high",
-      serviceTier: null,
-      rawPayload: {},
-    } as ThreadComposerState["thread"];
-    const secondThreadSummary = {
-      ...secondThread,
-      model: multiEffortModel.id,
-      reasoningEffort: "medium",
-      serviceTier: null,
-      rawPayload: {},
-    } as ThreadComposerState["thread"];
-    const gateway = mockGateway(
-      baseRoutes({
-        "POST /v1/threads/thread-1/input": { payload: {} },
-        "POST /v1/threads/thread-2/input": { payload: {} },
-      }),
-    );
-
-    renderBridgePair({ firstThread, models: [multiEffortModel], secondThreadSummary });
-
-    const firstPane = screen.getByRole("region", { name: /first thread pane/i });
-    const secondPane = screen.getByRole("region", { name: /second thread pane/i });
-    expect(within(firstPane).getByRole("button", { name: /model: gpt-5\.4, high/i })).toBeInTheDocument();
-    expect(within(secondPane).getByRole("button", { name: /model: gpt-5\.4, medium/i })).toBeInTheDocument();
-
-    await userEvent.click(within(secondPane).getByRole("button", { name: /model: gpt-5\.4, medium/i }));
+  it("edits only one chat's native future settings and leaves normal input options empty", async () => {
+    let secondSettings: ThreadSettingsResponse = { model: multiEffortModel.id, effort: "medium", serviceTier: null, activePermissionProfile: null };
+    const gateway = mockGateway(baseRoutes({
+      "GET /v1/threads/thread-1/settings": { ...secondSettings, effort: "high" },
+      "GET /v1/threads/thread-2/settings": () => ({ ...secondSettings }),
+      "PATCH /v1/threads/thread-2/settings": async (request: Request) => {
+        secondSettings = { ...secondSettings, ...await requestJson(request) };
+        return {};
+      },
+    }));
+    renderBridgePair({ models: [multiEffortModel] });
+    const firstPane = within(screen.getByRole("region", { name: /first thread pane/i }));
+    const secondPane = within(screen.getByRole("region", { name: /second thread pane/i }));
+    await firstPane.findByRole("button", { name: "Model: gpt-5.4, high" });
+    await userEvent.click(await secondPane.findByRole("button", { name: "Model: gpt-5.4, medium" }));
     await clickMenuItem(/^xhigh$/i);
-
-    expect(within(secondPane).getByRole("button", { name: /model: gpt-5\.4, xhigh/i })).toBeInTheDocument();
-    expect(within(firstPane).getByRole("button", { name: /model: gpt-5\.4, high/i })).toBeInTheDocument();
-    expect(gateway.callsFor("PATCH", "/v1/threads/thread-2/settings")).toHaveLength(0);
-
-    await userEvent.type(within(firstPane).getByLabelText(/message composer/i), "Use high");
-    await userEvent.click(within(firstPane).getByRole("button", { name: /send message/i }));
-    await waitFor(() => expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1));
-    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toMatchObject({
-      effort: "high",
-      model: multiEffortModel.id,
-    });
-
-    await userEvent.type(within(secondPane).getByLabelText(/message composer/i), "Use xhigh");
-    await userEvent.click(within(secondPane).getByRole("button", { name: /send message/i }));
-    await waitFor(() => expect(gateway.callsFor("POST", "/v1/threads/thread-2/input")).toHaveLength(1));
-    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-2/input")[0])).resolves.toMatchObject({
-      effort: "xhigh",
-      model: multiEffortModel.id,
-    });
+    await secondPane.findByRole("button", { name: "Model: gpt-5.4, xhigh" });
+    expect(firstPane.getByRole("button", { name: "Model: gpt-5.4, high" })).toBeInTheDocument();
+    await expect(requestJson(gateway.callsFor("PATCH", "/v1/threads/thread-2/settings")[0])).resolves.toEqual({ effort: "xhigh" });
+    for (const [pane, id] of [[firstPane, "thread-1"], [secondPane, "thread-2"]] as const) {
+      await userEvent.type(pane.getByLabelText(/message composer/i), "Use the current native settings");
+      await userEvent.click(pane.getByRole("button", { name: /send message/i }));
+      await waitFor(() => expect(gateway.callsFor("POST", `/v1/threads/${id}/input`)).toHaveLength(1));
+      await expect(requestJson(gateway.callsFor("POST", `/v1/threads/${id}/input`)[0])).resolves.toEqual({
+        input: [{ text: "Use the current native settings", type: "text" }],
+      });
+    }
   });
 
-  it("keeps duplicated same-thread panes independently configurable until submit", async () => {
-    const sameThread = {
-      ...thread,
-      model: multiEffortModel.id,
-      reasoningEffort: "high",
-      serviceTier: null,
-      rawPayload: {},
-    } as ThreadComposerState["thread"];
-    const gateway = mockGateway(
-      baseRoutes({
-        "POST /v1/threads/thread-1/input": { payload: {} },
-      }),
-    );
-
+  it("makes duplicated panes share native settings while retaining their own unsent text", async () => {
+    let settings: ThreadSettingsResponse = { model: multiEffortModel.id, effort: "high", serviceTier: null, activePermissionProfile: null };
+    const gateway = mockGateway(baseRoutes({
+      "GET /v1/threads/thread-1/settings": () => ({ ...settings }),
+      "PATCH /v1/threads/thread-1/settings": async (request: Request) => {
+        settings = { ...settings, ...await requestJson(request) };
+        return {};
+      },
+    }));
     renderBridgePair({
       firstPane: pane("thread-1", "Implement frontend", "pane-thread-1-a"),
-      firstThread: sameThread,
       models: [multiEffortModel],
       secondPane: pane("thread-1", "Duplicate thread", "pane-thread-1-b"),
-      secondThreadSummary: sameThread,
+      secondThreadSummary: thread as ThreadComposerState["thread"],
     });
-
-    const firstPane = screen.getByRole("region", { name: /first thread pane/i });
-    const secondPane = screen.getByRole("region", { name: /second thread pane/i });
-    expect(within(firstPane).getByRole("button", { name: /model: gpt-5\.4, high/i })).toBeInTheDocument();
-    expect(within(secondPane).getByRole("button", { name: /model: gpt-5\.4, high/i })).toBeInTheDocument();
-
-    await userEvent.click(within(secondPane).getByRole("button", { name: /model: gpt-5\.4, high/i }));
+    const firstPane = within(screen.getByRole("region", { name: /first thread pane/i }));
+    const secondPane = within(screen.getByRole("region", { name: /second thread pane/i }));
+    await firstPane.findByRole("button", { name: "Model: gpt-5.4, high" });
+    await userEvent.type(firstPane.getByLabelText(/message composer/i), "First draft");
+    await userEvent.type(secondPane.getByLabelText(/message composer/i), "Second draft");
+    await userEvent.click(secondPane.getByRole("button", { name: "Model: gpt-5.4, high" }));
     await clickMenuItem(/^xhigh$/i);
-
-    expect(within(secondPane).getByRole("button", { name: /model: gpt-5\.4, xhigh/i })).toBeInTheDocument();
-    expect(within(firstPane).getByRole("button", { name: /model: gpt-5\.4, high/i })).toBeInTheDocument();
-    expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")).toHaveLength(0);
-
-    await userEvent.type(within(firstPane).getByLabelText(/message composer/i), "Use high");
-    await userEvent.click(within(firstPane).getByRole("button", { name: /send message/i }));
-    await waitFor(() => expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1));
-    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toMatchObject({
-      effort: "high",
-      input: [{ text: "Use high", type: "text" }],
-      model: multiEffortModel.id,
-    });
-
-    await userEvent.type(within(secondPane).getByLabelText(/message composer/i), "Use xhigh");
-    await userEvent.click(within(secondPane).getByRole("button", { name: /send message/i }));
-    await waitFor(() => expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(2));
-    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[1])).resolves.toMatchObject({
-      effort: "xhigh",
-      input: [{ text: "Use xhigh", type: "text" }],
-      model: multiEffortModel.id,
-    });
+    for (const pane of [firstPane, secondPane]) {
+      await pane.findByRole("button", { name: "Model: gpt-5.4, xhigh" });
+      expect(pane.getByText("Next turn")).toBeInTheDocument();
+    }
+    expect(firstPane.getByLabelText(/message composer/i)).toHaveValue("First draft");
+    expect(secondPane.getByLabelText(/message composer/i)).toHaveValue("Second draft");
+    expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")).toHaveLength(1);
   });
 });

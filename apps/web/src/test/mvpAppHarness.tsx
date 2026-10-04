@@ -167,6 +167,8 @@ function baseRoutes(overrides: GatewayRouteMap = {}): GatewayRouteMap {
       ],
     },
     "GET /v1/composer-settings": { model: null, effort: null, serviceTier: null, permissionProfileId: null, permissionsPreset: null },
+    "GET /v1/threads/thread-1/settings": { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null },
+    "GET /v1/threads/thread-2/settings": { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null },
     ...overrides,
   };
   routes["POST /v1/threads/thread-1/attach"] ??= () => ({ disposition: "resumed", ...threadCommandFromList(routes, thread) });

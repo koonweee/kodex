@@ -903,7 +903,9 @@ impl KodexControlMcp {
         ))
     }
 
-    #[tool(description = "Update Kodex thread settings through self-control lifecycle handling")]
+    #[tool(
+        description = "Queue a sparse update to native thread settings; the acknowledgment does not confirm application"
+    )]
     async fn update_thread_settings(
         &self,
         Parameters(params): Parameters<UpdateThreadSettingsToolParams>,

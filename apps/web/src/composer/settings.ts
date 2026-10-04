@@ -1,15 +1,13 @@
 import type {
   ComposerSettingsResponse,
-  ComposerSettingsUpdateRequest,
   CreateThreadOptions,
   EventEnvelope,
   ModelSummary,
   ThreadSettingsUpdateRequest,
-  ThreadSummary,
-  TurnStartOptions,
+  ThreadSettingsResponse,
 } from "../api/client";
-import type { ComposerSettings, ContextUsage } from "../ComposerFooterControls";
-import { asRecord, numberValue, stringValue } from "../shared/values";
+import type { ComposerSettings, ComposerSettingsChange, ContextUsage } from "../ComposerFooterControls";
+import { asRecord, numberValue } from "../shared/values";
 
 export type ComposerContext = {
   activeSelectedTurnId: string | null;
@@ -49,44 +47,22 @@ export function normalizePersistedComposerSettings(
   };
 }
 
-export function mergeDurableComposerSettings(
-  current: ComposerSettings,
-  patch: ComposerSettingsUpdateRequest,
-): ComposerSettings {
+export function composerSettingsFromNative(settings: ThreadSettingsResponse): ComposerSettings {
   return {
-    ...current,
-    ...(Object.prototype.hasOwnProperty.call(patch, "model") ? { model: patch.model ?? undefined } : {}),
-    ...(Object.prototype.hasOwnProperty.call(patch, "effort") ? { effort: patch.effort ?? undefined } : {}),
-    ...(Object.prototype.hasOwnProperty.call(patch, "serviceTier") ? { fast: patch.serviceTier === "fast" } : {}),
-    ...(Object.prototype.hasOwnProperty.call(patch, "serviceTier")
-      ? { serviceTier: patch.serviceTier ?? undefined }
-      : {}),
+    model: settings.model,
+    effort: settings.effort ?? undefined,
+    fast: settings.serviceTier === "fast",
+    serviceTier: settings.serviceTier,
   };
 }
 
-type ThreadComposerSettingsSource = Pick<
-  ThreadSummary,
-  "model" | "reasoningEffort" | "serviceTier"
-> & {
-  rawPayload?: unknown;
-};
-
-export function composerSettingsFromThread(thread: ThreadComposerSettingsSource): ComposerSettings | null {
-  const rawPayload = asRecord(thread.rawPayload);
-  const model = stringValue(thread.model) ?? stringValue(rawPayload.model);
-  const effort = stringValue(thread.reasoningEffort) ?? stringValue(rawPayload.reasoningEffort);
-  const serviceTier = stringValue(thread.serviceTier) ?? stringValue(rawPayload.serviceTier);
-
-  if (!model && !effort && !serviceTier) {
-    return null;
+export function applyDraftComposerSettingsChange(current: ComposerSettings, change: ComposerSettingsChange, models: ModelSummary[]): ComposerSettings {
+  const next = { ...current, ...change };
+  if (change.model && current.effort && change.effort === undefined) {
+    const model = models.find((candidate) => candidate.id === change.model);
+    if (model && !supportsReasoningEffort(model, current.effort)) next.effort = undefined;
   }
-
-  return {
-    model: model ?? undefined,
-    effort: effort ?? undefined,
-    fast: serviceTier === "fast",
-    serviceTier: serviceTier ?? undefined,
-  };
+  return next;
 }
 
 export function createThreadOptions(settings: ComposerSettings): CreateThreadOptions {
@@ -105,36 +81,12 @@ export function createThreadOptions(settings: ComposerSettings): CreateThreadOpt
   return options;
 }
 
-export function composerTurnOptions(settings: ComposerSettings): TurnStartOptions {
-  const options: TurnStartOptions = {};
-  if (settings.model) {
-    options.model = settings.model;
-  }
-  if (settings.effort) {
-    options.effort = settings.effort;
-  }
-  if (settings.serviceTier !== undefined) {
-    options.serviceTier = settings.serviceTier;
-  } else if (settings.fast) {
-    options.serviceTier = "fast";
-  }
-  return options;
-}
-
-export function composerThreadSettingsPatch(
-  previousSettings: ComposerSettings,
-  nextSettings: ComposerSettings,
-): ThreadSettingsUpdateRequest {
+export function composerThreadSettingsPatch(change: ComposerSettingsChange): ThreadSettingsUpdateRequest {
   const patch: ThreadSettingsUpdateRequest = {};
-  if (previousSettings.model !== nextSettings.model) {
-    patch.model = nextSettings.model ?? null;
-  }
-  if (previousSettings.effort !== nextSettings.effort) {
-    patch.effort = nextSettings.effort ?? null;
-  }
-  if (previousSettings.fast !== nextSettings.fast) {
-    patch.serviceTier = nextSettings.fast ? "fast" : null;
-  }
+  if (change.model !== undefined) patch.model = change.model;
+  if (change.effort !== undefined) patch.effort = change.effort;
+  if (change.serviceTier !== undefined) patch.serviceTier = change.serviceTier;
+  else if (change.fast !== undefined) patch.serviceTier = change.fast ? "fast" : null;
   return patch;
 }
 

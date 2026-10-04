@@ -57,6 +57,7 @@ test("two tabs converge from native approval snapshots after responding, missed 
         case "GET /v1/capabilities": body = capabilities; break;
         case "GET /v1/sidebar/threads": body = { projects: [], projectThreads: {}, chatThreads: { threads: [detail.thread] }, pinnedThreads: { threads: [] } }; break;
         case "GET /v1/threads/thread-1": body = detail; break;
+        case "GET /v1/threads/thread-1/settings": body = { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null }; break;
         case "GET /v1/threads/thread-1/app-surface": body = { session: null }; break;
         case "GET /v1/threads/thread-1/queued-inputs": body = { queuedInputs: [] }; break;
         case "GET /v1/threads/thread-1/subagents": body = { subagents: [] }; break;

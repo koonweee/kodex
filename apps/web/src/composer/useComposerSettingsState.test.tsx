@@ -21,14 +21,12 @@ it("keeps cwd-specific hydration out of global defaults even when responses fini
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const hook = renderHook(() => useComposerSettingsState({
-    projects: [], onError: vi.fn(), draftChatThreadSelected: true, selectedProjectId: null,
-    selectedThread: null,
+    projects: [], onError: vi.fn(),
   }), { wrapper: ({ children }: PropsWithChildren) => <QueryClientProvider client={client}>{children}</QueryClientProvider> });
   await act(async () => { await hook.result.current.hydrateComposerDefaults(null, null); });
   let slow!: ReturnType<typeof hook.result.current.hydrateComposerDefaults>;
   await act(async () => { slow = hook.result.current.hydrateComposerDefaults(null, "/slow-repo"); });
   await act(async () => { expect(await hook.result.current.hydrateComposerDefaults(null, "/fast-repo")).toMatchObject({ model: "fast-model" }); });
   await act(async () => { releaseSlow(nativeSettings("slow-model")); expect(await slow).toMatchObject({ model: "slow-model" }); });
-  expect(hook.result.current.workspaceComposerDefaults.model).toBe("global-model");
-  expect(hook.result.current.composerSettings.model).toBe("global-model");
+  expect(hook.result.current.composerDefaults.model).toBe("global-model");
 });

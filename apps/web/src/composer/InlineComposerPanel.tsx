@@ -53,6 +53,7 @@ export function InlineComposerPanel({
   canCompose,
   canSubmitComposer,
   composerSettings,
+  composerSettingsDisabled,
   composerSettingsError,
   contextUsage,
   currentProjectName,
@@ -242,6 +243,7 @@ export function InlineComposerPanel({
           onStopTurn={onStopTurn}
           selectedThreadPresent={selectedThreadPresent}
           settings={composerSettings}
+          settingsDisabled={composerSettingsDisabled}
           settingsError={composerSettingsError}
           shouldShowStopAction={shouldShowStopAction}
           isSubmitting={isComposerSubmitting}

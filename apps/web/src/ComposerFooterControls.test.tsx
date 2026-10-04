@@ -36,6 +36,32 @@ const settings: ComposerSettings = {
 };
 
 describe("ComposerFooterControls", () => {
+  it.each([
+    { label: "Fast", role: "menuitemcheckbox", expected: { fast: true, serviceTier: "fast" } },
+    { label: "High", role: "menuitem", expected: { effort: "high" } },
+    { label: "gpt-5.4", role: "menuitem", expected: { model: model.id } },
+  ])("emits only the $label intent instead of a stale complete settings form", async ({ label, role, expected }) => {
+    const onSettingsChange = vi.fn();
+    renderWithProvider(
+      <ComposerFooterControls models={[reasoningModel]} settings={{ model: model.id, effort: "medium", fast: false }} onSettingsChange={onSettingsChange} />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i }));
+    await userEvent.click(await screen.findByRole(role, { name: label }));
+    expect(onSettingsChange).toHaveBeenCalledExactlyOnceWith(expected);
+  });
+
+  it("does not invent a future reasoning effort when the native read returns none", () => {
+    renderWithProvider(<ComposerFooterControls forNextTurn models={[reasoningModel]} settings={{ model: model.id, fast: false }} onSettingsChange={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Model: gpt-5.4" })).not.toHaveTextContent("Medium");
+  });
+
+  it("displays the actual native model when it is absent from the catalog", () => {
+    renderWithProvider(
+      <ComposerFooterControls models={[reasoningModel]} settings={{ model: "native-custom", effort: "ultra", fast: false }} onSettingsChange={vi.fn()} />,
+    );
+    expect(screen.getByRole("button", { name: "Model: native-custom, ultra" })).toHaveTextContent("native-custom Ultra");
+  });
+
   it("renders context usage as a non-interactive indicator and uses a compact model label", () => {
     renderWithProvider(
       <ComposerFooterControls

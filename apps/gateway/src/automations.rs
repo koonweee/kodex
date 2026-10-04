@@ -72,7 +72,7 @@ pub async fn process_due_automations(state: &AppState, now: DateTime<Utc>) -> Ap
             broadcast_automation_upsert(state, &automation).await?;
             continue;
         }
-        let options = latest_thread_options(state, &automation.target_thread_id).await?;
+        let options = TurnStartOptions::default();
         let input = vec![UserInput::Text {
             text: automation.prompt.clone(),
             text_elements: Vec::new(),
@@ -134,25 +134,6 @@ async fn resume_automation_target_thread(state: &AppState, thread_id: &str) -> A
         .thread_resume(thread_id.to_string(), json!({}))
         .await?;
     Ok(())
-}
-
-async fn latest_thread_options(state: &AppState, thread_id: &str) -> ApiResult<TurnStartOptions> {
-    let settings = state
-        .store
-        .thread_local_settings_overlays(&[thread_id.to_string()])
-        .await?;
-    Ok(settings
-        .get(thread_id)
-        .map(|settings| TurnStartOptions {
-            model: None,
-            effort: None,
-            service_tier: None,
-            approval_policy: settings.approval_policy.clone(),
-            approvals_reviewer: settings.approvals_reviewer.clone(),
-            permissions: settings.permissions.clone(),
-            sandbox_policy: settings.sandbox.clone(),
-        })
-        .unwrap_or_default())
 }
 
 pub async fn broadcast_automation_upsert(

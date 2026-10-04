@@ -51,6 +51,7 @@ export function MobileComposerPanel({
   canCompose,
   canSubmitComposer,
   composerSettings,
+  composerSettingsDisabled,
   composerSettingsError,
   contextUsage,
   draftState,
@@ -253,6 +254,7 @@ export function MobileComposerPanel({
                 onStopTurn={onStopTurn}
                 selectedThreadPresent={selectedThreadPresent}
                 settings={composerSettings}
+                settingsDisabled={composerSettingsDisabled}
                 settingsError={composerSettingsError}
                 shouldShowStopAction={shouldShowStopAction}
                 isSubmitting={isComposerSubmitting}
@@ -269,6 +271,7 @@ export function MobileComposerPanel({
       canCompose={canCompose}
       canSubmitComposer={canSubmitComposer}
       composerSettings={composerSettings}
+      composerSettingsDisabled={composerSettingsDisabled}
       composerSettingsError={composerSettingsError}
       contextUsage={contextUsage}
       density="mobile"

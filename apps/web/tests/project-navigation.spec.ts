@@ -39,6 +39,7 @@ for (const shape of [
           "GET /v1/projects/project-1": project,
           "GET /v1/sidebar/threads": { projects: [project], projectThreads: { [project.id]: { threads: [thread] } }, chatThreads: { threads: [] }, pinnedThreads: { threads: [] } },
           "GET /v1/threads/thread-1": detail,
+          "GET /v1/threads/thread-1/settings": { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null },
           "POST /v1/threads/thread-1/attach": { disposition: "resumed", thread },
           "GET /v1/threads/thread-1/app-surface": { session: null },
           "GET /v1/threads/thread-1/queued-inputs": { queuedInputs: [] },

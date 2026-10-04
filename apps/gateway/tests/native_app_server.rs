@@ -4,6 +4,8 @@
 mod fixture;
 #[path = "native_app_server/projects.rs"]
 mod projects;
+#[path = "native_app_server/settings.rs"]
+mod settings;
 
 use anyhow::Context;
 use axum::Router;

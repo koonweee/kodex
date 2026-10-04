@@ -36,9 +36,7 @@ use crate::{
     events_synthetic::{synthetic_event, thread_view_refresh_required_event},
     queue,
     routes::app_surfaces::{app_surface_payload_event, APP_SURFACE_UPSERTED_EVENT},
-    routes::threads::{
-        apply_thread_summary_state, ThreadReadStateUpdate, THREAD_READ_UPDATED_EVENT,
-    },
+    routes::threads::{ThreadReadStateUpdate, THREAD_READ_UPDATED_EVENT},
     schema::is_supported_approval_method,
     skills,
     store::{EventEnvelope, NewApproval, NewEvent, ThreadRuntimeState, ThreadRuntimeStatus},
@@ -47,7 +45,6 @@ use crate::{
         THREAD_SUBAGENTS_CHANGED_EVENT, THREAD_SUBAGENT_STARTED_EVENT,
         THREAD_SUBAGENT_STOPPED_EVENT, THREAD_SUBAGENT_UPDATED_EVENT,
     },
-    thread_settings_projection::{self, ActivePermissionProfilePatch},
     thread_view::{self, THREAD_VIEW_ITEM_DELTA_EVENT_KIND, THREAD_VIEW_PATCH_EVENT_KIND},
 };
 
@@ -223,8 +220,7 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
                 let _ = state.events.send(event);
                 emitted = true;
             }
-            if let Some(event) =
-                normalized_thread_settings_event(state, &method, &params, &metadata).await?
+            if let Some(event) = normalized_thread_settings_event(state, &method, &metadata).await?
             {
                 let _ = state.events.send(event);
                 emitted = true;
@@ -1269,7 +1265,6 @@ async fn normalized_account_event(
 async fn normalized_thread_settings_event(
     state: &AppState,
     method: &str,
-    params: &Value,
     metadata: &EventMetadata,
 ) -> ApiResult<Option<EventEnvelope>> {
     if !method.eq_ignore_ascii_case("thread/settings/updated") {
@@ -1278,46 +1273,18 @@ async fn normalized_thread_settings_event(
     let Some(thread_id) = metadata.thread_id.clone() else {
         return Ok(None);
     };
-    let mut thread = app_server_api::client(&state.app_server)
-        .thread_read_summary(thread_id)
-        .await?;
-    let active_permission_profile_patch =
-        ActivePermissionProfilePatch::from_thread_settings_value(params.get("threadSettings"))?;
-    thread_settings_projection::save_permissions_overlay_patch(
-        state,
-        &thread.id,
-        &active_permission_profile_patch,
-    )
-    .await?;
-    if let Some(settings) = params.get("threadSettings") {
-        if let Some(profile) = active_permission_profile_from_value(settings)? {
-            thread.active_permission_profile = Some(profile.clone());
-            if let Some(raw_payload) = thread.raw_payload.as_object_mut() {
-                raw_payload.insert(
-                    "activePermissionProfile".to_string(),
-                    serde_json::to_value(profile)?,
-                );
-            }
-        }
-    }
-    apply_thread_summary_state(state, std::slice::from_mut(&mut thread)).await?;
-    active_permission_profile_patch.apply_to_thread_summary(&mut thread)?;
-    let payload = TimelineThreadMetadataPayload {
-        source: TimelineUpdateSource::GatewayStream,
-        thread_id: thread.id.clone(),
-        thread: Some(thread),
-        git_info: None,
-    };
     state
         .store
         .append_event(NewEvent {
-            project_id: metadata.project_id.clone(),
-            thread_id: Some(payload.thread_id.clone()),
+            project_id: None,
+            thread_id: Some(thread_id.clone()),
             turn_id: None,
             item_id: None,
-            kind: "timeline.thread_metadata".to_string(),
+            kind: crate::routes::thread_settings::THREAD_SETTINGS_UPDATED_EVENT.to_string(),
             codex_method: Some(method.to_string()),
-            payload: serde_json::to_value(payload)?,
+            payload: serde_json::to_value(crate::routes::thread_settings::ThreadSettingsUpdated {
+                thread_id,
+            })?,
         })
         .await
         .map(Some)
