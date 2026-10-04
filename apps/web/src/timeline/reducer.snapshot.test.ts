@@ -825,6 +825,7 @@ function snapshot({
 }): ThreadViewResponse {
   return {
     thread: {
+      parentThreadId: null, canAcceptDirectInput: null,
       id: "thread-1",
       name: "Thread",
       cwd: "/tmp",

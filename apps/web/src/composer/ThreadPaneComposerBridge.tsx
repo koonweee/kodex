@@ -68,13 +68,15 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
   const target = paneTargetRecord(pane);
   const existingThreadId = target.mode === "existing" && typeof target.threadId === "string" ? target.threadId : null;
   const isDraftPane = existingThreadId === null;
-  const threadSettings = useThreadSettings(existingThreadId);
-  const draftProjectId = target.mode === "draft" && typeof target.projectId === "string" ? target.projectId : null;
   const thread = paneState.thread ?? null;
+  const isNativeReadOnly = thread?.canAcceptDirectInput === false;
+  const inputStateReadable = paneState.isReady && !isNativeReadOnly;
+  const threadSettings = useThreadSettings(inputStateReadable ? existingThreadId : null);
+  const draftProjectId = target.mode === "draft" && typeof target.projectId === "string" ? target.projectId : null;
   const currentProject = draftProjectId ? projects.find((project) => project.id === draftProjectId) ?? null : null;
   const explicitCwd = typeof target.cwd === "string" ? target.cwd : null;
   const composerCwd = thread?.cwd ?? (explicitCwd !== null ? explicitCwd.trim() || null : singleProjectRoot(currentProject));
-  const canCompose = !isDraftPane || draftProjectId === null || (currentProject !== null && composerCwd !== null);
+  const canCompose = !isNativeReadOnly && (!isDraftPane || draftProjectId === null || (currentProject !== null && composerCwd !== null));
   const [draftComposerEdited, setDraftComposerEdited] = useState(false);
   const [draftComposerSettings, setDraftComposerSettings] = useState<ComposerSettings>(composerDefaults);
   const composerShellRef = useRef<HTMLDivElement | null>(null);
@@ -95,7 +97,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
   }, [composerCwd, draftProjectId, pane.id]);
 
   const queuedInputsQuery = useQuery({
-    enabled: existingThreadId !== null,
+    enabled: existingThreadId !== null && inputStateReadable,
     queryKey: existingThreadId ? queryKeys.queuedInputs(existingThreadId) : ["queued-inputs", "pane", pane.id, "none"],
     queryFn: async () => {
       if (!existingThreadId) {
@@ -198,6 +200,10 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
     }).catch((error: unknown) => {
       onError(error);
     });
+  }
+
+  if (isNativeReadOnly) {
+    return <Alert mx="md" my="sm">This native subagent does not accept direct input.</Alert>;
   }
 
   return (

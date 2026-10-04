@@ -1,4 +1,5 @@
 import { mergeThreadSummaryMetadata } from "../../threads/summaryMetadata";
+import { subagentsEventInvalidatesThread } from "../../threads/subagentsCache";
 import { ThreadActionsMenu } from "./ThreadActionsMenu";
 import { Badge, Box, Button, Group, Loader, Modal, Skeleton, TextInput, Title } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
@@ -263,7 +264,10 @@ function ExistingThreadPane({
     if (!seededThread) {
       return;
     }
-    setThread((current) => mergePaneThreadSummary(current, seededThread));
+    setThread((current) => {
+      const next = mergePaneThreadSummary(current, seededThread);
+      return current ? { ...next, parentThreadId: current.parentThreadId, canAcceptDirectInput: current.canAcceptDirectInput } : next;
+    });
   }, [seededThread]);
 
   useEffect(() => () => {
@@ -278,7 +282,7 @@ function ExistingThreadPane({
 
   useEffect(() => {
     return subscribeLiveEvent((event) => {
-      if (event.kind === "thread.sections_updated" || projectEventInvalidatesThread(event, threadId)) {
+      if (event.kind === "thread.sections_updated" || subagentsEventInvalidatesThread(event, threadId) || projectEventInvalidatesThread(event, threadId)) {
         cancelQueuedTimelineEvents();
         void refreshSnapshot(true);
         return;

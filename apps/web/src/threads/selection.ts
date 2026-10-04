@@ -1,4 +1,4 @@
-import type { ThreadSubagentSummary, ThreadSummary } from "../api/client";
+import type { ThreadSummary } from "../api/client";
 import type { ThreadsByProjectId } from "./helpers";
 
 export type KnownThreadSelection =
@@ -7,14 +7,6 @@ export type KnownThreadSelection =
 
 export function selectedThreadShouldAttachLive(thread: ThreadSummary): boolean {
   return thread.status === "notLoaded" || thread.status === "active";
-}
-
-export function defaultSubagent(subagents: ThreadSubagentSummary[]): ThreadSubagentSummary | null {
-  return (
-    subagents.find((subagent) => subagent.status === "active" || subagent.liveState === "streaming") ??
-    subagents[0] ??
-    null
-  );
 }
 
 export function findKnownThreadSelection(

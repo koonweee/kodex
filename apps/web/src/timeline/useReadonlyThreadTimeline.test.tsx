@@ -161,6 +161,7 @@ function threadDetail(text: string, viewRevision: number): ThreadViewResponse {
     historyPage: null,
     liveState: "streaming",
     thread: {
+      parentThreadId: null, canAcceptDirectInput: null,
       id: "thread-1",
       name: "Readonly thread",
       cwd: "/workspace",

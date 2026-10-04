@@ -125,6 +125,26 @@ function renderBridgePair({
 }
 
 describe("ThreadPaneComposerBridge", () => {
+  it("keeps a native read-only child out of input/settings workflows without treating unknown capability as read-only", async () => {
+    const gateway = mockGateway(baseRoutes());
+    renderBridgePair({
+      firstThread: { ...thread, status: "active", canAcceptDirectInput: false },
+      firstActiveTurnId: "native-child-turn",
+      secondThreadSummary: { ...secondThread, status: "idle", canAcceptDirectInput: null },
+    });
+    const first = within(screen.getByRole("region", { name: /first thread pane/i }));
+    const second = within(screen.getByRole("region", { name: /second thread pane/i }));
+    expect(first.getByText(/this native subagent does not accept direct input/i)).toBeInTheDocument();
+    expect(first.queryByLabelText(/message composer/i)).not.toBeInTheDocument();
+    expect(first.queryByRole("button", { name: /send message|stop turn/i })).not.toBeInTheDocument();
+    await userEvent.type(second.getByLabelText(/message composer/i), "Try native input with unknown capability");
+    await userEvent.click(second.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(gateway.callsFor("POST", "/v1/threads/thread-2/input")).toHaveLength(1));
+    expect(gateway.callsFor("GET", "/v1/threads/thread-1/settings")).toHaveLength(0);
+    expect(gateway.callsFor("GET", "/v1/threads/thread-1/queued-inputs")).toHaveLength(0);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(0);
+  });
+
   it("keeps rejected picker intent out of shared settings and retains draft text for an options-free send", async () => {
     const gateway = mockGateway(baseRoutes({
       "GET /v1/threads/thread-1/settings": { model: model.id, effort: "medium", serviceTier: null, activePermissionProfile: null },

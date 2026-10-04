@@ -18,7 +18,8 @@ use crate::{
     api::AppState,
     app_server_api::{
         self, RawAppServerResponse, ThreadCommandResponse, ThreadListResponse, ThreadLiveState,
-        ThreadSettingsUpdateRequest, ThreadViewResponse, TurnStartOptions, UserInput,
+        ThreadSettingsUpdateRequest, ThreadSubagentListResponse, ThreadViewResponse,
+        TurnStartOptions, UserInput,
     },
     app_surfaces::{
         validate_app_surface_grants, validate_app_surface_title,
@@ -44,13 +45,13 @@ use crate::{
         },
         events::{EventListResponse, EventsQuery},
         projects::{Project, ProjectListResponse},
+        subagents::ThreadSubagentListQuery,
         thread_settings::ThreadSettingsUpdateResponse,
         threads::{
             apply_thread_command_response_state, broadcast_thread_upserted, create_thread_payload,
             MarkThreadSeenRequest, MarkThreadSeenResponse, RenameThreadRequest,
             RenameThreadResponse, SidebarThreadsResponse, ThreadAttachResponse,
-            ThreadCreationOptions, ThreadListQuery, ThreadSubagentListResponse,
-            ThreadTimelinePageQuery, ThreadUpsertScope,
+            ThreadCreationOptions, ThreadListQuery, ThreadTimelinePageQuery, ThreadUpsertScope,
         },
         turns::{
             start_turn, ThreadCompactResponse, ThreadInterruptCurrentResponse, TurnStartRequest,
@@ -408,13 +409,15 @@ pub async fn get_self_control_thread_timeline_page(
     get,
     path = "/v1/self-control/threads/{threadId}/subagents",
     summary = "List subagents through self-control",
+    params(ThreadSubagentListQuery),
     responses((status = 200, body = ThreadSubagentListResponse))
 )]
 pub async fn list_self_control_subagents(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
+    Query(query): Query<ThreadSubagentListQuery>,
 ) -> ApiResult<Json<ThreadSubagentListResponse>> {
-    crate::routes::threads::list_subagents(State(state), Path(thread_id)).await
+    crate::routes::subagents::list_subagents(State(state), Path(thread_id), Query(query)).await
 }
 
 #[utoipa::path(

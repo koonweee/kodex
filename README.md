@@ -87,6 +87,8 @@ Execution defaults and MCP setup use the native user config file and its version
 
 Sidebar sections use native ordering. Pinning moves a chat to Pinned; unpinning leaves it without a section. Section moves preserve its project and working directory. Custom sections can be renamed or deleted without deleting their chats.
 
+The subagent viewer lists native persisted descendants, including unloaded children, with native cursor pagination. Discovery runs independently of the parent timeline. The viewer remains read-only. Opening a child separately disables input when native capability explicitly denies it; unknown capability stays unknown and native dispatch decides eligibility.
+
 For prerequisites, tests, schema generation, and production-style static serving, see [Development](docs/development.md). For network binding, configuration and notifications, see [Deployment](docs/deployment.md).
 
 ## Repository map

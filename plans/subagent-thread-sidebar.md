@@ -1,5 +1,7 @@
 # Subagent Thread Sidebar Plan
 
+The observer workflow is retained by [the native app-server redesign](native-app-server-redesign.md). Its 0.160.0 discovery implementation uses persisted native descendant pages, includes unloaded children, preserves direct-input capability, and uses global refill notifications. The historical loaded-only scope below is superseded.
+
 ## Scope
 
 Add a read-only subagent thread viewer for the selected thread. When the gateway reports that the selected active thread has currently loaded descendant subagents, the thread header shows a robot icon beside the existing three-dot menu. The user can toggle a right-side sidebar, manually choose one subagent, and inspect that subagent with the existing timeline renderer.

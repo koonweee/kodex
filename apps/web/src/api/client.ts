@@ -59,6 +59,7 @@ export type SidebarThreadsResponse = components["schemas"]["SidebarThreadsRespon
 export type ThreadViewResponse = components["schemas"]["ThreadViewResponse"];
 export type ThreadViewThreadSummary = components["schemas"]["ThreadViewThreadSummary"];
 export type ThreadSubagentSummary = components["schemas"]["ThreadSubagentSummary"];
+export type ThreadSubagentListResponse = components["schemas"]["ThreadSubagentListResponse"];
 export type TextElement = components["schemas"]["TextElement"];
 export type ThreadSection = components["schemas"]["ThreadSection"];
 export type ThreadSummary = components["schemas"]["ThreadSummary"];
@@ -250,11 +251,13 @@ export async function getThreadTimelinePage(
   );
 }
 
-export async function listThreadSubagents(threadId: string): Promise<ThreadSubagentSummary[]> {
-  const response = await unwrap(
-    api.GET("/v1/threads/{threadId}/subagents", { params: { path: { threadId } } }),
+export async function listThreadSubagents(
+  threadId: string,
+  { signal, ...query }: NonNullable<paths["/v1/threads/{threadId}/subagents"]["get"]["parameters"]["query"]> & { signal?: AbortSignal } = {},
+): Promise<ThreadSubagentListResponse> {
+  return unwrap(
+    api.GET("/v1/threads/{threadId}/subagents", { params: { path: { threadId }, query }, cache: "no-store", signal }),
   );
-  return response.subagents;
 }
 
 export async function getThreadAppSurface(threadId: string): Promise<AppSurfaceSession | null> {

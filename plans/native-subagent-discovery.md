@@ -2,7 +2,7 @@
 
 ## Status
 
-Complete.
+Superseded by the discovery slice of [the native app-server redesign](native-app-server-redesign.md). Native 0.160.0 descendant pages replace the loaded-thread projection, recursive guesses and repair scans. The implementation notes below describe the historical 0.135 behavior.
 
 ## Implementation Notes
 

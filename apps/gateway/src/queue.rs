@@ -91,12 +91,16 @@ pub async fn create_queued_input(
         app_server_api::validate_file_attachments_for_thread(&thread_id, request.attachments)?;
     let input = app_server_api::append_file_attachment_envelope(request.input, &attachments);
     let input = skills::resolve_turn_input_for_thread(&state, &thread_id, input).await?;
-    let queued_input = state
-        .store
-        .create_queued_input_with_attachments(&thread_id, input, attachments, request.options)
-        .await?;
-    broadcast_queue_upsert(&state, &queued_input).await?;
-    trigger_queue_drain(state.clone(), thread_id);
+    let queued_input = create_queued_input_with_source_and_attachments(
+        &state,
+        &thread_id,
+        input,
+        attachments,
+        request.options,
+        None,
+        None,
+    )
+    .await?;
     Ok(Json(QueuedInputResponse { queued_input }))
 }
 
@@ -105,6 +109,9 @@ pub async fn retry_queued_input(
     State(state): State<AppState>,
     Path((thread_id, queue_id)): Path<(String, String)>,
 ) -> ApiResult<Json<QueuedInputResponse>> {
+    app_server_api::client(&state.app_server)
+        .check_direct_input_capability(&thread_id)
+        .await?;
     let queued_input = state
         .store
         .requeue_queued_input(&thread_id, &queue_id)
@@ -119,6 +126,9 @@ pub async fn steer_queued_input(
     State(state): State<AppState>,
     Path((thread_id, queue_id)): Path<(String, String)>,
 ) -> ApiResult<Json<QueuedInputResponse>> {
+    app_server_api::client(&state.app_server)
+        .check_direct_input_capability(&thread_id)
+        .await?;
     let Some(active_turn_id) = turn_lifecycle::current_active_turn_id(&state, &thread_id).await?
     else {
         return Err(ApiError::BadRequest(format!(
@@ -271,6 +281,9 @@ pub async fn create_queued_input_with_source_and_attachments(
     source_type: Option<&str>,
     source_id: Option<&str>,
 ) -> ApiResult<QueuedInput> {
+    app_server_api::client(&state.app_server)
+        .check_direct_input_capability(thread_id)
+        .await?;
     let queued_input = state
         .store
         .create_queued_input_with_source_and_attachments(
@@ -319,6 +332,9 @@ pub async fn create_rejected_steer_input_with_source_and_attachments(
     source_type: Option<&str>,
     source_id: Option<&str>,
 ) -> ApiResult<QueuedInput> {
+    app_server_api::client(&state.app_server)
+        .check_direct_input_capability(thread_id)
+        .await?;
     let queued_input = state
         .store
         .create_queued_input_with_source_and_attachments(

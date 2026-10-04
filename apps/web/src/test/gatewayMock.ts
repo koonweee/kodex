@@ -184,7 +184,7 @@ function fallbackThreadSubagents(request: Request) {
   if (request.method !== "GET" || !match) {
     return null;
   }
-  return { subagents: [] };
+  return { subagents: [], nextCursor: null };
 }
 
 async function fallbackThreadDetail(routes: GatewayRouteMap, request: Request) {

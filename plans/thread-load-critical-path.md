@@ -4,6 +4,8 @@
 
 Complete.
 
+The [native app-server redesign](native-app-server-redesign.md) replaces the subagent discovery gate described below. Native descendant listing runs independently of the parent timeline rather than waiting for its snapshot; the metadata-only attach work remains applicable.
+
 ## Context
 
 Thread selection currently waits on full selected-thread snapshot hydration, and active/not-loaded thread attachment can add duplicate app-server work. The immediate goal is to reduce critical-path app-server pressure without adding snapshot caches, new persistence, or partial-history semantics.

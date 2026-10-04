@@ -5,6 +5,7 @@ import { unreadAgentMessageBadgeCount } from "./unreadAgentMessages";
 
 function thread(id: string, unreadCompletedAgentTurn: boolean): ThreadSummary {
   return {
+    parentThreadId: null, canAcceptDirectInput: null,
     id,
     name: id,
     cwd: "/workspace",

@@ -57,6 +57,7 @@ function event(overrides: Partial<EventEnvelope>): EventEnvelope {
 
 function threadSummary(id: string, overrides: Partial<ThreadSummary> = {}): ThreadSummary {
   return {
+    parentThreadId: null, canAcceptDirectInput: null,
     createdAt: 1,
     cwd: "/workspace",
     gitInfo: null,

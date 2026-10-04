@@ -11,6 +11,7 @@ mod config;
 mod mcp_config;
 mod projects;
 mod sections;
+mod subagents;
 
 mod timeline;
 pub(crate) use client::is_thread_not_materialized_before_first_user_message;
@@ -21,6 +22,7 @@ pub use projects::{Project, ProjectPage, ProjectRoot};
 pub use sections::{
     ThreadSection, ThreadSectionAppearance, ThreadSectionPage, PINNED_THREAD_SECTION_ID,
 };
+pub use subagents::{ThreadSubagentListResponse, ThreadSubagentSummary};
 #[cfg(test)]
 pub(crate) use timeline::TIMELINE_PREVIEW_STRING_LIMIT;
 pub(crate) use timeline::{
@@ -757,6 +759,10 @@ impl ThreadLoadedListResponse {
 #[serde(rename_all = "camelCase")]
 pub struct ThreadSummary {
     pub id: String,
+    #[schema(required = true)]
+    pub parent_thread_id: Option<String>,
+    #[schema(required = true)]
+    pub can_accept_direct_input: Option<bool>,
     pub project_id: Option<String>,
     pub name: Option<String>,
     pub cwd: String,
@@ -807,6 +813,14 @@ impl ThreadSummary {
     pub(crate) fn from_payload(payload: &Value) -> ApiResult<Self> {
         Ok(Self {
             id: required_string(payload, "id")?,
+            parent_thread_id: optional_string(payload, "parentThreadId"),
+            can_accept_direct_input: serde_json::from_value(
+                payload
+                    .get("canAcceptDirectInput")
+                    .cloned()
+                    .unwrap_or(Value::Null),
+            )
+            .map_err(|error| bad_gateway(format!("thread input capability: {error}")))?,
             project_id: optional_string(payload, "projectId"),
             name: optional_string(payload, "name"),
             cwd: required_string(payload, "cwd")?,
@@ -958,6 +972,10 @@ impl ThreadViewResponse {
 #[serde(rename_all = "camelCase")]
 pub struct ThreadViewThreadSummary {
     pub id: String,
+    #[schema(required = true)]
+    pub parent_thread_id: Option<String>,
+    #[schema(required = true)]
+    pub can_accept_direct_input: Option<bool>,
     pub project_id: Option<String>,
     pub name: Option<String>,
     pub cwd: String,
@@ -988,6 +1006,8 @@ impl From<ThreadSummary> for ThreadViewThreadSummary {
     fn from(thread: ThreadSummary) -> Self {
         Self {
             id: thread.id,
+            parent_thread_id: thread.parent_thread_id,
+            can_accept_direct_input: thread.can_accept_direct_input,
             project_id: thread.project_id,
             name: thread.name,
             cwd: thread.cwd,

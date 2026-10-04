@@ -3023,6 +3023,7 @@ export interface components {
             agentRole?: string | null;
             approvalPolicy?: string | null;
             approvalsReviewer?: string | null;
+            canAcceptDirectInput: boolean | null;
             /** Format: int64 */
             createdAt: number;
             cwd: string;
@@ -3033,6 +3034,7 @@ export interface components {
             model?: string | null;
             name?: string | null;
             notificationsEnabled: boolean;
+            parentThreadId: string | null;
             preview?: unknown;
             projectId?: string | null;
             reasoningEffort?: string | null;
@@ -3262,23 +3264,30 @@ export interface components {
         };
         /** @enum {string} */
         ThreadStatus: "notLoaded" | "idle" | "systemError" | "active";
-        ThreadSubagentEventPayload: {
-            parentThreadId: string;
-            subagent?: null | components["schemas"]["ThreadSubagentSummary"];
-            subagentId?: string | null;
+        ThreadSubagentListQuery: {
+            archived?: boolean;
+            cursor?: string | null;
+            /** Format: int32 */
+            limit?: number | null;
         };
         ThreadSubagentListResponse: {
+            nextCursor: string | null;
             subagents: components["schemas"]["ThreadSubagentSummary"][];
         };
         ThreadSubagentSummary: {
             agentNickname?: string | null;
             agentRole?: string | null;
+            canAcceptDirectInput: boolean | null;
             id: string;
-            liveState: components["schemas"]["ThreadLiveState"];
-            parentThreadId: string;
+            name?: string | null;
+            parentThreadId: string | null;
+            preview: string;
             status: components["schemas"]["ThreadStatus"];
             /** Format: int64 */
             updatedAt: number;
+        };
+        ThreadSubagentsChanged: {
+            changedThreadId: string | null;
         };
         ThreadSummary: {
             activePermissionProfile?: null | components["schemas"]["ActivePermissionProfile"];
@@ -3286,6 +3295,7 @@ export interface components {
             agentRole?: string | null;
             approvalPolicy?: string | null;
             approvalsReviewer?: string | null;
+            canAcceptDirectInput: boolean | null;
             /** Format: int64 */
             createdAt: number;
             cwd: string;
@@ -3296,6 +3306,7 @@ export interface components {
             model?: string | null;
             name?: string | null;
             notificationsEnabled: boolean;
+            parentThreadId: string | null;
             preview?: unknown;
             projectId?: string | null;
             rawPayload: unknown;
@@ -3455,6 +3466,7 @@ export interface components {
             agentRole?: string | null;
             approvalPolicy?: string | null;
             approvalsReviewer?: string | null;
+            canAcceptDirectInput: boolean | null;
             /** Format: int64 */
             createdAt: number;
             cwd: string;
@@ -3465,6 +3477,7 @@ export interface components {
             model?: string | null;
             name?: string | null;
             notificationsEnabled: boolean;
+            parentThreadId: string | null;
             preview?: unknown;
             projectId?: string | null;
             reasoningEffort?: string | null;
@@ -5688,7 +5701,11 @@ export interface operations {
     };
     list_self_control_subagents: {
         parameters: {
-            query?: never;
+            query?: {
+                cursor?: string | null;
+                limit?: number | null;
+                archived?: boolean;
+            };
             header?: never;
             path: {
                 threadId: string;
@@ -6580,7 +6597,11 @@ export interface operations {
     };
     list_subagents: {
         parameters: {
-            query?: never;
+            query?: {
+                cursor?: string | null;
+                limit?: number | null;
+                archived?: boolean;
+            };
             header?: never;
             path: {
                 threadId: string;

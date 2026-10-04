@@ -11,14 +11,14 @@ import { applyProjectEvent } from "../projects/cache";
 import { applyAppSurfaceEvent } from "../appSurfaces/cache";
 import { applyApprovalInvalidation } from "../approvals/cache";
 import { applyCachedAutomationEvent } from "../automations/cache";
-import type { ThreadSubagentDiscoveryEvent, ThreadUpsert } from "../threads/events";
+import type { ThreadUpsert } from "../threads/events";
+import { applySubagentsEvent } from "../threads/subagentsCache";
 import type { LiveEventRouteHandlers } from "./liveRouting";
 
 export function useLiveEventHandlers({
   applyCompletedAgentTurnEvent,
   applyQueuedInputDeleted,
   applyQueuedInputUpsert,
-  applySubagentDiscoveryEvent,
   applyThreadMetadataEvent,
   applyThreadNotificationsState,
   applyThreadReadStateEvent,
@@ -31,7 +31,6 @@ export function useLiveEventHandlers({
   applyCompletedAgentTurnEvent: (event: EventEnvelope) => void;
   applyQueuedInputDeleted: (threadId: string, id: string) => void;
   applyQueuedInputUpsert: (row: QueuedInput) => void;
-  applySubagentDiscoveryEvent: (event: ThreadSubagentDiscoveryEvent) => void;
   applyThreadMetadataEvent: (event: EventEnvelope) => void;
   applyThreadNotificationsState: (threadId: string, notificationsEnabled: boolean) => void;
   applyThreadReadStateEvent: (event: EventEnvelope) => void;
@@ -79,7 +78,7 @@ export function useLiveEventHandlers({
       applyThreadReadStateEvent,
       applyThreadNotificationsState,
       refreshSidebarThreadsForLiveEvent,
-      applySubagentDiscoveryEvent,
+      applySubagentsEvent: (event) => applySubagentsEvent(queryClient, event),
       applyUsageLimitSnapshot,
       applyApprovalEvent: (event) => applyApprovalInvalidation(queryClient, event),
       applyAppSurfaceEvent: applyAppSurfaceStreamEvent,
@@ -94,7 +93,6 @@ export function useLiveEventHandlers({
     applyCompletedAgentTurnEvent,
     applyQueuedInputDeleted,
     applyQueuedInputUpsert,
-    applySubagentDiscoveryEvent,
     applyThreadMetadataEvent,
     applyThreadNotificationsState,
       applyThreadReadStateEvent,

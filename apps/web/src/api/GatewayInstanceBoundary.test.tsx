@@ -85,7 +85,7 @@ function SettingsProbe({ read, queryKey }: { read: (signal: AbortSignal) => Prom
 function threadDetail(id: string): ThreadViewResponse {
   return {
     liveState: "idle",
-    thread: { id, projectId: null, createdAt: 0, updatedAt: 0, cwd: "/workspace", status: "idle", notificationsEnabled: true, seenCompletedAgentTurnSeq: 0, unreadCompletedAgentTurn: false },
+    thread: { parentThreadId: null, canAcceptDirectInput: null, id, projectId: null, createdAt: 0, updatedAt: 0, cwd: "/workspace", status: "idle", notificationsEnabled: true, seenCompletedAgentTurnSeq: 0, unreadCompletedAgentTurn: false },
     timeline: { activeTurnId: null, liveState: "idle", pendingApprovalRequests: [], pendingUserInputRequests: [], rows: [], turns: [], viewRevision: 0 },
   };
 }
@@ -382,6 +382,8 @@ describe("gateway instance bootstrap", () => {
     { kind: "thread", queryKey: queryKeys.threadSettings("native-chat"), trigger: "foreground" },
     { kind: "native config", queryKey: queryKeys.composerSettings(null), trigger: "stream open" },
     { kind: "native config", queryKey: queryKeys.mcpConfiguredServers, trigger: "foreground" },
+    { kind: "native subagents", queryKey: queryKeys.threadSubagents("ancestor"), trigger: "stream open" },
+    { kind: "native subagents", queryKey: queryKeys.threadSubagents("ancestor"), trigger: "foreground" },
   ])("cancels a pre-recovery $kind read on $trigger while preserving the same-instance draft", async ({ queryKey, trigger }) => {
     const queryClient = createKodexQueryClient();
     let finishOld!: (value: string) => void;

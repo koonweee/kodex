@@ -29,7 +29,6 @@ import {
   listAutomations,
   listChatThreadsPage,
   listProjects,
-  listThreadSubagents,
   listThreadsPage,
   pauseAutomation,
   renameThread,
@@ -43,7 +42,6 @@ import {
   type EventEnvelope,
   type Project,
   type QueuedInput,
-  type ThreadSubagentSummary,
   type ThreadSummary,
 } from "./api/client";
 import { queryClient } from "./api/queryClient";
@@ -97,10 +95,7 @@ import {
   deleteCachedQueuedInput,
   upsertCachedQueuedInput,
 } from "./queuedInputs/cache";
-import type { ThreadSubagentDiscoveryEvent } from "./threads/events";
-import {
-  defaultSubagent,
-} from "./threads/selection";
+import { useThreadSubagents } from "./threads/useThreadSubagents";
 import { useSelectedThreadAttach } from "./threads/useSelectedThreadAttach";
 import { useSidebarThreadCaches } from "./threads/useSidebarThreadCaches";
 import { useSidebarThreadsSnapshot } from "./threads/useSidebarThreadsSnapshot";
@@ -131,7 +126,6 @@ import "./App.css";
 const DRAFT_COMPOSER_TRANSITION_MS = 280;
 const EMPTY_AUTOMATIONS: Automation[] = [];
 const EMPTY_PROJECTS: Project[] = [];
-const EMPTY_SUBAGENTS: ThreadSubagentSummary[] = [];
 const EMPTY_THREADS: ThreadSummary[] = [];
 type SidebarPaginationState = "idle" | "loading" | "error";
 
@@ -223,9 +217,6 @@ function KodexShell({
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferencesSection, setPreferencesSection] = useState<PreferenceSection>("appearance");
   const [hoveredThreadActionId, setHoveredThreadActionId] = useState<string | null>(null);
-  const [threadPaneSnapshotReadyIds, setThreadPaneSnapshotReadyIds] = useState<Set<string>>(new Set());
-  const [subagentSidebarOpen, setSubagentSidebarOpen] = useState(false);
-  const [selectedSubagentThreadId, setSelectedSubagentThreadId] = useState<string | null>(null);
   const [, setComposerResetToken] = useState(0);
   const [skillsInvalidationGeneration, setSkillsInvalidationGeneration] = useState(0);
   const approvalsRef = useRef<Approval[]>([]);
@@ -467,18 +458,7 @@ function KodexShell({
     selectedThreadId !== null && materializingThreadIds.has(selectedThreadId);
   const isDraftThreadSelected =
     draftChatThreadSelected || (draftThreadProjectId !== null && draftThreadProjectId === selectedProjectId);
-  const selectedThreadSubagentsQuery = useQuery({
-    enabled:
-      selectedMainPane === "thread" &&
-      selectedThread !== null &&
-      threadPaneSnapshotReadyIds.has(selectedThread.id),
-    queryKey: selectedThread ? queryKeys.threadSubagents(selectedThread.id) : ["threads", "none", "subagents"],
-    queryFn: async () => {
-      const threadId = selectedThread?.id;
-      return threadId ? listThreadSubagents(threadId) : [];
-    },
-  });
-  const selectedThreadSubagents = selectedThreadSubagentsQuery.data ?? EMPTY_SUBAGENTS;
+  const subagents = useThreadSubagents(selectedMainPane === "thread" ? selectedThreadId : null);
   const automations = automationsQuery.data ?? EMPTY_AUTOMATIONS;
   const automationTargetThreadOptions = useMemo(
     () =>
@@ -598,25 +578,6 @@ function KodexShell({
     }
   }, [threadsByProjectId]);
 
-  useEffect(() => {
-    setSubagentSidebarOpen(false);
-    setSelectedSubagentThreadId(null);
-  }, [selectedThreadId]);
-
-  useEffect(() => {
-    if (selectedThreadSubagents.length === 0) {
-      setSubagentSidebarOpen((current) => (current ? false : current));
-      setSelectedSubagentThreadId((current) => (current === null ? current : null));
-      return;
-    }
-    setSelectedSubagentThreadId((current) => {
-      if (current && selectedThreadSubagents.some((subagent) => subagent.id === current)) {
-        return current;
-      }
-      return defaultSubagent(selectedThreadSubagents)?.id ?? null;
-    });
-  }, [selectedThreadSubagents]);
-
   useLayoutEffect(() => {
     if (draftComposerTransitionToken === 0) {
       return;
@@ -680,7 +641,6 @@ function KodexShell({
     applyCompletedAgentTurnEvent,
     applyQueuedInputDeleted: removeQueuedInput,
     applyQueuedInputUpsert: upsertQueuedInput,
-    applySubagentDiscoveryEvent,
     applyThreadMetadataEvent,
     applyThreadNotificationsState,
     applyThreadReadStateEvent,
@@ -853,35 +813,6 @@ function KodexShell({
     }
   }
 
-  function applySubagentDiscoveryEvent(event: ThreadSubagentDiscoveryEvent) {
-    const key = queryKeys.threadSubagents(event.parentThreadId);
-    if (event.kind === "refresh") {
-      void queryClientForShell.invalidateQueries({ queryKey: key });
-      return;
-    }
-    let hadCachedList = false;
-    queryClientForShell.setQueryData(key, (current: unknown) => {
-      if (!Array.isArray(current)) {
-        return current;
-      }
-      hadCachedList = true;
-      if (event.kind === "delete") {
-        return current.filter((subagent) => subagent?.id !== event.subagentId);
-      }
-      const next = [...current];
-      const existingIndex = next.findIndex((subagent) => subagent?.id === event.subagent.id);
-      if (existingIndex >= 0) {
-        next[existingIndex] = event.subagent;
-        return next;
-      }
-      next.push(event.subagent);
-      return next;
-    });
-    if (!hadCachedList && selectedThreadIdRef.current === event.parentThreadId) {
-      void queryClientForShell.invalidateQueries({ queryKey: key });
-    }
-  }
-
   function reportError(error: unknown, context?: string) {
     const message = errorMessageFrom(error);
     setErrorMessage(context ? `${context}: ${message}` : message);
@@ -904,25 +835,9 @@ function KodexShell({
   const handleCloseMarkdownPreview = useEventCallback(() => setMarkdownPreview(null));
   const handleOpenMarkdownPreview = useEventCallback((request: MarkdownPreviewRequest) => setMarkdownPreview(request));
   const handleThreadPaneSnapshotLoaded = useEventCallback((thread: ThreadSummary) => {
-    setThreadPaneSnapshotReadyIds((current) => {
-      if (current.has(thread.id)) {
-        return current;
-      }
-      const next = new Set(current);
-      next.add(thread.id);
-      return next;
-    });
     handleSelectedThreadSnapshot(thread);
   });
   const handleThreadPaneSnapshotLoadFailed = useEventCallback((threadId: string) => {
-    setThreadPaneSnapshotReadyIds((current) => {
-      if (!current.has(threadId)) {
-        return current;
-      }
-      const next = new Set(current);
-      next.delete(threadId);
-      return next;
-    });
     handleSelectedThreadLoadFailed(threadId);
   });
   const handleClosePreferences = useEventCallback(() => setPreferencesOpen(false));
@@ -1058,24 +973,25 @@ function KodexShell({
       sidebarThreadsQuery,
     ],
   );
-  const selectedSubagentStillAvailable =
-    selectedSubagentThreadId !== null &&
-    selectedThreadSubagents.some((subagent) => subagent.id === selectedSubagentThreadId);
-  const subagentViewer =
-    subagentSidebarOpen && selectedSubagentStillAvailable ? (
-      <Suspense fallback={null}>
-        <SubagentThreadViewer
-          imagePreviewUrlsByPath={mergedImagePreviewUrlsByPath}
-          onError={reportError}
-          onImageOpen={setLightboxImage}
-          onMarkdownOpen={setMarkdownPreview}
-          onSelectSubagent={setSelectedSubagentThreadId}
-          selectedSubagentId={selectedSubagentThreadId}
-          showDebugEvents={showDebugEvents}
-          subagents={selectedThreadSubagents}
-        />
-      </Suspense>
-    ) : null;
+  const subagentViewer = subagents.open ? (
+    <Suspense fallback={null}>
+      <SubagentThreadViewer
+        imagePreviewUrlsByPath={mergedImagePreviewUrlsByPath}
+        onError={reportError}
+        onImageOpen={setLightboxImage}
+        onMarkdownOpen={setMarkdownPreview}
+        onSelectSubagent={subagents.select}
+        selectedSubagentId={subagents.selectedId}
+        showDebugEvents={showDebugEvents}
+        subagents={subagents.subagents}
+        hasMore={subagents.hasMore}
+        loadingMore={subagents.loadingMore}
+        onLoadMore={subagents.loadMore}
+        error={subagents.error}
+        onReload={subagents.reload}
+      />
+    </Suspense>
+  ) : null;
   const gatewayTerminalAvailable = capabilitiesQuery.data?.gateway.terminals?.enabled ?? true;
   const handlePaneImagePreviewUrlsChanged = useEventCallback((previewUrls: Record<string, string>) => {
     if (Object.keys(previewUrls).length === 0) {
@@ -1153,17 +1069,17 @@ function KodexShell({
     (_pane, state) => (
       <Group gap="xs" wrap="nowrap">
         <ThreadProjectSelect threadId={state.thread.id} projectId={state.thread.projectId ?? null} projects={orderedProjects} onError={reportError} />
-        {state.isActive && state.thread.id === selectedThreadId && selectedThreadSubagents.length > 0 ? (
+        {state.isActive && state.thread.id === selectedThreadId && (subagents.open || subagents.subagents.length > 0 || subagents.error !== null) ? (
           <AdaptiveIconButton
-            aria-pressed={subagentSidebarOpen ? "true" : "false"}
-            label={subagentSidebarOpen ? "Hide subagents" : "Show subagents"}
-            onClick={() => setSubagentSidebarOpen((current) => !current)}
-            variant={subagentSidebarOpen ? "light" : "subtle"}
+            aria-pressed={subagents.open ? "true" : "false"}
+            label={subagents.open ? "Hide subagents" : "Show subagents"}
+            onClick={subagents.toggle}
+            variant={subagents.open ? "light" : "subtle"}
           ><Bot /></AdaptiveIconButton>
         ) : null}
       </Group>
     ),
-    [orderedProjects, reportError, selectedThreadId, selectedThreadSubagents.length, subagentSidebarOpen, threadProjectIdsById],
+    [orderedProjects, reportError, selectedThreadId, subagents.error, subagents.open, subagents.subagents.length, subagents.toggle],
   );
   return (
     <>

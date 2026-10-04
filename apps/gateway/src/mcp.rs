@@ -9,11 +9,13 @@ use serde_json::{json, Map, Value};
 use tokio::time::{sleep, Duration, Instant};
 
 mod sections;
+mod subagents;
 use crate::routes::thread_sections::ThreadSectionListQuery;
 use sections::{
     CreateSectionToolParams, DeleteSectionToolParams, MoveThreadToSectionToolParams,
     SectionThreadsToolParams, UpdateSectionToolParams,
 };
+use subagents::ListSubagentsToolParams;
 
 const MCP_TOOL_THREAD_ID_META_KEY: &str = "threadId";
 
@@ -714,18 +716,28 @@ impl KodexControlMcp {
         Ok(json_tool_result(self.get_json(&path).await?))
     }
 
-    #[tool(description = "List subagents for a Kodex thread through self-control")]
+    #[tool(
+        description = "List one native page of descendants for a Kodex thread; pass nextCursor as cursor to continue"
+    )]
     async fn list_thread_subagents(
         &self,
-        Parameters(params): Parameters<ThreadIdToolParams>,
+        Parameters(params): Parameters<ListSubagentsToolParams>,
     ) -> Result<CallToolResult, McpError> {
-        Ok(json_tool_result(
-            self.get_json(&format!(
+        let path = append_query(
+            &format!(
                 "/v1/self-control/threads/{}/subagents",
                 path_segment(&params.thread_id)
-            ))
-            .await?,
-        ))
+            ),
+            [
+                ("cursor", params.query.cursor),
+                ("limit", params.query.limit.map(|limit| limit.to_string())),
+                (
+                    "archived",
+                    params.query.archived.then(|| "true".to_string()),
+                ),
+            ],
+        );
+        Ok(json_tool_result(self.get_json(&path).await?))
     }
 
     #[tool(description = "List queued inputs for a Kodex thread through self-control")]

@@ -1745,7 +1745,7 @@ describe("MVP composer input flows", () => {
     render(<App />);
 
     await expectHelloFromCodex();
-    const queuedCard = screen.getByRole("region", { name: /queued steer messages/i });
+    const queuedCard = await screen.findByRole("region", { name: /queued steer messages/i });
     const row = within(queuedCard).getByRole("group");
     const rowId = row.getAttribute("data-steer-row-id");
 

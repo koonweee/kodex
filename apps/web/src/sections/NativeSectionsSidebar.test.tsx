@@ -12,7 +12,7 @@ vi.mock("../api/client", () => ({ createThreadSection: vi.fn(), renameThreadSect
 const section = { id: "custom-section", name: "Research" };
 const pinned = { id: PINNED_SECTION_ID, name: "Pinned" };
 function thread(id: string, overrides: Partial<ThreadSummary> = {}): ThreadSummary {
-  return { id, name: id, section, projectId: "project-1", createdAt: 1, updatedAt: 1, cwd: "/repo", status: "idle", notificationsEnabled: true, seenCompletedAgentTurnSeq: 0, unreadCompletedAgentTurn: false, rawPayload: {}, ...overrides };
+  return { parentThreadId: null, canAcceptDirectInput: null, id, name: id, section, projectId: "project-1", createdAt: 1, updatedAt: 1, cwd: "/repo", status: "idle", notificationsEnabled: true, seenCompletedAgentTurnSeq: 0, unreadCompletedAgentTurn: false, rawPayload: {}, ...overrides };
 }
 const first = thread("Native first", { sectionEnteredAt: 99 });
 const second = thread("Native second", { status: "active", updatedAt: 100, sectionEnteredAt: 1 });

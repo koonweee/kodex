@@ -1,4 +1,4 @@
-import { Badge, Box, Group, Loader, SegmentedControl, Stack, Text } from "@mantine/core";
+import { Alert, Badge, Box, Button, Group, Loader, Select, Stack, Text } from "@mantine/core";
 import { Bot } from "lucide-react";
 
 import type { Approval, ApprovalResponse, ThreadSubagentSummary } from "../api/client";
@@ -6,6 +6,7 @@ import type { MarkdownPreviewRequest } from "../files/types";
 import type { ImageLightboxImage } from "../images/types";
 import { TimelineView } from "../timeline/TimelineView";
 import { useReadonlyThreadTimeline } from "../timeline/useReadonlyThreadTimeline";
+import { errorMessageFrom } from "../shared/values";
 
 const EMPTY_APPROVALS: Approval[] = [];
 const noopApprovalDecision = (_approval: Approval, _decision: ApprovalResponse) => {};
@@ -20,6 +21,11 @@ export function SubagentThreadViewer({
   selectedSubagentId,
   showDebugEvents,
   subagents,
+  hasMore,
+  loadingMore,
+  onLoadMore,
+  error,
+  onReload,
 }: {
   imagePreviewUrlsByPath: Record<string, string>;
   onError: (error: unknown) => void;
@@ -29,6 +35,11 @@ export function SubagentThreadViewer({
   selectedSubagentId: string | null;
   showDebugEvents: boolean;
   subagents: ThreadSubagentSummary[];
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
+  error: Error | null;
+  onReload: () => void;
 }) {
   const selectedSubagent =
     subagents.find((subagent) => subagent.id === selectedSubagentId) ?? subagents[0] ?? null;
@@ -43,10 +54,6 @@ export function SubagentThreadViewer({
     threadId: selectedSubagent?.id ?? null,
   });
 
-  if (!selectedSubagent) {
-    return null;
-  }
-
   const selectorData = subagents.map((subagent) => ({
     label: subagentLabel(subagent),
     value: subagent.id,
@@ -55,6 +62,13 @@ export function SubagentThreadViewer({
   return (
     <aside aria-label="Subagent thread viewer" className="kodex-subagent-viewer">
       <Stack className="kodex-subagent-viewer-inner" gap="sm">
+        {error ? (
+          <Alert color="red" title="Subagents could not be loaded">
+            {errorMessageFrom(error)}
+            <Button variant="subtle" size="compact-sm" onClick={onReload}>Reload subagents</Button>
+          </Alert>
+        ) : null}
+        {!selectedSubagent ? !error && <Text size="sm" c="dimmed">No subagents in the current native list.</Text> : <>
         <Group className="kodex-subagent-viewer-header" gap="xs" justify="space-between" wrap="nowrap">
           <Group gap="xs" wrap="nowrap" className="kodex-subagent-viewer-heading">
             <Bot size={16} />
@@ -62,19 +76,24 @@ export function SubagentThreadViewer({
               {subagentLabel(selectedSubagent)}
             </Text>
           </Group>
-          <Badge data-tone={statusTone(selectedSubagent.liveState)} size="xs" variant="light">
-            {statusLabel(selectedSubagent.liveState)}
+          <Badge data-tone={statusTone(selectedSubagent.status)} size="xs" variant="light">
+            {statusLabel(selectedSubagent.status)}
           </Badge>
         </Group>
-        {selectorData.length > 1 ? (
-          <SegmentedControl
-            aria-label="Select subagent"
+        <Select
+            label="Subagent"
             className="kodex-subagent-selector"
             data={selectorData}
-            onChange={onSelectSubagent}
+            onChange={(id) => { if (id) onSelectSubagent(id); }}
+            allowDeselect={false}
+            searchable
             size="xs"
             value={selectedSubagent.id}
-          />
+        />
+        {selectedSubagent.canAcceptDirectInput === false ? (
+          <Badge variant="light" size="xs">Read-only</Badge>
+        ) : selectedSubagent.canAcceptDirectInput === null ? (
+          <Badge variant="light" size="xs">Input capability unknown</Badge>
         ) : null}
         <Box
           className="kodex-subagent-timeline-scroll"
@@ -103,6 +122,8 @@ export function SubagentThreadViewer({
             />
           )}
         </Box>
+        </>}
+        {hasMore ? <Button variant="subtle" size="compact-sm" onClick={onLoadMore} loading={loadingMore}>Load more subagents</Button> : null}
       </Stack>
     </aside>
   );
@@ -117,28 +138,28 @@ function subagentLabel(subagent: ThreadSubagentSummary): string {
   if (subagent.agentRole) {
     return subagent.agentRole;
   }
-  return `Agent ${subagent.id.slice(0, 8)}`;
+  return subagent.name || subagent.preview || `Agent ${subagent.id.slice(0, 8)}`;
 }
 
-function statusLabel(liveState: ThreadSubagentSummary["liveState"]): string {
-  switch (liveState) {
-    case "streaming":
+function statusLabel(status: ThreadSubagentSummary["status"]): string {
+  switch (status) {
+    case "active":
       return "Active";
-    case "syncing":
-      return "Syncing";
+    case "systemError":
+      return "System error";
     case "notLoaded":
-      return "Unavailable";
+      return "Not loaded";
     case "idle":
     default:
       return "Idle";
   }
 }
 
-function statusTone(liveState: ThreadSubagentSummary["liveState"]): string {
-  if (liveState === "streaming") {
+function statusTone(status: ThreadSubagentSummary["status"]): string {
+  if (status === "active") {
     return "success";
   }
-  if (liveState === "notLoaded") {
+  if (status === "notLoaded") {
     return "muted";
   }
   return "neutral";

@@ -70,6 +70,8 @@ const project = {
 
 const thread = {
   id: "thread-1",
+  parentThreadId: null,
+  canAcceptDirectInput: null,
   projectId: project.id,
   name: "Implement frontend",
   cwd: "/home/example/kodex",

@@ -30,5 +30,6 @@ export const queryKeys = {
   rateLimits: ["account", "rate-limits"] as const,
   sidebarThreads: ["threads", "sidebar"] as const,
   skills: (cwd: string | null) => ["skills", cwd ?? "global"] as const,
-  threadSubagents: (threadId: string) => ["threads", threadId, "subagents"] as const,
+  threadSubagentsRoot: ["thread-subagents"] as const,
+  threadSubagents: (threadId: string | null) => ["thread-subagents", threadId] as const,
 };

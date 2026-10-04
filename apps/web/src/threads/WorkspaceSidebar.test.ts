@@ -17,6 +17,7 @@ const thread = threadSummary("thread-1");
 
 function threadSummary(id: string): ThreadSummary {
   return {
+    parentThreadId: null, canAcceptDirectInput: null,
     createdAt: 1,
     cwd: "/tmp/kodex",
     id,

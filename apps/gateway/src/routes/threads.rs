@@ -20,8 +20,8 @@ use crate::{
     app_server_api::{
         self, enrich_timeline_skill_mentions, timeline_skill_mentions_from_text,
         visible_text_from_thread_item, GitInfo, RawAppServerResponse, ThreadCommandResponse,
-        ThreadDetailResponse, ThreadItemSnapshot, ThreadListResponse, ThreadLiveState,
-        ThreadSection, ThreadStatus, ThreadSummary, ThreadViewResponse, TimelineSkillMention,
+        ThreadDetailResponse, ThreadItemSnapshot, ThreadListResponse, ThreadSection, ThreadStatus,
+        ThreadSummary, ThreadViewResponse, TimelineSkillMention,
     },
     app_surfaces,
     error::{ApiError, ApiResult},
@@ -45,7 +45,6 @@ pub fn router() -> Router<AppState> {
             "/v1/chats/threads",
             get(list_chat_threads).post(create_chat_thread),
         )
-        .route("/v1/threads/{thread_id}/subagents", get(list_subagents))
         .route(
             "/v1/threads/{thread_id}/timeline/pages",
             get(get_thread_timeline_page),
@@ -117,6 +116,10 @@ pub struct SidebarThreadListResponse {
 #[serde(rename_all = "camelCase")]
 pub struct SidebarThreadSummary {
     pub id: String,
+    #[schema(required = true)]
+    pub parent_thread_id: Option<String>,
+    #[schema(required = true)]
+    pub can_accept_direct_input: Option<bool>,
     pub name: Option<String>,
     pub project_id: Option<String>,
     pub cwd: String,
@@ -162,6 +165,8 @@ impl From<ThreadSummary> for SidebarThreadSummary {
     fn from(thread: ThreadSummary) -> Self {
         Self {
             id: thread.id,
+            parent_thread_id: thread.parent_thread_id,
+            can_accept_direct_input: thread.can_accept_direct_input,
             name: thread.name,
             project_id: thread.project_id,
             cwd: thread.cwd,
@@ -312,24 +317,6 @@ impl From<ThreadNotificationSetting> for ThreadNotificationSettingsResponse {
 }
 
 pub type ThreadNotificationSettingsUpdate = ThreadNotificationSettingsResponse;
-
-#[derive(Debug, Clone, Serialize, ToSchema, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct ThreadSubagentSummary {
-    pub id: String,
-    pub parent_thread_id: String,
-    pub agent_nickname: Option<String>,
-    pub agent_role: Option<String>,
-    pub status: ThreadStatus,
-    pub live_state: ThreadLiveState,
-    pub updated_at: i64,
-}
-
-#[derive(Debug, Clone, Serialize, ToSchema, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct ThreadSubagentListResponse {
-    pub subagents: Vec<ThreadSubagentSummary>,
-}
 
 #[utoipa::path(get, path = "/v1/threads", params(ThreadListQuery), responses((status = 200, body = ThreadListResponse)))]
 pub async fn list_threads(
@@ -957,55 +944,6 @@ pub async fn update_thread_notifications(
     Ok(Json(response))
 }
 
-#[utoipa::path(get, path = "/v1/threads/{threadId}/subagents", responses((status = 200, body = ThreadSubagentListResponse)))]
-pub async fn list_subagents(
-    State(state): State<AppState>,
-    Path(thread_id): Path<String>,
-) -> ApiResult<Json<ThreadSubagentListResponse>> {
-    if state.subagents.needs_repair(&thread_id).await {
-        repair_subagent_projection(&state, &thread_id).await?;
-    }
-
-    Ok(Json(ThreadSubagentListResponse {
-        subagents: state.subagents.list_descendants(&thread_id).await,
-    }))
-}
-
-async fn repair_subagent_projection(state: &AppState, thread_id: &str) -> ApiResult<()> {
-    let client = app_server_api::client(&state.app_server);
-    let loaded = client.thread_loaded_list().await?;
-    let mut threads = Vec::new();
-    let mut attempted_thread_reads = 0;
-    let mut read_failures = 0;
-    for loaded_thread_id in loaded.thread_ids {
-        if loaded_thread_id == thread_id {
-            continue;
-        }
-        attempted_thread_reads += 1;
-        match client.thread_read_summary(loaded_thread_id.clone()).await {
-            Ok(thread) => threads.push(thread),
-            Err(error) => {
-                read_failures += 1;
-                tracing::warn!(
-                    thread_id = loaded_thread_id,
-                    %error,
-                    "failed to read loaded thread during subagent repair"
-                );
-            }
-        }
-    }
-    if attempted_thread_reads > 0 && read_failures == attempted_thread_reads {
-        return Err(ApiError::BadGateway(
-            "failed to read any loaded thread during subagent discovery".to_string(),
-        ));
-    }
-    state
-        .subagents
-        .replace_repaired_descendants(thread_id, threads)
-        .await;
-    Ok(())
-}
-
 #[utoipa::path(post, path = "/v1/threads/{threadId}/resume", responses((status = 200, body = ThreadCommandResponse)))]
 pub async fn resume_thread(
     State(state): State<AppState>,
@@ -1263,9 +1201,6 @@ pub(crate) async fn apply_thread_summary_state(
 ) -> ApiResult<()> {
     apply_thread_notification_settings(state, threads).await?;
     apply_thread_read_state(state, threads).await?;
-    for thread in threads {
-        let _ = state.subagents.upsert_from_thread_summary(thread).await;
-    }
     Ok(())
 }
 

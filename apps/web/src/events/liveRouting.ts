@@ -3,9 +3,7 @@ import type { EventEnvelope, QueuedInput, RateLimitSnapshot } from "../api/clien
 import { isApprovalEvent } from "../approvals/state";
 import {
   threadNotificationsUpdateFromEvent,
-  threadSubagentDiscoveryEventFromEvent,
   threadUpsertFromEvent,
-  type ThreadSubagentDiscoveryEvent,
   type ThreadUpsert,
 } from "../threads/events";
 
@@ -23,7 +21,7 @@ export type LiveEventRouteHandlers = {
   applyThreadReadStateEvent: (event: EventEnvelope) => void;
   applyThreadNotificationsState: (threadId: string, notificationsEnabled: boolean) => void;
   refreshSidebarThreadsForLiveEvent: (event: EventEnvelope) => void;
-  applySubagentDiscoveryEvent: (event: ThreadSubagentDiscoveryEvent) => void;
+  applySubagentsEvent: (event: EventEnvelope) => void;
   applyUsageLimitSnapshot: (snapshot: RateLimitSnapshot) => void;
   applyApprovalEvent: (event: EventEnvelope) => void;
   applyAppSurfaceEvent: (event: EventEnvelope) => void;
@@ -33,6 +31,7 @@ export type LiveEventRouteHandlers = {
 
 export function routeGlobalLiveEvent(event: EventEnvelope, handlers: LiveEventRouteHandlers) {
   routeSharedLiveEvent(event, handlers);
+  if (event.kind === "thread.subagents_changed") handlers.applySubagentsEvent(event);
   if (event.kind === "thread.sections_updated") handlers.applyThreadSectionsEvent(event);
   if (event.kind === "project.changed" || event.kind === "thread.project_updated") {
     handlers.applyProjectEvent(event);
@@ -92,10 +91,6 @@ function routeSharedLiveEvent(event: EventEnvelope, handlers: LiveEventRouteHand
   }
   if (event.kind === "thread_view.patch" || event.kind === "timeline.thread_metadata") {
     handlers.refreshSidebarThreadsForLiveEvent(event);
-  }
-  const subagentDiscoveryEvent = threadSubagentDiscoveryEventFromEvent(event);
-  if (subagentDiscoveryEvent) {
-    handlers.applySubagentDiscoveryEvent(subagentDiscoveryEvent);
   }
 }
 

@@ -433,29 +433,29 @@ describe("event stream client", () => {
     client.close();
   });
 
-  it("receives parent-scoped subagent SSE events emitted by the gateway", () => {
+  it("receives global native subagent invalidation markers", () => {
     const received: string[] = [];
     const client = createEventStreamClient({
       EventSourceCtor: FakeEventSource,
-      threadId: "thread-1",
+      includeGlobal: true,
       onEvent: (event) => received.push(event.kind),
     });
 
     client.connect();
-    FakeEventSource.instances[0].emitNamed("thread.subagent_started", {
+    FakeEventSource.instances[0].emitNamed("thread.subagents_changed", {
       id: "event-9",
       seq: 9,
-      kind: "thread.subagent_started",
-      codexMethod: "thread/subagent",
+      kind: "thread.subagents_changed",
+      codexMethod: null,
       itemId: null,
-      threadId: "thread-1",
+      threadId: null,
       turnId: null,
       projectId: null,
-      payload: { parentThreadId: "thread-1", subagentId: "subagent-1", subagent: null },
+      payload: { changedThreadId: null },
       receivedAt: "2026-04-30T00:00:00Z",
     });
 
-    expect(received).toEqual(["thread.subagent_started"]);
+    expect(received).toEqual(["thread.subagents_changed"]);
     client.close();
   });
 

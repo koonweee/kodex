@@ -26,12 +26,13 @@ use crate::{
         RawAppServerResponse, SkillErrorInfo, SkillInterface, SkillMetadata, SkillsCatalogResponse,
         ThreadCommandResponse, ThreadItemSnapshot, ThreadListResponse, ThreadLiveState,
         ThreadSection, ThreadSectionAppearance, ThreadSettingsUpdateRequest,
-        ThreadTimelineFileChangeEntry, ThreadTimelineRow, ThreadTimelineSnapshot,
-        ThreadTimelineSnapshotItem, ThreadTimelineWindowPage, ThreadTimelineWorkDetailRow,
-        ThreadTimelineWorkSummary, ThreadTurnSnapshot, ThreadViewResponse, ThreadViewThreadSummary,
-        TimelineFileAttachment, TimelineItemDeltaPayload, TimelineItemUpsertPayload,
-        TimelineSkillMention, TimelineThreadMetadataPayload, TimelineThreadStatusPayload,
-        TimelineTurnUpsertPayload, TimelineUpdateSource, UserInput,
+        ThreadSubagentListResponse, ThreadSubagentSummary, ThreadTimelineFileChangeEntry,
+        ThreadTimelineRow, ThreadTimelineSnapshot, ThreadTimelineSnapshotItem,
+        ThreadTimelineWindowPage, ThreadTimelineWorkDetailRow, ThreadTimelineWorkSummary,
+        ThreadTurnSnapshot, ThreadViewResponse, ThreadViewThreadSummary, TimelineFileAttachment,
+        TimelineItemDeltaPayload, TimelineItemUpsertPayload, TimelineSkillMention,
+        TimelineThreadMetadataPayload, TimelineThreadStatusPayload, TimelineTurnUpsertPayload,
+        TimelineUpdateSource, UserInput,
     },
     config::Config,
     error::{ApiErrorBody, NativeConfigWriteErrorCode, NativeConfigWriteErrorData},
@@ -99,6 +100,7 @@ use crate::{
             SelfControlUpdateThreadSectionRequest,
         },
         skills::{SkillIconQuery, SkillsQuery},
+        subagents::ThreadSubagentListQuery,
         terminals::TerminalDeleteResponse,
         thread_presence::{ThreadViewPresenceRequest, ThreadViewPresenceSnapshotRequest},
         thread_sections::{
@@ -115,8 +117,7 @@ use crate::{
             ThreadAttachDisposition, ThreadAttachResponse, ThreadListQuery,
             ThreadNotificationSettingsResponse, ThreadNotificationSettingsUpdate,
             ThreadNotificationSettingsUpdateRequest, ThreadProjectUpdateRequest,
-            ThreadReadStateUpdate, ThreadSubagentListResponse, ThreadSubagentSummary,
-            ThreadTimelinePageQuery,
+            ThreadReadStateUpdate, ThreadTimelinePageQuery,
         },
         turns::{
             ThreadCompactDisposition, ThreadCompactResponse, ThreadInputDisposition,
@@ -135,7 +136,7 @@ use crate::{
         Approval, ApprovalSource, AutomationStatus, EventEnvelope, QueuedInput,
         QueuedInputPriority, QueuedInputStatus, Store, ThreadRead,
     },
-    subagents::{SubagentProjection, ThreadSubagentEventPayload},
+    subagents::ThreadSubagentsChanged,
     terminal::{
         CreateTerminalSession, TerminalSessionInfo, TerminalSessionListResponse,
         TerminalSessionResponse, TerminalSessionStatus,
@@ -152,7 +153,6 @@ pub struct AppState {
     pub events: broadcast::Sender<EventEnvelope>,
     pub skills: crate::skills::SkillCatalogCache,
     pub notifications: crate::notifications::NotificationService,
-    pub subagents: SubagentProjection,
     pub thread_presence: crate::thread_presence::ThreadPresence,
     pub thread_views: ThreadViewStore,
     pub thread_input_locks: crate::turn_lifecycle::ThreadInputLocks,
@@ -177,7 +177,6 @@ impl AppState {
             events,
             skills: crate::skills::SkillCatalogCache::default(),
             notifications,
-            subagents: SubagentProjection::default(),
             thread_presence: crate::thread_presence::ThreadPresence::default(),
             thread_views: ThreadViewStore::default(),
             thread_input_locks: crate::turn_lifecycle::ThreadInputLocks::default(),
@@ -229,7 +228,7 @@ impl AppState {
         crate::routes::threads::create_thread,
         crate::routes::threads::list_chat_threads,
         crate::routes::threads::create_chat_thread,
-        crate::routes::threads::list_subagents,
+        crate::routes::subagents::list_subagents,
         crate::routes::threads::get_thread,
         crate::routes::threads::get_thread_timeline_page,
         crate::routes::threads::attach_thread,
@@ -429,7 +428,8 @@ impl AppState {
         ThreadReadStateUpdate,
         ThreadSubagentSummary,
         ThreadSubagentListResponse,
-        ThreadSubagentEventPayload,
+        ThreadSubagentListQuery,
+        ThreadSubagentsChanged,
         ThreadRead,
         AppSurfaceProvider,
         AppSurfaceSessionStatus,
@@ -592,6 +592,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::events::router())
         .merge(routes::projects::router())
         .merge(routes::threads::router())
+        .merge(routes::subagents::router())
         .merge(routes::thread_sections::router())
         .merge(routes::self_control_sections::router())
         .merge(routes::thread_settings::router())

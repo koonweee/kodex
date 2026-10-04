@@ -8,6 +8,7 @@ function threadSummary(
   overrides: Partial<ThreadSummary> = {},
 ): ThreadSummary {
   return {
+    parentThreadId: null, canAcceptDirectInput: null,
     createdAt: 1,
     cwd: "/tmp/kodex",
     id,

@@ -6,12 +6,12 @@ import type { Capabilities, EventEnvelope, QueuedInput, ThreadSettingsResponse, 
 export async function nativeSettingsFixture(context: BrowserContext) {
   const settings: ThreadSettingsResponse = { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null };
   const detail: ThreadViewResponse = {
-    thread: { id: "settings-chat", name: "Native settings chat", projectId: null, cwd: "/execution/settings", status: "idle", createdAt: 0, updatedAt: 0, notificationsEnabled: true, seenCompletedAgentTurnSeq: 0, unreadCompletedAgentTurn: false },
+    thread: { parentThreadId: null, canAcceptDirectInput: null, id: "settings-chat", name: "Native settings chat", projectId: null, cwd: "/execution/settings", status: "idle", createdAt: 0, updatedAt: 0, notificationsEnabled: true, seenCompletedAgentTurnSeq: 0, unreadCompletedAgentTurn: false },
     liveState: "idle",
     timeline: { activeTurnId: null, liveState: "idle", pendingApprovalRequests: [], pendingUserInputRequests: [], rows: [], turns: [], viewRevision: 1 },
   };
   const capabilities: Capabilities = {
-    gateway: { instanceId: "native-settings-fixture", version: "test", sse: true, approvals: true, gatewayAuth: false, trustedNetworkOnly: true },
+    gateway: { instanceId: "native-settings-fixture", version: "test", sse: true, approvals: true, terminals: { enabled: false }, gatewayAuth: false, trustedNetworkOnly: true },
     appServer: { ready: true, experimentalApi: true, schemaVersion: "0.160.0", detectedVersion: "0.160.0", detectedVersionMatchesSchema: true },
   };
   const clients = new Map<Page, string>();
@@ -51,7 +51,7 @@ export async function nativeSettingsFixture(context: BrowserContext) {
 
   function emit(kind: string, payload: unknown, client?: string) {
     seq += 1;
-    const event: EventEnvelope = { id: String(seq), seq, kind, threadId: kind === "config.changed" ? null : detail.thread.id, payload, receivedAt: "2026-10-04T00:00:00Z" };
+    const event: EventEnvelope = { id: String(seq), seq, kind, threadId: ["config.changed", "thread.subagents_changed"].includes(kind) ? null : detail.thread.id, payload, receivedAt: "2026-10-04T00:00:00Z" };
     for (const [stream, id] of streams) {
       if (!client || client === id) stream.write(`id: ${seq}\nevent: ${kind}\ndata: ${JSON.stringify(event)}\n\n`);
     }
@@ -123,6 +123,7 @@ export async function nativeSettingsFixture(context: BrowserContext) {
   return {
     settings, requests, pending, connections, unexpected, errors, settingsChanged,
     configChanged(client?: string) { emit("config.changed", {}, client); },
+    subagentsChanged(client?: string, changedThreadId: string | null = null) { emit("thread.subagents_changed", { changedThreadId }, client); },
     connected(client: string) { return [...streams.values()].includes(client); },
     disconnect(client: string) { for (const [stream, id] of streams) if (client === id) stream.end(); },
     applyNext(client?: string) {

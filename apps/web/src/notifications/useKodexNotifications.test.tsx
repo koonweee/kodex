@@ -13,6 +13,7 @@ afterEach(() => {
 
 function thread(id: string, unreadCompletedAgentTurn = false): ThreadSummary {
   return {
+    parentThreadId: null, canAcceptDirectInput: null,
     id,
     name: id,
     cwd: "/workspace",

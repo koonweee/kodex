@@ -11,7 +11,7 @@ import { useSidebarThreadsSnapshot } from "./useSidebarThreadsSnapshot";
 vi.mock("../api/client", () => ({ getSidebarThreads: vi.fn() }));
 
 const project = { id: "native-project", name: "Native", roots: [{ path: "/shared" }], metadata: {}, position: 0, createdAt: 1, updatedAt: 1, recencyAt: null };
-const thread: SidebarThreadSummary = { id: "native-chat", projectId: project.id, cwd: "/shared", name: "Native chat", status: "idle", createdAt: 1, updatedAt: 1, notificationsEnabled: true, seenCompletedAgentTurnSeq: 0, unreadCompletedAgentTurn: false };
+const thread: SidebarThreadSummary = { parentThreadId: null, canAcceptDirectInput: null, id: "native-chat", projectId: project.id, cwd: "/shared", name: "Native chat", status: "idle", createdAt: 1, updatedAt: 1, notificationsEnabled: true, seenCompletedAgentTurnSeq: 0, unreadCompletedAgentTurn: false };
 function snapshot(assigned: boolean, deleted = false): SidebarThreadsResponse {
   return {
     projects: deleted ? [] : [project],

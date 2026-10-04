@@ -600,6 +600,7 @@ function projectSummary(id: string, name: string): Project {
 
 function threadSummary(index: number, overrides: Partial<ThreadSummary> = {}): ThreadSummary {
   return {
+    parentThreadId: null, canAcceptDirectInput: null,
     createdAt: index,
     cwd: "/workspace/project-1",
     projectId: "project-1",
