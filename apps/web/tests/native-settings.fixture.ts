@@ -22,7 +22,7 @@ export async function nativeSettingsFixture(context: BrowserContext) {
   const queuedInputs: QueuedInput[] = [];
   const unexpected: string[] = [];
   const errors: string[] = [];
-  const holds = new Set<string>();
+  const holds = new Map<string, string>();
   const held = new Map<string, { send: () => Promise<void>; aborted: () => boolean }>();
   let seq = 0;
   const server = createServer((request, response) => {
@@ -49,11 +49,11 @@ export async function nativeSettingsFixture(context: BrowserContext) {
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Expected a local SSE address");
 
-  function emit(kind: string, payload: unknown, client?: string) {
-    seq += 1;
-    const event: EventEnvelope = { id: String(seq), seq, kind, threadId: ["config.changed", "thread.subagents_changed"].includes(kind) ? null : detail.thread.id, payload, receivedAt: "2026-10-04T00:00:00Z" };
+  function emit(kind: string, payload: unknown, client?: string, eventSeq = seq + 1) {
+    seq = Math.max(seq, eventSeq);
+    const event: EventEnvelope = { id: `${eventSeq}-${kind}`, seq: eventSeq, kind, threadId: ["config.changed", "thread.subagents_changed"].includes(kind) ? null : detail.thread.id, payload, receivedAt: "2026-10-04T00:00:00Z" };
     for (const [stream, id] of streams) {
-      if (!client || client === id) stream.write(`id: ${seq}\nevent: ${kind}\ndata: ${JSON.stringify(event)}\n\n`);
+      if (!client || client === id) stream.write(`id: ${eventSeq}\nevent: ${kind}\ndata: ${JSON.stringify(event)}\n\n`);
     }
   }
   function settingsChanged(client?: string) { emit("thread.settings_updated", { threadId: detail.thread.id }, client); }
@@ -63,8 +63,10 @@ export async function nativeSettingsFixture(context: BrowserContext) {
       try { await route.fulfill({ status, json: captured }); }
       catch (error) { if (route.request().failure()?.errorText !== "net::ERR_ABORTED") throw error; }
     };
-    if (holdClient && holds.delete(holdClient)) {
-      held.set(holdClient, { send, aborted: () => route.request().failure()?.errorText === "net::ERR_ABORTED" });
+    const holdKey = holdClient ? holds.get(holdClient) : undefined;
+    if (holdClient && holdKey) {
+      holds.delete(holdClient);
+      held.set(holdKey, { send, aborted: () => route.request().failure()?.errorText === "net::ERR_ABORTED" });
     } else await send();
   }
   await context.route("**/v1/**", async (route) => {
@@ -90,7 +92,6 @@ export async function nativeSettingsFixture(context: BrowserContext) {
       "GET /v1/permission-profiles": { profiles: [] },
       "GET /v1/threads/settings-chat": detail,
       "POST /v1/threads/settings-chat/seen": { threadId: detail.thread.id, seenCompletedAgentTurnSeq: 0, updatedAt: "2026-10-05T00:00:00Z" },
-      "POST /v1/threads/settings-chat/attach": detail,
       "GET /v1/threads/settings-chat/app-surface": { session: null },
       "GET /v1/threads/settings-chat/subagents": { subagents: [] },
       "GET /v1/threads/settings-chat/queued-inputs": { queuedInputs },
@@ -98,7 +99,8 @@ export async function nativeSettingsFixture(context: BrowserContext) {
       "POST /v1/thread-view-presence": { ok: true },
     };
     if (key in fixed) return respond(route, fixed[key]);
-    if (key === "GET /v1/threads/settings-chat/settings") return respond(route, settings, 200, client);
+    if (key === "POST /v1/threads/settings-chat/attach") return respond(route, detail, 200, `snapshot:${client}`);
+    if (key === "GET /v1/threads/settings-chat/settings") return respond(route, settings, 200, `settings:${client}`);
     if (key === "PATCH /v1/threads/settings-chat/settings") {
       pending.push(body as ThreadSettingsUpdateRequest);
       // Native acknowledges the queued update independently of its application.
@@ -133,6 +135,17 @@ export async function nativeSettingsFixture(context: BrowserContext) {
     },
     configChanged(client?: string) { emit("config.changed", {}, client); },
     subagentsChanged(client?: string, changedThreadId: string | null = null) { emit("thread.subagents_changed", { changedThreadId }, client); },
+    refreshRequired(client?: string) { emit("thread_view.refresh_required", { threadId: detail.thread.id, reason: "snapshot_required" }, client); },
+    revertTimeline(timeline: ThreadViewResponse["timeline"], client?: string) {
+      const revision = Math.max(seq, detail.timeline.viewRevision ?? 0) + 1;
+      const reset: ThreadViewPatch = { scope: "full_snapshot", threadId: detail.thread.id, affectedTurnIds: [], activeTurnId: null, liveState: "idle", pendingApprovalRequests: [], pendingUserInputRequests: [], rows: [], turns: [], viewRevision: revision };
+      detail.timeline = { ...timeline, viewRevision: revision + 1 };
+      detail.liveState = timeline.liveState;
+      detail.thread.status = timeline.liveState === "streaming" ? "active" : "idle";
+      // The durable cursor owns both the empty reset and the refetch marker.
+      emit("thread_view.patch", reset, client, revision);
+      emit("thread_view.refresh_required", { threadId: detail.thread.id, reason: "thread_reverted" }, client, revision);
+    },
     connected(client: string) { return [...streams.values()].includes(client); },
     disconnect(client: string) { for (const [stream, id] of streams) if (client === id) stream.end(); },
     applyNext(client?: string) {
@@ -141,13 +154,14 @@ export async function nativeSettingsFixture(context: BrowserContext) {
       Object.assign(settings, update);
       settingsChanged(client);
     },
-    holdNext(client: string) { holds.add(client); },
-    isHeld(client: string) { return held.has(client); },
-    wasAborted(client: string) { return held.get(client)?.aborted() ?? false; },
-    async release(client: string) {
-      const reply = held.get(client);
-      if (!reply) throw new Error(`No held settings read for ${client}`);
-      held.delete(client);
+    holdNext(client: string, kind: "settings" | "snapshot" = "settings", label = "") { holds.set(`${kind}:${client}`, `${kind}:${client}:${label}`); },
+    isHeld(client: string, kind: "settings" | "snapshot" = "settings", label = "") { return held.has(`${kind}:${client}:${label}`); },
+    wasAborted(client: string, kind: "settings" | "snapshot" = "settings", label = "") { return held.get(`${kind}:${client}:${label}`)?.aborted() ?? false; },
+    async release(client: string, kind: "settings" | "snapshot" = "settings", label = "") {
+      const key = `${kind}:${client}:${label}`;
+      const reply = held.get(key);
+      if (!reply) throw new Error(`No held ${kind} read for ${client}`);
+      held.delete(key);
       await reply.send();
     },
     async page(client: string) {

@@ -20,7 +20,7 @@ fn user_item(id: &str, client_id: Option<&str>) -> Value {
 }
 
 async fn pending(sessions: &ThreadViewStore, client_id: &str, seq: i64) -> Option<ThreadViewPatch> {
-    record_pending_user_input(sessions, THREAD, TURN, client_id, &input(), &[], seq)
+    record_pending_user_input(sessions, THREAD, TURN, client_id, &input(), &[], (seq, seq))
         .await
         .unwrap()
 }

@@ -923,6 +923,24 @@ describe("MVP timeline flows", () => {
 
     expect(await screen.findByText(/external recovered snapshot/i)).toBeInTheDocument();
 
+    const recoveredItem = {
+      id: "projection-turn-2-agent-2",
+      threadId: "thread-2",
+      turnId: "turn-2",
+      itemId: "agent-2",
+      itemType: "agentMessage",
+      displayOrder: 2,
+      status: "completed",
+      codexMethod: "item/completed",
+      timestampMs: 2,
+      payload: {
+        source: "appServerSnapshot",
+        turnId: "turn-2",
+        itemId: "agent-2",
+        item: { id: "agent-2", type: "agentMessage", text: "External recovered snapshot" },
+        itemSnapshot: { id: "agent-2", itemType: "agentMessage" },
+      },
+    } satisfies ThreadTimelineSnapshotItem;
     act(() => {
       workspaceStream.emit({
         id: "historical-projection-external",
@@ -939,41 +957,8 @@ describe("MVP timeline flows", () => {
           threadId: "thread-2",
           activeTurnId: null,
           liveState: "idle",
-          rows: canonicalRowsFromSnapshotItems([
-            {
-              id: "projection-turn-2-agent-2",
-              threadId: "thread-2",
-              turnId: "turn-2",
-              itemId: "agent-2",
-              itemType: "agentMessage",
-              displayOrder: 2,
-              status: "completed",
-              timestampMs: 2,
-              payload: {
-                item: { id: "agent-2", type: "agentMessage", text: "External recovered snapshot" },
-              },
-            },
-          ]),
-          items: [
-            {
-              id: "projection-turn-2-agent-2",
-              threadId: "thread-2",
-              turnId: "turn-2",
-              itemId: "agent-2",
-              itemType: "agentMessage",
-              displayOrder: 2,
-              status: "completed",
-              codexMethod: "item/completed",
-              timestampMs: 2,
-              payload: {
-                source: "appServerSnapshot",
-                turnId: "turn-2",
-                itemId: "agent-2",
-                item: { id: "agent-2", type: "agentMessage", text: "External recovered snapshot" },
-                itemSnapshot: { id: "agent-2", itemType: "agentMessage", rawPayload: {} },
-              },
-            },
-          ],
+          rows: canonicalRowsFromSnapshotItems([recoveredItem]),
+          items: [recoveredItem],
         },
         receivedAt: "2026-04-30T00:00:03Z",
       });

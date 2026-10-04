@@ -19,7 +19,7 @@ use crate::{
         ThreadTimelineSnapshotTurn, ThreadTimelineWindowPage, ThreadTurnSnapshot,
         TimelineFileAttachment, TimelineItemUpsertPayload, TimelineUpdateSource, UserInput,
     },
-    error::ApiResult,
+    error::{ApiError, ApiResult},
     store::Approval,
 };
 
@@ -35,14 +35,34 @@ pub struct ThreadViewStore {
 }
 
 impl ThreadViewStore {
+    pub async fn ensure_history_current(&self, thread_id: &str, revision: i64) -> ApiResult<()> {
+        if let Some(view) = self.sessions.read().await.get(thread_id) {
+            view.ensure_history_current(revision)?;
+        }
+        Ok(())
+    }
+
+    pub async fn reset_history(&self, thread_id: &str, revision: i64) -> ThreadViewPatch {
+        let mut sessions = self.sessions.write().await;
+        let view = sessions.entry(thread_id.to_string()).or_default();
+        *view = ThreadView {
+            thread_id: thread_id.to_string(),
+            revision: view.revision.max(revision),
+            history_reset_revision: view.history_reset_revision.max(revision),
+            ..ThreadView::default()
+        };
+        view.to_patch()
+    }
+
     pub async fn refresh_from_turns(
         &self,
         thread_id: &str,
         turns: &[ThreadTurnSnapshot],
         revision: i64,
-    ) -> ThreadTimelineSnapshot {
+    ) -> ApiResult<ThreadTimelineSnapshot> {
         let mut sessions = self.sessions.write().await;
         let view = sessions.entry(thread_id.to_string()).or_default();
+        view.ensure_history_current(revision)?;
         let incoming_ids = turns
             .iter()
             .map(|turn| turn.id.clone())
@@ -59,7 +79,7 @@ impl ThreadViewStore {
             history_page.loaded_turn_count = view.history_turns.len() as u32;
         }
         let base = ThreadTimelineSnapshot::from_turns(thread_id, &view.history_turns);
-        view.refresh_from_base(thread_id, base, revision)
+        Ok(view.refresh_from_base(thread_id, base, revision))
     }
 
     pub async fn refresh_from_history_window(
@@ -68,9 +88,10 @@ impl ThreadViewStore {
         turns: &[ThreadTurnSnapshot],
         mut history_page: Option<ThreadTimelineWindowPage>,
         revision: i64,
-    ) -> ThreadTimelineSnapshot {
+    ) -> ApiResult<ThreadTimelineSnapshot> {
         let mut sessions = self.sessions.write().await;
         let view = sessions.entry(thread_id.to_string()).or_default();
+        view.ensure_history_current(revision)?;
         let reset_window = history_page
             .as_ref()
             .is_some_and(|history_page| history_page.reset_window);
@@ -115,7 +136,7 @@ impl ThreadViewStore {
         view.history_turns = next_turns;
         view.history_page = history_page;
         let base = ThreadTimelineSnapshot::from_turns(thread_id, &view.history_turns);
-        view.refresh_from_base(thread_id, base, revision)
+        Ok(view.refresh_from_base(thread_id, base, revision))
     }
 
     pub async fn prepend_history_page(
@@ -124,9 +145,10 @@ impl ThreadViewStore {
         turns: &[ThreadTurnSnapshot],
         mut history_page: Option<ThreadTimelineWindowPage>,
         revision: i64,
-    ) -> ThreadTimelineSnapshot {
+    ) -> ApiResult<ThreadTimelineSnapshot> {
         let mut sessions = self.sessions.write().await;
         let view = sessions.entry(thread_id.to_string()).or_default();
+        view.ensure_history_current(revision)?;
         let mut next_turns = turns.to_vec();
         let mut seen = next_turns
             .iter()
@@ -144,7 +166,7 @@ impl ThreadViewStore {
         view.history_turns = next_turns;
         view.history_page = history_page;
         let base = ThreadTimelineSnapshot::from_turns(thread_id, &view.history_turns);
-        view.refresh_from_base(thread_id, base, revision)
+        Ok(view.refresh_from_base(thread_id, base, revision))
     }
 
     pub async fn history_page(&self, thread_id: &str) -> Option<ThreadTimelineWindowPage> {
@@ -214,6 +236,9 @@ pub(crate) enum ItemDeltaApplyOutcome {
 pub(crate) struct ThreadView {
     pub(crate) thread_id: String,
     pub(crate) revision: i64,
+    // A native revert replaces history. Preserve this boundary even for an
+    // unseen/empty view so pre-revert replies cannot be promoted to new state.
+    pub(crate) history_reset_revision: i64,
     pub(crate) active_turn_id: Option<String>,
     pub(crate) live_state: ThreadLiveState,
     pub(crate) pending_approval_requests: Vec<PendingTimelineRequestSummary>,
@@ -226,6 +251,15 @@ pub(crate) struct ThreadView {
 }
 
 impl ThreadView {
+    fn ensure_history_current(&self, revision: i64) -> ApiResult<()> {
+        if revision < self.history_reset_revision {
+            return Err(ApiError::Conflict(
+                "thread history changed; read a fresh snapshot".into(),
+            ));
+        }
+        Ok(())
+    }
+
     fn refresh_from_base(
         &mut self,
         thread_id: &str,
@@ -765,9 +799,9 @@ pub async fn build_thread_timeline(
     turns: &[ThreadTurnSnapshot],
     revision: i64,
 ) -> ApiResult<ThreadTimelineSnapshot> {
-    Ok(sessions
+    sessions
         .refresh_from_turns(thread_id, turns, revision)
-        .await)
+        .await
 }
 
 pub async fn build_thread_timeline_window(
@@ -777,9 +811,9 @@ pub async fn build_thread_timeline_window(
     history_page: Option<ThreadTimelineWindowPage>,
     revision: i64,
 ) -> ApiResult<ThreadTimelineSnapshot> {
-    Ok(sessions
+    sessions
         .refresh_from_history_window(thread_id, turns, history_page, revision)
-        .await)
+        .await
 }
 
 pub async fn prepend_thread_timeline_page(
@@ -789,9 +823,9 @@ pub async fn prepend_thread_timeline_page(
     history_page: Option<ThreadTimelineWindowPage>,
     revision: i64,
 ) -> ApiResult<ThreadTimelineSnapshot> {
-    Ok(sessions
+    sessions
         .prepend_history_page(thread_id, turns, history_page, revision)
-        .await)
+        .await
 }
 
 pub async fn record_pending_requests(
@@ -1009,7 +1043,7 @@ pub async fn record_pending_user_input(
     client_id: &str,
     input: &[UserInput],
     attachments: &[TimelineFileAttachment],
-    updated_seq: i64,
+    (submission_revision, updated_seq): (i64, i64),
 ) -> ApiResult<Option<ThreadViewPatch>> {
     if attachments.is_empty() && visible_text_from_user_input(input).is_none() {
         return Ok(None);
@@ -1029,6 +1063,11 @@ pub async fn record_pending_user_input(
     item_snapshot.raw_payload = item.clone();
     let patch = sessions
         .with_thread_view(thread_id, updated_seq, |view| {
+            // An accepted native write remains successful, but its late ACK
+            // must not recreate input removed by a subsequent native revert.
+            if submission_revision < view.history_reset_revision {
+                return None;
+            }
             // Native events can materialize the input before its submission ACK.
             // Check and insert under the same view lock so late ACKs cannot
             // recreate a synthetic row after the native receipt.

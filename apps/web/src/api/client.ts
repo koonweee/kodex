@@ -237,7 +237,7 @@ export async function getThreadDetail(threadId: string, signal?: AbortSignal): P
 
 export async function getThreadTimelinePage(
   threadId: string,
-  options: { cursor?: string | null; limit?: number } = {},
+  options: { cursor?: string | null; limit?: number; signal?: AbortSignal } = {},
 ): Promise<ThreadViewResponse> {
   return unwrap(
     api.GET("/v1/threads/{threadId}/timeline/pages", {
@@ -245,6 +245,7 @@ export async function getThreadTimelinePage(
         path: { threadId },
         query: { cursor: options.cursor ?? undefined, limit: options.limit ?? undefined },
       },
+      signal: options.signal,
     }),
   );
 }

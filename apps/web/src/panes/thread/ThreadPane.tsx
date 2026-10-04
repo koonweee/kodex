@@ -118,6 +118,7 @@ function ExistingThreadPane({
   const [thread, setThread] = useState<ThreadSummary | null>(seededThread);
   const [timeline, setTimeline] = useState<TimelineState>(() => createTimelineState());
   const snapshotControllerRef = useRef<AbortController | null>(null);
+  const historyControllerRef = useRef<AbortController | null>(null);
   const refreshInFlightRef = useRef(false);
   const refreshInFlightThreadIdRef = useRef<string | null>(null);
   const refreshQueuedRef = useRef(false);
@@ -150,6 +151,9 @@ function ExistingThreadPane({
       refreshQueuedRef.current = true;
       return;
     }
+    historyControllerRef.current?.abort();
+    historyControllerRef.current = null;
+    setTimeline((current) => setTimelineOlderHistoryLoading(current, false));
     refreshInFlightRef.current = true;
     refreshInFlightThreadIdRef.current = threadId;
     const requestId = refreshRequestIdRef.current + 1;
@@ -250,8 +254,10 @@ function ExistingThreadPane({
 
   useEffect(() => () => {
     snapshotControllerRef.current?.abort();
+    historyControllerRef.current?.abort();
     refreshRequestIdRef.current += 1;
     snapshotControllerRef.current = null;
+    historyControllerRef.current = null;
     refreshInFlightRef.current = false;
     refreshInFlightThreadIdRef.current = null;
     refreshQueuedRef.current = false;
@@ -269,7 +275,7 @@ function ExistingThreadPane({
       }
       if (event.kind === "thread_view.refresh_required") {
         cancelQueuedTimelineEvents();
-        void refreshSnapshot();
+        void refreshSnapshot(true);
         return;
       }
       if (event.kind === "thread.notifications_updated") {
@@ -355,16 +361,25 @@ function ExistingThreadPane({
     if (!cursor || timeline.isLoadingOlderHistory) {
       return;
     }
+    historyControllerRef.current?.abort();
+    const controller = new AbortController();
+    historyControllerRef.current = controller;
+    const snapshotRequestId = refreshRequestIdRef.current;
     setTimeline((current) => setTimelineOlderHistoryLoading(current, true));
-    void getThreadTimelinePage(threadId, { cursor })
+    void getThreadTimelinePage(threadId, { cursor, signal: controller.signal })
       .then((snapshot) => {
+        if (controller.signal.aborted || snapshotRequestId !== refreshRequestIdRef.current || threadId !== latestThreadIdRef.current) return;
         setTimeline((current) => applyTimelineHistoryWindow(current, snapshot));
         const nextThread = threadViewSummaryToThreadSummary(snapshot.thread);
         setThread((current) => mergePaneThreadSummary(current, nextThread));
       })
       .catch((error) => {
+        if (controller.signal.aborted || snapshotRequestId !== refreshRequestIdRef.current || threadId !== latestThreadIdRef.current) return;
         setTimeline((current) => setTimelineOlderHistoryLoading(current, false));
         setPaneErrorMessage(errorMessageFrom(error));
+      })
+      .finally(() => {
+        if (historyControllerRef.current === controller) historyControllerRef.current = null;
       });
   }, [threadId, timeline.isLoadingOlderHistory, timeline.olderCursor]);
   const threadApprovals = approvals.filter((approval) => approval.threadId === threadId);

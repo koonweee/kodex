@@ -201,6 +201,40 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
                 return crate::approvals::resolve_native(state, &params).await;
             }
             let metadata = EventMetadata::from_payload(&params);
+            if method == "thread/reverted" {
+                if let Some(thread_id) = metadata.thread_id.as_deref() {
+                    let cursor = append_timeline_changed_cursor(
+                        state,
+                        &metadata,
+                        "thread_view.history_reset",
+                        Some(&method),
+                    )
+                    .await?;
+                    let patch = state
+                        .thread_views
+                        .reset_history(thread_id, cursor.seq)
+                        .await;
+                    state
+                        .store
+                        .upsert_thread_runtime_state(ThreadRuntimeState {
+                            thread_id: thread_id.to_string(),
+                            status: ThreadRuntimeStatus::Idle,
+                            active_turn_id: None,
+                            updated_at: Utc::now(),
+                            last_event_seq: Some(cursor.seq),
+                        })
+                        .await?;
+                    let reset = thread_view_patch_payload_event(state, patch).await?;
+                    let refill_seq = reset.seq;
+                    let _ = state.events.send(reset);
+                    let _ = state.events.send(thread_view_refresh_required_event(
+                        refill_seq,
+                        thread_id.to_string(),
+                        "thread_reverted",
+                    )?);
+                }
+                return Ok(());
+            }
             let mut emitted = false;
             if let Some(event) = normalized_project_event(state, &method, &params).await? {
                 let _ = state.events.send(event);
@@ -452,8 +486,12 @@ async fn event_stream(
         loop {
             let received = timeout(Duration::from_secs(5), receiver.recv()).await;
             match received {
+                // Refill signals intentionally share the observed cursor and
+                // may follow a canonical patch at that cursor. They carry no
+                // transcript rows and must not be dropped as duplicate data.
                 Ok(Ok(event))
-                    if event.seq > high_water
+                    if (event.seq > high_water
+                        || event.kind == thread_view::THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND)
                         && event_matches(&event, &query)
                         && is_sse_live_event_for_query(&event, &query) =>
                 {
@@ -815,7 +853,7 @@ async fn timeline_thread_compacted_event(
     let timeline = state
         .thread_views
         .refresh_from_turns(thread_id, &snapshot.turns, cursor.seq)
-        .await;
+        .await?;
     state
         .store
         .upsert_thread_runtime_state(ThreadRuntimeState {
@@ -1524,3 +1562,7 @@ mod tests;
 #[cfg(test)]
 #[path = "events/lag_tests.rs"]
 mod lag_tests;
+
+#[cfg(test)]
+#[path = "events/revert_tests.rs"]
+mod revert_tests;

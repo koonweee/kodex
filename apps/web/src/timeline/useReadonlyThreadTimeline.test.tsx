@@ -107,6 +107,48 @@ describe("useReadonlyThreadTimeline", () => {
     expect(getThreadDetail).toHaveBeenCalledTimes(2);
   });
 
+  it.each(["success", "failure"])("fences a pre-revert observer read and its late %s without attaching", async (outcome) => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    let release!: (snapshot: ThreadViewResponse) => void;
+    let reject!: (error: Error) => void;
+    const oldRead = new Promise<ThreadViewResponse>((resolve, rejectPromise) => { release = resolve; reject = rejectPromise; });
+    let releaseRefill!: (snapshot: ThreadViewResponse) => void;
+    const refill = new Promise<ThreadViewResponse>((resolve) => { releaseRefill = resolve; });
+    vi.mocked(getThreadDetail).mockReset()
+      .mockResolvedValueOnce(threadDetail("Removed history", 1))
+      .mockReturnValueOnce(oldRead)
+      .mockReturnValueOnce(refill);
+    const onError = vi.fn();
+    const onSnapshotThread = vi.fn();
+    const { result } = renderHook(() => useReadonlyThreadTimeline({ onError, onSnapshotThread, threadId: "thread-1" }));
+    await waitFor(() => expect(timelineText(result.current.timeline)).toBe("Removed history"));
+    const stream = FakeEventSource.instances[0];
+    act(() => stream.emitNamed("thread_view.refresh_required", refreshRequiredEvent(2)));
+    await waitFor(() => expect(getThreadDetail).toHaveBeenCalledTimes(2));
+    const signal = vi.mocked(getThreadDetail).mock.calls[1][1];
+    const reset = threadDetail("", 3).timeline;
+    act(() => {
+      stream.emitNamed("thread_view.patch", { ...refreshRequiredEvent(3), kind: "thread_view.patch", payload: { ...reset, rows: [], turns: [], activeTurnId: null, liveState: "idle", scope: "full_snapshot", threadId: "thread-1", affectedTurnIds: [] } });
+      stream.emitNamed("thread_view.refresh_required", { ...refreshRequiredEvent(3), payload: { threadId: "thread-1", reason: "thread_reverted" } });
+    });
+    await waitFor(() => expect(getThreadDetail).toHaveBeenCalledTimes(3));
+    expect(signal?.aborted).toBe(true);
+    await waitFor(() => expect(result.current.timeline.rows).toHaveLength(0));
+    expect(result.current.timeline.activeTurnId).toBeNull();
+    await act(async () => {
+      if (outcome === "success") release({ ...threadDetail("Removed history", 2), thread: { ...threadDetail("", 2).thread, name: "Obsolete before revert" } });
+      else reject(new Error("Obsolete pre-revert failure"));
+      await oldRead.catch(() => undefined);
+    });
+    expect(result.current.timeline.rows).toHaveLength(0);
+    await act(async () => { releaseRefill(threadDetail("Kept history", 5)); await refill; });
+    expect(timelineText(result.current.timeline)).toBe("Kept history");
+    expect(onSnapshotThread).toHaveBeenCalledTimes(2);
+    expect(onSnapshotThread).not.toHaveBeenCalledWith(expect.objectContaining({ name: "Obsolete before revert" }));
+    expect(onError).not.toHaveBeenCalled();
+    expect(attachThread).not.toHaveBeenCalled();
+  });
+
   it("drops equal-revision render events queued while refresh recovery is in flight", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     let resolveRefresh: (snapshot: ThreadViewResponse) => void = () => undefined;

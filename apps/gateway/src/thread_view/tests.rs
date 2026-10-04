@@ -122,7 +122,7 @@ async fn session_reconciles_pending_user_input_when_snapshot_materializes_item()
             text_elements: Vec::new(),
         }],
         &[],
-        1,
+        (1, 1),
     )
     .await
     .unwrap();
@@ -172,7 +172,7 @@ async fn session_reconciles_pending_skill_mention_user_input() {
             },
         ],
         &[],
-        1,
+        (1, 1),
     )
     .await
     .unwrap();
@@ -320,7 +320,7 @@ async fn pending_user_input_returns_turn_scoped_patch() {
             text_elements: Vec::new(),
         }],
         &[],
-        2,
+        (2, 2),
     )
     .await
     .unwrap()

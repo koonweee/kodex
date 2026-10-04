@@ -18,6 +18,8 @@ mod native_history_tests;
 #[cfg(test)]
 mod native_identity_tests;
 #[cfg(test)]
+mod native_revert_tests;
+#[cfg(test)]
 mod native_sections_tests;
 #[cfg(test)]
 mod native_skill_tests;
@@ -4520,7 +4522,7 @@ mod tests {
                 text_elements: Vec::new(),
             }],
             &[],
-            pending.seq,
+            (pending.seq, pending.seq),
         )
         .await
         .unwrap();

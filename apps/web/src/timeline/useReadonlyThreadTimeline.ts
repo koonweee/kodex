@@ -92,23 +92,32 @@ export function useReadonlyThreadTimeline({
 
     let cancelled = false;
     let closeStream: (() => void) | null = null;
+    let snapshotController: AbortController | null = null;
     const currentThreadId = threadId;
     const currentToken = streamToken.current + 1;
     streamToken.current = currentToken;
     markLoading(currentThreadId);
 
     async function refreshSnapshot(phase: "loadingSnapshot" | "refreshingSnapshot") {
+      snapshotController?.abort();
+      const controller = new AbortController();
+      snapshotController = controller;
       if (phase === "refreshingSnapshot") {
         markRefreshing(currentThreadId);
       }
-      const snapshot = await getThreadDetail(currentThreadId);
-      if (cancelled || streamToken.current !== currentToken) {
-        return false;
+      try {
+        const snapshot = await getThreadDetail(currentThreadId, controller.signal);
+        if (controller.signal.aborted || cancelled || streamToken.current !== currentToken) {
+          return false;
+        }
+        setTimeline((current) => applyTimelineSnapshot(current, snapshot));
+        latestCallbacks.current.onSnapshotThread?.(threadViewSummaryToThreadSummary(snapshot.thread));
+        markStreaming(currentThreadId);
+        return snapshot.timeline?.viewRevision ?? 0;
+      } catch (error) {
+        if (controller.signal.aborted) return false;
+        throw error;
       }
-      setTimeline((current) => applyTimelineSnapshot(current, snapshot));
-      latestCallbacks.current.onSnapshotThread?.(threadViewSummaryToThreadSummary(snapshot.thread));
-      markStreaming(currentThreadId);
-      return snapshot.timeline?.viewRevision ?? 0;
     }
 
     const refetchSnapshot = () => {
@@ -174,6 +183,7 @@ export function useReadonlyThreadTimeline({
 
     return () => {
       cancelled = true;
+      snapshotController?.abort();
       streamToken.current += 1;
       closeStream?.();
       cancelQueuedTimelineEvents();

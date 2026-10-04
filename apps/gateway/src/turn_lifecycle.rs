@@ -41,6 +41,7 @@ pub async fn current_active_turn_id(
     if let Some(active_turn_id) = state.thread_views.active_turn_id(thread_id).await {
         return Ok(Some(active_turn_id));
     }
+    let revision = state.store.latest_event_seq().await?;
     let snapshot = match app_server_api::client(&state.app_server)
         .thread_read(thread_id.to_string())
         .await
@@ -53,11 +54,10 @@ pub async fn current_active_turn_id(
         }
         Err(error) => return Err(error),
     };
-    let revision = state.store.latest_event_seq().await?;
     let timeline = state
         .thread_views
         .refresh_from_turns(thread_id, &snapshot.turns, revision)
-        .await;
+        .await?;
     Ok(timeline.active_turn_id)
 }
 
@@ -65,6 +65,7 @@ pub async fn refreshed_active_turn_id(
     state: &AppState,
     thread_id: &str,
 ) -> ApiResult<Option<String>> {
+    let revision = state.store.latest_event_seq().await?;
     let snapshot = match app_server_api::client(&state.app_server)
         .thread_read(thread_id.to_string())
         .await
@@ -78,11 +79,10 @@ pub async fn refreshed_active_turn_id(
         Err(error) => return Err(error),
     };
     let active_turn_id = snapshot.timeline.active_turn_id.clone();
-    let revision = state.store.latest_event_seq().await?;
     let timeline = state
         .thread_views
         .refresh_from_turns(thread_id, &snapshot.turns, revision)
-        .await;
+        .await?;
     if active_turn_id.is_none() && timeline.active_turn_id.is_some() {
         record_idle_after_missing_active_turn(state, thread_id).await?;
     }
@@ -174,7 +174,16 @@ pub async fn record_pending_user_projection(
     client_id: &str,
     input: &[UserInput],
     attachments: &[TimelineFileAttachment],
+    submission_revision: i64,
 ) -> ApiResult<()> {
+    if state
+        .thread_views
+        .ensure_history_current(thread_id, submission_revision)
+        .await
+        .is_err()
+    {
+        return Ok(());
+    }
     let event = state
         .store
         .append_event(crate::store::NewEvent {
@@ -194,7 +203,7 @@ pub async fn record_pending_user_projection(
         client_id,
         input,
         attachments,
-        event.seq,
+        (submission_revision, event.seq),
     )
     .await?
     {

@@ -230,6 +230,7 @@ pub async fn start_turn(
     let attachments =
         app_server_api::validate_file_attachments_for_thread(&thread_id, request.attachments)?;
     let input = app_server_api::append_file_attachment_envelope(request.input, &attachments);
+    let submission_revision = state.store.latest_event_seq().await?;
     let response = turn_start_resuming_missing_thread_once(
         &state,
         &thread_id,
@@ -246,6 +247,7 @@ pub async fn start_turn(
             &client_id,
             &input,
             &attachments,
+            submission_revision,
         )
         .await?;
     }
@@ -262,6 +264,7 @@ pub async fn steer_turn(
     let client_id = request
         .client_user_message_id
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let submission_revision = state.store.latest_event_seq().await?;
     let response = app_server_api::client(&state.app_server)
         .turn_steer(
             thread_id.clone(),
@@ -277,6 +280,7 @@ pub async fn steer_turn(
         &client_id,
         &input,
         &[],
+        submission_revision,
     )
     .await?;
     Ok(Json(response))

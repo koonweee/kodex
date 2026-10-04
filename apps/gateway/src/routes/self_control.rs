@@ -1788,6 +1788,7 @@ async fn should_queue_self_control_input(state: &AppState, thread_id: &str) -> A
         Some(ThreadLiveState::Idle) => return Ok(false),
         Some(ThreadLiveState::NotLoaded) | None => {}
     }
+    let revision = state.store.latest_event_seq().await?;
     let snapshot = match app_server_api::client(&state.app_server)
         .thread_read(thread_id.to_string())
         .await
@@ -1800,11 +1801,10 @@ async fn should_queue_self_control_input(state: &AppState, thread_id: &str) -> A
         }
         Err(error) => return Err(error),
     };
-    let revision = state.store.latest_event_seq().await?;
     let timeline = state
         .thread_views
         .refresh_from_turns(thread_id, &snapshot.turns, revision)
-        .await;
+        .await?;
     Ok(timeline.active_turn_id.is_some() || timeline.live_state != ThreadLiveState::Idle)
 }
 

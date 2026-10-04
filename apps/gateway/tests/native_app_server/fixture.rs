@@ -182,6 +182,20 @@ impl NativeSession {
             .await?)
     }
 
+    pub(super) async fn native_revert(
+        &self,
+        thread_id: &str,
+        before_turn_id: &str,
+    ) -> anyhow::Result<Value> {
+        Ok(self
+            .server
+            .request(
+                "thread/revert",
+                json!({"threadId":thread_id, "beforeTurnId":before_turn_id}),
+            )
+            .await?)
+    }
+
     pub(super) async fn start(fixture: &Fixture) -> anyhow::Result<Self> {
         let store = Store::connect(&fixture.config.database.path).await?;
         let (tx, mut native_rx) = mpsc::channel(1024);

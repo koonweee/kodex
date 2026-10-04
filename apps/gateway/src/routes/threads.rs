@@ -1025,6 +1025,10 @@ async fn apply_thread_detail_response_state_with_merge(
     timeline_revision: i64,
     merge_mode: ThreadTimelineMergeMode,
 ) -> ApiResult<()> {
+    state
+        .thread_views
+        .ensure_history_current(&response.thread.id, timeline_revision)
+        .await?;
     apply_thread_summary_state(state, std::slice::from_mut(&mut response.thread)).await?;
     let app_surface_sessions =
         app_surfaces::sync_mcp_app_surfaces_for_turns(state, &response.thread.id, &response.turns)
@@ -1060,6 +1064,10 @@ async fn apply_thread_detail_response_state_with_merge(
     }
     response.live_state = response.timeline.live_state;
     sync_raw_response_thread(&mut response.raw_payload, &response.thread);
+    state
+        .thread_views
+        .ensure_history_current(&response.thread.id, timeline_revision)
+        .await?;
     Ok(())
 }
 

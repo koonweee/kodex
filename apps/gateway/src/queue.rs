@@ -139,6 +139,7 @@ pub async fn steer_queued_input(
         .await?;
     broadcast_queue_upsert(&state, &queued_input).await?;
 
+    let submission_revision = state.store.latest_event_seq().await?;
     let result = app_server_api::client(&state.app_server)
         .turn_steer(
             thread_id.clone(),
@@ -156,6 +157,7 @@ pub async fn steer_queued_input(
                 &format!("kodex-queue:{}", queued_input.id),
                 &queued_input.input,
                 &queued_input.attachments,
+                submission_revision,
             )
             .await?;
             let queued_input = state
@@ -382,6 +384,7 @@ async fn drain_one_queued_input(state: &AppState, thread_id: &str) -> ApiResult<
     };
     broadcast_queue_upsert(state, &queued_input).await?;
 
+    let submission_revision = state.store.latest_event_seq().await?;
     let result = app_server_api::client(&state.app_server)
         .turn_start(
             thread_id.to_string(),
@@ -400,6 +403,7 @@ async fn drain_one_queued_input(state: &AppState, thread_id: &str) -> ApiResult<
                     &format!("kodex-queue:{}", queued_input.id),
                     &queued_input.input,
                     &queued_input.attachments,
+                    submission_revision,
                 )
                 .await?;
             }
@@ -474,14 +478,14 @@ async fn thread_is_idle_for_queue(state: &AppState, thread_id: &str) -> ApiResul
             _ => {}
         }
     }
+    let revision = state.store.latest_event_seq().await?;
     let snapshot = app_server_api::client(&state.app_server)
         .thread_read(thread_id.to_string())
         .await?;
-    let revision = state.store.latest_event_seq().await?;
     let timeline = state
         .thread_views
         .refresh_from_turns(thread_id, &snapshot.turns, revision)
-        .await;
+        .await?;
     Ok(timeline.active_turn_id.is_none() && timeline.live_state == ThreadLiveState::Idle)
 }
 

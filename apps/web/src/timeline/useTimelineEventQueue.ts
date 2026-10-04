@@ -1,6 +1,6 @@
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef } from "react";
 
-import type { EventEnvelope } from "../api/client";
+import type { EventEnvelope, ThreadViewPatch } from "../api/client";
 import type { TimelineState } from "./reducer";
 
 export type TimelineEventQueueReducer = (current: TimelineState, events: EventEnvelope[]) => TimelineState;
@@ -26,9 +26,11 @@ export function useTimelineEventQueue({
 
   const flushQueuedTimelineEvents = useCallback(() => {
     if (timelineFlushFrame.current !== null) {
+      window.cancelAnimationFrame(timelineFlushFrame.current);
       timelineFlushFrame.current = null;
     }
     if (timelineFlushTimer.current !== null) {
+      clearTimeout(timelineFlushTimer.current);
       timelineFlushTimer.current = null;
     }
     const events = queuedTimelineEvents.current;
@@ -60,8 +62,14 @@ export function useTimelineEventQueue({
 
   const enqueueTimelineEvent = useCallback((event: EventEnvelope) => {
     queuedTimelineEvents.current.push(event);
+    // Apply canonical replacement before a following refetch marker can discard
+    // buffered deltas. A slow or failed read must not hide an authoritative reset.
+    if (event.kind === "thread_view.patch" && (event.payload as ThreadViewPatch | null)?.scope === "full_snapshot") {
+      flushQueuedTimelineEvents();
+      return;
+    }
     scheduleQueuedTimelineFlush();
-  }, [scheduleQueuedTimelineFlush]);
+  }, [flushQueuedTimelineEvents, scheduleQueuedTimelineFlush]);
 
   const cancelQueuedTimelineEvents = useCallback(() => {
     if (timelineFlushFrame.current !== null) {
