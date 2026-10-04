@@ -29,72 +29,6 @@ impl Store {
         .await?;
         sqlx::query(
             r#"
-            create table if not exists projects (
-                id text primary key,
-                name text not null,
-                cwd text not null unique,
-                created_at text not null,
-                updated_at text not null
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-        sqlx::query(
-            r#"
-            create table if not exists project_preview_services (
-                id text primary key,
-                project_id text not null,
-                name text not null,
-                protocol text not null,
-                local_port integer not null,
-                health_path text not null,
-                created_at text not null,
-                updated_at text not null,
-                foreign key (project_id) references projects(id)
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-        sqlx::query(
-            r#"
-            create table if not exists project_previews (
-                id text primary key,
-                project_id text not null,
-                name text not null,
-                public_port integer not null unique,
-                root_service_id text not null,
-                enabled integer not null,
-                created_at text not null,
-                updated_at text not null,
-                foreign key (project_id) references projects(id),
-                foreign key (root_service_id) references project_preview_services(id)
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-        sqlx::query(
-            r#"
-            create table if not exists project_preview_routes (
-                id text primary key,
-                preview_id text not null,
-                path_pattern text not null,
-                service_id text not null,
-                strip_prefix integer not null,
-                sort_order integer not null,
-                created_at text not null,
-                updated_at text not null,
-                foreign key (preview_id) references project_previews(id),
-                foreign key (service_id) references project_preview_services(id)
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-        sqlx::query(
-            r#"
             create table if not exists app_surface_sessions (
                 id text primary key,
                 thread_id text not null unique,
@@ -575,7 +509,7 @@ mod tests {
 
         store.assert_wal().await.unwrap();
         let tables: Vec<String> = sqlx::query_scalar(
-            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'project_preview_services', 'project_previews', 'project_preview_routes', 'app_surface_sessions', 'app_surface_resources', 'approvals', 'thread_reads', 'push_subscriptions', 'notification_deliveries', 'thread_notification_settings', 'thread_local_settings_overlays', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
+            "select name from sqlite_master where type = 'table' and name in ('events', 'app_surface_sessions', 'app_surface_resources', 'approvals', 'thread_reads', 'push_subscriptions', 'notification_deliveries', 'thread_notification_settings', 'thread_local_settings_overlays', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
         )
         .fetch_all(store.pool())
         .await
@@ -591,10 +525,6 @@ mod tests {
                 "events",
                 "notification_deliveries",
                 "pending_timeline_skill_mentions",
-                "project_preview_routes",
-                "project_preview_services",
-                "project_previews",
-                "projects",
                 "push_subscriptions",
                 "queued_turn_inputs",
                 "thread_local_settings_overlays",

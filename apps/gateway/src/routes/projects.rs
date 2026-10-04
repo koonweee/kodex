@@ -6,6 +6,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -14,8 +15,17 @@ use crate::{
     api::AppState,
     app_server_api::{self, NativeProject, NativeProjectRoot},
     error::{ApiError, ApiResult},
-    store::Project,
 };
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Project {
+    pub id: String,
+    pub name: String,
+    pub cwd: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
 
 #[cfg(test)]
 mod tests;

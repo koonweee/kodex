@@ -1,10 +1,9 @@
 # Kodex Control Plugin
 
-`kodex-control` is the first-party Kodex plugin for guarded repository evaluation and local gateway self-control.
+`kodex-control` is the first-party Kodex plugin for guarded local gateway self-control.
 
 It contains:
 
-- `skills/kodex-proxy-evaluation`: the canonical proxy evaluation skill.
 - `skills/generative-ui`: guidance for using Kodex-generated MCP App surfaces.
 - `.mcp.json`: a gateway-hosted MCP server definition that runs `kodex-gateway mcp kodex-control`.
 

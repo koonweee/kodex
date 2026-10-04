@@ -35,7 +35,7 @@ A Rust gateway manages Codex and local capabilities, while a responsive React PW
 
 - A project and thread workspace with draggable, resizable panes, live timelines, queued follow-ups, approvals, pins, and unread state.
 - A responsive, installable web app for desktop, tablet, and phone browsers.
-- Host terminals, local file previews, and stable proxy URLs for project development servers.
+- Host terminals, local file previews, and uploads.
 - Codex account, model, MCP server, plugin, skill, and app-surface controls.
 - Recurring automations and optional browser notifications.
 - Local persistence for gateway-owned state, while Codex app-server remains the transcript authority.
@@ -47,11 +47,11 @@ flowchart LR
     Browser[Browser / installed PWA] -->|HTTP, SSE, WebSocket| Gateway[Kodex gateway]
     Gateway -->|JSON-RPC over stdio| Codex[Codex app-server]
     Gateway --> SQLite[(Local SQLite)]
-    Gateway --> Host[Files, terminals, previews]
+    Gateway --> Host[Files, terminals, uploads]
     Codex --> Projects[Your project workspaces]
 ```
 
-The gateway supervises an external `codex app-server`, translates its protocol into a browser-oriented API, brokers approvals, and owns local features such as terminals, automations, previews, and notifications. The web client is a projection of gateway and app-server state rather than a second source of truth.
+The gateway supervises an external `codex app-server`, translates its protocol into a browser-oriented API, brokers approvals, and owns local features such as terminals, automations, file serving, and notifications. The web client is a projection of gateway and app-server state rather than a second source of truth.
 
 See [Architecture](docs/architecture.md) for component boundaries and state ownership.
 
@@ -81,7 +81,7 @@ Open `http://127.0.0.1:5173`. The development server proxies API requests to the
 
 The new startup path defaults to `~/.kodex/native-v1/`: its gateway database, identity marker and `codex-home/` are independent of the old Kodex database and Codex desktop home. Nonempty unrecognized stores are rejected; no history, credentials, projects or schedules are imported. Sign in and configure the fresh instance deliberately. Production cutover remains gated on the redesign tests; do not point development runs at old stores.
 
-For prerequisites, tests, schema generation, and production-style static serving, see [Development](docs/development.md). For network binding, configuration, previews, and notifications, see [Deployment](docs/deployment.md).
+For prerequisites, tests, schema generation, and production-style static serving, see [Development](docs/development.md). For network binding, configuration and notifications, see [Deployment](docs/deployment.md).
 
 ## Repository map
 
@@ -97,7 +97,7 @@ For prerequisites, tests, schema generation, and production-style static serving
 
 - [Architecture](docs/architecture.md) — system shape, responsibilities, state ownership, and API boundaries.
 - [Development](docs/development.md) — setup, local workflows, validation, and generated contracts.
-- [Deployment](docs/deployment.md) — security assumptions, configuration, previews, PWA updates, and Web Push.
+- [Deployment](docs/deployment.md) — security assumptions, configuration, PWA updates, and Web Push.
 - [Kodex Control](docs/kodex-control.md) — install and develop the bundled plugin and MCP server.
 - [Plans](plans/index.md) — completed milestones, active work, and future extensions.
 - [Move a Codex project](docs/maintenance/move-codex-project.md) — maintenance procedure for project paths.

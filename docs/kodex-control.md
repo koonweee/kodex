@@ -1,6 +1,6 @@
 # Kodex Control
 
-The first-party plugin at `plugins/kodex-control` gives Codex guarded access to Kodex itself. It bundles the `kodex-proxy-evaluation` and `generative-ui` skills and exposes a gateway-hosted MCP server for self-control tools and read-only resources.
+The first-party plugin at `plugins/kodex-control` gives Codex guarded access to Kodex itself. It bundles the `generative-ui` skill and exposes a gateway-hosted MCP server for self-control tools and read-only resources.
 
 ## Install from Kodex
 
@@ -8,7 +8,7 @@ The first-party plugin at `plugins/kodex-control` gives Codex guarded access to 
 2. Open Preferences > Plugins in the web client.
 3. Install Kodex Control, or select Reinstall to refresh an existing installation.
 
-The install action adds the bundled marketplace, installs `kodex-control`, and emits `skills.changed`. Installation is unavailable when app-server is degraded; Caddy is not required.
+The install action adds the bundled marketplace, installs `kodex-control`, and emits `skills.changed`. Installation is unavailable when app-server is degraded.
 
 For non-web development, override the marketplace path with `KODEX_KODEX_CONTROL_MARKETPLACE_PATH`. The default for a repository checkout is `.agents/plugins/marketplace.json`.
 
@@ -37,7 +37,6 @@ It reads `KODEX_GATEWAY_URL`, defaulting to `http://127.0.0.1:8787`. Non-loopbac
 The server exposes guarded tools for:
 
 - Gateway status.
-- Project preview configuration.
 - Thread creation and input.
 - Generated app surfaces.
 - Automation management.
@@ -61,5 +60,5 @@ MCP tool and resource calls pass through gateway-owned grants and inherit Kodex'
 After installing the plugin, another project can invoke a bundled skill with a prompt such as:
 
 ```text
-Use $kodex-proxy-evaluation to evaluate this repo for Kodex project preview proxy compatibility and propose proxy settings.
+Use $generative-ui to create an interactive app surface for exploring these options.
 ```

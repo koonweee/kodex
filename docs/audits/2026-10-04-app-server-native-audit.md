@@ -48,7 +48,7 @@ No live user threads were resumed, no inference turns were run, and no account, 
 
 Kodex creates projects in its own SQLite database and forwards that ID as `thread/start.projectId`. In 0.135.0 this was not a declared native start field. In 0.160.0 it identifies an existing app-server project, and the server explicitly returns `project not found` for an unknown ID. An ordinary gateway project UUID cannot be forwarded as a native ID.
 
-Evidence: [Kodex project store](../../apps/gateway/src/store/projects.rs#L16), [start payload](../../apps/gateway/src/app_server_api/client.rs#L94), [upstream validation](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/app-server/src/request_processors/thread_processor.rs#L1180).
+Evidence: Kodex project store at audit revision `0362c9a` (`apps/gateway/src/store/projects.rs:16`, removed by the redesign), [start payload](../../apps/gateway/src/app_server_api/client.rs#L94), [upstream validation](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/app-server/src/request_processors/thread_processor.rs#L1180).
 
 **Action:** create projects natively in the fresh instance and pass native IDs throughout new thread/automation records. Omit `projectId` until a valid native project exists. No import or old-to-new ID map is needed; do not reinterpret old local IDs or infer membership solely from a matching working directory.
 

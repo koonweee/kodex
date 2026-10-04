@@ -139,64 +139,6 @@ impl KodexControlMcp {
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct PreviewApplyToolParams {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub project_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub project_cwd: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub project_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub create_project: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dry_run: Option<bool>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub services: Vec<PreviewServiceToolParams>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub previews: Vec<PreviewToolParams>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<Value>,
-    #[serde(default, flatten, skip_serializing_if = "Map::is_empty")]
-    pub extra: Map<String, Value>,
-}
-
-#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PreviewServiceToolParams {
-    pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub protocol: Option<String>,
-    pub local_port: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub health_path: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PreviewToolParams {
-    pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub public_port: Option<i64>,
-    pub root_service_name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub enabled: Option<bool>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub routes: Vec<PreviewRouteToolParams>,
-}
-
-#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PreviewRouteToolParams {
-    pub path_pattern: String,
-    pub service_name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub strip_prefix: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sort_order: Option<i64>,
-}
-
-#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct CreateThreadToolParams {
     #[serde(alias = "project_id")]
     pub project_id: String,
@@ -677,22 +619,6 @@ impl KodexControlMcp {
     async fn get_status(&self) -> Result<CallToolResult, McpError> {
         Ok(json_tool_result(
             self.get_json("/v1/self-control/status").await?,
-        ))
-    }
-
-    #[tool(
-        description = "Dry-run or apply a project preview configuration through Kodex self-control"
-    )]
-    async fn apply_project_preview_config(
-        &self,
-        Parameters(params): Parameters<PreviewApplyToolParams>,
-    ) -> Result<CallToolResult, McpError> {
-        Ok(json_tool_result(
-            self.post_json(
-                "/v1/self-control/project-previews/apply",
-                serde_json::to_value(params).map_err(json_encode_error)?,
-            )
-            .await?,
         ))
     }
 
@@ -1560,17 +1486,9 @@ impl ServerHandler for KodexControlMcp {
             "kodex://automations" => self.get_json("/v1/self-control/automations").await?,
             "kodex://approvals" => self.get_json("/v1/self-control/approvals").await?,
             "kodex://events" => self.get_json("/v1/self-control/events").await?,
-            uri if uri.starts_with("kodex://projects/") && uri.ends_with("/previews") => {
-                let project_id = uri
-                    .trim_start_matches("kodex://projects/")
-                    .trim_end_matches("/previews");
-                self.get_json(&format!(
-                    "/v1/self-control/projects/{}/previews",
-                    path_segment(project_id)
-                ))
-                .await?
-            }
-            uri if uri.starts_with("kodex://projects/") => {
+            uri if uri.starts_with("kodex://projects/")
+                && !uri.trim_start_matches("kodex://projects/").contains('/') =>
+            {
                 let project_id = uri.trim_start_matches("kodex://projects/");
                 self.get_json(&format!(
                     "/v1/self-control/projects/{}",
@@ -1668,10 +1586,6 @@ impl ServerHandler for KodexControlMcp {
         Ok(ListResourceTemplatesResult {
             resource_templates: vec![
                 Self::template("kodex://projects/{projectId}", "Kodex project"),
-                Self::template(
-                    "kodex://projects/{projectId}/previews",
-                    "Kodex project previews",
-                ),
                 Self::template(
                     "kodex://threads?projectId={projectId}",
                     "Kodex project threads",
@@ -2101,7 +2015,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mcp_server_lists_tools_reads_status_and_calls_preview_apply() -> anyhow::Result<()> {
+    async fn mcp_server_lists_tools_reads_status_and_controls_app_surfaces() -> anyhow::Result<()> {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let gateway_url = format!("http://{}", listener.local_addr()?);
         let state = crate::AppState::new(
@@ -2109,13 +2023,6 @@ mod tests {
             Store::in_memory().await?,
             Arc::new(UnavailableAppServer),
         );
-        let project = state
-            .store
-            .create_project(
-                "Kodex".to_string(),
-                std::env::current_dir()?.display().to_string(),
-            )
-            .await?;
         let router = build_router(state.clone());
         let server = tokio::spawn(async move { axum::serve(listener, router).await });
         let service = KodexControlMcp::for_test(gateway_url);
@@ -2177,27 +2084,6 @@ mod tests {
             panic!("expected text resource");
         };
         assert!(text.contains("\"gatewayReady\":true"));
-
-        let mut arguments = JsonObject::new();
-        arguments.insert("projectId".to_string(), json!(project.id));
-        arguments.insert("dryRun".to_string(), json!(true));
-        arguments.insert(
-            "services".to_string(),
-            json!([{"name": "frontend", "localPort": 4000}]),
-        );
-        arguments.insert(
-            "previews".to_string(),
-            json!([{"name": "app", "publicPort": 13000, "rootServiceName": "frontend"}]),
-        );
-        let result = client
-            .call_tool(
-                CallToolRequestParams::new("apply_project_preview_config")
-                    .with_arguments(arguments),
-            )
-            .await?;
-        let value: Value = result.into_typed()?;
-        assert_eq!(value["dryRun"], true);
-        assert_eq!(value["diff"][0]["action"], "created");
 
         let mut app_surface_args = JsonObject::new();
         app_surface_args.insert("title".to_string(), json!("Mockups"));

@@ -20,7 +20,6 @@ mod automations;
 mod events;
 mod migrations;
 mod notifications;
-mod projects;
 mod queued_inputs;
 mod runtime;
 mod threads;
@@ -56,106 +55,6 @@ pub struct NewEvent {
     pub kind: String,
     pub codex_method: Option<String>,
     pub payload: Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct Project {
-    pub id: String,
-    pub name: String,
-    pub cwd: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ProjectPreviewService {
-    pub id: String,
-    pub project_id: String,
-    pub name: String,
-    pub protocol: String,
-    pub local_port: i64,
-    pub health_path: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone)]
-pub struct NewProjectPreviewService {
-    pub project_id: String,
-    pub name: String,
-    pub protocol: String,
-    pub local_port: i64,
-    pub health_path: String,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct ProjectPreviewServiceUpdate {
-    pub name: Option<String>,
-    pub protocol: Option<String>,
-    pub local_port: Option<i64>,
-    pub health_path: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ProjectPreview {
-    pub id: String,
-    pub project_id: String,
-    pub name: String,
-    pub public_port: i64,
-    pub root_service_id: String,
-    pub enabled: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone)]
-pub struct NewProjectPreview {
-    pub project_id: String,
-    pub name: String,
-    pub public_port: i64,
-    pub root_service_id: String,
-    pub enabled: bool,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct ProjectPreviewUpdate {
-    pub name: Option<String>,
-    pub public_port: Option<i64>,
-    pub root_service_id: Option<String>,
-    pub enabled: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ProjectPreviewRoute {
-    pub id: String,
-    pub preview_id: String,
-    pub path_pattern: String,
-    pub service_id: String,
-    pub strip_prefix: bool,
-    pub sort_order: i64,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone)]
-pub struct NewProjectPreviewRoute {
-    pub preview_id: String,
-    pub path_pattern: String,
-    pub service_id: String,
-    pub strip_prefix: bool,
-    pub sort_order: i64,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct ProjectPreviewRouteUpdate {
-    pub path_pattern: Option<String>,
-    pub service_id: Option<String>,
-    pub strip_prefix: Option<bool>,
-    pub sort_order: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
@@ -729,59 +628,6 @@ fn row_to_event(row: sqlx::sqlite::SqliteRow) -> ApiResult<EventEnvelope> {
         kind: row.try_get("kind")?,
         codex_method: row.try_get("codex_method")?,
         payload: serde_json::from_str(&payload_json)?,
-    })
-}
-
-fn row_to_project(row: sqlx::sqlite::SqliteRow) -> ApiResult<Project> {
-    Ok(Project {
-        id: row.try_get("id")?,
-        name: row.try_get("name")?,
-        cwd: row.try_get("cwd")?,
-        created_at: row.try_get("created_at")?,
-        updated_at: row.try_get("updated_at")?,
-    })
-}
-
-fn row_to_project_preview_service(
-    row: sqlx::sqlite::SqliteRow,
-) -> ApiResult<ProjectPreviewService> {
-    Ok(ProjectPreviewService {
-        id: row.try_get("id")?,
-        project_id: row.try_get("project_id")?,
-        name: row.try_get("name")?,
-        protocol: row.try_get("protocol")?,
-        local_port: row.try_get("local_port")?,
-        health_path: row.try_get("health_path")?,
-        created_at: row.try_get("created_at")?,
-        updated_at: row.try_get("updated_at")?,
-    })
-}
-
-fn row_to_project_preview(row: sqlx::sqlite::SqliteRow) -> ApiResult<ProjectPreview> {
-    let enabled: i64 = row.try_get("enabled")?;
-    Ok(ProjectPreview {
-        id: row.try_get("id")?,
-        project_id: row.try_get("project_id")?,
-        name: row.try_get("name")?,
-        public_port: row.try_get("public_port")?,
-        root_service_id: row.try_get("root_service_id")?,
-        enabled: enabled != 0,
-        created_at: row.try_get("created_at")?,
-        updated_at: row.try_get("updated_at")?,
-    })
-}
-
-fn row_to_project_preview_route(row: sqlx::sqlite::SqliteRow) -> ApiResult<ProjectPreviewRoute> {
-    let strip_prefix: i64 = row.try_get("strip_prefix")?;
-    Ok(ProjectPreviewRoute {
-        id: row.try_get("id")?,
-        preview_id: row.try_get("preview_id")?,
-        path_pattern: row.try_get("path_pattern")?,
-        service_id: row.try_get("service_id")?,
-        strip_prefix: strip_prefix != 0,
-        sort_order: row.try_get("sort_order")?,
-        created_at: row.try_get("created_at")?,
-        updated_at: row.try_get("updated_at")?,
     })
 }
 

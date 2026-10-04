@@ -136,6 +136,10 @@ The approval slice passes 447 backend library tests, one startup-cleanup binary 
 
 ## M6 — Retained browser/host features and feature removals
 
+The early remote-preview removal slice deletes the Caddy supervisor, configuration, HTTP/OpenAPI/MCP/UI surface, proxy skill and gateway project registry. Fresh bootstrap omits the registry and three preview tables; no old storage is opened or deleted. Native project handlers retain their current public DTO until the full M2 roots/metadata cutover. The plugin manifest has a new cachebuster and retained generated-app guidance; existing installed plugin caches and production processes are untouched.
+
+Validation passes 439 backend library tests, one startup-cleanup binary test, two Control stdio tests, 722 frontend unit/component tests and 20 Playwright flows, plus the disposable real 0.160.0 native integration proof. Three new browser flows cover desktop fine pointer, narrow fine pointer and narrow touch navigation with no preview requests or console errors. HTTP and schema tests verify the removed surface and fresh-table absence; Control rejects the retired resource before any gateway call. A new regression caught production SPA fallback returning HTML for unknown API URLs; API misses now return 404 while browser deep links still serve the app. Formatting, build, both trims and generated OpenAPI/type freshness pass. Independent reviews approve the deletion boundaries and routing correction. This completes the preview-removal slice only; terminal restart and secure-context PWA release gates remain open.
+
 **Work**
 
 - Keep the terminal's gateway-owned PTY supervision, bounded reconnect buffer, interactive input, resize and termination. Browser disconnect and app-server restart do not end it. Preserve the existing gateway-lifetime boundary and host-shell permissions; do not add detached terminal persistence. Ensure gateway-managed shell launch defaults do not accidentally reintroduce the desktop native home.

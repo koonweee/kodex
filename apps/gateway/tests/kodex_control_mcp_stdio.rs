@@ -36,6 +36,9 @@ async fn kodex_control_mcp_stdio_lists_tools() -> anyhow::Result<()> {
     let client = ().serve(transport).await?;
     let tools = client.list_all_tools().await?;
     assert!(tools.iter().any(|tool| tool.name == "get_status"));
+    assert!(tools
+        .iter()
+        .all(|tool| tool.name != "apply_project_preview_config"));
     assert_tool_requires(&tools, "send_thread_input", &["threadId", "input"]);
     assert_tool_requires(&tools, "spawn_thread", &["projectId", "input"]);
     assert_tool_requires(&tools, "rename_thread", &["threadId", "name"]);
@@ -73,6 +76,9 @@ async fn kodex_control_mcp_stdio_lists_tools() -> anyhow::Result<()> {
     let templates = client.list_all_resource_templates().await?;
     assert!(templates
         .iter()
+        .all(|template| template.uri_template != "kodex://projects/{projectId}/previews"));
+    assert!(templates
+        .iter()
         .any(|template| template.uri_template == "kodex://threads?projectId={projectId}"));
     assert!(templates
         .iter()
@@ -107,6 +113,14 @@ async fn kodex_control_mcp_smokes_new_tools_against_fake_gateway() -> anyhow::Re
         }),
     )?;
     let client = ().serve(transport).await?;
+
+    let removed_resource = client
+        .read_resource(ReadResourceRequestParams::new(
+            "kodex://projects/project-1/previews",
+        ))
+        .await;
+    assert!(removed_resource.is_err());
+    assert!(state.requests.lock().unwrap().is_empty());
 
     let mut spawn_args = JsonObject::new();
     spawn_args.insert("projectId".to_string(), json!("project-1"));

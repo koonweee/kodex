@@ -16,8 +16,7 @@ Use this skill when direct visibility into Kodex gateway SSE events would help d
 
 2. Pick the gateway endpoint.
    - Prefer an already-running gateway when the user is testing the current app.
-   - If starting an isolated gateway against a shared DB, use a non-default port and make the DB path explicit.
-   - Disable unrelated subsystems that can interfere with startup, such as previews, when they are not under test.
+   - For an isolated gateway, use a disposable fresh instance root and a non-default port; never share its database or native home with another runtime.
 
 3. Run the bundled thin client:
 

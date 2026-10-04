@@ -13,7 +13,6 @@ pub mod mcp;
 pub mod native_runtime;
 pub mod notifications;
 pub mod performance;
-pub mod previews;
 pub mod queue;
 pub mod routes;
 pub mod schema;

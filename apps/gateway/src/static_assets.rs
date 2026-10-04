@@ -4,8 +4,9 @@ use axum::{
     body::Body,
     http::{
         header::{CACHE_CONTROL, CONTENT_TYPE},
-        Request, Response,
+        Request, Response, StatusCode,
     },
+    response::IntoResponse,
     Router,
 };
 use tower::{service_fn, ServiceExt};
@@ -25,9 +26,12 @@ pub fn attach_frontend(router: Router, dist_dir: PathBuf) -> Router {
             let path = request.uri().path().to_string();
             let frontend = frontend.clone();
             async move {
+                if path == "/v1" || path.starts_with("/v1/") {
+                    return Ok(StatusCode::NOT_FOUND.into_response());
+                }
                 let mut response = frontend.oneshot(request).await?;
                 apply_cache_control(&path, &mut response);
-                Ok::<_, std::convert::Infallible>(response)
+                Ok::<_, std::convert::Infallible>(response.into_response())
             }
         }))
     } else {
@@ -80,4 +84,41 @@ fn is_html_response<B>(response: &Response<B>) -> bool {
         .get(CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .is_some_and(|content_type| content_type.starts_with("text/html"))
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::body::to_bytes;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn unknown_api_routes_do_not_fall_back_to_the_frontend() {
+        let dist = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dist.path().join("index.html"),
+            "<!doctype html><main>Kodex</main>",
+        )
+        .unwrap();
+        let app = attach_frontend(Router::new(), dist.path().to_path_buf());
+        for path in ["/v1", "/v1/unknown", "/v1/projects/project-1/previews"] {
+            let response = app
+                .clone()
+                .oneshot(Request::get(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
+        }
+        let response = app
+            .oneshot(
+                Request::get("/threads/thread-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(body.as_ref(), b"<!doctype html><main>Kodex</main>");
+    }
 }

@@ -178,7 +178,7 @@ describe("PreferencesModal plugins tab", () => {
       plugin: null,
       pluginName: "kodex-control",
       setupError: null,
-      skills: ["kodex-proxy-evaluation", "generative-ui"],
+      skills: ["generative-ui"],
       status: "notInstalled",
     });
     apiMocks.installKodexControlPlugin.mockResolvedValue({ status: {}, marketplace: null, install: null });
@@ -188,7 +188,7 @@ describe("PreferencesModal plugins tab", () => {
 
     expect(await screen.findByText("Kodex Control")).toBeInTheDocument();
     expect(await screen.findByText("Available")).toBeInTheDocument();
-    expect(await screen.findByText("2 skills · 1 MCP servers")).toBeInTheDocument();
+    expect(await screen.findByText("1 skills · 1 MCP servers")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /^install$/i }));
 
@@ -223,7 +223,7 @@ describe("PreferencesModal plugins tab", () => {
       plugin: { installed: true, enabled: true },
       pluginName: "kodex-control",
       setupError: null,
-      skills: ["kodex-proxy-evaluation", "generative-ui"],
+      skills: ["generative-ui"],
       status: "installed",
     });
     apiMocks.installKodexControlPlugin.mockResolvedValue({ status: {}, marketplace: null, install: null });

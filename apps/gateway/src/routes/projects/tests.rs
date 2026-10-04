@@ -72,7 +72,6 @@ async fn create_project_uses_native_identity_and_does_not_create_a_gateway_recor
     assert_eq!(project["id"], "native-project-1");
     assert_eq!(project["cwd"], cwd);
     assert_eq!(project["createdAt"], "2026-01-01T00:00:00Z");
-    assert!(state.store.list_projects().await.unwrap().is_empty());
     let requests = server.requests.lock().unwrap();
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].0, "project/create");
@@ -221,7 +220,6 @@ async fn another_client_refetches_changed_native_project_metadata() {
         response_json(second).await["projects"][0]["name"],
         "Changed in native state"
     );
-    assert!(state.store.list_projects().await.unwrap().is_empty());
 }
 
 #[tokio::test]

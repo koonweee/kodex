@@ -61,7 +61,6 @@ async fn run_gateway(
 ) -> anyhow::Result<()> {
     let result: anyhow::Result<()> = async {
         kodex_gateway::approvals::initialize(&state).await?;
-        state.previews.start(&state.store).await?;
         recover_queued_inputs(&state).await?;
         recover_automations_after_restart(&state).await?;
         start_automation_scheduler(state.clone());
@@ -79,10 +78,8 @@ async fn run_gateway(
         Ok(())
     }
     .await;
-    let preview_shutdown = state.previews.shutdown().await;
     let native_shutdown = supervisor.shutdown().await;
     result?;
-    preview_shutdown?;
     native_shutdown?;
     Ok(())
 }
@@ -113,7 +110,6 @@ while IFS= read -r line; do :; done
         let mut config = Config::default();
         config.codex.binary = script.display().to_string();
         config.codex.home = dir.path().to_path_buf();
-        config.previews.data_dir = dir.path().join("previews");
         let store = Store::in_memory().await.unwrap();
         let (sender, receiver) = mpsc::channel(8);
         let server = JsonRpcAppServer::start(&config.codex, sender)

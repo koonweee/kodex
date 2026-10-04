@@ -546,7 +546,7 @@ pub mod tests {
     }
 
     impl RecordingAppServer {
-        pub fn seed_project(&self, name: String, cwd: String) -> crate::store::Project {
+        pub fn seed_project(&self, name: String, cwd: String) -> crate::routes::projects::Project {
             let mut projects = self.native_projects.lock().unwrap();
             let position = projects.len() as i64;
             let id = format!("native-project-{}", position + 1);
@@ -564,7 +564,7 @@ pub mod tests {
                     "recencyAt": timestamp,
                 }),
             );
-            crate::store::Project {
+            crate::routes::projects::Project {
                 id,
                 name,
                 cwd,

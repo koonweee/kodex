@@ -28,10 +28,12 @@ use crate::{
     },
     app_surfaces,
     error::{ApiError, ApiResult},
-    routes::app_surfaces::{broadcast_app_surface_event, APP_SURFACE_UPSERTED_EVENT},
+    routes::{
+        app_surfaces::{broadcast_app_surface_event, APP_SURFACE_UPSERTED_EVENT},
+        projects::Project,
+    },
     store::{
-        EventEnvelope, NewEvent, Project, ThreadLocalSettingsOverlay, ThreadNotificationSetting,
-        ThreadRead,
+        EventEnvelope, NewEvent, ThreadLocalSettingsOverlay, ThreadNotificationSetting, ThreadRead,
     },
     thread_settings_projection::{self, ActivePermissionProfilePatch},
     thread_view,

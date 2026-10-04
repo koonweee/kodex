@@ -612,22 +612,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/project-previews/reload": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["reload_previews"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/projects": {
         parameters: {
             query?: never;
@@ -658,102 +642,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/v1/projects/{projectId}/preview-services": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["create_preview_service"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/projects/{projectId}/preview-services/{serviceId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["delete_preview_service"];
-        options?: never;
-        head?: never;
-        patch: operations["update_preview_service"];
-        trace?: never;
-    };
-    "/v1/projects/{projectId}/previews": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_project_previews"];
-        put?: never;
-        post: operations["create_preview"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/projects/{projectId}/previews/{previewId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["delete_preview"];
-        options?: never;
-        head?: never;
-        patch: operations["update_preview"];
-        trace?: never;
-    };
-    "/v1/projects/{projectId}/previews/{previewId}/routes": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["create_preview_route"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/projects/{projectId}/previews/{previewId}/routes/{routeId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["delete_preview_route"];
-        options?: never;
-        head?: never;
-        patch: operations["update_preview_route"];
         trace?: never;
     };
     "/v1/self-control/approvals": {
@@ -941,26 +829,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/self-control/project-previews/apply": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Apply desired preview proxy configuration through self-control
-         * @description Agent-facing guarded preview apply endpoint. It reconciles desired preview services, previews, and routes through gateway-owned policy and provenance instead of exposing raw preview CRUD semantics to MCP tools.
-         */
-        post: operations["apply_project_preview_config"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/self-control/projects": {
         parameters: {
             query?: never;
@@ -987,23 +855,6 @@ export interface paths {
         };
         /** Read a project through self-control */
         get: operations["get_self_control_project"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/self-control/projects/{projectId}/previews": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List project previews through self-control */
-        get: operations["list_self_control_project_previews"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2691,92 +2542,6 @@ export interface components {
             name: string;
             source: unknown;
         };
-        PreviewCreateRequest: {
-            enabled?: boolean | null;
-            name: string;
-            /** Format: int64 */
-            publicPort?: number | null;
-            rootServiceId: string;
-        };
-        PreviewListResponse: {
-            previews: components["schemas"]["ProjectPreviewDto"][];
-            projectId: string;
-            services: components["schemas"]["ProjectPreviewServiceDto"][];
-            subsystem: components["schemas"]["PreviewSubsystemStatus"];
-        };
-        PreviewRouteCreateRequest: {
-            pathPattern: string;
-            serviceId: string;
-            /** Format: int64 */
-            sortOrder?: number | null;
-            stripPrefix?: boolean | null;
-        };
-        PreviewRouteResponse: {
-            route: components["schemas"]["ProjectPreviewRouteDto"];
-            subsystem: components["schemas"]["PreviewSubsystemStatus"];
-        };
-        PreviewRouteUpdateRequest: {
-            pathPattern?: string | null;
-            serviceId?: string | null;
-            /** Format: int64 */
-            sortOrder?: number | null;
-            stripPrefix?: boolean | null;
-        };
-        /** @enum {string} */
-        PreviewRuntimeStateKind: "active" | "disabled" | "degraded";
-        PreviewRuntimeStatus: {
-            lastReloadError?: string | null;
-            /** Format: int64 */
-            publicPort: number;
-            routeErrors: string[];
-            state: components["schemas"]["PreviewRuntimeStateKind"];
-            url?: string | null;
-        };
-        PreviewServiceCreateRequest: {
-            healthPath?: string | null;
-            /** Format: int64 */
-            localPort: number;
-            name: string;
-            protocol?: string | null;
-        };
-        /** @enum {string} */
-        PreviewServiceReachability: "reachable" | "unreachable" | "unknown";
-        PreviewServiceResponse: {
-            service: components["schemas"]["ProjectPreviewServiceDto"];
-            subsystem: components["schemas"]["PreviewSubsystemStatus"];
-        };
-        PreviewServiceStatus: {
-            healthUrl: string;
-            /** Format: date-time */
-            lastCheckedAt?: string | null;
-            lastError?: string | null;
-            reachability: components["schemas"]["PreviewServiceReachability"];
-        };
-        PreviewServiceUpdateRequest: {
-            healthPath?: string | null;
-            /** Format: int64 */
-            localPort?: number | null;
-            name?: string | null;
-            protocol?: string | null;
-        };
-        /** @enum {string} */
-        PreviewSubsystemState: "available" | "degraded" | "disabled";
-        PreviewSubsystemStatus: {
-            adminAddress: string;
-            adminReachable: boolean;
-            bindAddress?: string | null;
-            caddyFound: boolean;
-            caddyRunning: boolean;
-            lastReloadError?: string | null;
-            state: components["schemas"]["PreviewSubsystemState"];
-        };
-        PreviewUpdateRequest: {
-            enabled?: boolean | null;
-            name?: string | null;
-            /** Format: int64 */
-            publicPort?: number | null;
-            rootServiceId?: string | null;
-        };
         Project: {
             /** Format: date-time */
             createdAt: string;
@@ -2788,53 +2553,6 @@ export interface components {
         };
         ProjectListResponse: {
             projects: components["schemas"]["Project"][];
-        };
-        ProjectPreview: {
-            /** Format: date-time */
-            createdAt: string;
-            enabled: boolean;
-            id: string;
-            name: string;
-            projectId: string;
-            /** Format: int64 */
-            publicPort: number;
-            rootServiceId: string;
-            /** Format: date-time */
-            updatedAt: string;
-        };
-        ProjectPreviewDto: components["schemas"]["ProjectPreview"] & {
-            routes: components["schemas"]["ProjectPreviewRouteDto"][];
-            status: components["schemas"]["PreviewRuntimeStatus"];
-        };
-        ProjectPreviewRoute: {
-            /** Format: date-time */
-            createdAt: string;
-            id: string;
-            pathPattern: string;
-            previewId: string;
-            serviceId: string;
-            /** Format: int64 */
-            sortOrder: number;
-            stripPrefix: boolean;
-            /** Format: date-time */
-            updatedAt: string;
-        };
-        ProjectPreviewRouteDto: components["schemas"]["ProjectPreviewRoute"];
-        ProjectPreviewService: {
-            /** Format: date-time */
-            createdAt: string;
-            healthPath: string;
-            id: string;
-            /** Format: int64 */
-            localPort: number;
-            name: string;
-            projectId: string;
-            protocol: string;
-            /** Format: date-time */
-            updatedAt: string;
-        };
-        ProjectPreviewServiceDto: components["schemas"]["ProjectPreviewService"] & {
-            status: components["schemas"]["PreviewServiceStatus"];
         };
         PushSubscriptionDeleteResponse: {
             subscription?: null | components["schemas"]["PushSubscriptionResponse"];
@@ -2949,14 +2667,6 @@ export interface components {
             maxSelfControlDepth?: number | null;
             source?: components["schemas"]["SelfControlSource"];
         };
-        /** @enum {string} */
-        SelfControlApplyAction: "created" | "updated" | "unchanged" | "deletedSkipped";
-        SelfControlApplyChange: {
-            action: components["schemas"]["SelfControlApplyAction"];
-            detail?: string | null;
-            name: string;
-            resource: string;
-        };
         SelfControlApprovalDecisionRequest: {
             decision: unknown;
             policyToken?: string | null;
@@ -3009,7 +2719,6 @@ export interface components {
             appSurfaces: boolean;
             automations: boolean;
             mcpResources: boolean;
-            projectPreviewApply: boolean;
             threads: boolean;
         };
         SelfControlCreateThreadRequest: {
@@ -3025,28 +2734,6 @@ export interface components {
             sandbox?: string | null;
             serviceTier?: string | null;
             source?: components["schemas"]["SelfControlSource"];
-        };
-        SelfControlDesiredPreview: {
-            enabled?: boolean | null;
-            name: string;
-            /** Format: int64 */
-            publicPort?: number | null;
-            rootServiceName: string;
-            routes?: components["schemas"]["SelfControlDesiredPreviewRoute"][];
-        };
-        SelfControlDesiredPreviewRoute: {
-            pathPattern: string;
-            serviceName: string;
-            /** Format: int64 */
-            sortOrder?: number | null;
-            stripPrefix?: boolean | null;
-        };
-        SelfControlDesiredPreviewService: {
-            healthPath?: string | null;
-            /** Format: int64 */
-            localPort: number;
-            name: string;
-            protocol?: string | null;
         };
         SelfControlGeneratedAppSurfaceUpsertRequest: {
             csp?: components["schemas"]["AppSurfaceCsp"];
@@ -3070,22 +2757,6 @@ export interface components {
         SelfControlMutationRequest: {
             source?: components["schemas"]["SelfControlSource"];
         };
-        SelfControlPreviewApplyRequest: {
-            createProject?: boolean;
-            dryRun?: boolean;
-            previews?: components["schemas"]["SelfControlDesiredPreview"][];
-            projectCwd?: string | null;
-            projectId?: string | null;
-            projectName?: string | null;
-            services?: components["schemas"]["SelfControlDesiredPreviewService"][];
-            source?: components["schemas"]["SelfControlSource"];
-        };
-        SelfControlPreviewApplyResponse: {
-            diff: components["schemas"]["SelfControlApplyChange"][];
-            dryRun: boolean;
-            previews: components["schemas"]["PreviewListResponse"];
-            project: components["schemas"]["Project"];
-        };
         SelfControlRenameThreadRequest: {
             name: string;
             source?: components["schemas"]["SelfControlSource"];
@@ -3096,7 +2767,7 @@ export interface components {
          * @description Provenance supplied by Kodex Control MCP tools when they call guarded self-control endpoints.
          *
          *     Self-control endpoints are the agent-facing product boundary for Kodex-managed mutations.
-         *     MCP tools should use these routes instead of raw preview, thread, or automation CRUD routes so
+         *     MCP tools should use these routes instead of raw thread or automation CRUD routes so
          *     gateway-owned policy, reconciliation, provenance, and audit behavior stay centralized.
          */
         SelfControlSource: {
@@ -3122,7 +2793,6 @@ export interface components {
             appServerReady: boolean;
             capabilities: components["schemas"]["SelfControlCapabilities"];
             gatewayReady: boolean;
-            previewSubsystem: components["schemas"]["PreviewSubsystemStatus"];
             version: string;
         };
         /** @enum {string} */
@@ -4732,25 +4402,6 @@ export interface operations {
             };
         };
     };
-    reload_previews: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PreviewSubsystemStatus"];
-                };
-            };
-        };
-    };
     list_projects: {
         parameters: {
             query?: never;
@@ -4810,243 +4461,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Project"];
-                };
-            };
-        };
-    };
-    create_preview_service: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PreviewServiceCreateRequest"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PreviewServiceResponse"];
-                };
-            };
-        };
-    };
-    delete_preview_service: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: string;
-                serviceId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    update_preview_service: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: string;
-                serviceId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PreviewServiceUpdateRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PreviewServiceResponse"];
-                };
-            };
-        };
-    };
-    list_project_previews: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PreviewListResponse"];
-                };
-            };
-        };
-    };
-    create_preview: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PreviewCreateRequest"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProjectPreviewDto"];
-                };
-            };
-        };
-    };
-    delete_preview: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: string;
-                previewId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    update_preview: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: string;
-                previewId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PreviewUpdateRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProjectPreviewDto"];
-                };
-            };
-        };
-    };
-    create_preview_route: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: string;
-                previewId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PreviewRouteCreateRequest"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PreviewRouteResponse"];
-                };
-            };
-        };
-    };
-    delete_preview_route: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: string;
-                previewId: string;
-                routeId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    update_preview_route: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: string;
-                previewId: string;
-                routeId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PreviewRouteUpdateRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PreviewRouteResponse"];
                 };
             };
         };
@@ -5350,29 +4764,6 @@ export interface operations {
             };
         };
     };
-    apply_project_preview_config: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SelfControlPreviewApplyRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SelfControlPreviewApplyResponse"];
-                };
-            };
-        };
-    };
     list_self_control_projects: {
         parameters: {
             query?: never;
@@ -5409,27 +4800,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Project"];
-                };
-            };
-        };
-    };
-    list_self_control_project_previews: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PreviewListResponse"];
                 };
             };
         };
