@@ -61,6 +61,7 @@ async fn run_gateway(
 ) -> anyhow::Result<()> {
     let result: anyhow::Result<()> = async {
         kodex_gateway::approvals::initialize(&state).await?;
+        kodex_gateway::queue_transfer::recover(&state).await?;
         recover_queued_inputs(&state).await?;
         recover_automations_after_restart(&state).await?;
         start_automation_scheduler(state.clone());

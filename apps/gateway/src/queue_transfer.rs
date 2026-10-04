@@ -1,0 +1,447 @@
+//! Narrow coordination for the retained queued-row Steer action. Ordinary
+//! queue contents, ordering and dispatch remain native-owned. HTTP/producer
+//! cutover will use this coordinator; there is no parallel ordinary drainer.
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use utoipa::ToSchema;
+
+use crate::{
+    api::AppState,
+    app_server_api,
+    error::{ApiError, ApiResult},
+    store::{QueueTransfer, QueueTransferPhase},
+};
+
+pub const TRANSFER_CHANGED_EVENT: &str = "turn_queue.transfer_changed";
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum PromotionOutcome {
+    Delivered { id: String },
+    Transfer { transfer: QueueTransfer },
+}
+
+/// Shared native admission for composer, Control and automation producers.
+/// Producer bookkeeping must be persisted by its owner before calling this;
+/// an ambiguous native add is never retried here. Nothing resumes an idle chat.
+pub async fn enqueue(
+    state: &AppState,
+    thread_id: &str,
+    input: Vec<Value>,
+    client_id: String,
+) -> ApiResult<app_server_api::NativeQueuedSubmission> {
+    let _guard = state.thread_input_locks.lock(thread_id).await;
+    let client = app_server_api::client(&state.app_server);
+    client.check_direct_input_capability(thread_id).await?;
+    let probe = state.queue_admissions.begin_probe(thread_id);
+    let original = active_turn(&client, thread_id).await?;
+    let ticket = state
+        .queue_admissions
+        .capture_after_probe(probe, original.as_deref());
+    let row = client.queue_add(thread_id.into(), input, client_id).await?;
+    if let Some(ticket) = ticket {
+        state.queue_admissions.record(ticket, &row.id);
+    }
+    Ok(row)
+}
+
+/// One explicit operation, guarded by the pre-add original active turn. Never
+/// infer non-delivery from queue deletion or native history absence.
+pub async fn promote(
+    state: &AppState,
+    thread_id: &str,
+    native_queue_id: &str,
+) -> ApiResult<PromotionOutcome> {
+    let _guard = state.thread_input_locks.lock(thread_id).await;
+    if let Some(transfer) = state
+        .store
+        .get_queue_transfer_for_row(thread_id, native_queue_id)
+        .await?
+    {
+        // Response recovery only: a second tab or lost browser reply may read
+        // the same transfer, but cannot repeat any native mutation.
+        return Ok(PromotionOutcome::Transfer { transfer });
+    }
+    let client = app_server_api::client(&state.app_server);
+    client.check_direct_input_capability(thread_id).await?;
+    let current = active_turn(&client, thread_id).await?;
+    let claim = state.queue_admissions.claim_token(thread_id, native_queue_id, current.as_deref())
+        .ok_or_else(|| ApiError::Conflict(
+            "Queued message has no continuous original-turn context; leave it queued or send a new live correction".into()
+        ))?;
+    let original = claim.original_turn_id().to_owned();
+    let page = client.queue_list(thread_id.into(), None, Some(100)).await?;
+    let row = page
+        .data
+        .into_iter()
+        .find(|row| row.id == native_queue_id)
+        .ok_or_else(|| ApiError::Conflict("Native queued message is no longer available".into()))?;
+    if !state.queue_admissions.is_current(&claim) {
+        return Err(ApiError::Conflict(
+            "Original turn continuity was lost; native queue was left untouched".into(),
+        ));
+    }
+    let transfer = state
+        .store
+        .create_queue_transfer(
+            thread_id,
+            &row.id,
+            &row.client_user_message_id,
+            &original,
+            row.input,
+        )
+        .await?;
+    broadcast_changed(state, thread_id).await?;
+
+    if !state.queue_admissions.is_current(&claim) {
+        return uncertain(
+            state,
+            &transfer,
+            QueueTransferPhase::Deleting,
+            "Original turn continuity was lost before deletion; native queue was left untouched",
+        )
+        .await;
+    }
+
+    match client
+        .queue_delete(thread_id.into(), native_queue_id.into())
+        .await
+    {
+        Ok(true) => {}
+        Ok(false) => {
+            return uncertain(
+                state,
+                &transfer,
+                QueueTransferPhase::Deleting,
+                "Native queue deletion did not confirm ownership; delivery is uncertain",
+            )
+            .await
+        }
+        Err(_) => {
+            return uncertain(
+                state,
+                &transfer,
+                QueueTransferPhase::Deleting,
+                "Native queue deletion was not acknowledged; delivery is uncertain",
+            )
+            .await
+        }
+    }
+    if let Some(outcome) = advance(
+        state,
+        &transfer,
+        QueueTransferPhase::Deleting,
+        QueueTransferPhase::Deleted,
+        None,
+    )
+    .await?
+    {
+        return Ok(outcome);
+    }
+    if let Some(outcome) = advance(
+        state,
+        &transfer,
+        QueueTransferPhase::Deleted,
+        QueueTransferPhase::Steering,
+        None,
+    )
+    .await?
+    {
+        return Ok(outcome);
+    }
+    // Reset/EOF ingestion never waits for this command lock. The phase CAS
+    // above fences events observed before the native call; expectedTurnId is
+    // the final native guard against a turn ending immediately afterwards.
+    if !state.queue_admissions.is_current(&claim) {
+        return uncertain(
+            state,
+            &transfer,
+            QueueTransferPhase::Steering,
+            "Original turn continuity was lost after deletion; delivery is uncertain",
+        )
+        .await;
+    }
+    match client
+        .turn_steer_native_input(
+            thread_id.into(),
+            original,
+            transfer.input.clone(),
+            transfer.id.clone(),
+        )
+        .await
+    {
+        Ok(_) => {
+            if !state.queue_admissions.is_current(&claim) {
+                return uncertain(
+                    state,
+                    &transfer,
+                    QueueTransferPhase::Steering,
+                    "Runtime continuity was lost before the steering acknowledgement",
+                )
+                .await;
+            }
+            let stopped = advance(
+                state,
+                &transfer,
+                QueueTransferPhase::Steering,
+                QueueTransferPhase::Accepted,
+                None,
+            )
+            .await?;
+            if let Some(outcome) = stopped {
+                return Ok(outcome);
+            }
+            current_outcome(state, &transfer).await
+        }
+        Err(_) => {
+            uncertain(
+                state,
+                &transfer,
+                QueueTransferPhase::Steering,
+                "Native steering was not confirmed; delivery is uncertain",
+            )
+            .await
+        }
+    }
+}
+
+async fn active_turn(
+    client: &app_server_api::CodexClient,
+    thread_id: &str,
+) -> ApiResult<Option<String>> {
+    let page = match client
+        .thread_turns_list_page(
+            thread_id.into(),
+            None,
+            app_server_api::SortDirection::Desc,
+            app_server_api::ThreadTurnItemsView::NotLoaded,
+            Some(1),
+        )
+        .await
+    {
+        Ok(page) => page,
+        Err(error)
+            if app_server_api::is_thread_not_materialized_before_first_user_message(&error) =>
+        {
+            return Ok(None)
+        }
+        Err(error) => return Err(error),
+    };
+    let Some(turn) = page.data.first() else {
+        return Ok(None);
+    };
+    match turn.raw_payload.get("status").and_then(Value::as_str) {
+        Some("inProgress") => Ok(Some(turn.id.clone())),
+        Some("completed" | "interrupted" | "failed") => Ok(None),
+        _ => Err(ApiError::BadGateway(
+            "Native turn header has an invalid status".into(),
+        )),
+    }
+}
+
+/// None means the requested CAS succeeded. A receipt deletes the record;
+/// reset/disconnect leaves an uncertain record. Neither permits further RPCs.
+async fn advance(
+    state: &AppState,
+    transfer: &QueueTransfer,
+    expected: QueueTransferPhase,
+    next: QueueTransferPhase,
+    error: Option<&str>,
+) -> ApiResult<Option<PromotionOutcome>> {
+    if state
+        .store
+        .advance_queue_transfer(&transfer.id, expected, next, error)
+        .await?
+        .is_some()
+    {
+        broadcast_changed(state, &transfer.thread_id).await?;
+        Ok(None)
+    } else {
+        Ok(Some(current_outcome(state, transfer).await?))
+    }
+}
+
+async fn uncertain(
+    state: &AppState,
+    transfer: &QueueTransfer,
+    expected: QueueTransferPhase,
+    message: &str,
+) -> ApiResult<PromotionOutcome> {
+    if let Some(outcome) = advance(
+        state,
+        transfer,
+        expected,
+        QueueTransferPhase::Uncertain,
+        Some(message),
+    )
+    .await?
+    {
+        return Ok(outcome);
+    }
+    current_outcome(state, transfer).await
+}
+
+async fn current_outcome(
+    state: &AppState,
+    transfer: &QueueTransfer,
+) -> ApiResult<PromotionOutcome> {
+    Ok(match state.store.get_queue_transfer(&transfer.id).await? {
+        Some(transfer) => PromotionOutcome::Transfer { transfer },
+        None => PromotionOutcome::Delivered {
+            id: transfer.id.clone(),
+        },
+    })
+}
+
+/// Explicit bounded recovery read. Only a unique exact fresh-operation receipt
+/// in its original native turn can settle; no cursor walk, chat activation,
+/// queue deletion or replay is permitted by an absent or truncated page.
+pub async fn reconcile(state: &AppState, transfer_id: &str) -> ApiResult<PromotionOutcome> {
+    let transfer = state
+        .store
+        .get_queue_transfer(transfer_id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("Queue transfer is no longer available".into()))?;
+    let page = app_server_api::client(&state.app_server)
+        .thread_items_list_page(
+            transfer.thread_id.clone(),
+            Some(transfer.expected_turn_id.clone()),
+            None,
+            app_server_api::SortDirection::Desc,
+            Some(25),
+        )
+        .await?;
+    let matches = page
+        .data
+        .iter()
+        .filter(|entry| {
+            entry.item.item_type == "userMessage"
+                && entry.item.client_id.as_deref() == Some(transfer.id.as_str())
+        })
+        .count();
+    if matches == 1
+        && state
+            .store
+            .settle_queue_transfer_delivery(
+                &transfer.thread_id,
+                &transfer.expected_turn_id,
+                Some(&transfer.id),
+            )
+            .await?
+    {
+        broadcast_changed(state, &transfer.thread_id).await?;
+    }
+    current_outcome(state, &transfer).await
+}
+
+pub async fn broadcast_changed(state: &AppState, thread_id: &str) -> ApiResult<()> {
+    let event = state
+        .store
+        .append_event(crate::store::NewEvent {
+            project_id: None,
+            thread_id: Some(thread_id.into()),
+            turn_id: None,
+            item_id: None,
+            kind: TRANSFER_CHANGED_EVENT.into(),
+            codex_method: None,
+            payload: serde_json::json!({"threadId":thread_id}),
+        })
+        .await?;
+    let _ = state.events.send(event);
+    Ok(())
+}
+
+/// Call before serial ingestion can await timeline or app-surface work. Native
+/// user receipts settle by the fresh transfer operation ID, never a queue's
+/// reusable original client ID. No native RPC or input lock is acquired here.
+pub async fn observe_notification(state: &AppState, method: &str, params: &Value) -> ApiResult<()> {
+    let Some(thread) = params.get("threadId").and_then(Value::as_str) else {
+        return Ok(());
+    };
+    let changed = match method {
+        "item/started" | "item/completed"
+            if params.pointer("/item/type").and_then(Value::as_str) == Some("userMessage")
+                && params.pointer("/item/id").and_then(Value::as_str).is_some() =>
+        {
+            let Some(turn) = params.get("turnId").and_then(Value::as_str) else {
+                return Ok(());
+            };
+            state
+                .store
+                .settle_queue_transfer_delivery(
+                    thread,
+                    turn,
+                    params.pointer("/item/clientId").and_then(Value::as_str),
+                )
+                .await?
+        }
+        "turn/completed" => {
+            let Some(turn) = params.pointer("/turn/id").and_then(Value::as_str) else {
+                return Ok(());
+            };
+            state
+                .store
+                .invalidate_queue_transfers_for_turn(
+                    thread,
+                    turn,
+                    "Turn ended before a native delivery receipt",
+                )
+                .await?
+                > 0
+        }
+        "thread/reverted" | "thread/closed" | "thread/archived" | "thread/deleted" => {
+            state
+                .store
+                .invalidate_queue_transfers(
+                    Some(thread),
+                    "Thread lifecycle changed before a native delivery receipt",
+                )
+                .await?
+                > 0
+        }
+        "thread/status/changed"
+            if matches!(
+                params.pointer("/status/type").and_then(Value::as_str),
+                Some("idle" | "notLoaded" | "systemError")
+            ) =>
+        {
+            state
+                .store
+                .invalidate_queue_transfers(
+                    Some(thread),
+                    "Native thread stopped accepting the witnessed turn before a delivery receipt",
+                )
+                .await?
+                > 0
+        }
+        _ => false,
+    };
+    if changed {
+        broadcast_changed(state, thread).await?;
+    }
+    Ok(())
+}
+
+/// Gateway/native restart preserves content and uncertainty, never replays a
+/// delete/steer or activates an ordinary queued chat.
+pub async fn recover(state: &AppState) -> ApiResult<()> {
+    let threads = state
+        .store
+        .invalidate_queue_transfers_for_restart(
+            "Runtime continuity was lost before a native delivery receipt",
+        )
+        .await?;
+    for thread in threads {
+        broadcast_changed(state, &thread).await?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+#[path = "queue_transfer/tests.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "queue_transfer/reconciliation_tests.rs"]
+mod reconciliation_tests;

@@ -9,6 +9,7 @@ impl Store {
         sqlx::query("pragma journal_mode = wal")
             .execute(&self.pool)
             .await?;
+        self.install_queue_transfer_schema().await?;
         sqlx::query(
             r#"
             create table if not exists events (

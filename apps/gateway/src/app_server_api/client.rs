@@ -424,6 +424,36 @@ impl CodexClient {
         .await
     }
 
+    /// Queue promotion preserves the native input envelope and must never
+    /// replace its original turn guard after rejection or an ambiguous reply.
+    pub async fn turn_steer_native_input(
+        &self,
+        thread_id: String,
+        expected_turn_id: String,
+        input: Vec<Value>,
+        client_id: String,
+    ) -> ApiResult<RawAppServerResponse> {
+        let payload = self
+            .request(
+                "turn/steer",
+                json!({
+                    "threadId": thread_id,
+                    "expectedTurnId": expected_turn_id,
+                    "input": input,
+                    "clientUserMessageId": client_id,
+                }),
+            )
+            .await?;
+        // The pinned TurnSteerResponse requires one string turnId. Receiving
+        // an ACK for another turn cannot authorize changing the intended turn.
+        if payload.get("turnId").and_then(Value::as_str) != Some(expected_turn_id.as_str()) {
+            return Err(super::bad_gateway(
+                "turn/steer response did not acknowledge the original turn",
+            ));
+        }
+        Ok(RawAppServerResponse { payload })
+    }
+
     pub async fn turn_interrupt(
         &self,
         thread_id: String,

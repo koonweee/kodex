@@ -3,6 +3,130 @@ use serde_json::json;
 use super::QueueAdmissionWitnesses;
 
 #[test]
+fn late_head_reply_cannot_create_a_witness_after_preflight_context_was_retired() {
+    for (method, params) in [
+        (
+            "turn/completed",
+            json!({"threadId":"chat","turn":{"id":"turn"}}),
+        ),
+        (
+            "turn/started",
+            json!({"threadId":"chat","turn":{"id":"next"}}),
+        ),
+        ("thread/reverted", json!({"threadId":"chat"})),
+        ("thread/closed", json!({"threadId":"chat"})),
+        ("thread/archived", json!({"threadId":"chat"})),
+        ("thread/deleted", json!({"threadId":"chat"})),
+        (
+            "thread/status/changed",
+            json!({"threadId":"chat","status":{"type":"idle"}}),
+        ),
+        (
+            "thread/status/changed",
+            json!({"threadId":"chat","status":{"type":"notLoaded"}}),
+        ),
+        (
+            "thread/status/changed",
+            json!({"threadId":"chat","status":{"type":"systemError"}}),
+        ),
+        ("disconnected", json!({})),
+    ] {
+        let witnesses = QueueAdmissionWitnesses::default();
+        let held_head = witnesses.begin_probe("chat");
+        if method == "disconnected" {
+            witnesses.invalidate_all();
+        } else {
+            witnesses.observe_notification(method, &params);
+        }
+        // A second client may already be probing the same native turn; its
+        // current epoch cannot authorize the first client's obsolete reply.
+        let current_head = witnesses.begin_probe("chat");
+        assert!(
+            witnesses
+                .capture_after_probe(held_head, Some("turn"))
+                .is_none(),
+            "{method}"
+        );
+        let current = witnesses
+            .capture_after_probe(current_head, Some("turn"))
+            .unwrap();
+        assert!(witnesses.record(current, "current-row"));
+        assert!(witnesses
+            .claim("chat", "current-row", Some("turn"))
+            .is_some());
+    }
+}
+
+#[test]
+fn claimed_right_is_rechecked_after_awaits_without_recreating_a_consumed_row() {
+    let witnesses = QueueAdmissionWitnesses::default();
+    let ticket = witnesses.capture("chat", Some("original")).unwrap();
+    assert!(witnesses.record(ticket, "row"));
+    let claim = witnesses
+        .claim_token("chat", "row", Some("original"))
+        .unwrap();
+    assert_eq!(claim.original_turn_id(), "original");
+    assert!(witnesses.is_current(&claim));
+    assert!(witnesses
+        .claim_token("chat", "row", Some("original"))
+        .is_none());
+    for (method, params) in [
+        (
+            "turn/started",
+            json!({"threadId":"chat","turn":{"id":"original"}}),
+        ),
+        (
+            "turn/completed",
+            json!({"threadId":"chat","turn":{"id":"older"}}),
+        ),
+        (
+            "thread/status/changed",
+            json!({"threadId":"chat","status":{"type":"active","activeFlags":["waitingOnApproval"]}}),
+        ),
+        ("thread/reverted", json!({"threadId":"another-chat"})),
+    ] {
+        witnesses.observe_notification(method, &params);
+        assert!(witnesses.is_current(&claim), "{method}");
+    }
+    witnesses.observe_notification("thread/reverted", &json!({"threadId":"chat"}));
+    assert!(!witnesses.is_current(&claim));
+    let replacement = witnesses.capture("chat", Some("original")).unwrap();
+    assert!(witnesses.record(replacement, "replacement-row"));
+    assert!(
+        !witnesses.is_current(&claim),
+        "same turn ID does not restore a retired generation"
+    );
+    let replacement = witnesses
+        .claim_token("chat", "replacement-row", Some("original"))
+        .unwrap();
+    assert!(witnesses.is_current(&replacement));
+    witnesses.invalidate_all();
+    assert!(!witnesses.is_current(&replacement));
+}
+
+#[test]
+fn current_head_probe_keeps_existing_rights_but_idle_observation_retires_them() {
+    let witnesses = QueueAdmissionWitnesses::default();
+    let current = witnesses.capture("chat", Some("turn")).unwrap();
+    assert!(witnesses.record(current, "earlier-row"));
+    let head = witnesses.begin_probe("chat");
+    witnesses.observe_notification(
+        "turn/started",
+        &json!({"threadId":"chat","turn":{"id":"turn"}}),
+    );
+    let next = witnesses.capture_after_probe(head, Some("turn")).unwrap();
+    assert!(witnesses.record(next, "next-row"));
+    let earlier = witnesses
+        .claim_token("chat", "earlier-row", Some("turn"))
+        .unwrap();
+    assert!(witnesses.is_current(&earlier));
+    let idle = witnesses.begin_probe("chat");
+    assert!(witnesses.capture_after_probe(idle, None).is_none());
+    assert!(!witnesses.is_current(&earlier));
+    assert!(witnesses.claim("chat", "next-row", Some("turn")).is_none());
+}
+
+#[test]
 fn only_a_pre_add_active_turn_permits_one_promotion() {
     let witnesses = QueueAdmissionWitnesses::default();
     assert!(witnesses.capture("chat", None).is_none());

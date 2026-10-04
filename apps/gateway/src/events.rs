@@ -195,6 +195,9 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
     match message {
         InboundMessage::Disconnected => {
             state.queue_admissions.invalidate_all();
+            if let Err(error) = crate::queue_transfer::recover(state).await {
+                tracing::warn!(%error, "failed to publish queue transfer continuity loss");
+            }
             state.thread_views.clear_completion_witnesses().await;
             crate::approvals::runtime_unavailable(state).await?;
         }
@@ -205,6 +208,11 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
             state
                 .queue_admissions
                 .observe_notification(&method, &params);
+            if let Err(error) =
+                crate::queue_transfer::observe_notification(state, &method, &params).await
+            {
+                tracing::warn!(%error, "failed to reconcile queue transfer notification");
+            }
             let metadata = EventMetadata::from_payload(&params);
             if matches!(
                 method.as_str(),

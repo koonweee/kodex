@@ -12,6 +12,8 @@ mod identity;
 mod items;
 #[path = "native_app_server/projects.rs"]
 mod projects;
+#[path = "native_app_server/promotion.rs"]
+mod promotion;
 #[path = "native_app_server/queue.rs"]
 mod queue;
 #[path = "native_app_server/read_markers.rs"]

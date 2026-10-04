@@ -41,6 +41,53 @@ fn responding(payload: Value) -> Arc<RecordingAppServer> {
 }
 
 #[tokio::test]
+async fn native_queue_promotion_steer_preserves_input_and_guards_original_turn() {
+    let server = responding(json!({"turnId":"original-turn"}));
+    let acknowledged = CodexClient::new(server.clone())
+        .turn_steer_native_input(
+            "chat".into(),
+            "original-turn".into(),
+            native_input(),
+            "fresh-transfer-id".into(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(acknowledged.payload, json!({"turnId":"original-turn"}));
+    assert_eq!(
+        *server.requests.lock().unwrap(),
+        vec![(
+            "turn/steer".into(),
+            json!({
+                "threadId":"chat", "expectedTurnId":"original-turn", "input":native_input(),
+                "clientUserMessageId":"fresh-transfer-id",
+            })
+        )]
+    );
+}
+
+#[tokio::test]
+async fn native_queue_promotion_rejects_missing_malformed_or_different_turn_ack() {
+    for payload in [
+        json!({}),
+        json!({"turnId":null}),
+        json!({"turnId":123}),
+        json!({"turnId":"another-turn"}),
+    ] {
+        let server = responding(payload);
+        let result = CodexClient::new(server.clone())
+            .turn_steer_native_input(
+                "chat".into(),
+                "original-turn".into(),
+                native_input(),
+                "fresh-transfer-id".into(),
+            )
+            .await;
+        assert!(matches!(result, Err(ApiError::BadGateway(_))));
+        assert_eq!(server.requests.lock().unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
 async fn native_queue_add_and_update_preserve_input_and_opaque_identity() {
     let original = row("  native/id:队列 001  ");
     let mut changed = original.clone();

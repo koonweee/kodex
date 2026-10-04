@@ -177,6 +177,7 @@ impl Drop for Fixture {
 
 pub(super) struct NativeSession {
     pub(super) app: Router,
+    pub(super) state: AppState,
     thread_views: ThreadViewStore,
     server: Arc<JsonRpcAppServer>,
     relay: JoinHandle<()>,
@@ -276,6 +277,7 @@ impl NativeSession {
         }
         let app = build_router(state.clone());
         let thread_views = state.thread_views.clone();
+        let fixture_state = state.clone();
         let relay = tokio::spawn(async move {
             while let Some(message) = native_rx.recv().await {
                 let notification = match &message {
@@ -305,6 +307,7 @@ impl NativeSession {
         });
         Ok(Self {
             app,
+            state: fixture_state,
             thread_views,
             server,
             relay,

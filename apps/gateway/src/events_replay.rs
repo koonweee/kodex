@@ -9,7 +9,7 @@ use crate::{
         MCP_SERVER_STATUS_UPDATED_EVENT, PROJECT_CHANGED_EVENT, THREAD_PROJECT_UPDATED_EVENT,
     },
     events_synthetic::thread_view_refresh_required_event,
-    queue,
+    queue, queue_transfer,
     routes::{
         app_surfaces::{
             APP_SURFACE_ARCHIVED_EVENT, APP_SURFACE_BRIDGE_CALL_EVENT, APP_SURFACE_ERROR_EVENT,
@@ -49,6 +49,7 @@ pub(crate) const WORKSPACE_GLOBAL_THREAD_EVENT_KINDS: &[&str] = &[
     automations::AUTOMATION_DELETE_EVENT,
     queue::QUEUE_UPSERT_EVENT,
     queue::QUEUE_DELETE_EVENT,
+    queue_transfer::TRANSFER_CHANGED_EVENT,
 ];
 
 pub(crate) fn event_matches(event: &EventEnvelope, query: &EventsQuery) -> bool {
@@ -113,6 +114,7 @@ pub(crate) fn is_operational_replay_event(event: &EventEnvelope) -> bool {
             | automations::AUTOMATION_DELETE_EVENT
             | queue::QUEUE_UPSERT_EVENT
             | queue::QUEUE_DELETE_EVENT
+            | queue_transfer::TRANSFER_CHANGED_EVENT
     )
 }
 
