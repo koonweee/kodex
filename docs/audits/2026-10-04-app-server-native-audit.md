@@ -8,6 +8,8 @@ Kodex can relinquish substantial ownership to app-server. The best targets are t
 
 The desired boundary is **app-server owns Codex execution and durable Codex state; Kodex adapts that state for a responsive browser and owns only justified additional host/browser features**. Missing native support does not establish a feature requirement. Prefer changing or dropping a convenience feature over rebuilding an execution subsystem to preserve it. Keep one bounded, disposable snapshot/live projection for browser convergence; a history API does not provide a resumable live event log.
 
+**Subsystem replacement is welcome when it produces a simpler design.** Start from the retained user workflows and current native contract, then choose whether to adapt or replace the existing implementation. Keeping a feature does not require keeping its modules, tables, state machines, internal API shape or implementation-specific tests. Remove superseded machinery and dependencies with the replacement, update contracts/callers together, and preserve meaningful behavior tests. Judge simplicity by the state and lifecycle rules Kodex must own as well as code size. Scoped, reviewable work can replace an entire subsystem; it need not accumulate patches around the old design or preserve a permanent compatibility layer.
+
 The chosen ownership target is **a dedicated Kodex `CODEX_HOME` and a Kodex-owned app-server process**. Sharing desktop's home or live runtime is outside this redesign's scope. Today's inherited-home default does not implement that isolation. Resolve this and version compatibility before pursuing the larger deletions.
 
 **Start fresh; do not implement legacy data migration.** Use new native state and new gateway state, with fresh client state for references into that instance. Existing history, projects, queued work, schedules, settings and credentials are not imported or replayed. This removes old-to-new ID maps, queue conversion, backfills, compatibility readers and dual-write transition work. Leave old storage intact and outside the new runtime; this decision does not require deleting it. Initializing the new schema and keeping newly created work correct remain necessary.
@@ -312,6 +314,8 @@ These are proposed boundaries, not approved or completed implementation mileston
 6. **Optional feature exposure.** Goals, search, revert, attachments, usage and voice should be thin UI additions over the tested native contracts, not reasons to build parallel subsystems.
 
 Each implementation chunk should identify the established user need, why the simpler native workflow is insufficient (if adding custom logic), the native owner, the exact code/storage to remove, any user-visible behavior change and exit conditions. Start from fresh state instead of building compatibility or dual-write synchronization. Apply the necessity review to undecided features and to extra implementation complexity within retained features.
+
+At each boundary, compare a focused replacement with adaptation of the old code and choose the simpler maintained result. The order above groups responsibilities; it does not require preserving the current module structure or implementing every step as an incremental refactor. A replacement is complete only when its callers/contracts and behavior checks work and the superseded implementation is removed. This permission to replace code does not change the fresh-start decision to leave old user storage untouched.
 
 ## Validation required before deletion or release
 

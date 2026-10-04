@@ -4,6 +4,8 @@ This file is the directory of record for Kodex plans. Keep the status column cur
 
 The [2026-10-04 app-server native capability and desktop coexistence audit](../docs/audits/2026-10-04-app-server-native-audit.md) compares the current implementation with Codex 0.160.0 and proposes an order for reducing gateway ownership. Its target is a fresh start with dedicated Codex and gateway state, no legacy data migration, native behavior by default, and justified custom extensions. Retained scope includes automations, MCP Apps/setup, Kodex Control tools, docking, PWA extras, and queued-message steering; remote development-server previews are to be removed. It is a completed audit, not an implemented redesign or a change to the historical plan statuses below.
 
+Focused subsystem replacements are encouraged wherever they reduce maintained complexity. Retained workflows do not require preserving old implementation structure; replace obsolete machinery and its dependencies instead of building compatibility around it.
+
 ## Status Values
 
 - `Proposed`: plan exists but implementation has not started.
