@@ -50,7 +50,7 @@ use crate::{
 
 const SSE_REPLAY_PAGE_SIZE: i64 = 500;
 const TURN_COMPLETION_HEAD_REFRESH_LIMIT: u32 = 50;
-pub const MCP_CONFIG_CHANGED_EVENT: &str = "mcp.config_changed";
+pub const CONFIG_CHANGED_EVENT: &str = "config.changed";
 pub const MCP_SERVER_STATUS_UPDATED_EVENT: &str = "mcp.server_status_updated";
 pub const MCP_OAUTH_LOGIN_COMPLETED_EVENT: &str = "mcp.oauth_login_completed";
 pub const ACCOUNT_RATE_LIMITS_UPDATED_EVENT: &str = "account.rate_limits_updated";

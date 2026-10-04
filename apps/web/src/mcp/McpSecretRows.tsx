@@ -22,7 +22,7 @@ export function StoredSecretRows({ actions, label, onChange }: StoredSecretRowsP
         {label}
       </Text>
       {entries.map(([key, action]) => (
-        <Stack gap={6} key={key}>
+        <Stack aria-label={`Stored value ${key}`} gap={6} key={key} role="group">
           <Group gap={8} justify="space-between" wrap="wrap">
             <Group gap={6} wrap="nowrap">
               <Text fw={650} size="sm">
@@ -39,6 +39,7 @@ export function StoredSecretRows({ actions, label, onChange }: StoredSecretRowsP
               <Button onClick={() => onChange({ ...actions, [key]: { mode: "clear", value: "" } })} size="compact-xs" type="button" variant="subtle">
                 Clear
               </Button>
+              {action.mode !== "unchanged" ? <Button onClick={() => onChange({ ...actions, [key]: { mode: "unchanged", value: "" } })} size="compact-xs" type="button" variant="subtle">Keep stored value</Button> : null}
             </Group>
           </Group>
           {action.mode === "replace" ? (
@@ -49,6 +50,7 @@ export function StoredSecretRows({ actions, label, onChange }: StoredSecretRowsP
               value={action.value}
             />
           ) : null}
+          {action.mode === "clear" ? <Text c="dimmed" size="xs">Clears the selected file's value. An inherited value may still apply.</Text> : null}
         </Stack>
       ))}
     </Stack>

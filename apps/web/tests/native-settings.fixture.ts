@@ -51,7 +51,7 @@ export async function nativeSettingsFixture(context: BrowserContext) {
 
   function emit(kind: string, payload: unknown, client?: string) {
     seq += 1;
-    const event: EventEnvelope = { id: String(seq), seq, kind, threadId: detail.thread.id, payload, receivedAt: "2026-10-04T00:00:00Z" };
+    const event: EventEnvelope = { id: String(seq), seq, kind, threadId: kind === "config.changed" ? null : detail.thread.id, payload, receivedAt: "2026-10-04T00:00:00Z" };
     for (const [stream, id] of streams) {
       if (!client || client === id) stream.write(`id: ${seq}\nevent: ${kind}\ndata: ${JSON.stringify(event)}\n\n`);
     }
@@ -122,6 +122,7 @@ export async function nativeSettingsFixture(context: BrowserContext) {
   });
   return {
     settings, requests, pending, connections, unexpected, errors, settingsChanged,
+    configChanged(client?: string) { emit("config.changed", {}, client); },
     connected(client: string) { return [...streams.values()].includes(client); },
     disconnect(client: string) { for (const [stream, id] of streams) if (client === id) stream.end(); },
     applyNext(client?: string) {
@@ -158,11 +159,15 @@ export async function nativeSettingsFixture(context: BrowserContext) {
     async close() {
       const releases = await Promise.allSettled([...held.values()].map((reply) => reply.send()));
       held.clear();
-      await Promise.all([...clients.keys()].map((page) => page.close()));
+      // Stop query/focus producers while interception remains active. Playwright
+      // bypasses route handlers once page.close starts, which can otherwise let
+      // a late recovery request reach Vite's real gateway proxy.
+      const navigations = await Promise.allSettled([...clients.keys()].filter((page) => !page.isClosed()).map((page) => page.goto("about:blank")));
+      const closures = await Promise.allSettled([...clients.keys()].map((page) => page.close()));
       // Context teardown removes routing after pages/beacons have finished.
       server.closeAllConnections();
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-      for (const result of releases) if (result.status === "rejected") throw result.reason;
+      for (const result of [...releases, ...navigations, ...closures]) if (result.status === "rejected") throw result.reason;
     },
   };
 }

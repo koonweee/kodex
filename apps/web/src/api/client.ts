@@ -14,6 +14,9 @@ export type AutomationUpdateRequest = components["schemas"]["AutomationUpdateReq
 export type Capabilities = components["schemas"]["CapabilitiesResponse"];
 export type ComposerSettingsResponse = components["schemas"]["ComposerSettingsResponse"];
 export type ComposerSettingsUpdateRequest = components["schemas"]["ComposerSettingsUpdateRequest"];
+export type ComposerSettingsUpdateResponse = components["schemas"]["ComposerSettingsUpdateResponse"];
+export type NativeConfigWriteTarget = components["schemas"]["NativeConfigWriteTarget"];
+export type NativeConfigWriteResult = components["schemas"]["NativeConfigWriteResult"];
 export type EventEnvelope = components["schemas"]["EventEnvelope"];
 export type AppSurfaceBridgeRequest = components["schemas"]["AppSurfaceBridgeRequest"];
 export type AppSurfaceBridgeResponse = components["schemas"]["AppSurfaceBridgeResponse"];
@@ -27,6 +30,8 @@ export type McpOAuthLoginResponse = components["schemas"]["McpOAuthLoginResponse
 export type McpResource = components["schemas"]["McpResource"];
 export type McpResourceReadResponse = components["schemas"]["McpResourceReadResponse"];
 export type McpServerInstallRequest = components["schemas"]["McpServerInstallRequest"];
+export type McpServerUpdateRequest = components["schemas"]["McpServerUpdateRequest"];
+export type McpReloadResponse = components["schemas"]["McpReloadResponse"];
 export type McpServerListResponse = components["schemas"]["McpServerListResponse"];
 export type McpServerStatus = components["schemas"]["McpServerStatus"];
 export type ModelSummary = components["schemas"]["ModelSummary"];
@@ -80,9 +85,14 @@ export type CreateTerminalSession = components["schemas"]["CreateTerminalSession
 export type TerminalDeleteResponse = components["schemas"]["TerminalDeleteResponse"];
 export type TerminalSessionInfo = components["schemas"]["TerminalSessionInfo"];
 
-type GatewayErrorBody = {
-  message?: unknown;
-};
+type GatewayErrorBody = Partial<components["schemas"]["ApiErrorBody"]>;
+
+export class GatewayRequestError extends Error {
+  constructor(message: string, public readonly status?: number, public readonly code?: string) {
+    super(message);
+    this.name = "GatewayRequestError";
+  }
+}
 
 const api = createClient<paths>({
   baseUrl: getApiBaseUrl(),
@@ -613,40 +623,40 @@ export async function installKodexControlPlugin(): Promise<KodexControlPluginIns
   return unwrap(api.POST("/v1/kodex-control-plugin/install"));
 }
 
-export async function listMcpServers(): Promise<McpServerListResponse> {
-  return unwrap(api.GET("/v1/mcp/servers", { params: { query: { detail: "full" } } }));
+export async function listMcpServers(signal?: AbortSignal): Promise<McpServerListResponse> {
+  return unwrap(api.GET("/v1/mcp/servers", { signal, cache: "no-store", params: { query: { detail: "full" } } }));
 }
 
-export async function listConfiguredMcpServers(): Promise<ConfiguredMcpServerListResponse> {
-  return unwrap(api.GET("/v1/mcp/configured-servers"));
+export async function listConfiguredMcpServers(signal?: AbortSignal): Promise<ConfiguredMcpServerListResponse> {
+  return unwrap(api.GET("/v1/mcp/configured-servers", { signal, cache: "no-store" }));
 }
 
 export async function addMcpServer(request: McpServerInstallRequest): Promise<McpConfigMutationResponse> {
   return unwrap(api.POST("/v1/mcp/servers", { body: request }));
 }
 
-export async function replaceMcpServer(
+export async function updateMcpServer(
   server: string,
-  request: McpServerInstallRequest,
+  request: McpServerUpdateRequest,
 ): Promise<McpConfigMutationResponse> {
-  return unwrap(api.POST("/v1/mcp/servers/{server}/replace", { params: { path: { server } }, body: request }));
+  return unwrap(api.PATCH("/v1/mcp/servers/{server}", { params: { path: { server } }, body: request }));
 }
 
-export async function setMcpServerEnabled(server: string, enabled: boolean): Promise<McpConfigMutationResponse> {
+export async function setMcpServerEnabled(server: string, enabled: boolean, writeTarget: NativeConfigWriteTarget): Promise<McpConfigMutationResponse> {
   return unwrap(
     api.PATCH("/v1/mcp/servers/{server}/enabled", {
       params: { path: { server } },
-      body: { enabled },
+      body: { enabled, writeTarget },
     }),
   );
 }
 
-export async function removeMcpServer(server: string): Promise<McpConfigMutationResponse> {
-  return unwrap(api.DELETE("/v1/mcp/servers/{server}", { params: { path: { server } } }));
+export async function removeMcpServer(server: string, writeTarget: NativeConfigWriteTarget): Promise<McpConfigMutationResponse> {
+  return unwrap(api.DELETE("/v1/mcp/servers/{server}", { params: { path: { server } }, body: { writeTarget } }));
 }
 
-export async function reloadMcpServers(): Promise<void> {
-  await unwrap(api.POST("/v1/mcp/reload"));
+export async function reloadMcpServers(): Promise<McpReloadResponse> {
+  return unwrap(api.POST("/v1/mcp/reload"));
 }
 
 export async function startMcpOAuthLogin(server: string): Promise<McpOAuthLoginResponse> {
@@ -674,9 +684,10 @@ export async function listSkills(cwd?: string | null, forceReload = false): Prom
   );
 }
 
-export async function listPermissionProfiles(cwd?: string | null): Promise<PermissionProfileSummary[]> {
+export async function listPermissionProfiles(cwd?: string | null, signal?: AbortSignal): Promise<PermissionProfileSummary[]> {
   const response = await unwrap(
     api.GET("/v1/permission-profiles", {
+      signal, cache: "no-store",
       params: { query: { cwd: cwd ?? undefined } },
     }),
   );
@@ -689,22 +700,22 @@ export async function getComposerSettings(projectId?: string | null, cwd?: strin
   );
 }
 
-export async function persistComposerSettings(input: ComposerSettingsUpdateRequest): Promise<void> {
-  await unwrap(api.PATCH("/v1/composer-settings", { body: input }));
+export async function persistComposerSettings(input: ComposerSettingsUpdateRequest): Promise<ComposerSettingsUpdateResponse> {
+  return unwrap(api.PATCH("/v1/composer-settings", { body: input }));
 }
 
-async function unwrap<T>(request: Promise<{ data?: T; error?: unknown }>): Promise<T> {
-  const { data, error } = await request;
+async function unwrap<T>(request: Promise<{ data?: T; error?: unknown; response?: Response }>): Promise<T> {
+  const { data, error, response } = await request;
   if (error || data === undefined) {
-    throw new Error(gatewayErrorMessage(error));
+    throw new GatewayRequestError(gatewayErrorMessage(error), response?.status, isGatewayErrorBody(error) ? error.code : undefined);
   }
   return data;
 }
 
-async function unwrapNoContent(request: Promise<{ error?: unknown }>): Promise<void> {
-  const { error } = await request;
+async function unwrapNoContent(request: Promise<{ error?: unknown; response?: Response }>): Promise<void> {
+  const { error, response } = await request;
   if (error) {
-    throw new Error(gatewayErrorMessage(error));
+    throw new GatewayRequestError(gatewayErrorMessage(error), response?.status, isGatewayErrorBody(error) ? error.code : undefined);
   }
 }
 

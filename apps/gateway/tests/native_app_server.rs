@@ -1,5 +1,7 @@
 //! Real protocol proof with a pinned executable, disposable home, and local model.
 //! Interactive account sign-in is deliberately not completed or claimed by this test.
+#[path = "native_app_server/config.rs"]
+mod config;
 #[path = "native_app_server/fixture.rs"]
 mod fixture;
 #[path = "native_app_server/projects.rs"]

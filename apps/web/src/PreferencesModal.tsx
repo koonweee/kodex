@@ -1,19 +1,17 @@
-import { Alert, Badge, Box, Button, Group, Loader, Modal, SegmentedControl, Stack, Text } from "@mantine/core";
+import { Alert, Badge, Box, Button, Group, Loader, Modal, Stack, Text } from "@mantine/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bell, BellOff, Check, Package, RefreshCw, Send, Shield } from "lucide-react";
+import { Bell, BellOff, Package, RefreshCw, Send } from "lucide-react";
 import { useRef, type KeyboardEvent as ReactKeyboardEvent, type MutableRefObject } from "react";
 
 import {
-  getComposerSettings,
   getKodexControlPluginStatus,
   getNotificationStatus,
   installKodexControlPlugin,
-  listPermissionProfiles,
-  persistComposerSettings,
   sendTestNotification,
 } from "./api/client";
 import { queryKeys } from "./api/queryKeys";
 import { McpPreferencesPanel } from "./mcp/McpPreferencesPanel";
+import { ExecutionPreferencesPanel } from "./preferences/ExecutionPreferencesPanel";
 import { requestKodexNotificationPermission } from "./notifications/browserNotifications";
 import {
   browserPushNotificationsSupported,
@@ -55,16 +53,6 @@ export function PreferencesModal({
     queryFn: getNotificationStatus,
     queryKey: queryKeys.notificationStatus,
   });
-  const executionSettingsQuery = useQuery({
-    enabled: opened && activeSection === "execution",
-    queryFn: () => getComposerSettings(null),
-    queryKey: queryKeys.composerSettings(null),
-  });
-  const permissionProfilesQuery = useQuery({
-    enabled: opened && activeSection === "execution",
-    queryFn: () => listPermissionProfiles(null),
-    queryKey: queryKeys.permissionProfiles(null),
-  });
   const currentPushStateQuery = useQuery({
     enabled: opened && activeSection === "notifications",
     queryFn: loadBrowserPushNotificationState,
@@ -77,12 +65,6 @@ export function PreferencesModal({
         queryClient.invalidateQueries({ queryKey: queryKeys.kodexControlPlugin }),
         queryClient.invalidateQueries({ queryKey: ["skills"] }),
       ]);
-    },
-  });
-  const executionSettingsMutation = useMutation({
-    mutationFn: persistComposerSettings,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.composerSettingsRoot, refetchType: "all" });
     },
   });
   const enableNotificationsMutation = useMutation({
@@ -214,25 +196,7 @@ export function PreferencesModal({
             optionRefs={optionRefs}
           />
         ) : activeSection === "execution" ? (
-          <ExecutionPreferencesPanel
-            profiles={permissionProfilesQuery.data}
-            profilesError={permissionProfilesQuery.error}
-            profilesLoading={permissionProfilesQuery.isLoading}
-            saving={executionSettingsMutation.isPending}
-            saveError={executionSettingsMutation.error}
-            settings={executionSettingsQuery.data}
-            settingsError={executionSettingsQuery.error}
-            settingsLoading={executionSettingsQuery.isLoading}
-            onApprovalModeChange={(mode) =>
-              executionSettingsMutation.mutate(approvalSettingsForMode(mode))
-            }
-            onPermissionProfileChange={(permissionProfileId, approvalMode) =>
-              executionSettingsMutation.mutate({
-                permissionProfileId,
-                ...approvalSettingsForMode(approvalMode),
-              })
-            }
-          />
+          <ExecutionPreferencesPanel />
         ) : activeSection === "notifications" ? (
           <NotificationsPreferencesPanel
             disableError={disableNotificationsMutation.error}
@@ -271,185 +235,6 @@ export function PreferencesModal({
       </Box>
     </Modal>
   );
-}
-
-type ExecutionApprovalMode = "askMe" | "autoReview";
-type ExecutionApprovalSelection = ExecutionApprovalMode | "requiresChoice";
-
-function ExecutionPreferencesPanel({
-  profiles,
-  profilesError,
-  profilesLoading,
-  saving,
-  saveError,
-  settings,
-  settingsError,
-  settingsLoading,
-  onApprovalModeChange,
-  onPermissionProfileChange,
-}: {
-  profiles?: Awaited<ReturnType<typeof listPermissionProfiles>>;
-  profilesError: Error | null;
-  profilesLoading: boolean;
-  saving: boolean;
-  saveError: Error | null;
-  settings?: Awaited<ReturnType<typeof getComposerSettings>>;
-  settingsError: Error | null;
-  settingsLoading: boolean;
-  onApprovalModeChange: (mode: ExecutionApprovalMode) => void;
-  onPermissionProfileChange: (permissionProfileId: string | null, approvalMode: ExecutionApprovalMode) => void;
-}) {
-  const selectedPermissionProfileId = settings?.permissionProfileId ?? null;
-  const approvalSelection = executionApprovalMode(settings?.approvalPolicy, settings?.approvalsReviewer);
-  const normalizedApprovalMode = approvalSelection === "autoReview" ? "autoReview" : "askMe";
-  const loading = settingsLoading || profilesLoading;
-  const error = settingsError ?? profilesError ?? saveError;
-  const permissionOptions = [
-    { id: null, label: "Default", description: "Use the configured Codex default scope." },
-    ...(profiles ?? []).map((profile) => ({
-      id: profile.id,
-      label: permissionProfileLabel(profile.id, profile.label),
-      description: profile.description ?? permissionProfileDescription(profile.id),
-    })),
-  ];
-
-  return (
-    <Stack className="kodex-preferences-panel kodex-execution-panel" gap={14}>
-      <Group justify="space-between" wrap="nowrap">
-        <Text className="kodex-preferences-panel-title" fw={650}>
-          Execution
-        </Text>
-        <Badge data-tone={saving ? "info" : "neutral"}>{saving ? "Saving" : "Defaults"}</Badge>
-      </Group>
-
-      {loading ? (
-        <Group gap="xs">
-          <Loader size="xs" />
-          <Text c="dimmed" size="sm">
-            Loading execution defaults
-          </Text>
-        </Group>
-      ) : null}
-      {error ? (
-        <Alert color="red" variant="light">
-          {error.message}
-        </Alert>
-      ) : null}
-
-      <Stack className="kodex-preferences-setting" gap={10}>
-        <Box className="kodex-preferences-setting-header">
-          <Text fw={600} id="kodex-permission-scope-label" size="sm">
-            Permission scope
-          </Text>
-          <Text c="dimmed" size="xs">
-            Default filesystem and sandbox access for future turns.
-          </Text>
-        </Box>
-        <Box aria-labelledby="kodex-permission-scope-label" className="kodex-execution-option-list" role="radiogroup">
-          {permissionOptions.map((option) => {
-            const selected = option.id === selectedPermissionProfileId;
-            return (
-              <Button
-                aria-checked={selected}
-                className="kodex-execution-option"
-                data-active={selected ? "true" : undefined}
-                disabled={loading || saving}
-                key={option.id ?? "default"}
-                leftSection={selected ? <Check size={15} /> : <Shield size={15} />}
-                onClick={() => onPermissionProfileChange(option.id, normalizedApprovalMode)}
-                role="radio"
-                type="button"
-                variant={selected ? "light" : "subtle"}
-              >
-                <Box className="kodex-execution-option-copy">
-                  <Text fw={600} size="sm">
-                    {option.label}
-                  </Text>
-                  {option.description ? (
-                    <Text c="dimmed" size="xs">
-                      {option.description}
-                    </Text>
-                  ) : null}
-                </Box>
-              </Button>
-            );
-          })}
-        </Box>
-      </Stack>
-
-      <Stack className="kodex-preferences-setting" gap={10}>
-        <Box className="kodex-preferences-setting-header">
-          <Text fw={600} id="kodex-approval-review-label" size="sm">
-            Approval review
-          </Text>
-          <Text c="dimmed" size="xs">
-            Default reviewer for sandbox escapes, network requests, and similar approval prompts.
-          </Text>
-        </Box>
-        {approvalSelection === "requiresChoice" ? (
-          <Alert color="yellow" variant="light">
-            Choose a review mode to replace the previous no-approval default.
-          </Alert>
-        ) : null}
-        <SegmentedControl
-          aria-labelledby="kodex-approval-review-label"
-          className="kodex-execution-review-control"
-          data={[
-            { label: "Ask me", value: "askMe" },
-            { label: "Auto review", value: "autoReview" },
-          ]}
-          disabled={loading || saving}
-          onChange={(value) => onApprovalModeChange(value as ExecutionApprovalMode)}
-          value={approvalSelection === "requiresChoice" ? "" : approvalSelection}
-        />
-      </Stack>
-    </Stack>
-  );
-}
-
-function approvalSettingsForMode(mode: ExecutionApprovalMode) {
-  return {
-    approvalPolicy: "on-request",
-    approvalsReviewer: mode === "autoReview" ? "auto_review" : "user",
-  };
-}
-
-function executionApprovalMode(
-  approvalPolicy?: string | null,
-  approvalsReviewer?: string | null,
-): ExecutionApprovalSelection {
-  if (approvalPolicy && approvalPolicy !== "on-request") {
-    return "requiresChoice";
-  }
-  return approvalsReviewer === "auto_review" || approvalsReviewer === "guardian_subagent" ? "autoReview" : "askMe";
-}
-
-function permissionProfileLabel(id: string, label?: string | null): string {
-  const normalized = id.replace(/^:/, "");
-  switch (normalized) {
-    case "read-only":
-      return "Read only";
-    case "workspace":
-      return "Workspace";
-    case "danger-full-access":
-      return "Danger full access";
-    default:
-      return label || id;
-  }
-}
-
-function permissionProfileDescription(id: string): string | null {
-  const normalized = id.replace(/^:/, "");
-  switch (normalized) {
-    case "read-only":
-      return "Read files without writing changes.";
-    case "workspace":
-      return "Write inside the current workspace and ask before leaving it.";
-    case "danger-full-access":
-      return "Run without sandbox restrictions on this local machine.";
-    default:
-      return null;
-  }
 }
 
 function NotificationsPreferencesPanel({
@@ -725,7 +510,7 @@ function PluginsPreferencesPanel({
             </Badge>
           </Group>
           <Text c="dimmed" size="xs">
-            Proxy evaluation, guarded self-control tools, and gateway-hosted MCP resources.
+            Generated apps, guarded self-control tools, and gateway-hosted MCP resources.
           </Text>
           {statusLoading ? (
             <Group gap={8}>

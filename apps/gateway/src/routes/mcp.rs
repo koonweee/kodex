@@ -1,9 +1,9 @@
 use axum::{
     extract::{Path, Query, State},
-    routing::{delete, get, patch, post},
+    routing::{get, patch, post},
     Json, Router,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use utoipa::{IntoParams, ToSchema};
 
 use crate::{
@@ -11,11 +11,10 @@ use crate::{
     app_server_api::{
         self, ConfiguredMcpServerListResponse, McpConfigMutationResponse, McpOAuthLoginRequest,
         McpOAuthLoginResponse, McpReloadResponse, McpResourceReadResponse, McpServerInstallRequest,
-        McpServerListResponse, McpServerStatusDetail, McpServerToggleRequest,
+        McpServerListResponse, McpServerRemoveRequest, McpServerStatusDetail,
+        McpServerToggleRequest, McpServerUpdateRequest, NativeConfigWriteResult,
     },
     error::{ApiError, ApiResult},
-    events::MCP_CONFIG_CHANGED_EVENT,
-    store::NewEvent,
 };
 
 pub fn router() -> Router<AppState> {
@@ -26,8 +25,10 @@ pub fn router() -> Router<AppState> {
         )
         .route("/v1/mcp/servers", get(list_mcp_servers))
         .route("/v1/mcp/servers", post(add_mcp_server))
-        .route("/v1/mcp/servers/{server}", delete(remove_mcp_server))
-        .route("/v1/mcp/servers/{server}/replace", post(replace_mcp_server))
+        .route(
+            "/v1/mcp/servers/{server}",
+            patch(update_mcp_server).delete(remove_mcp_server),
+        )
         .route(
             "/v1/mcp/servers/{server}/enabled",
             patch(set_mcp_server_enabled),
@@ -67,7 +68,7 @@ pub async fn list_configured_mcp_servers(
 ) -> ApiResult<Json<ConfiguredMcpServerListResponse>> {
     Ok(Json(
         app_server_api::client(&state.app_server)
-            .mcp_configured_servers()
+            .mcp_configured_servers(&state.config.codex.home)
             .await?,
     ))
 }
@@ -99,38 +100,43 @@ pub async fn add_mcp_server(
     State(state): State<AppState>,
     Json(request): Json<McpServerInstallRequest>,
 ) -> ApiResult<Json<McpConfigMutationResponse>> {
+    request
+        .write_target
+        .validate_owned_path(&state.config.codex.home)?;
     let name = request.name.clone();
     let configured = app_server_api::client(&state.app_server)
-        .mcp_configured_servers()
+        .mcp_configured_servers(&state.config.codex.home)
         .await?;
     if configured.servers.iter().any(|server| server.name == name) {
         return Err(ApiError::BadRequest(format!(
-            "MCP server '{name}' already exists; use replace to overwrite it"
+            "MCP server '{name}' already exists; edit its individual fields"
         )));
     }
-    write_mcp_server(state, name, request, "add").await
+    let write = app_server_api::client(&state.app_server)
+        .mcp_add_server(request)
+        .await?;
+    finish_config_write(&state, write).await
 }
 
 #[utoipa::path(
-    post,
-    path = "/v1/mcp/servers/{server}/replace",
+    patch,
+    path = "/v1/mcp/servers/{server}",
     params(("server" = String, Path, description = "MCP server name")),
-    request_body = McpServerInstallRequest,
+    request_body = McpServerUpdateRequest,
     responses((status = 200, body = McpConfigMutationResponse))
 )]
-pub async fn replace_mcp_server(
+pub async fn update_mcp_server(
     State(state): State<AppState>,
     Path(server): Path<String>,
-    Json(request): Json<McpServerInstallRequest>,
+    Json(request): Json<McpServerUpdateRequest>,
 ) -> ApiResult<Json<McpConfigMutationResponse>> {
-    let client = app_server_api::client(&state.app_server);
-    let configured_server = client.mcp_replace_server(server.clone(), request).await?;
-    let reload = client.mcp_reload().await?;
-    emit_config_changed(&state, "replace", &server).await?;
-    Ok(Json(McpConfigMutationResponse {
-        configured_server: Some(configured_server),
-        reload,
-    }))
+    request
+        .write_target
+        .validate_owned_path(&state.config.codex.home)?;
+    let write = app_server_api::client(&state.app_server)
+        .mcp_update_server(&server, request)
+        .await?;
+    finish_config_write(&state, write).await
 }
 
 #[utoipa::path(
@@ -145,36 +151,34 @@ pub async fn set_mcp_server_enabled(
     Path(server): Path<String>,
     Json(request): Json<McpServerToggleRequest>,
 ) -> ApiResult<Json<McpConfigMutationResponse>> {
-    let client = app_server_api::client(&state.app_server);
-    client
-        .mcp_set_server_enabled(server.clone(), request.enabled)
+    request
+        .write_target
+        .validate_owned_path(&state.config.codex.home)?;
+    let write = app_server_api::client(&state.app_server)
+        .mcp_set_server_enabled(&server, request)
         .await?;
-    let reload = client.mcp_reload().await?;
-    emit_config_changed(&state, "toggle", &server).await?;
-    Ok(Json(McpConfigMutationResponse {
-        configured_server: None,
-        reload,
-    }))
+    finish_config_write(&state, write).await
 }
 
 #[utoipa::path(
     delete,
     path = "/v1/mcp/servers/{server}",
     params(("server" = String, Path, description = "MCP server name")),
+    request_body = McpServerRemoveRequest,
     responses((status = 200, body = McpConfigMutationResponse))
 )]
 pub async fn remove_mcp_server(
     State(state): State<AppState>,
     Path(server): Path<String>,
+    Json(request): Json<McpServerRemoveRequest>,
 ) -> ApiResult<Json<McpConfigMutationResponse>> {
-    let client = app_server_api::client(&state.app_server);
-    client.mcp_remove_server(server.clone()).await?;
-    let reload = client.mcp_reload().await?;
-    emit_config_changed(&state, "remove", &server).await?;
-    Ok(Json(McpConfigMutationResponse {
-        configured_server: None,
-        reload,
-    }))
+    request
+        .write_target
+        .validate_owned_path(&state.config.codex.home)?;
+    let write = app_server_api::client(&state.app_server)
+        .mcp_remove_server(&server, request)
+        .await?;
+    finish_config_write(&state, write).await
 }
 
 #[utoipa::path(
@@ -198,44 +202,31 @@ pub async fn read_mcp_resource(
     ))
 }
 
-async fn write_mcp_server(
-    state: AppState,
-    name: String,
-    request: McpServerInstallRequest,
-    operation: &'static str,
+async fn finish_config_write(
+    state: &AppState,
+    write: NativeConfigWriteResult,
 ) -> ApiResult<Json<McpConfigMutationResponse>> {
-    let client = app_server_api::client(&state.app_server);
-    let configured_server = client.mcp_write_server(name.clone(), request).await?;
-    let reload = client.mcp_reload().await?;
-    emit_config_changed(&state, operation, &name).await?;
+    // The file is already durable. A failed reload cannot turn this into an
+    // unsaved result or suppress the global authoritative refill.
+    let notification_error = super::config_writes::saved_notification_error(
+        super::config_writes::emit_config_changed(state).await,
+    );
+    let reload = match app_server_api::client(&state.app_server).mcp_reload().await {
+        Ok(response) => response,
+        Err(_) => McpReloadResponse {
+            queued: false,
+            error: Some(
+                "Configuration saved, but native MCP reload was not confirmed. Retry reload."
+                    .into(),
+            ),
+        },
+    };
     Ok(Json(McpConfigMutationResponse {
-        configured_server: Some(configured_server),
+        saved: true,
+        write,
         reload,
+        notification_error,
     }))
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct McpConfigChangedPayload<'a> {
-    operation: &'a str,
-    server: &'a str,
-}
-
-async fn emit_config_changed(state: &AppState, operation: &str, server: &str) -> ApiResult<()> {
-    let event = state
-        .store
-        .append_event(NewEvent {
-            project_id: None,
-            thread_id: None,
-            turn_id: None,
-            item_id: None,
-            kind: MCP_CONFIG_CHANGED_EVENT.to_string(),
-            codex_method: None,
-            payload: serde_json::to_value(McpConfigChangedPayload { operation, server })?,
-        })
-        .await?;
-    let _ = state.events.send(event);
-    Ok(())
 }
 
 #[utoipa::path(

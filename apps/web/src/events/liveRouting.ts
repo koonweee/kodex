@@ -28,7 +28,7 @@ export type LiveEventRouteHandlers = {
   applyApprovalEvent: (event: EventEnvelope) => void;
   applyAppSurfaceEvent: (event: EventEnvelope) => void;
   applySkillsChangedEvent: () => void;
-  applyMcpLifecycleEvent: (event: EventEnvelope) => void;
+  applyNativeConfigEvent: (event: EventEnvelope) => void;
 };
 
 export function routeGlobalLiveEvent(event: EventEnvelope, handlers: LiveEventRouteHandlers) {
@@ -53,8 +53,8 @@ export function routeGlobalLiveEvent(event: EventEnvelope, handlers: LiveEventRo
   if (event.kind === "skills.changed") {
     handlers.applySkillsChangedEvent();
   }
-  if (isMcpLifecycleEvent(event)) {
-    handlers.applyMcpLifecycleEvent(event);
+  if (isNativeConfigEvent(event)) {
+    handlers.applyNativeConfigEvent(event);
   }
 }
 
@@ -117,9 +117,9 @@ function queuedInputDeleteFromEvent(event: EventEnvelope): { threadId: string; i
   return id && threadId ? { threadId, id } : null;
 }
 
-function isMcpLifecycleEvent(event: EventEnvelope): boolean {
+function isNativeConfigEvent(event: EventEnvelope): boolean {
   return (
-    event.kind === "mcp.config_changed" ||
+    event.kind === "config.changed" ||
     event.kind === "mcp.server_status_updated" ||
     event.kind === "mcp.oauth_login_completed"
   );

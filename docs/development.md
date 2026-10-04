@@ -53,6 +53,10 @@ Sidebar sections and their member order are native state. Pinned is the reserved
 
 Existing-chat controls edit shared native settings for the next turn using only the selected field. Send and Queue submit input and attachments without replaying browser settings. Native update acceptance is not application confirmation. Fresh chats expose full settings after their first native turn starts; unavailable reads refill at the canonical turn-start boundary. The pinned 0.160.0 native runtime restores model, reasoning effort and permission profile after restart, while service tier returns to the configured default. Kodex accepts that native behavior rather than preserving a duplicate settings record.
 
+Execution defaults and MCP setup read the native config layers and expose only the active writable user target and opaque native version within the dedicated home. Forms capture that target when opened; writes use native `expectedVersion` with sparse edits. A conflict keeps the draft until explicit review replaces it with current native values. Secret replacement/deletion is an individual leaf edit; unchanged masks are never submitted. Unknown policies remain native-owned. Null removes a user-layer value, which can expose inherited configuration. Saved values overridden by higher layers are reported separately from effective values.
+
+`config.changed` is a global refill-only event after a native save. Config reads are canceled/refilled on invalidation, actual EventSource reopening and foreground recovery. MCP writes request one explicit native reload after saving; failure leaves the save intact, and Reload retries only the runtime request. The acknowledgment establishes a queued refresh, not server readiness. Native config reload is best-effort for loaded chats and cannot turn session-static defaults into existing-chat settings.
+
 ## Validation commands
 
 Backend:
@@ -81,7 +85,7 @@ Install its test browser once with `cd apps/web && npx playwright install chromi
 KODEX_TEST_CODEX_BINARY=/absolute/path/to/codex cargo test -p kodex-gateway --test native_app_server -- --ignored --nocapture
 ```
 
-The native fixtures verify approval replay and exact resolution after acceptance/Stop, as well as project roots, idempotent creation, sparse edits, ordering, membership and history after a cold restart. Browser E2E covers two-tab approval/project convergence, missed notifications, delayed stale snapshots and real SSE reconnects. Project flows run at desktop, narrow fine-pointer and narrow touch sizes. These fixtures do not establish completed interactive account sign-in or release readiness.
+The native fixtures verify approval replay and exact resolution after acceptance/Stop; project roots, idempotent creation, sparse edits, order, membership and history after cold restart; shared settings and native sections; and native config CAS, missing-file versions, literal key paths, sparse secret/policy preservation and higher-layer overrides. Browser E2E covers two-tab approval/project/section/settings/config convergence, conflicts, missed notifications, delayed stale snapshots and real SSE reconnects. Responsive flows run at desktop, narrow fine-pointer and narrow touch sizes. Config proof servers are disabled, so these tests do not claim successful MCP authentication or server readiness. These fixtures do not establish completed interactive account sign-in or release readiness.
 
 ## Production-style local serving
 

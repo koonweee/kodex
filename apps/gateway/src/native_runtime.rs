@@ -148,7 +148,7 @@ fn reject_unrecognized_root(root: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn reject_leaf_symlink(path: &Path) -> anyhow::Result<()> {
+pub(crate) fn reject_leaf_symlink(path: &Path) -> anyhow::Result<()> {
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
             bail!("Kodex-owned state cannot be a symlink: {}", path.display())
@@ -159,7 +159,7 @@ fn reject_leaf_symlink(path: &Path) -> anyhow::Result<()> {
     }
 }
 
-fn canonical_future_path(path: &Path) -> anyhow::Result<PathBuf> {
+pub(crate) fn canonical_future_path(path: &Path) -> anyhow::Result<PathBuf> {
     let absolute = if path.is_absolute() {
         path.to_path_buf()
     } else {

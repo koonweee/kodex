@@ -6,6 +6,7 @@ import { authLabel } from "./mcpTypes";
 
 type McpServerDetailProps = {
   configured?: ConfiguredMcpServer;
+  writesDisabled: boolean;
   oauthError?: string;
   oauthLoading: boolean;
   oauthUrl: string | null;
@@ -14,7 +15,7 @@ type McpServerDetailProps = {
   onLogin: () => void;
   onReadResource: (resource: McpResource) => void;
   onRemove: () => void;
-  onReplace: () => void;
+  onEdit: () => void;
   resource: McpResource | null;
   resourceError?: string;
   resourceLoading: boolean;
@@ -26,6 +27,7 @@ type McpServerDetailProps = {
 
 export function McpServerDetail({
   configured,
+  writesDisabled,
   oauthError,
   oauthLoading,
   oauthUrl,
@@ -34,7 +36,7 @@ export function McpServerDetail({
   onLogin,
   onReadResource,
   onRemove,
-  onReplace,
+  onEdit,
   resource,
   resourceError,
   resourceLoading,
@@ -58,13 +60,13 @@ export function McpServerDetail({
         <Group gap={6}>
           {configured ? (
             <>
-              <Button onClick={onReplace} size="xs" type="button" variant="subtle">
-                Replace
+              <Button disabled={writesDisabled} onClick={onEdit} size="xs" type="button" variant="subtle">
+                Edit
               </Button>
-              <Button onClick={configured.enabled ? onDisable : onEnable} size="xs" type="button" variant="subtle">
+              <Button disabled={writesDisabled} onClick={configured.enabled ? onDisable : onEnable} size="xs" type="button" variant="subtle">
                 {configured.enabled ? "Disable" : "Enable"}
               </Button>
-              <Button color="red" onClick={onRemove} size="xs" type="button" variant={removeConfirming ? "light" : "subtle"}>
+              <Button color="red" disabled={writesDisabled} onClick={onRemove} size="xs" type="button" variant={removeConfirming ? "light" : "subtle"}>
                 {removeConfirming ? "Confirm remove" : "Remove"}
               </Button>
             </>

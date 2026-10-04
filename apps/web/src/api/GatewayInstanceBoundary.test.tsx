@@ -77,8 +77,8 @@ function AccountProbe({ read }: { read: () => Promise<string> }) {
   return <p>{account.data}</p>;
 }
 
-function ThreadSettingsProbe({ read }: { read: (signal: AbortSignal) => Promise<string> }) {
-  const settings = useQuery({ queryKey: queryKeys.threadSettings("native-chat"), queryFn: ({ signal }) => read(signal) });
+function SettingsProbe({ read, queryKey }: { read: (signal: AbortSignal) => Promise<string>; queryKey: readonly unknown[] }) {
+  const settings = useQuery({ queryKey, queryFn: ({ signal }) => read(signal) });
   return <p>{settings.data}</p>;
 }
 
@@ -377,7 +377,12 @@ describe("gateway instance bootstrap", () => {
     expect(readAccount).toHaveBeenCalledTimes(2);
   });
 
-  it.each(["stream open", "foreground"])("cancels a pre-recovery settings read on %s while preserving the same-instance draft", async (trigger) => {
+  it.each([
+    { kind: "thread", queryKey: queryKeys.threadSettings("native-chat"), trigger: "stream open" },
+    { kind: "thread", queryKey: queryKeys.threadSettings("native-chat"), trigger: "foreground" },
+    { kind: "native config", queryKey: queryKeys.composerSettings(null), trigger: "stream open" },
+    { kind: "native config", queryKey: queryKeys.mcpConfiguredServers, trigger: "foreground" },
+  ])("cancels a pre-recovery $kind read on $trigger while preserving the same-instance draft", async ({ queryKey, trigger }) => {
     const queryClient = createKodexQueryClient();
     let finishOld!: (value: string) => void;
     let oldSignal: AbortSignal | undefined;
@@ -390,7 +395,7 @@ describe("gateway instance bootstrap", () => {
     render(
       <GatewayInstanceBoundary queryClient={queryClient}>
         <QueryClientProvider client={queryClient}>
-          <ThreadSettingsProbe read={readSettings} /><WorkspaceProbe /><StreamProbe />
+          <SettingsProbe read={readSettings} queryKey={queryKey} /><WorkspaceProbe /><StreamProbe />
         </QueryClientProvider>
       </GatewayInstanceBoundary>,
     );

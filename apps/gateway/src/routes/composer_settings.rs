@@ -44,7 +44,7 @@ pub async fn read_composer_settings(
 
     Ok(Json(
         app_server_api::client(&state.app_server)
-            .composer_settings(cwd)
+            .composer_settings(cwd, &state.config.codex.home)
             .await?,
     ))
 }
@@ -59,13 +59,22 @@ pub async fn update_composer_settings(
     State(state): State<AppState>,
     Json(request): Json<ComposerSettingsUpdateRequest>,
 ) -> ApiResult<Json<ComposerSettingsUpdateResponse>> {
+    request
+        .write_target
+        .validate_owned_path(&state.config.codex.home)?;
     let should_invalidate_skills =
         request.model.is_some() || request.effort.is_some() || request.service_tier.is_some();
-    let response = app_server_api::client(&state.app_server)
+    let mut response = app_server_api::client(&state.app_server)
         .update_composer_settings(request)
         .await?;
+    response.notification_error = super::config_writes::saved_notification_error(
+        super::config_writes::emit_config_changed(&state).await,
+    );
     if should_invalidate_skills {
-        skills::broadcast_skills_changed(&state, "config-write").await?;
+        let warning = super::config_writes::saved_notification_error(
+            skills::broadcast_skills_changed(&state, "config-write").await,
+        );
+        response.notification_error = response.notification_error.or(warning);
     }
     Ok(Json(response))
 }

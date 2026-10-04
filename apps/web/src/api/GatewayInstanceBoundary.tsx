@@ -11,6 +11,7 @@ import { currentKodexRoute, isThemeWorkbenchRoute, replaceKodexRoute } from "../
 import { getCapabilities, getProject, getThreadDetail } from "./client";
 import { createInstanceStorage, type InstanceStorage } from "./instanceStorage";
 import { queryKeys } from "./queryKeys";
+import { refreshNativeConfig } from "./nativeConfigCache";
 
 const InstanceStorageContext = createContext<InstanceStorage | null>(null);
 const InstanceConnectionContext = createContext<{
@@ -78,6 +79,7 @@ function GatewayInstanceGate({ children, queryClient }: GatewayInstanceBoundaryP
           void refreshApprovalSnapshot(queryClient);
           void refreshProjectState(queryClient);
           void refreshThreadSettings(queryClient);
+          void refreshNativeConfig(queryClient);
         }
         queryClient.setQueryData(queryKeys.capabilities, capabilities);
         setError(null);
@@ -101,6 +103,7 @@ function GatewayInstanceGate({ children, queryClient }: GatewayInstanceBoundaryP
       void refreshApprovalSnapshot(queryClient);
       void refreshProjectState(queryClient);
       void refreshThreadSettings(queryClient);
+      void refreshNativeConfig(queryClient);
     }
   }, [confirmedId, queryClient]);
   const connection = useMemo(() => ({ beforeConnect: validateInstance, onConnected: handleStreamConnected }), [handleStreamConnected, validateInstance]);

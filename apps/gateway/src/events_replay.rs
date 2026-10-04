@@ -5,7 +5,7 @@ use crate::{
     error::ApiResult,
     events::{
         EventsQuery, ACCOUNT_LOGIN_COMPLETED_EVENT, ACCOUNT_RATE_LIMITS_UPDATED_EVENT,
-        ACCOUNT_UPDATED_EVENT, MCP_CONFIG_CHANGED_EVENT, MCP_OAUTH_LOGIN_COMPLETED_EVENT,
+        ACCOUNT_UPDATED_EVENT, CONFIG_CHANGED_EVENT, MCP_OAUTH_LOGIN_COMPLETED_EVENT,
         MCP_SERVER_STATUS_UPDATED_EVENT, PROJECT_CHANGED_EVENT, THREAD_PROJECT_UPDATED_EVENT,
     },
     events_synthetic::thread_view_refresh_required_event,
@@ -93,7 +93,7 @@ pub(crate) fn is_operational_replay_event(event: &EventEnvelope) -> bool {
             | "gateway.error"
             | "gateway.warning"
             | "timeline.thread_metadata"
-            | MCP_CONFIG_CHANGED_EVENT
+            | CONFIG_CHANGED_EVENT
             | ACCOUNT_RATE_LIMITS_UPDATED_EVENT
             | ACCOUNT_UPDATED_EVENT
             | ACCOUNT_LOGIN_COMPLETED_EVENT

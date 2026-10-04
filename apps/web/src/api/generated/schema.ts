@@ -433,7 +433,7 @@ export interface paths {
         delete: operations["remove_mcp_server"];
         options?: never;
         head?: never;
-        patch?: never;
+        patch: operations["update_mcp_server"];
         trace?: never;
     };
     "/v1/mcp/servers/{server}/enabled": {
@@ -462,22 +462,6 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["start_mcp_oauth_login"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/mcp/servers/{server}/replace": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["replace_mcp_server"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1927,6 +1911,7 @@ export interface components {
         };
         ApiErrorBody: {
             code: string;
+            data?: null | components["schemas"]["NativeConfigWriteErrorData"];
             message: string;
             retryable: boolean;
         };
@@ -2221,6 +2206,7 @@ export interface components {
             permissionProfileId?: string | null;
             permissionsPreset?: null | components["schemas"]["ComposerPermissionsPreset"];
             serviceTier?: string | null;
+            writeTarget: null | components["schemas"]["NativeConfigWriteTarget"];
         };
         ComposerSettingsUpdateRequest: {
             approvalPolicy?: string | null;
@@ -2229,9 +2215,12 @@ export interface components {
             model?: string | null;
             permissionProfileId?: string | null;
             serviceTier?: string | null;
+            writeTarget: components["schemas"]["NativeConfigWriteTarget"];
         };
         ComposerSettingsUpdateResponse: {
+            notificationError?: string | null;
             saved: boolean;
+            write: components["schemas"]["NativeConfigWriteResult"];
         };
         ConfiguredMcpSecret: {
             configured: boolean;
@@ -2252,6 +2241,7 @@ export interface components {
         };
         ConfiguredMcpServerListResponse: {
             servers: components["schemas"]["ConfiguredMcpServer"][];
+            writeTarget: null | components["schemas"]["NativeConfigWriteTarget"];
         };
         ConfiguredMcpTransport: {
             args?: string[];
@@ -2436,8 +2426,10 @@ export interface components {
         /** @enum {string} */
         McpAuthStatus: "unknown" | "unsupported" | "notLoggedIn" | "bearerToken" | "oAuth";
         McpConfigMutationResponse: {
-            configuredServer?: null | components["schemas"]["ConfiguredMcpServer"];
+            notificationError?: string | null;
             reload: components["schemas"]["McpReloadResponse"];
+            saved: boolean;
+            write: components["schemas"]["NativeConfigWriteResult"];
         };
         McpOAuthLoginRequest: {
             scopes?: string[] | null;
@@ -2448,7 +2440,12 @@ export interface components {
             authorizationUrl: string;
         };
         McpReloadResponse: {
-            reloaded: boolean;
+            error: string | null;
+            /**
+             * @description True when native acknowledges queuing a refresh, not server readiness.
+             *     False with an error means unconfirmed; it does not prove no refresh was queued.
+             */
+            queued: boolean;
         };
         McpResource: {
             _meta?: unknown;
@@ -2488,9 +2485,13 @@ export interface components {
             /** Format: int64 */
             toolTimeoutSec?: number | null;
             transport: components["schemas"]["McpServerTransportRequest"];
+            writeTarget: components["schemas"]["NativeConfigWriteTarget"];
         };
         McpServerListResponse: {
             servers: components["schemas"]["McpServerStatus"][];
+        };
+        McpServerRemoveRequest: {
+            writeTarget: components["schemas"]["NativeConfigWriteTarget"];
         };
         McpServerStatus: {
             authStatus: components["schemas"]["McpAuthStatus"];
@@ -2505,10 +2506,10 @@ export interface components {
         McpServerStatusDetail: "full" | "toolsAndAuthOnly";
         McpServerToggleRequest: {
             enabled: boolean;
+            writeTarget: components["schemas"]["NativeConfigWriteTarget"];
         };
         McpServerTransportRequest: {
             args?: string[];
-            clearEnv?: string[];
             command: string;
             cwd?: string | null;
             env?: {
@@ -2519,7 +2520,6 @@ export interface components {
             type: "stdio";
         } | {
             bearerTokenEnvVar?: string | null;
-            clearHttpHeaders?: string[];
             envHttpHeaders?: {
                 [key: string]: string;
             };
@@ -2530,6 +2530,10 @@ export interface components {
             /** @enum {string} */
             type: "streamableHttp";
             url: string;
+        };
+        McpServerUpdateRequest: {
+            edits: components["schemas"]["NativeConfigLeafEdit"][];
+            writeTarget: components["schemas"]["NativeConfigWriteTarget"];
         };
         McpServersQuery: {
             detail?: null | components["schemas"]["McpServerStatusDetail"];
@@ -2571,6 +2575,38 @@ export interface components {
         MoveThreadToSectionRequest: {
             beforeThreadId?: string | null;
             sectionId: string | null;
+        };
+        NativeConfigLayerMetadata: {
+            filePath?: string | null;
+            kind: string;
+            profile?: string | null;
+            version: string;
+        };
+        NativeConfigLeafEdit: {
+            /** @description Native key-path segments relative to one MCP server. Null deletes the leaf. */
+            keyPath: string[];
+            value: unknown;
+        };
+        NativeConfigOverriddenMetadata: {
+            message: string;
+            overridingLayer: components["schemas"]["NativeConfigLayerMetadata"];
+        };
+        /** @enum {string} */
+        NativeConfigWriteErrorCode: "configLayerReadonly" | "configRequirementReadonly" | "configVersionConflict" | "configValidationError" | "configPathNotFound" | "configSchemaUnknownKey" | "userLayerNotFound";
+        NativeConfigWriteErrorData: {
+            config_write_error_code: components["schemas"]["NativeConfigWriteErrorCode"];
+        };
+        NativeConfigWriteResult: {
+            filePath: string;
+            overriddenMetadata: null | components["schemas"]["NativeConfigOverriddenMetadata"];
+            status: components["schemas"]["NativeConfigWriteStatus"];
+            version: string;
+        };
+        /** @enum {string} */
+        NativeConfigWriteStatus: "ok" | "okOverridden";
+        NativeConfigWriteTarget: {
+            filePath: string;
+            version: string;
         };
         NotificationStatusResponse: {
             configured: boolean;
@@ -4305,7 +4341,37 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpServerRemoveRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpConfigMutationResponse"];
+                };
+            };
+        };
+    };
+    update_mcp_server: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description MCP server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpServerUpdateRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -4365,32 +4431,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["McpOAuthLoginResponse"];
-                };
-            };
-        };
-    };
-    replace_mcp_server: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description MCP server name */
-                server: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["McpServerInstallRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["McpConfigMutationResponse"];
                 };
             };
         };

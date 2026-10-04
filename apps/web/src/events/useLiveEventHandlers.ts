@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { applyAccountEvent } from "../account/cache";
 import { applyThreadSettingsEvent } from "../composer/threadSettingsCache";
 import type { EventEnvelope, QueuedInput, RateLimitSnapshot } from "../api/client";
-import { applyMcpLifecycleEvent } from "../api/mcpCache";
+import { applyNativeConfigEvent } from "../api/nativeConfigCache";
 import { queryKeys } from "../api/queryKeys";
 import { applyThreadSectionsEvent } from "../sections/cache";
 import { applyProjectEvent } from "../projects/cache";
@@ -57,8 +57,8 @@ export function useLiveEventHandlers({
       setSkillsInvalidationGeneration((current) => current + 1);
     }
 
-    function applyMcpLifecycleStreamEvent(event: EventEnvelope) {
-      applyMcpLifecycleEvent(queryClient, event);
+    function applyNativeConfigStreamEvent(event: EventEnvelope) {
+      applyNativeConfigEvent(queryClient, event);
     }
 
     function applyAppSurfaceStreamEvent(event: EventEnvelope) {
@@ -84,7 +84,7 @@ export function useLiveEventHandlers({
       applyApprovalEvent: (event) => applyApprovalInvalidation(queryClient, event),
       applyAppSurfaceEvent: applyAppSurfaceStreamEvent,
       applySkillsChangedEvent,
-      applyMcpLifecycleEvent: applyMcpLifecycleStreamEvent,
+      applyNativeConfigEvent: applyNativeConfigStreamEvent,
     };
 
     return {

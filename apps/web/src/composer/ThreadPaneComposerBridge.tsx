@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Autocomplete, Box, Button } from "@mantine/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { listQueuedInputs, type Project, type QueuedInput } from "../api/client";
+import { getComposerSettings, listQueuedInputs, type Project, type QueuedInput } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import type { ComposerSettings, ComposerSettingsChange, ContextUsage } from "../ComposerFooterControls";
 import type { ImageLightboxImage } from "../images/types";
@@ -12,7 +12,7 @@ import { singleProjectRoot } from "../projects/roots";
 import { useWorkspace, type ThreadComposerState } from "../workspace/WorkspaceProvider";
 import { paneTargetRecord, type WorkspacePane } from "../workspace/paneTypes";
 import { ComposerPanel } from "./ComposerPanel";
-import { applyDraftComposerSettingsChange, sameComposerSettings } from "./settings";
+import { applyDraftComposerSettingsChange, normalizePersistedComposerSettings } from "./settings";
 import type { ComposerDraftStore } from "./useComposerDraftState";
 import { useComposerOrchestration } from "./useComposerOrchestration";
 import type { useComposerSettingsState } from "./useComposerSettingsState";
@@ -81,20 +81,14 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const createdDraftThreadRef = useRef<{ threadId: string } | null>(null);
 
-  useEffect(() => {
-    if (!isDraftPane || draftComposerEdited || (draftProjectId !== null && composerCwd === null)) {
-      return;
-    }
-    let cancelled = false;
-    void hydrateComposerDefaults(draftProjectId, composerCwd).then((settings) => {
-      if (!cancelled && settings) {
-        setDraftComposerSettings((current) => (sameComposerSettings(current, settings) ? current : settings));
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [composerCwd, draftComposerEdited, draftProjectId, hydrateComposerDefaults, isDraftPane]);
+  const draftDefaultsQuery = useQuery({
+    enabled: isDraftPane && !draftComposerEdited && canCompose,
+    queryKey: queryKeys.composerSettings(draftProjectId, composerCwd),
+    queryFn: ({ signal }) => getComposerSettings(draftProjectId, composerCwd, signal),
+  });
+  const effectiveDraftSettings = !draftComposerEdited && draftDefaultsQuery.data
+    ? normalizePersistedComposerSettings(draftDefaultsQuery.data, models)
+    : draftComposerSettings;
 
   useEffect(() => {
     createdDraftThreadRef.current = null;
@@ -117,7 +111,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
   });
 
   const paneComposerSettings = isDraftPane
-    ? draftComposerSettings
+    ? effectiveDraftSettings
     : threadSettings.settings;
   const activeThreadId = existingThreadId;
   const queuedSteerRows = existingThreadId ? queuedInputsQuery.data ?? EMPTY_QUEUED_INPUTS : EMPTY_QUEUED_INPUTS;
@@ -151,7 +145,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
   const orchestration = useComposerOrchestration({
     activeSelectedTurnId: paneState.activeTurnId,
     canCompose,
-    composerSettings: draftComposerSettings,
+    composerSettings: effectiveDraftSettings,
     draftChatThreadSelected: isDraftPane && draftProjectId === null,
     draftThreadProjectId: isDraftPane ? draftProjectId : null,
     isDraftThreadSelected: isDraftPane,
@@ -192,7 +186,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
   function handleComposerSettingsChange(change: ComposerSettingsChange) {
     if (!existingThreadId) {
       setDraftComposerEdited(true);
-      setDraftComposerSettings((current) => applyDraftComposerSettingsChange(current, change, models));
+      setDraftComposerSettings(applyDraftComposerSettingsChange(effectiveDraftSettings, change, models));
       return;
     }
     threadSettings.update(change);

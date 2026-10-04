@@ -55,7 +55,7 @@ Managed launches discard inherited `CODEX_*` variables and ambient OpenAI API cr
 
 Image uploads default to the system temporary directory so app-server can read `localImage` paths from its sandbox. If you override `KODEX_UPLOADS_DIR`, choose a location readable by the active app-server sandbox profile, such as a project root or `/tmp`.
 
-MCP environment and HTTP header values are stored in local Codex configuration rather than gateway SQLite. Kodex masks them on readback, but this is a usability measure—not a secret manager. Removing a server removes its inline configuration but does not remove app-server-owned OAuth credentials unless upstream provides a supported credential-removal API.
+MCP environment and HTTP header values are stored in local Codex configuration rather than gateway SQLite. Kodex masks them on readback, but this is a usability measure—not a secret manager. Edits use the native active user-layer file and version within the dedicated Kodex home; unknown policy fields and untouched secrets are not reconstructed. Deleting a value removes it from that user layer, so inherited configuration may become effective again. Removing a server does not remove app-server-owned OAuth credentials unless upstream provides a supported credential-removal API. A successful save remains saved if MCP reload is unconfirmed; retrying Reload does not repeat the config write. A reload acknowledgment does not establish server readiness.
 
 ## PWA behavior
 

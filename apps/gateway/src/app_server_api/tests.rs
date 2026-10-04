@@ -838,7 +838,10 @@ async fn adapter_reads_and_writes_composer_settings_with_execution_defaults() {
     let client = CodexClient::new(server.clone());
 
     let settings = client
-        .composer_settings(Some("/workspace".to_string()))
+        .composer_settings(
+            Some("/workspace".to_string()),
+            std::path::Path::new("/test-native-home"),
+        )
         .await
         .unwrap();
     assert_eq!(settings.model.as_deref(), Some("gpt-5.4"));
@@ -855,9 +858,14 @@ async fn adapter_reads_and_writes_composer_settings_with_execution_defaults() {
         Some(ComposerPermissionsPreset::AutoReview)
     );
 
-    *server.response.lock().unwrap() = json!({"ok": true});
+    *server.response.lock().unwrap() =
+        json!({"status":"ok","filePath":"/test-native-home/config.toml","version":"v2"});
     client
         .update_composer_settings(ComposerSettingsUpdateRequest {
+            write_target: NativeConfigWriteTarget {
+                file_path: "/test-native-home/config.toml".into(),
+                version: "v1".into(),
+            },
             model: Some(Some("gpt-5.4".to_string())),
             effort: Some(Some("medium".to_string())),
             service_tier: Some(None),
@@ -873,13 +881,15 @@ async fn adapter_reads_and_writes_composer_settings_with_execution_defaults() {
         requests[0],
         (
             "config/read".to_string(),
-            json!({"cwd": "/workspace", "includeLayers": false})
+            json!({"cwd": "/workspace", "includeLayers": true})
         )
     );
     assert_eq!(requests[1].0, "config/batchWrite");
     assert_eq!(
         requests[1].1,
         json!({
+            "filePath":"/test-native-home/config.toml",
+            "expectedVersion":"v1",
             "edits": [
                 {"keyPath": "model", "mergeStrategy": "replace", "value": "gpt-5.4"},
                 {"keyPath": "model_reasoning_effort", "mergeStrategy": "replace", "value": "medium"},
@@ -895,28 +905,34 @@ async fn adapter_reads_and_writes_composer_settings_with_execution_defaults() {
 
 #[test]
 fn composer_settings_permission_hint_is_read_only_and_conservative() {
-    let default = ComposerSettingsResponse::from_payload(json!({
-        "config": {
-            "approval_policy": "on-request",
-            "approvals_reviewer": "user",
-            "sandbox_mode": "workspace-write"
-        },
-        "origins": {}
-    }))
+    let default = ComposerSettingsResponse::from_payload(
+        json!({
+            "config": {
+                "approval_policy": "on-request",
+                "approvals_reviewer": "user",
+                "sandbox_mode": "workspace-write"
+            },
+            "origins": {}
+        }),
+        std::path::Path::new("/test-native-home"),
+    )
     .unwrap();
     assert_eq!(
         default.permissions_preset,
         Some(ComposerPermissionsPreset::Default)
     );
 
-    let full_access = ComposerSettingsResponse::from_payload(json!({
-        "config": {
-            "approval_policy": "never",
-            "approvals_reviewer": "user",
-            "sandbox_mode": "workspace-write"
-        },
-        "origins": {}
-    }))
+    let full_access = ComposerSettingsResponse::from_payload(
+        json!({
+            "config": {
+                "approval_policy": "never",
+                "approvals_reviewer": "user",
+                "sandbox_mode": "workspace-write"
+            },
+            "origins": {}
+        }),
+        std::path::Path::new("/test-native-home"),
+    )
     .unwrap();
     assert_eq!(
         full_access.permissions_preset,

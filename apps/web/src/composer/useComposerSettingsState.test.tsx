@@ -8,7 +8,7 @@ import { useComposerSettingsState } from "./useComposerSettingsState";
 
 vi.mock("../api/client", () => ({ getComposerSettings: vi.fn(), listModels: vi.fn() }));
 afterEach(() => vi.clearAllMocks());
-const nativeSettings = (model: string): ComposerSettingsResponse => ({ model });
+const nativeSettings = (model: string): ComposerSettingsResponse => ({ model, writeTarget: null });
 
 it("keeps cwd-specific hydration out of global defaults even when responses finish in reverse order", async () => {
   vi.mocked(listModels).mockResolvedValue(["global-model", "slow-model", "fast-model"].map((id) => ({

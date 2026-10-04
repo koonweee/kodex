@@ -19,6 +19,8 @@ pub enum ApiError {
     UnsupportedMediaType(String),
     #[error("conflict: {0}")]
     Conflict(String),
+    #[error("native configuration write rejected: {0:?}")]
+    NativeConfigWrite(NativeConfigWriteErrorCode),
     #[error("app-server unavailable")]
     AppServerUnavailable,
     #[error("retryable app-server error: {0}")]
@@ -39,6 +41,45 @@ pub struct ApiErrorBody {
     pub code: String,
     pub message: String,
     pub retryable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<NativeConfigWriteErrorData>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum NativeConfigWriteErrorCode {
+    ConfigLayerReadonly,
+    ConfigRequirementReadonly,
+    ConfigVersionConflict,
+    ConfigValidationError,
+    ConfigPathNotFound,
+    ConfigSchemaUnknownKey,
+    UserLayerNotFound,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct NativeConfigWriteErrorData {
+    pub config_write_error_code: NativeConfigWriteErrorCode,
+}
+
+impl NativeConfigWriteErrorCode {
+    fn message(&self) -> &'static str {
+        match self {
+            Self::ConfigVersionConflict => {
+                "Configuration changed since this view was read. Refetch and review before saving."
+            }
+            Self::ConfigLayerReadonly => {
+                "The selected native configuration layer is read-only or is no longer active."
+            }
+            Self::ConfigRequirementReadonly => {
+                "A managed native requirement prevents this configuration change."
+            }
+            Self::ConfigValidationError => "Native configuration validation rejected the change.",
+            Self::ConfigPathNotFound => "The native configuration path was not found.",
+            Self::ConfigSchemaUnknownKey => "The native configuration key is not recognized.",
+            Self::UserLayerNotFound => "The native user configuration layer was not found.",
+        }
+    }
 }
 
 impl ApiError {
@@ -47,7 +88,11 @@ impl ApiError {
             Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
             Self::UnsupportedMediaType(_) => StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            Self::Conflict(_) => StatusCode::CONFLICT,
+            Self::Conflict(_)
+            | Self::NativeConfigWrite(NativeConfigWriteErrorCode::ConfigVersionConflict) => {
+                StatusCode::CONFLICT
+            }
+            Self::NativeConfigWrite(_) => StatusCode::BAD_REQUEST,
             Self::AppServerUnavailable => StatusCode::SERVICE_UNAVAILABLE,
             Self::Retryable(_) => StatusCode::TOO_MANY_REQUESTS,
             Self::BadGateway(_) => StatusCode::BAD_GATEWAY,
@@ -61,41 +106,62 @@ impl ApiError {
                 code: "not_found".to_string(),
                 message: message.clone(),
                 retryable: false,
+                data: None,
             },
             Self::BadRequest(message) => ApiErrorBody {
                 code: "bad_request".to_string(),
                 message: message.clone(),
                 retryable: false,
+                data: None,
             },
             Self::UnsupportedMediaType(message) => ApiErrorBody {
                 code: "unsupported_media_type".to_string(),
                 message: message.clone(),
                 retryable: false,
+                data: None,
             },
             Self::Conflict(message) => ApiErrorBody {
                 code: "conflict".to_string(),
                 message: message.clone(),
                 retryable: false,
+                data: None,
+            },
+            Self::NativeConfigWrite(code) => ApiErrorBody {
+                code: if *code == NativeConfigWriteErrorCode::ConfigVersionConflict {
+                    "config_version_conflict"
+                } else {
+                    "config_write_error"
+                }
+                .into(),
+                message: code.message().into(),
+                retryable: false,
+                data: Some(NativeConfigWriteErrorData {
+                    config_write_error_code: code.clone(),
+                }),
             },
             Self::AppServerUnavailable => ApiErrorBody {
                 code: "app_server_unavailable".to_string(),
                 message: "Codex app-server is not ready".to_string(),
                 retryable: true,
+                data: None,
             },
             Self::Retryable(message) => ApiErrorBody {
                 code: "app_server_retryable".to_string(),
                 message: message.clone(),
                 retryable: true,
+                data: None,
             },
             Self::BadGateway(message) => ApiErrorBody {
                 code: "bad_gateway".to_string(),
                 message: message.clone(),
                 retryable: true,
+                data: None,
             },
             Self::Store(_) | Self::Io(_) | Self::Other(_) => ApiErrorBody {
                 code: "internal_error".to_string(),
                 message: "internal server error".to_string(),
                 retryable: false,
+                data: None,
             },
         }
     }

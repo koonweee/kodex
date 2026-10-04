@@ -4,12 +4,15 @@ pub mod approvals;
 pub mod automations;
 pub mod capabilities;
 pub mod composer_settings;
+mod config_writes;
 pub mod events;
 pub mod file_preview;
 pub mod health;
 pub mod kodex_control_plugin;
 pub mod mcp;
 pub mod models;
+#[cfg(test)]
+mod native_config_tests;
 #[cfg(test)]
 mod native_sections_tests;
 #[cfg(test)]
@@ -1498,7 +1501,6 @@ mod tests {
             "/v1/mcp/servers",
             "/v1/mcp/servers/{server}",
             "/v1/mcp/servers/{server}/enabled",
-            "/v1/mcp/servers/{server}/replace",
             "/v1/mcp/servers/{server}/resources/read",
             "/v1/mcp/servers/{server}/oauth-login",
             "/v1/mcp/reload",
@@ -3558,97 +3560,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn composer_settings_reads_project_config_and_persists_execution_defaults() {
-        let (state, app_server) = test_state().await;
-        let cwd = std::env::current_dir().unwrap().display().to_string();
-        let project = app_server.seed_project("Kodex".to_string(), cwd.clone());
-        *app_server.next_response.lock().unwrap() = Some(json!({
-            "config": {
-                "model": "gpt-5.4",
-                "model_reasoning_effort": "high",
-                "service_tier": "fast",
-                "default_permissions": ":workspace",
-                "approval_policy": "on-request",
-                "approvals_reviewer": "auto_review",
-                "sandbox_mode": "workspace-write"
-            },
-            "origins": {}
-        }));
-        let app = build_router(state.clone());
-
-        let read = app
-            .clone()
-            .oneshot(
-                Request::get(format!("/v1/composer-settings?projectId={}", project.id))
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(read.status(), StatusCode::OK);
-        let body = response_json(read).await;
-        assert_eq!(body["model"], "gpt-5.4");
-        assert_eq!(body["effort"], "high");
-        assert_eq!(body["serviceTier"], "fast");
-        assert_eq!(body["permissionProfileId"], ":workspace");
-        assert_eq!(body["approvalPolicy"], "on-request");
-        assert_eq!(body["approvalsReviewer"], "auto_review");
-        assert_eq!(body["permissionsPreset"], "autoReview");
-
-        let write = app
-            .oneshot(
-                Request::patch("/v1/composer-settings")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        json!({
-                            "model": "gpt-5.4",
-                            "effort": "medium",
-                            "serviceTier": null,
-                            "permissionProfileId": ":read-only",
-                            "approvalPolicy": "on-request",
-                            "approvalsReviewer": "user"
-                        })
-                        .to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(write.status(), StatusCode::OK);
-
-        let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests[0].0, "project/read");
-        assert_eq!(requests[0].1["projectId"], project.id);
-        let requests = &requests[1..];
-        assert_eq!(
-            requests[0],
-            (
-                "config/read".to_string(),
-                json!({"cwd": cwd, "includeLayers": false})
-            )
-        );
-        assert_eq!(requests[1].0, "config/batchWrite");
-        assert_eq!(
-            requests[1].1,
-            json!({
-                "edits": [
-                    {"keyPath": "model", "mergeStrategy": "replace", "value": "gpt-5.4"},
-                    {"keyPath": "model_reasoning_effort", "mergeStrategy": "replace", "value": "medium"},
-                    {"keyPath": "service_tier", "mergeStrategy": "replace", "value": null},
-                    {"keyPath": "default_permissions", "mergeStrategy": "replace", "value": ":read-only"},
-                    {"keyPath": "approval_policy", "mergeStrategy": "replace", "value": "on-request"},
-                    {"keyPath": "approvals_reviewer", "mergeStrategy": "replace", "value": "user"}
-                ],
-                "reloadUserConfig": true
-            })
-        );
-        let events = state.store.replay_events(None, None, None).await.unwrap();
-        assert!(events.iter().any(|event| {
-            event.kind == "skills.changed" && event.payload["source"] == "config-write"
-        }));
-    }
-
-    #[tokio::test]
     async fn mcp_servers_route_pages_app_server_statuses() {
         let (state, app_server) = test_state().await;
         app_server.queued_responses.lock().unwrap().extend([
@@ -3749,7 +3660,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(reload.status(), StatusCode::OK);
-        assert_eq!(response_json(reload).await["reloaded"], true);
+        assert_eq!(
+            response_json(reload).await,
+            json!({"queued":true,"error":null})
+        );
 
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(
@@ -3859,286 +3773,6 @@ mod tests {
                 json!({"cwd": null, "includeLayers": true})
             )
         );
-    }
-
-    #[tokio::test]
-    async fn mcp_config_mutations_write_reload_and_emit_event() {
-        let (state, app_server) = test_state().await;
-        app_server.queued_responses.lock().unwrap().extend([
-            json!({"config": {"mcp_servers": {}}, "origins": {}}),
-            json!({}),
-            json!({}),
-            json!({}),
-            json!({}),
-            json!({}),
-            json!({}),
-        ]);
-        let app = build_router(state.clone());
-
-        let add = app
-            .clone()
-            .oneshot(
-                Request::post("/v1/mcp/servers")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        json!({
-                            "name": "docs",
-                            "transport": {
-                                "type": "stdio",
-                                "command": "npx",
-                                "args": ["-y", "@docs/mcp"],
-                                "env": {"DOCS_TOKEN": "secret-token"},
-                                "envVars": ["SHARED_ENV"]
-                            },
-                            "enabled": true
-                        })
-                        .to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(add.status(), StatusCode::OK);
-        let add = response_json(add).await;
-        assert_eq!(add["configuredServer"]["name"], "docs");
-        assert_eq!(
-            add["configuredServer"]["transport"]["env"]["DOCS_TOKEN"]["masked"],
-            true
-        );
-        assert!(!add.to_string().contains("secret-token"));
-
-        let toggle = app
-            .clone()
-            .oneshot(
-                Request::patch("/v1/mcp/servers/docs/enabled")
-                    .header("content-type", "application/json")
-                    .body(Body::from(json!({"enabled": false}).to_string()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(toggle.status(), StatusCode::OK);
-
-        let remove = app
-            .oneshot(
-                Request::delete("/v1/mcp/servers/docs")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(remove.status(), StatusCode::OK);
-
-        let requests = app_server.requests.lock().unwrap();
-        assert_eq!(
-            requests[0],
-            (
-                "config/read".to_string(),
-                json!({"cwd": null, "includeLayers": true})
-            )
-        );
-        assert_eq!(requests[1].0, "config/batchWrite");
-        assert_eq!(
-            requests[1].1,
-            json!({
-                "edits": [{
-                    "keyPath": "mcp_servers.docs",
-                    "mergeStrategy": "replace",
-                    "value": {
-                        "command": "npx",
-                        "args": ["-y", "@docs/mcp"],
-                        "env": {"DOCS_TOKEN": "secret-token"},
-                        "env_vars": ["SHARED_ENV"],
-                        "enabled": true
-                    }
-                }],
-                "reloadUserConfig": true
-            })
-        );
-        assert_eq!(
-            requests[2],
-            ("config/mcpServer/reload".to_string(), Value::Null)
-        );
-        assert_eq!(
-            requests[3].1,
-            json!({
-                "edits": [{
-                    "keyPath": "mcp_servers.docs.enabled",
-                    "mergeStrategy": "replace",
-                    "value": false
-                }],
-                "reloadUserConfig": true
-            })
-        );
-        assert_eq!(
-            requests[4],
-            ("config/mcpServer/reload".to_string(), Value::Null)
-        );
-        assert_eq!(
-            requests[5].1,
-            json!({
-                "edits": [{
-                    "keyPath": "mcp_servers.docs",
-                    "mergeStrategy": "replace",
-                    "value": null
-                }],
-                "reloadUserConfig": true
-            })
-        );
-        assert_eq!(
-            requests[6],
-            ("config/mcpServer/reload".to_string(), Value::Null)
-        );
-
-        let events = state.store.replay_events(None, None, None).await.unwrap();
-        let config_events = events
-            .iter()
-            .filter(|event| event.kind == "mcp.config_changed")
-            .collect::<Vec<_>>();
-        assert_eq!(config_events.len(), 3);
-        assert_eq!(config_events[0].payload["operation"], "add");
-        assert_eq!(config_events[1].payload["operation"], "toggle");
-        assert_eq!(config_events[2].payload["operation"], "remove");
-    }
-
-    #[tokio::test]
-    async fn mcp_replace_preserves_replaces_and_clears_stored_secrets() {
-        let (state, app_server) = test_state().await;
-        app_server.queued_responses.lock().unwrap().extend([
-            json!({
-                "config": {
-                    "mcp_servers": {
-                        "docs": {
-                            "url": "https://old.example.test",
-                            "http_headers": {
-                                "Authorization": "Bearer old",
-                                "X-Keep": "keep-secret",
-                                "X-Remove": "remove-secret"
-                            },
-                            "scopes": ["old-scope"],
-                            "enabled_tools": ["old-tool"],
-                            "startup_timeout_sec": 5,
-                            "tool_timeout_sec": 20
-                        }
-                    }
-                },
-                "origins": {}
-            }),
-            json!({}),
-            json!({}),
-        ]);
-        let app = build_router(state);
-
-        let response = app
-            .oneshot(
-                Request::post("/v1/mcp/servers/docs/replace")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        json!({
-                            "name": "docs",
-                            "transport": {
-                                "type": "streamableHttp",
-                                "url": "https://new.example.test",
-                                "httpHeaders": {"Authorization": "Bearer new"},
-                                "clearHttpHeaders": ["X-Remove"],
-                                "envHttpHeaders": {"X-Env": "DOCS_TOKEN"}
-                            },
-                            "enabled": true,
-                            "required": true
-                        })
-                        .to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(
-            body["configuredServer"]["transport"]["httpHeaders"]["Authorization"]["masked"],
-            true
-        );
-        assert_eq!(
-            body["configuredServer"]["transport"]["httpHeaders"]["X-Keep"]["masked"],
-            true
-        );
-        assert!(body["configuredServer"]["transport"]["httpHeaders"]
-            .get("X-Remove")
-            .is_none());
-        let response_text = body.to_string();
-        assert!(!response_text.contains("Bearer new"));
-        assert!(!response_text.contains("keep-secret"));
-
-        let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests[0].0, "config/read");
-        assert_eq!(
-            requests[1].1,
-            json!({
-                "edits": [{
-                    "keyPath": "mcp_servers.docs",
-                    "mergeStrategy": "replace",
-                    "value": {
-                        "url": "https://new.example.test",
-                        "http_headers": {
-                            "Authorization": "Bearer new",
-                            "X-Keep": "keep-secret"
-                        },
-                        "env_http_headers": {"X-Env": "DOCS_TOKEN"},
-                        "enabled": true,
-                        "required": true,
-                        "startup_timeout_sec": 5,
-                        "tool_timeout_sec": 20,
-                        "scopes": ["old-scope"],
-                        "enabled_tools": ["old-tool"]
-                    }
-                }],
-                "reloadUserConfig": true
-            })
-        );
-        assert_eq!(
-            requests[2],
-            ("config/mcpServer/reload".to_string(), Value::Null)
-        );
-    }
-
-    #[tokio::test]
-    async fn mcp_add_rejects_existing_configured_server_name() {
-        let (state, app_server) = test_state().await;
-        app_server.queued_responses.lock().unwrap().push(json!({
-            "config": {
-                "mcp_servers": {
-                    "docs": {"command": "npx"}
-                }
-            },
-            "origins": {}
-        }));
-        let app = build_router(state);
-
-        let response = app
-            .oneshot(
-                Request::post("/v1/mcp/servers")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        json!({
-                            "name": "docs",
-                            "transport": {"type": "stdio", "command": "npx"}
-                        })
-                        .to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        let body = response_json(response).await;
-        assert_eq!(body["code"], "bad_request");
-        assert!(body["message"].as_str().unwrap().contains("already exists"));
-
-        let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].0, "config/read");
     }
 
     #[tokio::test]
@@ -11785,7 +11419,7 @@ mod tests {
                 thread_id: None,
                 turn_id: None,
                 item_id: None,
-                kind: "mcp.config_changed".to_string(),
+                kind: "config.changed".to_string(),
                 codex_method: None,
                 payload: json!({"operation": "add", "server": "docs"}),
             })
@@ -11832,7 +11466,7 @@ mod tests {
         let body = response_json(response).await;
         let events = body["events"].as_array().unwrap();
         assert!(events.iter().any(|event| {
-            event["seq"] == config_changed.seq && event["kind"] == "mcp.config_changed"
+            event["seq"] == config_changed.seq && event["kind"] == "config.changed"
         }));
         assert!(events.iter().any(|event| {
             event["seq"] == startup.seq && event["kind"] == "mcp.server_status_updated"
@@ -11859,7 +11493,7 @@ mod tests {
                 thread_id: None,
                 turn_id: None,
                 item_id: None,
-                kind: "mcp.config_changed".to_string(),
+                kind: "config.changed".to_string(),
                 codex_method: None,
                 payload: json!({"operation": "replace", "server": "docs"}),
             })
@@ -11871,7 +11505,7 @@ mod tests {
         let mut body = response.into_body();
         let chunk = next_sse_chunk(&mut body).await;
         assert!(chunk.contains(&format!("id: {}", live.seq)));
-        assert!(chunk.contains("mcp.config_changed"));
+        assert!(chunk.contains("config.changed"));
         assert!(chunk.contains("\"operation\":\"replace\""));
     }
 

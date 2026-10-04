@@ -14,7 +14,7 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use kodex_gateway::{
-    app_server::{InboundMessage, JsonRpcAppServer},
+    app_server::{AppServer, InboundMessage, JsonRpcAppServer},
     build_router,
     config::Config,
     events::ingest_inbound,
@@ -157,6 +157,13 @@ pub(super) struct NativeSession {
 }
 
 impl NativeSession {
+    pub(super) async fn native_config_read(&self) -> anyhow::Result<Value> {
+        Ok(self
+            .server
+            .request("config/read", json!({"cwd":null,"includeLayers":true}))
+            .await?)
+    }
+
     pub(super) async fn start(fixture: &Fixture) -> anyhow::Result<Self> {
         let store = Store::connect(&fixture.config.database.path).await?;
         let (tx, mut native_rx) = mpsc::channel(1024);

@@ -281,16 +281,9 @@ impl AppServer for JsonRpcAppServer {
                 Err(ApiError::Retryable(error.message))
             }
             Ok(Err(error)) => {
-                let message = if let Some(data) = error.data {
-                    format!(
-                        "app-server error {}: {}; data: {}",
-                        error.code, error.message, data
-                    )
-                } else {
-                    format!("app-server error {}: {}", error.code, error.message)
-                };
-                log_app_server_timing(method, started_at, None, "bad_gateway");
-                Err(ApiError::BadGateway(message))
+                let error = api_error_from_rpc(error);
+                log_app_server_timing(method, started_at, None, api_error_classification(&error));
+                Err(error)
             }
             Err(_) => {
                 log_app_server_timing(method, started_at, None, "unavailable");
@@ -344,12 +337,35 @@ fn serialized_json_len(value: &Value) -> usize {
     serde_json::to_vec(value).map_or(0, |bytes| bytes.len())
 }
 
+fn api_error_from_rpc(error: JsonRpcError) -> ApiError {
+    if let Some(code) = error
+        .data
+        .as_ref()
+        .and_then(|data| data.get("config_write_error_code"))
+        .and_then(|code| serde_json::from_value(code.clone()).ok())
+    {
+        // Keep only the known native code. Native validation errors and data can
+        // include submitted secret values, so they are not public error text.
+        return ApiError::NativeConfigWrite(code);
+    }
+    let message = if let Some(data) = error.data {
+        format!(
+            "app-server error {}: {}; data: {}",
+            error.code, error.message, data
+        )
+    } else {
+        format!("app-server error {}: {}", error.code, error.message)
+    };
+    ApiError::BadGateway(message)
+}
+
 fn api_error_classification(error: &ApiError) -> &'static str {
     match error {
         ApiError::NotFound(_) => "not_found",
         ApiError::BadRequest(_) => "bad_request",
         ApiError::UnsupportedMediaType(_) => "unsupported_media_type",
         ApiError::Conflict(_) => "conflict",
+        ApiError::NativeConfigWrite(_) => "config_write_error",
         ApiError::AppServerUnavailable => "unavailable",
         ApiError::Retryable(_) => "retryable",
         ApiError::BadGateway(_) => "bad_gateway",
@@ -580,6 +596,27 @@ pub mod tests {
             params["capabilities"]["extensions"]["io.modelcontextprotocol/ui"]["mimeTypes"][0],
             "text/html;profile=mcp-app"
         );
+    }
+
+    #[test]
+    fn native_config_version_conflict_is_typed_and_does_not_expose_raw_error_data() {
+        let error = api_error_from_rpc(JsonRpcError {
+            code: -32600,
+            message: "Configuration was modified since last read. Fetch latest version and retry."
+                .into(),
+            data: Some(
+                json!({"config_write_error_code":"configVersionConflict","untrusted":"secret-token"}),
+            ),
+        });
+        assert_eq!(error.status_code(), axum::http::StatusCode::CONFLICT);
+        let body = serde_json::to_value(error.body()).unwrap();
+        assert_eq!(body["code"], "config_version_conflict");
+        assert_eq!(
+            body["data"],
+            json!({"config_write_error_code":"configVersionConflict"})
+        );
+        assert_eq!(body["retryable"], false);
+        assert!(!body.to_string().contains("secret-token"));
     }
 
     #[test]

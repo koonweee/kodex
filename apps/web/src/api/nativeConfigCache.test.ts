@@ -2,7 +2,7 @@ import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 
 import type { EventEnvelope } from "./client";
-import { applyMcpLifecycleEvent } from "./mcpCache";
+import { applyNativeConfigEvent } from "./nativeConfigCache";
 import { queryKeys } from "./queryKeys";
 
 function event(kind: string): EventEnvelope {
@@ -26,18 +26,34 @@ function event(kind: string): EventEnvelope {
   };
 }
 
-describe("MCP cache events", () => {
-  it("invalidates MCP server inventory for lifecycle events", () => {
-    const queryClient = new QueryClient();
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
-
-    applyMcpLifecycleEvent(queryClient, event("mcp.config_changed"));
-    applyMcpLifecycleEvent(queryClient, event("mcp.server_status_updated"));
-    applyMcpLifecycleEvent(queryClient, event("mcp.oauth_login_completed"));
-
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.mcpServers });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.mcpConfiguredServers });
-    expect(invalidateSpy).toHaveBeenCalledTimes(6);
+describe("native configuration cache events", () => {
+  it("cancels both clients' earlier inventory reads before a native change refill", async () => {
+    let releaseOld: (value: unknown) => void = () => undefined;
+    const oldReply = new Promise((resolve) => { releaseOld = resolve; });
+    const clients = [new QueryClient(), new QueryClient()];
+    const signals: AbortSignal[] = [];
+    const cleanups = clients.map((client) => {
+      let reads = 0;
+      const observer = new QueryObserver(client, {
+        queryKey: queryKeys.mcpConfiguredServers,
+        queryFn: ({ signal }) => {
+          signals.push(signal);
+          reads += 1;
+          return reads === 1 ? oldReply : Promise.resolve({ servers: [{ name: "native-current" }] });
+        },
+      });
+      return observer.subscribe(() => {});
+    });
+    await vi.waitFor(() => expect(signals).toHaveLength(2));
+    const firstSignals = [...signals];
+    clients.forEach((client) => applyNativeConfigEvent(client, event("config.changed")));
+    await vi.waitFor(() => expect(firstSignals.every((signal) => signal.aborted)).toBe(true));
+    await vi.waitFor(() => clients.forEach((client) => expect(client.getQueryData(queryKeys.mcpConfiguredServers)).toEqual({ servers: [{ name: "native-current" }] })));
+    releaseOld({ servers: [{ name: "stale-server" }] });
+    await oldReply;
+    clients.forEach((client) => expect(client.getQueryData(queryKeys.mcpConfiguredServers)).toEqual({ servers: [{ name: "native-current" }] }));
+    cleanups.forEach((cleanup) => cleanup());
+    clients.forEach((client) => client.clear());
   });
 
   it("lets another active client converge by refetching inventory after MCP config events", async () => {
@@ -69,7 +85,7 @@ describe("MCP cache events", () => {
     observingFetch.mockResolvedValue({ servers: [{ name: "after-event" }] });
     observingConfigFetch.mockResolvedValue({ servers: [{ name: "after-config" }] });
 
-    applyMcpLifecycleEvent(observingClient, event("mcp.config_changed"));
+    applyNativeConfigEvent(observingClient, event("config.changed"));
 
     await vi.waitFor(() =>
       expect(observingClient.getQueryData(queryKeys.mcpServers)).toEqual({
@@ -96,7 +112,7 @@ describe("MCP cache events", () => {
     const queryClient = new QueryClient();
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
 
-    applyMcpLifecycleEvent(queryClient, event("skills.changed"));
+    applyNativeConfigEvent(queryClient, event("skills.changed"));
 
     expect(invalidateSpy).not.toHaveBeenCalled();
   });
