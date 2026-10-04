@@ -142,6 +142,9 @@ impl KodexControlMcp {
 pub struct CreateThreadToolParams {
     #[serde(alias = "project_id")]
     pub project_id: String,
+    /// Execution directory; required when the project has zero or multiple roots.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -447,6 +450,9 @@ pub struct MarkThreadSeenToolParams {
 pub struct SpawnThreadToolParams {
     #[serde(alias = "project_id")]
     pub project_id: String,
+    /// Execution directory; independent of the project's organizational roots.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
     pub input: Vec<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,

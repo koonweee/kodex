@@ -42,10 +42,11 @@ async function main() {
 async function loadThreadTargets() {
   const sidebar = await getJson("/v1/sidebar/threads");
   const projects = sidebar.projects ?? [];
-  const kodexProject = projects.find((project) => project.cwd === REPO_ROOT)
-    ?? projects.find((project) => project.name === "kodex")
-    ?? projects[0]
-    ?? null;
+  const matchingProjects = projects.filter((project) => project.roots.some((root) => root.path === REPO_ROOT));
+  if (matchingProjects.length > 1) {
+    throw new Error("Multiple native projects include the repository root; the profiling target is ambiguous.");
+  }
+  const kodexProject = matchingProjects[0] ?? null;
   const chatThreads = filterExcludedThreads(sidebar.chatThreads?.threads ?? []);
   const projectThreads = filterExcludedThreads(kodexProject ? sidebar.projectThreads?.[kodexProject.id]?.threads ?? [] : []);
   const idleProjectThreads = projectThreads.filter((thread) => thread.status !== "active");
@@ -149,7 +150,7 @@ function buildScenarios(targets) {
       action: async ({ page }) => {
         await waitForPaneCount(page, 2);
         await page.getByLabel(/message composer/i).last().waitFor({ state: "visible", timeout: 15000 });
-        await profileStreamingSubmission(page);
+        await profileStreamingSubmission(page, targets.kodexProject ? REPO_ROOT : null);
       },
     },
   ];
@@ -258,7 +259,8 @@ async function profileComposerTyping(page, text, options = {}) {
   await page.waitForTimeout(250);
 }
 
-async function profileStreamingSubmission(page) {
+async function profileStreamingSubmission(page, cwd = null) {
+  if (cwd) await page.getByLabel("Working directory", { exact: true }).fill(cwd);
   await page.evaluate(() => {
     window.__kodexProfile.streaming = {
       startedAt: performance.now(),
@@ -517,11 +519,11 @@ function renderReport({ baseUrl, generatedAt, results, threadTargets }) {
       ? [
           "## Live Diagnostics",
           "",
-          "| ID | Live events | Reducer batches/events | Reducer total/avg event | Refreshes | Delta misses | Patch bytes |",
-          "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+          "| ID | Live events | Reducer batches/events | Reducer total/avg event | Patch bytes |",
+          "| --- | ---: | ---: | ---: | ---: |",
           ...results.map((result) => {
             const live = result.liveDiagnostics;
-            return `| ${result.id} | ${formatEventsByStream(live)} | ${formatReducerCounts(live)} | ${formatReducerDurations(live)} | ${live?.selectedThreadSnapshotRefreshes ?? ""} | ${live?.selectedThreadDeltaMisses ?? ""} | ${formatRecord(live?.patchBytesByScope)} |`;
+            return `| ${result.id} | ${formatEventsByStream(live)} | ${formatReducerCounts(live)} | ${formatReducerDurations(live)} | ${formatRecord(live?.patchBytesByScope)} |`;
           }),
           "",
         ]
@@ -804,7 +806,7 @@ function formatEventsByStream(live) {
   if (!live) {
     return "";
   }
-  return `g:${live.eventsByStream?.global ?? 0} s:${live.eventsByStream?.selected ?? 0}`;
+  return String(live.eventsByStream?.global ?? 0);
 }
 
 function formatReducerCounts(live) {

@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { useCallback, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { ThreadPaneComposerBridge } from "../App";
+import { ThreadPaneComposerBridge } from "../composer/ThreadPaneComposerBridge";
 import type { ComposerSettings } from "../ComposerFooterControls";
 import {
   baseRoutes,

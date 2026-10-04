@@ -520,12 +520,13 @@ describe("App shell", () => {
   it("keeps unified pane chrome and composer outside the timeline scroll region and toggles debug events locally", async () => {
     mockGateway({
       "GET /v1/projects": {
-        projects: [{ id: "project-1", name: "Kodex", cwd: "/home/example/kodex", createdAt: "", updatedAt: "" }],
+        projects: [{ id: "project-1", name: "Kodex", roots: [{ path: "/home/example/kodex" }], metadata: {}, position: 0, createdAt: 1777507200, updatedAt: 1777507200, recencyAt: null }],
       },
       "GET /v1/threads": {
         threads: [
           {
             id: "thread-1",
+            projectId: "project-1",
             name: "Investigate timeline rendering with a deliberately long generated title",
             cwd: "/home/example/kodex",
             status: "idle",
@@ -543,6 +544,7 @@ describe("App shell", () => {
       "GET /v1/threads/thread-1": threadDetail(
         {
           id: "thread-1",
+          projectId: "project-1",
           name: "Investigate timeline rendering with a deliberately long generated title",
           cwd: "/home/example/kodex",
           status: "idle",
@@ -599,12 +601,13 @@ describe("App shell", () => {
     try {
       const gateway = mockGateway({
         "GET /v1/projects": {
-          projects: [{ id: "project-1", name: "Kodex", cwd: "/home/example/kodex", createdAt: "", updatedAt: "" }],
+          projects: [{ id: "project-1", name: "Kodex", roots: [{ path: "/home/example/kodex" }], metadata: {}, position: 0, createdAt: 1777507200, updatedAt: 1777507200, recencyAt: null }],
         },
         "GET /v1/threads": {
           threads: [
             {
               id: "thread-1",
+              projectId: "project-1",
               name: "Timeline QA",
               cwd: "/home/example/kodex",
               status: "idle",
@@ -622,6 +625,7 @@ describe("App shell", () => {
         "GET /v1/threads/thread-1": threadDetail(
           {
             id: "thread-1",
+            projectId: "project-1",
             name: "Timeline QA",
             cwd: "/home/example/kodex",
             status: "idle",
@@ -682,12 +686,13 @@ describe("App shell", () => {
 
     mockGateway({
       "GET /v1/projects": {
-        projects: [{ id: "project-1", name: "Kodex", cwd: "/home/example/kodex", createdAt: "", updatedAt: "" }],
+        projects: [{ id: "project-1", name: "Kodex", roots: [{ path: "/home/example/kodex" }], metadata: {}, position: 0, createdAt: 1777507200, updatedAt: 1777507200, recencyAt: null }],
       },
       "GET /v1/threads": {
         threads: [
           {
             id: "thread-1",
+            projectId: "project-1",
             name: "Markdown QA",
             cwd: "/home/example/kodex",
             status: "idle",
@@ -705,6 +710,7 @@ describe("App shell", () => {
       "GET /v1/threads/thread-1": threadDetail(
         {
           id: "thread-1",
+          projectId: "project-1",
           name: "Markdown QA",
           cwd: "/home/example/kodex",
           status: "idle",
@@ -754,12 +760,13 @@ describe("App shell", () => {
     try {
       mockGateway({
         "GET /v1/projects": {
-          projects: [{ id: "project-1", name: "Kodex", cwd: "/home/example/kodex", createdAt: "", updatedAt: "" }],
+          projects: [{ id: "project-1", name: "Kodex", roots: [{ path: "/home/example/kodex" }], metadata: {}, position: 0, createdAt: 1777507200, updatedAt: 1777507200, recencyAt: null }],
         },
         "GET /v1/threads": {
           threads: [
             {
               id: "thread-1",
+              projectId: "project-1",
               name: "Large thread",
               cwd: "/home/example/kodex",
               status: "idle",
@@ -777,6 +784,7 @@ describe("App shell", () => {
         "GET /v1/threads/thread-1": threadDetail(
           {
             id: "thread-1",
+            projectId: "project-1",
             name: "Large thread",
             cwd: "/home/example/kodex",
             status: "idle",
@@ -829,12 +837,13 @@ describe("App shell", () => {
   it("shows and hides the scroll-to-bottom button when the user leaves and returns to bottom", async () => {
     mockGateway({
       "GET /v1/projects": {
-        projects: [{ id: "project-1", name: "Kodex", cwd: "/home/example/kodex", createdAt: "", updatedAt: "" }],
+        projects: [{ id: "project-1", name: "Kodex", roots: [{ path: "/home/example/kodex" }], metadata: {}, position: 0, createdAt: 1777507200, updatedAt: 1777507200, recencyAt: null }],
       },
       "GET /v1/threads": {
         threads: [
           {
             id: "thread-1",
+            projectId: "project-1",
             name: "Large thread",
             cwd: "/home/example/kodex",
             status: "idle",
@@ -852,6 +861,7 @@ describe("App shell", () => {
       "GET /v1/threads/thread-1": threadDetail(
         {
           id: "thread-1",
+          projectId: "project-1",
           name: "Large thread",
           cwd: "/home/example/kodex",
           status: "idle",
@@ -907,12 +917,13 @@ describe("App shell", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     mockGateway({
       "GET /v1/projects": {
-        projects: [{ id: "project-1", name: "Kodex", cwd: "/home/example/kodex", createdAt: "", updatedAt: "" }],
+        projects: [{ id: "project-1", name: "Kodex", roots: [{ path: "/home/example/kodex" }], metadata: {}, position: 0, createdAt: 1777507200, updatedAt: 1777507200, recencyAt: null }],
       },
       "GET /v1/threads": {
         threads: [
           {
             id: "thread-1",
+            projectId: "project-1",
             name: "Large thread",
             cwd: "/home/example/kodex",
             status: "idle",
@@ -930,6 +941,7 @@ describe("App shell", () => {
       "GET /v1/threads/thread-1": threadDetail(
         {
           id: "thread-1",
+          projectId: "project-1",
           name: "Large thread",
           cwd: "/home/example/kodex",
           status: "idle",
@@ -991,12 +1003,13 @@ describe("App shell", () => {
   it("keeps the user's scroll position when sending while scrolled up", async () => {
     const gateway = mockGateway({
       "GET /v1/projects": {
-        projects: [{ id: "project-1", name: "Kodex", cwd: "/home/example/kodex", createdAt: "", updatedAt: "" }],
+        projects: [{ id: "project-1", name: "Kodex", roots: [{ path: "/home/example/kodex" }], metadata: {}, position: 0, createdAt: 1777507200, updatedAt: 1777507200, recencyAt: null }],
       },
       "GET /v1/threads": {
         threads: [
           {
             id: "thread-1",
+            projectId: "project-1",
             name: "Large thread",
             cwd: "/home/example/kodex",
             status: "idle",
@@ -1014,6 +1027,7 @@ describe("App shell", () => {
       "GET /v1/threads/thread-1": threadDetail(
         {
           id: "thread-1",
+          projectId: "project-1",
           name: "Large thread",
           cwd: "/home/example/kodex",
           status: "idle",
@@ -1068,12 +1082,13 @@ describe("App shell", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     mockGateway({
       "GET /v1/projects": {
-        projects: [{ id: "project-1", name: "Kodex", cwd: "/home/example/kodex", createdAt: "", updatedAt: "" }],
+        projects: [{ id: "project-1", name: "Kodex", roots: [{ path: "/home/example/kodex" }], metadata: {}, position: 0, createdAt: 1777507200, updatedAt: 1777507200, recencyAt: null }],
       },
       "GET /v1/threads": {
         threads: [
           {
             id: "thread-1",
+            projectId: "project-1",
             name: "Large thread",
             cwd: "/home/example/kodex",
             status: "idle",
@@ -1091,6 +1106,7 @@ describe("App shell", () => {
       "GET /v1/threads/thread-1": threadDetail(
         {
           id: "thread-1",
+          projectId: "project-1",
           name: "Large thread",
           cwd: "/home/example/kodex",
           status: "idle",
@@ -1152,12 +1168,13 @@ describe("App shell", () => {
   it("bounds mounted nested activity items in activity-heavy timelines", async () => {
     mockGateway({
       "GET /v1/projects": {
-        projects: [{ id: "project-1", name: "Kodex", cwd: "/home/example/kodex", createdAt: "", updatedAt: "" }],
+        projects: [{ id: "project-1", name: "Kodex", roots: [{ path: "/home/example/kodex" }], metadata: {}, position: 0, createdAt: 1777507200, updatedAt: 1777507200, recencyAt: null }],
       },
       "GET /v1/threads": {
         threads: [
           {
             id: "thread-1",
+            projectId: "project-1",
             name: "Activity thread",
             cwd: "/home/example/kodex",
             status: "idle",
@@ -1175,6 +1192,7 @@ describe("App shell", () => {
       "GET /v1/threads/thread-1": threadDetail(
         {
           id: "thread-1",
+          projectId: "project-1",
           name: "Activity thread",
           cwd: "/home/example/kodex",
           status: "idle",

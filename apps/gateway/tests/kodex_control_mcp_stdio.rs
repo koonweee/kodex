@@ -41,6 +41,10 @@ async fn kodex_control_mcp_stdio_lists_tools() -> anyhow::Result<()> {
         .all(|tool| tool.name != "apply_project_preview_config"));
     assert_tool_requires(&tools, "send_thread_input", &["threadId", "input"]);
     assert_tool_requires(&tools, "spawn_thread", &["projectId", "input"]);
+    for name in ["create_thread", "spawn_thread"] {
+        let tool = tools.iter().find(|tool| tool.name == name).unwrap();
+        assert!(tool.input_schema["properties"].get("cwd").is_some());
+    }
     assert_tool_requires(&tools, "rename_thread", &["threadId", "name"]);
     assert_tool_requires(&tools, "update_thread_settings", &["threadId", "settings"]);
     assert_tool_requires(
@@ -124,6 +128,7 @@ async fn kodex_control_mcp_smokes_new_tools_against_fake_gateway() -> anyhow::Re
 
     let mut spawn_args = JsonObject::new();
     spawn_args.insert("projectId".to_string(), json!("project-1"));
+    spawn_args.insert("cwd".to_string(), json!("/workspace/selected-root"));
     spawn_args.insert(
         "input".to_string(),
         json!([{"type": "text", "text": "start work"}]),
@@ -214,6 +219,7 @@ async fn kodex_control_mcp_smokes_new_tools_against_fake_gateway() -> anyhow::Re
         request.method == Method::POST
             && request.path == "/v1/self-control/thread-spawns"
             && request.body["projectId"] == "project-1"
+            && request.body["cwd"] == "/workspace/selected-root"
             && request.body["model"] == "gpt-test"
             && request.body.get("creationOptions").is_none()
     }));

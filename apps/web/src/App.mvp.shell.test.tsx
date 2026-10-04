@@ -60,8 +60,7 @@ async function notificationMenuItem(name: RegExp) {
 }
 
 function addProjectSubmitButton() {
-  const buttons = screen.getAllByRole("button", { name: /add project/i });
-  return buttons[buttons.length - 1];
+  return within(screen.getByRole("dialog", { name: /add project/i })).getByRole("button", { name: /add project/i });
 }
 
 function streamIncludesThread(instance: FakeEventSource, threadId: string): boolean {
@@ -98,11 +97,23 @@ function deferred<T>() {
   return { promise, reject, resolve };
 }
 
-function missingSidebarThreadsRoute() {
-  return new Response(JSON.stringify({ code: "not_found", message: "Unhandled route", retryable: false }), {
-    status: 404,
-    headers: { "Content-Type": "application/json" },
-  });
+function sidebarSnapshot({
+  projects = [project],
+  threads = [thread],
+  chats = [],
+  pins = [],
+}: {
+  projects?: typeof project[];
+  threads?: Array<{ projectId: string | null } & Record<string, unknown>>;
+  chats?: Array<Record<string, unknown>>;
+  pins?: Array<Record<string, unknown>>;
+} = {}) {
+  return {
+    projects,
+    projectThreads: Object.fromEntries(projects.map((project) => [project.id, { threads: threads.filter((thread) => thread.projectId === project.id) }])),
+    chatThreads: { threads: chats },
+    pinnedThreads: { threads: pins },
+  };
 }
 
 describe("MVP shell flows", () => {
@@ -120,27 +131,27 @@ describe("MVP shell flows", () => {
     "renders projects and threads, creates a project, and promotes a draft thread title from the first message",
     async () => {
       vi.stubGlobal("EventSource", FakeEventSource);
+      const scratchProject = { ...project, id: "project-2", name: "scratch", roots: [{ path: "/home/example/scratch" }], position: 1 };
+      let projects = [project];
+      let threads = [thread];
       const gateway = mockGateway(
         baseRoutes({
-          "POST /v1/projects": async (request: Request) => {
-            const body = (await requestJson(request)) as { createDirectory?: boolean; cwd: string; name?: string | null };
-            if (!body.createDirectory) {
-              return new Response(JSON.stringify({ message: "directory does not exist" }), {
-                status: 400,
-                headers: { "Content-Type": "application/json" },
-              });
-            }
-            return {
-              cwd: "/home/example/scratch",
-              id: "project-2",
-              name: "scratch",
-              createdAt: "2026-04-30T00:00:00Z",
-              updatedAt: "2026-04-30T00:00:00Z",
-            };
+          "GET /v1/projects": () => ({ projects }),
+          "GET /v1/threads": (request: Request) => {
+            const projectId = new URL(request.url).searchParams.get("projectId");
+            return { threads: threads.filter((thread) => !projectId || thread.projectId === projectId) };
           },
-          "POST /v1/threads": { thread: { ...thread, id: "thread-2", name: "New thread", preview: "" }, rawPayload: {} },
+          "POST /v1/projects": () => {
+            projects = [project, scratchProject];
+            return scratchProject;
+          },
+          "POST /v1/threads": () => {
+            const created = { ...thread, id: "thread-2", projectId: scratchProject.id, cwd: "/home/example/scratch", name: "New thread", preview: "" };
+            threads = [...threads, { ...created, preview: "Implement the next milestone for the web client" }];
+            return { thread: created, rawPayload: {} };
+          },
           "GET /v1/threads/thread-2": threadDetail(
-            { ...thread, id: "thread-2", name: "New thread", preview: "Implement the next milestone for the web client" },
+            { ...thread, id: "thread-2", projectId: scratchProject.id, cwd: "/home/example/scratch", name: "New thread", preview: "Implement the next milestone for the web client" },
             [],
           ),
           "POST /v1/threads/thread-2/input": { payload: {} },
@@ -149,34 +160,24 @@ describe("MVP shell flows", () => {
 
       render(<App />);
 
-      expect(await screen.findByText("Kodex")).toBeInTheDocument();
+      expect(await screen.findByRole("group", { name: "Kodex" })).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /kodex \/home\/example\/kodex/i })).not.toBeInTheDocument();
       expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
 
       await userEvent.click(screen.getByRole("button", { name: /add project/i }));
-      expect(screen.queryByLabelText(/project name/i)).not.toBeInTheDocument();
-      await userEvent.type(screen.getByLabelText(/directory/i), "scratch");
+      await userEvent.type(screen.getByLabelText(/project name/i), "scratch");
+      await userEvent.type(screen.getByLabelText(/root directories/i), "/home/example/scratch");
       await userEvent.click(addProjectSubmitButton());
 
       await waitFor(() => {
         expect(gateway.callsFor("POST", "/v1/projects")).toHaveLength(1);
       });
-      expect(await screen.findByRole("button", { name: /create ~\/scratch\?/i })).toBeInTheDocument();
-      await userEvent.click(screen.getByRole("button", { name: /cancel directory create/i }));
-      expect(addProjectSubmitButton()).toBeInTheDocument();
-
-      await userEvent.click(addProjectSubmitButton());
-      expect(await screen.findByRole("button", { name: /create ~\/scratch\?/i })).toBeInTheDocument();
-      await userEvent.click(screen.getByRole("button", { name: /create ~\/scratch\?/i }));
-
-      await waitFor(() => {
-        expect(gateway.callsFor("POST", "/v1/projects")).toHaveLength(3);
+      await expect(requestJson(gateway.callsFor("POST", "/v1/projects")[0])).resolves.toEqual({
+        name: "scratch",
+        roots: [{ path: "/home/example/scratch" }],
+        idempotencyKey: expect.any(String),
       });
-      await expect(requestJson(gateway.callsFor("POST", "/v1/projects")[0])).resolves.toEqual({ cwd: "scratch" });
-      await expect(requestJson(gateway.callsFor("POST", "/v1/projects")[2])).resolves.toEqual({
-        createDirectory: true,
-        cwd: "scratch",
-      });
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: /add project/i })).not.toBeInTheDocument());
 
       await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
       expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(0);
@@ -222,7 +223,7 @@ describe("MVP shell flows", () => {
           seq: 2,
           kind: "timeline.thread_metadata",
           codexMethod: "thread/nameUpdated",
-          projectId: project.id,
+          projectId: scratchProject.id,
           threadId: "thread-2",
           payload: { threadId: "thread-2", threadName: "Implement the next milestone" },
           receivedAt: "2026-04-30T00:00:01Z",
@@ -455,15 +456,20 @@ describe("MVP shell flows", () => {
     window.history.replaceState(null, "", "/");
     const chatThread = {
       ...thread,
+      projectId: null,
       id: "chat-thread-1",
       name: "New thread",
       cwd: "/home/example/Documents/Codex/2026-05-05/plan-the-chat-sidebar",
       preview: "",
     };
+    let created = false;
     const gateway = mockGateway(
       baseRoutes({
-        "GET /v1/chats/threads": { threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-        "POST /v1/chats/threads": { thread: chatThread, rawPayload: {} },
+        "GET /v1/chats/threads": () => ({ threads: created ? [{ ...chatThread, preview: "Plan the chat sidebar implementation" }] : [] }),
+        "POST /v1/chats/threads": () => {
+          created = true;
+          return { thread: chatThread, rawPayload: {} };
+        },
         "GET /v1/threads/chat-thread-1/queued-inputs": { queuedInputs: [] },
         "POST /v1/threads/chat-thread-1/input": { payload: {} },
         "GET /v1/threads/chat-thread-1": threadDetail(
@@ -515,15 +521,22 @@ describe("MVP shell flows", () => {
     const initialChatThreads = deferred<unknown>();
     const chatThread = {
       ...thread,
+      projectId: null,
       id: "chat-thread-1",
       name: "New thread",
       cwd: "/home/example/Documents/Codex/2026-05-05/keep-local-chat",
       preview: "",
     };
+    let created = false;
     mockGateway(
       baseRoutes({
-        "GET /v1/chats/threads": () => initialChatThreads.promise,
-        "POST /v1/chats/threads": { thread: chatThread, rawPayload: {} },
+        "GET /v1/chats/threads": () => created
+          ? { threads: [{ ...chatThread, preview: "Keep local chat" }] }
+          : initialChatThreads.promise,
+        "POST /v1/chats/threads": () => {
+          created = true;
+          return { thread: chatThread, rawPayload: {} };
+        },
         "GET /v1/threads/chat-thread-1/queued-inputs": { queuedInputs: [] },
         "POST /v1/threads/chat-thread-1/input": { payload: {} },
         "GET /v1/threads/chat-thread-1": threadDetail(
@@ -546,18 +559,33 @@ describe("MVP shell flows", () => {
     expect(screen.getByRole("heading", { name: /keep local chat/i })).toBeInTheDocument();
   });
 
-  it("keeps a locally created project thread when the initial project list resolves late", async () => {
-    const initialProjectThreads = deferred<unknown>();
+  it("keeps a locally created project thread when an earlier sidebar refill resolves late", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const initialProjectThreads = deferred<{ threads: Array<typeof thread> }>();
+    let delayNextSnapshot = false;
+    let delayedSnapshotStarted = false;
+    let projectThreads = [thread];
     const projectThread = {
       ...thread,
       id: "project-thread-2",
       name: "New thread",
       preview: "",
     };
-    mockGateway(
+    const gateway = mockGateway(
       baseRoutes({
-        "GET /v1/threads": () => initialProjectThreads.promise,
-        "POST /v1/threads": { thread: projectThread, rawPayload: {} },
+        "GET /v1/sidebar/threads": () => {
+          if (delayNextSnapshot) {
+            delayNextSnapshot = false;
+            delayedSnapshotStarted = true;
+            return initialProjectThreads.promise.then((response) => sidebarSnapshot({ threads: response.threads }));
+          }
+          return sidebarSnapshot({ threads: projectThreads });
+        },
+        "GET /v1/threads": () => ({ threads: projectThreads }),
+        "POST /v1/threads": () => {
+          projectThreads = [{ ...projectThread, preview: "Keep local project thread" }, thread];
+          return { thread: projectThread, rawPayload: {} };
+        },
         "GET /v1/threads/project-thread-2/queued-inputs": { queuedInputs: [] },
         "POST /v1/threads/project-thread-2/input": { payload: {} },
         "GET /v1/threads/project-thread-2": threadDetail(
@@ -569,12 +597,24 @@ describe("MVP shell flows", () => {
 
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: /create thread in kodex/i }));
+    const kodexGroup = await screen.findByRole("group", { name: "Kodex" });
+    expect(within(kodexGroup).getByRole("button", { name: /new thread|create thread in kodex/i })).toBeEnabled();
+    await waitFor(() => expect(FakeEventSource.instances.some((source) => source.url.includes("includeGlobal=true"))).toBe(true));
+    delayNextSnapshot = true;
+    act(() => {
+      FakeEventSource.instances.find((source) => source.url.includes("includeGlobal=true"))?.emitNamed("project.changed", {
+        id: "project-before-create", seq: 2, kind: "project.changed", codexMethod: "project/changed",
+        projectId: null, threadId: null, payload: { projectId: project.id, changeType: "updated" }, receivedAt: "2026-10-04T00:00:00Z",
+      });
+    });
+    await waitFor(() => expect(delayedSnapshotStarted).toBe(true));
+    await userEvent.click(within(kodexGroup).getByRole("button", { name: /new thread|create thread in kodex/i }));
     await userEvent.type(activeComposer(), "Keep local project thread");
     await userEvent.click(activeSendButton());
 
+    await waitFor(() => expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1));
     expect(await screen.findByRole("button", { name: /keep local project thread/i })).toBeInTheDocument();
-    initialProjectThreads.resolve({ threads: [thread], nextCursor: null, backwardsCursor: null, rawPayload: {} });
+    initialProjectThreads.resolve({ threads: [thread] });
 
     expect(await screen.findByRole("button", { name: /keep local project thread/i })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
@@ -586,7 +626,8 @@ describe("MVP shell flows", () => {
       ...project,
       id: "project-2",
       name: "Scratch",
-      cwd: "/tmp/scratch",
+      roots: [{ path: "/tmp/scratch" }],
+      position: 1,
     };
     mockGateway(
       baseRoutes({
@@ -702,7 +743,6 @@ describe("MVP shell flows", () => {
     const pinnedThread = { ...thread, pinnedAt: "2026-05-06T12:00:00Z" };
     const gateway = mockGateway(
       baseRoutes({
-        "GET /v1/sidebar/threads": missingSidebarThreadsRoute,
         "GET /v1/threads": { threads: [secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
         "GET /v1/threads/pinned": { threads: [pinnedThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
       }),
@@ -711,34 +751,40 @@ describe("MVP shell flows", () => {
     render(<App />);
 
     await waitFor(() => expect(gateway.callsFor("GET", "/v1/sidebar/threads")).toHaveLength(1));
-    await waitFor(() => expect(gateway.callsFor("GET", "/v1/threads/pinned")).toHaveLength(1));
+    expect(gateway.callsFor("GET", "/v1/threads/pinned")).toHaveLength(0);
     const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
     expect(screen.queryByText("Pinned")).not.toBeInTheDocument();
     expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
     expect(within(kodexGroup).getByRole("button", { name: /second thread/i })).toBeInTheDocument();
   });
 
-  it("keeps pinned project rows visible while the pinned snapshot is pending", async () => {
-    const pinnedThreads = deferred<unknown>();
+  it("keeps pinned project rows visible while the next native sidebar snapshot is pending", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const nextSnapshot = deferred<unknown>();
     const pinnedThread = { ...thread, pinnedAt: "2026-05-06T12:00:00Z" };
-    const gateway = mockGateway(
-      baseRoutes({
-        "GET /v1/sidebar/threads": missingSidebarThreadsRoute,
-        "GET /v1/threads": { threads: [pinnedThread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-        "GET /v1/threads/pinned": () => pinnedThreads.promise,
-      }),
-    );
+    const snapshot = sidebarSnapshot({ threads: [pinnedThread, secondThread], pins: [pinnedThread] });
+    let snapshotReads = 0;
+    const gateway = mockGateway(baseRoutes({
+      "GET /v1/sidebar/threads": () => ++snapshotReads === 1 ? snapshot : nextSnapshot.promise,
+    }));
 
     render(<App />);
 
     const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
     expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
-    await waitFor(() => expect(gateway.callsFor("GET", "/v1/threads/pinned")).toHaveLength(1));
-
-    pinnedThreads.resolve({ threads: [pinnedThread], nextCursor: null, backwardsCursor: null, rawPayload: {} });
-
-    await waitFor(() => expect(screen.queryByText("Pinned")).not.toBeInTheDocument());
+    await waitFor(() => expect(FakeEventSource.instances.some((source) => source.url.includes("includeGlobal=true"))).toBe(true));
+    act(() => {
+      FakeEventSource.instances.find((source) => source.url.includes("includeGlobal=true"))?.emitNamed("project.changed", {
+        id: "project-changed", seq: 2, kind: "project.changed", codexMethod: "project/changed",
+        projectId: null, threadId: null, payload: { projectId: project.id, changeType: "updated" }, receivedAt: "2026-10-04T00:00:00Z",
+      });
+    });
+    await waitFor(() => expect(gateway.callsFor("GET", "/v1/sidebar/threads")).toHaveLength(2));
     expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
+
+    await act(async () => { nextSnapshot.resolve(snapshot); await nextSnapshot.promise; });
+    expect(screen.queryByText("Pinned")).not.toBeInTheDocument();
+    expect(within(screen.getByRole("group", { name: /kodex/i })).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
   });
 
   it("seeds the sidebar from the gateway snapshot endpoint", async () => {
@@ -779,6 +825,7 @@ describe("MVP shell flows", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const chatThread = {
       ...thread,
+      projectId: null,
       id: "chat-thread-1",
       name: "Chat starter",
       cwd: "/home/example/Documents/Codex/2026-05-09/chat-starter",
@@ -902,6 +949,7 @@ describe("MVP shell flows", () => {
     };
     const chatThreads = Array.from({ length: 5 }, (_value, index) => ({
       ...thread,
+      projectId: null,
       cwd: `/home/example/Documents/Codex/2026-05-09/chat-${index + 1}`,
       id: `chat-thread-${index + 1}`,
       name: `Chat thread ${index + 1}`,
@@ -909,6 +957,7 @@ describe("MVP shell flows", () => {
     }));
     const nextChatThread = {
       ...thread,
+      projectId: null,
       cwd: "/home/example/Documents/Codex/2026-05-09/chat-next",
       id: "chat-thread-next",
       name: "Chat thread next",
@@ -977,8 +1026,9 @@ describe("MVP shell flows", () => {
   it("moves pinned rows from live pin events while the pinned snapshot is pending", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const pinnedThreads = deferred<unknown>();
-    mockGateway(
+    const gateway = mockGateway(
       baseRoutes({
+        "GET /v1/sidebar/threads": sidebarSnapshot({ threads: [thread, secondThread] }),
         "GET /v1/threads": { threads: [thread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
         "GET /v1/threads/pinned": () => pinnedThreads.promise,
       }),
@@ -991,6 +1041,14 @@ describe("MVP shell flows", () => {
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
     const selectedThreadStream = FakeEventSource.instances.find((instance) => streamIncludesThread(instance, "thread-1"));
     expect(selectedThreadStream).toBeDefined();
+
+    act(() => {
+      selectedThreadStream?.emitNamed("thread.pin_updated", {
+        id: "event-unknown-pin", seq: 1, kind: "thread.pin_updated", codexMethod: "thread/pin_updated",
+        projectId: null, threadId: "unknown-pinned-thread", payload: { threadId: "unknown-pinned-thread", pinnedAt: "2026-05-06T11:00:00Z" }, receivedAt: "2026-05-06T11:00:00Z",
+      });
+    });
+    await waitFor(() => expect(gateway.callsFor("GET", "/v1/threads/pinned")).toHaveLength(1));
 
     act(() => {
       selectedThreadStream?.emitNamed("thread.pin_updated", {
@@ -1034,7 +1092,12 @@ describe("MVP shell flows", () => {
 
   it("inserts gateway-created project and chat threads from live upsert events", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
-    mockGateway(baseRoutes());
+    const projectThreads = [thread];
+    const chatThreads: Array<Record<string, unknown>> = [];
+    mockGateway(baseRoutes({
+      "GET /v1/threads": () => ({ threads: projectThreads }),
+      "GET /v1/chats/threads": () => ({ threads: chatThreads }),
+    }));
 
     render(<App />);
 
@@ -1052,6 +1115,7 @@ describe("MVP shell flows", () => {
       unreadCompletedAgentTurn: false,
       updatedAt: thread.updatedAt + 1,
     };
+    projectThreads.push(projectThread);
     act(() => {
       globalStream?.emitNamed("thread.upserted", {
         id: "event-project-thread",
@@ -1071,6 +1135,7 @@ describe("MVP shell flows", () => {
 
     const chatThread = {
       ...thread,
+      projectId: null,
       id: "thread-live-chat",
       name: "Live chat thread",
       cwd: "/home/example/Documents/Codex/2026-05-09/live-chat-thread",
@@ -1079,6 +1144,7 @@ describe("MVP shell flows", () => {
       unreadCompletedAgentTurn: false,
       updatedAt: thread.updatedAt + 2,
     };
+    chatThreads.push(chatThread);
     act(() => {
       globalStream?.emitNamed("thread.upserted", {
         id: "event-chat-thread",
@@ -1100,6 +1166,7 @@ describe("MVP shell flows", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const pendingChatThread = {
       ...thread,
+      projectId: null,
       id: "thread-live-chat-pending",
       name: null,
       cwd: "/home/example/Documents/Codex/2026-05-09/live-chat-pending",
@@ -1172,6 +1239,7 @@ describe("MVP shell flows", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const staleActiveChat = {
       ...thread,
+      projectId: null,
       id: "thread-chat-active",
       name: "Active chat",
       cwd: "/home/example/Documents/Codex/2026-05-09/active-chat",
@@ -1182,6 +1250,7 @@ describe("MVP shell flows", () => {
     };
     const recentChat = {
       ...thread,
+      projectId: null,
       id: "thread-chat-recent",
       name: "Recent chat",
       cwd: "/home/example/Documents/Codex/2026-05-09/recent-chat",
@@ -1253,7 +1322,7 @@ describe("MVP shell flows", () => {
 
     expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
     const main = await screen.findByRole("main", { name: /thread/i });
-    expect(within(main).queryByText(project.cwd)).not.toBeInTheDocument();
+    expect(within(main).queryByText(project.roots[0].path)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /fork thread/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /archive thread/i })).not.toBeInTheDocument();
 
@@ -1954,6 +2023,7 @@ describe("MVP shell flows", () => {
     stubNarrowViewport();
     const chatThread = {
       ...thread,
+      projectId: null,
       id: "chat-thread-1",
       name: "New thread",
       cwd: "/home/example/Documents/Codex/2026-05-05/mobile-chat",
@@ -2019,21 +2089,21 @@ describe("MVP shell flows", () => {
     const newProjectThreads = new Promise((resolve) => {
       resolveNewProjectThreads = resolve;
     });
+    const scratchProject = { ...project, id: "project-2", name: "scratch", roots: [{ path: "/home/example/scratch" }], position: 1 };
+    let projects = [project];
     const gateway = mockGateway(
       baseRoutes({
+        "GET /v1/projects": () => ({ projects }),
         "GET /v1/threads": (request: Request) => {
           const url = new URL(request.url);
           return url.searchParams.get("projectId") === "project-2"
             ? newProjectThreads
             : { threads: [thread], nextCursor: null, backwardsCursor: null, rawPayload: {} };
         },
-        "POST /v1/projects": async (request: Request) => ({
-          ...(await requestJson(request)),
-          id: "project-2",
-          name: "scratch",
-          createdAt: "2026-04-30T00:00:00Z",
-          updatedAt: "2026-04-30T00:00:00Z",
-        }),
+        "POST /v1/projects": () => {
+          projects = [project, scratchProject];
+          return scratchProject;
+        },
       }),
     );
 
@@ -2041,7 +2111,8 @@ describe("MVP shell flows", () => {
 
     expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /add project/i }));
-    await userEvent.type(screen.getByLabelText(/directory/i), "scratch");
+    await userEvent.type(screen.getByLabelText(/project name/i), "scratch");
+    await userEvent.type(screen.getByLabelText(/root directories/i), "/home/example/scratch");
     await userEvent.click(addProjectSubmitButton());
 
     await waitFor(() => {
@@ -2051,7 +2122,7 @@ describe("MVP shell flows", () => {
     expect(screen.queryByText(/select or create a thread/i)).not.toBeInTheDocument();
 
     resolveNewProjectThreads({
-      threads: [secondThread],
+      threads: [{ ...secondThread, projectId: scratchProject.id }],
       nextCursor: null,
       backwardsCursor: null,
       rawPayload: {},
@@ -2064,7 +2135,8 @@ describe("MVP shell flows", () => {
       ...project,
       id: "project-2",
       name: "Scratch",
-      cwd: "/tmp/scratch",
+      roots: [{ path: "/tmp/scratch" }],
+      position: 1,
     };
     mockGateway(
       baseRoutes({
@@ -2081,7 +2153,7 @@ describe("MVP shell flows", () => {
           }
           return { threads: [thread], nextCursor: null, backwardsCursor: null, rawPayload: {} };
         },
-        "GET /v1/threads/thread-2": threadDetail(secondThread, [
+        "GET /v1/threads/thread-2": threadDetail({ ...secondThread, projectId: "project-2" }, [
           snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Second project snapshot" })]),
         ]),
       }),
@@ -2099,15 +2171,12 @@ describe("MVP shell flows", () => {
   });
 
   it("keeps the old active thread when a project title row is clicked", async () => {
-    let resolveSecondThreads: (value: unknown) => void = () => undefined;
-    const secondThreads = new Promise((resolve) => {
-      resolveSecondThreads = resolve;
-    });
     const otherProject = {
       ...project,
       id: "project-2",
       name: "Scratch",
-      cwd: "/tmp/scratch",
+      roots: [{ path: "/tmp/scratch" }],
+      position: 1,
     };
     mockGateway(
       baseRoutes({
@@ -2115,7 +2184,7 @@ describe("MVP shell flows", () => {
         "GET /v1/threads": (request: Request) => {
           const url = new URL(request.url);
           return url.searchParams.get("projectId") === "project-2"
-            ? secondThreads
+            ? { threads: [{ ...secondThread, projectId: "project-2" }], nextCursor: null, backwardsCursor: null, rawPayload: {} }
             : { threads: [thread], nextCursor: null, backwardsCursor: null, rawPayload: {} };
         },
       }),
@@ -2129,12 +2198,6 @@ describe("MVP shell flows", () => {
     expect(activeComposer()).toBeEnabled();
     expect(screen.getByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
 
-    resolveSecondThreads({
-      threads: [secondThread],
-      nextCursor: null,
-      backwardsCursor: null,
-      rawPayload: {},
-    });
     expect(screen.getByRole("button", { name: /expand scratch/i })).toHaveAttribute("aria-expanded", "false");
     await userEvent.click(screen.getByRole("button", { name: /expand scratch/i }));
     expect(await screen.findByRole("button", { name: /second thread/i })).toBeInTheDocument();

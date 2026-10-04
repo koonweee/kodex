@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-const project = { id: "project-1", name: "Kodex", cwd: "/tmp/kodex-project", createdAt: "2026-10-04T00:00:00Z", updatedAt: "2026-10-04T00:00:00Z" };
-const thread = { id: "thread-1", name: "Project chat", cwd: project.cwd, status: "idle", rawPayload: {} };
+const projectCwd = "/tmp/kodex-project";
+const project = { id: "project-1", name: "Kodex", roots: [{ path: projectCwd }], metadata: {}, position: 0, createdAt: 1791072000, updatedAt: 1791072000, recencyAt: null };
+const thread = { id: "thread-1", name: "Project chat", projectId: project.id, cwd: projectCwd, status: "idle", rawPayload: {} };
 const detail = {
   thread, turns: [], liveState: "idle", rawPayload: {},
   timeline: { viewRevision: 1, activeTurnId: null, liveState: "idle", pendingApprovalRequests: [], pendingUserInputRequests: [], rows: [], items: [], turns: [] },
@@ -61,7 +62,7 @@ for (const shape of [
       await page.goto("/projects/project-1");
       const main = page.getByRole("main", { name: "Project", exact: true });
       await expect(main.getByRole("heading", { name: "Kodex" })).toBeVisible();
-      await expect(main.getByText(project.cwd)).toBeVisible();
+      await expect(main.getByText(projectCwd)).toBeVisible();
       await expect(main.getByRole("button", { name: /add service|add preview|restart proxy/i })).toHaveCount(0);
 
       if (shape.width < 700) await main.getByRole("button", { name: "Projects", exact: true }).click();

@@ -134,7 +134,8 @@ function isThreadPaneTarget(value: unknown): value is ThreadPaneTarget {
     return typeof value.threadId === "string";
   }
   if (value.mode === "draft") {
-    return value.projectId === undefined || value.projectId === null || typeof value.projectId === "string";
+    return (value.projectId === undefined || value.projectId === null || typeof value.projectId === "string") &&
+      (value.cwd === undefined || value.cwd === null || typeof value.cwd === "string");
   }
   return false;
 }

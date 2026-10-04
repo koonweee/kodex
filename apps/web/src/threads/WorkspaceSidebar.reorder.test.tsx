@@ -19,10 +19,10 @@ describe("WorkspaceSidebar project reorder", () => {
     vi.restoreAllMocks();
   });
 
-  it("emits a persisted order when a project is dragged before another project", () => {
-    const onReorderProjects = vi.fn();
+  it("requests a native relative move when a project is dragged before another project", () => {
+    const onMoveProject = vi.fn();
     const { container } = renderSidebar({
-      onReorderProjects,
+      onMoveProject,
       projects: [
         projectSummary("new", "New"),
         projectSummary("middle", "Middle"),
@@ -55,18 +55,18 @@ describe("WorkspaceSidebar project reorder", () => {
 
     fireEvent.dragOver(newProjectTitle!, { dataTransfer, clientY: 45 });
     expect(projectOrder(container)).toEqual(["Old", "New", "Middle"]);
-    expect(onReorderProjects).not.toHaveBeenCalled();
+    expect(onMoveProject).not.toHaveBeenCalled();
 
     fireEvent.dragEnd(oldProjectRow!, { dataTransfer });
     expect(projectOrder(container)).toEqual(["New", "Middle", "Old"]);
-    expect(onReorderProjects).not.toHaveBeenCalled();
+    expect(onMoveProject).not.toHaveBeenCalled();
 
     fireEvent.dragStart(oldProjectRow!, { dataTransfer });
     fireEvent.dragOver(newProjectTitle!, { dataTransfer, clientY: 45 });
     fireEvent.drop(screen.getByRole("group", { name: "New" }), { dataTransfer });
 
     expect(projectOrder(container)).toEqual(["New", "Middle", "Old"]);
-    expect(onReorderProjects).toHaveBeenCalledWith(["old", "new", "middle"]);
+    expect(onMoveProject).toHaveBeenCalledWith("old", "new");
   });
 
   it("collapses older project threads behind a subdued show more toggle", () => {
@@ -96,11 +96,10 @@ describe("WorkspaceSidebar project reorder", () => {
     renderSidebar({
       chatThreads: Array.from({ length: 7 }, (_value, index) => threadSummary(index + 1)),
       onCreateChat,
-      projectFormOpen: true,
     });
 
     expect(screen.queryByRole("button", { name: "Start new chat from desktop header" })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Add project" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Add project" })).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "Chats" }));
     fireEvent.click(screen.getByRole("button", { name: "New chat" }));
     expect(onCreateChat).toHaveBeenCalledTimes(1);
@@ -218,10 +217,7 @@ describe("WorkspaceSidebar project reorder", () => {
             onLoadMoreProjectThreads={onLoadMoreProjectThreads}
             onOpenPreferences={vi.fn()}
             onPinThread={vi.fn()}
-            onProjectCwdChange={vi.fn()}
-            onProjectDirectoryCreateCancel={vi.fn()}
-            onProjectFormOpenChange={vi.fn()}
-            onReorderProjects={vi.fn()}
+            onMoveProject={vi.fn()}
             onSelectAutomations={vi.fn()}
             onSelectChatThread={vi.fn()}
             onSelectPinnedThread={vi.fn()}
@@ -234,9 +230,6 @@ describe("WorkspaceSidebar project reorder", () => {
             onUnpinThread={vi.fn()}
             pendingTitleThreadIds={new Set()}
             pinnedThreads={[]}
-            projectCwd=""
-            projectDirectoryCreatePending={false}
-            projectFormOpen={false}
             projectThreadHasMoreById={{ "project-1": true }}
             projectThreadPaginationStateById={{ "project-1": "error" }}
             projects={[projectSummary("project-1", "Project")]}
@@ -310,6 +303,7 @@ describe("WorkspaceSidebar project reorder", () => {
           id: "chat-pinned",
           name: "Pinned chat thread",
           cwd: "/workspace/chats/2026-05-06",
+          projectId: null,
           pinnedAt: "2026-05-06T12:01:00Z",
         }),
       ],
@@ -426,25 +420,21 @@ describe("WorkspaceSidebar project reorder", () => {
   it("collapses and expands the Projects section from the section row", () => {
     renderSidebar({
       projects: [projectSummary("project-1", "Project")],
-      projectFormOpen: true,
       threadsByProjectId: {
         "project-1": [threadSummary(1)],
       },
     });
 
     const projectsToggle = screen.getByRole("button", { name: "Collapse Projects section" });
-    expect(screen.getByText("Directory")).toBeInTheDocument();
     expect(screen.getByText("Project")).toBeInTheDocument();
 
     fireEvent.click(projectsToggle);
 
     expect(projectsToggle).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByText("Directory")).not.toBeInTheDocument();
     expect(screen.queryByText("Project")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Expand Projects section" }));
 
-    expect(screen.getByText("Directory")).toBeInTheDocument();
     expect(screen.getByText("Project")).toBeInTheDocument();
   });
 
@@ -453,6 +443,7 @@ describe("WorkspaceSidebar project reorder", () => {
       pinnedThreads: [
         threadSummary(1, {
           cwd: "/workspace/chats/2026-05-06",
+          projectId: null,
           id: "thread-pinned",
           name: "Pinned thread",
           pinnedAt: "2026-05-06T12:00:00Z",
@@ -671,10 +662,7 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar
           onLogout={vi.fn()}
           onOpenPreferences={vi.fn()}
           onPinThread={vi.fn()}
-          onProjectCwdChange={vi.fn()}
-          onProjectDirectoryCreateCancel={vi.fn()}
-          onProjectFormOpenChange={vi.fn()}
-          onReorderProjects={vi.fn()}
+          onMoveProject={vi.fn()}
           onSelectAutomations={vi.fn()}
           onSelectChatThread={vi.fn()}
           onSelectPinnedThread={vi.fn()}
@@ -687,9 +675,6 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar
           onUnpinThread={vi.fn()}
           pendingTitleThreadIds={new Set()}
           pinnedThreads={[]}
-          projectCwd=""
-          projectDirectoryCreatePending={false}
-          projectFormOpen={false}
           projects={[]}
           selectedMainPane="thread"
           selectedProjectId={null}
@@ -735,11 +720,13 @@ function rect({ top, height }: { top: number; height: number }): DOMRect {
 
 function projectSummary(id: string, name: string): Project {
   return {
-    createdAt: "2026-05-01T00:00:00Z",
-    cwd: `/workspace/${id}`,
+    createdAt: 1,
+    roots: [{ path: `/workspace/${id}` }],
+    metadata: {},
+    position: 0,
     id,
     name,
-    updatedAt: "2026-05-01T00:00:00Z",
+    updatedAt: 1,
   };
 }
 
@@ -747,6 +734,7 @@ function threadSummary(index: number, overrides: Partial<ThreadSummary> = {}): T
   return {
     createdAt: index,
     cwd: "/workspace/project-1",
+    projectId: "project-1",
     id: `thread-${index}`,
     name: `Thread ${index}`,
     notificationsEnabled: true,

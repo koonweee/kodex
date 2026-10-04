@@ -6,7 +6,7 @@ use crate::{
     events::{
         EventsQuery, ACCOUNT_LOGIN_COMPLETED_EVENT, ACCOUNT_RATE_LIMITS_UPDATED_EVENT,
         ACCOUNT_UPDATED_EVENT, MCP_CONFIG_CHANGED_EVENT, MCP_OAUTH_LOGIN_COMPLETED_EVENT,
-        MCP_SERVER_STATUS_UPDATED_EVENT,
+        MCP_SERVER_STATUS_UPDATED_EVENT, PROJECT_CHANGED_EVENT, THREAD_PROJECT_UPDATED_EVENT,
     },
     events_synthetic::thread_view_refresh_required_event,
     queue,
@@ -39,6 +39,7 @@ pub(crate) const WORKSPACE_GLOBAL_THREAD_EVENT_KINDS: &[&str] = &[
     "gateway.error",
     "gateway.warning",
     "timeline.thread_metadata",
+    THREAD_PROJECT_UPDATED_EVENT,
     APP_SURFACE_PRESENTATION_REQUESTED_EVENT,
     THREAD_NOTIFICATIONS_UPDATED_EVENT,
     THREAD_READ_UPDATED_EVENT,
@@ -94,6 +95,8 @@ pub(crate) fn is_operational_replay_event(event: &EventEnvelope) -> bool {
             | ACCOUNT_RATE_LIMITS_UPDATED_EVENT
             | ACCOUNT_UPDATED_EVENT
             | ACCOUNT_LOGIN_COMPLETED_EVENT
+            | PROJECT_CHANGED_EVENT
+            | THREAD_PROJECT_UPDATED_EVENT
             | MCP_SERVER_STATUS_UPDATED_EVENT
             | MCP_OAUTH_LOGIN_COMPLETED_EVENT
             | skills::SKILLS_CHANGED_EVENT

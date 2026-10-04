@@ -16,7 +16,7 @@ Kodex is a browser-based workspace built around an external Codex app-server. It
 
 Shared state must survive reloads, reconnects, and multiple browser tabs. Kodex therefore keeps shared lifecycle decisions in the gateway or upstream app-server instead of deriving them from one browser's event stream.
 
-- App-server owns native projects, durable transcript history, Codex session lifecycle and native approval requests.
+- App-server owns native project roots, metadata, order and thread membership, durable transcript history, Codex session lifecycle and native approval requests. Project roots organize chats; they neither grant filesystem permissions nor change existing chat working directories.
 - Gateway mirrors native approvals in connection-scoped memory and projects canonical thread state.
 - Gateway still owns queued input, read state, pins, automations, notifications and generated-app grants. Queue, settings and sidebar ownership are changing under the active native redesign plan.
 - The browser may own drafts, focus, open dialogs, scroll position, and other per-tab presentation state.
@@ -29,6 +29,8 @@ Selected-thread history is loaded from bounded app-server snapshots. Live SSE up
 - HTTP exposes snapshots and commands to the web client.
 - Server-Sent Events carry gateway events and selected-thread live projections.
 - WebSocket carries interactive PTY terminal input, resizing, and output.
+
+Native project notifications invalidate authoritative sidebar snapshots rather than patching a second project registry. Project deletion also refreshes open thread snapshots, because the native membership notification excludes archived threads. A lagged SSE stream emits its existing refresh signals and closes at its previous cursor. Reconnection replays operational invalidations, and the browser refills current native state.
 
 The generated OpenAPI document is the API contract. With the gateway running, use:
 

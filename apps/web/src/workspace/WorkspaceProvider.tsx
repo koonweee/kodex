@@ -29,10 +29,12 @@ import {
   type WorkspacePanePlacementIntent,
 } from "./panePlacement";
 import { paneTargetRecord, type WorkspaceModel, type WorkspacePane, type WorkspacePanePatch } from "./paneTypes";
+import { usePaneThreadContexts, type PaneThreadContext } from "./usePaneThreadContexts";
 import { workspaceSubscribedThreadIds } from "./resourceSubscriptions";
 
 type WorkspaceLiveEventHandler = (event: EventEnvelope) => void;
 export type ThreadPaneTimelineAction =
+  | { kind: "refresh_snapshot"; threadId?: string }
   | {
       clientRequestId: string;
       kind: "optimistic_user_started";
@@ -117,6 +119,8 @@ type WorkspaceContextValue = {
   paneHeaderActionsById: Record<string, ReactNode>;
   panePlacementHintsById: WorkspacePanePlacementHintsById;
   paneTabStatusById: Record<string, WorkspacePaneTabStatus>;
+  paneThreadContextsById: Record<string, PaneThreadContext>;
+  setPaneThreadContext: (paneId: string, context: PaneThreadContext | null) => void;
   persistLayout: (dockviewLayout: unknown, activePaneId: string | null) => void;
   publishThreadPaneTimelineAction: (action: ThreadPaneTimelineAction) => void;
   renderThreadComposer?: (pane: WorkspacePane, state: Omit<ThreadComposerState, "publishThreadPaneTimelineAction">) => ReactNode;
@@ -315,7 +319,12 @@ export function WorkspaceProvider({
       cursor: liveEventCursorRef.current,
       includeGlobal: true,
       threadIds: subscribedThreadIds,
-      onStatusChange: (status) => { if (status === "connected") handleStreamConnected?.(); },
+      onStatusChange: (status) => {
+        if (status === "connected") {
+          handleStreamConnected?.();
+          publishThreadPaneTimelineAction({ kind: "refresh_snapshot" });
+        }
+      },
       onEvent: (event) => {
         recordLiveEvent("global", event);
         liveEventCursorRef.current = Math.max(liveEventCursorRef.current ?? 0, event.seq);
@@ -328,7 +337,9 @@ export function WorkspaceProvider({
     });
     client.connect();
     return client.close;
-  }, [handleStreamConnected, subscribedThreadIdsKey, validateInstance]);
+  }, [handleStreamConnected, publishThreadPaneTimelineAction, subscribedThreadIdsKey, validateInstance]);
+
+  const { paneThreadContextsById, setPaneThreadContext } = usePaneThreadContexts(workspace.panes);
 
   const subscribeLiveEvent = useCallback((handler: WorkspaceLiveEventHandler) => {
     liveEventHandlersRef.current.add(handler);
@@ -778,6 +789,8 @@ export function WorkspaceProvider({
       paneHeaderActionsById,
       panePlacementHintsById,
       paneTabStatusById,
+      paneThreadContextsById,
+      setPaneThreadContext,
       persistLayout,
       publishThreadPaneTimelineAction,
       renderThreadComposer: renderThreadComposer
@@ -828,6 +841,8 @@ export function WorkspaceProvider({
       paneHeaderActionsById,
       panePlacementHintsById,
       paneTabStatusById,
+      paneThreadContextsById,
+      setPaneThreadContext,
       persistLayout,
       publishThreadPaneTimelineAction,
       renderThreadComposer,

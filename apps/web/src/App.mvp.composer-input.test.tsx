@@ -1344,6 +1344,10 @@ describe("MVP composer input flows", () => {
 
   it("keeps failed draft thread image uploads visible and retryable", async () => {
     let rejectUpload: (reason?: unknown) => void = () => undefined;
+    let resolveDetail: (detail: ReturnType<typeof threadDetail>) => void = () => undefined;
+    const pendingDetail = new Promise<ReturnType<typeof threadDetail>>((resolve) => {
+      resolveDetail = resolve;
+    });
     let uploadAttempts = 0;
     const createObjectUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:draft-retry-diagram");
     const revokeObjectUrl = vi.spyOn(URL, "revokeObjectURL");
@@ -1365,16 +1369,7 @@ describe("MVP composer input flows", () => {
           };
         },
         "POST /v1/threads/thread-2/input": { payload: {} },
-        "GET /v1/threads/thread-2": threadDetail(
-          { ...thread, id: "thread-2", name: "New thread", preview: "Inspect this" },
-          [
-            snapshotTurn("turn-1", [
-              snapshotItem("user-1", "userMessage", {
-                content: [{ type: "text", text: "Inspect this" }],
-              }),
-            ]),
-          ],
-        ),
+        "GET /v1/threads/thread-2": () => pendingDetail,
       }),
     );
 
@@ -1414,7 +1409,19 @@ describe("MVP composer input flows", () => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-2/input")).toHaveLength(1);
     }, { timeout: 2_000 });
     expect(screen.queryByRole("button", { name: /remove diagram.png/i })).not.toBeInTheDocument();
-    expect(within(timelineElement(container)).getAllByText("Inspect this")).toHaveLength(1);
+    await waitFor(() => expect(gateway.callsFor("GET", "/v1/threads/thread-2").length).toBeGreaterThan(0));
+    expect(within(timelineElement(container)).queryByText("Inspect this")).not.toBeInTheDocument();
+    await act(async () => {
+      resolveDetail(threadDetail(
+        { ...thread, id: "thread-2", name: "New thread", preview: "Inspect this" },
+        [snapshotTurn("turn-1", [snapshotItem("user-1", "userMessage", {
+          content: [{ type: "text", text: "Inspect this" }],
+        })])],
+      ));
+    });
+    await waitFor(() => expect(within(timelineElement(container)).getAllByText("Inspect this")).toHaveLength(1));
+    expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-2/input")).toHaveLength(1);
   });
 
   it("does not restore failed image upload retry state after switching threads", async () => {

@@ -638,6 +638,22 @@ export interface paths {
         get: operations["get_project"];
         put?: never;
         post?: never;
+        delete: operations["delete_project"];
+        options?: never;
+        head?: never;
+        patch: operations["update_project"];
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["move_project"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1564,6 +1580,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/threads/{threadId}/project": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["update_thread_project"];
+        trace?: never;
+    };
     "/v1/threads/{threadId}/queued-inputs": {
         parameters: {
             query?: never;
@@ -2116,6 +2148,7 @@ export interface components {
         /** @enum {string} */
         ComposerPermissionsPreset: "default" | "autoReview" | "fullAccess";
         ComposerSettingsQuery: {
+            cwd?: string | null;
             projectId?: string | null;
         };
         ComposerSettingsResponse: {
@@ -2196,10 +2229,12 @@ export interface components {
             serviceTier?: string | null;
         };
         CreateProjectRequest: {
-            createDirectory?: boolean | null;
-            cwd: string;
-            idempotencyKey?: string | null;
-            name?: string | null;
+            idempotencyKey: string;
+            metadata?: {
+                [key: string]: string;
+            } | null;
+            name: string;
+            roots: components["schemas"]["ProjectRoot"][];
         };
         CreateTerminalSession: {
             command?: string | null;
@@ -2209,6 +2244,7 @@ export interface components {
         CreateThreadRequest: {
             approvalPolicy?: string | null;
             approvalsReviewer?: string | null;
+            cwd?: string | null;
             effort?: string | null;
             model?: string | null;
             payload?: unknown;
@@ -2463,6 +2499,9 @@ export interface components {
         ModelsQuery: {
             includeHidden?: boolean;
         };
+        MoveProjectRequest: {
+            beforeProjectId?: string | null;
+        };
         NotificationStatusResponse: {
             configured: boolean;
             subscriptionsEnabled: boolean;
@@ -2543,16 +2582,30 @@ export interface components {
             source: unknown;
         };
         Project: {
-            /** Format: date-time */
-            createdAt: string;
-            cwd: string;
+            /** Format: int64 */
+            createdAt: number;
             id: string;
+            metadata: {
+                [key: string]: string;
+            };
             name: string;
-            /** Format: date-time */
-            updatedAt: string;
+            /** Format: int64 */
+            position: number;
+            /** Format: int64 */
+            recencyAt?: number | null;
+            roots: components["schemas"]["ProjectRoot"][];
+            /** Format: int64 */
+            updatedAt: number;
+        };
+        ProjectChanged: {
+            changeType: string;
+            projectId: string;
         };
         ProjectListResponse: {
             projects: components["schemas"]["Project"][];
+        };
+        ProjectRoot: {
+            path: string;
         };
         PushSubscriptionDeleteResponse: {
             subscription?: null | components["schemas"]["PushSubscriptionResponse"];
@@ -2724,6 +2777,7 @@ export interface components {
         SelfControlCreateThreadRequest: {
             approvalPolicy?: string | null;
             approvalsReviewer?: string | null;
+            cwd?: string | null;
             effort?: string | null;
             /** Format: int32 */
             maxSelfControlDepth?: number | null;
@@ -2818,6 +2872,7 @@ export interface components {
         SelfControlThreadSpawnRequest: {
             approvalPolicy?: string | null;
             approvalsReviewer?: string | null;
+            cwd?: string | null;
             effort?: string | null;
             goal?: string | null;
             idempotencyKey?: string | null;
@@ -2866,6 +2921,7 @@ export interface components {
             /** Format: date-time */
             pinnedAt?: string | null;
             preview?: unknown;
+            projectId?: string | null;
             reasoningEffort?: string | null;
             sandbox?: unknown;
             /** Format: int64 */
@@ -3027,6 +3083,13 @@ export interface components {
             pinnedAt?: string | null;
             threadId: string;
         };
+        ThreadProjectUpdateRequest: {
+            projectId: string | null;
+        };
+        ThreadProjectUpdated: {
+            projectId: string | null;
+            threadId: string;
+        };
         ThreadRead: {
             /** Format: int64 */
             seenCompletedAgentTurnSeq: number;
@@ -3094,6 +3157,7 @@ export interface components {
             /** Format: date-time */
             pinnedAt?: string | null;
             preview?: unknown;
+            projectId?: string | null;
             rawPayload: unknown;
             reasoningEffort?: string | null;
             sandbox?: unknown;
@@ -3261,6 +3325,7 @@ export interface components {
             /** Format: date-time */
             pinnedAt?: string | null;
             preview?: unknown;
+            projectId?: string | null;
             reasoningEffort?: string | null;
             sandbox?: unknown;
             /** Format: int64 */
@@ -3389,6 +3454,14 @@ export interface components {
         };
         TurnSteerRequest: {
             input: components["schemas"]["UserInput"][];
+        };
+        UpdateProjectRequest: {
+            /** @description Replaces the complete metadata map when supplied; omission preserves it. */
+            metadata?: {
+                [key: string]: string;
+            } | null;
+            name?: string | null;
+            roots?: components["schemas"]["ProjectRoot"][] | null;
         };
         UserInput: {
             text: string;
@@ -3897,6 +3970,7 @@ export interface operations {
         parameters: {
             query?: {
                 projectId?: string | null;
+                cwd?: string | null;
             };
             header?: never;
             path?: never;
@@ -4462,6 +4536,73 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Project"];
                 };
+            };
+        };
+    };
+    delete_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProjectRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+        };
+    };
+    move_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoveProjectRequest"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -5928,6 +6069,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadPinResponse"];
+                };
+            };
+        };
+    };
+    update_thread_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadProjectUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadCommandResponse"];
                 };
             };
         };

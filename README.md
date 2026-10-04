@@ -100,7 +100,6 @@ For prerequisites, tests, schema generation, and production-style static serving
 - [Deployment](docs/deployment.md) — security assumptions, configuration, PWA updates, and Web Push.
 - [Kodex Control](docs/kodex-control.md) — install and develop the bundled plugin and MCP server.
 - [Plans](plans/index.md) — completed milestones, active work, and future extensions.
-- [Move a Codex project](docs/maintenance/move-codex-project.md) — maintenance procedure for project paths.
 
 ## Project status
 

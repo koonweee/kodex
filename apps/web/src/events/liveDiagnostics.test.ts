@@ -4,11 +4,8 @@ import type { EventEnvelope } from "../api/client";
 import {
   getLiveDiagnosticsSnapshot,
   recordCacheInvalidation,
-  recordDuplicateSelectedGlobalDrop,
   recordLiveEvent,
   recordReducerBatch,
-  recordSelectedThreadDeltaMiss,
-  recordSelectedThreadSnapshotRefresh,
   resetLiveDiagnosticsForTest,
 } from "./liveDiagnostics";
 
@@ -16,7 +13,7 @@ describe("live diagnostics", () => {
   beforeEach(() => resetLiveDiagnosticsForTest());
 
   it("records stream counters and patch bytes without storing payload text", () => {
-    recordLiveEvent("selected", event({
+    recordLiveEvent("global", event({
       kind: "thread_view.patch",
       payload: {
         scope: "turn",
@@ -27,83 +24,19 @@ describe("live diagnostics", () => {
     }));
 
     const snapshot = getLiveDiagnosticsSnapshot();
-    expect(snapshot.eventsByStream.selected).toBe(1);
-    expect(snapshot.eventsByStreamAndKind["selected:thread_view.patch"]).toBe(1);
+    expect(snapshot.eventsByStream.global).toBe(1);
+    expect(snapshot.eventsByStreamAndKind["global:thread_view.patch"]).toBe(1);
     expect(snapshot.patchBytesByScope.turn).toBeGreaterThan(0);
     expect(JSON.stringify(snapshot)).not.toContain("secret prompt text");
   });
 
-  it("records duplicate drops, refreshes, reducer batches, and cache invalidations", () => {
-    recordDuplicateSelectedGlobalDrop();
-    recordLiveEvent("selected", event({ kind: "thread_view.refresh_required" }));
+  it("records refresh signals, reducer batches, and cache invalidations", () => {
+    recordLiveEvent("global", event({ kind: "thread_view.refresh_required" }));
     recordReducerBatch(3, 2.5);
-    recordSelectedThreadSnapshotRefresh("initial");
-    recordSelectedThreadSnapshotRefresh("refreshRequired");
-    recordSelectedThreadSnapshotRefresh("refreshRequired");
-    recordSelectedThreadSnapshotRefresh("deltaMiss");
-    recordSelectedThreadDeltaMiss({
-      batchSize: 3,
-      itemId: "item-1",
-      relation: "patchEarlierInBatch",
-      refreshInFlight: false,
-      seq: 2,
-      state: "indexedButNotAppendable",
-      threadId: "thread-1",
-      turnId: "turn-1",
-    });
-    recordSelectedThreadDeltaMiss({
-      batchSize: 1,
-      itemId: "item-2",
-      relation: "noPatchInBatch",
-      refreshInFlight: true,
-      seq: 3,
-      state: "notIndexed",
-      threadId: "thread-1",
-      turnId: "turn-1",
-    });
     recordCacheInvalidation("projectThreads");
 
     expect(getLiveDiagnosticsSnapshot()).toMatchObject({
-      duplicateSelectedGlobalDrops: 1,
       refreshRequiredCount: 1,
-      selectedThreadSnapshotRefreshes: 4,
-      selectedThreadSnapshotRefreshesByReason: {
-        initial: 1,
-        refreshRequired: 2,
-        deltaMiss: 1,
-      },
-      selectedThreadDeltaMisses: 2,
-      selectedThreadDeltaMissesByRelation: {
-        patchEarlierInBatch: 1,
-        noPatchInBatch: 1,
-      },
-      selectedThreadDeltaMissesByState: {
-        indexedButNotAppendable: 1,
-        notIndexed: 1,
-      },
-      selectedThreadDeltaMissesWhileRefreshInFlight: 1,
-      selectedThreadRecentDeltaMisses: [
-        {
-          batchSize: 3,
-          itemId: "item-1",
-          relation: "patchEarlierInBatch",
-          refreshInFlight: false,
-          seq: 2,
-          state: "indexedButNotAppendable",
-          threadId: "thread-1",
-          turnId: "turn-1",
-        },
-        {
-          batchSize: 1,
-          itemId: "item-2",
-          relation: "noPatchInBatch",
-          refreshInFlight: true,
-          seq: 3,
-          state: "notIndexed",
-          threadId: "thread-1",
-          turnId: "turn-1",
-        },
-      ],
       reducerBatchCount: 1,
       reducerEventCount: 3,
       reducerTotalDurationMs: 2.5,

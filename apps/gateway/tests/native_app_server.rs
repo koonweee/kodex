@@ -2,6 +2,8 @@
 //! Interactive account sign-in is deliberately not completed or claimed by this test.
 #[path = "native_app_server/fixture.rs"]
 mod fixture;
+#[path = "native_app_server/projects.rs"]
+mod projects;
 
 use anyhow::Context;
 use axum::Router;
@@ -77,7 +79,7 @@ async fn exercise(fixture: &mut Fixture, session: &mut NativeSession) -> anyhow:
         "POST",
         "/v1/projects",
         Some(json!({
-            "cwd":fixture.workspace, "name":"Native integration",
+            "roots":[{"path":fixture.workspace}], "name":"Native integration",
             "idempotencyKey":"real-native-project-fixture",
         })),
     )

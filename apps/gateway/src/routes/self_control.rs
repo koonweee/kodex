@@ -658,6 +658,8 @@ pub async fn archive_self_control_app_surface(
 pub struct SelfControlCreateThreadRequest {
     pub project_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
@@ -696,8 +698,9 @@ pub async fn create_self_control_thread(
     Json(request): Json<SelfControlCreateThreadRequest>,
 ) -> ApiResult<Json<ThreadCommandResponse>> {
     enforce_self_control_depth(request.max_self_control_depth)?;
-    let project =
-        crate::routes::projects::read_project_with_cwd(&state, &request.project_id).await?;
+    let cwd =
+        crate::routes::projects::project_execution_cwd(&state, &request.project_id, request.cwd)
+            .await?;
     let options = ThreadCreationOptions {
         model: request.model,
         effort: request.effort,
@@ -711,7 +714,7 @@ pub async fn create_self_control_thread(
     options.validate()?;
     let payload = create_thread_payload(&options);
     let mut response = app_server_api::client(&state.app_server)
-        .thread_start(project.id.clone(), project.cwd, payload)
+        .thread_start(request.project_id.clone(), cwd, payload)
         .await?;
     save_thread_creation_options(&state, &response.thread.id, &options).await?;
     overlay_thread_creation_options(&mut response.thread, &options);
@@ -1170,6 +1173,8 @@ pub async fn interrupt_current_self_control_thread(
 #[serde(rename_all = "camelCase")]
 pub struct SelfControlThreadSpawnRequest {
     pub project_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
     pub input: Vec<UserInput>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
@@ -1287,6 +1292,7 @@ pub async fn spawn_self_control_thread(
         State(state.clone()),
         Json(SelfControlCreateThreadRequest {
             project_id: request.project_id.clone(),
+            cwd: request.cwd,
             model: request.model,
             effort: request.effort,
             service_tier: request.service_tier,

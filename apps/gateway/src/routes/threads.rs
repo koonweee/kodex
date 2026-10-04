@@ -1,8 +1,6 @@
 use std::{
     collections::{BTreeMap, HashMap},
     path::{Path as FsPath, PathBuf},
-    sync::{Arc, Mutex as StdMutex},
-    time::{Duration, Instant},
 };
 
 use axum::{
@@ -61,6 +59,10 @@ pub fn router() -> Router<AppState> {
         .route("/v1/threads/{thread_id}", get(get_thread))
         .route("/v1/threads/{thread_id}/name", patch(rename_thread))
         .route(
+            "/v1/threads/{thread_id}/project",
+            patch(update_thread_project),
+        )
+        .route(
             "/v1/threads/{thread_id}/settings",
             patch(update_thread_settings),
         )
@@ -98,7 +100,6 @@ const DEFAULT_THREAD_LIST_LIMIT: u32 = 100;
 const SIDEBAR_INITIAL_THREAD_LIST_LIMIT: u32 = 10;
 const SELECTED_THREAD_HISTORY_PAGE_LIMIT: u32 = 50;
 const MAX_SELECTED_THREAD_HISTORY_PAGE_LIMIT: u32 = 200;
-const CHAT_CWD_CACHE_TTL: Duration = Duration::from_secs(2);
 const SIDEBAR_PROJECT_FETCH_CONCURRENCY: usize = 8;
 
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
@@ -117,42 +118,6 @@ pub struct SidebarThreadsResponse {
     pub pinned_threads: SidebarThreadListResponse,
 }
 
-#[derive(Clone, Default)]
-pub struct ChatCwdCache {
-    inner: Arc<StdMutex<HashMap<PathBuf, ChatCwdCacheEntry>>>,
-}
-
-#[derive(Clone)]
-struct ChatCwdCacheEntry {
-    checked_at: Instant,
-    candidates: Vec<String>,
-}
-
-impl ChatCwdCache {
-    fn get_or_scan(&self, chat_root: &FsPath) -> ApiResult<Vec<String>> {
-        let now = Instant::now();
-        if let Some(entry) = self.inner.lock().unwrap().get(chat_root).cloned() {
-            if now.duration_since(entry.checked_at) <= CHAT_CWD_CACHE_TTL {
-                return Ok(entry.candidates);
-            }
-        }
-
-        let candidates = chat_thread_cwd_candidates(chat_root)?;
-        self.inner.lock().unwrap().insert(
-            chat_root.to_path_buf(),
-            ChatCwdCacheEntry {
-                checked_at: now,
-                candidates: candidates.clone(),
-            },
-        );
-        Ok(candidates)
-    }
-
-    pub fn invalidate(&self, chat_root: &FsPath) {
-        self.inner.lock().unwrap().remove(chat_root);
-    }
-}
-
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SidebarThreadListResponse {
@@ -166,6 +131,7 @@ pub struct SidebarThreadListResponse {
 pub struct SidebarThreadSummary {
     pub id: String,
     pub name: Option<String>,
+    pub project_id: Option<String>,
     pub cwd: String,
     pub status: ThreadStatus,
     pub created_at: i64,
@@ -209,6 +175,7 @@ impl From<ThreadSummary> for SidebarThreadSummary {
         Self {
             id: thread.id,
             name: thread.name,
+            project_id: thread.project_id,
             cwd: thread.cwd,
             status: thread.status,
             created_at: thread.created_at,
@@ -251,6 +218,8 @@ impl From<ThreadListResponse> for SidebarThreadListResponse {
 #[serde(rename_all = "camelCase")]
 pub struct CreateThreadRequest {
     pub project_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -396,7 +365,7 @@ pub async fn list_threads(
         Some(project_id) => {
             list_project_threads(&state, project_id, query.cursor, query.limit).await?
         }
-        None => list_project_threads_for_cwd(&state, None, query.cursor, query.limit).await?,
+        None => list_all_threads(&state, query.cursor, query.limit).await?,
     };
     Ok(Json(response))
 }
@@ -466,7 +435,7 @@ async fn list_project_threads(
     limit: Option<u32>,
 ) -> ApiResult<ThreadListResponse> {
     let mut response = app_server_api::client(&state.app_server)
-        .thread_list_in_project(project_id, cursor, limit)
+        .thread_list_in_project(Some(project_id), cursor, limit)
         .await?;
     response
         .threads
@@ -475,14 +444,13 @@ async fn list_project_threads(
     Ok(response)
 }
 
-async fn list_project_threads_for_cwd(
+async fn list_all_threads(
     state: &AppState,
-    cwd: Option<String>,
     cursor: Option<String>,
     limit: Option<u32>,
 ) -> ApiResult<ThreadListResponse> {
     let mut response = app_server_api::client(&state.app_server)
-        .thread_list(cwd, cursor, limit)
+        .thread_list(None, cursor, limit)
         .await?;
     response
         .threads
@@ -491,13 +459,41 @@ async fn list_project_threads_for_cwd(
     Ok(response)
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadProjectUpdateRequest {
+    #[serde(deserialize_with = "required_nullable_project_id")]
+    #[schema(required = true)]
+    pub project_id: Option<String>,
+}
+
+fn required_nullable_project_id<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    Option::<String>::deserialize(deserializer)
+}
+
+#[utoipa::path(patch, path = "/v1/threads/{threadId}/project", request_body = ThreadProjectUpdateRequest, responses((status = 200, body = ThreadCommandResponse)))]
+pub async fn update_thread_project(
+    State(state): State<AppState>,
+    Path(thread_id): Path<String>,
+    Json(request): Json<ThreadProjectUpdateRequest>,
+) -> ApiResult<Json<ThreadCommandResponse>> {
+    let mut response = app_server_api::client(&state.app_server)
+        .thread_assign_project(thread_id, request.project_id)
+        .await?;
+    apply_thread_command_response_state(&state, &mut response).await?;
+    Ok(Json(response))
+}
+
 #[utoipa::path(post, path = "/v1/threads", request_body = CreateThreadRequest, responses((status = 200, body = ThreadCommandResponse)))]
 pub async fn create_thread(
     State(state): State<AppState>,
     Json(request): Json<CreateThreadRequest>,
 ) -> ApiResult<Json<ThreadCommandResponse>> {
-    let project = super::projects::read_project_with_cwd(&state, &request.project_id).await?;
-    let project_id = project.id.clone();
+    let cwd =
+        super::projects::project_execution_cwd(&state, &request.project_id, request.cwd).await?;
+    let project_id = request.project_id;
     let options = ThreadCreationOptions {
         model: request.model,
         effort: request.effort,
@@ -511,7 +507,7 @@ pub async fn create_thread(
     options.validate()?;
     let payload = create_thread_payload(&options);
     let mut response = app_server_api::client(&state.app_server)
-        .thread_start(project.id, project.cwd, payload)
+        .thread_start(project_id.clone(), cwd, payload)
         .await?;
     save_thread_creation_options(&state, &response.thread.id, &options).await?;
     overlay_thread_creation_options(&mut response.thread, &options);
@@ -546,17 +542,9 @@ async fn chat_thread_list_response(
     cursor: Option<String>,
     limit: Option<u32>,
 ) -> ApiResult<ThreadListResponse> {
-    let Some(chat_root) = canonical_chat_root(&state.config.projects.home_dir)? else {
-        return Ok(empty_thread_list_response());
-    };
-    let chat_cwds = state.chat_cwd_cache.get_or_scan(&chat_root)?;
-    if chat_cwds.is_empty() {
-        return Ok(empty_thread_list_response());
-    }
-    let mut response = list_chat_threads_page(state, chat_cwds, cursor, limit).await?;
-    response
-        .threads
-        .retain(|thread| thread_is_under_canonical_root(thread, &chat_root));
+    let mut response = app_server_api::client(&state.app_server)
+        .thread_list_in_project(None, cursor, limit)
+        .await?;
     response
         .threads
         .retain(|thread| !thread_is_archived(thread));
@@ -640,9 +628,6 @@ pub async fn create_chat_thread(
         &request.first_message_text,
         Local::now().date_naive(),
     )?;
-    if let Some(chat_root) = canonical_chat_root(&state.config.projects.home_dir)? {
-        state.chat_cwd_cache.invalidate(&chat_root);
-    }
     let options = ThreadCreationOptions {
         model: request.model,
         effort: request.effort,
@@ -791,88 +776,6 @@ fn dated_chat_cwd(
 
 fn chat_root(home_dir: &FsPath) -> PathBuf {
     home_dir.join("Documents").join("Codex")
-}
-
-fn canonical_chat_root(home_dir: &FsPath) -> ApiResult<Option<PathBuf>> {
-    match std::fs::canonicalize(chat_root(home_dir)) {
-        Ok(path) => Ok(Some(path)),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(_) => Err(crate::error::ApiError::BadRequest(
-            "chat directory could not be read".to_string(),
-        )),
-    }
-}
-
-fn chat_thread_cwd_candidates(chat_root: &FsPath) -> ApiResult<Vec<String>> {
-    let mut candidates = Vec::new();
-    for entry in std::fs::read_dir(chat_root).map_err(|_| {
-        crate::error::ApiError::BadRequest("chat directory could not be read".to_string())
-    })? {
-        let entry = entry.map_err(|_| {
-            crate::error::ApiError::BadRequest("chat directory could not be read".to_string())
-        })?;
-        if !entry
-            .file_type()
-            .map(|file_type| file_type.is_dir())
-            .unwrap_or(false)
-        {
-            continue;
-        }
-
-        let date_dir = entry.path();
-        push_canonical_chat_cwd(&mut candidates, &date_dir)?;
-        for child in std::fs::read_dir(&date_dir).map_err(|_| {
-            crate::error::ApiError::BadRequest("chat directory could not be read".to_string())
-        })? {
-            let child = child.map_err(|_| {
-                crate::error::ApiError::BadRequest("chat directory could not be read".to_string())
-            })?;
-            if child
-                .file_type()
-                .map(|file_type| file_type.is_dir())
-                .unwrap_or(false)
-            {
-                push_canonical_chat_cwd(&mut candidates, &child.path())?;
-            }
-        }
-    }
-    candidates.sort();
-    candidates.dedup();
-    Ok(candidates)
-}
-
-fn push_canonical_chat_cwd(candidates: &mut Vec<String>, path: &FsPath) -> ApiResult<()> {
-    let path = std::fs::canonicalize(path).map_err(|_| {
-        crate::error::ApiError::BadRequest("chat directory could not be read".to_string())
-    })?;
-    candidates.push(path.to_string_lossy().to_string());
-    Ok(())
-}
-
-async fn list_chat_threads_page(
-    state: &AppState,
-    chat_cwds: Vec<String>,
-    cursor: Option<String>,
-    limit: Option<u32>,
-) -> ApiResult<ThreadListResponse> {
-    app_server_api::client(&state.app_server)
-        .thread_list_cwds_updated(chat_cwds, cursor, limit)
-        .await
-}
-
-fn empty_thread_list_response() -> ThreadListResponse {
-    ThreadListResponse {
-        threads: Vec::new(),
-        next_cursor: None,
-        backwards_cursor: None,
-        raw_payload: json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
-    }
-}
-
-fn thread_is_under_canonical_root(thread: &ThreadSummary, chat_root: &FsPath) -> bool {
-    let cwd = FsPath::new(&thread.cwd);
-    let cwd = std::fs::canonicalize(cwd).unwrap_or_else(|_| cwd.to_path_buf());
-    cwd.starts_with(chat_root)
 }
 
 fn create_unique_chat_cwd(date_dir: &FsPath, first_message_text: &str) -> ApiResult<String> {
@@ -1032,29 +935,6 @@ mod tests {
             };
             assert!(names.contains(&format!("build-the-chat-sidebar{suffix}")));
         }
-    }
-
-    #[test]
-    fn chat_cwd_cache_reuses_candidates_until_invalidated() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let chat_root = temp_dir.path();
-        let first = chat_root.join("2026-05-01").join("first");
-        std::fs::create_dir_all(&first).unwrap();
-        let first = std::fs::canonicalize(first).unwrap();
-        let cache = ChatCwdCache::default();
-
-        let initial = cache.get_or_scan(chat_root).unwrap();
-        assert!(initial.contains(&first.to_string_lossy().to_string()));
-
-        let second = chat_root.join("2026-05-01").join("second");
-        std::fs::create_dir_all(&second).unwrap();
-        let second = std::fs::canonicalize(second).unwrap();
-        let cached = cache.get_or_scan(chat_root).unwrap();
-        assert!(!cached.contains(&second.to_string_lossy().to_string()));
-
-        cache.invalidate(chat_root);
-        let refreshed = cache.get_or_scan(chat_root).unwrap();
-        assert!(refreshed.contains(&second.to_string_lossy().to_string()));
     }
 }
 

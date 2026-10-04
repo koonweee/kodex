@@ -291,6 +291,21 @@ describe("WorkspaceProvider pane commands", () => {
     expect(store.getState().activePaneId).toBe("pane-thread-2");
   });
 
+  it("retains an unlisted pane's canonical project and cwd after focus moves without persisting them", async () => {
+    const store = createMemoryWorkspacePaneStore(workspaceState([
+      threadPane("pane-thread-1", "thread-1", "Unlisted"),
+      threadPane("pane-thread-2", "thread-2", "Other"),
+    ], "pane-thread-1"));
+    renderProvider(store);
+    fireEvent.click(screen.getByRole("button", { name: "Receive native pane context" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open unseen thread" }));
+    await waitFor(() => expect(screen.getByTestId("active-pane")).toHaveTextContent("pane-thread-2"));
+    expect(screen.getByTestId("canonical-pane-context")).toHaveTextContent("native-project|/native-cwd");
+    expect(store.getState().panes[0].target).toEqual({ mode: "existing", threadId: "thread-1" });
+    fireEvent.click(screen.getByRole("button", { name: "Close native context pane" }));
+    await waitFor(() => expect(screen.getByTestId("canonical-pane-context")).toHaveTextContent("none|none"));
+  });
+
   it("dedupes workspace stream subscriptions by unique thread resource", async () => {
     const store = createMemoryWorkspacePaneStore(workspaceState([
       threadPane("pane-thread-1", "thread-1", "Thread 1"),
@@ -323,6 +338,9 @@ function CommandHarness() {
   const workspace = useWorkspace();
   return (
     <>
+      <span data-testid="canonical-pane-context">{workspace.paneThreadContextsById["pane-thread-1"]?.projectId ?? "none"}|{workspace.paneThreadContextsById["pane-thread-1"]?.cwd ?? "none"}</span>
+      <button onClick={() => workspace.setPaneThreadContext("pane-thread-1", { id: "thread-1", projectId: "native-project", cwd: "/native-cwd" })}>Receive native pane context</button>
+      <button onClick={() => workspace.closePane("pane-thread-1", null)}>Close native context pane</button>
       <span data-testid="pane-count">{workspace.workspace.panes.length}</span>
       <span data-testid="active-pane">{workspace.workspace.activePaneId ?? "none"}</span>
       <span data-testid="focus-pulses">{JSON.stringify(workspace.focusPulseByPaneId)}</span>

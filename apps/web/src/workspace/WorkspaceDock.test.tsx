@@ -125,6 +125,22 @@ describe("WorkspaceDock sync", () => {
     });
   });
 
+  it("uses the pane's canonical membership over paginated sidebar membership, including explicit removal", () => {
+    const openDraftThreadPane = vi.fn();
+    const input = {
+      openDraftThreadPane,
+      panelId: "unlisted-pane",
+      pane: pane("unlisted-pane", "thread", { mode: "existing", threadId: "unlisted-chat" }, "Unlisted chat"),
+      threadProjectIdsById: {},
+      loadedProjectId: "native-project",
+    };
+    const [item] = workspaceTabContextMenuItems(input);
+    if (typeof item === "string") throw new Error("Expected project action");
+    item.action?.();
+    expect(openDraftThreadPane).toHaveBeenCalledWith("native-project", expect.any(Object));
+    expect(workspaceTabContextMenuItems({ ...input, loadedProjectId: null, threadProjectIdsById: { "unlisted-chat": "stale-project" } })).toEqual([]);
+  });
+
   it("does not show the project draft tab action for non-project thread tabs", () => {
     expect(
       workspaceTabContextMenuItems({

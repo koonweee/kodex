@@ -106,13 +106,12 @@ export function withPinnedProjectThreads(
 ): ThreadsByProjectId {
   let next: ThreadsByProjectId | null = null;
   const projectIds = new Set(projects.map((project) => project.id));
-  const projectIdsByCwd = new Map(projects.map((project) => [project.cwd, project.id]));
 
   for (const thread of pinnedThreads) {
     if (!threadPinnedAt(thread)) {
       continue;
     }
-    const projectId = projectIdForPinnedThread(thread, projectIds, projectIdsByCwd);
+    const projectId = projectIdForPinnedThread(thread, projectIds);
     if (!projectId) {
       continue;
     }
@@ -202,13 +201,12 @@ function threadPinnedAt(thread: ThreadSummary): string | null {
 function projectIdForPinnedThread(
   thread: ThreadSummary,
   projectIds: Set<string>,
-  projectIdsByCwd: Map<string, string>,
 ): string | null {
-  const explicitProjectId = stringValue((thread as { projectId?: unknown }).projectId);
+  const explicitProjectId = thread.projectId;
   if (explicitProjectId && projectIds.has(explicitProjectId)) {
     return explicitProjectId;
   }
-  return projectIdsByCwd.get(thread.cwd) ?? null;
+  return null;
 }
 
 function threadStatusNeedsApproval(thread: ThreadSummary): boolean {

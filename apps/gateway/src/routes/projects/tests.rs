@@ -15,7 +15,7 @@ use crate::{
     store::Store,
 };
 
-async fn test_state() -> (AppState, Arc<RecordingAppServer>) {
+pub(super) async fn test_state() -> (AppState, Arc<RecordingAppServer>) {
     let server = Arc::new(RecordingAppServer::default());
     server.ready.store(true, Ordering::SeqCst);
     let state = AppState::new(
@@ -26,7 +26,7 @@ async fn test_state() -> (AppState, Arc<RecordingAppServer>) {
     (state, server)
 }
 
-fn native_project(id: &str, cwd: &str) -> Value {
+pub(super) fn native_project(id: &str, cwd: &str) -> Value {
     json!({
         "id": id,
         "name": "Native project",
@@ -39,7 +39,7 @@ fn native_project(id: &str, cwd: &str) -> Value {
     })
 }
 
-async fn response_json(response: axum::response::Response) -> Value {
+pub(super) async fn response_json(response: axum::response::Response) -> Value {
     serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap()).unwrap()
 }
 
@@ -59,7 +59,7 @@ async fn create_project_uses_native_identity_and_does_not_create_a_gateway_recor
             Request::post("/v1/projects")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    json!({"name": "Native project", "cwd": cwd, "idempotencyKey": "create-operation-1"})
+                    json!({"name": "Native project", "roots": [{"path":cwd}], "idempotencyKey": "create-operation-1"})
                         .to_string(),
                 ))
                 .unwrap(),
@@ -70,8 +70,8 @@ async fn create_project_uses_native_identity_and_does_not_create_a_gateway_recor
     assert_eq!(response.status(), StatusCode::CREATED);
     let project = response_json(response).await;
     assert_eq!(project["id"], "native-project-1");
-    assert_eq!(project["cwd"], cwd);
-    assert_eq!(project["createdAt"], "2026-01-01T00:00:00Z");
+    assert_eq!(project["roots"], json!([{"path":cwd}]));
+    assert_eq!(project["createdAt"], 1_767_225_600_i64);
     let requests = server.requests.lock().unwrap();
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].0, "project/create");
@@ -290,7 +290,7 @@ async fn a_rootless_native_project_remains_readable_without_breaking_the_sidebar
             &body["projects"][0]
         };
         assert_eq!(project["id"], "rootless");
-        assert_eq!(project["cwd"], "");
+        assert_eq!(project["roots"], json!([]));
     }
 }
 

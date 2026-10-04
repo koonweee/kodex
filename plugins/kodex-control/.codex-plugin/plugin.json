@@ -1,6 +1,6 @@
 {
   "name": "kodex-control",
-  "version": "0.1.0+codex.local-20261004-preview-removal",
+  "version": "0.1.0+codex.local-20261004-native-projects",
   "description": "First-party Kodex control plugin for guarded self-management workflows.",
   "author": {
     "name": "OpenAI",

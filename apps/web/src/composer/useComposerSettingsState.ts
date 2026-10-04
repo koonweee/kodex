@@ -6,8 +6,10 @@ import {
   listModels,
   type ModelSummary,
   type ThreadSummary,
+  type Project,
 } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
+import { singleProjectRoot } from "../projects/roots";
 import type { ComposerSettings } from "../ComposerFooterControls";
 import {
   composerSettingsFromThread,
@@ -21,6 +23,7 @@ type UseComposerSettingsStateParams = {
   draftChatThreadSelected: boolean;
   selectedProjectId: string | null;
   selectedThread: ThreadSummary | null;
+  projects: Project[];
 };
 
 export function useComposerSettingsState({
@@ -28,6 +31,7 @@ export function useComposerSettingsState({
   draftChatThreadSelected,
   selectedProjectId,
   selectedThread,
+  projects,
 }: UseComposerSettingsStateParams) {
   const queryClient = useQueryClient();
   const [models, setModels] = useState<ModelSummary[]>([]);
@@ -55,24 +59,28 @@ export function useComposerSettingsState({
       ? globalComposerDefaults
       : draftComposerSettings;
 
-  const hydrateComposerDefaults = useCallback(async (projectId: string | null): Promise<ComposerSettings | null> => {
+  const hydrateComposerDefaults = useCallback(async (projectId: string | null, cwd?: string | null): Promise<ComposerSettings | null> => {
     try {
       const nextModels = await queryClient.fetchQuery({
         queryKey: queryKeys.models,
         queryFn: listModels,
       });
       setModels((current) => (sameModelSummaries(current, nextModels) ? current : nextModels));
+      const executionCwd = cwd === undefined
+        ? singleProjectRoot(projects.find((project) => project.id === projectId))
+        : cwd;
+      if (projectId !== null && !executionCwd) return null;
       const settings = await queryClient.fetchQuery({
-        queryKey: queryKeys.composerSettings(projectId),
-        queryFn: () => getComposerSettings(projectId),
+        queryKey: queryKeys.composerSettings(projectId, executionCwd),
+        queryFn: ({ signal }) => getComposerSettings(projectId, executionCwd, signal),
       });
       const normalized = normalizePersistedComposerSettings(settings, nextModels);
-      setComposerDefaults((current) => (sameComposerSettings(current, normalized) ? current : normalized));
-      if (projectId === null) {
+      if (projectId === null && !executionCwd) {
+        setComposerDefaults((current) => (sameComposerSettings(current, normalized) ? current : normalized));
         setGlobalComposerDefaults((current) => (sameComposerSettings(current, normalized) ? current : normalized));
-      }
-      if (!draftComposerEditedRef.current) {
-        setDraftComposerSettings((current) => (sameComposerSettings(current, normalized) ? current : normalized));
+        if (!draftComposerEditedRef.current) {
+          setDraftComposerSettings((current) => (sameComposerSettings(current, normalized) ? current : normalized));
+        }
       }
       return normalized;
     } catch (error) {
@@ -86,7 +94,7 @@ export function useComposerSettingsState({
       }
       return null;
     }
-  }, [models.length, onError, queryClient]);
+  }, [models.length, onError, projects, queryClient]);
 
   function handleComposerSettingsChange(nextSettings: ComposerSettings) {
     if (selectedThread) {

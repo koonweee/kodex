@@ -34,14 +34,7 @@ pub async fn list_permission_profiles(
     State(state): State<AppState>,
     Query(query): Query<PermissionProfilesQuery>,
 ) -> ApiResult<Json<PermissionProfileListResponse>> {
-    let cwd = match (query.project_id, query.cwd) {
-        (Some(project_id), _) => Some(
-            super::projects::read_project_with_cwd(&state, &project_id)
-                .await?
-                .cwd,
-        ),
-        (None, cwd) => cwd,
-    };
+    let cwd = super::projects::settings_cwd(&state, query.project_id.as_deref(), query.cwd).await?;
     let client = app_server_api::client(&state.app_server);
     let mut cursor = None;
     let mut profiles = Vec::new();

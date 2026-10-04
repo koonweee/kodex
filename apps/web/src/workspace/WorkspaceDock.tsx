@@ -68,7 +68,7 @@ export function WorkspaceDock({
   panePlacementHintsById = {},
   workspace,
 }: WorkspaceDockProps) {
-  const { openDraftThreadPane, threadProjectIdsById } = useWorkspace();
+  const { openDraftThreadPane, paneThreadContextsById, threadProjectIdsById } = useWorkspace();
   const apiRef = useRef<DockviewApi | null>(null);
   const suppressEventsRef = useRef(false);
   const debounceRef = useRef<number | null>(null);
@@ -163,9 +163,10 @@ export function WorkspaceDock({
         panelId: panel.id,
         pane: params.pane,
         threadProjectIdsById,
+        loadedProjectId: paneThreadContextsById[params.pane.id] ? paneThreadContextsById[params.pane.id].projectId ?? null : undefined,
       });
     },
-    [openDraftThreadPane, threadProjectIdsById],
+    [openDraftThreadPane, paneThreadContextsById, threadProjectIdsById],
   );
 
   useEffect(() => {
@@ -218,13 +219,15 @@ export function workspaceTabContextMenuItems({
   panelId,
   pane,
   threadProjectIdsById,
+  loadedProjectId,
 }: {
   openDraftThreadPane: (projectId?: string | null, options?: WorkspacePaneOpenOptions) => Promise<void>;
   panelId: string;
   pane: WorkspacePane;
   threadProjectIdsById: Record<string, string>;
+  loadedProjectId?: string | null;
 }): Array<BuiltInContextMenuItem | ReactContextMenuItemConfig> {
-  const projectId = projectIdForWorkspacePane(pane, threadProjectIdsById);
+  const projectId = loadedProjectId === undefined ? projectIdForWorkspacePane(pane, threadProjectIdsById) : loadedProjectId;
   if (!projectId) {
     return [];
   }

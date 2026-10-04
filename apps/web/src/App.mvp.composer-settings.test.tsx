@@ -479,6 +479,7 @@ describe("MVP composer settings flows", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const chatThread = {
       ...thread,
+      projectId: null,
       id: "chat-thread-1",
       name: "New thread",
       cwd: "/home/example/Documents/Codex/2026-05-05/global-defaults",
@@ -531,6 +532,7 @@ describe("MVP composer settings flows", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const chatThread = {
       ...thread,
+      projectId: null,
       id: "chat-thread-1",
       name: "Chat without settings",
       cwd: "/home/example/Documents/Codex/2026-05-05/chat-without-settings",
@@ -570,6 +572,7 @@ describe("MVP composer settings flows", () => {
     }>();
     const chatThread = {
       ...thread,
+      projectId: null,
       id: "chat-thread-1",
       name: "Chat without settings",
       cwd: "/home/example/Documents/Codex/2026-05-05/chat-without-settings",
@@ -873,7 +876,8 @@ describe("MVP composer settings flows", () => {
     const { unmount } = render(<App />);
 
     await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i });
-    await userEvent.click(await screen.findByRole("button", { name: /create thread in kodex/i }));
+    const projectGroup = await screen.findByRole("group", { name: "Kodex" });
+    await userEvent.click(within(projectGroup).getByRole("button", { name: /create thread in kodex|new thread/i }));
     await userEvent.click(getActiveModelButton(/model: gpt-5\.4, medium/i));
     await clickMenuItem(/^gpt-5\.4-mini$/i);
     expect(await screen.findByRole("button", { name: /model: gpt-5\.4-mini, medium/i })).toBeInTheDocument();

@@ -30,20 +30,27 @@ export function useSidebarThreadsSnapshot({
   const sidebarThreadsQuery = useQuery({
     queryKey: queryKeys.sidebarThreads,
     retry: false,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const beforeChatSnapshot = queryClient.getQueryData<ThreadSummary[]>(queryKeys.chatThreads);
       const beforeProjectSnapshots = new Map(
         queryClient
-          .getQueriesData<ThreadSummary[]>({ queryKey: queryKeys.projectThreadsRoot })
+          .getQueriesData<ThreadSummary[]>({ queryKey: queryKeys.projectThreadsRoot, exact: false })
+          .filter(([queryKey]) => queryKey.length === 3)
           .map(([queryKey, data]) => [typeof queryKey[2] === "string" ? queryKey[2] : "", data] as const)
           .filter(([projectId]) => projectId.length > 0),
       );
       const beforePinnedSnapshot = queryClient.getQueryData<ThreadSummary[]>(queryKeys.pinnedThreads);
       const tombstonesBeforeSnapshot = queryClient.getQueryData<string[]>(queryKeys.pinnedThreadTombstones);
-      const snapshot = await getSidebarThreads();
+      const snapshot = await getSidebarThreads(signal);
+      signal.throwIfAborted();
       queryClient.setQueryData<Project[]>(queryKeys.projects, snapshot.projects);
 
       const nextProjectCursors: Record<string, string | null> = {};
+      for (const projectId of beforeProjectSnapshots.keys()) {
+        if (!(projectId in snapshot.projectThreads)) {
+          queryClient.setQueryData<ThreadSummary[]>(queryKeys.projectThreads(projectId), []);
+        }
+      }
       for (const [projectId, response] of Object.entries(snapshot.projectThreads)) {
         mergeProjectThreadSnapshot(
           queryClient,
@@ -82,7 +89,7 @@ export function useSidebarThreadsSnapshot({
     },
   });
   const sidebarSnapshotReady = sidebarThreadsQuery.data !== undefined;
-  const scopedSidebarQueriesEnabled = sidebarSnapshotReady || sidebarThreadsQuery.isError;
+  const scopedSidebarQueriesEnabled = sidebarSnapshotReady;
   const scopedSidebarSnapshotStaleTime = sidebarSnapshotReady ? Infinity : undefined;
   const cachedSidebarSnapshotData = useCallback(
     <T,>(queryKey: readonly unknown[]): T | null => {

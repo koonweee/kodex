@@ -37,12 +37,12 @@ export type ShellSelectionActions = {
   handleDraftProjectChange: (projectId: string | null) => void;
   handleFocusWorkspaceThreadPane: (threadId: string) => void;
   handleSelectAutomations: () => void;
+  handleShowWorkspace: () => void;
   handleSelectChatThread: (threadId: string) => void;
   handleSelectPinnedThread: (threadId: string) => void;
   handleSelectProjectSettings: (projectId: string) => void;
   handleSelectThread: (projectId: string, threadId: string) => void;
   selectMaterializedThread: (options: { projectId: string | null; thread: ThreadSummary }) => void;
-  selectProject: (projectId: string) => void;
   setMobilePanel: (panel: MobilePanel) => void;
   setRouteSelectedThreadState: (thread: ThreadSummary | null) => void;
   setSelectedProjectId: (projectId: string | null) => void;
@@ -57,20 +57,16 @@ export type ShellSelectionRefs = {
 };
 
 export function useShellSelection({
-  beginMaterializingTimelineEntry,
-  beginTimelineEntry,
+  onSelectThread,
   chatThreadsRef,
-  clearTimelineEntry,
   composerDefaultsRef,
   initialRoute,
   pinnedThreadsRef,
   resetComposerDraft,
   threadsByProjectIdRef,
 }: {
-  beginMaterializingTimelineEntry: (threadId: string) => void;
-  beginTimelineEntry: (threadId: string) => void;
+  onSelectThread: (threadId: string) => void;
   chatThreadsRef: CurrentRef<ThreadSummary[]>;
-  clearTimelineEntry: () => void;
   composerDefaultsRef: CurrentRef<{
     draftComposerEditedRef: CurrentRef<boolean>;
     hydrateComposerDefaults: (projectId: string | null) => void | Promise<unknown>;
@@ -129,8 +125,8 @@ export function useShellSelection({
     setUnavailableThreadId(null);
     setRouteSelectedThreadState(null);
     setSelectedThreadIdWithRef(threadId);
-    beginTimelineEntry(threadId);
-  }, [beginTimelineEntry, setRouteSelectedThreadState, setSelectedProjectIdWithRef, setSelectedThreadIdWithRef]);
+    onSelectThread(threadId);
+  }, [onSelectThread, setRouteSelectedThreadState, setSelectedProjectIdWithRef, setSelectedThreadIdWithRef]);
 
   const selectKnownChatThread = useCallback((threadId: string) => {
     setSelectedMainPane("thread");
@@ -150,9 +146,9 @@ export function useShellSelection({
     setUnavailableThreadId(null);
     setRouteSelectedThreadState(null);
     setSelectedThreadIdWithRef(threadId);
-    beginTimelineEntry(threadId);
+    onSelectThread(threadId);
   }, [
-    beginTimelineEntry,
+    onSelectThread,
     composerDefaultsRef,
     setRouteSelectedThreadState,
     setSelectedProjectIdWithRef,
@@ -172,8 +168,8 @@ export function useShellSelection({
     setUnavailableThreadId(null);
     setRouteSelectedThreadState(null);
     setSelectedThreadIdWithRef(threadId);
-    beginTimelineEntry(threadId);
-  }, [beginTimelineEntry, setRouteSelectedThreadState, setSelectedProjectIdWithRef, setSelectedThreadIdWithRef]);
+    onSelectThread(threadId);
+  }, [onSelectThread, setRouteSelectedThreadState, setSelectedProjectIdWithRef, setSelectedThreadIdWithRef]);
 
   const selectRouteThread = useCallback((threadId: string) => {
     setSelectedMainPane("thread");
@@ -206,9 +202,9 @@ export function useShellSelection({
     setUnavailableThreadId(null);
     setRouteSelectedThreadState(null);
     setSelectedThreadIdWithRef(threadId);
-    beginTimelineEntry(threadId);
+    onSelectThread(threadId);
   }, [
-    beginTimelineEntry,
+    onSelectThread,
     chatThreadsRef,
     pinnedThreadsRef,
     selectKnownChatThread,
@@ -218,29 +214,6 @@ export function useShellSelection({
     setSelectedProjectIdWithRef,
     setSelectedThreadIdWithRef,
     threadsByProjectIdRef,
-  ]);
-
-  const selectProject = useCallback((projectId: string) => {
-    setRouteThreadPaneId(null);
-    setSelectedMainPane("thread");
-    setSelectedProjectPaneId(null);
-    setSelectedProjectIdWithRef(projectId);
-    const { draftComposerEditedRef, hydrateComposerDefaults } = composerDefaultsRef.current;
-    if (!draftComposerEditedRef.current) {
-      void hydrateComposerDefaults(projectId);
-    }
-    setSelectedThreadIdWithRef(null);
-    setRouteSelectedThreadState(null);
-    setUnavailableThreadId(null);
-    setDraftChatThreadSelected(false);
-    setDraftThreadProjectId(projectId);
-    clearTimelineEntry();
-  }, [
-    clearTimelineEntry,
-    composerDefaultsRef,
-    setRouteSelectedThreadState,
-    setSelectedProjectIdWithRef,
-    setSelectedThreadIdWithRef,
   ]);
 
   const handleCreateThread = useCallback((projectId: string) => {
@@ -255,9 +228,8 @@ export function useShellSelection({
     setSelectedThreadIdWithRef(null);
     setRouteSelectedThreadState(null);
     setUnavailableThreadId(null);
-    clearTimelineEntry();
     resetComposerDraft();
-  }, [clearTimelineEntry, resetComposerDraft, setRouteSelectedThreadState, setSelectedProjectIdWithRef, setSelectedThreadIdWithRef]);
+  }, [resetComposerDraft, setRouteSelectedThreadState, setSelectedProjectIdWithRef, setSelectedThreadIdWithRef]);
 
   const handleCreateChat = useCallback(() => {
     setRouteThreadPaneId(null);
@@ -276,11 +248,9 @@ export function useShellSelection({
     setSelectedThreadIdWithRef(null);
     setRouteSelectedThreadState(null);
     setUnavailableThreadId(null);
-    clearTimelineEntry();
     resetComposerDraft();
   }, [
-    clearTimelineEntry,
-    composerDefaultsRef,
+      composerDefaultsRef,
     resetComposerDraft,
     setRouteSelectedThreadState,
     setSelectedProjectIdWithRef,
@@ -296,7 +266,6 @@ export function useShellSelection({
     setSelectedThreadIdWithRef(null);
     setRouteSelectedThreadState(null);
     setUnavailableThreadId(null);
-    clearTimelineEntry();
     const { draftComposerEditedRef, hydrateComposerDefaults } = composerDefaultsRef.current;
 
     if (projectId === null) {
@@ -316,8 +285,7 @@ export function useShellSelection({
       void hydrateComposerDefaults(projectId);
     }
   }, [
-    clearTimelineEntry,
-    composerDefaultsRef,
+      composerDefaultsRef,
     setRouteSelectedThreadState,
     setSelectedProjectIdWithRef,
     setSelectedThreadIdWithRef,
@@ -354,6 +322,14 @@ export function useShellSelection({
     setSelectedProjectPaneId(null);
   }, []);
 
+  const handleShowWorkspace = useCallback(() => {
+    setRouteThreadPaneId(null);
+    setSelectedMainPane("thread");
+    setSelectedProjectPaneId(null);
+    setMobilePanel("chat");
+    pushKodexRoute({ panel: null, threadId: null, view: "thread" });
+  }, []);
+
   const handleSelectProjectSettings = useCallback((projectId: string) => {
     setRouteThreadPaneId(null);
     pushKodexRoute({ panel: null, projectId, threadId: null, view: "project" });
@@ -366,8 +342,7 @@ export function useShellSelection({
     setUnavailableThreadId(null);
     setDraftChatThreadSelected(false);
     setDraftThreadProjectId(null);
-    clearTimelineEntry();
-  }, [clearTimelineEntry, setRouteSelectedThreadState, setSelectedProjectIdWithRef, setSelectedThreadIdWithRef]);
+  }, [setRouteSelectedThreadState, setSelectedProjectIdWithRef, setSelectedThreadIdWithRef]);
 
   const clearSelectionToDraft = useCallback(({
     projectId,
@@ -379,7 +354,6 @@ export function useShellSelection({
     replaceRoute?: boolean;
   }) => {
     setRouteThreadPaneId(null);
-    clearTimelineEntry();
     setSelectedThreadIdWithRef(null);
     setRouteSelectedThreadState(null);
     setUnavailableThreadId(null);
@@ -404,8 +378,7 @@ export function useShellSelection({
       replaceKodexRoute({ panel: null, threadId: null });
     }
   }, [
-    clearTimelineEntry,
-    composerDefaultsRef,
+      composerDefaultsRef,
     resetComposerDraft,
     setRouteSelectedThreadState,
     setSelectedThreadIdWithRef,
@@ -418,11 +391,11 @@ export function useShellSelection({
     setSelectedProjectIdWithRef(projectId);
     setUnavailableThreadId(null);
     setRouteSelectedThreadState(thread);
-    beginMaterializingTimelineEntry(thread.id);
+    onSelectThread(thread.id);
     setSelectedThreadIdWithRef(thread.id);
     pushKodexRoute({ panel: null, threadId: null });
   }, [
-    beginMaterializingTimelineEntry,
+    onSelectThread,
     setRouteSelectedThreadState,
     setSelectedProjectIdWithRef,
     setSelectedThreadIdWithRef,
@@ -447,8 +420,7 @@ export function useShellSelection({
       setUnavailableThreadId(null);
       setDraftChatThreadSelected(false);
       setDraftThreadProjectId(null);
-      clearTimelineEntry();
-      return;
+        return;
     }
     setSelectedMainPane("thread");
     setSelectedProjectPaneId(null);
@@ -461,8 +433,7 @@ export function useShellSelection({
       setUnavailableThreadId(null);
       setDraftChatThreadSelected(true);
       setDraftThreadProjectId(null);
-      clearTimelineEntry();
-      return;
+        return;
     }
     setRouteThreadPaneId(route.threadId);
     if (route.threadId === selectedThreadIdRef.current) {
@@ -472,8 +443,7 @@ export function useShellSelection({
     selectRouteThread(route.threadId);
     setMobilePanel(route.panel ?? "chat");
   }, [
-    clearTimelineEntry,
-    selectRouteThread,
+      selectRouteThread,
     setRouteSelectedThreadState,
     setSelectedProjectIdWithRef,
     setSelectedThreadIdWithRef,
@@ -507,6 +477,7 @@ export function useShellSelection({
   }, []);
 
   return {
+    handleShowWorkspace,
     applyBrowserRoute,
     clearSelectionToDraft,
     draftChatThreadSelected,
@@ -525,7 +496,6 @@ export function useShellSelection({
     routeSelectedThreadRef,
     routeThreadPaneId,
     selectMaterializedThread,
-    selectProject,
     selectedMainPane,
     selectedProjectId,
     selectedProjectIdRef,

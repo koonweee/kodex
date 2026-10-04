@@ -124,8 +124,8 @@ describe("sidebar thread ordering", () => {
           "project-1": [threadSummary("normal", { cwd: "/workspace/project-1" })],
         },
         [
-          threadSummary("pinned-project", { cwd: "/workspace/project-1", pinnedAt: "2026-05-06T00:00:00Z" }),
-          threadSummary("pinned-chat", { cwd: "/workspace/chats/2026-05-06", pinnedAt: "2026-05-06T00:01:00Z" }),
+          threadSummary("pinned-project", { projectId: "project-1", cwd: "/another/execution/path", pinnedAt: "2026-05-06T00:00:00Z" }),
+          threadSummary("pinned-chat", { projectId: null, cwd: "/workspace/project-1", pinnedAt: "2026-05-06T00:01:00Z" }),
         ],
         [projectSummary("project-1", "Project", "/workspace/project-1")],
       )["project-1"].map((thread) => thread.id),
@@ -148,10 +148,12 @@ describe("thread display titles", () => {
 
 function projectSummary(id: string, name: string, cwd: string): Project {
   return {
-    createdAt: "2026-05-01T00:00:00Z",
-    cwd,
+    createdAt: 1,
+    roots: [{ path: cwd }],
+    metadata: {},
+    position: 0,
     id,
     name,
-    updatedAt: "2026-05-01T00:00:00Z",
+    updatedAt: 1,
   };
 }

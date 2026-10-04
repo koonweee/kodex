@@ -2,12 +2,10 @@ import {
   AppShell,
   Badge,
   Box,
-  Button,
   Group,
   Menu,
   Stack,
   Text,
-  TextInput,
   Tooltip,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
@@ -26,7 +24,6 @@ import {
   Settings,
   SquarePen,
   SquareTerminal,
-  X,
 } from "lucide-react";
 import {
   memo,
@@ -37,7 +34,6 @@ import {
   useRef,
   useState,
   type DragEvent as ReactDragEvent,
-  type FormEvent,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from "react";
@@ -59,7 +55,7 @@ import {
   sortThreadsForSidebar,
   type ThreadsByProjectId,
 } from "./helpers";
-import { moveProjectInSidebarOrderAt } from "./projectOrder";
+import { moveProjectInSidebarOrderAt } from "../projects/dragOrder";
 import { SidebarIconButton } from "./SidebarIconButton";
 import {
   loadSidebarDisclosureState,
@@ -141,10 +137,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onOpenPreferences,
   onOpenTerminal,
   onPinThread,
-  onProjectCwdChange,
-  onProjectDirectoryCreateCancel,
-  onProjectFormOpenChange,
-  onReorderProjects,
+  onMoveProject,
   onSelectAutomations,
   onSelectChatThread,
   onSelectPinnedThread,
@@ -158,9 +151,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onUnpinThread,
   pinnedThreads,
   pendingTitleThreadIds,
-  projectCwd,
-  projectDirectoryCreatePending,
-  projectFormOpen,
   projectThreadHasMoreById = {},
   projectThreadPaginationStateById = {},
   projects,
@@ -182,7 +172,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   hoveredThreadActionId: string | null;
   onArchiveThread: (threadId: string) => void;
   onCreateChat: () => void;
-  onCreateProject: (options?: { createDirectory?: boolean }) => void;
+  onCreateProject: () => void;
   onCreateThread: (projectId: string) => void;
   onLogout: () => void;
   onLoadMoreChatThreads?: () => void;
@@ -190,10 +180,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onOpenPreferences: () => void;
   onOpenTerminal?: () => void;
   onPinThread: (threadId: string) => void;
-  onProjectCwdChange: (value: string) => void;
-  onProjectDirectoryCreateCancel: () => void;
-  onProjectFormOpenChange: (open: boolean | ((open: boolean) => boolean)) => void;
-  onReorderProjects: (projectIds: string[]) => void;
+  onMoveProject: (projectId: string, beforeProjectId: string | null) => void;
   onSelectAutomations: () => void;
   onSelectChatThread: (threadId: string) => void;
   onSelectPinnedThread: (threadId: string) => void;
@@ -207,9 +194,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onUnpinThread: (threadId: string) => void;
   pendingTitleThreadIds: Set<string>;
   pinnedThreads: ThreadSummary[];
-  projectCwd: string;
-  projectDirectoryCreatePending: boolean;
-  projectFormOpen: boolean;
   projectThreadHasMoreById?: Record<string, boolean>;
   projectThreadPaginationStateById?: Record<string, SidebarPaginationState>;
   projects: Project[];
@@ -255,7 +239,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const projectScopeLookup = useMemo(() => sidebarProjectScopeLookup(projects), [projects]);
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
   const scopedPinnedThreads =
-    sidebarScope === "chats" ? sortedPinnedThreads.filter((thread) => !pinnedThreadBelongsToProject(thread, projectScopeLookup)) : [];
+    sidebarScope === "chats" ? sortedPinnedThreads.filter((thread) => !threadBelongsToProjectScope(thread, projectScopeLookup)) : [];
   const visiblePinnedThreads = normalizedSearchQuery
     ? scopedPinnedThreads.filter((thread) => threadMatchesSearch(thread, normalizedSearchQuery, pendingTitleThreadIds))
     : scopedPinnedThreads;
@@ -403,7 +387,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     if (!sourceProjectId || sameOrder(nextProjectIds, currentProjectIds)) {
       return;
     }
-    onReorderProjects(nextProjectIds);
+    onMoveProject(sourceProjectId, nextProjectIds[nextProjectIds.indexOf(sourceProjectId) + 1] ?? null);
   }
 
   function handleProjectDragEnd() {
@@ -583,48 +567,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                         {
                           icon: <FolderPlus />,
                           label: SIDEBAR_TEXT.newProject,
-                          onClick: () => onProjectFormOpenChange((open) => !open),
+                          onClick: onCreateProject,
                         },
                       ]}
                     />
-                    {!projectsSectionCollapsed && projectFormOpen ? (
-                      <Box
-                        component="form"
-                        className="kodex-project-form"
-                        onSubmit={(event: FormEvent) => {
-                          event.preventDefault();
-                          onCreateProject();
-                        }}
-                      >
-                        <TextInput
-                          label={SIDEBAR_TEXT.cwd}
-                          required
-                          value={projectCwd}
-                          onChange={(event) => onProjectCwdChange(event.currentTarget.value)}
-                        />
-                        {projectDirectoryCreatePending ? (
-                          <Group className="kodex-project-create-confirm" gap="xs" wrap="nowrap">
-                            <Button size="xs" type="button" onClick={() => onCreateProject({ createDirectory: true })}>
-                              {`Create ${projectDirectoryDisplayPath(projectCwd)}?`}
-                            </Button>
-                            <Button
-                              aria-label="Cancel directory create"
-                              color="gray"
-                              onClick={onProjectDirectoryCreateCancel}
-                              size="xs"
-                              type="button"
-                              variant="light"
-                            >
-                              <X size={14} />
-                            </Button>
-                          </Group>
-                        ) : (
-                          <Button type="submit" size="xs" disabled={!projectCwd.trim()}>
-                            {SIDEBAR_TEXT.createProject}
-                          </Button>
-                        )}
-                      </Box>
-                    ) : null}
                     {!projectsSectionCollapsed ? (
                       <Stack gap="sm" className="kodex-project-tree">
                         {projects.length === 0 && dataState.projects === "loaded" ? (
@@ -912,27 +858,12 @@ function CollapsedSidebarRail({
   );
 }
 
-function projectDirectoryDisplayPath(projectCwd: string): string {
-  const cwd = projectCwd.trim();
-  if (cwd === "~" || cwd.startsWith("~/") || cwd.startsWith("/")) {
-    return cwd;
-  }
-  return `~/${cwd}`;
+function sidebarProjectScopeLookup(projects: Project[]): Set<string> {
+  return new Set(projects.map((project) => project.id));
 }
 
-function sidebarProjectScopeLookup(projects: Project[]): { projectCwds: Set<string>; projectIds: Set<string> } {
-  return {
-    projectCwds: new Set(projects.map((project) => project.cwd)),
-    projectIds: new Set(projects.map((project) => project.id)),
-  };
-}
-
-function pinnedThreadBelongsToProject(
-  thread: ThreadSummary,
-  { projectCwds, projectIds }: { projectCwds: Set<string>; projectIds: Set<string> },
-): boolean {
-  const projectId = (thread as { projectId?: unknown }).projectId;
-  return (typeof projectId === "string" && projectIds.has(projectId)) || projectCwds.has(thread.cwd);
+function threadBelongsToProjectScope(thread: ThreadSummary, projectIds: Set<string>): boolean {
+  return typeof thread.projectId === "string" && projectIds.has(thread.projectId);
 }
 
 type RecentSidebarThread = {
@@ -962,12 +893,12 @@ function recentSidebarThreads({
       byThreadId.set(thread.id, { location: { kind: "chat" }, thread });
     }
   }
-  const projectByCwd = new Map(projects.map((project) => [project.cwd, project.id]));
+  const projectIds = new Set(projects.map((project) => project.id));
   for (const thread of pinnedThreads) {
     if (byThreadId.has(thread.id)) {
       continue;
     }
-    const projectId = projectByCwd.get(thread.cwd);
+    const projectId = thread.projectId && projectIds.has(thread.projectId) ? thread.projectId : null;
     byThreadId.set(thread.id, {
       location: projectId ? { kind: "project", projectId } : { kind: "pinned" },
       thread,

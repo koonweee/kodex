@@ -23,7 +23,7 @@ Useful environment variables:
   KODEX_CREATE_THREAD=1                  Create a new project thread before observing.
   KODEX_PROJECT_ID                       Project id for created threads.
   KODEX_PROJECT_NAME                     Project name to resolve through GET /v1/projects.
-  KODEX_PROJECT_CWD                      Project cwd to resolve or create through /v1/projects.
+  KODEX_PROJECT_CWD                      Explicit thread execution cwd; creates a fresh profiling project if no id/name is given.
   KODEX_PROMPT                           Prompt to submit after opening SSE.
   KODEX_TIMEOUT_MS                       Maximum observation time. Default: 300000 with a prompt, 60000 without.
   KODEX_STOP_ON_IDLE=0                   Keep observing after a terminal idle patch.
@@ -38,6 +38,8 @@ Output:
   /tmp/kodex-sse-after.json. Compare rawBytesPerMinute, byKind, patchScopes, and
   largestEvents to evaluate a fix.
 */
+
+import { randomUUID } from "node:crypto";
 
 const baseUrl = process.env.KODEX_BASE_URL ?? "http://127.0.0.1:8787";
 const prompt = process.env.KODEX_PROMPT ?? null;
@@ -116,23 +118,18 @@ async function resolveProjectId() {
   const projectName = process.env.KODEX_PROJECT_NAME;
   if (projectName) {
     const projects = await requestJson("/v1/projects");
-    const project = projects.projects?.find((candidate) => candidate.name === projectName);
-    if (!project) {
-      throw new Error(`project not found: ${projectName}`);
+    const matches = projects.projects?.filter((candidate) => candidate.name === projectName) ?? [];
+    if (matches.length !== 1) {
+      throw new Error(`project name must identify one project; use KODEX_PROJECT_ID: ${projectName}`);
     }
-    return project.id;
+    return matches[0].id;
   }
 
   const projectCwd = process.env.KODEX_PROJECT_CWD;
   if (projectCwd) {
-    const projects = await requestJson("/v1/projects");
-    const existing = projects.projects?.find((candidate) => candidate.cwd === projectCwd);
-    if (existing) {
-      return existing.id;
-    }
     const project = await requestJson("/v1/projects", {
       method: "POST",
-      body: JSON.stringify({ cwd: projectCwd, createDirectory: false }),
+      body: JSON.stringify({ name: "SSE profiling", roots: [{ path: projectCwd }], idempotencyKey: randomUUID() }),
     });
     return project.id;
   }
@@ -155,7 +152,7 @@ async function ensureThread() {
   }
   const created = await requestJson("/v1/threads", {
     method: "POST",
-    body: JSON.stringify({ projectId }),
+    body: JSON.stringify({ projectId, cwd: process.env.KODEX_PROJECT_CWD }),
   });
   stats.threadId = created.thread.id;
   stats.createdThread = true;

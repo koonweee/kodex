@@ -8,7 +8,7 @@ const SOURCE_FILES = [
   "src/timeline/batch.ts",
   "src/timeline/reducer.ts",
   "src/timeline/useReadonlyThreadTimeline.ts",
-  "src/timeline/useSelectedThreadTimeline.ts",
+  "src/panes/thread/ThreadPane.tsx",
   "src/App.tsx",
 ];
 

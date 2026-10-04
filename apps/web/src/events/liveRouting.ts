@@ -12,6 +12,7 @@ import {
 
 export type LiveEventRouteHandlers = {
   applyAccountEvent: (event: EventEnvelope) => void;
+  applyProjectEvent: (event: EventEnvelope) => void;
   applyAutomationStreamEvent: (event: EventEnvelope) => void;
   applyQueuedInputUpsert: (row: QueuedInput) => void;
   applyQueuedInputDeleted: (threadId: string, id: string) => void;
@@ -30,13 +31,11 @@ export type LiveEventRouteHandlers = {
   applyMcpLifecycleEvent: (event: EventEnvelope) => void;
 };
 
-export type SelectedThreadLiveEventRouteHandlers = Omit<
-  LiveEventRouteHandlers,
-  "applyAccountEvent" | "applyUsageLimitSnapshot" | "applyApprovalEvent" | "applySkillsChangedEvent" | "applyMcpLifecycleEvent"
->;
-
 export function routeGlobalLiveEvent(event: EventEnvelope, handlers: LiveEventRouteHandlers) {
   routeSharedLiveEvent(event, handlers);
+  if (event.kind === "project.changed" || event.kind === "thread.project_updated") {
+    handlers.applyProjectEvent(event);
+  }
   if (event.kind === "account.updated" || event.kind === "account.login_completed") {
     handlers.applyAccountEvent(event);
   }
@@ -55,11 +54,7 @@ export function routeGlobalLiveEvent(event: EventEnvelope, handlers: LiveEventRo
   }
 }
 
-export function routeSelectedThreadLiveEvent(event: EventEnvelope, handlers: SelectedThreadLiveEventRouteHandlers) {
-  routeSharedLiveEvent(event, handlers);
-}
-
-function routeSharedLiveEvent(event: EventEnvelope, handlers: SelectedThreadLiveEventRouteHandlers) {
+function routeSharedLiveEvent(event: EventEnvelope, handlers: LiveEventRouteHandlers) {
   if (event.kind === "automation.item_upsert" || event.kind === "automation.item_deleted") {
     handlers.applyAutomationStreamEvent(event);
   }

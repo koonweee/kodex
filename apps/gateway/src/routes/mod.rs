@@ -1621,94 +1621,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn project_create_resolves_relative_cwd_from_home() {
-        let (mut state, _) = test_state().await;
-        let home = tempdir().unwrap();
-        Arc::make_mut(&mut state.config).projects.home_dir = home.path().join(".");
-        let cwd = tempfile::Builder::new()
-            .prefix("kodex-project-")
-            .tempdir_in(home.path())
-            .unwrap();
-        let relative_cwd = cwd
-            .path()
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap()
-            .to_string();
-        let app = build_router(state);
-
-        let response = app
-            .oneshot(
-                Request::post("/v1/projects")
-                    .header("content-type", "application/json")
-                    .body(Body::from(json!({"cwd": relative_cwd}).to_string()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::CREATED);
-        let project = response_json(response).await;
-        assert_eq!(
-            project["cwd"],
-            std::fs::canonicalize(cwd.path())
-                .unwrap()
-                .to_string_lossy()
-                .to_string()
-        );
-        assert_eq!(project["name"], relative_cwd);
-    }
-
-    #[tokio::test]
-    async fn project_create_can_create_missing_relative_directory_under_home() {
-        let (mut state, _) = test_state().await;
-        let home = tempdir().unwrap();
-        Arc::make_mut(&mut state.config).projects.home_dir = home.path().to_path_buf();
-        let parent = tempfile::Builder::new()
-            .prefix("kodex-project-")
-            .tempdir_in(home.path())
-            .unwrap();
-        let relative_cwd = format!(
-            "{}/missing-child",
-            parent
-                .path()
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap()
-        );
-        let expected_cwd = parent.path().join("missing-child");
-        let app = build_router(state);
-
-        let missing = app
-            .clone()
-            .oneshot(
-                Request::post("/v1/projects")
-                    .header("content-type", "application/json")
-                    .body(Body::from(json!({"cwd": relative_cwd}).to_string()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(missing.status(), StatusCode::BAD_REQUEST);
-        assert!(!expected_cwd.exists());
-
-        let created = app
-            .clone()
-            .oneshot(
-                Request::post("/v1/projects")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        json!({"cwd": relative_cwd, "createDirectory": true}).to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(created.status(), StatusCode::CREATED);
-        assert!(expected_cwd.is_dir());
-    }
-
-    #[tokio::test]
-    async fn project_routes_create_list_get_and_reject_missing_cwd() {
+    async fn project_routes_create_list_get_and_require_native_create_fields() {
         let (state, _) = test_state().await;
         let cwd = std::env::current_dir().unwrap().display().to_string();
         let app = build_router(state);
@@ -1730,7 +1643,7 @@ mod tests {
             .oneshot(
                 Request::post("/v1/projects")
                     .header("content-type", "application/json")
-                    .body(Body::from(json!({"name": "Kodex", "cwd": cwd}).to_string()))
+                    .body(Body::from(json!({"name": "Kodex", "roots": [{"path":cwd}], "idempotencyKey":"create-kodex"}).to_string()))
                     .unwrap(),
             )
             .await
@@ -3373,7 +3286,8 @@ mod tests {
             "serviceTier": "fast",
             "approvalPolicy": "on-request",
             "approvalsReviewer": "auto_review",
-            "sandbox": "workspace-write"
+            "sandbox": "workspace-write",
+            "payload": {"projectId":"must-not-assign"}
         })
         .to_string();
         let response = app
@@ -3396,7 +3310,7 @@ mod tests {
         assert_eq!(body["thread"]["sandbox"], "workspace-write");
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "thread/start");
-        assert!(requests[0].1.get("projectId").is_none());
+        assert_eq!(requests[0].1.get("projectId"), Some(&Value::Null));
         assert_eq!(requests[0].1["model"], "gpt-5.4");
         assert!(requests[0].1.get("effort").is_none());
         assert_eq!(requests[0].1["serviceTier"], "fast");
@@ -3467,45 +3381,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn chat_thread_list_filters_threads_under_chat_root() {
+    async fn chat_thread_list_uses_native_unassigned_membership_outside_scratch_folders() {
         let (mut state, app_server) = test_state().await;
         let home = tempdir().unwrap();
         Arc::make_mut(&mut state.config).projects.home_dir = home.path().to_path_buf();
-        let chat_cwd = home
-            .path()
-            .join("Documents")
-            .join("Codex")
-            .join("2026-05-05")
-            .join("chat-thread");
-        std::fs::create_dir_all(&chat_cwd).unwrap();
-        let chat_cwd = std::fs::canonicalize(chat_cwd).unwrap();
+        let mut thread = thread_summary("unassigned-thread");
+        thread["cwd"] = json!("/workspace/existing-project-folder");
+        thread["projectId"] = Value::Null;
         *app_server.next_response.lock().unwrap() = Some(json!({
-            "data": [
-                {
-                    "id": "chat-thread",
-                    "cwd": chat_cwd,
-                    "status": {"type": "idle"},
-                    "source": "local",
-                    "preview": "chat",
-                    "createdAt": 1_767_225_600_i64,
-                    "updatedAt": 1_767_225_700_i64
-                },
-                {
-                    "id": "project-thread",
-                    "cwd": "/workspace/project",
-                    "status": {"type": "idle"},
-                    "source": "local",
-                    "preview": "project",
-                    "createdAt": 1_767_225_600_i64,
-                    "updatedAt": 1_767_225_700_i64
-                }
-            ],
-            "nextCursor": null,
-            "backwardsCursor": null
+            "data": [thread], "nextCursor": null, "backwardsCursor": null
         }));
-        let app = build_router(state);
-
-        let response = app
+        let response = build_router(state)
             .oneshot(
                 Request::get("/v1/chats/threads")
                     .body(Body::empty())
@@ -3513,17 +3399,16 @@ mod tests {
             )
             .await
             .unwrap();
-
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
         assert_eq!(body["threads"].as_array().unwrap().len(), 1);
-        assert_eq!(body["threads"][0]["id"], "chat-thread");
+        assert_eq!(body["threads"][0]["id"], "unassigned-thread");
+        assert_eq!(body["threads"][0]["projectId"], Value::Null);
+        assert!(!home.path().join("Documents").exists());
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "thread/list");
-        assert!(requests[0].1["cwd"]
-            .as_array()
-            .unwrap()
-            .contains(&Value::String(chat_cwd.to_string_lossy().to_string())));
+        assert_eq!(requests[0].1.get("projectId"), Some(&Value::Null));
+        assert!(requests[0].1.get("cwd").is_none());
         assert_eq!(requests[0].1["cursor"], Value::Null);
         assert_eq!(requests[0].1["limit"], 100);
         assert_eq!(requests[0].1["sortKey"], "updated_at");
@@ -3648,7 +3533,7 @@ mod tests {
         let home = tempdir().unwrap();
         Arc::make_mut(&mut state.config).projects.home_dir = home.path().to_path_buf();
         let project_one_cwd = home.path().join("project-one");
-        let project_two_cwd = home.path().join("project-two");
+        let project_two_cwd = project_one_cwd.clone();
         std::fs::create_dir_all(&project_one_cwd).unwrap();
         std::fs::create_dir_all(&project_two_cwd).unwrap();
         let project_one_cwd = std::fs::canonicalize(project_one_cwd).unwrap();
@@ -3695,6 +3580,7 @@ mod tests {
         let chat_cwd = std::fs::canonicalize(chat_cwd).unwrap();
         let mut project_one_thread = thread_summary("project-one-thread");
         project_one_thread["cwd"] = json!(project_one_cwd.to_string_lossy().to_string());
+        project_one_thread["projectId"] = json!(project_one.id);
         project_one_thread["preview"] = json!({"text": "Project one preview"});
         project_one_thread["status"] = json!({"type": "active"});
         project_one_thread["model"] = json!("gpt-5.4-mini");
@@ -3707,6 +3593,7 @@ mod tests {
         });
         let mut project_two_thread = thread_summary("project-two-thread");
         project_two_thread["cwd"] = json!(project_two_cwd.to_string_lossy().to_string());
+        project_two_thread["projectId"] = json!(project_two.id);
         let mut chat_thread = thread_summary("chat-thread");
         chat_thread["cwd"] = json!(chat_cwd.to_string_lossy().to_string());
         let listed_projects = [project_one.clone(), project_two.clone()];
@@ -3767,6 +3654,11 @@ mod tests {
             body["projectThreads"][project_one.id.as_str()]["threads"][0]["rawPayload"].is_null()
         );
         let project_one_compact = &body["projectThreads"][project_one.id.as_str()]["threads"][0];
+        assert_eq!(project_one_compact["projectId"], project_one.id);
+        assert_eq!(
+            body["projectThreads"][project_two.id.as_str()]["threads"][0]["projectId"],
+            project_two.id
+        );
         assert_eq!(project_one_compact["status"], "active");
         assert_eq!(
             project_one_compact["preview"],
@@ -3858,9 +3750,8 @@ mod tests {
                 && params["limit"] == 10
                 && params["archived"] == false
                 && params["useStateDbOnly"] == true
-                && params["cwd"].as_array().is_some_and(|paths| {
-                    paths.contains(&Value::String(chat_cwd.to_string_lossy().to_string()))
-                })
+                && params.get("projectId") == Some(&Value::Null)
+                && params.get("cwd").is_none()
         }));
         assert!(requests.iter().any(|(method, params)| {
             method == "thread/read"

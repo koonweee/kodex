@@ -1,13 +1,3 @@
-.kodex-project-form {
-  display: grid;
-  gap: 10px;
-  margin-bottom: 12px;
-  border: 1px solid var(--kodex-border-strong);
-  border-radius: var(--kodex-radius-md);
-  padding: 12px;
-  background: var(--kodex-bg-raised-muted);
-}
-
 .kodex-sidebar {
   --kodex-sidebar-action-gap: 0px;
   --kodex-sidebar-action-size: 28px;
@@ -159,8 +149,7 @@
 
 .kodex-sidebar[data-sidebar-scope="projects"] .kodex-sidebar-section,
 .kodex-sidebar[data-sidebar-scope="chats"] .kodex-projects-section-row,
-.kodex-sidebar[data-sidebar-scope="chats"] .kodex-project-tree,
-.kodex-sidebar[data-sidebar-scope="chats"] .kodex-project-form {
+.kodex-sidebar[data-sidebar-scope="chats"] .kodex-project-tree {
   display: none;
 }
 

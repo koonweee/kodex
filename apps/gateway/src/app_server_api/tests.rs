@@ -241,11 +241,7 @@ async fn adapter_maps_thread_list_read_archive_and_turn_start_interrupt_methods(
         .unwrap();
     client.thread_list_recent_updated(10).await.unwrap();
     client
-        .thread_list_cwds_updated(
-            vec!["/chat/a".to_string(), "/chat/b".to_string()],
-            None,
-            Some(50),
-        )
+        .thread_list_in_project(None, None, Some(50))
         .await
         .unwrap();
     *server.response.lock().unwrap() = json!({"thread": thread_summary_payload("thread-1")});
@@ -311,7 +307,7 @@ async fn adapter_maps_thread_list_read_archive_and_turn_start_interrupt_methods(
             json!({
                 "cursor": null,
                 "limit": 50,
-                "cwd": ["/chat/a", "/chat/b"],
+                "projectId": null,
                 "sortKey": "updated_at",
                 "sortDirection": "desc",
                 "archived": false,

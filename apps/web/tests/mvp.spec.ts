@@ -1,17 +1,22 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { createServer, type ServerResponse } from "node:http";
 
 const project = {
   id: "project-1",
   name: "Kodex",
-  cwd: "/home/example/kodex",
-  createdAt: "2026-04-30T00:00:00Z",
-  updatedAt: "2026-04-30T00:00:00Z",
+  roots: [{ path: "/home/example/kodex" }],
+  metadata: {},
+  position: 0,
+  createdAt: 1777507200,
+  updatedAt: 1777507200,
+  recencyAt: null,
 };
 
 const thread = {
   id: "thread-1",
+  projectId: project.id,
   name: "Frontend MVP",
-  cwd: project.cwd,
+  cwd: project.roots[0].path,
   status: "idle",
   source: "local",
   preview: "Build the web client",
@@ -31,7 +36,7 @@ const approval = {
   itemId: "item-approval",
   method: "command_execution",
   status: "pending",
-  payload: { command: "cargo test", cwd: project.cwd, reason: "Verify changes" },
+  payload: { command: "cargo test", cwd: project.roots[0].path, reason: "Verify changes" },
   response: null,
   createdAt: "2026-04-30T00:00:00Z",
   resolvedAt: null,
@@ -263,19 +268,27 @@ test("creates and selects a project", async ({ page }) => {
 
   await expect(page.locator(".kodex-project-title").filter({ hasText: "Kodex" })).toBeVisible();
   await page.getByRole("button", { name: /add project/i }).first().click();
-  await page.getByLabel(/directory/i).fill("/tmp/scratch");
-  await page.getByRole("button", { name: /add project/i }).last().click();
+  await page.getByLabel(/project name/i).fill("Scratch");
+  await page.getByLabel(/root directories/i).fill("/tmp/scratch");
+  await page.getByRole("dialog", { name: /add project/i }).getByRole("button", { name: /add project/i }).click();
 
   await expect(page.locator(".kodex-project-title").filter({ hasText: "Scratch" })).toBeVisible();
 });
 
 test("creates a thread and submits a turn", async ({ page }) => {
+  const submissions: unknown[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && new URL(request.url()).pathname === "/v1/threads/thread-2/input") submissions.push(request.postDataJSON());
+  });
   await page.goto("/");
 
   await page.getByRole("button", { name: /create thread in kodex/i }).click();
   await composerInActiveThreadPane(page).fill("Implement the next milestone");
   await sendButtonInActiveThreadPane(page).click();
   await expect(composerInActiveThreadPane(page)).toBeEmpty();
+  await expect(activeThreadPane(page).getByRole("heading", { name: "Created chat", exact: true })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Kodex", exact: true }).getByRole("button", { name: "Created chat", exact: true })).toBeVisible();
+  expect(submissions).toMatchObject([{ input: [{ type: "text", text: "Implement the next milestone" }] }]);
 });
 
 test("renders selected thread snapshot output", async ({ page }) => {
@@ -584,90 +597,105 @@ test("keeps followed live output pinned to the scroll parent bottom", async ({ p
     },
   ];
   const threadBody = (liveText: string) => threadDetailBody({ ...thread, status: "active" }, turnsForLiveText(liveText), "streaming");
+  let currentDetail = threadBody("Initial live output");
+  const grownText = `Live growth marker\n\n${"More assistant output. ".repeat(120)}`;
   const patchTimeline = timelineFromTurns(
     { ...thread, status: "active" },
-    turnsForLiveText(`Live growth marker\n\n${"More assistant output. ".repeat(120)}`),
+    turnsForLiveText(grownText),
     "streaming",
   );
-  let releasePatch: (() => void) | null = null;
-  const patchReleased = new Promise<void>((resolve) => {
-    releasePatch = resolve;
-  });
-
-  await page.unroute("**/v1/**");
-  await page.route("**/v1/**", async (route) => {
-    const request = route.request();
-    const url = new URL(request.url());
-    const key = `${request.method()} ${url.pathname}`;
-
-    if (key === "GET /v1/events" && request.headers().accept?.includes("text/event-stream")) {
-      await patchReleased;
-      const event = {
-        id: "event-live-growth",
-        seq: 2,
-        kind: "thread_view.patch",
-        codexMethod: "thread_view/patch",
-        itemId: "assistant-live",
-        projectId: project.id,
-        threadId: thread.id,
-        turnId: "turn-2",
-        payload: {
-          ...patchTimeline,
-          pendingApprovalRequests: [],
-          pendingUserInputRequests: [],
-          scope: "full_snapshot",
-          threadId: thread.id,
-          turns: [
-            { id: "turn-1", status: "completed", startedAt: 1777500001, completedAt: 1777500002 },
-            { id: "turn-2", status: "running", startedAt: 1777500003 },
-          ],
-          viewRevision: 2,
-        },
-        receivedAt: "2026-04-30T00:00:03Z",
-      };
-      await route.fulfill({
-        status: 200,
-        headers: { "Content-Type": "text/event-stream" },
-        body: `event: thread_view.patch\ndata: ${JSON.stringify(event)}\n\n`,
-      });
+  const event = {
+    id: "event-live-growth", seq: 2, kind: "thread_view.patch", codexMethod: "thread_view/patch",
+    itemId: "assistant-live", projectId: project.id, threadId: thread.id, turnId: "turn-2",
+    payload: {
+      ...patchTimeline, pendingApprovalRequests: [], pendingUserInputRequests: [], scope: "full_snapshot", threadId: thread.id,
+      turns: [
+        { id: "turn-1", status: "completed", startedAt: 1777500001, completedAt: 1777500002 },
+        { id: "turn-2", status: "running", startedAt: 1777500003 },
+      ],
+      viewRevision: 2,
+    },
+    receivedAt: "2026-04-30T00:00:03Z",
+  };
+  const streams = new Set<ServerResponse>();
+  const server = createServer((request, response) => {
+    const path = new URL(request.url ?? "/", "http://localhost").pathname;
+    if (path === "/v1/thread-view-presence" && ["POST", "OPTIONS"].includes(request.method ?? "")) {
+      response.writeHead(204, { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST", "Access-Control-Allow-Headers": "Content-Type" });
+      response.end();
       return;
     }
-
-    const response =
-      key === "GET /v1/threads/thread-1"
-        ? { body: threadBody("Initial live output") }
-        : key === "POST /v1/threads/thread-1/attach"
-          ? { body: { disposition: "resumed", thread: { ...thread, status: "active" }, rawPayload: {} } }
-          : key === "GET /v1/approvals"
-            ? { body: { approvals: [] } }
-            : await responseFor(key, route);
-
-    await route.fulfill({
-      status: response.status ?? 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(response.body),
+    if (path !== "/v1/events" || request.method !== "GET") {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
+    response.writeHead(200, { "Content-Type": "text/event-stream", "Access-Control-Allow-Origin": "*" });
+    response.flushHeaders();
+    streams.add(response);
+    response.on("close", () => streams.delete(response));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Expected a local SSE address");
+  try {
+    // Pagehide beacons can outlive Playwright's route interception.
+    await page.addInitScript((origin) => {
+      const sendBeacon = navigator.sendBeacon.bind(navigator);
+      navigator.sendBeacon = (url, data) => {
+        const target = new URL(String(url), window.location.href);
+        return sendBeacon(target.pathname === "/v1/thread-view-presence" ? `${origin}${target.pathname}` : url, data);
+      };
+    }, `http://127.0.0.1:${address.port}`);
+    await page.unroute("**/v1/**");
+    await page.route("**/v1/**", async (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      const key = `${request.method()} ${url.pathname}`;
+      if (key === "GET /v1/events" && request.headers().accept?.includes("text/event-stream")) {
+        await route.continue({ url: `http://127.0.0.1:${address.port}${url.pathname}${url.search}` });
+        return;
+      }
+      const response =
+        key === "GET /v1/threads/thread-1"
+          ? { body: currentDetail }
+          : key === "POST /v1/threads/thread-1/attach"
+            ? { body: { disposition: "resumed", thread: { ...thread, status: "active" }, rawPayload: {} } }
+            : key === "GET /v1/approvals"
+              ? { body: { approvals: [] } }
+              : await responseFor(key, route);
+      await route.fulfill({
+        status: response.status ?? 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(response.body),
+      });
     });
-  });
 
-  await page.setViewportSize({ width: 820, height: 760 });
-  await page.goto("/threads/thread-1");
-  await expect(page.getByText("Follow seed 13")).toBeVisible();
-
-  const viewer = page.locator(".kodex-timeline-scroll");
-  await viewer.evaluate((node) => {
-    const scrollElement = node as HTMLElement;
-    scrollElement.scrollTop = scrollElement.scrollHeight - scrollElement.clientHeight - 20;
-    scrollElement.dispatchEvent(new Event("scroll"));
-  });
-  await expect(page.locator(".kodex-scroll-to-bottom")).toHaveCount(0);
-
-  releasePatch?.();
-  await expect(page.getByText("Live growth marker")).toBeVisible();
-  await expect.poll(async () => viewer.evaluate((node) => {
-    const scrollElement = node as HTMLElement;
-    return Math.round(scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight);
-  })).toBe(0);
-  await expect(page.locator(".kodex-scroll-to-bottom")).toHaveCount(0);
+    await page.setViewportSize({ width: 820, height: 760 });
+    await page.goto("/threads/thread-1");
+    await expect(page.getByText("Follow seed 13")).toBeVisible();
+    await expect.poll(() => streams.size).toBe(1);
+    const viewer = page.locator(".kodex-timeline-scroll");
+    await viewer.evaluate((node) => {
+      const scrollElement = node as HTMLElement;
+      scrollElement.scrollTop = scrollElement.scrollHeight - scrollElement.clientHeight - 20;
+      scrollElement.dispatchEvent(new Event("scroll"));
+    });
+    await expect(page.locator(".kodex-scroll-to-bottom")).toHaveCount(0);
+    const updated = threadBody(grownText);
+    currentDetail = { ...updated, timeline: { ...updated.timeline, viewRevision: 2 } };
+    for (const stream of streams) stream.write(`id: ${event.seq}\n${sse(event)}`);
+    await expect(page.getByText("Live growth marker")).toBeVisible();
+    await expect.poll(async () => viewer.evaluate((node) => {
+      const scrollElement = node as HTMLElement;
+      return Math.round(scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight);
+    })).toBe(0);
+    await expect(page.locator(".kodex-scroll-to-bottom")).toHaveCount(0);
+  } finally {
+    await page.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
 });
 
 test("keeps large file changes and following skill messages from overlapping", async ({ page }) => {
@@ -1075,7 +1103,7 @@ test("restores selected thread model settings when switching threads", async ({ 
         status: 200,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          projects: [{ id: "project-1", name: "Kodex", cwd: "/tmp", createdAt: "2026-05-05T00:00:00Z", updatedAt: "2026-05-05T00:00:00Z" }],
+          projects: [{ ...project, roots: [{ path: "/tmp" }] }],
         }),
       });
       return;
@@ -1148,9 +1176,20 @@ test("restores selected thread model settings when switching threads", async ({ 
       return;
     }
 
+    if (key === "GET /v1/sidebar/threads") {
+      await route.fulfill({ json: {
+        projects: [{ ...project, roots: [{ path: "/tmp" }] }],
+        projectThreads: { [project.id]: { threads: [] } },
+        chatThreads: { threads: Object.values(threadsById).map((thread) => ({ ...thread, projectId: null, cwd: "/tmp", status: "idle", rawPayload: { model: thread.model }, createdAt: 1777500000, updatedAt: 1777501000 })) },
+        pinnedThreads: { threads: [] },
+      } });
+      return;
+    }
+
     if (key === "GET /v1/threads") {
       const threads = Object.values(threadsById).map((thread) => ({
         id: thread.id,
+        projectId: null,
         name: thread.name,
         cwd: "/tmp",
         status: "idle",
@@ -1201,6 +1240,7 @@ test("restores selected thread model settings when switching threads", async ({ 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(threadDetailBody({
             id: thread.id,
+            projectId: null,
             name: thread.name,
             cwd: "/tmp",
             status: "idle",
@@ -1230,6 +1270,7 @@ test("restores selected thread model settings when switching threads", async ({ 
         body: JSON.stringify({
           thread: {
             id: threadId,
+            projectId: null,
             name: nextName,
             model,
             reasoningEffort: modelEffort,
@@ -1264,6 +1305,7 @@ test("restores selected thread model settings when switching threads", async ({ 
           disposition: "resumed",
           thread: {
             id: thread.id,
+            projectId: null,
             name: thread.name,
             cwd: "/tmp",
             status: "idle",
@@ -1430,6 +1472,8 @@ async function expectNoRenderedTimelineOverlap(page: Page) {
 }
 
 async function mockGateway(page: Page) {
+  const projects = [project];
+  const threads = [thread];
   await page.route("**/v1/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -1444,7 +1488,7 @@ async function mockGateway(page: Page) {
       return;
     }
 
-    const response = await responseFor(key, route);
+    const response = await responseFor(key, route, projects, threads);
     await route.fulfill({
       status: response.status ?? 200,
       headers: { "Content-Type": "application/json" },
@@ -1453,7 +1497,7 @@ async function mockGateway(page: Page) {
   });
 }
 
-async function responseFor(key: string, route: Route): Promise<{ status?: number; body: unknown }> {
+async function responseFor(key: string, route: Route, projects = [project], threads = [thread]): Promise<{ status?: number; body: unknown }> {
   if (key === "GET /v1/capabilities") {
     return {
       body: {
@@ -1469,24 +1513,25 @@ async function responseFor(key: string, route: Route): Promise<{ status?: number
       },
     };
   }
+  if (key === "GET /v1/sidebar/threads") {
+    return { body: {
+      projects,
+      projectThreads: Object.fromEntries(projects.map((project) => [project.id, { threads: threads.filter((entry) => entry.projectId === project.id) }])),
+      chatThreads: { threads: [] },
+      pinnedThreads: { threads: [] },
+    } };
+  }
   if (key === "GET /v1/projects") {
-    return { body: { projects: [project] } };
+    return { body: { projects } };
   }
   if (key === "POST /v1/projects") {
-    const body = route.request().postDataJSON() as { cwd: string; name?: string | null };
-    return {
-      status: 201,
-      body: {
-        id: "project-2",
-        name: body.name ?? "Scratch",
-        cwd: body.cwd,
-        createdAt: "2026-04-30T00:00:00Z",
-        updatedAt: "2026-04-30T00:00:00Z",
-      },
-    };
+    const body = route.request().postDataJSON() as { roots: Array<{ path: string }>; name: string; idempotencyKey: string };
+    const created = { ...project, id: "project-2", name: body.name, roots: body.roots, position: projects.length };
+    projects.push(created);
+    return { status: 201, body: created };
   }
   if (key === "GET /v1/threads") {
-    return { body: { threads: [thread], nextCursor: null, backwardsCursor: null, rawPayload: {} } };
+    return { body: { threads, nextCursor: null, backwardsCursor: null, rawPayload: {} } };
   }
   if (key === "GET /v1/threads/thread-1") {
     return {
@@ -1514,10 +1559,18 @@ async function responseFor(key: string, route: Route): Promise<{ status?: number
   if (key === "GET /v1/threads/thread-1/app-surface") {
     return { body: { session: null } };
   }
+  if (key === "GET /v1/threads/thread-2") {
+    const created = threads.find((entry) => entry.id === "thread-2");
+    if (created) return { body: threadDetailBody(created) };
+  }
+  if (key === "GET /v1/threads/thread-2/app-surface") return { body: { session: null } };
   if (key === "POST /v1/threads") {
+    const input = route.request().postDataJSON() as { projectId: string; cwd: string };
+    const created = { ...thread, id: "thread-2", name: "Created chat", projectId: input.projectId, cwd: input.cwd, status: "idle" };
+    threads.push(created);
     return {
       body: {
-        thread: { ...thread, id: "thread-2", name: "New thread", status: "idle" },
+        thread: created,
         rawPayload: {},
       },
     };
@@ -1537,7 +1590,7 @@ async function responseFor(key: string, route: Route): Promise<{ status?: number
     key === "POST /v1/threads/thread-1/input" ||
     key === "POST /v1/threads/thread-1/turns"
   ) {
-    return { body: { payload: {} } };
+    return { body: { disposition: "started", queuedInput: null, rawPayload: {} } };
   }
   if (key === "POST /v1/threads/thread-1/seen") {
     return {

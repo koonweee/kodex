@@ -33,6 +33,8 @@ export type ModelSummary = components["schemas"]["ModelSummary"];
 export type PendingTimelineRequestSummary = components["schemas"]["PendingTimelineRequestSummary"];
 export type PermissionProfileSummary = components["schemas"]["PermissionProfileSummary"];
 export type Project = components["schemas"]["Project"];
+export type CreateProjectRequest = components["schemas"]["CreateProjectRequest"];
+export type UpdateProjectRequest = components["schemas"]["UpdateProjectRequest"];
 export type QueuedInput = components["schemas"]["QueuedInput"];
 export type RateLimitSnapshot = components["schemas"]["RateLimitSnapshot"];
 export type RateLimitWindow = components["schemas"]["RateLimitWindow"];
@@ -145,8 +147,8 @@ export async function deleteTerminalSession(terminalId: string): Promise<Termina
   return unwrap(api.DELETE("/v1/terminals/{terminalId}", { params: { path: { terminalId } } }));
 }
 
-export async function listProjects(): Promise<Project[]> {
-  const response = await unwrap(api.GET("/v1/projects"));
+export async function listProjects(signal?: AbortSignal): Promise<Project[]> {
+  const response = await unwrap(api.GET("/v1/projects", { signal, cache: "no-store" }));
   return response.projects;
 }
 
@@ -154,37 +156,57 @@ export async function getProject(projectId: string, signal?: AbortSignal): Promi
   return unwrap(api.GET("/v1/projects/{projectId}", { params: { path: { projectId } }, cache: "no-store", signal }));
 }
 
-export async function createProject(input: { createDirectory?: boolean; cwd: string }): Promise<Project> {
+export async function createProject(input: CreateProjectRequest): Promise<Project> {
   return unwrap(api.POST("/v1/projects", { body: input }));
+}
+
+export async function updateProject(projectId: string, input: UpdateProjectRequest): Promise<Project> {
+  return unwrap(api.PATCH("/v1/projects/{projectId}", { params: { path: { projectId } }, body: input }));
+}
+
+export async function deleteProject(projectId: string): Promise<void> {
+  await unwrapNoContent(api.DELETE("/v1/projects/{projectId}", { params: { path: { projectId } } }));
+}
+
+export async function moveProject(projectId: string, beforeProjectId: string | null): Promise<void> {
+  await unwrapNoContent(api.POST("/v1/projects/{projectId}/move", { params: { path: { projectId } }, body: { beforeProjectId } }));
+}
+
+export async function assignThreadProject(threadId: string, projectId: string | null): Promise<void> {
+  await unwrap(api.PATCH("/v1/threads/{threadId}/project", { params: { path: { threadId } }, body: { projectId } }));
 }
 
 export async function listThreadsPage(
   projectId: string,
-  options: { cursor?: string | null; limit?: number } = {},
+  options: { cursor?: string | null; limit?: number; signal?: AbortSignal } = {},
 ): Promise<ThreadListResponse> {
   return unwrap(
     api.GET("/v1/threads", {
+      signal: options.signal,
+      cache: "no-store",
       params: { query: { projectId, cursor: options.cursor ?? undefined, limit: options.limit ?? 100 } },
     }),
   );
 }
 
-export async function getSidebarThreads(): Promise<SidebarThreadsResponse> {
-  return unwrap(api.GET("/v1/sidebar/threads"));
+export async function getSidebarThreads(signal?: AbortSignal): Promise<SidebarThreadsResponse> {
+  return unwrap(api.GET("/v1/sidebar/threads", { signal, cache: "no-store" }));
 }
 
 export async function listChatThreadsPage(
-  options: { cursor?: string | null; limit?: number } = {},
+  options: { cursor?: string | null; limit?: number; signal?: AbortSignal } = {},
 ): Promise<ThreadListResponse> {
   return unwrap(
     api.GET("/v1/chats/threads", {
+      signal: options.signal,
+      cache: "no-store",
       params: { query: { cursor: options.cursor ?? undefined, limit: options.limit ?? undefined } },
     }),
   );
 }
 
-export async function listPinnedThreads(): Promise<ThreadSummary[]> {
-  const response = await unwrap(api.GET("/v1/threads/pinned"));
+export async function listPinnedThreads(signal?: AbortSignal): Promise<ThreadSummary[]> {
+  const response = await unwrap(api.GET("/v1/threads/pinned", { signal, cache: "no-store" }));
   return response.threads;
 }
 
@@ -646,9 +668,9 @@ export async function listPermissionProfiles(cwd?: string | null): Promise<Permi
   return response.profiles;
 }
 
-export async function getComposerSettings(projectId?: string | null): Promise<ComposerSettingsResponse> {
+export async function getComposerSettings(projectId?: string | null, cwd?: string | null, signal?: AbortSignal): Promise<ComposerSettingsResponse> {
   return unwrap(
-    api.GET("/v1/composer-settings", { params: { query: { projectId: projectId ?? undefined } } }),
+    api.GET("/v1/composer-settings", { signal, cache: "no-store", params: { query: { projectId: projectId ?? undefined, cwd: cwd ?? undefined } } }),
   );
 }
 

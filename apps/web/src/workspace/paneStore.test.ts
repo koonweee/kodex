@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import { createInstanceStorage } from "../api/instanceStorage";
-import { loadSidebarProjectOrder, saveSidebarProjectOrder } from "../threads/projectOrder";
 import { loadSidebarDisclosureState, saveSidebarDisclosureState } from "../threads/sidebarDisclosureState";
 import {
   createBrowserWorkspacePaneStore,
@@ -28,14 +27,11 @@ describe("paneStore", () => {
     expect(firstStore.load().panes[0]?.target).toEqual({ mode: "draft" });
 
     firstStore.save(oldState);
-    saveSidebarProjectOrder(["project-1"], firstTab);
     saveSidebarDisclosureState({ chatsSectionCollapsed: false, collapsedProjectIds: new Set(["project-1"]), pinnedSectionCollapsed: false, projectsSectionCollapsed: false }, firstTab);
 
     expect(createBrowserWorkspacePaneStore(secondTab).load()).toEqual(oldState);
-    expect(loadSidebarProjectOrder(secondTab)).toEqual(["project-1"]);
     expect(loadSidebarDisclosureState(secondTab).collapsedProjectIds).toEqual(new Set(["project-1"]));
     expect(createBrowserWorkspacePaneStore(replacement).load().panes[0]?.target).toEqual({ mode: "draft" });
-    expect(loadSidebarProjectOrder(replacement)).toBeNull();
     expect(loadSidebarDisclosureState(replacement).collapsedProjectIds.size).toBe(0);
     expect(createBrowserWorkspacePaneStore(firstTab).load()).toEqual(oldState);
   });

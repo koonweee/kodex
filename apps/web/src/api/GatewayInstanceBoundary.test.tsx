@@ -80,13 +80,13 @@ function AccountProbe({ read }: { read: () => Promise<string> }) {
 function threadDetail(id: string): ThreadViewResponse {
   return {
     liveState: "idle",
-    thread: { id, createdAt: 0, updatedAt: 0, cwd: "/workspace", status: "idle", notificationsEnabled: true, seenCompletedAgentTurnSeq: 0, unreadCompletedAgentTurn: false },
+    thread: { id, projectId: null, createdAt: 0, updatedAt: 0, cwd: "/workspace", status: "idle", notificationsEnabled: true, seenCompletedAgentTurnSeq: 0, unreadCompletedAgentTurn: false },
     timeline: { activeTurnId: null, liveState: "idle", pendingApprovalRequests: [], pendingUserInputRequests: [], rows: [], turns: [], viewRevision: 0 },
   };
 }
 
 function project(id: string): Project {
-  return { id, name: "Native project", cwd: "/workspace", createdAt: "2026-10-04T00:00:00Z", updatedAt: "2026-10-04T00:00:00Z" };
+  return { id, name: "Native project", roots: [{ path: "/workspace" }], metadata: {}, position: 0, createdAt: 1791072000, updatedAt: 1791072000, recencyAt: null };
 }
 
 beforeEach(() => {

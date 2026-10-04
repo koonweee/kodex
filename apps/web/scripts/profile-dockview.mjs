@@ -27,21 +27,25 @@ const TRACE_CATEGORIES = [
   "toplevel",
 ].join(",");
 
+const profileCwd = process.cwd();
 const project = {
   id: "project-1",
   name: "Kodex",
-  cwd: process.cwd(),
-  createdAt: "2026-06-05T00:00:00Z",
-  updatedAt: "2026-06-05T00:00:00Z",
+  roots: [{ path: profileCwd }],
+  metadata: {},
+  position: 0,
+  createdAt: 1780617600,
+  updatedAt: 1780617600,
+  recencyAt: null,
 };
 
 const threadSummaries = [
-  threadSummary("thread-1", "Frontend MVP", "Build the web client", "idle"),
+  threadSummary("thread-1", "Frontend MVP", "Build the web client", "idle", null),
   threadSummary("thread-2", "Second pane investigation", "Compare pane subscriptions", "idle"),
   threadSummary("thread-3", "Approval heavy flow", "Approval card and timeline", "idle"),
   threadSummary("thread-4", "Generated UI review", "Generated UI surface available", "idle"),
-  threadSummary("thread-long", "Long timeline rendering", "Large thread with tool output", "idle"),
-  threadSummary("thread-stream", "Long running active turn", "Streaming answer in progress", "active"),
+  threadSummary("thread-long", "Long timeline rendering", "Large thread with tool output", "idle", null),
+  threadSummary("thread-stream", "Long running active turn", "Streaming answer in progress", "active", null),
 ];
 
 const scenarios = [
@@ -802,11 +806,11 @@ function renderReport({ agentProfiles, baseUrl, generatedAt, results }) {
       ? [
           "## Live Diagnostics",
           "",
-          "| ID | Live events | Reducer batches/events | Reducer total/avg event | Refreshes | Delta misses | Patch bytes |",
-          "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+          "| ID | Live events | Reducer batches/events | Reducer total/avg event | Patch bytes |",
+          "| --- | ---: | ---: | ---: | ---: |",
           ...results.map((result) => {
             const live = result.liveDiagnostics;
-            return `| ${result.id} | ${formatEventsByStream(live)} | ${formatReducerCounts(live)} | ${formatReducerDurations(live)} | ${live?.selectedThreadSnapshotRefreshes ?? ""} | ${live?.selectedThreadDeltaMisses ?? ""} | ${formatRecord(live?.patchBytesByScope)} |`;
+            return `| ${result.id} | ${formatEventsByStream(live)} | ${formatReducerCounts(live)} | ${formatReducerDurations(live)} | ${formatRecord(live?.patchBytesByScope)} |`;
           }),
           "",
         ]
@@ -978,7 +982,7 @@ async function handleApi({ activeScenario, request, response, terminalSessions, 
   if (key === "GET /v1/threads") {
     const projectId = url.searchParams.get("projectId");
     json(response, {
-      threads: projectId ? threadSummaries : [],
+      threads: projectId ? threadSummaries.filter((thread) => thread.projectId === projectId) : threadSummaries,
       nextCursor: null,
       backwardsCursor: null,
       rawPayload: {},
@@ -999,7 +1003,7 @@ async function handleApi({ activeScenario, request, response, terminalSessions, 
       chatThreads: { threads: [threadSummaries[0], threadSummaries[4], threadSummaries[5]], nextCursor: null, backwardsCursor: null, rawPayload: {} },
       pinnedThreads: { threads: [threadSummaries[1]], nextCursor: null, backwardsCursor: null, rawPayload: {} },
       projectThreads: {
-        [project.id]: { threads: threadSummaries, nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        [project.id]: { threads: threadSummaries.filter((thread) => thread.projectId === project.id), nextCursor: null, backwardsCursor: null, rawPayload: {} },
       },
       rawPayload: {},
     });
@@ -1125,7 +1129,7 @@ async function handleApi({ activeScenario, request, response, terminalSessions, 
     const terminal = {
       id,
       title: "Mock terminal",
-      cwd: project.cwd,
+      cwd: profileCwd,
       command: null,
       status: "running",
       createdAt: "2026-06-05T00:00:00Z",
@@ -1457,7 +1461,7 @@ function itemDeltaEvent(seq, delta, threadId, turnId, itemId) {
     seq,
     kind: "thread_view.item_delta",
     codexMethod: "thread_view/item_delta",
-    projectId: project.id,
+    projectId: threadSummaries.find((thread) => thread.id === threadId)?.projectId ?? null,
     threadId,
     turnId,
     itemId,
@@ -1530,7 +1534,7 @@ function approval() {
     itemId: "item-approval",
     method: "command_execution",
     status: "pending",
-    payload: { command: "cargo test", cwd: project.cwd, reason: "Verify profile flow" },
+    payload: { command: "cargo test", cwd: profileCwd, reason: "Verify profile flow" },
     response: null,
     createdAt: "2026-06-05T00:00:00Z",
     resolvedAt: null,
@@ -1552,11 +1556,12 @@ function queuedInput(threadId) {
   };
 }
 
-function threadSummary(id, name, preview, status) {
+function threadSummary(id, name, preview, status, projectId = project.id) {
   return {
     id,
+    projectId,
     name,
-    cwd: project.cwd,
+    cwd: profileCwd,
     status,
     source: "local",
     preview,
@@ -1587,7 +1592,7 @@ function generatedUiPane(id, threadId, title) {
 }
 
 function terminalPane(id) {
-  return { id, kind: "terminal", target: { command: null, cwd: project.cwd, terminalId: null }, title: "Terminal" };
+  return { id, kind: "terminal", target: { command: null, cwd: profileCwd, terminalId: null }, title: "Terminal" };
 }
 
 async function expectText(page, text, timeout = 7000) {
@@ -1751,7 +1756,7 @@ function formatEventsByStream(live) {
   if (!live) {
     return "";
   }
-  return `g:${live.eventsByStream?.global ?? 0} s:${live.eventsByStream?.selected ?? 0}`;
+  return String(live.eventsByStream?.global ?? 0);
 }
 
 function formatReducerCounts(live) {

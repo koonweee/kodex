@@ -40,7 +40,7 @@ import type { ComposerDraftControls } from "./ComposerPanel";
 import { isTouchInputDevice } from "../shared/inputCapabilities";
 import type { PendingAttachment, QueuedSteerRow } from "./types";
 
-type DraftThreadCreateRequest = { composerSettings?: ComposerSettings; firstMessageText: string; projectId?: string };
+type DraftThreadCreateRequest = { composerSettings?: ComposerSettings; firstMessageText: string; projectId?: string; cwd?: string };
 type DraftThreadCreateResult = { threadId: string; composerSettings: ComposerSettings };
 type QueuedInputMutation = {
   queueId: string;

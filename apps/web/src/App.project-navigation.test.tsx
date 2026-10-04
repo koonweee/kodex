@@ -19,7 +19,7 @@ describe("project navigation", () => {
     expect(window.location.pathname).toBe("/projects/project-1");
     const main = await screen.findByRole("main", { name: "Project" });
     expect(await within(main).findByRole("heading", { name: "Kodex" })).toBeInTheDocument();
-    expect(within(main).getByText(project.cwd)).toBeInTheDocument();
+    expect(within(main).getByRole("textbox", { name: "Root directories" })).toHaveValue(project.roots.map((root) => root.path).join("\n"));
     expect(within(main).queryAllByRole("button", { name: /add service|add preview|restart proxy/i })).toHaveLength(0);
     expect(gateway.callsFor("GET", "/v1/projects/project-1/previews")).toHaveLength(0);
 

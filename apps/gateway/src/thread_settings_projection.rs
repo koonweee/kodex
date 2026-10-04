@@ -177,6 +177,7 @@ mod tests {
     fn summary_with_profile() -> ThreadSummary {
         ThreadSummary {
             id: "thread-1".to_string(),
+            project_id: None,
             name: None,
             cwd: "/tmp".to_string(),
             status: ThreadStatus::Idle,

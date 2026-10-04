@@ -540,7 +540,6 @@ pub mod tests {
         pub queued_errors: StdMutex<Vec<ApiError>>,
         pub queued_responses: StdMutex<Vec<Value>>,
         pub native_projects: StdMutex<HashMap<String, Value>>,
-        pub thread_list_responses_by_cwd: StdMutex<HashMap<String, Value>>,
         pub thread_list_responses_by_project_id: StdMutex<HashMap<String, Value>>,
         pub next_response: StdMutex<Option<Value>>,
     }
@@ -564,13 +563,7 @@ pub mod tests {
                     "recencyAt": timestamp,
                 }),
             );
-            crate::routes::projects::Project {
-                id,
-                name,
-                cwd,
-                created_at: chrono::DateTime::from_timestamp(timestamp, 0).unwrap(),
-                updated_at: chrono::DateTime::from_timestamp(timestamp, 0).unwrap(),
-            }
+            serde_json::from_value(projects[&id].clone()).unwrap()
         }
     }
 
@@ -934,17 +927,6 @@ done
                         return Ok(response);
                     }
                 }
-                if let Some(cwd) = params.get("cwd").and_then(Value::as_str) {
-                    if let Some(response) = self
-                        .thread_list_responses_by_cwd
-                        .lock()
-                        .unwrap()
-                        .get(cwd)
-                        .cloned()
-                    {
-                        return Ok(response);
-                    }
-                }
             }
             if method == "project/read" {
                 if let Some(project) = params
@@ -974,11 +956,22 @@ done
             }
             drop(queued_responses);
             if method == "project/create" && self.next_response.lock().unwrap().is_none() {
-                let project = self.seed_project(
-                    params["name"].as_str().unwrap().to_string(),
-                    params["roots"][0]["path"].as_str().unwrap().to_string(),
-                );
-                return Ok(json!({"project": self.native_projects.lock().unwrap()[&project.id]}));
+                let mut projects = self.native_projects.lock().unwrap();
+                let id = format!("native-project-{}", projects.len() + 1);
+                let project = json!({
+                    "id":id, "name":params["name"], "roots":params["roots"],
+                    "metadata":params.get("metadata").cloned().unwrap_or_else(||json!({})),
+                    "position":projects.len(), "createdAt":1_767_225_600_i64,
+                    "updatedAt":1_767_225_600_i64, "recencyAt":null,
+                });
+                projects.insert(id, project.clone());
+                return Ok(json!({"project":project}));
+            }
+            if method == "thread/start" && self.next_response.lock().unwrap().is_none() {
+                let mut response = default_test_response(method);
+                response["thread"]["cwd"] = params["cwd"].clone();
+                response["thread"]["projectId"] = params["projectId"].clone();
+                return Ok(response);
             }
             Ok(self
                 .next_response

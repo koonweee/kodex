@@ -47,6 +47,8 @@ Account state is reread after native account events, browser foreground checks a
 
 Native approvals belong to the current app-server connection. Kodex mirrors outstanding requests in memory, deduplicates native replay, and refetches authoritative approval snapshots after invalidation, reconnection and browser foreground checks. Sending a response makes a request non-actionable while it waits for native resolution; a successful pipe write does not prove the decision was accepted or executed. A disconnected runtime retires its native requests. Generated-app grants remain gateway-owned and durable, with their existing scope checks.
 
+Projects use native IDs, ordered roots and metadata. Roots organize a project; they do not create directories, grant workspace access or change an existing chat's working directory. New chats default to a project's sole root; projects with zero or multiple roots require a chosen execution directory. Configuration, permissions, skills and terminal context follow that choice. Changing project membership preserves chat history and its working directory; deleting a project leaves its chats unassigned. Kodex no longer provides direct database/rollout rewriting for moving old project paths.
+
 ## Validation commands
 
 Backend:
@@ -75,7 +77,7 @@ Install its test browser once with `cd apps/web && npx playwright install chromi
 KODEX_TEST_CODEX_BINARY=/absolute/path/to/codex cargo test -p kodex-gateway --test native_app_server -- --ignored --nocapture
 ```
 
-The native fixture also verifies replay of the same pending approval without duplication and Stop clearing its exact native request. Browser E2E covers two-tab approval convergence, missed invalidation and a delayed stale snapshot. These fixtures do not establish completed interactive account sign-in or release readiness.
+The native fixtures verify approval replay and exact resolution after acceptance/Stop, as well as project roots, idempotent creation, sparse edits, ordering, membership and history after a cold restart. Browser E2E covers two-tab approval/project convergence, missed notifications, delayed stale snapshots and real SSE reconnects. Project flows run at desktop, narrow fine-pointer and narrow touch sizes. These fixtures do not establish completed interactive account sign-in or release readiness.
 
 ## Production-style local serving
 

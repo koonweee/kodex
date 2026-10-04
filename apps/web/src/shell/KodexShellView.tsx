@@ -6,6 +6,7 @@ import type { PreferencesModalProps } from "../PreferencesModal";
 import type { ProjectPane as ProjectPaneComponent } from "../projects/ProjectPane";
 import { useInputCapabilities } from "../shared/inputCapabilities";
 import { NARROW_WORKSPACE_QUERY } from "../shared/layoutBreakpoints";
+import { useProjectTerminal } from "../projects/useProjectTerminal";
 import { WorkspaceSidebar } from "../threads/WorkspaceSidebar";
 import type { ThreadSummary } from "../api/client";
 import { WorkspaceSinglePaneShell } from "../workspace/WorkspaceSinglePaneShell";
@@ -174,7 +175,16 @@ function WorkspaceSidebarWithPaneActions({
   workspaceSelectedThreadPaneId,
   ...props
 }: WorkspaceSidebarWithPaneActionsProps) {
-  const { openDraftThreadPane, openTerminalPane, openThreadPane, threadActions } = useWorkspace();
+  const { openDraftThreadPane, openThreadPane, threadActions } = useWorkspace();
+  const { openTerminal, terminalDirectoryDialog } = useProjectTerminal({
+    projects: props.projects,
+    selectedMainPane: props.selectedMainPane,
+    selectedProjectId: props.selectedProjectId,
+    onOpened: () => {
+      props.onOpenTerminal?.();
+      if (useSingleThreadMode || narrowThreadWorkspaceMatches()) props.onShowThread?.();
+    },
+  });
   const titleLookupPropsRef = useRef(props);
   const seededRouteThreadPaneRef = useRef<string | null>(null);
 
@@ -217,22 +227,11 @@ function WorkspaceSidebarWithPaneActions({
   ]);
 
   return (
+    <>
     <WorkspaceSidebar
       {...props}
       onArchiveThread={threadActions.onArchiveThread ?? props.onArchiveThread}
-      onOpenTerminal={
-        props.onOpenTerminal
-          ? () => {
-              void openTerminalPane().catch((error: unknown) => {
-                console.error("Failed to open workspace terminal pane", error);
-              });
-              props.onOpenTerminal?.();
-              if (useSingleThreadMode || narrowThreadWorkspaceMatches()) {
-                props.onShowThread?.();
-              }
-            }
-          : undefined
-      }
+      onOpenTerminal={props.onOpenTerminal ? openTerminal : undefined}
       onCreateChat={() => {
         props.onCreateChat();
         void openDraftThreadPane(null).catch((error: unknown) => {
@@ -258,6 +257,8 @@ function WorkspaceSidebarWithPaneActions({
         props.onSelectThread(projectId, threadId);
       }}
     />
+    {terminalDirectoryDialog}
+    </>
   );
 }
 

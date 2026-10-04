@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
 import type { EventEnvelope, ThreadSummary } from "../api/client";
+import { refreshProjectState } from "../projects/cache";
 import { queryKeys } from "../api/queryKeys";
 import { recordCacheInvalidation } from "../events/liveDiagnostics";
 import {
@@ -90,12 +91,11 @@ export function useSidebarThreadCaches({
   ]);
 
   const applyThreadUpsert = useCallback((update: ThreadUpsert) => {
+    void refreshProjectState(queryClient);
     if (update.scope === "project") {
       upsertProjectThread(queryClient, update.projectId, update.thread);
-      void queryClient.invalidateQueries({ queryKey: queryKeys.projectThreads(update.projectId) });
     } else {
       upsertChatThread(queryClient, update.thread);
-      void queryClient.invalidateQueries({ queryKey: queryKeys.chatThreads });
     }
 
     if (update.thread.pinnedAt) {

@@ -16,6 +16,8 @@ export function mockGateway(routes: GatewayRouteMap) {
 
     const handler = routes[key];
     if (handler === undefined) {
+      const sidebar = await fallbackSidebarThreads(routes, request);
+      if (sidebar) return jsonResponse(sidebar, 200);
       const queuedInput = await fallbackQueuedInput(request, () => {
         nextQueueIndex += 1;
         return `queue-${nextQueueIndex}`;
@@ -42,6 +44,12 @@ export function mockGateway(routes: GatewayRouteMap) {
     if (body instanceof Response) {
       return body;
     }
+    if (
+      (request.method === "DELETE" && /^\/v1\/projects\/[^/]+$/.test(url.pathname)) ||
+      (request.method === "POST" && /^\/v1\/projects\/[^/]+\/move$/.test(url.pathname))
+    ) {
+      return new Response(null, { status: 204 });
+    }
     return jsonResponse(body, request.method === "POST" && key === "POST /v1/projects" ? 201 : 200);
   });
 
@@ -53,6 +61,27 @@ export function mockGateway(routes: GatewayRouteMap) {
         return request.method === method && url.pathname === pathname;
       });
     },
+  };
+}
+
+async function fallbackSidebarThreads(routes: GatewayRouteMap, request: Request) {
+  if (request.method !== "GET" || new URL(request.url).pathname !== "/v1/sidebar/threads" || !("GET /v1/projects" in routes)) return null;
+  async function readRoute(path: string) {
+    const url = new URL(path, "http://localhost");
+    const route = routes[`GET ${url.pathname}`];
+    const body = typeof route === "function" ? await route(new Request(url)) : route;
+    return body as { projects?: Array<{ id: string }>; threads?: Array<{ projectId?: string | null }> } | undefined;
+  }
+  const projects = (await readRoute("/v1/projects"))?.projects ?? [];
+  const projectThreads = Object.fromEntries(await Promise.all(projects.map(async (project) => {
+    const response = await readRoute(`/v1/threads?projectId=${encodeURIComponent(project.id)}`);
+    return [project.id, { ...response, threads: (response?.threads ?? []).filter((thread) => thread.projectId === project.id) }];
+  })));
+  return {
+    projects,
+    projectThreads,
+    chatThreads: await readRoute("/v1/chats/threads") ?? { threads: [] },
+    pinnedThreads: await readRoute("/v1/threads/pinned") ?? { threads: [] },
   };
 }
 

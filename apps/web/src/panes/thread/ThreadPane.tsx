@@ -5,6 +5,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type
 
 import type { EventEnvelope, ThreadSummary } from "../../api/client";
 import { getThreadAppSurface, getThreadDetail, getThreadTimelinePage } from "../../api/client";
+import { projectEventInvalidatesThread } from "../../projects/cache";
 import { queryKeys } from "../../api/queryKeys";
 import { recordReducerBatch } from "../../events/liveDiagnostics";
 import { errorMessageFrom } from "../../shared/values";
@@ -102,6 +103,7 @@ function ExistingThreadPane({
     renderThreadPaneHeaderActions,
     setPaneHeaderActions,
     setPaneHeaderAdornment,
+    setPaneThreadContext,
     showDebugEvents,
     subscribeLiveEvent,
     subscribeThreadPaneTimelineAction,
@@ -117,6 +119,7 @@ function ExistingThreadPane({
   const [timelineOverflowBelow, setTimelineOverflowBelow] = useState(false);
   const [thread, setThread] = useState<ThreadSummary | null>(seededThread);
   const [timeline, setTimeline] = useState<TimelineState>(() => createTimelineState());
+  const snapshotControllerRef = useRef<AbortController | null>(null);
   const refreshInFlightRef = useRef(false);
   const refreshInFlightThreadIdRef = useRef<string | null>(null);
   const refreshQueuedRef = useRef(false);
@@ -133,6 +136,10 @@ function ExistingThreadPane({
     queryFn: () => getThreadAppSurface(threadId),
   });
 
+  useEffect(() => {
+    setPaneThreadContext(pane.id, thread ? { id: thread.id, projectId: thread.projectId, cwd: thread.cwd } : null);
+  }, [pane.id, setPaneThreadContext, thread?.id, thread?.projectId, thread?.cwd]);
+
   const clearRetrySnapshotTimer = useCallback(() => {
     if (retrySnapshotTimerRef.current !== null) {
       window.clearTimeout(retrySnapshotTimerRef.current);
@@ -142,7 +149,12 @@ function ExistingThreadPane({
   latestThreadIdRef.current = threadId;
   latestPaneThreadRef.current = thread;
 
-  const refreshSnapshot = useCallback(async () => {
+  const refreshSnapshot = useCallback(async (replaceInFlight = false) => {
+    if (replaceInFlight) {
+      snapshotControllerRef.current?.abort();
+      refreshInFlightRef.current = false;
+      refreshQueuedRef.current = false;
+    }
     if (refreshInFlightRef.current && refreshInFlightThreadIdRef.current === threadId) {
       refreshQueuedRef.current = true;
       return;
@@ -152,13 +164,16 @@ function ExistingThreadPane({
     const requestId = refreshRequestIdRef.current + 1;
     refreshRequestIdRef.current = requestId;
     const requestThreadId = threadId;
+    const controller = new AbortController();
+    snapshotControllerRef.current = controller;
     setEntry((current) =>
       current.threadId === threadId && current.phase === "streamingLive"
         ? { phase: "refreshingSnapshot", threadId }
         : { phase: "loadingSnapshot", threadId },
     );
     try {
-      const snapshot = await getThreadDetail(threadId);
+      const snapshot = await getThreadDetail(threadId, controller.signal);
+      controller.signal.throwIfAborted();
       if (requestId !== refreshRequestIdRef.current || requestThreadId !== latestThreadIdRef.current) {
         return;
       }
@@ -190,7 +205,7 @@ function ExistingThreadPane({
       setPaneErrorMessage(errorMessageFrom(error));
       onThreadSnapshotLoadFailed(threadId);
     } finally {
-      if (refreshInFlightThreadIdRef.current !== requestThreadId) {
+      if (refreshInFlightThreadIdRef.current !== requestThreadId || requestId !== refreshRequestIdRef.current) {
         return;
       }
       refreshInFlightRef.current = false;
@@ -250,10 +265,23 @@ function ExistingThreadPane({
     setThread((current) => mergePaneThreadSummary(current, seededThread));
   }, [seededThread]);
 
-  useEffect(() => () => clearRetrySnapshotTimer(), [clearRetrySnapshotTimer]);
+  useEffect(() => () => {
+    clearRetrySnapshotTimer();
+    snapshotControllerRef.current?.abort();
+    refreshRequestIdRef.current += 1;
+    snapshotControllerRef.current = null;
+    refreshInFlightRef.current = false;
+    refreshInFlightThreadIdRef.current = null;
+    refreshQueuedRef.current = false;
+  }, [clearRetrySnapshotTimer]);
 
   useEffect(() => {
     return subscribeLiveEvent((event) => {
+      if (projectEventInvalidatesThread(event, threadId)) {
+        cancelQueuedTimelineEvents();
+        void refreshSnapshot(true);
+        return;
+      }
       if (!isThreadEventForPane(event, threadId)) {
         return;
       }
@@ -318,6 +346,13 @@ function ExistingThreadPane({
 
   useEffect(() => {
     return subscribeThreadPaneTimelineAction((action) => {
+      if (action.kind === "refresh_snapshot") {
+        if (!action.threadId || action.threadId === threadId) {
+          cancelQueuedTimelineEvents();
+          void refreshSnapshot(true);
+        }
+        return;
+      }
       if (action.kind === "optimistic_user_started") {
         if (action.threadId !== threadId) {
           return;
@@ -338,7 +373,7 @@ function ExistingThreadPane({
       }
       setTimeline((current) => removeOptimisticUserMessage(current, action.clientRequestId));
     });
-  }, [subscribeThreadPaneTimelineAction, threadId]);
+  }, [cancelQueuedTimelineEvents, refreshSnapshot, subscribeThreadPaneTimelineAction, threadId]);
 
   const loadOlderHistory = useCallback(() => {
     const cursor = timeline.olderCursor;

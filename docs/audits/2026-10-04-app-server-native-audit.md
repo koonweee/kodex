@@ -284,7 +284,7 @@ The project-move maintenance path edits Codex's SQLite/rollout state directly. T
 
 Use native APIs for supported changes going forward. Historical relocation/import tooling is outside this fresh-start redesign; do not repair or extend it as a prerequisite. Never turn direct writes to desktop global-state files, rollout JSONL, authentication files, worktree metadata or SQLite into the integration layer.
 
-Evidence: [existing move procedure](../maintenance/move-codex-project.md), [native settings and metadata](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L236).
+Evidence: the move procedure at audit revision `034ebce` (`docs/maintenance/move-codex-project.md`, retired with direct storage mutation), [native settings and metadata](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L236).
 
 ## Relevant additional capabilities
 

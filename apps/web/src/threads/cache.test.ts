@@ -26,6 +26,7 @@ function thread(id: string, overrides: Partial<ThreadSummary> = {}): ThreadSumma
     id,
     name: id,
     notificationsEnabled: true,
+    projectId: null,
     rawPayload: {},
     seenCompletedAgentTurnSeq: 0,
     status: "idle",
@@ -44,7 +45,7 @@ function read(threadId: string, seenCompletedAgentTurnSeq: number): ThreadRead {
 }
 
 describe("thread query cache helpers", () => {
-  it("preserves a selected route thread when a stale project snapshot resolves later", () => {
+  it("removes a selected route thread absent from the authoritative project membership", () => {
     const queryClient = createKodexQueryClient();
     const routeThread = thread("thread-route", { name: "Fresh route title" });
     queryClient.setQueryData(queryKeys.projectThreads("project-1"), [routeThread]);
@@ -52,19 +53,18 @@ describe("thread query cache helpers", () => {
     mergeProjectThreadSnapshot(queryClient, "project-1", [thread("thread-old")], routeThread, routeThread.id);
 
     expect(queryClient.getQueryData(queryKeys.projectThreads("project-1"))).toEqual([
-      routeThread,
       thread("thread-old"),
     ]);
   });
 
-  it("keeps a locally created chat when the initial chat snapshot resolves later", () => {
+  it("replaces chat membership with an authoritative empty snapshot", () => {
     const queryClient = createKodexQueryClient();
     const localChat = thread("chat-local", { preview: "Local prompt" });
     upsertChatThread(queryClient, localChat);
 
     mergeChatThreadSnapshot(queryClient, []);
 
-    expect(queryClient.getQueryData(queryKeys.chatThreads)).toEqual([localChat]);
+    expect(queryClient.getQueryData(queryKeys.chatThreads)).toEqual([]);
   });
 
   it("keeps a newer cached chat when a stale chat snapshot resolves later", () => {
@@ -89,7 +89,7 @@ describe("thread query cache helpers", () => {
     expect(queryClient.getQueryData(queryKeys.chatThreads)).toEqual([snapshotChat]);
   });
 
-  it("keeps a live-created project thread when the initial project snapshot resolves later", () => {
+  it("removes project members absent from the authoritative replacement", () => {
     const queryClient = createKodexQueryClient();
     const liveThread = thread("thread-live", { preview: "Live prompt" });
     upsertProjectThread(queryClient, "project-1", liveThread);
@@ -97,7 +97,6 @@ describe("thread query cache helpers", () => {
     mergeProjectThreadSnapshot(queryClient, "project-1", [thread("thread-old")], null, null);
 
     expect(queryClient.getQueryData(queryKeys.projectThreads("project-1"))).toEqual([
-      liveThread,
       thread("thread-old"),
     ]);
   });

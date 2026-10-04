@@ -27,6 +27,7 @@ pub fn router() -> Router<AppState> {
 #[serde(rename_all = "camelCase")]
 pub struct ComposerSettingsQuery {
     pub project_id: Option<String>,
+    pub cwd: Option<String>,
 }
 
 #[utoipa::path(
@@ -39,14 +40,7 @@ pub async fn read_composer_settings(
     State(state): State<AppState>,
     Query(query): Query<ComposerSettingsQuery>,
 ) -> ApiResult<Json<ComposerSettingsResponse>> {
-    let cwd = match query.project_id {
-        Some(project_id) => Some(
-            super::projects::read_project_with_cwd(&state, &project_id)
-                .await?
-                .cwd,
-        ),
-        None => None,
-    };
+    let cwd = super::projects::settings_cwd(&state, query.project_id.as_deref(), query.cwd).await?;
 
     Ok(Json(
         app_server_api::client(&state.app_server)

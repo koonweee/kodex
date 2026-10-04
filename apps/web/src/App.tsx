@@ -1,9 +1,8 @@
-import { MantineProvider } from "@mantine/core";
-import { QueryClientProvider, useMutation, useQueries, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { Group, MantineProvider } from "@mantine/core";
+import { QueryClientProvider, isCancelledError, useMutation, useQueries, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { Bot } from "lucide-react";
 import {
   lazy,
-  memo,
   Suspense,
   useCallback,
   useEffect,
@@ -22,13 +21,11 @@ import {
   archiveThread,
   createAutomation,
   createChatThread,
-  createProject,
   createThread,
   deleteAutomation,
   getCapabilities,
   listAutomations,
   listChatThreadsPage,
-  listQueuedInputs,
   listPinnedThreads,
   listProjects,
   listThreadSubagents,
@@ -50,7 +47,6 @@ import {
   type ThreadSubagentSummary,
   type ThreadSummary,
 } from "./api/client";
-import { useGatewayInstanceStorage } from "./api/GatewayInstanceBoundary";
 import { queryClient } from "./api/queryClient";
 import { queryKeys } from "./api/queryKeys";
 import {
@@ -58,13 +54,16 @@ import {
   mergeAutomationData,
   upsertCachedAutomation,
 } from "./automations/cache";
-import { ComposerPanel } from "./composer/ComposerPanel";
-import type { ComposerSettings, ContextUsage } from "./ComposerFooterControls";
+import { ThreadPaneComposerBridge } from "./composer/ThreadPaneComposerBridge";
+import { WorkspaceProjectCreateDialog } from "./projects/ProjectCreateDialog";
+import { ThreadProjectSelect } from "./projects/ThreadProjectSelect";
+import { moveProject } from "./api/client";
+import { refreshProjectState } from "./projects/cache";
+import type { ComposerSettings } from "./ComposerFooterControls";
 import type { ComposerDraftStore } from "./composer/useComposerDraftState";
 import { automationThreadOptions } from "./automations/threadOptions";
-import { composerSettingsFromThread, createThreadOptions, sameComposerSettings } from "./composer/settings";
+import { createThreadOptions, sameComposerSettings } from "./composer/settings";
 import { useComposerSettingsState } from "./composer/useComposerSettingsState";
-import { useComposerOrchestration } from "./composer/useComposerOrchestration";
 import { installLiveLongTaskObserver } from "./events/liveDiagnostics";
 import { routeGlobalLiveEvent } from "./events/liveRouting";
 import { useLiveEventHandlers } from "./events/useLiveEventHandlers";
@@ -81,8 +80,6 @@ import {
   writeStoredKodexColorScheme,
   type KodexColorSchemeId,
 } from "./theme";
-import { idleTimelineEntry, type TimelineEntry } from "./timeline/entry";
-import { useSelectedThreadTimeline, type ThreadSyncNotice } from "./timeline/useSelectedThreadTimeline";
 import {
   clearAvailableThreadTitles,
   markThreadTitlePending,
@@ -95,7 +92,7 @@ import {
   mergeChatThreadData,
   mergePinnedThreadData,
   mergeProjectThreadData,
-  mergeProjectThreadSnapshot,
+  appendThreadPage,
   pinnedTombstonesAddedDuringSnapshot,
   removeThreadEverywhere,
   upsertChatThread,
@@ -103,7 +100,6 @@ import {
 } from "./threads/cache";
 import {
   deleteCachedQueuedInput,
-  mergeQueuedInputData,
   upsertCachedQueuedInput,
 } from "./queuedInputs/cache";
 import type { ThreadSubagentDiscoveryEvent } from "./threads/events";
@@ -112,20 +108,12 @@ import {
 } from "./threads/selection";
 import { useSelectedThreadAttach } from "./threads/useSelectedThreadAttach";
 import { useSidebarThreadCaches } from "./threads/useSidebarThreadCaches";
-import {
-  applySidebarProjectOrder,
-  loadSidebarProjectOrder,
-  saveSidebarProjectOrder,
-} from "./threads/projectOrder";
 import { useSidebarThreadsSnapshot } from "./threads/useSidebarThreadsSnapshot";
 import { useThreadMetadata } from "./threads/useThreadMetadata";
 import { useThreadReadState } from "./threads/useThreadReadState";
 import { useThreadViewPresence } from "./threads/useThreadViewPresence";
 import { AdaptiveIconButton } from "./ui/AdaptiveIconButton";
-import { paneTargetRecord } from "./workspace/paneTypes";
-import { createTimelineState, type TimelineState } from "./timeline/reducer";
 import { errorMessageFrom } from "./shared/values";
-import { createClientRequestId } from "./shared/id";
 import { KodexShellView, useNarrowThreadWorkspace } from "./shell/KodexShellView";
 import {
   currentKodexRoute,
@@ -137,7 +125,6 @@ import { useSidebarResize } from "./shell/useSidebarResize";
 import { useShellSelection } from "./shell/useShellSelection";
 import {
   WorkspaceProvider,
-  useWorkspace,
   type ThreadComposerState,
   type ThreadPaneTimelineAction,
   type ThreadPaneTimelineActionHandler,
@@ -149,7 +136,6 @@ import "./App.css";
 const DRAFT_COMPOSER_TRANSITION_MS = 280;
 const EMPTY_AUTOMATIONS: Automation[] = [];
 const EMPTY_PROJECTS: Project[] = [];
-const EMPTY_QUEUED_INPUTS: QueuedInput[] = [];
 const EMPTY_SUBAGENTS: ThreadSubagentSummary[] = [];
 const EMPTY_THREADS: ThreadSummary[] = [];
 type SidebarPaginationState = "idle" | "loading" | "error";
@@ -184,274 +170,6 @@ type AppProps = {
   workspacePaneStore?: WorkspacePaneStoreAdapter;
 };
 
-type ThreadPaneComposerBridgeProps = {
-  composerDefaults: ComposerSettings;
-  contextUsageByThreadId: Record<string, ContextUsage>;
-  composerSettingsError: string | null;
-  composerDraftStore: ComposerDraftStore;
-  hydrateComposerDefaults: (projectId: string | null) => Promise<ComposerSettings | null>;
-  isDraftComposerTransitioning: boolean;
-  models: ReturnType<typeof useComposerSettingsState>["models"];
-  onCreateDraftThread: Parameters<typeof useComposerOrchestration>[0]["onCreateDraftThread"];
-  onError: (error: unknown) => void;
-  onImageOpen: (image: ImageLightboxImage) => void;
-  onImagePreviewUrlsChanged: (previewUrls: Record<string, string>) => void;
-  onQueuedInputDeleted: (threadId: string, queueId: string) => void;
-  onQueuedInputUpsert: (row: QueuedInput) => void;
-  onPaneComposerSettingsChange: (paneId: string, settings: ComposerSettings) => void;
-  onThreadMaterialized: (threadId: string) => void;
-  onThreadTurnStartFailed: (threadId: string) => void;
-  onThreadTurnStarted: (threadId: string) => void;
-  paneComposerSettingsByPaneId: Record<string, ComposerSettings>;
-  pane: WorkspacePane;
-  paneState: ThreadComposerState;
-  projects: Project[];
-  skillsInvalidationGeneration: number;
-  threadComposerDefaults: ComposerSettings;
-};
-
-export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
-  composerDefaults,
-  contextUsageByThreadId,
-  composerDraftStore,
-  composerSettingsError,
-  hydrateComposerDefaults,
-  isDraftComposerTransitioning,
-  models,
-  onCreateDraftThread,
-  onError,
-  onImageOpen,
-  onImagePreviewUrlsChanged,
-  onQueuedInputDeleted,
-  onQueuedInputUpsert,
-  onPaneComposerSettingsChange,
-  onThreadMaterialized,
-  onThreadTurnStartFailed,
-  onThreadTurnStarted,
-  paneComposerSettingsByPaneId,
-  pane,
-  paneState,
-  projects,
-  skillsInvalidationGeneration,
-  threadComposerDefaults,
-}: ThreadPaneComposerBridgeProps) {
-  const queryClientForPane = useQueryClient();
-  const { publishThreadPaneTimelineAction, updatePane } = useWorkspace();
-  const target = paneTargetRecord(pane);
-  const existingThreadId = target.mode === "existing" && typeof target.threadId === "string" ? target.threadId : null;
-  const isDraftPane = existingThreadId === null;
-  const draftProjectId = target.mode === "draft" && typeof target.projectId === "string" ? target.projectId : null;
-  const thread = paneState.thread ?? null;
-  const [draftComposerEdited, setDraftComposerEdited] = useState(false);
-  const [draftComposerSettings, setDraftComposerSettings] = useState<ComposerSettings>(composerDefaults);
-  const composerShellRef = useRef<HTMLDivElement | null>(null);
-  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
-  const createdDraftThreadRef = useRef<{ composerSettings: ComposerSettings; threadId: string } | null>(null);
-
-  useEffect(() => {
-    if (!isDraftPane || draftComposerEdited) {
-      return;
-    }
-    setDraftComposerSettings((current) => (sameComposerSettings(current, composerDefaults) ? current : composerDefaults));
-  }, [composerDefaults, draftComposerEdited, isDraftPane]);
-
-  useEffect(() => {
-    if (!isDraftPane || draftComposerEdited) {
-      return;
-    }
-    let cancelled = false;
-    void hydrateComposerDefaults(draftProjectId).then((settings) => {
-      if (!cancelled && settings) {
-        setDraftComposerSettings((current) => (sameComposerSettings(current, settings) ? current : settings));
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [draftComposerEdited, draftProjectId, hydrateComposerDefaults, isDraftPane]);
-
-  useEffect(() => {
-    if (!thread?.id) {
-      return;
-    }
-    const canonicalSettings = composerSettingsFromThread(thread);
-    if (canonicalSettings) {
-      createdDraftThreadRef.current = null;
-      onPaneComposerSettingsChange(pane.id, canonicalSettings);
-      return;
-    }
-    const createdThread = createdDraftThreadRef.current;
-    if (createdThread?.threadId === thread.id) {
-      onPaneComposerSettingsChange(pane.id, createdThread.composerSettings);
-    }
-  }, [
-    onPaneComposerSettingsChange,
-    pane.id,
-    thread?.id,
-    thread?.model,
-    thread?.reasoningEffort,
-    thread?.serviceTier,
-  ]);
-
-  useEffect(() => {
-    createdDraftThreadRef.current = null;
-  }, [draftProjectId, pane.id]);
-
-  const queuedInputsQuery = useQuery({
-    enabled: existingThreadId !== null,
-    queryKey: existingThreadId ? queryKeys.queuedInputs(existingThreadId) : ["queued-inputs", "pane", pane.id, "none"],
-    queryFn: async () => {
-      if (!existingThreadId) {
-        return [];
-      }
-      const snapshot = await listQueuedInputs(existingThreadId);
-      return mergeQueuedInputData(
-        queryClientForPane.getQueryData<QueuedInput[]>(queryKeys.queuedInputs(existingThreadId)),
-        snapshot,
-        queryClientForPane.getQueryData<string[]>(queryKeys.queuedInputTombstones(existingThreadId)) ?? [],
-      );
-    },
-  });
-
-  const baseThreadComposerSettings = thread ? composerSettingsFromThread(thread) : null;
-  const storedPaneComposerSettings = paneComposerSettingsByPaneId[pane.id];
-  const paneComposerSettings = isDraftPane
-    ? draftComposerSettings
-    : storedPaneComposerSettings ?? baseThreadComposerSettings ?? threadComposerDefaults;
-  const currentProject =
-    draftProjectId ? projects.find((project) => project.id === draftProjectId) ?? null : null;
-  const composerCwd = thread?.cwd ?? currentProject?.cwd ?? null;
-  const activeThreadId = existingThreadId;
-  const queuedSteerRows = existingThreadId ? queuedInputsQuery.data ?? EMPTY_QUEUED_INPUTS : EMPTY_QUEUED_INPUTS;
-  const composerSettingsErrorMessage = composerSettingsError;
-  const composerDraftKey = existingThreadId
-    ? `pane:${pane.id}:thread:${existingThreadId}`
-    : `pane:${pane.id}:draft:${draftProjectId ?? "chat"}`;
-  const createDraftThreadForPane = useCallback<ThreadPaneComposerBridgeProps["onCreateDraftThread"]>(
-    async (request) => {
-      if (!isDraftPane) {
-        return onCreateDraftThread(request);
-      }
-      if (createdDraftThreadRef.current) {
-        return createdDraftThreadRef.current;
-      }
-      const createdThread = await onCreateDraftThread(request);
-      createdDraftThreadRef.current = createdThread;
-      onPaneComposerSettingsChange(pane.id, createdThread.composerSettings);
-      return createdThread;
-    },
-    [isDraftPane, onCreateDraftThread, onPaneComposerSettingsChange, pane.id],
-  );
-
-  const orchestration = useComposerOrchestration({
-    activeSelectedTurnId: paneState.activeTurnId,
-    canCompose: true,
-    composerSettings: paneComposerSettings,
-    draftChatThreadSelected: isDraftPane && draftProjectId === null,
-    draftThreadProjectId: isDraftPane ? draftProjectId : null,
-    isDraftThreadSelected: isDraftPane,
-    onCreateDraftThread: createDraftThreadForPane,
-    onError,
-    onImagePreviewUrlsChanged,
-    onOptimisticUserMessageRemoved: (clientRequestId) => {
-      publishThreadPaneTimelineAction({ clientRequestId, kind: "optimistic_user_removed" });
-    },
-    onOptimisticUserMessageSent: (clientRequestId) => {
-      publishThreadPaneTimelineAction({ clientRequestId, kind: "optimistic_user_sent" });
-    },
-    onOptimisticUserMessageStarted: ({ skillMentions, text, threadId }) => {
-      const clientRequestId = createClientRequestId();
-      publishThreadPaneTimelineAction({
-        clientRequestId,
-        kind: "optimistic_user_started",
-        skillMentions,
-        text,
-        threadId,
-      });
-      return clientRequestId;
-    },
-    onQueuedInputDeleted,
-    onQueuedInputUpsert,
-    onThreadMaterialized: (threadId) => {
-      createdDraftThreadRef.current = null;
-      onThreadMaterialized(threadId);
-      paneState.materializeThreadPane?.(threadId, null);
-    },
-    onThreadTurnStartFailed,
-    onThreadTurnStarted,
-    queuedSteerRows,
-    selectedProjectId: isDraftPane ? draftProjectId : null,
-    selectedThreadId: activeThreadId,
-  });
-
-  function handleComposerSettingsChange(nextSettings: ComposerSettings) {
-    if (!existingThreadId) {
-      setDraftComposerEdited(true);
-      setDraftComposerSettings(nextSettings);
-      return;
-    }
-    onPaneComposerSettingsChange(pane.id, nextSettings);
-  }
-
-  function handleDraftProjectChange(projectId: string | null) {
-    void updatePane(pane.id, {
-      target: { mode: "draft", projectId },
-    }).catch((error: unknown) => {
-      onError(error);
-    });
-  }
-
-  return (
-    <ComposerPanel
-      activeSelectedTurnId={paneState.activeTurnId}
-      attachmentInputRef={attachmentInputRef}
-      canCompose
-      composerDraftKey={composerDraftKey}
-      composerDraftStore={composerDraftStore}
-      composerResetToken={0}
-      composerSettings={paneComposerSettings}
-      composerSettingsError={composerSettingsErrorMessage}
-      composerCwd={composerCwd}
-      composerShellRef={composerShellRef}
-      contextUsage={existingThreadId ? contextUsageByThreadId[existingThreadId] ?? null : null}
-      currentProjectName={currentProject?.name ?? null}
-      draftProjectSelector={
-        isDraftPane
-          ? {
-              onChange: handleDraftProjectChange,
-              projects,
-              value: draftProjectId,
-            }
-          : undefined
-      }
-      selectedGitBranch={thread?.gitInfo?.branch ?? null}
-      isDraftThreadSelected={isDraftPane}
-      isDraftComposerTransitioning={isDraftComposerTransitioning}
-      isComposerDragActive={orchestration.isComposerDragActive}
-      isComposerSubmitting={orchestration.isComposerSubmitting}
-      isQueuedTurnStartPending={orchestration.isQueuedTurnStartPending}
-      isSelectedTimelineReady={paneState.isReady}
-      skillsInvalidationGeneration={skillsInvalidationGeneration}
-      models={models}
-      onAbortQueuedSteer={orchestration.handleAbortQueuedSteer}
-      onAttachmentInputChange={orchestration.handleAttachmentInputChange}
-      onComposerDragLeave={orchestration.handleComposerDragLeave}
-      onComposerDragOver={orchestration.handleComposerDragOver}
-      onComposerDrop={orchestration.handleComposerDrop}
-      onComposerKeyDown={orchestration.handleComposerKeyDown}
-      onComposerPaste={orchestration.handleComposerPaste}
-      onComposerSettingsChange={handleComposerSettingsChange}
-      onImageOpen={onImageOpen}
-      onRemovePendingAttachment={orchestration.removePendingAttachment}
-      onStopTurn={orchestration.handleStopTurn}
-      onSubmitQueuedSteer={orchestration.handleSubmitQueuedSteer}
-      onSubmitTurn={orchestration.handleSubmitTurn}
-      pendingAttachments={orchestration.pendingAttachments}
-      queuedSteerRows={orchestration.queuedSteerRows}
-      selectedThreadPresent={!isDraftPane}
-    />
-  );
-});
 
 export function App({ queryClientInstance = queryClient, workspacePaneStore }: AppProps = {}) {
   const [colorSchemeId, setColorSchemeId] = useState<KodexColorSchemeId>(() => readStoredKodexColorScheme());
@@ -496,23 +214,14 @@ function KodexShell({
   onColorSchemeChange: (colorSchemeId: KodexColorSchemeId) => void;
   workspacePaneStore?: WorkspacePaneStoreAdapter;
 }) {
-  const instanceStorage = useGatewayInstanceStorage();
   const [initialRoute] = useState(() => currentKodexRoute());
   const queryClientForShell = useQueryClient();
   const useSingleThreadWorkspace = useNarrowThreadWorkspace();
-  const [projectOrderIds, setProjectOrderIds] = useState<string[] | null>(() => loadSidebarProjectOrder(instanceStorage));
   const [pendingTitleThreadIds, setPendingTitleThreadIds] = useState<Set<string>>(new Set());
   const [materializingThreadIds, setMaterializingThreadIds] = useState<Set<string>>(new Set());
-  const [, setTimeline] = useState<TimelineState>(createTimelineState());
-  const [, setTimelineEntry] = useState<TimelineEntry>(() =>
-    initialRoute.threadId ? { phase: "loadingSnapshot", threadId: initialRoute.threadId } : idleTimelineEntry,
-  );
   const [projectFormOpen, setProjectFormOpen] = useState(false);
-  const [projectCwd, setProjectCwd] = useState("");
-  const [projectDirectoryCreateCwd, setProjectDirectoryCreateCwd] = useState<string | null>(null);
   const [showDebugEvents, setShowDebugEvents] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [, setThreadSyncNotice] = useState<ThreadSyncNotice | null>(null);
   const [lightboxImage, setLightboxImage] = useState<ImageLightboxImage | null>(null);
   const [markdownPreview, setMarkdownPreview] = useState<MarkdownPreviewRequest | null>(null);
   const [paneComposerSettingsByPaneId, setPaneComposerSettingsByPaneId] = useState<Record<string, ComposerSettings>>({});
@@ -560,6 +269,7 @@ function KodexShell({
     handleCreateChat,
     handleCreateThread,
     handleFocusWorkspaceThreadPane,
+    handleShowWorkspace,
     handleSelectAutomations,
     handleSelectChatThread,
     handleSelectPinnedThread,
@@ -570,7 +280,6 @@ function KodexShell({
     routeSelectedThreadRef,
     routeThreadPaneId,
     selectMaterializedThread,
-    selectProject,
     selectedMainPane,
     selectedProjectId,
     selectedProjectIdRef,
@@ -583,10 +292,8 @@ function KodexShell({
     setUnavailableThreadId,
     unavailableThreadId,
   } = useShellSelection({
-    beginMaterializingTimelineEntry,
-    beginTimelineEntry,
+    onSelectThread: handleThreadSelectionRead,
     chatThreadsRef,
-    clearTimelineEntry,
     composerDefaultsRef,
     initialRoute,
     pinnedThreadsRef,
@@ -613,12 +320,12 @@ function KodexShell({
     queryKey: queryKeys.projects,
     refetchOnMount: false,
     staleTime: scopedSidebarSnapshotStaleTime,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const seededProjects = cachedSidebarSnapshotData<Project[]>(queryKeys.projects);
       if (seededProjects) {
         return seededProjects;
       }
-      return listProjects();
+      return listProjects(signal);
     },
   });
   const capabilitiesQuery = useQuery({
@@ -627,20 +334,21 @@ function KodexShell({
     staleTime: Infinity,
   });
   const projects = projectsQuery.data ?? EMPTY_PROJECTS;
-  const orderedProjects = useMemo(() => applySidebarProjectOrder(projects, projectOrderIds), [projectOrderIds, projects]);
+  const orderedProjects = projects;
   const projectThreadQueries = useQueries({
     queries: orderedProjects.map((project) => ({
       enabled: scopedSidebarQueriesEnabled,
       queryKey: queryKeys.projectThreads(project.id),
       refetchOnMount: false,
       staleTime: scopedSidebarSnapshotStaleTime,
-      queryFn: async () => {
+      queryFn: async ({ signal }) => {
         const seededThreads = cachedSidebarSnapshotData<ThreadSummary[]>(queryKeys.projectThreads(project.id));
         if (seededThreads) {
           return seededThreads;
         }
         const beforeSnapshot = queryClientForShell.getQueryData<ThreadSummary[]>(queryKeys.projectThreads(project.id));
-        const response = await listThreadsPage(project.id);
+        const response = await listThreadsPage(project.id, { signal });
+        signal.throwIfAborted();
         setProjectThreadNextCursors((current) => ({ ...current, [project.id]: response.nextCursor ?? null }));
         return mergeProjectThreadData(
           queryClientForShell.getQueryData<ThreadSummary[]>(queryKeys.projectThreads(project.id)),
@@ -664,13 +372,14 @@ function KodexShell({
     queryKey: queryKeys.chatThreads,
     refetchOnMount: false,
     staleTime: scopedSidebarSnapshotStaleTime,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const seededThreads = cachedSidebarSnapshotData<ThreadSummary[]>(queryKeys.chatThreads);
       if (seededThreads) {
         return seededThreads;
       }
       const beforeSnapshot = queryClientForShell.getQueryData<ThreadSummary[]>(queryKeys.chatThreads);
-      const response = await listChatThreadsPage();
+      const response = await listChatThreadsPage({ signal });
+      signal.throwIfAborted();
       setChatThreadsNextCursor(response.nextCursor ?? null);
       return mergeChatThreadData(
         queryClientForShell.getQueryData<ThreadSummary[]>(queryKeys.chatThreads),
@@ -684,14 +393,15 @@ function KodexShell({
     queryKey: queryKeys.pinnedThreads,
     refetchOnMount: false,
     staleTime: sidebarSnapshotReady || pinnedStateTrusted ? Infinity : 0,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const seededThreads = cachedSidebarSnapshotData<ThreadSummary[]>(queryKeys.pinnedThreads);
       if (seededThreads) {
         return seededThreads;
       }
       const beforeSnapshot = queryClientForShell.getQueryData<ThreadSummary[]>(queryKeys.pinnedThreads);
       const tombstonesBeforeSnapshot = queryClientForShell.getQueryData<string[]>(queryKeys.pinnedThreadTombstones);
-      const threads = await listPinnedThreads();
+      const threads = await listPinnedThreads(signal);
+      signal.throwIfAborted();
       const current = queryClientForShell.getQueryData<ThreadSummary[]>(queryKeys.pinnedThreads);
       const tombstones = queryClientForShell.getQueryData<string[]>(queryKeys.pinnedThreadTombstones);
       const tombstonesForSnapshot = pinnedTombstonesAddedDuringSnapshot(tombstonesBeforeSnapshot, tombstones);
@@ -749,7 +459,6 @@ function KodexShell({
     },
     onSuccess: (automationId) => deleteCachedAutomation(queryClientForShell, automationId),
   });
-  const createProjectMutation = useMutation({ mutationFn: createProject });
   const archiveThreadMutation = useMutation({ mutationFn: archiveThread });
   const renameThreadMutation = useMutation({
     mutationFn: ({ threadId, name }: { threadId: string; name: string }) => renameThread(threadId, name),
@@ -780,19 +489,20 @@ function KodexShell({
       summaries[thread.id] = thread;
     }
     if (routeSelectedThread) {
-      summaries[routeSelectedThread.id] = routeSelectedThread;
+      const listed = summaries[routeSelectedThread.id];
+      summaries[routeSelectedThread.id] = listed
+        ? { ...routeSelectedThread, projectId: listed.projectId }
+        : routeSelectedThread;
     }
     return summaries;
   }, [chatThreads, flatProjectThreads, pinnedThreads, routeSelectedThread]);
   const threadProjectIdsById = useMemo(() => {
     const projectIds: Record<string, string> = {};
-    for (const [projectId, threads] of Object.entries(threadsByProjectId)) {
-      for (const thread of threads) {
-        projectIds[thread.id] = projectId;
-      }
+    for (const thread of Object.values(threadSummariesById)) {
+      if (thread.projectId) projectIds[thread.id] = thread.projectId;
     }
     return projectIds;
-  }, [threadsByProjectId]);
+  }, [threadSummariesById]);
   const isSelectedThreadSnapshotDeferred =
     selectedThreadId !== null && materializingThreadIds.has(selectedThreadId);
   const isDraftThreadSelected =
@@ -859,6 +569,7 @@ function KodexShell({
     onError: reportError,
     selectedProjectId,
     selectedThread,
+    projects,
   });
   composerDefaultsRef.current = { draftComposerEditedRef, hydrateComposerDefaults };
   const publishThreadPaneTimelineAction = useEventCallback((action: ThreadPaneTimelineAction) => {
@@ -1019,7 +730,7 @@ function KodexShell({
     };
   }, [draftComposerTransitionToken]);
 
-  const { applySelectedThreadStreamEvent, liveRouteHandlers } = useLiveEventHandlers({
+  const { liveRouteHandlers } = useLiveEventHandlers({
     applyCompletedAgentTurnEvent,
     applyQueuedInputDeleted: removeQueuedInput,
     applyQueuedInputUpsert: upsertQueuedInput,
@@ -1056,82 +767,20 @@ function KodexShell({
     selectedThread,
   });
 
-  useSelectedThreadTimeline({
-    isSelectedThreadSnapshotDeferred,
-    onError: (error) => {
-      const threadId = selectedThreadIdRef.current;
-      reportError(error, threadId ? `Selected thread load failed (${threadId})` : "Selected thread load failed");
-    },
-    onSnapshotThread: handleSelectedThreadSnapshot,
-    onSyncNotice: setThreadSyncNotice,
-    onSelectedThreadEvent: applySelectedThreadStreamEvent,
-    onQueueEvent: () => {},
-    selectedThreadId: useSingleThreadWorkspace ? selectedThreadId : null,
-    setTimeline,
-    setTimelineEntry,
-    onThreadLoadFailed: handleSelectedThreadLoadFailed,
-  });
-
-  function clearTimelineEntry() {
-    setTimelineEntry(idleTimelineEntry);
-    setTimeline(createTimelineState());
-  }
-
-  function beginTimelineEntry(threadId: string) {
-    markCompletedAgentTurnSeen(threadId);
-    setTimeline(createTimelineState());
-    setTimelineEntry({ phase: "loadingSnapshot", threadId });
-  }
-
-  function beginMaterializingTimelineEntry(threadId: string) {
-    markCompletedAgentTurnSeen(threadId);
-    setTimeline(createTimelineState());
-    setTimelineEntry({ phase: "streamingLive", threadId });
-  }
-
-  async function handleCreateProject(options: { createDirectory?: boolean } = {}) {
-    const cwd = projectCwd.trim();
-    if (!cwd) {
-      return;
-    }
-
-    try {
-      const project = await createProjectMutation.mutateAsync({
-        ...(options.createDirectory ? { createDirectory: true } : {}),
-        cwd,
-      });
-      queryClientForShell.setQueryData<Project[]>(queryKeys.projects, (current) => [project, ...(current ?? [])]);
-      selectProject(project.id);
-      setProjectCwd("");
-      setProjectDirectoryCreateCwd(null);
-      setProjectFormOpen(false);
-    } catch (error) {
-      if (!options.createDirectory && errorMessageFrom(error) === "directory does not exist") {
-        setProjectDirectoryCreateCwd(cwd);
-        return;
-      }
-      reportError(error);
-    }
-  }
-
-  function handleProjectCwdChange(value: string) {
-    setProjectCwd(value);
-    setProjectDirectoryCreateCwd(null);
-  }
-
-  function handleReorderProjects(nextProjectIds: string[]) {
-    setProjectOrderIds(nextProjectIds);
-    saveSidebarProjectOrder(nextProjectIds, instanceStorage);
+  function handleMoveProject(projectId: string, beforeProjectId: string | null) {
+    void moveProject(projectId, beforeProjectId).then(() => refreshProjectState(queryClientForShell)).catch(reportError);
   }
 
   async function createDraftThreadFromComposer({
     composerSettings: paneComposerSettings,
     firstMessageText,
     projectId,
+    cwd,
   }: {
     composerSettings?: ComposerSettings;
     firstMessageText: string;
     projectId?: string;
+    cwd?: string;
   }) {
     draftComposerTransitionOriginRef.current = composerShellRef.current?.getBoundingClientRect() ?? null;
     const threadSettings =
@@ -1141,10 +790,11 @@ function KodexShell({
         : (await hydrateComposerDefaults(null)) ?? composerSettings);
     const thread = optimisticThreadSummary(
       projectId
-        ? await createThread(projectId, createThreadOptions(threadSettings))
+        ? await createThread(projectId, { ...createThreadOptions(threadSettings), cwd })
         : await createChatThread(firstMessageText, createThreadOptions(threadSettings)),
       firstMessageText,
     );
+    void refreshProjectState(queryClientForShell);
     if (projectId) {
       upsertProjectThread(queryClientForShell, projectId, thread);
     } else {
@@ -1228,13 +878,17 @@ function KodexShell({
     await deleteAutomationMutation.mutateAsync(automationId);
   }
 
+  function handleThreadSelectionRead(threadId: string) {
+    markCompletedAgentTurnSeen(threadId);
+  }
+
   function handleSelectedThreadSnapshot(thread: ThreadSummary) {
     if (thread.id === selectedThreadIdRef.current) {
       setRouteSelectedThreadState(thread);
+      setSelectedProjectId(thread.projectId ?? null);
       setUnavailableThreadId((current) => (current === thread.id ? null : current));
     }
     replaceThread(thread);
-    markCompletedAgentTurnSeen(thread.id, thread.lastCompletedAgentTurnSeq);
   }
 
   function handleSelectedThreadLoadFailed(threadId: string) {
@@ -1335,11 +989,7 @@ function KodexShell({
       next.add(thread.id);
       return next;
     });
-    if (thread.id === selectedThreadIdRef.current) {
-      setRouteSelectedThreadState(thread);
-      setUnavailableThreadId((current) => (current === thread.id ? null : current));
-    }
-    replaceThread(thread);
+    handleSelectedThreadSnapshot(thread);
   });
   const handleThreadPaneSnapshotLoadFailed = useEventCallback((threadId: string) => {
     setThreadPaneSnapshotReadyIds((current) => {
@@ -1354,7 +1004,6 @@ function KodexShell({
   });
   const handleClosePreferences = useEventCallback(() => setPreferencesOpen(false));
   const handleOpenPreferences = useEventCallback(() => setPreferencesOpen(true));
-  const stableHandleCreateProject = useEventCallback(handleCreateProject);
   const stableHandleCreateChat = useEventCallback(handleCreateChat);
   const stableHandleCreateThread = useEventCallback(handleCreateThread);
   const stableHandlePinThread = useEventCallback((threadId: string) => void handlePinThread(threadId));
@@ -1412,14 +1061,18 @@ function KodexShell({
     chatThreadsLoadingCursorRef.current = cursor;
     setChatThreadsPaginationState("loading");
     try {
-      const beforeSnapshot = queryClientForShell.getQueryData<ThreadSummary[]>(queryKeys.chatThreads);
-      const response = await listChatThreadsPage({ cursor });
+      const response = await queryClientForShell.fetchQuery({
+        queryKey: [...queryKeys.threadPages, "chat", cursor],
+        queryFn: ({ signal }) => listChatThreadsPage({ cursor, signal }),
+        staleTime: 0,
+      });
       queryClientForShell.setQueryData<ThreadSummary[]>(queryKeys.chatThreads, (current) =>
-        mergeChatThreadData(current, response.threads, beforeSnapshot),
+        appendThreadPage(current, response.threads),
       );
       setChatThreadsNextCursor(response.nextCursor ?? null);
       setChatThreadsPaginationState("idle");
     } catch (error) {
+      if (isCancelledError(error)) { setChatThreadsPaginationState("idle"); return; }
       setChatThreadsPaginationState("error");
       reportError(error);
     } finally {
@@ -1436,19 +1089,16 @@ function KodexShell({
     projectThreadLoadingCursorsRef.current = { ...projectThreadLoadingCursorsRef.current, [projectId]: cursor };
     setProjectThreadPaginationStateById((current) => ({ ...current, [projectId]: "loading" }));
     try {
-      const beforeSnapshot = queryClientForShell.getQueryData<ThreadSummary[]>(queryKeys.projectThreads(projectId));
-      const response = await listThreadsPage(projectId, { cursor });
-      mergeProjectThreadSnapshot(
-        queryClientForShell,
-        projectId,
-        response.threads,
-        routeSelectedThreadRef.current,
-        selectedThreadIdRef.current,
-        beforeSnapshot,
-      );
+      const response = await queryClientForShell.fetchQuery({
+        queryKey: [...queryKeys.threadPages, "project", projectId, cursor],
+        queryFn: ({ signal }) => listThreadsPage(projectId, { cursor, signal }),
+        staleTime: 0,
+      });
+      queryClientForShell.setQueryData<ThreadSummary[]>(queryKeys.projectThreads(projectId), (current) => appendThreadPage(current, response.threads));
       setProjectThreadNextCursors((current) => ({ ...current, [projectId]: response.nextCursor ?? null }));
       setProjectThreadPaginationStateById((current) => ({ ...current, [projectId]: "idle" }));
     } catch (error) {
+      if (isCancelledError(error)) { setProjectThreadPaginationStateById((current) => ({ ...current, [projectId]: "idle" })); return; }
       setProjectThreadPaginationStateById((current) => ({ ...current, [projectId]: "error" }));
       reportError(error);
     } finally {
@@ -1603,18 +1253,20 @@ function KodexShell({
   const renderWorkspaceThreadPaneHeaderActions = useCallback<
     NonNullable<ComponentProps<typeof WorkspaceProvider>["renderThreadPaneHeaderActions"]>
   >(
-    (_pane, state) =>
-      state.isActive && state.thread.id === selectedThreadId && selectedThreadSubagents.length > 0 ? (
-        <AdaptiveIconButton
-          aria-pressed={subagentSidebarOpen ? "true" : "false"}
-          label={subagentSidebarOpen ? "Hide subagents" : "Show subagents"}
-          onClick={() => setSubagentSidebarOpen((current) => !current)}
-          variant={subagentSidebarOpen ? "light" : "subtle"}
-        >
-          <Bot />
-        </AdaptiveIconButton>
-      ) : null,
-    [selectedThreadId, selectedThreadSubagents.length, subagentSidebarOpen],
+    (_pane, state) => (
+      <Group gap="xs" wrap="nowrap">
+        <ThreadProjectSelect threadId={state.thread.id} projectId={state.thread.projectId ?? null} projects={orderedProjects} onError={reportError} />
+        {state.isActive && state.thread.id === selectedThreadId && selectedThreadSubagents.length > 0 ? (
+          <AdaptiveIconButton
+            aria-pressed={subagentSidebarOpen ? "true" : "false"}
+            label={subagentSidebarOpen ? "Hide subagents" : "Show subagents"}
+            onClick={() => setSubagentSidebarOpen((current) => !current)}
+            variant={subagentSidebarOpen ? "light" : "subtle"}
+          ><Bot /></AdaptiveIconButton>
+        ) : null}
+      </Group>
+    ),
+    [orderedProjects, reportError, selectedThreadId, selectedThreadSubagents.length, subagentSidebarOpen, threadProjectIdsById],
   );
   return (
     <>
@@ -1666,6 +1318,8 @@ function KodexShell({
         projectPaneProps={{
           onShowMobileSidebar: handleShowMobileSidebar,
           project: selectedProjectPane,
+          projects: orderedProjects,
+          onDeleted: handleCreateChat,
         }}
           sidebarCollapsed={sidebarCollapsed}
           useSingleThreadWorkspace={useSingleThreadWorkspace}
@@ -1674,25 +1328,26 @@ function KodexShell({
           chatThreadsHasMore: chatThreadsNextCursor !== null,
           chatThreadsPaginationState,
           onArchiveThread: handleArchiveThreadById,
-          onCreateChat: stableHandleCreateChat, onCreateProject: stableHandleCreateProject, onCreateThread: stableHandleCreateThread, onLogout: handleLogout,
+          onCreateChat: stableHandleCreateChat, onCreateProject: () => setProjectFormOpen(true), onCreateThread: stableHandleCreateThread, onLogout: handleLogout,
           onLoadMoreChatThreads: handleLoadMoreChatThreads, onLoadMoreProjectThreads: handleLoadMoreProjectThreads,
           onPinThread: stableHandlePinThread,
-          onOpenPreferences: handleOpenPreferences, onOpenTerminal: gatewayTerminalAvailable ? () => undefined : undefined, onProjectCwdChange: handleProjectCwdChange, onProjectDirectoryCreateCancel: () => setProjectDirectoryCreateCwd(null),
-          onProjectFormOpenChange: setProjectFormOpen, onReorderProjects: handleReorderProjects, onSelectChatThread: stableHandleSelectChatThread,
+          onOpenPreferences: handleOpenPreferences, onOpenTerminal: gatewayTerminalAvailable ? handleShowWorkspace : undefined,
+          onMoveProject: handleMoveProject, onSelectChatThread: stableHandleSelectChatThread,
           onSelectAutomations: stableHandleSelectAutomations, onSelectPinnedThread: stableHandleSelectPinnedThread, onSelectProjectSettings: stableHandleSelectProjectSettings, onSelectThread: stableHandleSelectThread, onUnpinThread: stableHandleUnpinThread,
           onShowThread: handleShowMobileThread, onShowDebugEventsChange: setShowDebugEvents, onSidebarCollapseClick: handleSidebarCollapseClick,
           onSidebarExpandClick: handleSidebarExpandClick, onThreadActionHoverChange: setHoveredThreadActionId,
           pinnedThreads: sidebarPinnedThreads,
-          pendingTitleThreadIds, projectCwd, projectDirectoryCreatePending: projectDirectoryCreateCwd === projectCwd.trim() && projectCwd.trim().length > 0,
+          pendingTitleThreadIds,
           projectThreadHasMoreById: Object.fromEntries(Object.entries(projectThreadNextCursors).map(([projectId, cursor]) => [projectId, cursor !== null])),
           projectThreadPaginationStateById,
-          projectFormOpen, projects: orderedProjects, selectedMainPane, selectedProjectId, selectedThreadId: selectedMainPane === "thread" ? selectedThreadId : null,
+          projects: orderedProjects, selectedMainPane, selectedProjectId, selectedThreadId: selectedMainPane === "thread" ? selectedThreadId : null,
           showDebugEvents, sidebarWidth, threadsByProjectId: sidebarThreadsByProjectId, usageLimitLines,
         }}
         workspaceSelectedThreadPaneId={
           selectedMainPane === "thread" && !isSelectedThreadSnapshotDeferred ? routeThreadPaneId ?? unavailableThreadId : null
         }
         />
+        {projectFormOpen ? <WorkspaceProjectCreateDialog onClose={() => setProjectFormOpen(false)} onCreated={(project) => handleCreateThread(project.id)} onError={reportError} /> : null}
       </WorkspaceProvider>
       {lightboxImage ? (
         <Suspense fallback={null}>

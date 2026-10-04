@@ -13,7 +13,7 @@ mod projects;
 mod timeline;
 pub(crate) use client::is_thread_not_materialized_before_first_user_message;
 pub use client::{client, CodexClient};
-pub use projects::{NativeProject, NativeProjectPage, NativeProjectRoot};
+pub use projects::{Project, ProjectPage, ProjectRoot};
 #[cfg(test)]
 pub(crate) use timeline::TIMELINE_PREVIEW_STRING_LIMIT;
 pub(crate) use timeline::{
@@ -1142,6 +1142,7 @@ impl ThreadLoadedListResponse {
 #[serde(rename_all = "camelCase")]
 pub struct ThreadSummary {
     pub id: String,
+    pub project_id: Option<String>,
     pub name: Option<String>,
     pub cwd: String,
     pub status: ThreadStatus,
@@ -1190,6 +1191,7 @@ impl ThreadSummary {
     pub(crate) fn from_payload(payload: &Value) -> ApiResult<Self> {
         Ok(Self {
             id: required_string(payload, "id")?,
+            project_id: optional_string(payload, "projectId"),
             name: optional_string(payload, "name"),
             cwd: required_string(payload, "cwd")?,
             status: required_thread_status(payload)?,
@@ -1332,6 +1334,7 @@ impl ThreadViewResponse {
 #[serde(rename_all = "camelCase")]
 pub struct ThreadViewThreadSummary {
     pub id: String,
+    pub project_id: Option<String>,
     pub name: Option<String>,
     pub cwd: String,
     pub status: ThreadStatus,
@@ -1360,6 +1363,7 @@ impl From<ThreadSummary> for ThreadViewThreadSummary {
     fn from(thread: ThreadSummary) -> Self {
         Self {
             id: thread.id,
+            project_id: thread.project_id,
             name: thread.name,
             cwd: thread.cwd,
             status: thread.status,

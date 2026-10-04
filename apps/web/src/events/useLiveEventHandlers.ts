@@ -5,11 +5,12 @@ import { applyAccountEvent } from "../account/cache";
 import type { EventEnvelope, QueuedInput, RateLimitSnapshot } from "../api/client";
 import { applyMcpLifecycleEvent } from "../api/mcpCache";
 import { queryKeys } from "../api/queryKeys";
+import { applyProjectEvent } from "../projects/cache";
 import { applyAppSurfaceEvent } from "../appSurfaces/cache";
 import { applyApprovalInvalidation } from "../approvals/cache";
 import { applyCachedAutomationEvent } from "../automations/cache";
 import type { ThreadSubagentDiscoveryEvent, ThreadUpsert } from "../threads/events";
-import { routeSelectedThreadLiveEvent, type LiveEventRouteHandlers } from "./liveRouting";
+import type { LiveEventRouteHandlers } from "./liveRouting";
 
 export function useLiveEventHandlers({
   applyCompletedAgentTurnEvent,
@@ -66,6 +67,7 @@ export function useLiveEventHandlers({
 
     const liveRouteHandlers: LiveEventRouteHandlers = {
       applyAccountEvent: (event) => applyAccountEvent(queryClient, event),
+      applyProjectEvent: (event) => applyProjectEvent(queryClient, event),
       applyAutomationStreamEvent,
       applyQueuedInputUpsert,
       applyQueuedInputDeleted,
@@ -85,7 +87,6 @@ export function useLiveEventHandlers({
     };
 
     return {
-      applySelectedThreadStreamEvent: (event: EventEnvelope) => routeSelectedThreadLiveEvent(event, liveRouteHandlers),
       liveRouteHandlers,
     };
   }, [

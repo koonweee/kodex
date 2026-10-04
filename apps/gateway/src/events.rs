@@ -59,6 +59,23 @@ pub const MCP_OAUTH_LOGIN_COMPLETED_EVENT: &str = "mcp.oauth_login_completed";
 pub const ACCOUNT_RATE_LIMITS_UPDATED_EVENT: &str = "account.rate_limits_updated";
 pub const ACCOUNT_UPDATED_EVENT: &str = "account.updated";
 pub const ACCOUNT_LOGIN_COMPLETED_EVENT: &str = "account.login_completed";
+pub const PROJECT_CHANGED_EVENT: &str = "project.changed";
+pub const THREAD_PROJECT_UPDATED_EVENT: &str = "thread.project_updated";
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectChanged {
+    pub project_id: String,
+    pub change_type: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadProjectUpdated {
+    pub thread_id: String,
+    #[schema(required = true)]
+    pub project_id: Option<String>,
+}
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -194,6 +211,10 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
             }
             let metadata = EventMetadata::from_payload(&params);
             let mut emitted = false;
+            if let Some(event) = normalized_project_event(state, &method, &params).await? {
+                let _ = state.events.send(event);
+                emitted = true;
+            }
             if let Some(event) = normalized_mcp_event(state, &method, &params).await? {
                 let _ = state.events.send(event);
                 emitted = true;
@@ -319,6 +340,48 @@ fn is_transcript_notification_method(method: &str) -> bool {
         || method.starts_with("thread/realtime/transcript/")
 }
 
+async fn normalized_project_event(
+    state: &AppState,
+    method: &str,
+    params: &Value,
+) -> ApiResult<Option<EventEnvelope>> {
+    let (kind, thread_id, payload) = match method {
+        "project/changed" => {
+            let notification: ProjectChanged = serde_json::from_value(params.clone())?;
+            (
+                PROJECT_CHANGED_EVENT,
+                None,
+                serde_json::to_value(notification)?,
+            )
+        }
+        "thread/project/updated" => {
+            let notification: ThreadProjectUpdated = serde_json::from_value(params.clone())?;
+            (
+                THREAD_PROJECT_UPDATED_EVENT,
+                Some(notification.thread_id.clone()),
+                serde_json::to_value(notification)?,
+            )
+        }
+        _ => return Ok(None),
+    };
+    // Native project mutations can change sibling positions and membership of
+    // unloaded threads, so these notifications invalidate complete projections.
+    Ok(Some(
+        state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id,
+                turn_id: None,
+                item_id: None,
+                kind: kind.to_string(),
+                codex_method: Some(method.to_string()),
+                payload,
+            })
+            .await?,
+    ))
+}
+
 async fn normalized_mcp_event(
     state: &AppState,
     method: &str,
@@ -422,6 +485,9 @@ async fn event_stream(
                             }
                         }
                     }
+                    // Reconnect from the unchanged cursor before any newer event
+                    // can advance past missed global invalidations.
+                    break;
                 }
                 Ok(Err(broadcast::error::RecvError::Closed)) => break,
                 Err(_) => {}
@@ -1610,6 +1676,7 @@ fn thread_summary_from_value(thread: &Value) -> ApiResult<ThreadSummary> {
         .ok_or_else(|| missing_payload_field("status.type"))?;
     Ok(ThreadSummary {
         id: required_payload_string(thread, "id")?,
+        project_id: string_field(thread, &["projectId"]),
         name: string_field(thread, &["name"]),
         cwd: required_payload_string(thread, "cwd")?,
         status,
@@ -1755,3 +1822,7 @@ fn nested_string_field(payload: &Value, parent: &str, names: &[&str]) -> Option<
 #[cfg(test)]
 #[path = "events/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "events/lag_tests.rs"]
+mod lag_tests;

@@ -64,29 +64,6 @@ impl CodexClient {
         ThreadListResponse::from_payload(payload)
     }
 
-    pub async fn thread_list_cwds_updated(
-        &self,
-        cwds: Vec<String>,
-        cursor: Option<String>,
-        limit: Option<u32>,
-    ) -> ApiResult<ThreadListResponse> {
-        let payload = self
-            .request(
-                "thread/list",
-                json!({
-                    "cursor": cursor,
-                    "limit": limit,
-                    "cwd": cwds,
-                    "sortKey": "updated_at",
-                    "sortDirection": "desc",
-                    "archived": false,
-                    "useStateDbOnly": true,
-                }),
-            )
-            .await?;
-        ThreadListResponse::from_payload(payload)
-    }
-
     pub async fn thread_start(
         &self,
         project_id: String,
@@ -107,7 +84,8 @@ impl CodexClient {
         cwd: String,
         payload: Value,
     ) -> ApiResult<ThreadCommandResponse> {
-        let payload = require_paginated_history(merge_path_payload("cwd", cwd, payload));
+        let mut payload = require_paginated_history(merge_path_payload("cwd", cwd, payload));
+        payload["projectId"] = Value::Null;
         let payload = self.request("thread/start", payload).await?;
         ThreadCommandResponse::from_payload(payload)
     }

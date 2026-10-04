@@ -27,6 +27,8 @@ const GATEWAY_SSE_EVENT_TYPES = [
   "account.login_completed",
   "account.updated",
   "approval.changed",
+  "project.changed",
+  "thread.project_updated",
   "account.rate_limits_updated",
   "automation.item_deleted",
   "automation.item_upsert",

@@ -272,6 +272,27 @@ mod tests {
     }
 
     #[test]
+    fn native_project_notifications_match_checked_in_contract() {
+        for (method, params) in [
+            (
+                "project/changed",
+                json!({"projectId":"project-1","changeType":"updated"}),
+            ),
+            (
+                "thread/project/updated",
+                json!({"threadId":"thread-1","projectId":null}),
+            ),
+            (
+                "thread/project/updated",
+                json!({"threadId":"thread-1","projectId":"project-1"}),
+            ),
+        ] {
+            validate_server_notification(&json!({"jsonrpc":"2.0","method":method,"params":params}))
+                .unwrap();
+        }
+    }
+
+    #[test]
     fn native_status_and_settings_notifications_are_supported() {
         validate_server_notification(&json!({
             "jsonrpc": "2.0",

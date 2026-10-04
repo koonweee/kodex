@@ -2,7 +2,7 @@ export type WorkspacePaneType = "thread" | "appSurface" | "terminal";
 
 export type ThreadPaneTarget =
   | { mode: "existing"; threadId: string }
-  | { mode: "draft"; projectId?: string | null };
+  | { mode: "draft"; projectId?: string | null; cwd?: string | null };
 
 export type AppSurfacePaneTarget =
   | { mode: "latest"; threadId: string }

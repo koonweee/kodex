@@ -187,7 +187,6 @@ export function mergeChatThreadData(
   }
   const currentById = threadsById(current);
   const beforeById = threadsById(beforeSnapshot ?? []);
-  const loadedIds = new Set(loadedThreads.map((thread) => thread.id));
   const mergedLoadedThreads = loadedThreads.map((loadedThread) => {
     const currentThread = currentById.get(loadedThread.id);
     if (!currentThread) {
@@ -198,7 +197,10 @@ export function mergeChatThreadData(
     }
     return mergeNewerReadProjection(loadedThread, currentThread, beforeById.get(loadedThread.id));
   });
-  return [...current.filter((thread) => !loadedIds.has(thread.id)), ...mergedLoadedThreads];
+  return mergedLoadedThreads.map((thread) => ({
+    ...thread,
+    projectId: loadedThreads.find((loaded) => loaded.id === thread.id)?.projectId ?? null,
+  }));
 }
 
 export function mergePinnedThreadData(
@@ -224,7 +226,9 @@ export function mergePinnedThreadData(
     if (beforeThread && !currentThread) {
       continue;
     }
-    merged.push(currentThread && threadChangedDuringSnapshot(beforeThread, currentThread) ? currentThread : loadedThread);
+    merged.push(currentThread && threadChangedDuringSnapshot(beforeThread, currentThread)
+      ? { ...currentThread, projectId: loadedThread.projectId ?? null }
+      : loadedThread);
   }
 
   for (const currentThread of current) {
@@ -283,8 +287,18 @@ function mergeProjectThreads(
     }
     return mergeNewerReadProjection(hydratedThread, currentThread, beforeById.get(hydratedThread.id));
   });
-  const hydratedIds = new Set(hydratedThreads.map((thread) => thread.id));
-  return [...current.filter((thread) => !hydratedIds.has(thread.id)), ...mergedHydratedThreads];
+  return mergedHydratedThreads.map((thread) => ({
+    ...thread,
+    projectId: loadedThreads.find((loaded) => loaded.id === thread.id)?.projectId ?? null,
+  }));
+}
+
+export function appendThreadPage(current: ThreadSummary[] | undefined, page: ThreadSummary[]): ThreadSummary[] {
+  const incomingIds = new Set(page.map((thread) => thread.id));
+  return [
+    ...(current ?? []).filter((thread) => !incomingIds.has(thread.id)),
+    ...mergeChatThreadData(current, page, current),
+  ];
 }
 
 function mergeRouteSelectedThreadIntoList(

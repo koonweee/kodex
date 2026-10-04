@@ -1,0 +1,66 @@
+import { Alert, Button, Group, Modal, Select, Stack, Text, Textarea, TextInput } from "@mantine/core";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+
+import { deleteProject, moveProject, updateProject, type Project, type UpdateProjectRequest } from "../api/client";
+import { useWorkspace } from "../workspace/WorkspaceProvider";
+import { errorMessageFrom } from "../shared/values";
+import { refreshProjectState } from "./cache";
+import { projectRootsFromText } from "./roots";
+
+export function ProjectEditor({ project, projects, onDeleted }: { project: Project; projects: Project[]; onDeleted: () => void }) {
+  const queryClient = useQueryClient();
+  const { publishThreadPaneTimelineAction } = useWorkspace();
+  const [nameEdit, setNameEdit] = useState<string | null>(null);
+  const [rootsEdit, setRootsEdit] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [beforeId, setBeforeId] = useState<string | null>(null);
+  const save = useMutation({
+    mutationFn: (request: UpdateProjectRequest) => updateProject(project.id, request),
+    onSuccess: async () => { await refreshProjectState(queryClient); setNameEdit(null); setRootsEdit(null); },
+  });
+  const remove = useMutation({
+    mutationFn: () => deleteProject(project.id),
+    onSuccess: async () => {
+      publishThreadPaneTimelineAction({ kind: "refresh_snapshot" });
+      await refreshProjectState(queryClient);
+      onDeleted();
+    },
+  });
+  const move = useMutation({
+    mutationFn: () => moveProject(project.id, beforeId),
+    onSuccess: () => refreshProjectState(queryClient),
+  });
+  const name = nameEdit ?? project.name;
+  const roots = rootsEdit ?? project.roots.map((root) => root.path).join("\n");
+  const changes: UpdateProjectRequest = {
+    ...(nameEdit !== null && name.trim() !== project.name ? { name: name.trim() } : {}),
+    ...(rootsEdit !== null && JSON.stringify(projectRootsFromText(roots)) !== JSON.stringify(project.roots) ? { roots: projectRootsFromText(roots) } : {}),
+  };
+  const pending = save.isPending || remove.isPending || move.isPending;
+  const error = save.error ?? remove.error ?? move.error;
+
+  return (
+    <Stack>
+      <form onSubmit={(event) => { event.preventDefault(); save.mutate(changes); }}>
+        <Stack>
+          <TextInput label="Project name" value={name} onChange={(event) => setNameEdit(event.currentTarget.value)} required disabled={pending} />
+          <Textarea label="Root directories" description="One absolute path per line. Existing chats keep their working directory." value={roots} onChange={(event) => setRootsEdit(event.currentTarget.value)} minRows={3} disabled={pending} />
+          <Button type="submit" loading={save.isPending} disabled={pending || !name.trim() || Object.keys(changes).length === 0}>Save project</Button>
+        </Stack>
+      </form>
+      <Group align="end">
+        <Select label="Move before" clearable placeholder="End of project list" value={beforeId} onChange={setBeforeId} data={projects.filter((candidate) => candidate.id !== project.id).map((candidate) => ({ label: candidate.name, value: candidate.id }))} disabled={pending} />
+        <Button variant="light" onClick={() => move.mutate()} loading={move.isPending} disabled={pending}>Move project</Button>
+      </Group>
+      {error ? <Alert color="red">{errorMessageFrom(error)}</Alert> : null}
+      <Button color="red" variant="subtle" onClick={() => setDeleteOpen(true)} disabled={pending}>Delete project</Button>
+      <Modal opened={deleteOpen} onClose={() => setDeleteOpen(false)} title={`Delete ${project.name}?`}>
+        <Stack>
+          <Text>Its chats will remain available without a project. Files are unchanged.</Text>
+          <Button color="red" loading={remove.isPending} onClick={() => remove.mutate()}>Delete project</Button>
+        </Stack>
+      </Modal>
+    </Stack>
+  );
+}

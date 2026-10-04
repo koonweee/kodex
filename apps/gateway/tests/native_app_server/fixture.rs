@@ -214,6 +214,24 @@ impl NativeSession {
             .context("native request stream closed")
     }
 
+    pub(super) async fn notification(
+        &mut self,
+        method: &str,
+        key: &str,
+        expected: &str,
+    ) -> anyhow::Result<Value> {
+        timeout(Duration::from_secs(15), async {
+            while let Some((received, params)) = self.notifications.recv().await {
+                if received == method && params[key] == expected {
+                    return Ok(params);
+                }
+            }
+            anyhow::bail!("native notification stream closed")
+        })
+        .await
+        .with_context(|| format!("missing native {method} for {key}={expected}"))?
+    }
+
     pub(super) async fn completed_turn(
         &mut self,
         thread_id: &str,
@@ -352,6 +370,9 @@ pub(super) async fn request_json(app: &Router, request: Request<Body>) -> anyhow
         "{status}: {}",
         String::from_utf8_lossy(&payload)
     );
+    if status == axum::http::StatusCode::NO_CONTENT {
+        return Ok(Value::Null);
+    }
     Ok(serde_json::from_slice(&payload)?)
 }
 

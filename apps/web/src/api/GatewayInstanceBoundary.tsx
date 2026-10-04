@@ -4,6 +4,7 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 
 import { refreshAccountQueries } from "../account/cache";
 import { refreshApprovalSnapshot } from "../approvals/cache";
+import { refreshProjectState } from "../projects/cache";
 import { PwaLifecycle } from "../pwa/PwaLifecycle";
 import { currentKodexRoute, isThemeWorkbenchRoute, replaceKodexRoute } from "../shell/browserRouting";
 import { getCapabilities, getProject, getThreadDetail } from "./client";
@@ -74,6 +75,7 @@ function GatewayInstanceGate({ children, queryClient }: GatewayInstanceBoundaryP
           // Foreground checks also recover missed account changes while a stream stays open.
           void refreshAccountQueries(queryClient, { cancelInFlight: true });
           void refreshApprovalSnapshot(queryClient);
+          void refreshProjectState(queryClient);
         }
         queryClient.setQueryData(queryKeys.capabilities, capabilities);
         setError(null);
@@ -95,6 +97,7 @@ function GatewayInstanceGate({ children, queryClient }: GatewayInstanceBoundaryP
     if (confirmedId && instanceIdRef.current === confirmedId) {
       void refreshAccountQueries(queryClient, { cancelInFlight: true });
       void refreshApprovalSnapshot(queryClient);
+      void refreshProjectState(queryClient);
     }
   }, [confirmedId, queryClient]);
   const connection = useMemo(() => ({ beforeConnect: validateInstance, onConnected: handleStreamConnected }), [handleStreamConnected, validateInstance]);
