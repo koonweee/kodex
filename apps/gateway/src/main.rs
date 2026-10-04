@@ -43,23 +43,35 @@ async fn main() -> anyhow::Result<()> {
         .await
         .with_context(|| format!("opening sqlite database {}", config.database.path.display()))?;
 
-    let (inbound_tx, inbound_rx) = mpsc::channel(1024);
-    let supervisor = JsonRpcAppServer::start(&config.codex, inbound_tx)
+    let listener = tokio::net::TcpListener::bind(config.server.bind)
         .await
-        .context("starting the required isolated Codex app-server")?;
+        .context("binding the owned gateway listener")?;
+    config.server.bind = listener.local_addr()?;
+    let (inbound_tx, inbound_rx) = mpsc::channel(1024);
+    let supervisor = JsonRpcAppServer::start_with_control(
+        &config.codex,
+        inbound_tx,
+        config.server.bind,
+        &std::env::current_exe()?,
+    )
+    .await
+    .context("starting the required isolated Codex app-server")?;
     let app_server: DynAppServer = supervisor.clone();
 
     let state = AppState::new(config, store, app_server);
-    run_gateway(state, supervisor, inbound_rx).await
+    run_gateway(state, supervisor, inbound_rx, listener).await
 }
 
 async fn run_gateway(
     state: AppState,
     supervisor: Arc<JsonRpcAppServer>,
     inbound_rx: mpsc::Receiver<InboundMessage>,
+    listener: tokio::net::TcpListener,
 ) -> anyhow::Result<()> {
+    let mut import_worker = None;
     let result: anyhow::Result<()> = async {
         kodex_gateway::approvals::initialize(&state).await?;
+        import_worker = Some(kodex_gateway::app_surfaces::start_import_worker(&state)?);
         kodex_gateway::queue_transfer::recover(&state).await?;
         recover_automations_after_restart(&state).await?;
         start_automation_scheduler(state.clone());
@@ -68,7 +80,6 @@ async fn run_gateway(
         tokio::spawn(run_inbound_ingest(inbound_rx, state.clone()));
 
         let app = build_router(state.clone());
-        let listener = tokio::net::TcpListener::bind(state.config.server.bind).await?;
         tracing::info!(bind = %state.config.server.bind, "kodex gateway listening");
 
         axum::serve(listener, app)
@@ -77,6 +88,9 @@ async fn run_gateway(
         Ok(())
     }
     .await;
+    if let Some(worker) = import_worker {
+        worker.shutdown().await;
+    }
     let native_shutdown = supervisor.shutdown().await;
     result?;
     native_shutdown?;
@@ -117,7 +131,8 @@ while IFS= read -r line; do :; done
         let state = AppState::new(config, store.clone(), server.clone());
         store.pool().close().await;
 
-        let result = run_gateway(state, server.clone(), receiver).await;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let result = run_gateway(state, server.clone(), receiver, listener).await;
         let still_ready = server.is_ready();
         server.shutdown().await.unwrap();
         assert!(result.is_err());

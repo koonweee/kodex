@@ -8,7 +8,7 @@ use crate::{
     error::{ApiError, ApiResult},
     store::{
         AppSurfaceCsp, AppSurfaceGrants, AppSurfacePermissions, AppSurfaceProvider,
-        AppSurfaceResourceGrant, AppSurfaceSession, AppSurfaceSessionUpsert, AppSurfaceToolGrant,
+        AppSurfaceResourceGrant, AppSurfaceSessionUpsert, AppSurfaceToolGrant,
     },
 };
 
@@ -16,6 +16,13 @@ pub const MCP_APP_MIME_TYPE: &str = "text/html;profile=mcp-app";
 pub const APP_SURFACE_HTML_MAX_BYTES: usize = 4 * 1024 * 1024;
 
 mod candidate;
+mod importer;
+pub(crate) use importer::{
+    capture_mcp_app_surface_import, enqueue_mcp_app_surface_import, AppSurfaceImports,
+};
+pub use importer::{start_import_worker, AppSurfaceImportWorker};
+#[cfg(test)]
+mod import_tests;
 pub(crate) mod scope;
 #[cfg(test)]
 mod scope_tests;
@@ -205,34 +212,11 @@ pub fn app_surface_csp(csp: &AppSurfaceCsp) -> String {
     )
 }
 
-pub async fn sync_mcp_app_surface_for_item(
-    state: &AppState,
-    thread_id: &str,
-    turn_id: &str,
-    item: &Value,
-) -> ApiResult<Option<AppSurfaceSession>> {
-    let Some(candidate) = McpAppSurfaceCandidate::from_item(turn_id, item) else {
-        return Ok(None);
-    };
-    if let Some(latest) = state.store.latest_app_surface_session(thread_id).await? {
-        if latest.provider == AppSurfaceProvider::Mcp
-            && latest
-                .provenance
-                .get("mcp")
-                .and_then(|mcp| mcp.get("signature"))
-                == Some(&candidate.signature)
-        {
-            return Ok(None);
-        }
-    }
-    upsert_mcp_app_surface_from_candidate(state, thread_id, candidate).await
-}
-
-async fn upsert_mcp_app_surface_from_candidate(
+async fn prepare_mcp_app_surface(
     state: &AppState,
     thread_id: &str,
     candidate: McpAppSurfaceCandidate,
-) -> ApiResult<Option<AppSurfaceSession>> {
+) -> ApiResult<Option<AppSurfaceSessionUpsert>> {
     let McpAppSurfaceCandidate {
         turn_id,
         item_id,
@@ -301,43 +285,39 @@ async fn upsert_mcp_app_surface_from_candidate(
     );
     let grants = mcp_app_surface_grants(state, thread_id, &server, scope.as_ref()).await?;
     let title = validate_app_surface_title(title.unwrap_or_else(|| tool.clone()))?;
-    let fallback_content = mcp_tool_result_content_text(result.as_ref())
+    let fallback_content = crate::app_server_api::mcp_result_text(result.as_ref())
         .filter(|text| !text.trim().is_empty())
         .unwrap_or_else(|| format!("{server}.{tool} returned an interactive app."));
-    let session = state
-        .store
-        .upsert_app_surface_session(AppSurfaceSessionUpsert {
-            thread_id: thread_id.to_string(),
-            provider: AppSurfaceProvider::Mcp,
-            title,
-            resource_uri: Some(resource_uri.clone()),
-            resource_mime_type: mime_type,
-            html,
-            fallback_content,
-            display_modes: vec!["inline".to_string(), "fullscreen".to_string()],
-            csp: resource_metadata.csp,
-            permissions: resource_metadata.permissions,
-            grants,
-            provenance: serde_json::json!({
-                "mcp": {
-                    "server": server,
-                    "tool": tool,
-                    "turnId": turn_id,
-                    "itemId": item_id,
-                    "originCallId": origin_call_id,
-                    "appContext": app_context,
-                    "mcpAppUi": mcp_app_ui,
-                    "resourceUri": resource_uri,
-                    "arguments": arguments,
-                    "result": result,
-                    "error": error,
-                    "status": status,
-                    "signature": signature
-                }
-            }),
-        })
-        .await?;
-    Ok(Some(session))
+    Ok(Some(AppSurfaceSessionUpsert {
+        thread_id: thread_id.to_string(),
+        provider: AppSurfaceProvider::Mcp,
+        title,
+        resource_uri: Some(resource_uri.clone()),
+        resource_mime_type: mime_type,
+        html,
+        fallback_content,
+        display_modes: vec!["inline".to_string(), "fullscreen".to_string()],
+        csp: resource_metadata.csp,
+        permissions: resource_metadata.permissions,
+        grants,
+        provenance: serde_json::json!({
+            "mcp": {
+                "server": server,
+                "tool": tool,
+                "turnId": turn_id,
+                "itemId": item_id,
+                "originCallId": origin_call_id,
+                "appContext": app_context,
+                "mcpAppUi": mcp_app_ui,
+                "resourceUri": resource_uri,
+                "arguments": arguments,
+                "result": result,
+                "error": error,
+                "status": status,
+                "signature": signature
+            }
+        }),
+    }))
 }
 
 fn csp_from_value(value: &Value) -> AppSurfaceCsp {
@@ -431,22 +411,6 @@ async fn mcp_app_surface_grants(
         can_update_model_context: true,
         can_open_links: false,
     })
-}
-
-fn mcp_tool_result_content_text(result: Option<&Value>) -> Option<String> {
-    let content = result
-        .and_then(|result| result.get("content"))
-        .and_then(Value::as_array)?;
-    let text = content
-        .iter()
-        .filter_map(|part| part.get("text").and_then(Value::as_str))
-        .collect::<Vec<_>>()
-        .join("\n");
-    if text.is_empty() {
-        None
-    } else {
-        Some(text)
-    }
 }
 
 fn string_array(value: Option<&Value>) -> Vec<String> {

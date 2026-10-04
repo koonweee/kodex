@@ -28,10 +28,14 @@ async fn native_widget_import_verifies_origin_and_limits_grants_to_its_thread_ap
             "own":tool("own","app-A","account-A"),"otherApp":tool("otherApp","app-B","account-A"),"otherAccount":tool("otherAccount","app-A","account-B")},
         "resources":[{"name":"own","uri":"ui://own","_meta":{"connector_id":"app-A","link_id":"account-A"}},{"name":"foreign","uri":"ui://foreign","_meta":{"connector_id":"app-B","link_id":"account-A"}}],"resourceTemplates":[]
     }],"nextCursor":null})]);
-    let surface = sync_mcp_app_surface_for_item(&state, "chat", "turn", &item("codex_apps"))
-        .await
-        .unwrap()
-        .unwrap();
+    let surface = prepare_mcp_app_surface(
+        &state,
+        "chat",
+        McpAppSurfaceCandidate::from_item("turn", &item("codex_apps")).unwrap(),
+    )
+    .await
+    .unwrap()
+    .unwrap();
     assert_eq!(surface.title, "Native action");
     assert_eq!(surface.provenance["mcp"]["originCallId"], "origin");
     assert_eq!(
@@ -71,7 +75,12 @@ async fn missing_or_wrong_hosted_native_origin_does_not_create_an_artifact_or_di
         );
         *native.next_response.lock().unwrap() = Some(resource(origin));
         assert!(matches!(
-            sync_mcp_app_surface_for_item(&state, "chat", "turn", &item("codex_apps")).await,
+            prepare_mcp_app_surface(
+                &state,
+                "chat",
+                McpAppSurfaceCandidate::from_item("turn", &item("codex_apps")).unwrap()
+            )
+            .await,
             Err(ApiError::BadGateway(_))
         ));
         assert!(state
@@ -97,10 +106,14 @@ async fn fresh_regular_mcp_result_widget_needs_no_hosted_account_origin() {
     item["appContext"] = Value::Null;
     item["mcpAppUi"] = Value::Null;
     item["result"]["_meta"] = json!({"ui":{"resourceUri":"ui://widget"}});
-    let surface = sync_mcp_app_surface_for_item(&state, "chat", "turn", &item)
-        .await
-        .unwrap()
-        .unwrap();
+    let surface = prepare_mcp_app_surface(
+        &state,
+        "chat",
+        McpAppSurfaceCandidate::from_item("turn", &item).unwrap(),
+    )
+    .await
+    .unwrap()
+    .unwrap();
     assert_eq!(surface.grants.tools.len(), 1);
     assert_eq!(surface.provenance["mcp"]["appContext"], Value::Null);
 }

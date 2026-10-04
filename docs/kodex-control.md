@@ -32,7 +32,9 @@ The gateway binary hosts the plugin's MCP server:
 kodex-gateway mcp kodex-control
 ```
 
-It reads `KODEX_GATEWAY_URL`, defaulting to `http://127.0.0.1:8787`. Non-loopback URLs are rejected unless `KODEX_ALLOW_REMOTE_SELF_CONTROL=1` is set.
+Managed Kodex launches provide the actual bound gateway URL and running executable to their own Codex child through `KODEX_GATEWAY_URL` and `KODEX_GATEWAY_BINARY`. The plugin forwards these native `env_vars` to its MCP launcher. This supports an ephemeral or custom port and avoids an HTTP bootstrap lookup, a Cargo build, or accidentally invoking another installed gateway. Inherited Control bindings are stripped before setting the owned values. Wildcard listeners use loopback; a specific private/VPN listener also receives the child-only remote opt-in required to reach that address. This does not make the gateway safe for public exposure.
+
+For an unmanaged development invocation, place `kodex-gateway` on `PATH` or set `KODEX_GATEWAY_BINARY` explicitly, and set `KODEX_GATEWAY_URL` to the intended gateway. A source-checkout launcher can also use an already-built `target/debug/kodex-gateway`. The MCP server otherwise defaults to `http://127.0.0.1:8787`; non-loopback URLs require `KODEX_ALLOW_REMOTE_SELF_CONTROL=1`.
 
 The server exposes guarded tools for:
 

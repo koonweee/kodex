@@ -25,6 +25,7 @@ pub(crate) use client::is_thread_not_materialized_before_first_user_message;
 pub use client::{client, CodexClient};
 pub use config::*;
 pub use items::{ThreadItemEntry, ThreadItemsListPage};
+pub(crate) use mcp_apps::mcp_result_text;
 pub use mcp_apps::{McpResourceReadRequest, McpResourceReadTarget, McpServerConnectionStatus};
 pub use mcp_config::*;
 pub use projects::{Project, ProjectPage, ProjectRoot};

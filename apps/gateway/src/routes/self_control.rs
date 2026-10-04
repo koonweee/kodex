@@ -504,6 +504,7 @@ pub async fn upsert_self_control_generated_app_surface(
     } else {
         request.display_modes
     };
+    let mut artifact_mutation = state.app_surface_imports.lock_mutation(&thread_id).await;
     let session = state
         .store
         .upsert_app_surface_session(AppSurfaceSessionUpsert {
@@ -524,6 +525,8 @@ pub async fn upsert_self_control_generated_app_surface(
             }),
         })
         .await?;
+    artifact_mutation.committed();
+    drop(artifact_mutation);
     broadcast_app_surface_event(&state, APP_SURFACE_UPSERTED_EVENT, &session).await?;
     if let Some(action) = request.presentation {
         broadcast_app_surface_presentation_request(
@@ -630,10 +633,15 @@ pub async fn archive_self_control_app_surface(
 ) -> ApiResult<Json<AppSurfaceSessionReadResponse>> {
     let source = optional_source(request);
     require_control_thread(&state, &thread_id).await?;
+    let mut artifact_mutation = state.app_surface_imports.lock_mutation(&thread_id).await;
     let session = state
         .store
         .archive_latest_app_surface_session(&thread_id)
         .await?;
+    if session.is_some() {
+        artifact_mutation.committed();
+    }
+    drop(artifact_mutation);
     if let Some(session) = &session {
         broadcast_app_surface_event(&state, APP_SURFACE_ARCHIVED_EVENT, session).await?;
     }

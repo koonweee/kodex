@@ -1,5 +1,6 @@
 use serde_json::{json, Value};
 
+#[derive(Clone)]
 pub(super) struct McpAppSurfaceCandidate {
     pub(super) turn_id: String,
     pub(super) item_id: String,

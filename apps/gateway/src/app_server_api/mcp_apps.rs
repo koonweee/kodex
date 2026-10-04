@@ -35,3 +35,15 @@ pub struct McpResourceReadRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target: Option<McpResourceReadTarget>,
 }
+
+/// Visible native MCP text, without app/widget metadata or serialized binary data.
+pub(crate) fn mcp_result_text(result: Option<&serde_json::Value>) -> Option<String> {
+    let content = result?.get("content")?.as_array()?;
+    let text = content
+        .iter()
+        .filter(|part| part.get("type").and_then(serde_json::Value::as_str) == Some("text"))
+        .filter_map(|part| part.get("text").and_then(serde_json::Value::as_str))
+        .collect::<Vec<_>>()
+        .join("\n");
+    (!text.is_empty()).then_some(text)
+}

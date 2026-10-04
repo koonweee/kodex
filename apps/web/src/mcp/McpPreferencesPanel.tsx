@@ -29,7 +29,6 @@ export function McpPreferencesPanel() {
   const queryClient = useQueryClient();
   const [selectedServerName, setSelectedServerName] = useState<string | null>(null);
   const [selectedResource, setSelectedResource] = useState<McpResource | null>(null);
-  const [oauthUrl, setOauthUrl] = useState<string | null>(null);
   const [editor, setEditor] = useState<EditorSession | null>(null);
   const [needsReview, setNeedsReview] = useState(false);
   const [removeConfirm, setRemoveConfirm] = useState<{ server: string; writeTarget: NativeConfigWriteTarget } | null>(null);
@@ -70,7 +69,8 @@ export function McpPreferencesPanel() {
       }
     },
   });
-  const oauthMutation = useMutation({ mutationFn: startMcpOAuthLogin, onSuccess: (response) => setOauthUrl(response.authorizationUrl) });
+  const oauthMutation = useMutation({ mutationFn: startMcpOAuthLogin });
+  const selectedOAuthAttempt = oauthMutation.variables === selectedServer?.name;
   const resourceQuery = useQuery({
     enabled: Boolean(selectedServer?.runtime && selectedResource),
     queryFn: () => readMcpResource(selectedServer!.name, selectedResource!.uri),
@@ -81,7 +81,6 @@ export function McpPreferencesPanel() {
   function selectServer(server: MergedMcpServer) {
     setSelectedServerName(server.name);
     setSelectedResource(null);
-    setOauthUrl(null);
     setRemoveConfirm(null);
     oauthMutation.reset();
   }
@@ -140,7 +139,9 @@ export function McpPreferencesPanel() {
       <McpServerList onSelect={selectServer} selectedName={selectedServer?.name} servers={mergedServers} />
       {selectedServer ? <McpServerDetail
         configured={selectedServer.configured} writesDisabled={writesDisabled}
-        oauthError={oauthMutation.error?.message} oauthLoading={oauthMutation.isPending} oauthUrl={oauthUrl}
+        oauthError={selectedOAuthAttempt ? oauthMutation.error?.message : undefined}
+        oauthLoading={selectedOAuthAttempt && oauthMutation.isPending}
+        oauthUrl={selectedOAuthAttempt ? oauthMutation.data?.authorizationUrl ?? null : null}
         onDisable={() => toggle(false)} onEnable={() => toggle(true)} onLogin={() => oauthMutation.mutate(selectedServer.name)}
         onReadResource={setSelectedResource} onRemove={remove} onEdit={() => openEditor(selectedServer.configured)}
         resource={selectedResource} resourceError={resourceQuery.error?.message} resourceLoading={resourceQuery.isFetching} resourceResponse={resourceQuery.data}

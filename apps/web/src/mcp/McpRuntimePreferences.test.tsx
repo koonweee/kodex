@@ -1,6 +1,6 @@
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { queryKeys } from "../api/queryKeys";
@@ -233,6 +233,71 @@ describe("MCP runtime preferences", () => {
     expect(link).toHaveAttribute("href", "https://auth.example.test/login");
     expect(apiMocks.startMcpOAuthLogin).toHaveBeenCalled();
     expect(apiMocks.startMcpOAuthLogin.mock.calls[0][0]).toBe("docs");
+  });
+
+  it.each(["success", "error"] as const)("ignores a late OAuth %s after selecting another server and returning", async (outcome) => {
+    apiMocks.listMcpServers.mockResolvedValue({ servers: ["docs", "other"].map((name) => ({
+      name, authStatus: "notLoggedIn", resourceTemplates: [], resources: [], tools: {},
+    })) });
+    let resolve!: (value: { authorizationUrl: string }) => void;
+    let reject!: (error: Error) => void;
+    apiMocks.startMcpOAuthLogin.mockImplementationOnce(() => new Promise((yes, no) => { resolve = yes; reject = no; }));
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole("button", { name: /log in/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^other / }));
+    await act(async () => {
+      if (outcome === "success") resolve({ authorizationUrl: "https://auth.example.test/old-docs" });
+      else reject(new Error("Old docs login failed"));
+    });
+
+    expect(screen.queryByRole("link", { name: /open login/i })).not.toBeInTheDocument();
+    expect(screen.queryByText("Old docs login failed")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /log in/i })).toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: /^docs / }));
+    expect(screen.queryByRole("link", { name: /open login/i })).not.toBeInTheDocument();
+    expect(screen.queryByText("Old docs login failed")).not.toBeInTheDocument();
+  });
+
+  it.each(["success", "error"] as const)("keeps the newer same-server OAuth attempt after an older %s", async (outcome) => {
+    apiMocks.listMcpServers.mockResolvedValue({ servers: [{
+      name: "docs", authStatus: "notLoggedIn", resourceTemplates: [], resources: [], tools: {},
+    }] });
+    let resolve!: (value: { authorizationUrl: string }) => void;
+    let reject!: (error: Error) => void;
+    apiMocks.startMcpOAuthLogin
+      .mockImplementationOnce(() => new Promise((yes, no) => { resolve = yes; reject = no; }))
+      .mockResolvedValueOnce({ authorizationUrl: "https://auth.example.test/new-docs" });
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole("button", { name: /log in/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^docs / }));
+    await userEvent.click(screen.getByRole("button", { name: /log in/i }));
+    expect(await screen.findByRole("link", { name: /open login/i })).toHaveAttribute("href", "https://auth.example.test/new-docs");
+    await act(async () => {
+      if (outcome === "success") resolve({ authorizationUrl: "https://auth.example.test/old-docs" });
+      else reject(new Error("Old docs login failed"));
+    });
+
+    expect(screen.getByRole("link", { name: /open login/i })).toHaveAttribute("href", "https://auth.example.test/new-docs");
+    expect(screen.queryByText("Old docs login failed")).not.toBeInTheDocument();
+    expect(apiMocks.startMcpOAuthLogin.mock.calls.map(([name]) => name)).toEqual(["docs", "docs"]);
+  });
+
+  it("shows the current attempt's error and replaces it when the user retries", async () => {
+    apiMocks.listMcpServers.mockResolvedValue({ servers: [{
+      name: "docs", authStatus: "notLoggedIn", resourceTemplates: [], resources: [], tools: {},
+    }] });
+    apiMocks.startMcpOAuthLogin
+      .mockRejectedValueOnce(new Error("Current login could not start"))
+      .mockResolvedValueOnce({ authorizationUrl: "https://auth.example.test/retry" });
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole("button", { name: /log in/i }));
+    expect(await screen.findByText("Current login could not start")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /log in/i }));
+    expect(await screen.findByRole("link", { name: /open login/i })).toHaveAttribute("href", "https://auth.example.test/retry");
+    expect(screen.queryByText("Current login could not start")).not.toBeInTheDocument();
   });
 
   it("shows MCP loading, empty, and error states", async () => {

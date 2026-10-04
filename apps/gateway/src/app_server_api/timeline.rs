@@ -931,7 +931,12 @@ pub(crate) fn compact_timeline_item_payload(item: &Value) -> TimelineDisplayItem
         name: display_string(object, "name"),
         arguments: display_value(object, "arguments"),
         args: display_value(object, "args"),
-        result: display_string(object, "result"),
+        result: display_string(object, "result").or_else(|| {
+            if object.get("type").and_then(Value::as_str) != Some("mcpToolCall") {
+                return None;
+            }
+            super::mcp_result_text(object.get("result")).map(|text| compact_preview_string(&text))
+        }),
         receiver_thread_ids: object.get("receiverThreadIds").and_then(|value| {
             value.as_array().map(|items| {
                 items

@@ -73,3 +73,26 @@ async fn explicit_native_thread_commands_cannot_import_foreign_path_or_history()
     assert_eq!(requests[0].1["threadId"], "kodex-owned-id");
     assert_eq!(requests[0].1["model"], "native-model");
 }
+
+#[test]
+fn canonical_mcp_activity_keeps_native_text_fallback_without_widget_metadata() {
+    let item = json!({"type":"mcpToolCall","id":"call","server":"docs","tool":"show","status":"completed",
+        "result":{"content":[{"type":"text","text":"First native result"},{"type":"image","data":"opaque","mimeType":"image/png"},{"type":"text","text":"Second native result"}],"_meta":{"html":"<script>private widget implementation</script>"}}});
+    let compact = compact_timeline_item_payload(&item);
+    assert_eq!(
+        compact.result.as_deref(),
+        Some("First native result\nSecond native result")
+    );
+    let encoded = serde_json::to_value(compact).unwrap();
+    assert!(!encoded
+        .to_string()
+        .contains("private widget implementation"));
+    let mut legacy = item;
+    legacy["result"] = json!("Existing string result");
+    assert_eq!(
+        compact_timeline_item_payload(&legacy).result.as_deref(),
+        Some("Existing string result")
+    );
+    legacy["result"] = json!({"content":"malformed","text":"Not a native content part"});
+    assert!(compact_timeline_item_payload(&legacy).result.is_none());
+}

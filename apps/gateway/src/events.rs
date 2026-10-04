@@ -33,7 +33,6 @@ use crate::{
     },
     events_synthetic::{synthetic_event, thread_view_refresh_required_event},
     queue,
-    routes::app_surfaces::{app_surface_payload_event, APP_SURFACE_UPSERTED_EVENT},
     routes::threads::{ThreadReadStateUpdate, THREAD_READ_UPDATED_EVENT},
     schema::is_supported_approval_method,
     skills,
@@ -194,6 +193,7 @@ pub async fn run_inbound_ingest(mut inbound: mpsc::Receiver<InboundMessage>, sta
 pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiResult<()> {
     match message {
         InboundMessage::Disconnected => {
+            state.app_surface_imports.disconnect().await;
             state.queue_admissions.invalidate_all();
             if let Err(error) = crate::queue_transfer::recover(state).await {
                 tracing::warn!(%error, "failed to publish queue transfer continuity loss");
@@ -202,6 +202,21 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
             crate::approvals::runtime_unavailable(state).await?;
         }
         InboundMessage::Notification { method, params } => {
+            let pending_widget = if method == "item/completed" {
+                match (
+                    params.get("threadId").and_then(Value::as_str),
+                    params.get("turnId").and_then(Value::as_str),
+                    params.get("item"),
+                ) {
+                    (Some(thread), Some(turn), Some(item)) => {
+                        app_surfaces::capture_mcp_app_surface_import(state, thread, turn, item)
+                            .await
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
             if method == "serverRequest/resolved" {
                 return crate::approvals::resolve_native(state, &params).await;
             }
@@ -309,6 +324,11 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
             emitted |= !normalized.events.is_empty();
             for normalized in normalized.events {
                 send_normalized_live_event(state, normalized).await;
+            }
+            // Canonical state is already published before optional widget work
+            // enters the bounded importer. This path performs no native reads.
+            if let Some(job) = pending_widget {
+                app_surfaces::enqueue_mcp_app_surface_import(state, job).await;
             }
             if let Some(event) =
                 crate::subagents::native_change_event(state, &method, &params).await?
@@ -819,24 +839,7 @@ async fn timeline_item_upsert_event(
         cursor.seq,
     )
     .await?;
-    let mut events = vec![thread_view_patch_payload_event(state, patch).await?];
-    match app_surfaces::sync_mcp_app_surface_for_item(state, &thread_id, &turn_id, item).await {
-        Ok(Some(session)) => {
-            events.push(
-                app_surface_payload_event(state, APP_SURFACE_UPSERTED_EVENT, &session).await?,
-            );
-        }
-        Ok(None) => {}
-        Err(error) => {
-            tracing::warn!(
-                %error,
-                thread_id,
-                turn_id,
-                "failed to sync MCP app surface from item"
-            );
-        }
-    }
-    Ok(events)
+    Ok(vec![thread_view_patch_payload_event(state, patch).await?])
 }
 
 fn item_upsert_item_status(method: &str) -> Option<&'static str> {
@@ -863,42 +866,12 @@ async fn timeline_thread_compacted_event(
     let cursor =
         append_timeline_changed_cursor(state, metadata, "timeline.thread_compacted", Some(method))
             .await?;
-    let snapshot = match app_server_api::client(&state.app_server)
-        .thread_read(thread_id.to_string())
-        .await
-    {
-        Ok(snapshot) => snapshot,
-        Err(error) => {
-            tracing::warn!(%error, thread_id, "failed to reconcile compacted thread from app-server");
-            return Ok(NormalizedTimelineEvents {
-                events: vec![thread_view_refresh_required_event(
-                    cursor.seq,
-                    thread_id.to_string(),
-                    "thread_compacted_reconciliation_failed",
-                )?],
-            });
-        }
-    };
-    let timeline = state
-        .thread_views
-        .refresh_from_turns(thread_id, &snapshot.turns, cursor.seq)
-        .await?;
-    state
-        .store
-        .upsert_thread_runtime_state(ThreadRuntimeState {
-            thread_id: thread_id.to_string(),
-            status: if timeline.active_turn_id.is_some() {
-                ThreadRuntimeStatus::Active
-            } else {
-                ThreadRuntimeStatus::Idle
-            },
-            active_turn_id: timeline.active_turn_id.clone(),
-            updated_at: Utc::now(),
-            last_event_seq: Some(cursor.seq),
-        })
-        .await?;
     Ok(NormalizedTimelineEvents {
-        events: vec![thread_view_full_snapshot_patch_event(state, thread_id).await?],
+        events: vec![thread_view_refresh_required_event(
+            cursor.seq,
+            thread_id.to_string(),
+            "thread_compacted",
+        )?],
     })
 }
 
@@ -1050,14 +1023,6 @@ async fn append_thread_read_projection_event(
         })
         .await
         .map(Some)
-}
-
-async fn thread_view_full_snapshot_patch_event(
-    state: &AppState,
-    thread_id: &str,
-) -> ApiResult<EventEnvelope> {
-    let patch = thread_view::patch_for_thread(&state.thread_views, thread_id).await?;
-    thread_view_patch_payload_event(state, patch).await
 }
 
 pub(crate) async fn thread_view_patch_payload_event(

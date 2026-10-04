@@ -90,6 +90,8 @@ impl AppServer for UnavailableAppServer {
     }
 }
 
+mod control_binding;
+
 pub struct JsonRpcAppServer {
     stdin: Mutex<ChildStdin>,
     child: Mutex<Child>,
@@ -105,6 +107,23 @@ impl JsonRpcAppServer {
         config: &CodexConfig,
         inbound: mpsc::Sender<InboundMessage>,
     ) -> ApiResult<Arc<Self>> {
+        Self::start_inner(config, inbound, None).await
+    }
+
+    pub async fn start_with_control(
+        config: &CodexConfig,
+        inbound: mpsc::Sender<InboundMessage>,
+        address: std::net::SocketAddr,
+        gateway_binary: &std::path::Path,
+    ) -> ApiResult<Arc<Self>> {
+        Self::start_inner(config, inbound, Some((address, gateway_binary))).await
+    }
+
+    async fn start_inner(
+        config: &CodexConfig,
+        inbound: mpsc::Sender<InboundMessage>,
+        control: Option<(std::net::SocketAddr, &std::path::Path)>,
+    ) -> ApiResult<Arc<Self>> {
         let detected_version = detect_codex_cli_version(config).await;
         if detected_version.as_deref() != Some(crate::schema::APP_SERVER_SCHEMA_VERSION) {
             return Err(ApiError::BadGateway(format!(
@@ -115,6 +134,9 @@ impl JsonRpcAppServer {
         }
 
         let mut command = codex_command(config);
+        if let Some((address, binary)) = control {
+            control_binding::apply_control_binding(&mut command, address, binary);
+        }
         command.args(&config.args);
         for (key, value) in [
             ("sqlite_home", config.home.join("sqlite")),
@@ -405,6 +427,9 @@ fn codex_command(config: &CodexConfig) -> Command {
     }
     command.env_remove("OPENAI_API_KEY");
     command.env_remove("OPENAI_BASE_URL");
+    for key in control_binding::CONTROL_ENV {
+        command.env_remove(key);
+    }
     command.env("CODEX_HOME", &config.home);
     command.current_dir(&config.home);
     command
@@ -869,6 +894,9 @@ while true; do :; done
             .env("CODEX_API_KEY", "synthetic-api-key")
             .env("OPENAI_API_KEY", "synthetic-provider-key")
             .env("OPENAI_BASE_URL", "https://fixture.invalid")
+            .env("KODEX_GATEWAY_URL", "http://foreign.invalid:8787")
+            .env("KODEX_GATEWAY_BINARY", "/foreign/desktop/gateway")
+            .env("KODEX_ALLOW_REMOTE_SELF_CONTROL", "1")
             .output()
             .unwrap();
         assert!(
@@ -901,6 +929,18 @@ while true; do :; done
         assert!(!environment.lines().any(
             |line| line.starts_with("OPENAI_API_KEY=") || line.starts_with("OPENAI_BASE_URL=")
         ));
+        for name in [
+            "KODEX_GATEWAY_URL",
+            "KODEX_GATEWAY_BINARY",
+            "KODEX_ALLOW_REMOTE_SELF_CONTROL",
+        ] {
+            assert!(
+                !environment
+                    .lines()
+                    .any(|line| line.starts_with(&format!("{name}="))),
+                "ambient control binding leaked: {name}"
+            );
+        }
         // Child sanitization must never mutate the gateway environment.
         assert_eq!(
             std::env::var("CODEX_ACCESS_TOKEN").unwrap(),

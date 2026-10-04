@@ -4,9 +4,7 @@
       "command": "sh",
       "args": ["./bin/kodex-control-mcp"],
       "cwd": ".",
-      "env": {
-        "KODEX_GATEWAY_URL": "http://127.0.0.1:8787"
-      }
+      "env_vars": ["KODEX_GATEWAY_URL", "KODEX_GATEWAY_BINARY", "KODEX_ALLOW_REMOTE_SELF_CONTROL"]
     }
   }
 }

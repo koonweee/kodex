@@ -181,6 +181,7 @@ pub(super) struct NativeSession {
     thread_views: ThreadViewStore,
     server: Arc<JsonRpcAppServer>,
     relay: JoinHandle<()>,
+    import_worker: std::sync::Mutex<Option<kodex_gateway::app_surfaces::AppSurfaceImportWorker>>,
     notifications: mpsc::UnboundedReceiver<(String, Value)>,
     requests: mpsc::UnboundedReceiver<(String, String)>,
 }
@@ -263,9 +264,33 @@ impl NativeSession {
     }
 
     pub(super) async fn start(fixture: &Fixture) -> anyhow::Result<Self> {
+        Self::start_inner(fixture, None).await
+    }
+
+    pub(super) async fn start_with_control(
+        fixture: &Fixture,
+        address: std::net::SocketAddr,
+    ) -> anyhow::Result<Self> {
+        Self::start_inner(fixture, Some(address)).await
+    }
+
+    async fn start_inner(
+        fixture: &Fixture,
+        address: Option<std::net::SocketAddr>,
+    ) -> anyhow::Result<Self> {
         let store = Store::connect(&fixture.config.database.path).await?;
         let (tx, mut native_rx) = mpsc::channel(1024);
-        let server = JsonRpcAppServer::start(&fixture.config.codex, tx).await?;
+        let server = if let Some(address) = address {
+            JsonRpcAppServer::start_with_control(
+                &fixture.config.codex,
+                tx,
+                address,
+                std::path::Path::new(env!("CARGO_BIN_EXE_kodex-gateway")),
+            )
+            .await?
+        } else {
+            JsonRpcAppServer::start(&fixture.config.codex, tx).await?
+        };
         let (notification_tx, notifications) = mpsc::unbounded_channel();
         let (request_tx, requests) = mpsc::unbounded_channel();
         let state = AppState::new(fixture.config.clone(), store, server.clone());
@@ -275,6 +300,15 @@ impl NativeSession {
             })?;
             return Err(error.into());
         }
+        let import_worker = match kodex_gateway::app_surfaces::start_import_worker(&state) {
+            Ok(worker) => worker,
+            Err(error) => {
+                server.shutdown().await.with_context(|| {
+                    format!("native fixture importer failed ({error}); cleanup failed")
+                })?;
+                return Err(error.into());
+            }
+        };
         let app = build_router(state.clone());
         let thread_views = state.thread_views.clone();
         let fixture_state = state.clone();
@@ -311,6 +345,7 @@ impl NativeSession {
             thread_views,
             server,
             relay,
+            import_worker: std::sync::Mutex::new(Some(import_worker)),
             notifications,
             requests,
         })
@@ -395,6 +430,10 @@ impl NativeSession {
     }
 
     pub(super) async fn shutdown(&self) -> anyhow::Result<()> {
+        let worker = self.import_worker.lock().unwrap().take();
+        if let Some(worker) = worker {
+            worker.shutdown().await;
+        }
         self.server.shutdown().await?;
         self.relay.abort();
         Ok(())
@@ -403,6 +442,7 @@ impl NativeSession {
 
 impl Drop for NativeSession {
     fn drop(&mut self) {
+        self.import_worker.get_mut().unwrap().take();
         self.relay.abort();
     }
 }
