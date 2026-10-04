@@ -2,7 +2,7 @@
 
 This file is the directory of record for Kodex plans. Keep the status column current whenever work starts, completes, pauses, or changes scope.
 
-The [2026-10-04 app-server native capability and desktop coexistence audit](../docs/audits/2026-10-04-app-server-native-audit.md) compares the current implementation with Codex 0.160.0 and proposes an order for reducing gateway ownership. Its target is a fresh start with dedicated Codex and gateway state, no legacy data migration, native behavior by default, and justified custom extensions. Retained scope includes automations, MCP Apps/setup, Kodex Control tools, docking, PWA extras, and queued-message steering; remote development-server previews are to be removed. It is a completed audit, not an implemented redesign or a change to the historical plan statuses below.
+The [native app-server redesign plan](native-app-server-redesign.md) turns the [2026-10-04 capability audit](../docs/audits/2026-10-04-app-server-native-audit.md) and product decisions into implementation milestones. Its target is a fresh start with dedicated Codex and gateway state, no legacy data migration, native behavior by default, and justified custom extensions. Retained scope includes automations, MCP Apps/setup, Kodex Control tools, docking, PWA extras, queued-message steering, and a terminal supervised independently of app-server. Remote development-server previews and automatic title generation are to be removed. The audit is complete; the redesign is Proposed. Historical completed plan statuses below remain records of the earlier implementation.
 
 Focused subsystem replacements are encouraged wherever they reduce maintained complexity. Retained workflows do not require preserving old implementation structure; replace obsolete machinery and its dependencies instead of building compatibility around it.
 
@@ -19,6 +19,7 @@ Focused subsystem replacements are encouraged wherever they reduce maintained co
 
 | Plan | Status | Scope | Notes |
 | --- | --- | --- | --- |
+| [Native app-server redesign](native-app-server-redesign.md) | Proposed | Dedicated fresh runtime, Codex 0.160.0 native ownership, subsystem replacement, retained extensions and obsolete-feature removal | Seven milestones with deletion targets, dependencies, two-client/failure acceptance gates and fresh-release readiness; no implementation started. |
 | [MVP backend implementation plan](mvp-backend.md) | Complete | Rust gateway, app-server supervisor, event store, API, approvals, account/models | MVP backend milestones are implemented, covered by gateway tests, and pushed. |
 | [MVP backend revision 1 plan](mvp-backend-rev-1.md) | Complete | Backend ownership cleanup before frontend implementation | Added app-server adapter ownership, typed frontend-critical response DTOs, event/static modules, and contract tests. |
 | [MVP frontend implementation plan](mvp-frontend.md) | Complete | React web client for projects, threads, timeline, composer, approvals, account/models | MVP frontend milestones are implemented with Vitest and Playwright coverage. |

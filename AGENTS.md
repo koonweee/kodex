@@ -75,11 +75,11 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 
 ## Multi-Client State Ownership
 
-- Design the web client as a thin projection of gateway-owned state. Any state that must be correct across two browser tabs, reloads, reconnects, or future clients must live in the gateway or upstream app-server, not only in React state.
+- Design the web client as a thin projection of authoritative app-server or gateway state. Any state that must be correct across two browser tabs, reloads, reconnects, or future clients must live in the gateway or upstream app-server, not only in React state. Prefer native ownership; the gateway's routing/projection responsibility does not require a duplicate durable store for native state.
 - Browser-local state is appropriate for drafts, focus, hover, modals, scroll, drag interactions, unsent attachments, and other purely visual or per-tab UI concerns.
-- The gateway must own shared lifecycle decisions: active or pending turn state, queued or pending submitted input, interrupt and steer routing, read receipts, thread completion counters, approval state, account/session state, thread settings, archive/fork/title metadata, and sidebar ordering when ordering affects selection or read state.
+- Shared lifecycle decisions must be authoritative in app-server or the gateway: active or pending turn state, queued or pending submitted input, interrupt and steer routing, read receipts, thread completion counters, approval state, account/session state, thread settings, archive/fork/title metadata, and sidebar ordering when ordering affects selection or read state. Delegate native decisions and persistence to app-server; retain gateway coordination only where the supported native contract requires it.
 - Do not make the browser decide shared command routing from stale local state. Prefer gateway commands that atomically inspect current gateway/app-server state, then return or emit the authoritative result.
-- Optimistic UI is allowed only as a temporary projection of a gateway-owned pending record, or when incorrect cross-client visibility is harmless. If another tab should know about it, create a gateway row/event for it.
+- Optimistic UI is allowed only as a temporary projection of an authoritative native/gateway pending operation, or when incorrect cross-client visibility is harmless. If another tab should know about it, expose authoritative state and convergence events through the gateway; native persistence does not require a second gateway row.
 - Do not derive durable counters, lifecycle status, or ordering from client-observed event order unless the gateway provides a monotonic sequence or watermark that makes the derivation safe.
 - Snapshot and SSE reconciliation must have a gateway-owned source of truth. Snapshots that can overwrite live state should carry a comparable sequence/runtime watermark, or the gateway should emit ordered canonical snapshot events.
 - Visible thread timeline rendering must consume gateway canonical thread view snapshots, `thread_view.patch`, and canonical text-only `thread_view.item_delta` events only. Do not render app-server item/turn lifecycle directly from raw SSE events such as `timeline.item_delta`, and do not reintroduce persisted timeline replay as browser transcript history.
@@ -88,7 +88,7 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 - Selected-thread Stop must route through `POST /v1/threads/{threadId}/interrupt-current`; the browser must not choose the interrupted turn from local `activeTurnId` except for explicit turn-id API utilities.
 - Existing-thread turn input options are per-turn or per-queued-row submission data. Normal sends must not persist a browser-submitted full options object as future thread settings.
 - Keep guardrail tests updated when changing lifecycle event names. A behavior change that adds a new browser-visible lifecycle event should fail loudly unless the canonical source-of-truth contract is updated in code and docs.
-- Thread/session settings that affect future turns must be versioned or merged by the gateway. A stale tab must not be able to silently overwrite newer shared settings by submitting a full local options object.
+- Thread/session settings that affect future turns must use native partial-update/version semantics or gateway coordination where the native contract requires it. A stale tab must not be able to silently overwrite newer shared settings by submitting a full local options object.
 - Any behavior-changing feature that touches shared thread/project/session state should include a same-user, two-tab test shape: one client mutates or misses events, and the other must converge through gateway state/SSE without reload.
 
 ## Parallel Work
@@ -117,6 +117,7 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 
 ## Plan References
 
+- Native app-server redesign: [plans/native-app-server-redesign.md](plans/native-app-server-redesign.md)
 - Backend MVP: [plans/mvp-backend.md](plans/mvp-backend.md)
 - Frontend MVP: [plans/mvp-frontend.md](plans/mvp-frontend.md)
 - Future extensions: [plans/future-extensions.md](plans/future-extensions.md)
@@ -128,9 +129,9 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 - Frontend stack: React, Vite, TypeScript.
 - API contract stack: Rust DTOs plus generated OpenAPI, with frontend-generated TypeScript types/client.
 - Gateway talks to a configured external `codex` binary over stdio.
-- Architecture target: every Kodex-launched Codex process uses a dedicated, real Kodex `CODEX_HOME`, separate from Codex desktop. Shared desktop homes and shared desktop runtimes are outside the target. This isolation is not yet implemented; see the [native capability audit](docs/audits/2026-10-04-app-server-native-audit.md) for implementation and validation requirements.
+- Architecture target: every Kodex-launched Codex process uses a dedicated, real Kodex `CODEX_HOME`, separate from Codex desktop. Shared desktop homes and shared desktop runtimes are outside the target. This isolation is not yet implemented; see the [native app-server redesign plan](plans/native-app-server-redesign.md) and its supporting audit for implementation and validation requirements.
 - The native-first redesign starts with fresh Codex and gateway state. Do not build legacy data imports, old-to-new ID mappings, queued-work conversion, or compatibility readers. Leave old storage intact and keep it out of the new runtime; fresh initialization does not require migrating existing user data.
-- Retain automations, MCP Apps, MCP setup, Kodex Control tools, docking, PWA extras, and queued-message steering. Simplify their implementations around native primitives while preserving their intended workflows. Remove remote development-server previews and their preview-specific control surface; file previews and generated app surfaces remain distinct retained features. These are target-scope decisions, not claims that the redesign is implemented.
+- Retain automations, MCP Apps, MCP setup, Kodex Control tools, docking, PWA extras, queued-message steering, and the integrated terminal with gateway-owned process supervision independent of app-server. Simplify their implementations around native primitives while preserving their intended workflows. Remove remote development-server previews and their preview-specific control surface; file previews and generated app surfaces remain distinct retained features. Remove automatic title generation in favor of native preview text and manual names. These are target-scope decisions, not claims that the redesign is implemented.
 - Gateway serves the built frontend in production.
 - SSE is the first event transport.
 - WebSocket is deferred until a feature requires bidirectional browser transport.
