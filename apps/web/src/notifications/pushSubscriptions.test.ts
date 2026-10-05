@@ -22,7 +22,8 @@ vi.mock("../api/client", async (importOriginal) => ({
   upsertPushSubscription: vi.fn(),
 }));
 
-vi.mock("../pwa/registerServiceWorker", () => ({
+vi.mock("../pwa/registerServiceWorker", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../pwa/registerServiceWorker")>()),
   getServiceWorkerRegistration: vi.fn(),
 }));
 
@@ -75,6 +76,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   restoreDescriptor(globalThis, "Notification", originalNotification);
   restoreDescriptor(globalThis, "PushManager", originalPushManager);
   restoreDescriptor(navigator, "serviceWorker", originalServiceWorker);
@@ -87,6 +89,19 @@ describe("applicationServerKeyBytes", () => {
 });
 
 describe("browserPushNotificationsSupported", () => {
+  it("disables push when the configured API uses a separate origin", async () => {
+    const getRegistration = vi.fn();
+    installPushGlobals({ getRegistration });
+    vi.stubEnv("VITE_KODEX_API_BASE_URL", "https://another-gateway.example");
+
+    expect(browserPushNotificationsSupported()).toBe(false);
+    await expect(loadBrowserPushNotificationState()).resolves.toMatchObject({ supported: false, subscribed: false });
+    await expect(enableBrowserPushNotifications("AQIDBA")).rejects.toThrow(/not supported/i);
+    expect(getRegistration).not.toHaveBeenCalled();
+    expect(mockedGetServiceWorkerRegistration).not.toHaveBeenCalled();
+    expect(mockedUpsertPushSubscription).not.toHaveBeenCalled();
+  });
+
   it("requires both service workers and PushManager", () => {
     expect(browserPushNotificationsSupported()).toBe(false);
 

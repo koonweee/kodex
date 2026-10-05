@@ -37,7 +37,7 @@ npm run dev
 
 Open `http://127.0.0.1:5173`. Vite proxies `/v1` and `/openapi.json` to `http://127.0.0.1:8787` by default.
 
-To proxy to another local gateway, set `VITE_KODEX_PROXY_TARGET`. To call another gateway origin directly, set `VITE_KODEX_API_BASE_URL`.
+To proxy to another local gateway, set `VITE_KODEX_PROXY_TARGET`. To call another gateway origin directly, set `VITE_KODEX_API_BASE_URL`. Service-worker registration and Web Push require the frontend and API to share an origin; they are disabled when this variable points to a different origin. Use the Vite proxy for development PWA badge and notification checks.
 
 App surfaces require a sandbox document on a different browser origin. Loopback development swaps `localhost` and `127.0.0.1` automatically. Remote browsers and HTTPS or non-loopback deployments must set `VITE_KODEX_APP_SURFACE_SANDBOX_URL` to the sandbox HTML on a distinct origin.
 
@@ -142,21 +142,14 @@ apps/gateway/scripts/smoke.sh http://127.0.0.1:8787
 
 Rust DTOs and routes generate the gateway's OpenAPI contract. Inspect it at `/docs` or `/openapi.json` on a running gateway.
 
-Regenerate the committed frontend types after backend contract changes:
+Regenerate the committed frontend types from the checkout’s Rust exporter; no running gateway is required:
 
 ```bash
-cargo run -p kodex-gateway
 cd apps/web
 npm run generate:api
 ```
 
-For contract generation without starting a runtime, export the same Rust definition and run the generator against that file:
-
-```bash
-cargo run -q -p kodex-gateway --example export_openapi > /tmp/kodex-openapi.json
-cd apps/web
-npx openapi-typescript /tmp/kodex-openapi.json -o src/api/generated/schema.ts
-```
+The command exports into a temporary file and generates types from it, so a stale installed server cannot influence the contract.
 
 The output lives at `apps/web/src/api/generated/schema.ts`. Do not hand-write duplicate frontend DTOs or a separate route contract.
 

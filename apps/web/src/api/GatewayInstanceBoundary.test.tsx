@@ -1,3 +1,5 @@
+import { CompatibilityNotice } from "./CompatibilityNotice";
+import { resetCompatibilityForTests } from "./compatibility";
 import { MantineProvider } from "@mantine/core";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -27,7 +29,7 @@ vi.mock("../pwa/registerServiceWorker", () => ({
 
 function capabilities(instanceId: string): Capabilities {
   return {
-    gateway: { instanceId, version: "test", sse: true, approvals: true, terminals: { enabled: true }, gatewayAuth: false, trustedNetworkOnly: true },
+    gateway: { apiVersion: "1", instanceId, version: "test", sse: true, approvals: true, terminals: { enabled: true }, gatewayAuth: false, trustedNetworkOnly: true },
     appServer: { ready: true, experimentalApi: true, schemaVersion: "0.160.0", detectedVersion: "0.160.0", detectedVersionMatchesSchema: true },
   };
 }
@@ -95,6 +97,7 @@ function project(id: string): Project {
 }
 
 beforeEach(() => {
+  resetCompatibilityForTests();
   window.history.replaceState(null, "", "/");
 });
 
@@ -521,3 +524,16 @@ describe("gateway instance bootstrap", () => {
     expect(secondEvents).toHaveBeenCalledWith({ seq: 1 });
   });
 });
+
+ it("keeps an edited draft mounted when a foreground check detects an incompatible deployment", async () => {
+    vi.mocked(getCapabilities).mockResolvedValue(capabilities("same-instance"));
+    render(<GatewayInstanceBoundary queryClient={createKodexQueryClient()}><WorkspaceProbe /><MantineProvider><CompatibilityNotice /></MantineProvider></GatewayInstanceBoundary>);
+    fireEvent.click(await screen.findByText("fresh draft"));
+    const changed = capabilities("same-instance");
+    Object.assign(changed.gateway, { apiVersion: "future" });
+    vi.mocked(getCapabilities).mockResolvedValue(changed);
+    fireEvent(window, new Event("focus"));
+    expect(await screen.findByText("Update Kodex to continue")).toBeVisible();
+    expect(screen.getByText("edited draft")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Reload after saving drafts" })).toBeVisible();
+  });

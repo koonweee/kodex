@@ -1,3 +1,5 @@
+import { CompatibilityNotice } from "./CompatibilityNotice";
+import { compatibilityRequired, observeApiVersion } from "./compatibility";
 import { Button, Center, MantineProvider, Stack, Text } from "@mantine/core";
 import type { QueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -58,6 +60,8 @@ function GatewayInstanceGate({ children, queryClient }: GatewayInstanceBoundaryP
       try {
         const capabilities = await getCapabilities(request.signal);
         if (request.signal.aborted) return null;
+        observeApiVersion(capabilities.gateway.apiVersion);
+        if (compatibilityRequired()) return null;
         const id = capabilities.gateway.instanceId;
         if (typeof id !== "string" || !id.trim()) {
           throw new Error("Gateway did not provide an instance identity.");
@@ -157,6 +161,7 @@ function GatewayInstanceGate({ children, queryClient }: GatewayInstanceBoundaryP
   return (
     <MantineProvider>
       <PwaLifecycle />
+      <CompatibilityNotice />
       <Center mih="100dvh" p="md">
         <Stack align="center">
           <Text role={error ? "alert" : "status"}>

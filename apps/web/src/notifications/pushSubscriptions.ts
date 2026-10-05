@@ -3,7 +3,7 @@ import {
   getCurrentPushSubscriptionStatus,
   upsertPushSubscription,
 } from "../api/client";
-import { getServiceWorkerRegistration } from "../pwa/registerServiceWorker";
+import { getServiceWorkerRegistration, pwaGatewayIsSameOrigin } from "../pwa/registerServiceWorker";
 import { notificationPermission } from "./browserNotifications";
 import type { BrowserNotificationPermission } from "./notificationTypes";
 
@@ -19,6 +19,7 @@ export type BrowserPushNotificationState = {
 export function browserPushNotificationsSupported(): boolean {
   return (
     typeof navigator !== "undefined" &&
+    pwaGatewayIsSameOrigin() &&
     "serviceWorker" in navigator &&
     typeof Notification !== "undefined" &&
     typeof PushManager !== "undefined"

@@ -53,7 +53,7 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 - Run frontend Playwright flows with `cd apps/web && npm run test:e2e`.
 - Build frontend assets with `cd apps/web && npm run build`.
 - Check frontend unused files, exports, dependencies, locals, and parameters with `./tools/trim-frontend.sh` from the repo root, or `cd apps/web && npm run trim`.
-- Regenerate frontend OpenAPI types with a gateway running, then `cd apps/web && npm run generate:api`.
+- Regenerate frontend OpenAPI types from the checkout’s Rust exporter (no running gateway required): `cd apps/web && npm run generate:api`.
 - The generated OpenAPI TypeScript output is committed at `apps/web/src/api/generated/schema.ts`; do not hand-write duplicate gateway DTO interfaces.
 
 ## Frontend Code Organization
@@ -152,3 +152,5 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 - WebSocket is deferred until a feature requires bidirectional browser transport.
 - MVP gateway auth is omitted because deployment is localhost or trusted VPN only.
 - ChatGPT/Codex auth is handled through app-server account APIs.
+
+- Browser API compatibility: bump `ApiVersion` in `apps/gateway/src/api_compatibility.rs` on incompatible API changes, regenerate OpenAPI types, and update the frontend epoch to satisfy the generated type. Versioned stale writes are rejected by middleware; unversioned CLI/Control callers remain supported.

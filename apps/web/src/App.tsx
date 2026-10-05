@@ -1,3 +1,4 @@
+import { CompatibilityNotice } from "./api/CompatibilityNotice";
 import { refreshUnreadBadge } from "./notifications/unreadBadge";
 import { usePinnedThreads } from "./threads/usePinnedThreads";
 import { Group, MantineProvider } from "@mantine/core";
@@ -172,6 +173,7 @@ export function App({ queryClientInstance = queryClient, workspacePaneStore }: A
     <QueryClientProvider client={queryClientInstance}>
       <MantineProvider forceColorScheme={colorScheme.mode} theme={theme}>
         <PwaLifecycle />
+        <CompatibilityNotice />
         {isThemeWorkbench ? (
           <Suspense fallback={null}>
             <ThemeWorkbench colorSchemeId={colorSchemeId} onColorSchemeChange={setColorSchemeId} />

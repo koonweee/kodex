@@ -196,6 +196,9 @@ impl AppState {
 
 #[derive(OpenApi)]
 #[openapi(
+    info(
+        description = "Browser clients send x-kodex-api-version matching gateway.apiVersion from /v1/capabilities. Responses carry the current version. Incompatible versioned mutations under /v1 return HTTP 409 with ApiErrorBody code client_update_required before execution. Unversioned CLI/Control clients remain supported."
+    ),
     paths(
         crate::routes::health::healthz,
         crate::routes::health::readyz,
@@ -623,6 +626,7 @@ pub fn build_router(state: AppState) -> Router {
     }
 
     router
+        .layer(middleware::from_fn(crate::api_compatibility::enforce))
         .layer(middleware::from_fn(
             crate::performance::route_timing_middleware,
         ))

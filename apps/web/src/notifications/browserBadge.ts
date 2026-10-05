@@ -1,3 +1,5 @@
+import { pwaGatewayIsSameOrigin } from "../pwa/registerServiceWorker";
+
 type BadgeNavigator = Navigator & {
   clearAppBadge?: () => Promise<void>;
   setAppBadge?: (contents?: number) => Promise<void>;
@@ -5,7 +7,7 @@ type BadgeNavigator = Navigator & {
 
 export async function setKodexAppBadge(count: number): Promise<boolean> {
   const badgeNavigator = globalThis.navigator as BadgeNavigator | undefined;
-  if (badgeNavigator?.serviceWorker?.controller) {
+  if (pwaGatewayIsSameOrigin() && badgeNavigator?.serviceWorker?.controller) {
     badgeNavigator.serviceWorker.controller.postMessage({ type: "REFRESH_BADGE" });
     return true;
   }

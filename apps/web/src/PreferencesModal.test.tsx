@@ -21,7 +21,10 @@ const apiMocks = vi.hoisted(() => ({
 }));
 const pwaMocks = vi.hoisted(() => ({ getServiceWorkerRegistration: vi.fn() }));
 
-vi.mock("./pwa/registerServiceWorker", () => pwaMocks);
+vi.mock("./pwa/registerServiceWorker", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./pwa/registerServiceWorker")>()),
+  ...pwaMocks,
+}));
 
 vi.mock("./api/client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./api/client")>()),

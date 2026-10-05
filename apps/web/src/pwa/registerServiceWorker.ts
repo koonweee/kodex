@@ -2,7 +2,7 @@ import type { RegisterSWOptions } from "vite-plugin-pwa/types";
 
 export type ServiceWorkerRegistrationResult =
   | { registered: true; registration: ServiceWorkerRegistration }
-  | { registered: false; reason: "unsupported" | "insecure-context" | "failed"; error?: unknown };
+  | { registered: false; reason: "unsupported" | "insecure-context" | "cross-origin-api" | "failed"; error?: unknown };
 
 export type PwaUpdateState = {
   needRefresh: boolean;
@@ -29,11 +29,17 @@ let registrationPromise: Promise<ServiceWorkerRegistrationResult> | null = null;
 let serviceWorkerRegistrationPromise: Promise<ServiceWorkerRegistration> | null = null;
 let needRefresh = false;
 let updateServiceWorker: (() => Promise<void>) | null = null;
-let reloadOnControllerChange = false;
-let controllerChangeReloadInstalled = false;
-let reloadPage = () => {
-  window.location.reload();
-};
+
+export function pwaGatewayIsSameOrigin(): boolean {
+  if (typeof window === "undefined") return false;
+  const apiBaseUrl = import.meta.env.VITE_KODEX_API_BASE_URL;
+  if (!apiBaseUrl) return true;
+  try {
+    return new URL(apiBaseUrl, window.location.origin).origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
 
 function serviceWorkersSupported(): boolean {
   return (
@@ -50,26 +56,6 @@ function serviceWorkersSecure(): boolean {
 function emitUpdateState() {
   const state = getPwaUpdateState();
   listeners.forEach((listener) => listener(state));
-}
-
-function installControllerChangeReload() {
-  if (controllerChangeReloadInstalled || !serviceWorkersSupported()) {
-    return;
-  }
-  controllerChangeReloadInstalled = true;
-  navigator.serviceWorker.addEventListener?.("controllerchange", () => {
-    if (!reloadOnControllerChange) {
-      return;
-    }
-    reloadOnControllerChange = false;
-    reloadPage();
-  });
-}
-
-async function applyWaitingServiceWorkerUpdate(update: (reloadPage?: boolean) => Promise<void>) {
-  reloadOnControllerChange = true;
-  installControllerChangeReload();
-  await update(true);
 }
 
 function failedRegistrationResult(error: unknown): ServiceWorkerRegistrationResult {
@@ -110,6 +96,11 @@ export async function registerPwaServiceWorker(
   if (!serviceWorkersSecure()) {
     return { registered: false, reason: "insecure-context" };
   }
+  // Worker badge reads and notification navigation use the frontend origin.
+  // Development can use Vite's same-origin proxy for the retained PWA features.
+  if (!pwaGatewayIsSameOrigin()) {
+    return { registered: false, reason: "cross-origin-api" };
+  }
   if (registrationStarted) {
     return registrationPromise ?? registerKodexServiceWorker();
   }
@@ -120,15 +111,39 @@ export async function registerPwaServiceWorker(
       (registerSW) =>
         new Promise<ServiceWorkerRegistrationResult>((resolve) => {
           let settled = false;
+          let registrationFailed = false;
+          let updateRequested = false;
+          let reloadAvailable = false;
+          const workerContainer = navigator.serviceWorker;
+          let controlled = Boolean(workerContainer.controller);
+          const onControllerChange = () => {
+            const initialClaim = !controlled;
+            controlled = true;
+            if (initialClaim && !needRefresh && !updateRequested) return;
+            if (updateRequested) {
+              updateRequested = false;
+              window.location.reload();
+            } else {
+              reloadAvailable = true;
+              needRefresh = true;
+              emitUpdateState();
+            }
+          };
+          workerContainer.addEventListener?.("controllerchange", onControllerChange);
           const settle = (result: ServiceWorkerRegistrationResult) => {
             if (settled) {
               return;
             }
             settled = true;
             if (!result.registered) {
+              registrationFailed = true;
+              workerContainer.removeEventListener?.("controllerchange", onControllerChange);
               registrationStarted = false;
               registrationPromise = null;
               serviceWorkerRegistrationPromise = null;
+              updateServiceWorker = null;
+              needRefresh = false;
+              emitUpdateState();
             } else {
               serviceWorkerRegistrationPromise = Promise.resolve(result.registration);
             }
@@ -138,30 +153,55 @@ export async function registerPwaServiceWorker(
             options.onRegisterError?.(error);
             settle(failedRegistrationResult(error));
           };
-          const update = registerSW({
-            immediate: true,
-            onNeedRefresh() {
-              needRefresh = true;
-              emitUpdateState();
-            },
-            onOfflineReady() {
-              options.onOfflineReady?.();
-            },
-            onRegisteredSW(_scriptUrl, registration) {
-              if (registration) {
-                settle({ registered: true, registration });
-                return;
-              }
-              void activeServiceWorkerRegistration()
-                .then((activeRegistration) => settle({ registered: true, registration: activeRegistration }))
-                .catch(settleFailed);
-            },
-            onRegisterError(error) {
-              settleFailed(error);
-            },
-          });
+          let update: ReturnType<RegisterSW>;
+          try {
+            update = registerSW({
+              immediate: true,
+              onNeedRefresh() {
+                needRefresh = true;
+                emitUpdateState();
+              },
+              // Workbox captures isUpdate at first registration, so its reload
+              // callback misses a later update in the initially uncontrolled tab.
+              // Use one controllerchange owner and suppress the plugin's default.
+              // Each tab still requires explicit acceptance to preserve its drafts.
+              onNeedReload() {},
+              onOfflineReady() {
+                options.onOfflineReady?.();
+              },
+              onRegisteredSW(_scriptUrl, registration) {
+                if (registration) {
+                  settle({ registered: true, registration });
+                  return;
+                }
+                void activeServiceWorkerRegistration()
+                  .then((activeRegistration) => settle({ registered: true, registration: activeRegistration }))
+                  .catch(settleFailed);
+              },
+              onRegisterError(error) {
+                settleFailed(error);
+              },
+            });
+          } catch (error) {
+            settleFailed(error);
+            return;
+          }
+          if (registrationFailed) return;
 
-          updateServiceWorker = () => applyWaitingServiceWorkerUpdate(update);
+          updateServiceWorker = async () => {
+            if (reloadAvailable) {
+              reloadAvailable = false;
+              window.location.reload();
+              return;
+            }
+            updateRequested = true;
+            try {
+              await update(true);
+            } catch (error) {
+              updateRequested = false;
+              throw error;
+            }
+          };
           emitUpdateState();
         }),
     )
@@ -169,6 +209,9 @@ export async function registerPwaServiceWorker(
       registrationStarted = false;
       registrationPromise = null;
       serviceWorkerRegistrationPromise = null;
+      updateServiceWorker = null;
+      needRefresh = false;
+      emitUpdateState();
       options.onRegisterError?.(error);
       return failedRegistrationResult(error);
     });
@@ -203,13 +246,4 @@ export function resetPwaServiceWorkerStateForTests(): void {
   serviceWorkerRegistrationPromise = null;
   needRefresh = false;
   updateServiceWorker = null;
-  reloadOnControllerChange = false;
-  controllerChangeReloadInstalled = false;
-  reloadPage = () => {
-    window.location.reload();
-  };
-}
-
-export function setPwaReloadForTests(reloader: () => void): void {
-  reloadPage = reloader;
 }

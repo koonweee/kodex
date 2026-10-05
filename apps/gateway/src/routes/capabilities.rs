@@ -19,6 +19,7 @@ pub struct CapabilitiesResponse {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GatewayCapabilities {
+    pub api_version: crate::api_compatibility::ApiVersion,
     pub version: String,
     pub instance_id: String,
     pub sse: bool,
@@ -53,6 +54,7 @@ pub async fn capabilities(State(state): State<AppState>) -> Json<CapabilitiesRes
 
     Json(CapabilitiesResponse {
         gateway: GatewayCapabilities {
+            api_version: crate::api_compatibility::ApiVersion::V1,
             version: env!("CARGO_PKG_VERSION").to_string(),
             instance_id: state.config.instance.id.clone(),
             sse: true,

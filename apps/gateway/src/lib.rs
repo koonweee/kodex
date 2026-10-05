@@ -1,4 +1,5 @@
 pub mod api;
+pub mod api_compatibility;
 pub mod app_server;
 pub mod app_server_api;
 pub mod app_surfaces;

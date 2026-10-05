@@ -6,7 +6,6 @@ import {
   registerKodexServiceWorker,
   registerPwaServiceWorker,
   resetPwaServiceWorkerStateForTests,
-  setPwaReloadForTests,
   setRegisterSWLoaderForTests,
   subscribeToPwaUpdates,
 } from "./registerServiceWorker";
@@ -14,6 +13,7 @@ import type { RegisterSWOptions } from "vite-plugin-pwa/types";
 
 afterEach(() => {
   resetPwaServiceWorkerStateForTests();
+  vi.unstubAllEnvs();
   vi.clearAllMocks();
 });
 
@@ -32,7 +32,6 @@ describe("registerKodexServiceWorker", () => {
     const updateServiceWorker = vi.fn().mockResolvedValue(undefined);
     const listener = vi.fn();
     const controllerChangeListeners: Array<() => void> = [];
-    const reloadPage = vi.fn();
     const originalServiceWorker = navigator.serviceWorker;
     const originalSecureContext = window.isSecureContext;
     Object.defineProperty(navigator, "serviceWorker", {
@@ -55,10 +54,11 @@ describe("registerKodexServiceWorker", () => {
         return updateServiceWorker;
       }),
     );
-    setPwaReloadForTests(reloadPage);
     subscribeToPwaUpdates(listener);
 
     await registerPwaServiceWorker();
+    controllerChangeListeners[0]();
+    expect(getPwaUpdateState().needRefresh).toBe(false);
     registerOptions?.onNeedRefresh?.();
     await getPwaUpdateState().updateServiceWorker?.();
 
@@ -69,10 +69,135 @@ describe("registerKodexServiceWorker", () => {
     });
     expect(updateServiceWorker).toHaveBeenCalledWith(true);
     expect(controllerChangeListeners).toHaveLength(1);
-    controllerChangeListeners[0]();
-    expect(reloadPage).toHaveBeenCalledTimes(1);
+    expect(registerOptions?.onNeedReload).toEqual(expect.any(Function));
+    const pageReload = vi.fn();
+    try {
+      vi.stubGlobal("window", { location: { origin: window.location.origin, reload: pageReload } });
+      registerOptions?.onNeedReload?.();
+      expect(pageReload).not.toHaveBeenCalled();
+      controllerChangeListeners[0]();
+      registerOptions?.onNeedReload?.();
+      controllerChangeListeners[0]();
+      expect(pageReload).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
     Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: originalServiceWorker });
     Object.defineProperty(window, "isSecureContext", { configurable: true, value: originalSecureContext });
+  });
+
+  it("does not reload on a later worker activation after an update request failed", async () => {
+    const pageReload = vi.fn();
+    const original = navigator.serviceWorker;
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: Object.assign(new EventTarget(), { getRegistration: vi.fn() }),
+    });
+    setRegisterSWLoaderForTests(() => Promise.resolve((options) => {
+      options?.onRegisteredSW?.("/sw.js", { scope: "/" } as ServiceWorkerRegistration);
+      return vi.fn().mockRejectedValue(new Error("update failed"));
+    }));
+
+    try {
+      await registerPwaServiceWorker();
+      vi.stubGlobal("window", { location: { origin: window.location.origin, reload: pageReload } });
+      await expect(getPwaUpdateState().updateServiceWorker?.()).rejects.toThrow("update failed");
+      navigator.serviceWorker.dispatchEvent(new Event("controllerchange"));
+      expect(pageReload).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: original });
+    }
+  });
+
+  it("preserves a passive tab and reloads only the tab that explicitly accepts an update", async () => {
+    const pageReload = vi.fn();
+    const original = navigator.serviceWorker;
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: Object.assign(new EventTarget(), { getRegistration: vi.fn(), controller: {} }),
+    });
+    setRegisterSWLoaderForTests(() => Promise.resolve((options) => {
+      options?.onRegisteredSW?.("/sw.js", { scope: "/" } as ServiceWorkerRegistration);
+      return vi.fn().mockResolvedValue(undefined);
+    }));
+
+    try {
+      await registerPwaServiceWorker();
+      vi.stubGlobal("window", { location: { origin: window.location.origin, reload: pageReload } });
+      // Another tab's update can replace this controller even if this tab
+      // missed the waiting-worker notification entirely.
+      navigator.serviceWorker.dispatchEvent(new Event("controllerchange"));
+      expect(getPwaUpdateState().needRefresh).toBe(true);
+      expect(pageReload).not.toHaveBeenCalled();
+
+      await getPwaUpdateState().updateServiceWorker?.();
+      navigator.serviceWorker.dispatchEvent(new Event("controllerchange"));
+      expect(pageReload).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+      Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: original });
+    }
+  });
+
+  it.each(["callback", "delayed callback", "throw"])("removes its reload listener after a registration %s failure", async (failure) => {
+    const original = navigator.serviceWorker;
+    const worker = Object.assign(new EventTarget(), { getRegistration: vi.fn() });
+    const remove = vi.spyOn(worker, "removeEventListener");
+    Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: worker });
+    setRegisterSWLoaderForTests(() => Promise.resolve((options) => {
+      const error = new Error("registration failed");
+      if (failure === "throw") throw error;
+      if (failure === "delayed callback") queueMicrotask(() => options?.onRegisterError?.(error));
+      else options?.onRegisterError?.(error);
+      return vi.fn();
+    }));
+    try {
+      await expect(registerPwaServiceWorker()).resolves.toMatchObject({ registered: false, reason: "failed" });
+      expect(remove).toHaveBeenCalledWith("controllerchange", expect.any(Function));
+      expect(getPwaUpdateState().updateServiceWorker).toBeNull();
+    } finally {
+      Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: original });
+    }
+  });
+
+  it("does not register a worker against a separate API origin", async () => {
+    const original = navigator.serviceWorker;
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: { getRegistration: vi.fn() },
+    });
+    vi.stubEnv("VITE_KODEX_API_BASE_URL", "https://another-gateway.example");
+    const loader = vi.fn().mockRejectedValue(new Error("should not register"));
+    setRegisterSWLoaderForTests(loader);
+
+    try {
+      await expect(registerPwaServiceWorker()).resolves.toEqual({ registered: false, reason: "cross-origin-api" });
+      await expect(getServiceWorkerRegistration()).rejects.toThrow("cross-origin-api");
+      expect(loader).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: original });
+    }
+  });
+
+  it("allows an explicitly configured same-origin API", async () => {
+    const original = navigator.serviceWorker;
+    const registration = { scope: "/" } as ServiceWorkerRegistration;
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: { getRegistration: vi.fn() },
+    });
+    vi.stubEnv("VITE_KODEX_API_BASE_URL", window.location.origin);
+    setRegisterSWLoaderForTests(() => Promise.resolve((options) => {
+      options?.onRegisteredSW?.("/sw.js", registration);
+      return vi.fn();
+    }));
+
+    try {
+      await expect(registerPwaServiceWorker()).resolves.toEqual({ registered: true, registration });
+    } finally {
+      Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: original });
+    }
   });
 
   it("returns the active browser service worker registration", async () => {

@@ -1948,6 +1948,8 @@ export interface components {
             message: string;
             retryable: boolean;
         };
+        /** @enum {string} */
+        ApiVersion: "1";
         AppServerCapabilities: {
             detectedVersion?: string | null;
             detectedVersionMatchesSchema?: boolean | null;
@@ -2401,6 +2403,7 @@ export interface components {
             files: components["schemas"]["TimelineFileAttachment"][];
         };
         GatewayCapabilities: {
+            apiVersion: components["schemas"]["ApiVersion"];
             approvals: boolean;
             gatewayAuth: boolean;
             instanceId: string;

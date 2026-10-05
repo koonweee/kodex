@@ -1687,6 +1687,7 @@ describe("MVP shell flows", () => {
       baseRoutes({
         "GET /v1/capabilities": {
           gateway: {
+            apiVersion: "1",
             version: "0.1.0",
             sse: true,
             approvals: true,

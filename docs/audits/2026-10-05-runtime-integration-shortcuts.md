@@ -8,7 +8,7 @@ Scope: current deployment, gateway/native boundaries, frontend contract/update b
 - **Startup health did not establish tool readiness.** Version/initialization/HTTP checks can all pass with a missing helper. Validate the packaged helper before switching the live service; run a disposable real-native execution proof for this change.
 - **Controller update bootstrap.** The installed updater runs the previous release’s packaging code. When changing that controller, invoke the tested checkout updater directly. This is documented rather than adding a second self-updater subsystem.
 
-## Remaining findings
+## Findings addressed by integration cleanup
 
 | Priority | Evidence | Issue and simpler direction |
 | --- | --- | --- |
@@ -27,4 +27,13 @@ Scope: current deployment, gateway/native boundaries, frontend contract/update b
 - The managed Control binding supplies the running gateway executable and local URL. It avoids discovering an unrelated global service and is not a desktop dependency.
 - Self-contained release copies support deliberate rollback without a mutable shared runtime cache. Retaining old releases is documented; automatic garbage collection would need to account for native installed-plugin references.
 
-Remaining findings are recommendations, not implemented fixes in this packaging change.
+The follow-up [integration cleanup](../../plans/integration-shortcut-cleanup.md) implements all seven findings:
+
+- A generated API epoch and request/response header reject stale browser mutations on the gateway. The browser fences subsequent writes and rejects incompatible response bodies, while keeping the workspace and unsent drafts mounted. Update is explicit; pre-header bundles need one initial manual update. Unversioned CLI/Control clients remain supported.
+- One controller-change handler owns reloads and the library’s default reload is disabled. The installed library callback misses later updates in a tab opened before first installation; the real PWA test establishes why this small custom bridge is needed. Only the accepting tab reloads, and passive tabs can accept the activated update later.
+- `generate:api` invokes the checkout’s Rust exporter into a temporary file, independent of port 8787.
+- Preview reads metadata only. Stop reads native metadata and at most one descending turn header, without rebuilding or overwriting the transcript projection.
+- Native RPC errors retain code, message and data internally. Narrow pinned-runtime classifiers replace parsing of formatted errors; public/logged config errors remain sanitized.
+- Separate-origin development APIs disable worker registration/Push and avoid worker badge delegation. Use Vite’s same-origin proxy for PWA work.
+
+These fixes add no durable state or general retry layer.

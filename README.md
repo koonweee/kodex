@@ -144,3 +144,5 @@ Kodex is an actively developed personal project. The Rust gateway and React clie
 Kodex is available under the [MIT License](LICENSE). See [Third-Party Notices](THIRD_PARTY_NOTICES.md) for attribution.
 
 Kodex is an independent, unofficial project. It is not affiliated with or endorsed by OpenAI. Third-party names and marks belong to their respective owners.
+
+Browser builds carry an API compatibility epoch. After an incompatible gateway update, versioned browser writes are rejected and the UI asks for an explicit reload while keeping open drafts mounted. Save unsent work before accepting an update; passive tabs are not automatically reloaded. Older bundles shipped before this check require an initial manual update. Generate frontend API types from the checkout with `cd apps/web && npm run generate:api`; no running server is used.

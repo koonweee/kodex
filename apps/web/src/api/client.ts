@@ -1,3 +1,4 @@
+import { compatibleFetch, compatibilityRequired } from "./compatibility";
 import createClient from "openapi-fetch";
 
 import type { components, paths } from "./generated/schema";
@@ -100,7 +101,7 @@ export class GatewayRequestError extends Error {
 
 const api = createClient<paths>({
   baseUrl: getApiBaseUrl(),
-  fetch: (request) => globalThis.fetch(request),
+  fetch: (request) => compatibleFetch(request),
 });
 
 function getApiBaseUrl(): string {
@@ -365,7 +366,7 @@ function threadViewPresenceSnapshotUrl(): string {
 }
 
 export function sendThreadViewPresenceSnapshotBeacon(request: ThreadViewPresenceSnapshotRequest): boolean {
-  if (typeof navigator === "undefined" || typeof navigator.sendBeacon !== "function") {
+  if (compatibilityRequired() || typeof navigator === "undefined" || typeof navigator.sendBeacon !== "function") {
     return false;
   }
   const body = new Blob([JSON.stringify(request)], { type: "application/json" });
@@ -564,7 +565,7 @@ export async function uploadImages(files: File[]): Promise<ImageUpload[]> {
   for (const file of files) {
     formData.append("images", file);
   }
-  const response = await fetch(`${getApiBaseUrl()}/v1/uploads/images`, {
+  const response = await compatibleFetch(`${getApiBaseUrl()}/v1/uploads/images`, {
     method: "POST",
     body: formData,
   });
@@ -580,7 +581,7 @@ export async function uploadFiles(threadId: string, files: File[]): Promise<Time
   for (const file of files) {
     formData.append("files", file);
   }
-  const response = await fetch(`${getApiBaseUrl()}/v1/threads/${encodeURIComponent(threadId)}/uploads/files`, {
+  const response = await compatibleFetch(`${getApiBaseUrl()}/v1/threads/${encodeURIComponent(threadId)}/uploads/files`, {
     method: "POST",
     body: formData,
   });

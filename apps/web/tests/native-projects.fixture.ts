@@ -31,7 +31,7 @@ export async function nativeProjectsFixture(context: BrowserContext) {
   let failFirstCreate = false;
   let seq = 0;
   const capabilities: Capabilities = {
-    gateway: { instanceId: "native-project-fixture", version: "test", sse: true, approvals: true, terminals: { enabled: true }, gatewayAuth: false, trustedNetworkOnly: true },
+    gateway: { apiVersion: "1", instanceId: "native-project-fixture", version: "test", sse: true, approvals: true, terminals: { enabled: true }, gatewayAuth: false, trustedNetworkOnly: true },
     appServer: { ready: true, experimentalApi: true, schemaVersion: "0.160.0", detectedVersion: "0.160.0", detectedVersionMatchesSchema: true },
   };
   // Keep native notifications independent of refills caused by reconnects.

@@ -72,6 +72,15 @@ test.describe("real built PWA", () => {
       }
       expect(await cacheEntries(page)).toEqual(initialCache);
 
+      const passivePage = await fixture.page();
+      await passivePage.getByRole("navigation", { name: "Workspace", exact: true }).getByRole("button", { name: "Chats", exact: true }).click();
+      await passivePage.getByRole("button", { name: "New chat", exact: true }).click();
+      const passiveDraft = passivePage.getByRole("textbox", { name: "Message composer", exact: true });
+      await passiveDraft.fill("Keep this unsent draft while another tab updates.");
+      let passiveReloads = 0;
+      passivePage.on("framenavigated", (frame) => {
+        if (frame === passivePage.mainFrame() && new URL(frame.url()).origin === fixture.baseUrl) passiveReloads += 1;
+      });
       let reloads = 0;
       page.on("framenavigated", (frame) => {
         if (frame === page.mainFrame() && new URL(frame.url()).origin === fixture.baseUrl) reloads += 1;
@@ -91,6 +100,7 @@ test.describe("real built PWA", () => {
       await page.evaluate(async () => { await (await navigator.serviceWorker.getRegistration())!.update(); });
       await expect.poll(() => page.evaluate(async () => (await navigator.serviceWorker.getRegistration())?.waiting?.state)).toBe("installed");
       await expect(page.getByRole("status")).toContainText("Update available");
+      await expect(passivePage.getByRole("status")).toContainText("Update available");
       expect(await page.evaluate(() => navigator.serviceWorker.controller === Reflect.get(window, "originalPwaProofController"))).toBe(true);
       expect(reloads).toBe(0);
       await page.screenshot({ path: testInfo.outputPath("real-pwa-waiting-update.png"), fullPage: true });
@@ -106,9 +116,19 @@ test.describe("real built PWA", () => {
       await expect(page.getByRole("button", { name: "Update", exact: true })).toHaveCount(0);
       expect(await cacheEntries(page)).toEqual(initialCache);
       expect(reloads).toBe(1);
+      expect(passiveReloads).toBe(0);
+      await expect(passiveDraft).toHaveValue("Keep this unsent draft while another tab updates.");
+      await expect(passivePage.getByRole("button", { name: "Update", exact: true })).toBeVisible();
+      // That tab may explicitly reload the worker already activated elsewhere.
+      await Promise.all([
+        passivePage.waitForEvent("load"),
+        passivePage.getByRole("button", { name: "Update", exact: true }).click(),
+      ]);
+      await expect(passivePage.getByRole("button", { name: "Update", exact: true })).toHaveCount(0);
+      expect(passiveReloads).toBe(1);
       await fixture.assertClean();
       await testInfo.attach("native-pwa-evidence", {
-        body: JSON.stringify({ registration, cacheEntries: initialCache, networkResponses, reloads }, null, 2),
+        body: JSON.stringify({ registration, cacheEntries: initialCache, networkResponses, reloads, passiveReloads }, null, 2),
         contentType: "application/json",
       });
     } finally {
