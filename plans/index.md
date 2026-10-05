@@ -19,7 +19,7 @@ Focused subsystem replacements are encouraged wherever they reduce maintained co
 
 | Plan | Status | Scope | Notes |
 | --- | --- | --- | --- |
-| [Integration shortcut cleanup](integration-shortcut-cleanup.md) | Active | Resolve runtime integration audit follow-ups | Native reads/errors, browser compatibility, PWA and contract tooling. |
+| [Integration shortcut cleanup](integration-shortcut-cleanup.md) | Complete | Resolve runtime integration audit follow-ups | Tested and deployed native reads/errors, browser compatibility, PWA and contract tooling. |
 | [Pinned upstream runtime](pinned-runtime-distribution.md) | Complete | Direct official runtime acquisition | Deployed verified complete package; native Code Mode proof passed; adjacent audit recorded. |
 | [Remove custom sections](remove-custom-sections.md) | Complete | Keep Pinned, Projects and Chats | Remove section management, APIs and cached state. |
 | [Sidebar load recovery](sidebar-load-recovery.md) | Complete | Canceled SQLite transaction recovery and visible sidebar errors | Preserve native projects through section refills; remove redundant editor move controls. |

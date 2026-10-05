@@ -2,7 +2,7 @@
 
 ## Status
 
-Active.
+Complete — deployed 2026-10-05.
 
 ## Scope
 
@@ -22,3 +22,7 @@ Focused failing-to-passing regressions, same-user stale/current client coverage,
 - Checkout OpenAPI generation, frontend build and both trim checks passed. Independent cross-reviews covered typed errors, bounded native reads, compatibility/draft behavior and PWA ownership.
 
 - Final PWA validation: 63 focused cases and two real built-PWA browser proofs pass, including actual Push/badge behavior and first-install/two-tab update acceptance. The single custom controller handler is retained because the installed library’s callback misses later updates in an initially uncontrolled tab; the library default reload is disabled. Failure cleanup and missed waiting notifications have focused coverage.
+
+## Deployment
+
+Release `20261005-160618-1af818f6` is running on the Mac mini login service. Readiness, capabilities API epoch/header, account presence, sidebar and private HTTPS checks passed. A stale-version POST returned 409 `client_update_required` before route execution. Existing dedicated account/chat state was retained. First adoption requires an explicit PWA update because previously shipped clients lack the compatibility header.
