@@ -387,6 +387,10 @@ describe("gateway instance bootstrap", () => {
     { kind: "native subagents", queryKey: queryKeys.threadSubagents("ancestor"), trigger: "foreground" },
     { kind: "app surface", queryKey: queryKeys.appSurface("native-chat"), trigger: "stream open" },
     { kind: "app surface", queryKey: queryKeys.appSurface("native-chat"), trigger: "foreground" },
+    { kind: "notification status", queryKey: queryKeys.notificationStatus, trigger: "stream open" },
+    { kind: "notification status", queryKey: queryKeys.notificationStatus, trigger: "foreground" },
+    { kind: "current device", queryKey: ["notifications", "current-device"], trigger: "stream open" },
+    { kind: "current device", queryKey: ["notifications", "current-device"], trigger: "foreground" },
   ])("cancels a pre-recovery $kind read on $trigger while preserving the same-instance draft", async ({ queryKey, trigger }) => {
     const queryClient = createKodexQueryClient();
     let finishOld!: (value: string) => void;
@@ -417,6 +421,42 @@ describe("gateway instance bootstrap", () => {
     expect(screen.queryByText("Obsolete native settings")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "edited draft" })).toBeInTheDocument();
     expect(readSettings).toHaveBeenCalledTimes(2);
+  });
+
+  it("recovers notification and device state in two tabs through stream open and foreground reads", async () => {
+    let configured = true;
+    let subscribed = true;
+    const readStatus = vi.fn(async () => configured ? "Push configured" : "Push unavailable");
+    const readDevice = vi.fn(async () => subscribed ? "Device enabled" : "Device disabled");
+    vi.mocked(getCapabilities).mockResolvedValue(capabilities("shared"));
+    const tabs = [createKodexQueryClient(), createKodexQueryClient()].map((client) => render(
+      <GatewayInstanceBoundary queryClient={client}>
+        <QueryClientProvider client={client}>
+          <SettingsProbe queryKey={queryKeys.notificationStatus} read={readStatus} />
+          <SettingsProbe queryKey={["notifications", "current-device"]} read={readDevice} />
+          <StreamProbe />
+        </QueryClientProvider>
+      </GatewayInstanceBoundary>,
+    ));
+    for (const tab of tabs) {
+      expect(await within(tab.container).findByText("Push configured")).toBeInTheDocument();
+      expect(await within(tab.container).findByText("Device enabled")).toBeInTheDocument();
+    }
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(2));
+    expect(readStatus).toHaveBeenCalledTimes(2);
+    expect(readDevice).toHaveBeenCalledTimes(2);
+    configured = false;
+    subscribed = false;
+
+    await act(async () => FakeEventSource.instances[0].onopen?.());
+    expect(await within(tabs[0].container).findByText("Device disabled")).toBeInTheDocument();
+    expect(within(tabs[0].container).getByText("Push unavailable")).toBeInTheDocument();
+    expect(within(tabs[1].container).getByText("Device enabled")).toBeInTheDocument();
+
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(await within(tabs[1].container).findByText("Device disabled")).toBeInTheDocument();
+    expect(within(tabs[1].container).getByText("Push unavailable")).toBeInTheDocument();
+    expect(FakeEventSource.instances).toHaveLength(2);
   });
 
   it("refetches active account state on focus without resetting a same-instance draft", async () => {

@@ -5,6 +5,7 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 import { refreshQueuedInputs } from "../queuedInputs/cache";
 import { refreshAutomationRuns } from "../automations/runsCache";
 import { refreshUnreadBadge } from "../notifications/unreadBadge";
+import { refreshNotificationQueries } from "../notifications/cache";
 import { refreshAccountQueries } from "../account/cache";
 import { refreshApprovalSnapshot } from "../approvals/cache";
 import { refreshProjectState } from "../projects/cache";
@@ -88,6 +89,7 @@ function GatewayInstanceGate({ children, queryClient }: GatewayInstanceBoundaryP
           void refreshAppSurfaceSessions(queryClient);
           void refreshThreadSubagents(queryClient);
           void refreshUnreadBadge(queryClient);
+          void refreshNotificationQueries(queryClient);
           void refreshQueuedInputs(queryClient);
           void refreshAutomationRuns(queryClient);
         }
@@ -117,6 +119,7 @@ function GatewayInstanceGate({ children, queryClient }: GatewayInstanceBoundaryP
       void refreshAppSurfaceSessions(queryClient);
       void refreshThreadSubagents(queryClient);
       void refreshUnreadBadge(queryClient);
+      void refreshNotificationQueries(queryClient);
       void refreshQueuedInputs(queryClient);
       void refreshAutomationRuns(queryClient);
     }

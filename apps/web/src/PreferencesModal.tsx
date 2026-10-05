@@ -50,12 +50,12 @@ export function PreferencesModal({
   });
   const notificationStatusQuery = useQuery({
     enabled: opened && activeSection === "notifications",
-    queryFn: getNotificationStatus,
+    queryFn: ({ signal }) => getNotificationStatus(signal),
     queryKey: queryKeys.notificationStatus,
   });
   const currentPushStateQuery = useQuery({
     enabled: opened && activeSection === "notifications",
-    queryFn: loadBrowserPushNotificationState,
+    queryFn: ({ signal }) => loadBrowserPushNotificationState(signal),
     queryKey: ["notifications", "current-device"],
   });
   const installPluginMutation = useMutation({
@@ -200,10 +200,10 @@ export function PreferencesModal({
         ) : activeSection === "notifications" ? (
           <NotificationsPreferencesPanel
             disableError={disableNotificationsMutation.error}
-            disableSuccess={disableNotificationsMutation.isSuccess}
+            disableSuccess={disableNotificationsMutation.isSuccess && currentPushStateQuery.data?.subscribed === false && !currentPushStateQuery.error}
             disabling={disableNotificationsMutation.isPending}
             enableError={enableNotificationsMutation.error}
-            enableSuccess={enableNotificationsMutation.isSuccess && enableNotificationsMutation.data === "granted"}
+            enableSuccess={enableNotificationsMutation.isSuccess && enableNotificationsMutation.data === "granted" && currentPushStateQuery.data?.subscribed === true && !currentPushStateQuery.error}
             enabling={enableNotificationsMutation.isPending}
             onDisable={() => disableNotificationsMutation.mutate()}
             onEnable={() => enableNotificationsMutation.mutate()}

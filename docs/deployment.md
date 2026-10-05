@@ -63,6 +63,12 @@ The web app is installable as a progressive web app. Its service worker precache
 
 Long-running tabs may show an update banner when a new static bundle is waiting. Applying it activates the bundle and reloads the page. App badge updates use gateway-owned unread completed-turn state and silently no-op when the browser lacks the Badging API.
 
+## Terminal lifetime
+
+Terminal processes are supervised independently of app-server. Closing a pane only detaches that browser view; another tab can keep using the shell. Open terminal reuses a running shell, New terminal starts another, and Stop terminal terminates the shared shell. A view disconnected by another tab's Stop can be closed or explicitly reconnected to start a replacement.
+
+The gateway permits eight sessions, keeps at most 1 MiB of reconnect output per shell and expires a shell detached from every browser after five minutes. Gateway exit or restart ends its terminals; they are not durable jobs. Managed shells default to the dedicated Kodex `CODEX_HOME`, but ordinary shell commands and startup files retain host access and can explicitly choose other environments.
+
 ## Browser notifications
 
 Web Push is optional. Configure VAPID values on the gateway:
@@ -76,5 +82,7 @@ KODEX_VAPID_SUBJECT=mailto:you@example.com
 `KODEX_NOTIFICATIONS_RECHECK_DELAY_MS` defaults to `2000`. The gateway records delivery attempts, retries temporary failures without resending to endpoints that already accepted a delivery, and disables stale endpoints only when the push service reports that they are gone.
 
 Preferences > Notifications reconciles the current browser subscription with gateway state. Use its Test action to verify delivery. For deeper local diagnosis, inspect the `notification_deliveries` and `push_subscriptions` SQLite tables.
+
+Reconnection and returning to a tab refill notification status, including changes from another tab. Enable/Disable success is shown only while the current authoritative device status confirms it. Missing browser capabilities, registration failures and gateway errors remain visible; a failed status read is not treated as a disabled subscription.
 
 Push on phones and tablets requires a secure browser context. Localhost is accepted for development; remote access over a private network generally needs HTTPS termination. HTTPS does not make a public deployment safe—the gateway must remain private.

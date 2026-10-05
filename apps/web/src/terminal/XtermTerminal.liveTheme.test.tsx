@@ -1,4 +1,4 @@
-import { render, waitFor } from "@testing-library/react";
+import { act, render, waitFor } from "@testing-library/react";
 import type { ITerminalOptions } from "@xterm/xterm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -46,6 +46,7 @@ vi.mock("@xterm/addon-fit", () => ({
 }));
 
 class MockWebSocket {
+  static instances: MockWebSocket[] = [];
   static CONNECTING = 0;
   static OPEN = 1;
   static CLOSING = 2;
@@ -58,7 +59,7 @@ class MockWebSocket {
   onopen: ((event: Event) => void) | null = null;
   readyState = MockWebSocket.CONNECTING;
 
-  constructor(readonly url: string) {}
+  constructor(readonly url: string) { MockWebSocket.instances.push(this); }
 
   close = vi.fn(() => {
     this.readyState = MockWebSocket.CLOSED;
@@ -71,6 +72,7 @@ describe("XtermTerminal live theme updates", () => {
 
   beforeEach(() => {
     xtermMock.instances = [];
+    MockWebSocket.instances = [];
     vi.stubGlobal("WebSocket", MockWebSocket);
     vi.spyOn(window, "getComputedStyle").mockImplementation(
       () =>
@@ -120,5 +122,34 @@ describe("XtermTerminal live theme updates", () => {
         selectionBackground: "rgb(205, 220, 255)",
       });
     });
+  });
+
+  it("keeps an attached shell connected when its status callback changes during Stop", () => {
+    const initial = vi.fn();
+    const latest = vi.fn();
+    const view = render(<XtermTerminal webSocketUrl="ws://localhost/terminal" onConnectionStateChange={initial} />);
+    const socket = MockWebSocket.instances[0]!;
+    act(() => socket.onopen?.(new Event("open")));
+    expect(initial).toHaveBeenLastCalledWith("open");
+
+    view.rerender(<XtermTerminal webSocketUrl="ws://localhost/terminal" onConnectionStateChange={latest} />);
+    expect(socket.close).not.toHaveBeenCalled();
+    expect(xtermMock.instances[0]!.dispose).not.toHaveBeenCalled();
+    expect(MockWebSocket.instances).toHaveLength(1);
+    act(() => socket.onclose?.(new CloseEvent("close")));
+    expect(latest).toHaveBeenLastCalledWith("closed");
+    expect(initial).toHaveBeenLastCalledWith("open");
+  });
+
+  it("closes the old attachment when the shell target changes", () => {
+    const state = vi.fn();
+    const view = render(<XtermTerminal webSocketUrl="ws://localhost/old" onConnectionStateChange={state} />);
+    const socket = MockWebSocket.instances[0]!;
+    view.rerender(<XtermTerminal webSocketUrl="ws://localhost/new" onConnectionStateChange={state} />);
+    expect(socket.close).toHaveBeenCalledOnce();
+    expect(xtermMock.instances[0]!.dispose).toHaveBeenCalledOnce();
+    expect(MockWebSocket.instances.map((socket) => socket.url)).toEqual(["ws://localhost/old", "ws://localhost/new"]);
+    act(() => MockWebSocket.instances[1]!.onopen?.(new Event("open")));
+    expect(state).toHaveBeenLastCalledWith("open");
   });
 });

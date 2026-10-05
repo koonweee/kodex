@@ -7,8 +7,6 @@ import { getServiceWorkerRegistration } from "../pwa/registerServiceWorker";
 import { notificationPermission } from "./browserNotifications";
 import type { BrowserNotificationPermission } from "./notificationTypes";
 
-const PUSH_SUBSCRIPTION_ID_KEY = "kodex.pushSubscriptionId";
-
 export type BrowserPushNotificationState = {
   configured: boolean;
   endpoint: string | null;
@@ -27,17 +25,6 @@ export function browserPushNotificationsSupported(): boolean {
   );
 }
 
-function cleanupLegacyPushSubscriptionId(): void {
-  if (typeof localStorage === "undefined") {
-    return;
-  }
-  try {
-    localStorage.removeItem(PUSH_SUBSCRIPTION_ID_KEY);
-  } catch {
-    // Storage can be blocked in private or restricted browsing contexts.
-  }
-}
-
 export function applicationServerKeyBytes(key: string): ArrayBuffer {
   const normalized = key.replace(/-/g, "+").replace(/_/g, "/");
   const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
@@ -49,8 +36,7 @@ export function applicationServerKeyBytes(key: string): ArrayBuffer {
   return bytes.buffer;
 }
 
-export async function loadBrowserPushNotificationState(): Promise<BrowserPushNotificationState> {
-  cleanupLegacyPushSubscriptionId();
+export async function loadBrowserPushNotificationState(signal?: AbortSignal): Promise<BrowserPushNotificationState> {
   const supported = browserPushNotificationsSupported();
   const permission = notificationPermission();
   if (!supported || permission !== "granted") {
@@ -65,6 +51,7 @@ export async function loadBrowserPushNotificationState(): Promise<BrowserPushNot
   }
 
   const subscription = await currentBrowserPushSubscription();
+  signal?.throwIfAborted();
   const endpoint = subscription?.endpoint ?? null;
   if (!endpoint) {
     return {
@@ -77,7 +64,7 @@ export async function loadBrowserPushNotificationState(): Promise<BrowserPushNot
     };
   }
 
-  const status = await getCurrentPushSubscriptionStatus(endpoint);
+  const status = await getCurrentPushSubscriptionStatus(endpoint, signal);
   return {
     configured: status.configured,
     endpoint,
@@ -88,18 +75,14 @@ export async function loadBrowserPushNotificationState(): Promise<BrowserPushNot
   };
 }
 
-export async function enableBrowserPushNotifications(vapidPublicKey: string): Promise<PushSubscription | null> {
-  cleanupLegacyPushSubscriptionId();
+export async function enableBrowserPushNotifications(vapidPublicKey: string): Promise<PushSubscription> {
   if (!browserPushNotificationsSupported()) {
-    return null;
+    throw new Error("Push notifications are not supported in this browser.");
   }
-  const registration = await getRegistrationForPushSubscription();
-  if (!registration) {
-    return null;
-  }
+  const registration = await getServiceWorkerRegistration();
   const pushManager = registration.pushManager;
   if (!pushManager) {
-    return null;
+    throw new Error("Push notifications are not supported in this browser.");
   }
   const subscription =
     (await pushManager.getSubscription()) ??
@@ -108,20 +91,10 @@ export async function enableBrowserPushNotifications(vapidPublicKey: string): Pr
       userVisibleOnly: true,
     }));
   await upsertPushSubscription(subscription);
-  cleanupLegacyPushSubscriptionId();
   return subscription;
 }
 
-async function getRegistrationForPushSubscription(): Promise<ServiceWorkerRegistration | null> {
-  try {
-    return await getServiceWorkerRegistration();
-  } catch {
-    return null;
-  }
-}
-
 export async function disableBrowserPushNotifications(): Promise<void> {
-  cleanupLegacyPushSubscriptionId();
   const subscription = await currentBrowserPushSubscription();
   const endpoint = subscription?.endpoint ?? null;
   if (endpoint) {
@@ -133,21 +106,12 @@ export async function disableBrowserPushNotifications(): Promise<void> {
     // Server-side disable is the important shared state; keep going even if the
     // local browser subscription is already gone or service worker state is stale.
   }
-  cleanupLegacyPushSubscriptionId();
 }
 
 async function currentBrowserPushSubscription(): Promise<PushSubscription | null> {
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
     return null;
   }
-  try {
-    const serviceWorker = navigator.serviceWorker;
-    const registration =
-      typeof serviceWorker?.getRegistration === "function"
-        ? ((await serviceWorker.getRegistration()) ?? (await serviceWorker.ready))
-        : await serviceWorker?.ready;
-    return (await registration?.pushManager?.getSubscription()) ?? null;
-  } catch {
-    return null;
-  }
+  const registration = await navigator.serviceWorker.getRegistration();
+  return (await registration?.pushManager?.getSubscription()) ?? null;
 }

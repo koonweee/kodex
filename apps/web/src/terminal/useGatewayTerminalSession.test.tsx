@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -52,6 +52,8 @@ function HookProbe({
     <div>
       <span>{terminal.isLoading ? "loading" : "idle"}</span>
       <span>{terminal.session?.title ?? "no-session"}</span>
+      {terminal.error ? <span role="alert">{terminal.error}</span> : null}
+      <button onClick={terminal.stopSession} type="button">Stop</button>
       <button onClick={terminal.createNewSession} type="button">
         New
       </button>
@@ -110,6 +112,33 @@ describe("useGatewayTerminalSession", () => {
     render(<HookProbe opened preferredTerminalId="terminal-2" />);
 
     expect(await screen.findByText("replacement: /bin/zsh")).toBeInTheDocument();
+    expect(createTerminalSession).not.toHaveBeenCalled();
+  });
+
+  it("converges when another view already stopped the shell", async () => {
+    vi.mocked(listTerminalSessions).mockResolvedValue([session]);
+    vi.mocked(deleteTerminalSession)
+      .mockResolvedValueOnce({ id: session.id })
+      .mockRejectedValueOnce(new Error(`terminal ${session.id} was not found`));
+    const first = render(<HookProbe opened preferredTerminalId={session.id} />);
+    const second = render(<HookProbe opened preferredTerminalId={session.id} />);
+    for (const view of [first, second]) await within(view.container).findByText(session.title);
+    await userEvent.click(within(first.container).getByRole("button", { name: "Stop" }));
+    await within(first.container).findByText("no-session");
+    await userEvent.click(within(second.container).getByRole("button", { name: "Stop" }));
+    await within(second.container).findByText("no-session");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(createTerminalSession).not.toHaveBeenCalled();
+  });
+
+  it("keeps the shell available after an uncertain Stop failure", async () => {
+    vi.mocked(listTerminalSessions).mockResolvedValue([session]);
+    vi.mocked(deleteTerminalSession).mockRejectedValue(new Error("gateway unavailable"));
+    render(<HookProbe opened preferredTerminalId={session.id} />);
+    await screen.findByText(session.title);
+    await userEvent.click(screen.getByRole("button", { name: "Stop" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("gateway unavailable");
+    expect(screen.getByText(session.title)).toBeInTheDocument();
     expect(createTerminalSession).not.toHaveBeenCalled();
   });
 

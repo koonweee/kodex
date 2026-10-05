@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { waitFor } from "@testing-library/react";
 
 import {
   deleteCurrentPushSubscription,
@@ -96,6 +97,22 @@ describe("browserPushNotificationsSupported", () => {
 });
 
 describe("loadBrowserPushNotificationState", () => {
+  it("settles without waiting for a worker that has never registered", async () => {
+    installPushGlobals({
+      getRegistration: vi.fn().mockResolvedValue(undefined),
+      ready: new Promise(() => {}),
+    });
+    const settled = vi.fn();
+    void loadBrowserPushNotificationState().then(settled);
+
+    await waitFor(() => expect(settled).toHaveBeenCalledWith(expect.objectContaining({
+      endpoint: null,
+      hasBrowserSubscription: false,
+      subscribed: false,
+    })));
+    expect(mockedGetCurrentPushSubscriptionStatus).not.toHaveBeenCalled();
+  });
+
   it("does not treat stale localStorage as enabled state", async () => {
     localStorage.setItem("kodex.pushSubscriptionId", "subscription-1");
     installPushGlobals({
@@ -115,7 +132,7 @@ describe("loadBrowserPushNotificationState", () => {
       subscribed: false,
       supported: true,
     });
-    expect(localStorage.getItem("kodex.pushSubscriptionId")).toBeNull();
+    expect(localStorage.getItem("kodex.pushSubscriptionId")).toBe("subscription-1");
     expect(mockedGetCurrentPushSubscriptionStatus).not.toHaveBeenCalled();
   });
 
@@ -143,7 +160,7 @@ describe("loadBrowserPushNotificationState", () => {
       subscribed: false,
       supported: true,
     });
-    expect(mockedGetCurrentPushSubscriptionStatus).toHaveBeenCalledWith(subscription.endpoint);
+    expect(mockedGetCurrentPushSubscriptionStatus).toHaveBeenCalledWith(subscription.endpoint, undefined);
   });
 
   it("converges on gateway state after a second tab refetches", async () => {
@@ -175,32 +192,31 @@ describe("loadBrowserPushNotificationState", () => {
 });
 
 describe("enableBrowserPushNotifications", () => {
-  it("returns null when push is unsupported", async () => {
-    await expect(enableBrowserPushNotifications("AQIDBA")).resolves.toBeNull();
+  it("reports an error when push is unsupported", async () => {
+    await expect(enableBrowserPushNotifications("AQIDBA")).rejects.toThrow(/not supported/i);
     expect(mockedGetServiceWorkerRegistration).not.toHaveBeenCalled();
   });
 
-  it("returns null when the registered service worker has no push manager", async () => {
+  it("reports an error when the registered service worker has no push manager", async () => {
     installPushGlobals();
     mockedGetServiceWorkerRegistration.mockResolvedValue({} as ServiceWorkerRegistration);
 
-    await expect(enableBrowserPushNotifications("AQIDBA")).resolves.toBeNull();
+    await expect(enableBrowserPushNotifications("AQIDBA")).rejects.toThrow(/not supported/i);
     expect(mockedUpsertPushSubscription).not.toHaveBeenCalled();
   });
 
-  it("returns null when shared service worker registration fails", async () => {
+  it("preserves the shared service worker registration failure", async () => {
     installPushGlobals();
     mockedGetServiceWorkerRegistration.mockRejectedValue(new Error("registration failed"));
 
-    await expect(enableBrowserPushNotifications("AQIDBA")).resolves.toBeNull();
+    await expect(enableBrowserPushNotifications("AQIDBA")).rejects.toThrow("registration failed");
     expect(mockedUpsertPushSubscription).not.toHaveBeenCalled();
   });
 
-  it("subscribes, upserts the browser endpoint, and clears the legacy gateway id", async () => {
+  it("subscribes and upserts the browser endpoint", async () => {
     installPushGlobals();
     const subscription = { endpoint: "https://push.example/sub" } as PushSubscription;
     const subscribe = vi.fn().mockResolvedValue(subscription);
-    localStorage.setItem("kodex.pushSubscriptionId", "subscription-1");
     mockedGetServiceWorkerRegistration.mockResolvedValue({
       pushManager: {
         getSubscription: vi.fn().mockResolvedValue(null),
@@ -226,7 +242,6 @@ describe("enableBrowserPushNotifications", () => {
     });
     expect(mockedUpsertPushSubscription).toHaveBeenCalledWith(subscription);
     expect(mockedGetServiceWorkerRegistration).toHaveBeenCalledTimes(1);
-    expect(localStorage.getItem("kodex.pushSubscriptionId")).toBeNull();
   });
 
   it("re-upserts an existing browser subscription without resubscribing", async () => {
@@ -256,7 +271,7 @@ describe("enableBrowserPushNotifications", () => {
     expect(mockedUpsertPushSubscription).toHaveBeenCalledWith(subscription);
   });
 
-  it("does not store a subscription id when browser subscribe fails", async () => {
+  it("does not upsert an endpoint when browser subscribe fails", async () => {
     installPushGlobals();
     mockedGetServiceWorkerRegistration.mockResolvedValue({
       pushManager: {
@@ -267,7 +282,6 @@ describe("enableBrowserPushNotifications", () => {
 
     await expect(enableBrowserPushNotifications("AQIDBA")).rejects.toThrow("subscribe failed");
     expect(mockedUpsertPushSubscription).not.toHaveBeenCalled();
-    expect(localStorage.getItem("kodex.pushSubscriptionId")).toBeNull();
   });
 });
 
@@ -290,8 +304,7 @@ describe("disableBrowserPushNotifications", () => {
     expect(unsubscribe).toHaveBeenCalled();
   });
 
-  it("only clears the legacy id when no browser subscription exists", async () => {
-    localStorage.setItem("kodex.pushSubscriptionId", "subscription-1");
+  it("does not revoke an endpoint when no browser subscription exists", async () => {
     installPushGlobals({
       getRegistration: vi.fn().mockResolvedValue({
         pushManager: {
@@ -304,6 +317,5 @@ describe("disableBrowserPushNotifications", () => {
     await disableBrowserPushNotifications();
 
     expect(mockedDeleteCurrentPushSubscription).not.toHaveBeenCalled();
-    expect(localStorage.getItem("kodex.pushSubscriptionId")).toBeNull();
   });
 });

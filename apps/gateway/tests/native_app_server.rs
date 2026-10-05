@@ -36,6 +36,8 @@ mod settings;
 mod skills;
 #[path = "native_app_server/subagents.rs"]
 mod subagents;
+#[path = "native_app_server/terminal.rs"]
+mod terminal;
 
 use anyhow::Context;
 use axum::Router;

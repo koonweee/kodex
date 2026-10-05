@@ -116,6 +116,25 @@ describe("TerminalPane", () => {
     expect(vi.mocked(useGatewayTerminalSession).mock.results[0]?.value.createNewSession).not.toHaveBeenCalled();
   });
 
+  it("reopens an ordinary terminal view from the gateway's running inventory", () => {
+    renderTerminalPane(workspacePane({ reuseRunning: true }));
+    expect(useGatewayTerminalSession).toHaveBeenCalledWith(true, {
+      createRequest: { command: undefined, cwd: undefined, title: undefined },
+      preferredTerminalId: null,
+      reuseRunning: true,
+    });
+  });
+
+  it("stops the shell only through its explicit Stop action", async () => {
+    renderTerminalPane(workspacePane({ terminalId: "terminal-1" }));
+    const actions = workspaceMocks.setPaneHeaderActions.mock.calls.find(([paneId]) => paneId === "pane-terminal")?.[1];
+    render(<MantineProvider>{actions}</MantineProvider>);
+    expect(vi.mocked(useGatewayTerminalSession).mock.results[0]?.value.stopSession).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Stop terminal" }));
+    await waitFor(() => expect(vi.mocked(useGatewayTerminalSession).mock.results[0]?.value.stopSession).toHaveBeenCalledOnce());
+    expect(workspaceMocks.openNewTerminalPane).not.toHaveBeenCalled();
+  });
+
   it("does not render the terminal title, status, and cwd as an in-pane header", () => {
     renderTerminalPane(workspacePane({ terminalId: "terminal-1" }));
 

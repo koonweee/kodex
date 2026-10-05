@@ -1,6 +1,6 @@
 import { MantineProvider } from "@mantine/core";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,6 +19,9 @@ const apiMocks = vi.hoisted(() => ({
   sendTestNotification: vi.fn(),
   upsertPushSubscription: vi.fn(),
 }));
+const pwaMocks = vi.hoisted(() => ({ getServiceWorkerRegistration: vi.fn() }));
+
+vi.mock("./pwa/registerServiceWorker", () => pwaMocks);
 
 vi.mock("./api/client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./api/client")>()),
@@ -71,9 +74,11 @@ function renderPreferences(initialSection: "appearance" | "execution" | "notific
 function installNotificationEnvironment({
   permission = "default",
   subscription = null,
+  registration,
 }: {
   permission?: NotificationPermission;
   subscription?: PushSubscription | null;
+  registration?: ServiceWorkerRegistration;
 } = {}) {
   const originalNotification = Object.getOwnPropertyDescriptor(globalThis, "Notification");
   const originalPushManager = Object.getOwnPropertyDescriptor(globalThis, "PushManager");
@@ -98,7 +103,7 @@ function installNotificationEnvironment({
   Object.defineProperty(navigator, "serviceWorker", {
     configurable: true,
     value: {
-      getRegistration: vi.fn().mockResolvedValue({
+      getRegistration: vi.fn().mockResolvedValue(registration ?? {
         pushManager: {
           getSubscription: vi.fn().mockResolvedValue(subscription),
         },
@@ -256,6 +261,7 @@ describe("PreferencesModal plugins tab", () => {
 
 describe("PreferencesModal notifications tab", () => {
   beforeEach(() => {
+    pwaMocks.getServiceWorkerRegistration.mockReset();
     apiMocks.deleteCurrentPushSubscription.mockReset();
     apiMocks.deletePushSubscription.mockReset();
     apiMocks.getCurrentPushSubscriptionStatus.mockReset();
@@ -264,6 +270,84 @@ describe("PreferencesModal notifications tab", () => {
     apiMocks.sendTestNotification.mockReset();
     apiMocks.upsertPushSubscription.mockReset();
     localStorage.clear();
+  });
+
+  it.each(["registration", "subscription", "gateway"])("does not report enabled when %s fails after permission is granted", async (failure) => {
+    const restoreNotifications = installNotificationEnvironment({ permission: "default" });
+    apiMocks.getNotificationStatus.mockResolvedValue({ configured: true, subscriptionsEnabled: true, vapidPublicKey: "AQIDBA" });
+    const error = new Error(`${failure} failed`);
+    const subscription = { endpoint: "https://push.example/new-sub" } as PushSubscription;
+    const subscribe = vi.fn().mockResolvedValue(subscription);
+    pwaMocks.getServiceWorkerRegistration.mockResolvedValue({ pushManager: { getSubscription: vi.fn().mockResolvedValue(null), subscribe } });
+    apiMocks.upsertPushSubscription.mockResolvedValue({ subscription: { enabled: true } });
+    if (failure === "registration") pwaMocks.getServiceWorkerRegistration.mockRejectedValue(error);
+    else if (failure === "subscription") subscribe.mockRejectedValue(error);
+    else apiMocks.upsertPushSubscription.mockRejectedValue(error);
+
+    try {
+      renderPreferences("notifications");
+      await screen.findByText("Available");
+      await userEvent.click(screen.getByRole("button", { name: /enable/i }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(error.message);
+      expect(screen.queryByText("Notifications enabled.")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /enable/i })).toBeEnabled();
+      expect(screen.getByRole("button", { name: /disable/i })).toBeDisabled();
+      if (failure !== "gateway") expect(apiMocks.upsertPushSubscription).not.toHaveBeenCalled();
+    } finally {
+      restoreNotifications();
+    }
+  });
+
+  it("keeps success feedback consistent with enable, disable and later device-status refills", async () => {
+    let current: PushSubscription | null = null;
+    let subscribed = false;
+    let statusError: Error | null = null;
+    const subscription = {
+      endpoint: "https://push.example/device",
+      unsubscribe: vi.fn(async () => { current = null; return true; }),
+    } as unknown as PushSubscription;
+    const registration = { pushManager: {
+      getSubscription: vi.fn(async () => current),
+      subscribe: vi.fn(async () => { current = subscription; return subscription; }),
+    } } as unknown as ServiceWorkerRegistration;
+    const restoreNotifications = installNotificationEnvironment({ permission: "granted", registration });
+    pwaMocks.getServiceWorkerRegistration.mockResolvedValue(registration);
+    apiMocks.getNotificationStatus.mockResolvedValue({ configured: true, subscriptionsEnabled: true, vapidPublicKey: "AQIDBA" });
+    apiMocks.getCurrentPushSubscriptionStatus.mockImplementation(async () => {
+      if (statusError) throw statusError;
+      return { configured: true, subscribed, subscription: null };
+    });
+    apiMocks.upsertPushSubscription.mockImplementation(async () => { subscribed = true; return { subscription: { enabled: true } }; });
+    apiMocks.deleteCurrentPushSubscription.mockImplementation(async () => { subscribed = false; return { subscription: null }; });
+
+    try {
+      const { queryClient } = renderPreferences("notifications");
+      await screen.findByText("Available");
+      await userEvent.click(screen.getByRole("button", { name: /enable/i }));
+      expect(await screen.findByText("Notifications enabled.")).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("button", { name: /disable/i }));
+      expect(await screen.findByText("Notifications disabled.")).toBeInTheDocument();
+      expect(screen.queryByText("Notifications enabled.")).not.toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("button", { name: /enable/i }));
+      expect(await screen.findByText("Notifications enabled.")).toBeInTheDocument();
+      expect(screen.queryByText("Notifications disabled.")).not.toBeInTheDocument();
+
+      subscribed = false;
+      await act(async () => { await queryClient.invalidateQueries({ queryKey: ["notifications", "current-device"] }); });
+      expect(await screen.findByText("Available")).toBeInTheDocument();
+      expect(screen.queryByText("Notifications enabled.")).not.toBeInTheDocument();
+
+      statusError = new Error("Device status unavailable");
+      await act(async () => { await queryClient.invalidateQueries({ queryKey: ["notifications", "current-device"] }); });
+      expect(await screen.findByText(statusError.message)).toBeInTheDocument();
+      expect(screen.queryByText("Notifications enabled.")).not.toBeInTheDocument();
+      expect(screen.queryByText("Notifications disabled.")).not.toBeInTheDocument();
+    } finally {
+      restoreNotifications();
+    }
   });
 
   it("shows notification availability without iOS-specific guidance", async () => {
@@ -341,7 +425,7 @@ describe("PreferencesModal notifications tab", () => {
       expect(await screen.findByText("Available")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /enable/i })).toBeEnabled();
       expect(screen.getByRole("button", { name: /disable/i })).toBeDisabled();
-      await waitFor(() => expect(localStorage.getItem("kodex.pushSubscriptionId")).toBeNull());
+      expect(localStorage.getItem("kodex.pushSubscriptionId")).toBe("subscription-1");
       expect(apiMocks.deletePushSubscription).not.toHaveBeenCalled();
     } finally {
       restoreNotifications();

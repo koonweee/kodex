@@ -3,7 +3,6 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 import { flushSync } from "react-dom";
 
 import {
-  deleteTerminalSession,
   type Approval,
   type ApprovalResponse,
   type EventEnvelope,
@@ -475,12 +474,6 @@ export function WorkspaceProvider({
   }, [pulsePane]);
 
   const closePane = useCallback((paneId: string, dockviewLayout: unknown, options: WorkspacePaneCloseOptions = {}) => {
-    const paneToClose = workspace.panes.find((pane) => pane.id === paneId) ?? null;
-    if (paneToClose?.kind === "terminal" && typeof paneToClose.target.terminalId === "string") {
-      void deleteTerminalSession(paneToClose.target.terminalId).catch((error: unknown) => {
-        setWorkspaceError(error instanceof Error ? error : new Error("Terminal session could not be stopped."));
-      });
-    }
     setWorkspace((current) => {
       const remainingPanes = current.panes.filter((pane) => pane.id !== paneId);
       if (remainingPanes.length === current.panes.length) {
@@ -503,7 +496,7 @@ export function WorkspaceProvider({
         panes,
       };
     });
-  }, [workspace.panes]);
+  }, []);
 
   const closeThreadPanes = useCallback((threadId: string) => {
     setWorkspace((current) => {
@@ -712,6 +705,7 @@ export function WorkspaceProvider({
         target: {
           command: options.command ?? null,
           cwd: options.cwd ?? null,
+          reuseRunning: !options.command && !options.cwd,
         },
         title: "Terminal",
       };
@@ -886,7 +880,7 @@ export function useWorkspace() {
 
 function duplicateWorkspacePane(pane: WorkspacePane): WorkspacePane {
   if (pane.kind === "terminal") {
-    const { terminalId: _terminalId, ...target } = pane.target;
+    const { terminalId: _terminalId, reuseRunning: _reuseRunning, ...target } = pane.target;
     return {
       ...pane,
       id: createPaneId("terminal"),

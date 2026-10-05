@@ -101,7 +101,22 @@ describe("WorkspaceProvider pane commands", () => {
     await waitFor(() => {
       expect(store.getState().panes.some((pane) => pane.id === "pane-terminal-1")).toBe(false);
     });
-    expect(deleteTerminalSession).toHaveBeenCalledWith("terminal-1");
+    expect(deleteTerminalSession).not.toHaveBeenCalled();
+  });
+
+  it("opens an ordinary terminal with gateway reuse after its view is closed", async () => {
+    const store = createMemoryWorkspacePaneStore(workspaceState([
+      threadPane("pane-thread-1", "thread-1", "Thread 1"),
+      terminalPane("pane-terminal-1", "terminal-1"),
+    ], "pane-terminal-1"));
+    renderProvider(store);
+    fireEvent.click(screen.getByRole("button", { name: "Close existing terminal" }));
+    await waitFor(() => expect(store.getState().panes.some((pane) => pane.kind === "terminal")).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Open terminal" }));
+    await waitFor(() => expect(store.getState().panes.find((pane) => pane.kind === "terminal")?.target).toEqual({
+      command: null, cwd: null, reuseRunning: true,
+    }));
+    expect(deleteTerminalSession).not.toHaveBeenCalled();
   });
 
   it("switches to an existing app surface tab for the same latest thread surface", async () => {

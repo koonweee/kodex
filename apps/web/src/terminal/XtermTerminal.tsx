@@ -1,7 +1,7 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as Xterm } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { useEffect, useRef } from "react";
+import { useEffect, useEffectEvent, useRef } from "react";
 
 import { useInputCapabilities } from "../shared/inputCapabilities";
 import { encodeTerminalBegin, encodeTerminalResize, encodeTerminalStdin } from "./terminalProtocol";
@@ -24,6 +24,9 @@ export function XtermTerminal({ className, inputSignal, onConnectionStateChange,
   const socketRef = useRef<WebSocket | null>(null);
   const terminalRef = useRef<Xterm | null>(null);
   const { hasTouchInput } = useInputCapabilities();
+  const reportConnectionState = useEffectEvent((state: TerminalConnectionState) => {
+    onConnectionStateChange?.(state);
+  });
 
   useEffect(() => {
     const container = containerRef.current;
@@ -31,7 +34,7 @@ export function XtermTerminal({ className, inputSignal, onConnectionStateChange,
       return;
     }
 
-    onConnectionStateChange?.("connecting");
+    reportConnectionState("connecting");
     const terminal = new Xterm({
       allowProposedApi: false,
       convertEol: true,
@@ -94,12 +97,12 @@ export function XtermTerminal({ className, inputSignal, onConnectionStateChange,
     requestAnimationFrame(fitTerminal);
 
     socket.onopen = () => {
-      onConnectionStateChange?.("open");
+      reportConnectionState("open");
       socket.send(encodeTerminalBegin());
       fitTerminal();
     };
-    socket.onclose = () => onConnectionStateChange?.("closed");
-    socket.onerror = () => onConnectionStateChange?.("error");
+    socket.onclose = () => reportConnectionState("closed");
+    socket.onerror = () => reportConnectionState("error");
     socket.onmessage = (event) => {
       writeSocketMessage(terminal, event.data);
     };
@@ -119,9 +122,9 @@ export function XtermTerminal({ className, inputSignal, onConnectionStateChange,
       if (terminalRef.current === terminal) {
         terminalRef.current = null;
       }
-      onConnectionStateChange?.("closed");
+      reportConnectionState("closed");
     };
-  }, [hasTouchInput, onConnectionStateChange, webSocketUrl]);
+  }, [hasTouchInput, webSocketUrl]);
 
   useEffect(() => {
     if (!inputSignal) {

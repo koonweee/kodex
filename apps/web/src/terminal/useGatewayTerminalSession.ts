@@ -94,7 +94,7 @@ export function useGatewayTerminalSession(opened: boolean, options: GatewayTermi
     }
     setState((current) => ({ ...current, error: null, isLoading: true }));
     try {
-      await deleteTerminalSession(terminalId);
+      await deleteKnownSession(terminalId);
       setState({ error: null, isLoading: false, session: null });
     } catch (error) {
       setState((current) => ({

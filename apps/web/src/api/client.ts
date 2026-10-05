@@ -382,14 +382,15 @@ export function sendThreadViewPresenceSnapshotBeacon(request: ThreadViewPresence
   return navigator.sendBeacon(threadViewPresenceSnapshotUrl(), body);
 }
 
-export async function getNotificationStatus(): Promise<NotificationStatusResponse> {
-  return unwrap(api.GET("/v1/notifications/status"));
+export async function getNotificationStatus(signal?: AbortSignal): Promise<NotificationStatusResponse> {
+  return unwrap(api.GET("/v1/notifications/status", { signal, cache: "no-store" }));
 }
 
 export async function getCurrentPushSubscriptionStatus(
   endpoint: string,
+  signal?: AbortSignal,
 ): Promise<CurrentPushSubscriptionStatusResponse> {
-  return unwrap(api.GET("/v1/notifications/subscription/current", { params: { query: { endpoint } } }));
+  return unwrap(api.GET("/v1/notifications/subscription/current", { params: { query: { endpoint } }, signal, cache: "no-store" }));
 }
 
 export async function upsertPushSubscription(

@@ -1,5 +1,5 @@
 import { Alert, Box, Button, Group, Loader, Text } from "@mantine/core";
-import { Plus, RotateCw } from "lucide-react";
+import { Plus, RotateCw, Square } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { terminalWebSocketUrl } from "../../api/client";
@@ -19,6 +19,7 @@ const TERMINAL_TEXT = {
   create: "New terminal",
   loading: "Starting terminal",
   reconnect: "Reconnect terminal",
+  stop: "Stop terminal",
 };
 
 const TERMINAL_ACCESSORY_KEYS: Array<{ data: string; label: string }> = [
@@ -45,10 +46,10 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
     }),
     [pane.title, targetCommand, targetCwd],
   );
-  const { error, isLoading, recoverSession, session } = useGatewayTerminalSession(true, {
+  const { error, isLoading, recoverSession, session, stopSession } = useGatewayTerminalSession(true, {
     createRequest,
     preferredTerminalId: targetTerminalId,
-    reuseRunning: false,
+    reuseRunning: target.reuseRunning === true,
   });
   const patchingSessionIdRef = useRef<string | null>(null);
   const [connectionState, setConnectionState] = useState<TerminalConnectionState>("closed");
@@ -138,6 +139,16 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
         >
           <Plus />
         </AdaptiveIconButton>
+        {session ? (
+          <AdaptiveIconButton
+            color="gray"
+            disabled={isLoading}
+            label={TERMINAL_TEXT.stop}
+            onClick={() => void stopSession()}
+          >
+            <Square />
+          </AdaptiveIconButton>
+        ) : null}
         {connectionMessage ? (
           <AdaptiveIconButton
             color="gray"
@@ -151,7 +162,7 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
         ) : null}
       </Group>
     ),
-    [connectionMessage, handleOpenTerminalTab, handleReconnect, isLoading],
+    [connectionMessage, handleOpenTerminalTab, handleReconnect, isLoading, session, stopSession],
   );
 
   useEffect(() => {

@@ -77,7 +77,7 @@ npm run build
 npm run trim
 ```
 
-Playwright uses mocked gateway responses and starts its own Vite server on `127.0.0.1:5174`.
+Most Playwright flows use gateway projection fixtures and start Vite on `127.0.0.1:5174`. The native terminal and built-PWA flows instead start the actual gateway and pinned Codex in disposable instances, serving a copied production bundle. They never use existing credentials or production storage.
 
 Install its test browser once with `cd apps/web && npx playwright install chromium --only-shell`. The real app-server integration test is opt-in and uses a disposable home with a local Responses fixture, without existing credentials:
 
@@ -85,7 +85,19 @@ Install its test browser once with `cd apps/web && npx playwright install chromi
 KODEX_TEST_CODEX_BINARY=/absolute/path/to/codex cargo test -p kodex-gateway --test native_app_server -- --ignored --nocapture
 ```
 
-The native fixtures verify approval replay and exact resolution after acceptance/Stop; project roots, idempotent creation, sparse edits, order, membership and history after cold restart; shared settings and native sections; and native config CAS, missing-file versions, literal key paths, sparse secret/policy preservation and higher-layer overrides. Browser E2E covers two-tab approval/project/section/settings/config convergence, conflicts, missed notifications, delayed stale snapshots and real SSE reconnects. Responsive flows run at desktop, narrow fine-pointer and narrow touch sizes. Config proof servers are disabled, so these tests do not claim successful MCP authentication or server readiness. These fixtures do not establish completed interactive account sign-in or release readiness.
+The built-PWA and native-terminal browser tests use full Chromium because the separate headless shell crashes on this worker's BadgeService binding. Run them explicitly after building both applications:
+
+```bash
+cargo build -p kodex-gateway
+cd apps/web
+npm run build
+npx playwright install chromium --no-shell
+KODEX_TEST_GATEWAY_BINARY="$PWD/../../target/debug/kodex-gateway" KODEX_TEST_CODEX_BINARY=/absolute/path/to/codex npm run test:e2e -- tests/native-terminal.spec.ts tests/native-pwa.spec.ts --workers=1
+```
+
+These tests are skipped without both explicit binary paths. The terminal proof uses real shells and WebSockets in two tabs at all three viewport/input shapes. The PWA proof exercises a real worker, static CacheStorage, network-owned APIs/uploads/file previews and an explicit waiting-worker update. The Rust native terminal proof stops and explicitly replaces app-server while the same gateway shell continues; it does not claim automatic app-server recovery or terminal persistence across gateway restart.
+
+The native fixtures also verify approval replay/resolution, projects/settings/sections/config, queue admission and promotion, history, read state, installed Control, scoped hosted widgets and MCP OAuth. OAuth and hosted-widget proofs use local synthetic services; they establish native callback/token/resource compatibility rather than real provider consent. Browser E2E covers two-tab convergence, conflicts, missed notifications, delayed stale snapshots and real SSE reconnects. Responsive flows run at desktop, narrow fine-pointer and narrow touch sizes. These fixtures do not establish interactive Codex account sign-in, OS PWA installation, mobile Safari behavior, provider Web Push delivery, operator VPN/TLS setup or release readiness.
 
 ## Production-style local serving
 
