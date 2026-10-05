@@ -21,7 +21,7 @@ it("registers a rootless native project and reuses its idempotency key after an 
     },
   }));
   render(<App />);
-  expect(await screen.findByRole("button", { name: "Chat project: Kodex" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Implement frontend", exact: true })).toBeInTheDocument();
   await userEvent.click(await screen.findByRole("button", { name: /add project/i }));
   const dialog = await screen.findByRole("dialog", { name: "Add project" });
   await userEvent.type(within(dialog).getByRole("textbox", { name: "Project name" }), "Research");

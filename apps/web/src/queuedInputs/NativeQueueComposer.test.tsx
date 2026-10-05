@@ -17,7 +17,8 @@ it("sends active-chat input through the native atomic command and queues only ex
   expect(gateway.callsFor("POST", "/v1/threads/thread-1/queued-inputs")).toHaveLength(0);
   await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toEqual({ input: [{ type: "text", text: "Live correction" }], clientUserMessageId: expect.any(String) });
   await userEvent.type(composer, "Next-turn work");
-  await userEvent.click(screen.getByRole("button", { name: "Queue message" }));
+  await userEvent.click(screen.getByRole("button", { name: "Open attachment menu" }));
+  await userEvent.click(await screen.findByRole("menuitem", { name: "Queue message" }));
   const queue = await screen.findByRole("region", { name: "Queued messages" });
   expect(queue).toHaveTextContent("Next-turn work");
   expect(composer).toHaveValue("");

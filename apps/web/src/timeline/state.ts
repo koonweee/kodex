@@ -120,7 +120,8 @@ export type TimelineWorkRow = {
   key: string;
   turnKey: string;
   turnId: string;
-  state: "running" | "completed";
+  state: "running" | "completed" | "failed" | "interrupted";
+  errorMessage?: string;
   startedAtMs?: number;
   completedAtMs?: number;
   collapsedRows: Array<TimelineItemRow | TimelineActivityRow | TimelineFileChangesRow>;

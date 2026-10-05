@@ -29,11 +29,8 @@
   font-size: 16px;
 }
 
-.kodex-mobile-composer-expanded {
-  min-width: 0;
-  border: 0;
-  background: var(--kodex-bg-raised);
-  box-shadow: var(--kodex-shadow-strong);
+.kodex-thread-pane-existing > .kodex-composer-shell[data-inline-density="mobile"]:not(.kodex-mobile-composer-expanded) {
+  margin-bottom: calc(var(--kodex-pane-edge-space) + 4px + env(safe-area-inset-bottom));
 }
 
 .kodex-mobile-composer-keyboard-mask {
@@ -44,17 +41,22 @@
   pointer-events: none;
 }
 
-.kodex-mobile-composer-expanded {
+.kodex-composer-shell[data-inline-density="mobile"].kodex-mobile-composer-expanded {
   position: fixed;
-  top: calc(env(safe-area-inset-top) + var(--kodex-mobile-visual-viewport-offset-top, 0px));
+  top: var(--kodex-mobile-visual-viewport-offset-top, 0px);
   right: 0;
   bottom: var(--kodex-mobile-keyboard-inset, 0px);
   left: 0;
   z-index: 30;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  max-height: calc(var(--kodex-mobile-visual-viewport-height, 100dvh) - env(safe-area-inset-top));
-  border-width: 0;
+  align-self: stretch;
+  justify-self: stretch;
+  width: 100%;
+  max-width: none;
+  max-height: var(--kodex-mobile-visual-viewport-height, 100dvh);
+  margin: 0;
+  border: 0;
   border-radius: 0;
   background: var(--kodex-bg-shell);
   overflow: hidden;
@@ -65,71 +67,58 @@
   grid-template-columns: 44px minmax(0, 1fr) 44px;
   align-items: center;
   min-height: 54px;
-  padding: 6px 10px;
+  padding: calc(6px + max(0px, env(safe-area-inset-top) - var(--kodex-mobile-visual-viewport-offset-top, 0px)))
+    max(10px, env(safe-area-inset-right)) 6px max(10px, env(safe-area-inset-left));
   border-bottom: 1px solid var(--kodex-border-subtle);
   text-align: center;
 }
 
-.kodex-mobile-composer-expanded-body {
-  position: relative;
-  contain: layout style;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 10px;
-  min-height: 0;
-  padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
-  overflow: hidden;
-  background: var(--kodex-bg-shell);
-}
-
-.kodex-mobile-composer-expanded-body[data-skill-command-open="true"] {
-  grid-template-rows: minmax(0, 1fr);
-  gap: 0;
-}
-
-.kodex-mobile-composer-expanded-main {
+.kodex-composer-shell[data-inline-density="mobile"] .kodex-mobile-composer-expanded-body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-height: 0;
+  padding: 10px max(12px, env(safe-area-inset-right))
+    calc(12px + var(--kodex-mobile-bottom-safe-area, env(safe-area-inset-bottom)))
+    max(12px, env(safe-area-inset-left));
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--kodex-bg-shell);
+  overflow: hidden;
+}
+
+.kodex-mobile-composer-expanded .kodex-composer-toolbar {
+  flex: 0 0 auto;
+  margin-top: auto;
+}
+
+.kodex-mobile-composer-textarea {
+  flex: 1 1 0;
+  min-width: 0;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
 
-.kodex-mobile-composer-expanded-main[data-skill-command-open="true"] {
-  overflow: hidden;
-  padding-bottom: 12px;
-}
-
-.kodex-mobile-composer-expanded-main[data-skill-command-open="true"] .kodex-mobile-composer-textarea {
-  flex: 0 1 auto;
-}
-
-.kodex-mobile-composer-textarea {
-  min-width: 0;
-}
-
-.kodex-mobile-composer-textarea textarea {
+.kodex-composer-shell[data-inline-density="mobile"] .kodex-mobile-composer-textarea textarea {
   min-height: 44px;
-  max-height: min(36dvh, 240px);
+  max-height: none;
   padding: 8px 2px;
   border: 0;
   background: transparent;
   box-shadow: none;
   font-size: 16px;
   line-height: 1.45;
-  overflow-y: auto;
   resize: none;
 }
 
-.kodex-mobile-composer-expanded .kodex-mobile-composer-textarea textarea {
-  max-height: none;
-  min-height: min(38dvh, 340px);
+.kodex-mobile-composer-expanded-body[data-skill-command-open="true"] .kodex-mobile-composer-textarea {
+  flex: 0 1 auto;
+  order: -1;
 }
 
-.kodex-mobile-composer-expanded-main[data-skill-command-open="true"] .kodex-mobile-composer-textarea textarea {
-  min-height: clamp(72px, calc(var(--kodex-mobile-visual-viewport-height, 100dvh) * 0.18), 140px);
+.kodex-mobile-composer-expanded-body[data-skill-command-open="true"] .kodex-mobile-composer-textarea textarea {
   max-height: clamp(88px, calc(var(--kodex-mobile-visual-viewport-height, 100dvh) * 0.24), 180px);
 }
 
@@ -138,13 +127,6 @@
   color: var(--input-color);
   opacity: 1;
   -webkit-text-fill-color: var(--input-color);
-}
-
-.kodex-mobile-composer-expanded-footer {
-  min-width: 0;
-  padding-top: 2px;
-  position: relative;
-  z-index: 1;
 }
 
 .kodex-composer-shell[data-inline-density="mobile"] .kodex-attachment-tray,

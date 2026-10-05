@@ -2,7 +2,7 @@
 
 ## Status
 
-Complete. The composer now uses shared draft, skill, attachment, submit, stop, and settings logic. Mobile non-fullscreen composition reuses the shared inline composer structure with mobile density styling, the same toolbar and underbar as desktop, and an expand affordance; fullscreen mobile composition remains a separate drafting surface with keyboard-aware sizing and a mobile skill command sheet.
+Complete. The composer now uses shared draft, skill, attachment, submit, stop, and settings logic. Mobile non-fullscreen composition reuses the shared inline composer structure with mobile density styling and the same toolbar and underbar as desktop. Fullscreen opens when its textarea receives focus. Expansion keeps the same textarea mounted and focused, changing only its layout, with keyboard-aware sizing and a mobile skill command sheet.
 
 Implemented code:
 
@@ -379,6 +379,13 @@ Two-tab correctness:
 ## Decisions
 
 - Mobile non-fullscreen composition uses the shared inline composer instead of a separate compact/focused pair.
-- Expanded mode is explicit through the expand affordance.
+- On narrow touch devices, focusing the inline textarea expands the same mounted input into fullscreen. Native tap focus and text selection survive expansion; there is no deferred refocus onto a replacement input.
+- The viewport opts into safe-area coverage. Touch shell headers and composer controls reserve device safe areas; keyboard-visible fullscreen footers use the measured visual viewport without adding a home-indicator inset above the keyboard.
 - Mobile settings are available through the shared inline composer controls and the same controls in the fullscreen footer toolbar.
 - Hardware keyboard arrow navigation stays shared with desktop behavior while touch rows are optimized for mobile.
+
+## October 2026 mobile follow-up
+
+Removed the top-bar project selector (membership remains in Thread actions), the “Next turn” footer text and explanatory model-menu copy. Queue remains native and is available through the composer “+” menu. PWA artwork uses an opaque square background without a baked-in rim so the OS owns its rounded mask.
+
+Focus expansion now keeps one textarea mounted; the shell, composer and viewport account for safe areas and keyboard height. Regression coverage checks preserved input identity/selection, desktop and narrow fine-pointer behavior, narrow touch expansion, and reachable input/actions after viewport shrink. Browser screenshots verify fullscreen placement. Physical iOS keyboard presentation and installed-icon refresh still require device verification.

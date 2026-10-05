@@ -322,12 +322,14 @@ function canonicalTimelineRowToViewRow(
   };
 
   if (row.kind === "work" && "work" in row) {
-    const workState = row.work?.state === "running" ? "running" : "completed";
+    const nativeState = row.work?.state;
+    const workState = nativeState === "running" || nativeState === "failed" || nativeState === "interrupted" ? nativeState : "completed";
     return {
       ...base,
       type: "work",
       turnId: row.turnId ?? "",
       state: workState,
+      errorMessage: row.work?.errorMessage ?? undefined,
       startedAtMs: unixSecondsToMs(row.work?.startedAt),
       completedAtMs: workState === "running" ? undefined : unixSecondsToMs(row.work?.completedAt),
       collapsedRows: row.collapsedRows

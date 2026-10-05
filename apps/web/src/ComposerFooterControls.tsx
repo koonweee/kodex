@@ -99,7 +99,6 @@ export function ComposerFooterControls({
           </Menu.Target>
           <Menu.Dropdown aria-label="Model and speed controls" className="kodex-composer-menu kodex-run-settings-menu">
             <MobileMenuHeader title="Run settings" onClose={() => setModelMenuOpened(false)} />
-            {forNextTurn ? <Menu.Label>Settings for the next turn. Queued messages use these settings when executed.</Menu.Label> : null}
             <Menu.Label>Model</Menu.Label>
             <Box className="kodex-run-settings-chip-row" data-section="model">
               {models.map((model) => (
@@ -151,7 +150,6 @@ export function ComposerFooterControls({
             </CheckboxMenuItem>
           </Menu.Dropdown>
         </Menu>
-        {forNextTurn ? <Text c="dimmed" size="xs">Next turn</Text> : null}
       </Group>
     </Group>
   );

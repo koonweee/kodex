@@ -778,6 +778,7 @@ impl ThreadView {
             status: status.to_string(),
             started_at: None,
             completed_at: None,
+            error_message: None,
         });
     }
 
@@ -794,12 +795,9 @@ impl ThreadView {
         } else {
             None
         };
-        let next_turn = ThreadTimelineSnapshotTurn {
-            id: turn.id.clone(),
-            status: turn.status.clone(),
-            started_at,
-            completed_at,
-        };
+        let mut next_turn = ThreadTimelineSnapshotTurn::from_turn(turn);
+        next_turn.started_at = started_at;
+        next_turn.completed_at = completed_at;
         replace_or_push_turn(&mut self.turns, next_turn);
     }
 
@@ -861,9 +859,16 @@ pub(crate) fn ordered_turns_for_items(
             ordered.push((*turn).clone());
         }
     }
-    for turn in turns {
+    for (index, turn) in turns.iter().enumerate() {
         if seen.insert(turn.id.clone()) {
-            ordered.push(turn.clone());
+            // Turns without transcript items still have native outcomes. Keep
+            // them before their next known native turn instead of moving them
+            // below every turn that happened to contain an item.
+            let position = turns[index + 1..]
+                .iter()
+                .find_map(|next| ordered.iter().position(|current| current.id == next.id))
+                .unwrap_or(ordered.len());
+            ordered.insert(position, turn.clone());
         }
     }
     ordered
@@ -883,6 +888,7 @@ fn timeline_turns_from_items(
             status: item.status.clone(),
             started_at: None,
             completed_at: None,
+            error_message: None,
         });
     }
     turns
@@ -1528,3 +1534,7 @@ mod identity_tests;
 #[cfg(test)]
 #[path = "thread_view/commit_tests.rs"]
 mod commit_tests;
+
+#[cfg(test)]
+#[path = "thread_view/failure_tests.rs"]
+mod failure_tests;

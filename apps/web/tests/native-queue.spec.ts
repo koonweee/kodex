@@ -34,7 +34,7 @@ for (const shape of [
           { input: [{ type: "text", text: "Second queued work" }], clientUserMessageId: expect.any(String) },
         ]);
         expect(fixture.connections).toEqual(connections);
-        await first.screenshot({ path: `/private/tmp/kodex-native-queue-${shape.name.replaceAll(" ", "-")}.png` });
+        await first.screenshot({ path: test.info().outputPath("native-queue.png") });
 
         // Editing one known text field retains unfamiliar native input unchanged.
         fixture.queuedInputs[0].input = [{ type: "text", text: "First queued work", nativeAnnotation: "preserve" }, { type: "futureInput", opaque: { keep: true } }];
@@ -128,5 +128,10 @@ async function submit(page: Page, text: string, label: string, touch: boolean) {
   }
   await composer(page).fill(text);
   await expect(composer(page)).toHaveValue(text);
-  await click(activePane(page).getByRole("button", { name: label, exact: true }), touch);
+  if (label === "Queue message") {
+    await click(activePane(page).getByRole("button", { name: "Open attachment menu", exact: true }), touch);
+    await click(page.getByRole("menuitem", { name: "Queue message", exact: true }), touch);
+  } else {
+    await click(activePane(page).getByRole("button", { name: label, exact: true }), touch);
+  }
 }

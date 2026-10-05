@@ -53,7 +53,6 @@ import {
 } from "./automations/cache";
 import { ThreadPaneComposerBridge } from "./composer/ThreadPaneComposerBridge";
 import { WorkspaceProjectCreateDialog } from "./projects/ProjectCreateDialog";
-import { ThreadProjectSelect } from "./projects/ThreadProjectSelect";
 import { moveProject } from "./api/client";
 import { refreshProjectState } from "./projects/cache";
 import type { ComposerSettings } from "./ComposerFooterControls";
@@ -1019,7 +1018,6 @@ function KodexShell({
   >(
     (_pane, state) => (
       <Group gap="xs" wrap="nowrap">
-        <ThreadProjectSelect threadId={state.thread.id} projectId={state.thread.projectId ?? null} projects={orderedProjects} onError={reportError} />
         {state.isActive && state.thread.id === selectedThreadId && (subagents.open || subagents.subagents.length > 0 || subagents.error !== null) ? (
           <AdaptiveIconButton
             aria-pressed={subagents.open ? "true" : "false"}
@@ -1030,7 +1028,7 @@ function KodexShell({
         ) : null}
       </Group>
     ),
-    [orderedProjects, reportError, selectedThreadId, subagents.error, subagents.open, subagents.subagents.length, subagents.toggle],
+    [selectedThreadId, subagents.error, subagents.open, subagents.subagents.length, subagents.toggle],
   );
   return (
     <>

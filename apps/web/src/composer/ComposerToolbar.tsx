@@ -19,6 +19,7 @@ const COMPOSER_TOOLBAR_TEXT = {
 };
 
 type ComposerToolbarProps = {
+  formId: string;
   attachmentInputRef: RefObject<HTMLInputElement | null>;
   canSubmitComposer: boolean;
   contextUsage?: ContextUsage | null;
@@ -37,6 +38,7 @@ type ComposerToolbarProps = {
 };
 
 export const ComposerToolbar = memo(function ComposerToolbar({
+  formId,
   attachmentInputRef,
   canSubmitComposer,
   contextUsage,
@@ -81,6 +83,17 @@ export const ComposerToolbar = memo(function ComposerToolbar({
             >
               {COMPOSER_TOOLBAR_TEXT.addAttachment}
             </Menu.Item>
+            {selectedThreadPresent ? (
+              <Menu.Item
+                disabled={!canSubmitComposer}
+                leftSection={<ListPlus size={14} />}
+                type="submit"
+                form={formId}
+                data-submit-intent="queue"
+              >
+                Queue message
+              </Menu.Item>
+            ) : null}
           </Menu.Dropdown>
         </Menu>
         <ComposerFooterControls
@@ -102,11 +115,6 @@ export const ComposerToolbar = memo(function ComposerToolbar({
           onClick={onExpandComposer}
         >
           <Maximize2 />
-        </AdaptiveIconButton>
-      ) : null}
-      {selectedThreadPresent && !shouldShowStopAction ? (
-        <AdaptiveIconButton label="Queue message" disabled={!canSubmitComposer} type="submit" data-submit-intent="queue">
-          <ListPlus />
         </AdaptiveIconButton>
       ) : null}
       {isSubmitting ? (

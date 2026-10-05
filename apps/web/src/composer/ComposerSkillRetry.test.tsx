@@ -98,12 +98,22 @@ describe("explicit skill retry", () => {
     await userEvent.type(composer, "请 $rev");
     expect(await screen.findByRole("option", { name: /review fix/i })).toBeInTheDocument();
     await userEvent.keyboard("{Enter}");
-    await userEvent.click(screen.getByRole("button", { name: endpoint === "queued-inputs" ? "Queue message" : "Send message" }));
+    if (endpoint === "queued-inputs") {
+      await userEvent.click(screen.getByRole("button", { name: "Open attachment menu" }));
+      await userEvent.click(await screen.findByRole("menuitem", { name: "Queue message" }));
+    } else {
+      await userEvent.click(screen.getByRole("button", { name: "Send message" }));
+    }
 
     await waitFor(() => expect(onError).toHaveBeenCalledOnce());
     expect((composer as HTMLTextAreaElement).value.trim()).toBe("请 $review-fix");
     expect(composer).toBeEnabled();
-    await userEvent.click(screen.getByRole("button", { name: endpoint === "queued-inputs" ? "Queue message" : "Send message" }));
+    if (endpoint === "queued-inputs") {
+      await userEvent.click(screen.getByRole("button", { name: "Open attachment menu" }));
+      await userEvent.click(await screen.findByRole("menuitem", { name: "Queue message" }));
+    } else {
+      await userEvent.click(screen.getByRole("button", { name: "Send message" }));
+    }
 
     await waitFor(() => expect(gateway.callsFor("POST", `/v1/threads/thread-1/${endpoint}`)).toHaveLength(2));
     const expectedBody = { input: [

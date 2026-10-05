@@ -1,7 +1,7 @@
 import { Badge, Box, Button, Code, Group, Stack, Text } from "@mantine/core";
 import { ChevronRight, Terminal } from "lucide-react";
 import { memo, useEffect, useMemo, useState } from "react";
-import type { ReactNode, SyntheticEvent } from "react";
+import type { SyntheticEvent } from "react";
 
 import type { MarkdownPreviewRequest } from "../files/types";
 import type { ImageLightboxImage } from "../images/types";
@@ -22,7 +22,7 @@ import {
   titleCase,
   unknownRenderer,
 } from "./rendererShared";
-import type { TimelineItem, TimelineWorkRow, WebSearchAction } from "./reducer";
+import type { TimelineItem, WebSearchAction } from "./reducer";
 
 type TimelineActivityGroupRendererProps = {
   imagePreviewUrlsByPath?: Record<string, string>;
@@ -90,69 +90,6 @@ function TimelineActivityGroupRendererImpl({
 
 export const TimelineActivityGroupRenderer = memo(TimelineActivityGroupRendererImpl);
 TimelineActivityGroupRenderer.displayName = "TimelineActivityGroupRenderer";
-
-type TimelineWorkRowRendererProps = {
-  children?: ReactNode;
-  expanded?: boolean;
-  onExpandedChange?: (expanded: boolean) => void;
-  row: TimelineWorkRow;
-};
-
-function TimelineWorkRowRendererImpl({
-  children,
-  expanded = false,
-  onExpandedChange,
-  row,
-}: TimelineWorkRowRendererProps) {
-  const elapsedMs = useWorkElapsedMs(row);
-  const verb = row.state === "running" ? "Working" : "Worked";
-  const label = elapsedMs === null ? verb : `${verb} for ${fmtElapsedCompact(Math.floor(elapsedMs / 1_000))}`;
-
-  if (row.state === "running") {
-    return (
-      <Box className="kodex-work-row" data-state="running">
-        <Text size="sm" c="dimmed">
-          {label}
-        </Text>
-        <WorkHeaderDivider />
-      </Box>
-    );
-  }
-
-  if (row.collapsedRows.length === 0) {
-    return (
-      <Box className="kodex-work-row" data-state="completed">
-        <Text size="sm" c="dimmed">
-          {label}
-        </Text>
-        <WorkHeaderDivider />
-      </Box>
-    );
-  }
-
-  return (
-    <details
-      className="kodex-work-row"
-      data-state="completed"
-      onToggle={(event) => onExpandedChange?.(event.currentTarget.open)}
-      open={expanded}
-    >
-      <summary>
-        <Box className="kodex-work-summary-content">
-          <Text size="sm" c="dimmed">
-            {label}
-          </Text>
-          <ChevronRight size={16} className="kodex-work-caret" aria-hidden="true" />
-        </Box>
-        <WorkHeaderDivider />
-      </summary>
-      {expanded ? children : null}
-    </details>
-  );
-}
-
-export const TimelineWorkRowRenderer = memo(TimelineWorkRowRendererImpl);
-TimelineWorkRowRenderer.displayName = "TimelineWorkRowRenderer";
 
 export function ReasoningBlock({ item }: { item: TimelineItem }) {
   const summary = item.summary || item.text;
@@ -455,43 +392,6 @@ function renderActivityItemBody(
     return <Text size="sm">{item.text || "Unsupported item"}</Text>;
   }
   return unknownRenderer(item);
-}
-
-function WorkHeaderDivider() {
-  return <Box aria-hidden="true" className="kodex-timeline-final-response-divider kodex-work-header-divider" />;
-}
-
-function useWorkElapsedMs(row: TimelineWorkRow): number | null {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (row.state !== "running" || row.startedAtMs === undefined) {
-      return;
-    }
-    const interval = window.setInterval(() => setNow(Date.now()), 1_000);
-    return () => window.clearInterval(interval);
-  }, [row.state, row.startedAtMs]);
-  if (row.startedAtMs === undefined) {
-    return null;
-  }
-  if (row.state === "completed") {
-    return Math.max(0, (row.completedAtMs ?? row.startedAtMs) - row.startedAtMs);
-  }
-  return Math.max(0, now - row.startedAtMs);
-}
-
-function fmtElapsedCompact(elapsedSecs: number): string {
-  if (elapsedSecs < 60) {
-    return `${elapsedSecs}s`;
-  }
-  if (elapsedSecs < 3600) {
-    const minutes = Math.floor(elapsedSecs / 60);
-    const seconds = elapsedSecs % 60;
-    return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
-  }
-  const hours = Math.floor(elapsedSecs / 3600);
-  const minutes = Math.floor((elapsedSecs % 3600) / 60);
-  const seconds = elapsedSecs % 60;
-  return `${hours}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
 }
 
 function webSearchActionText(action: WebSearchAction): string {

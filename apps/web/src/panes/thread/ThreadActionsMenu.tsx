@@ -2,6 +2,7 @@ import { Menu, Switch } from "@mantine/core";
 import { Archive, Copy, CopyPlus, MoreHorizontal, Pencil, Pin, PinOff } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 import type { ThreadSummary } from "../../api/client";
+import { ThreadProjectMenuItems } from "../../projects/ThreadProjectMenuItems";
 import { PINNED_SECTION_ID } from "../../sections/cache";
 import { SectionMenuItems, type ThreadSectionActions } from "../../sections/SectionMenuItems";
 import { AdaptiveIconButton } from "../../ui/AdaptiveIconButton";
@@ -10,6 +11,7 @@ import { copyTextToClipboard } from "../../shared/clipboard";
 export function ThreadActionsMenu({
   onDuplicatePane,
   onArchiveThread,
+  onProjectAssignmentError,
   onPinThread,
   onRenameThread,
   onSetThread,
@@ -19,6 +21,7 @@ export function ThreadActionsMenu({
   threadId, sections, onMoveThreadToSection, sectionMovePending,
 }: ThreadSectionActions & {
   onDuplicatePane: () => void;
+  onProjectAssignmentError: (error: unknown) => void;
   onArchiveThread?: (threadId: string) => void;
   onPinThread?: (threadId: string) => void;
   onRenameThread: () => void;
@@ -56,6 +59,7 @@ export function ThreadActionsMenu({
               {thread.section?.id === PINNED_SECTION_ID ? "Unpin thread" : "Pin thread"}
             </Menu.Item>
             <SectionMenuItems thread={thread} sections={sections} onMoveThreadToSection={onMoveThreadToSection} sectionMovePending={sectionMovePending} />
+            <ThreadProjectMenuItems threadId={thread.id} projectId={thread.projectId ?? null} onError={onProjectAssignmentError} />
             <Menu.Item leftSection={<Pencil size={14} />} onClick={onRenameThread}>
               Rename thread
             </Menu.Item>

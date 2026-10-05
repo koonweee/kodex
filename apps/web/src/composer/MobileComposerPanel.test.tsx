@@ -1,6 +1,6 @@
 import { MantineProvider } from "@mantine/core";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps, FormEvent, RefObject } from "react";
@@ -56,10 +56,12 @@ describe("Mobile composer panel", () => {
   it("opens fullscreen composer when the touch mobile inline textarea is focused", async () => {
     renderComposerPanel();
 
-    await userEvent.click(screen.getByLabelText(/message composer/i));
+    const textarea = screen.getByLabelText(/message composer/i);
+    await userEvent.click(textarea);
 
     expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByLabelText(/message composer/i)).toHaveFocus());
+    expect(screen.getByLabelText(/message composer/i)).toBe(textarea);
+    expect(textarea).toHaveFocus();
   });
 
   it("keeps the narrow non-touch composer inline when the textarea is focused", async () => {
@@ -86,17 +88,12 @@ describe("Mobile composer panel", () => {
     await userEvent.click(screen.getByLabelText(/message composer/i));
 
     const dialog = screen.getByRole("dialog", { name: /compose/i });
-    const keyboardMask = document.querySelector(".kodex-mobile-composer-keyboard-mask");
     expect(dialog).toHaveStyle({
       "--kodex-mobile-keyboard-inset": "256px",
       "--kodex-mobile-visual-viewport-height": "520px",
       "--kodex-mobile-visual-viewport-offset-top": "24px",
     });
-    expect(keyboardMask).toHaveStyle({
-      "--kodex-mobile-keyboard-inset": "256px",
-      "--kodex-mobile-visual-viewport-height": "520px",
-      "--kodex-mobile-visual-viewport-offset-top": "24px",
-    });
+
   });
 
   it("preserves draft text when collapsing back to inline mode", async () => {
@@ -114,7 +111,7 @@ describe("Mobile composer panel", () => {
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("Long mobile draft");
   });
 
-  it("moves the cursor to the draft end when reopening fullscreen from inline focus", async () => {
+  it("preserves the selected draft position when reopening fullscreen from inline focus", async () => {
     renderComposerPanel();
 
     await userEvent.click(screen.getByLabelText(/message composer/i));
@@ -122,13 +119,13 @@ describe("Mobile composer panel", () => {
     await userEvent.click(screen.getByRole("button", { name: /collapse composer/i }));
 
     const inlineTextarea = screen.getByLabelText(/message composer/i) as HTMLTextAreaElement;
-    inlineTextarea.setSelectionRange(0, 0);
-    await userEvent.click(inlineTextarea);
+    inlineTextarea.setSelectionRange(3, 7);
+    fireEvent.focus(inlineTextarea);
 
     const expandedTextarea = screen.getByLabelText(/message composer/i) as HTMLTextAreaElement;
     await waitFor(() => {
-      expect(expandedTextarea.selectionStart).toBe("Long mobile draft".length);
-      expect(expandedTextarea.selectionEnd).toBe("Long mobile draft".length);
+      expect(expandedTextarea.selectionStart).toBe(3);
+      expect(expandedTextarea.selectionEnd).toBe(7);
     });
   });
 
@@ -330,10 +327,6 @@ describe("Mobile composer panel", () => {
 
     expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
     expect(document.querySelector(".kodex-mobile-composer-expanded-body")).toHaveAttribute(
-      "data-skill-command-open",
-      "true",
-    );
-    expect(document.querySelector(".kodex-mobile-composer-expanded-main")).toHaveAttribute(
       "data-skill-command-open",
       "true",
     );

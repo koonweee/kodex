@@ -3517,6 +3517,7 @@ export interface components {
         ThreadTimelineSnapshotTurn: {
             /** Format: int64 */
             completedAt?: number | null;
+            errorMessage?: string | null;
             id: string;
             /** Format: int64 */
             startedAt?: number | null;
@@ -3549,6 +3550,7 @@ export interface components {
         ThreadTimelineWorkSummary: {
             /** Format: int64 */
             completedAt?: number | null;
+            errorMessage?: string | null;
             /** Format: int64 */
             startedAt?: number | null;
             state: string;

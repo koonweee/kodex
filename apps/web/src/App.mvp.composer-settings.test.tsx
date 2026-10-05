@@ -33,7 +33,7 @@ function deferred<T>() {
 }
 
 async function clickFastSwitch() {
-  await userEvent.click(screen.getByRole("menuitemcheckbox", { name: /fast/i, hidden: true }));
+  await userEvent.click(await screen.findByRole("menuitemcheckbox", { name: /fast/i, hidden: true }));
 }
 
 function rateLimitResetDate(daysFromToday: number, hour: number, minute: number) {

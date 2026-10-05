@@ -289,13 +289,16 @@
     display: none !important;
     width: auto !important;
     height: auto !important;
-    padding: 12px !important;
+    padding: calc(12px + var(--kodex-mobile-safe-area-top, 0px))
+      max(12px, var(--kodex-mobile-safe-area-right, 0px))
+      calc(12px + var(--kodex-mobile-safe-area-bottom, 0px))
+      max(12px, var(--kodex-mobile-safe-area-left, 0px)) !important;
     overflow: auto;
     transform: none !important;
   }
 
   .kodex-sidebar {
-    padding-top: 6px !important;
+    padding-top: calc(6px + var(--kodex-mobile-safe-area-top, 0px)) !important;
   }
 
   .kodex-main {
@@ -316,15 +319,15 @@
   }
 
   .kodex-main-stack {
-    height: calc(100dvh - 24px) !important;
+    height: calc(100dvh - 24px - var(--kodex-mobile-safe-area-top, 0px) - var(--kodex-mobile-safe-area-bottom, 0px)) !important;
   }
 
   .kodex-shell[data-mobile-panel="chat"] .kodex-main[data-single-pane-workspace="true"] {
-    padding: 0 !important;
+    padding: var(--kodex-mobile-safe-area-top, 0px) var(--kodex-mobile-safe-area-right, 0px) 0 var(--kodex-mobile-safe-area-left, 0px) !important;
   }
 
   .kodex-main-stack[data-single-pane-workspace="true"] {
-    height: 100dvh !important;
+    height: calc(100dvh - var(--kodex-mobile-safe-area-top, 0px)) !important;
   }
 
   .kodex-thread-sidebar-button {
@@ -374,5 +377,14 @@
 @media (max-width: 900px) and (pointer: coarse), (max-width: 900px) and (any-pointer: coarse) {
   .kodex-sidebar {
     padding-top: 4px !important;
+  }
+}
+
+@media (max-width: 900px) and (any-pointer: coarse) {
+  .kodex-shell {
+    --kodex-mobile-safe-area-top: env(safe-area-inset-top);
+    --kodex-mobile-safe-area-right: env(safe-area-inset-right);
+    --kodex-mobile-safe-area-bottom: env(safe-area-inset-bottom);
+    --kodex-mobile-safe-area-left: env(safe-area-inset-left);
   }
 }

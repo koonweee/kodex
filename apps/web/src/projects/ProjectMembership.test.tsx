@@ -28,7 +28,7 @@ it("refreshes canonical chat details after assignment without waiting for a nati
     "PATCH /v1/threads/thread-1/project": () => { member = { ...member, projectId: destination.id }; return { thread: member, rawPayload: {} }; },
   }));
   render(<App />);
-  const chooser = await screen.findByRole("button", { name: "Chat project: Kodex" });
+  const chooser = await screen.findByRole("button", { name: "Thread actions" });
   await waitFor(() => expect(gateway.callsFor("POST", "/v1/threads/thread-1/attach").length).toBeGreaterThan(0));
   holdNext = true;
   act(() => {
@@ -43,7 +43,8 @@ it("refreshes canonical chat details after assignment without waiting for a nati
   await waitFor(() => expect(gateway.callsFor("POST", "/v1/threads/thread-1/attach").length).toBeGreaterThan(readsBeforeAssignment));
   expect(oldSignal?.aborted).toBe(true);
   await act(async () => { releaseOld(threadDetail(thread)); });
-  expect(await screen.findByRole("button", { name: "Chat project: Research" })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Thread actions" }));
+  await waitFor(() => expect(screen.getAllByRole("menuitem", { hidden: true }).find((item) => item.textContent === "Research")).toBeDisabled());
   expect(within(screen.getByRole("navigation", { name: "Workspace" })).getByRole("group", { name: "Kodex" })).not.toHaveTextContent("Implement frontend");
 });
 
@@ -55,10 +56,11 @@ it("uses canonical membership for a deep link outside the current sidebar page",
     "PATCH /v1/threads/thread-1/project": () => { member = { ...member, projectId: null }; return { thread: member, rawPayload: {} }; },
   }));
   render(<App />);
-  await userEvent.click(await screen.findByRole("button", { name: "Chat project: Kodex" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Thread actions" }));
   const clear = await screen.findByRole("menuitem", { name: "No project" });
   expect(clear).toBeEnabled();
   await userEvent.click(clear);
   await waitFor(() => expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/project")).toHaveLength(1));
-  expect(await screen.findByRole("button", { name: "Chat project: No project" })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Thread actions" }));
+  await waitFor(() => expect(screen.getAllByRole("menuitem", { hidden: true }).find((item) => item.textContent === "No project")).toBeDisabled());
 });

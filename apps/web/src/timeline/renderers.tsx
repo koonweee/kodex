@@ -11,10 +11,10 @@ import {
   ReasoningBlock,
   StatusMarker,
   TimelineActivityGroupRenderer,
-  TimelineWorkRowRenderer,
   ToolCallBlock,
   WebSearchBlock,
 } from "./activityRenderers";
+import { TimelineWorkRowRenderer } from "./workRenderer";
 import { FileChangeBlock, TimelineFileChangesRenderer } from "./fileRenderers";
 import { ImageActivityBlock } from "./imageRenderers";
 import { AssistantMessageMarkdown, UserMessageBubble } from "./messageRenderers";

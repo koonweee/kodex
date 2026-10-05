@@ -57,15 +57,12 @@ for (const shape of [
           if (shape.hasTouch) await skill.tap();
           else await skill.click();
           await expect(composer).toHaveValue("请 $review-fix ");
-          const send = activePane(first).getByRole("button", { name: queued ? "Queue message" : "Send message", exact: true });
-          if (shape.hasTouch) await send.tap();
-          else await send.click();
+          await submit(first, queued, shape.hasTouch);
           await expect.poll(() => attempts.length).toBe(1);
           await expect(first.getByText("Native input rejected", { exact: true })).toBeVisible();
           await expect(composer).toHaveValue("请 $review-fix ");
-          await expect(send).toBeEnabled();
-          if (shape.hasTouch) await send.tap();
-          else await send.click();
+          await expect(composer).toBeEnabled();
+          await submit(first, queued, shape.hasTouch);
           await expect.poll(() => attempts.length).toBe(2);
           expect(attempts).toEqual([
             { input, clientUserMessageId: expect.any(String) },
@@ -93,7 +90,7 @@ for (const shape of [
           await expect(activePane(second).getByLabel("$review-fix skill", { exact: true })).toBeVisible();
           expect(catalogReads).toBe(pickerCatalogReads);
           expect(attempts).toHaveLength(2);
-          if (!queued) await second.screenshot({ path: `/private/tmp/kodex-native-skills-${shape.name.replaceAll(" ", "-")}.png` });
+          if (!queued) await second.screenshot({ path: test.info().outputPath("native-skills.png") });
         } finally {
           await fixture.close();
         }
@@ -107,4 +104,17 @@ for (const shape of [
 
 function activePane(page: Page) {
   return page.locator('.kodex-thread-pane[data-workspace-pane-active="true"]');
+}
+
+async function submit(page: Page, queued: boolean, touch: boolean) {
+  if (queued) {
+    const menu = activePane(page).getByRole("button", { name: "Open attachment menu", exact: true });
+    if (touch) await menu.tap();
+    else await menu.click();
+  }
+  const action = queued
+    ? page.getByRole("menuitem", { name: "Queue message", exact: true })
+    : activePane(page).getByRole("button", { name: "Send message", exact: true });
+  if (touch) await action.tap();
+  else await action.click();
 }

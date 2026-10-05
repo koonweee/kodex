@@ -102,15 +102,21 @@ function modelButton(page: Page, effort: string) {
 
 async function send(page: Page, text: string, hasTouch: boolean, label = "Send message") {
   const composer = activePane(page).getByLabel("Message composer", { exact: true });
-  // Touch focus opens a replacement expanded editor. Resolve it after the tap
-  // before entering text, just as a phone user does before typing.
+  // Touch focus expands the same editor before entering text.
   if (hasTouch) {
     await composer.tap();
     await expect(activePane(page).getByRole("dialog", { name: "Compose", exact: true })).toBeVisible();
   }
   await composer.fill(text);
   await expect(composer).toHaveValue(text);
-  const submit = activePane(page).getByRole("button", { name: label, exact: true });
+  if (label === "Queue message") {
+    const menu = activePane(page).getByRole("button", { name: "Open attachment menu", exact: true });
+    if (hasTouch) await menu.tap();
+    else await menu.click();
+  }
+  const submit = label === "Queue message"
+    ? page.getByRole("menuitem", { name: "Queue message", exact: true })
+    : activePane(page).getByRole("button", { name: label, exact: true });
   if (hasTouch) await submit.tap();
   else await submit.click();
 }

@@ -18,7 +18,7 @@ for (const shape of shapes) {
         const first = await fixture.page("first", "/threads/history");
         const second = await fixture.page("second", "/threads/history");
         for (const page of [first, second]) {
-          await expect(page.getByRole("button", { name: "Chat project: Alpha", exact: true })).toBeVisible();
+          await expectProject(page, "Alpha");
           await expect(page.getByText(preservedHistory, { exact: true })).toBeVisible();
         }
         await expect.poll(() => fixture.connected("first") && fixture.connected("second")).toBe(true);
@@ -66,13 +66,13 @@ for (const shape of shapes) {
         }
         expect(fixture.connections.get("second")).toBe(secondConnections);
 
-        await second.getByRole("button", { name: "Chat project: Alpha", exact: true }).click();
+        await second.getByRole("button", { name: "Thread actions", exact: true }).click();
         await second.getByRole("menuitem", { name: "Beta", exact: true }).click();
-        for (const page of [first, second]) await expect(page.getByRole("button", { name: "Chat project: Beta", exact: true })).toBeVisible();
-        await first.getByRole("button", { name: "Chat project: Beta", exact: true }).click();
+        for (const page of [first, second]) await expectProject(page, "Beta");
+        await first.getByRole("button", { name: "Thread actions", exact: true }).click();
         await first.getByRole("menuitem", { name: "No project", exact: true }).click();
         for (const page of [first, second]) {
-          await expect(page.getByRole("button", { name: "Chat project: No project", exact: true })).toBeVisible();
+          await expectProject(page, "No project");
           await expect(page.getByText(preservedHistory, { exact: true })).toBeVisible();
         }
         expect(fixture.requests.filter((entry) => entry.key === "PATCH /v1/threads/history/project").map((entry) => entry.body)).toEqual([{ projectId: "beta" }, { projectId: null }]);
@@ -97,7 +97,7 @@ test.describe("narrow detail recovery", () => {
       const first = await fixture.page("first", "/projects/alpha");
       const second = await fixture.page("second", "/threads/unlisted");
       await expect(first.getByRole("heading", { name: "Alpha", exact: true })).toBeVisible();
-      await expect(second.getByRole("button", { name: "Chat project: Alpha", exact: true })).toBeVisible();
+      await expectProject(second, "Alpha");
       await expect(second.getByText(preservedHistory, { exact: true })).toBeVisible();
       await expect.poll(() => fixture.connected("first") && fixture.connected("second")).toBe(true);
 
@@ -113,11 +113,11 @@ test.describe("narrow detail recovery", () => {
       const confirm = first.getByRole("dialog", { name: "Delete Alpha?", exact: true });
       await expect(confirm.getByText("Its chats will remain available without a project. Files are unchanged.")).toBeVisible();
       await confirm.getByRole("button", { name: "Delete project", exact: true }).click();
-      await expect(second.getByRole("button", { name: "Chat project: No project", exact: true })).toBeVisible();
+      await expectProject(second, "No project");
       await expect.poll(() => fixture.wasAborted("second", "sidebar") && fixture.wasAborted("second", "detail")).toBe(true);
       await fixture.release("second", "sidebar");
       await fixture.release("second", "detail");
-      await expect(second.getByRole("button", { name: "Chat project: No project", exact: true })).toBeVisible();
+      await expectProject(second, "No project");
       const sidebar = await openSidebar(second);
       await expect(sidebar.getByRole("group", { name: "Alpha", exact: true })).toHaveCount(0);
       await expect(sidebar.getByRole("button", { name: "Unlisted history", exact: true })).toHaveCount(0);
@@ -133,10 +133,10 @@ test.describe("narrow detail recovery", () => {
       fixture.state.threads.find((entry) => entry.id === "unlisted")!.projectId = "beta";
       fixture.emit("project.changed", { projectId: "beta", changeType: "updated" }, "first");
       fixture.emit("thread.project_updated", { threadId: "unlisted", projectId: "beta" }, "first");
-      await expect(second.getByRole("button", { name: "Chat project: No project", exact: true })).toBeVisible();
+      await expectProject(second, "No project");
       fixture.disconnect("second");
       await expect.poll(() => fixture.connections.get("second") ?? 0).toBeGreaterThan(beforeReconnect);
-      await expect(second.getByRole("button", { name: "Chat project: Recovered Beta", exact: true })).toBeVisible();
+      await expectProject(second, "Recovered Beta");
       await expect(second.getByText(preservedHistory, { exact: true })).toBeVisible();
       expect(fixture.requests.filter((entry) => entry.client === "second" && entry.key === "POST /v1/threads/unlisted/attach").length).toBeGreaterThan(readsBeforeReconnect);
       expect(fixture.state.threads.find((entry) => entry.id === "unlisted")?.cwd).toBe(executionCwd);
@@ -167,5 +167,12 @@ async function openHistory(page: Page) {
   const expand = sidebar.getByRole("button", { name: "Expand Alpha", exact: true });
   if (await expand.isVisible()) await expand.click();
   await sidebar.getByRole("button", { name: "History chat", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Chat project: Alpha", exact: true })).toBeVisible();
+  await expectProject(page, "Alpha");
+}
+
+async function expectProject(page: Page, name: string) {
+  await page.getByRole("button", { name: "Thread actions", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name, exact: true })).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu", { name: "Thread actions", exact: true })).toBeHidden();
 }

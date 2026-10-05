@@ -1,6 +1,7 @@
 import { Box, Group, Menu, Textarea } from "@mantine/core";
 import { ChevronDown, Folder, GitGraph, MessageSquare } from "lucide-react";
-import type { KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from "react";
+import { useId } from "react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from "react";
 
 import type { SkillMetadata } from "../api/client";
 import { AttachmentTray } from "./AttachmentTray";
@@ -26,6 +27,7 @@ type InlineComposerPanelProps = ComposerPanelProps & {
   queuePanel?: ReactNode;
   canSubmitComposer: boolean;
   density?: "desktop" | "mobile";
+  expanded?: { header: ReactNode; style: CSSProperties };
   draftState: ComposerDraftState;
   filteredSkills: SkillMetadata[];
   filteredSlashCommands: SlashCommandItem[];
@@ -57,6 +59,7 @@ export function InlineComposerPanel({
   contextUsage,
   currentProjectName,
   density = "desktop",
+  expanded,
   draftProjectSelector,
   draftState,
   filteredSkills,
@@ -97,8 +100,9 @@ export function InlineComposerPanel({
   renderSkillSuggestions,
   textareaRef,
 }: InlineComposerPanelProps) {
+  const formId = useId();
   const draftHeroText = greetingForDate(new Date());
-  const shouldShowDraftHero = isDraftThreadSelected || isDraftComposerTransitioning;
+  const shouldShowDraftHero = !expanded && (isDraftThreadSelected || isDraftComposerTransitioning);
   const selectedDraftProject =
     draftProjectSelector?.projects.find((project) => project.id === draftProjectSelector.value) ?? null;
   const draftProjectSelectorLabel = selectedDraftProject?.name ?? COMPOSER_TEXT.noProject;
@@ -120,7 +124,10 @@ export function InlineComposerPanel({
   return (
     <Box
       ref={setComposerShellNode}
-      className="kodex-composer-shell kodex-thread-column"
+      className={`kodex-composer-shell kodex-thread-column${expanded ? " kodex-mobile-composer-expanded" : ""}`}
+      role={expanded ? "dialog" : undefined}
+      aria-label={expanded ? "Compose" : undefined}
+      style={expanded?.style}
       data-inline-density={density}
       data-entry-ready={isEntryPending ? "false" : "true"}
       data-drag-active={isComposerDragActive ? "true" : "false"}
@@ -128,6 +135,7 @@ export function InlineComposerPanel({
       onDragOver={isComposerControlsDisabled ? undefined : onComposerDragOver}
       onDrop={isComposerControlsDisabled ? undefined : onComposerDrop}
     >
+      {expanded?.header}
       {shouldShowDraftHero ? (
         <Box
           className="kodex-composer-hero-stage"
@@ -136,10 +144,12 @@ export function InlineComposerPanel({
           <Box className="kodex-composer-hero">{draftHeroText}</Box>
         </Box>
       ) : null}
-      {queuePanel}
+      {expanded ? null : queuePanel}
       <Box
         component="form"
-        className="kodex-composer"
+        id={formId}
+        className={`kodex-composer${expanded ? " kodex-mobile-composer-expanded-body" : ""}`}
+        data-skill-command-open={expanded && (skillPopupOpen || slashPopupOpen) ? "true" : undefined}
         onSubmit={(event) =>
           onSubmitTurn(
             event,
@@ -180,15 +190,20 @@ export function InlineComposerPanel({
           onChange={onAttachmentInputChange}
         />
         {pendingAttachments.length > 0 && !isComposerBusy ? (
-          <AttachmentTray attachments={pendingAttachments} onImageOpen={onImageOpen} onRemove={onRemovePendingAttachment} />
+          <AttachmentTray
+            compact={Boolean(expanded)}
+            attachments={pendingAttachments}
+            onImageOpen={onImageOpen}
+            onRemove={onRemovePendingAttachment}
+          />
         ) : null}
         <Textarea
           ref={textareaRef}
           aria-label="Message composer"
-          className="kodex-composer-textarea"
+          className={`kodex-composer-textarea${expanded ? " kodex-mobile-composer-textarea" : ""}`}
           placeholder={canCompose ? COMPOSER_TEXT.placeholder : COMPOSER_TEXT.disabledPlaceholder}
-          minRows={2}
-          maxRows={10}
+          minRows={expanded ? 3 : 2}
+          maxRows={expanded ? 16 : 10}
           autosize
           value={draftState.composerText}
           onChange={(event) => {
@@ -217,25 +232,28 @@ export function InlineComposerPanel({
             {COMPOSER_TEXT.dropImages}
           </Box>
         ) : null}
-        <ComposerToolbar
-          attachmentInputRef={attachmentInputRef}
-          canSubmitComposer={canSubmitComposer}
-          contextUsage={contextUsage}
-          disabled={isComposerControlsDisabled}
-          models={models}
-          onExpandComposer={onExpandComposer}
-          onSettingsChange={onComposerSettingsChange}
-          onStopTurn={onStopTurn}
-          selectedThreadPresent={selectedThreadPresent}
-          settings={composerSettings}
-          settingsDisabled={composerSettingsDisabled}
-          settingsError={composerSettingsError}
-          shouldShowStopAction={shouldShowStopAction}
-          isSubmitting={isComposerSubmitting}
-          showContextUsage={!shouldShowDraftHero}
-        />
+        {expanded && (skillPopupOpen || slashPopupOpen) ? null : (
+          <ComposerToolbar
+            formId={formId}
+            attachmentInputRef={attachmentInputRef}
+            canSubmitComposer={canSubmitComposer}
+            contextUsage={contextUsage}
+            disabled={isComposerControlsDisabled}
+            models={models}
+            onExpandComposer={onExpandComposer}
+            onSettingsChange={onComposerSettingsChange}
+            onStopTurn={onStopTurn}
+            selectedThreadPresent={selectedThreadPresent}
+            settings={composerSettings}
+            settingsDisabled={composerSettingsDisabled}
+            settingsError={composerSettingsError}
+            shouldShowStopAction={shouldShowStopAction}
+            isSubmitting={isComposerSubmitting}
+            showContextUsage={!shouldShowDraftHero}
+          />
+        )}
       </Box>
-      {hasUnderbar ? (
+      {hasUnderbar && !expanded ? (
         <Box className="kodex-composer-underbar" aria-label={underbarLabel} role="toolbar">
           <Group className="kodex-composer-underbar-left" gap={10} wrap="nowrap">
             {draftProjectSelector ? (

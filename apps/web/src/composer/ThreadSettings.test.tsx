@@ -29,7 +29,7 @@ it("shares native applied settings across clients while disjoint stale picker in
   const streams = FakeEventSource.instances.filter((source) => !source.closed);
 
   await userEvent.click(first.getByRole("button", { name: "Model: gpt-5.4, medium" }));
-  await userEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Fast" }));
+  await userEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Fast", hidden: true }));
   await waitFor(() => expect(patches).toEqual([{ serviceTier: "fast" }]));
   expect(first.queryByRole("img", { name: "Fast responses enabled" })).not.toBeInTheDocument();
 

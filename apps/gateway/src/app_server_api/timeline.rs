@@ -125,6 +125,8 @@ pub struct ThreadTimelineWorkSummary {
     pub state: String,
     pub started_at: Option<i64>,
     pub completed_at: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_message: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -146,6 +148,8 @@ pub struct ThreadTimelineSnapshotTurn {
     pub status: String,
     pub started_at: Option<i64>,
     pub completed_at: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_message: Option<String>,
 }
 
 impl ThreadTimelineSnapshotTurn {
@@ -155,6 +159,12 @@ impl ThreadTimelineSnapshotTurn {
             status: turn.status.clone(),
             started_at: turn.started_at,
             completed_at: turn.completed_at,
+            error_message: turn
+                .raw_payload
+                .get("error")
+                .and_then(|error| error.get("message"))
+                .and_then(Value::as_str)
+                .map(str::to_owned),
         }
     }
 }
@@ -358,7 +368,8 @@ fn insert_work_rows(
                     ThreadLiveState::Idle | ThreadLiveState::NotLoaded
                 );
             let is_terminal_turn = is_terminal_turn_status(&turn.status);
-            if turn.started_at.is_none() && !is_active_turn {
+            let unsuccessful = matches!(turn.status.as_str(), "failed" | "interrupted");
+            if turn.started_at.is_none() && !is_active_turn && !unsuccessful {
                 return None;
             }
             if !is_active_turn && !is_terminal_turn {
@@ -374,7 +385,7 @@ fn insert_work_rows(
                     status: if is_active_turn {
                         "running".to_string()
                     } else {
-                        "completed".to_string()
+                        turn.status.clone()
                     },
                     timestamp_ms: None,
                     item: None,
@@ -384,7 +395,7 @@ fn insert_work_rows(
                         state: if is_active_turn {
                             "running".to_string()
                         } else {
-                            "completed".to_string()
+                            turn.status.clone()
                         },
                         started_at: turn.started_at,
                         completed_at: if is_active_turn {
@@ -392,6 +403,7 @@ fn insert_work_rows(
                         } else {
                             turn.completed_at
                         },
+                        error_message: turn.error_message.clone(),
                     }),
                     collapsed_rows: Vec::new(),
                     divider_before: None,
@@ -435,6 +447,34 @@ fn insert_work_rows(
         };
         result.extend(rows_for_turn_with_work_row(turn_rows, work_row));
     }
+    // A native failure can arrive before any transcript item was created.
+    // Retain its outcome in native turn order rather than requiring a user row.
+    for (index, turn) in turns.iter().enumerate() {
+        if !matches!(turn.status.as_str(), "failed" | "interrupted") {
+            continue;
+        }
+        if let Some(mut work_row) = work_rows.remove(&turn.id) {
+            work_row.display_order = turns[index + 1..]
+                .iter()
+                .find_map(|next| {
+                    result
+                        .iter()
+                        .filter(|row| row.turn_id.as_deref() == Some(&next.id))
+                        .map(|row| row.display_order)
+                        .min()
+                })
+                .map(|order| order.saturating_sub(1))
+                .unwrap_or_else(|| {
+                    result
+                        .iter()
+                        .map(|row| row.display_order)
+                        .max()
+                        .unwrap_or(0)
+                        .saturating_add(1)
+                });
+            result.push(work_row);
+        }
+    }
     result.sort_by_key(|row| row.display_order);
     result
 }
@@ -444,6 +484,14 @@ fn rows_for_turn_with_work_row(
     mut work_row: ThreadTimelineRow,
 ) -> Vec<ThreadTimelineRow> {
     let Some(first_work_index) = rows.iter().position(row_contains_work_precursor) else {
+        if matches!(work_row.status.as_str(), "failed" | "interrupted") {
+            work_row.display_order = rows
+                .first()
+                .map_or(0, |row| row.display_order.saturating_sub(1));
+            let mut result = vec![work_row];
+            result.extend(rows.into_iter().map(ThreadTimelineRow::from));
+            return result;
+        }
         return rows.into_iter().map(ThreadTimelineRow::from).collect();
     };
     let final_index = rows
