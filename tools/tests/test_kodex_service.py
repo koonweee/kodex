@@ -224,6 +224,22 @@ class LifecycleTests(unittest.TestCase):
              patch.object(service.urllib.request, 'build_opener', return_value=opener):
             self.app.health(release)
 
+    def test_native_app_bundle_is_packaged_with_its_resources(self):
+        source = self.root / 'CodexCLI.app/Contents/MacOS/codex'
+        source.parent.mkdir(parents=True)
+        source.write_text('signed executable')
+        resources = source.parents[1] / 'Resources'
+        resources.mkdir()
+        (resources / 'required').write_text('resource')
+        stage = self.root / 'stage'
+        stage.mkdir()
+        def ditto(args):
+            service.shutil.copytree(args[1], args[2])
+        with patch.object(service, 'run', side_effect=ditto):
+            service.package_native(source, stage)
+        self.assertEqual((stage / 'codex').read_text(), 'signed executable')
+        self.assertEqual((stage / 'native.app/Contents/Resources/required').read_text(), 'resource')
+
 
 if __name__ == '__main__':
     unittest.main()

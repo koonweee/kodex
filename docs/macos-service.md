@@ -39,6 +39,8 @@ The installation layout is:
 ~/Library/LaunchAgents/dev.kodex.gateway.plist  # present when autostart is enabled
 ```
 
+Pass a real executable, not a shell wrapper that depends on adjacent files. For the current desktop bundle this is `/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex`, not its `bin/codex` wrapper. An executable inside an `.app` is packaged with its enclosing bundle using macOS `ditto`, preserving the resources needed for signed execution.
+
 Each release includes a copy of the selected Codex executable, verified against the checkout's schema version. Updating the desktop app or editing the checkout cannot silently change the installed release. Plugin sources are packaged too; existing installed plugin caches still follow native plugin update semantics.
 
 ## Daily commands

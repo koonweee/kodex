@@ -48,6 +48,17 @@ def check_port(port):
         ) from error
 
 
+def package_native(binary, stage):
+    # Signed macOS app executables may require their bundle to run after relocation.
+    binary = binary.resolve(strict=True)
+    bundle = next((parent for parent in binary.parents if parent.suffix == '.app'), None)
+    if bundle:
+        run(['/usr/bin/ditto', bundle, stage / 'native.app'])
+        (stage / 'codex').symlink_to(Path('native.app') / binary.relative_to(bundle))
+    else:
+        shutil.copy2(binary, stage / 'codex')
+
+
 def native_version(binary):
     with tempfile.TemporaryDirectory(prefix='kodex-version-') as home:
         env = {key: os.environ[key] for key in ('HOME', 'PATH', 'USER', 'TMPDIR') if key in os.environ}
@@ -225,7 +236,7 @@ class Service:
         stage = Path(tempfile.mkdtemp(prefix='.stage-', dir=releases))
         try:
             shutil.copy2(repo / 'tools/kodex-service', stage / 'kodex-service')
-            shutil.copy2(binary, stage / 'codex')
+            package_native(binary, stage)
             if native_version(stage / 'codex') != version:
                 raise ServiceError('Copied Codex executable version mismatch')
             run(['cargo', 'build', '--release', '--locked', '-p', 'kodex-gateway',
