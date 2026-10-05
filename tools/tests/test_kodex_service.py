@@ -161,6 +161,119 @@ class LifecycleTests(unittest.TestCase):
         self.assertTrue((release / 'marketplace/.agents/plugins/marketplace.json').is_file())
         self.assertEqual((release / 'codex').read_text(), 'native executable')
 
+    def frontend_fixture(self):
+        old, previous = self.release('old'), self.release('previous')
+        service.link(self.app.root / 'current', old)
+        service.link(self.app.root / 'previous', previous)
+        (old / 'frontend/assets').mkdir()
+        (old / 'frontend/assets/old-abcdefgh.js').write_text('old chunk')
+        repo = self.root / 'repo'
+        for folder in ('apps/gateway/src', 'apps/web/src/api', 'apps/web/dist/assets'):
+            (repo / folder).mkdir(parents=True)
+        (repo / 'apps/gateway/src/schema.rs').write_text('APP_SERVER_SCHEMA_VERSION: &str = "0.160.0"')
+        (repo / 'apps/web/src/api/compatibility.ts').write_text('const API_VERSION = "1" satisfies unknown;')
+        (repo / 'apps/web/dist/index.html').write_text('new frontend')
+        (repo / 'apps/web/dist/assets/new-abcdefgh.js').write_text('new chunk')
+        return old, previous, repo
+
+    def fake_swap(self, left, right):
+        temporary = left.with_name('.test-swap')
+        left.rename(temporary)
+        right.rename(left)
+        temporary.rename(right)
+
+    def test_frontend_update_retains_assets_and_never_restarts_or_builds_native(self):
+        old, previous, repo = self.frontend_fixture()
+        with patch.object(self.app, 'health', return_value=42) as health, \
+             patch.object(self.app, 'job', return_value={'pid': 42}), \
+             patch.object(service, 'swap_directories', side_effect=self.fake_swap), \
+             patch.object(service, 'run') as commands, \
+             patch.object(service, 'acquire_native') as native, \
+             patch.object(self.app, 'stop') as stop, patch.object(self.app, 'start') as start, \
+             patch.dict(service.os.environ, {'VITE_KODEX_API_BASE_URL': 'http://other'}):
+            self.app.update_frontend(repo)
+        self.assertEqual([call.args[0] for call in commands.call_args_list],
+                         [['npm', 'ci'], ['npm', 'run', 'build']])
+        self.assertEqual(commands.call_args_list[-1].kwargs['env']['VITE_KODEX_API_BASE_URL'], '')
+        self.assertEqual((old / 'frontend/index.html').read_text(), 'new frontend')
+        self.assertEqual((old / 'frontend/assets/old-abcdefgh.js').read_text(), 'old chunk')
+        self.assertEqual((old / 'frontend/assets/new-abcdefgh.js').read_text(), 'new chunk')
+        self.assertEqual((self.app.root / 'current').resolve(), old)
+        self.assertEqual((self.app.root / 'previous').resolve(), previous)
+        self.assertEqual((old / 'kodex-gateway').read_text(), 'gateway')
+        native.assert_not_called()
+        stop.assert_not_called()
+        start.assert_not_called()
+        self.assertEqual(health.call_count, 3)
+        for call in health.call_args_list:
+            self.assertEqual(call.kwargs['expected_pid'], 42)
+            self.assertEqual(call.kwargs['api_version'], '1')
+
+    def test_frontend_failed_health_rolls_back_only_frontend_and_keeps_new_chunks(self):
+        old, previous, repo = self.frontend_fixture()
+        with patch.object(self.app, 'health', side_effect=[42, 42, service.ServiceError('unhealthy'), 42]), \
+             patch.object(self.app, 'job', return_value={'pid': 42}), \
+             patch.object(service, 'swap_directories', side_effect=self.fake_swap) as swap, \
+             patch.object(service, 'run'), \
+             patch.object(self.app, 'stop') as stop, patch.object(self.app, 'start') as start:
+            with self.assertRaisesRegex(service.ServiceError, 'rolled back'):
+                self.app.update_frontend(repo)
+        self.assertEqual(swap.call_count, 2)
+        self.assertEqual((old / 'frontend/index.html').read_text(), 'old')
+        self.assertEqual((old / 'frontend/assets/new-abcdefgh.js').read_text(), 'new chunk')
+        self.assertEqual((self.app.root / 'current').resolve(), old)
+        self.assertEqual((self.app.root / 'previous').resolve(), previous)
+        stop.assert_not_called()
+        start.assert_not_called()
+
+    def test_frontend_build_failure_leaves_index_and_assets_unchanged(self):
+        old, _, repo = self.frontend_fixture()
+        with patch.object(self.app, 'health', return_value=42), \
+             patch.object(self.app, 'job', return_value={'pid': 42}), \
+             patch.object(service, 'run', side_effect=service.ServiceError('build failed')), \
+             patch.object(service, 'swap_directories') as swap:
+            with self.assertRaisesRegex(service.ServiceError, 'build failed'):
+                self.app.update_frontend(repo)
+        self.assertEqual((old / 'frontend/index.html').read_text(), 'old')
+        self.assertFalse((old / 'frontend/assets/new-abcdefgh.js').exists())
+        swap.assert_not_called()
+        self.assertFalse(any(path.name.startswith('.frontend-') for path in old.iterdir()))
+
+    def test_frontend_schema_mismatch_refuses_before_build(self):
+        old, _, repo = self.frontend_fixture()
+        (repo / 'apps/gateway/src/schema.rs').write_text('APP_SERVER_SCHEMA_VERSION: &str = "0.999.0"')
+        with patch.object(service, 'run') as commands, patch.object(self.app, 'health') as health:
+            with self.assertRaisesRegex(service.ServiceError, 'schema'):
+                self.app.update_frontend(repo)
+        commands.assert_not_called()
+        health.assert_not_called()
+        self.assertEqual((old / 'frontend/index.html').read_text(), 'old')
+
+    def test_retained_asset_copy_failure_never_publishes_partial_chunk(self):
+        old, _, repo = self.frontend_fixture()
+        new = repo / 'apps/web/dist'
+        def fail(source, target):
+            Path(target).write_text('partial')
+            raise OSError('copy failed')
+        with patch.object(service.shutil, 'copy2', side_effect=fail):
+            with self.assertRaisesRegex(OSError, 'copy failed'):
+                service.retain_frontend_assets(new, old / 'frontend')
+        self.assertFalse((old / 'frontend/assets/new-abcdefgh.js').exists())
+        self.assertFalse(any((old / 'frontend/assets').glob('.asset-*')))
+        self.assertEqual((old / 'frontend/assets/old-abcdefgh.js').read_text(), 'old chunk')
+
+    def test_frontend_asset_collision_refuses_without_overwriting_live_files(self):
+        old, _, repo = self.frontend_fixture()
+        (repo / 'apps/web/dist/assets/old-abcdefgh.js').write_text('different content')
+        with patch.object(self.app, 'health', return_value=42), \
+             patch.object(self.app, 'job', return_value={'pid': 42}), \
+             patch.object(service, 'run'), patch.object(service, 'swap_directories') as swap:
+            with self.assertRaisesRegex(service.ServiceError, 'collision'):
+                self.app.update_frontend(repo)
+        self.assertEqual((old / 'frontend/assets/old-abcdefgh.js').read_text(), 'old chunk')
+        self.assertEqual((old / 'frontend/index.html').read_text(), 'old')
+        swap.assert_not_called()
+
     def test_login_port_conflict_never_executes_gateway(self):
         release = self.release('new')
         service.link(self.app.root / 'current', release)
@@ -195,7 +308,7 @@ class LifecycleTests(unittest.TestCase):
         (self.root / 'data').mkdir()
         (self.root / 'data/instance.json').write_text(json.dumps({'id': 'owned'}))
         responses = {
-            '/v1/capabilities': json.dumps({'gateway': {'instanceId': instance}, 'appServer': {
+            '/v1/capabilities': json.dumps({'gateway': {'instanceId': instance, 'apiVersion': '1'}, 'appServer': {
                 'schemaVersion': '0.160.0', 'detectedVersionMatchesSchema': True}}).encode(),
             '/readyz': json.dumps({'ready': ready}).encode(), '/': b'health',
         }
@@ -217,6 +330,75 @@ class LifecycleTests(unittest.TestCase):
                      patch.object(service.time, 'sleep'):
                     with self.assertRaisesRegex(service.ServiceError, 'Health check failed'):
                         self.app.health(release)
+
+    def test_frontend_api_mismatch_fails_before_build(self):
+        from types import SimpleNamespace
+        release, opener = self.health_fixture()
+        service.link(self.app.root / 'current', release)
+        repo = self.root / 'repo'
+        (repo / 'apps/gateway/src').mkdir(parents=True)
+        (repo / 'apps/web/src/api').mkdir(parents=True)
+        (repo / 'apps/gateway/src/schema.rs').write_text('APP_SERVER_SCHEMA_VERSION: &str = "0.160.0"')
+        (repo / 'apps/web/src/api/compatibility.ts').write_text('const API_VERSION = "future";')
+        with patch.object(self.app, 'job', return_value={'pid': 42}), \
+             patch.object(service.subprocess, 'run', return_value=SimpleNamespace(stdout='42')), \
+             patch.object(service.urllib.request, 'build_opener', return_value=opener), \
+             patch.object(service, 'run') as commands:
+            with self.assertRaisesRegex(service.ServiceError, 'API version'):
+                self.app.update_frontend(repo)
+        commands.assert_not_called()
+        self.assertEqual((release / 'frontend/index.html').read_text(), 'health')
+
+    def test_frontend_health_rejects_pid_change_immediately(self):
+        release, opener = self.health_fixture()
+        with patch.object(self.app, 'job', return_value={'pid': 43}), \
+             patch.object(service.urllib.request, 'build_opener', return_value=opener), \
+             patch.object(service.time, 'sleep') as sleep:
+            with self.assertRaisesRegex(service.ServiceError, 'PID changed'):
+                self.app.health(release, expected_pid=42, api_version='1')
+        sleep.assert_not_called()
+
+    @unittest.skipUnless(service.sys.platform == 'darwin', 'macOS atomic exchange')
+    def test_real_atomic_exchange_of_existing_frontend_directories(self):
+        left, right = self.root / 'frontend', self.root / 'stage'
+        left.mkdir()
+        right.mkdir()
+        (left / 'index.html').write_text('old')
+        (right / 'index.html').write_text('new')
+        service.swap_directories(left, right)
+        self.assertEqual((left / 'index.html').read_text(), 'new')
+        self.assertEqual((right / 'index.html').read_text(), 'old')
+        service.swap_directories(left, right)
+        self.assertEqual((left / 'index.html').read_text(), 'old')
+
+    def test_frontend_interrupt_after_swap_restores_frontend(self):
+        old, _, repo = self.frontend_fixture()
+        with patch.object(self.app, 'health', side_effect=[42, 42, KeyboardInterrupt(), 42]), \
+             patch.object(self.app, 'job', return_value={'pid': 42}), \
+             patch.object(service, 'swap_directories', side_effect=self.fake_swap) as swap, \
+             patch.object(service, 'run'), patch.object(self.app, 'stop') as stop:
+            with self.assertRaises(KeyboardInterrupt):
+                self.app.update_frontend(repo)
+        self.assertEqual(swap.call_count, 2)
+        self.assertEqual((old / 'frontend/index.html').read_text(), 'old')
+        stop.assert_not_called()
+
+    def test_frontend_failed_rollback_keeps_original_frontend_backup(self):
+        old, _, repo = self.frontend_fixture()
+        def swap(left, right):
+            if self.actions:
+                raise OSError('exchange refused')
+            self.fake_swap(left, right)
+            self.actions.append('swapped')
+        with patch.object(self.app, 'health', side_effect=[42, 42, service.ServiceError('unhealthy')]), \
+             patch.object(self.app, 'job', return_value={'pid': 42}), \
+             patch.object(service, 'swap_directories', side_effect=swap), patch.object(service, 'run'):
+            with self.assertRaisesRegex(service.ServiceError, 'rollback failed'):
+                self.app.update_frontend(repo)
+        backups = list(old.glob('.frontend-*/frontend/index.html'))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_text(), 'old')
+        self.assertEqual((old / 'frontend/index.html').read_text(), 'new frontend')
 
     def test_health_accepts_owned_ready_release(self):
         from types import SimpleNamespace

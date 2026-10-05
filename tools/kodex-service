@@ -2,6 +2,7 @@
 """Install and operate Kodex as a macOS per-user launchd service (Python 3.9+)."""
 import argparse
 import contextlib
+import ctypes
 import fcntl
 import json
 import hashlib
@@ -37,6 +38,50 @@ def link(path, target):
     temporary.unlink(missing_ok=True)
     temporary.symlink_to(target)
     temporary.replace(path)
+
+
+def swap_directories(left, right):
+    """Exchange real directories without a missing-path window (same filesystem)."""
+    if sys.platform != 'darwin':
+        raise ServiceError('Atomic frontend replacement requires macOS renamex_np')
+    libc = ctypes.CDLL('/usr/lib/libSystem.B.dylib', use_errno=True)
+    rename = libc.renamex_np
+    rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+    rename.restype = ctypes.c_int
+    if rename(os.fsencode(left), os.fsencode(right), 0x00000002):  # RENAME_SWAP
+        number = ctypes.get_errno()
+        raise OSError(number, os.strerror(number), str(left))
+
+
+def retain_frontend_assets(left, right):
+    """Keep immutable Vite assets available to tabs across deploy and rollback."""
+    copies = []
+    for source, destination in ((left, right), (right, left)):
+        assets = source / 'assets'
+        if not assets.exists():
+            continue
+        for path in assets.rglob('*'):
+            if path.is_symlink():
+                raise ServiceError('Frontend assets must not contain symbolic links')
+            if not path.is_file():
+                continue
+            target = destination / path.relative_to(source)
+            if target.exists():
+                if not target.is_file() or target.read_bytes() != path.read_bytes():
+                    raise ServiceError(f'Frontend asset collision: {path.relative_to(source)}')
+            else:
+                copies.append((path, target))
+    # Check every collision before adding files to the live directory.
+    for source, destination in copies:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        descriptor, name = tempfile.mkstemp(prefix='.asset-', dir=destination.parent)
+        os.close(descriptor)
+        temporary = Path(name)
+        try:
+            shutil.copy2(source, temporary)
+            temporary.replace(destination)
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 def check_port(port):
@@ -234,7 +279,7 @@ class Service:
                 time.sleep(0.2)
             raise ServiceError('Gateway did not exit; release was not replaced')
 
-    def health(self, release):
+    def health(self, release, *, expected_pid=None, api_version=None):
         endpoint = f"http://127.0.0.1:{self.config()['port']}"
         manifest = json.loads((release / 'manifest.json').read_text())
         expected_index = (release / 'frontend/index.html').read_bytes()
@@ -246,6 +291,8 @@ class Service:
                     with opener.open(endpoint + path, timeout=2) as response:
                         return response.read()
                 job = self.job()
+                if expected_pid is not None and (not job or job['pid'] != expected_pid):
+                    raise ServiceError('Gateway PID changed during frontend deployment; process unchanged by controller')
                 if not job or not job['pid']:
                     raise ValueError('job has no running process')
                 owners = subprocess.run(['/usr/sbin/lsof', '-nP', '-t',
@@ -256,17 +303,18 @@ class Service:
                 capabilities = json.loads(read('/v1/capabilities'))
                 marker = json.loads((Path(self.config()['data_dir']) / 'instance.json').read_text())
                 native = capabilities['appServer']
+                if api_version is not None and capabilities['gateway']['apiVersion'] != api_version:
+                    raise ServiceError('Frontend API version does not match running gateway; use a full update')
                 if (json.loads(read('/readyz'))['ready'] is True
                         and capabilities['gateway']['instanceId'] == marker['id']
                         and native['schemaVersion'] == manifest['schema_version']
                         and native['detectedVersionMatchesSchema'] is True
                         and read('/') == expected_index):
-                    return
+                    return job['pid']
             except (OSError, ValueError, KeyError):
                 pass
             time.sleep(0.5)
-        raise ServiceError(f'Health check failed at {endpoint}; inspect kodex-service logs. '
-                           'Service stopped; no automatic data rollback was attempted.')
+        raise ServiceError(f'Health check failed at {endpoint}; inspect kodex-service logs')
 
     def autostart(self, enabled):
         self.check_login_owner()
@@ -304,6 +352,64 @@ class Service:
         except BaseException:
             shutil.rmtree(stage)
             raise
+
+    def update_frontend(self, repo):
+        repo = repo.resolve(strict=True)
+        release = (self.root / 'current').resolve(strict=True)
+        frontend = release / 'frontend'
+        if frontend.is_symlink() or not frontend.is_dir():
+            raise ServiceError('Current frontend must be a real directory; service unchanged')
+        source = (repo / 'apps/gateway/src/schema.rs').read_text()
+        schema = re.search(r'APP_SERVER_SCHEMA_VERSION: &str = "([^"\n]+)"', source)
+        manifest = json.loads((release / 'manifest.json').read_text())
+        if not schema or schema[1] != manifest['schema_version']:
+            raise ServiceError('Checkout schema differs from current release; use a full update')
+        source = (repo / 'apps/web/src/api/compatibility.ts').read_text()
+        version = re.search(r'const API_VERSION = "([^"\n]+)"', source)
+        if not version:
+            raise ServiceError('Cannot determine frontend API version; service unchanged')
+        job = self.job()
+        if not job or not job['pid']:
+            raise ServiceError('Frontend deployment requires the installed gateway to be running')
+        pid = job['pid']
+        self.health(release, expected_pid=pid, api_version=version[1])
+        stage = Path(tempfile.mkdtemp(prefix='.frontend-', dir=release))
+        staged_frontend = stage / 'frontend'
+        keep_backup = False
+        try:
+            run(['npm', 'ci'], cwd=repo / 'apps/web')
+            run(['npm', 'run', 'build'], cwd=repo / 'apps/web',
+                env=dict(os.environ, VITE_KODEX_API_BASE_URL=''))
+            shutil.copytree(repo / 'apps/web/dist', staged_frontend)
+            if not (staged_frontend / 'index.html').is_file():
+                raise ServiceError('Frontend build has no index.html; service unchanged')
+            self.health(release, expected_pid=pid, api_version=version[1])
+            if (self.root / 'current').resolve(strict=True) != release:
+                raise ServiceError('Current release changed during frontend build; service unchanged')
+            retain_frontend_assets(frontend, staged_frontend)
+            swap_directories(frontend, staged_frontend)
+            try:
+                self.health(release, expected_pid=pid, api_version=version[1])
+            except BaseException as error:
+                try:
+                    swap_directories(frontend, staged_frontend)
+                except BaseException as rollback_error:
+                    keep_backup = True
+                    raise ServiceError(f'Frontend rollback failed; original frontend retained at {staged_frontend}; '
+                                       'no process was stopped or started') from rollback_error
+                try:
+                    self.health(release, expected_pid=pid, api_version=version[1])
+                except Exception as rollback_error:
+                    raise ServiceError('Frontend rolled back, but gateway health failed; '
+                                       'no process was stopped or started') from rollback_error
+                if not isinstance(error, Exception):
+                    raise
+                raise ServiceError('Frontend health failed and frontend was rolled back; '
+                                   'no process was stopped or started') from error
+        finally:
+            if not keep_backup:
+                shutil.rmtree(stage)
+        print(f'Frontend updated; gateway PID {pid} unchanged')
 
     def update(self, repo):
         release = self.build(repo)  # Build failures cannot stop or replace the live release.
@@ -358,7 +464,7 @@ def main():
     install = commands.add_parser('install', help='configure and build; starts Kodex, autostart initially off')
     install.add_argument('--port', type=int, default=8787)
     install.add_argument('--data-dir', type=Path, default=Path.home() / '.kodex/native-v1')
-    for command in ('install', 'update'):
+    for command in ('install', 'update', 'update-frontend'):
         sub = install if command == 'install' else commands.add_parser(command)
         sub.add_argument('--repo', type=Path, default=None)
     for command in ('start', 'stop', 'restart', 'status', 'logs', '_run'):
@@ -395,6 +501,8 @@ def main():
             app.update(args.repo or Path(app.config()['repo']))
         elif args.command == 'update':
             app.update(args.repo or Path(app.config()['repo']))
+        elif args.command == 'update-frontend':
+            app.update_frontend(args.repo or Path(app.config()['repo']))
         elif args.command == 'start':
             app.start()
         elif args.command == 'stop':

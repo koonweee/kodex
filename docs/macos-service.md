@@ -74,7 +74,7 @@ kodex-service update
 kodex-service update --repo /absolute/path/to/kodex
 ```
 
-When changing the service controller itself, invoke the new checkout controller for that update:
+When a full deployment changes the service controller itself, invoke the new checkout controller for that update:
 
 ```bash
 ./tools/kodex-service update --repo "$PWD"
@@ -85,6 +85,20 @@ The installed command executes its current release's controller, so it cannot ap
 The default checkout was recorded at install time. Production frontend builds explicitly use same-origin API routing, overriding development API-base settings. The update command builds the current working tree, including uncommitted changes; it does not pull Git or run the full test suite. Avoid editing or concurrently building that checkout during the update.
 
 Update downloads and verifies the official native package pinned for the checkout's schema, builds Rust with `--release --locked`, runs `npm ci` and the frontend build, and stages the complete release while the current service keeps running. Only after staging succeeds does it stop the owned job, switch the release pointers, start, and verify readiness. Updates also start a previously stopped installation. Login autostart is unchanged. A build failure leaves the running release untouched.
+
+### Frontend-only updates
+
+For frontend changes compatible with the running gateway, use:
+
+```bash
+./tools/kodex-service update-frontend --repo "$PWD"
+```
+
+Use the checkout command until a full update installs the new controller; afterward, the installed `kodex-service update-frontend` command is available too. This path runs `npm ci` and the production frontend build, but does not build Rust, download Codex, restart the gateway, or change the current/previous release pointers. Active chats and integrated terminals keep running.
+
+The command requires a running, healthy owned service and matching frontend API epoch and native schema version. It stages the frontend beside the installed assets and atomically exchanges directories. Old hashed assets remain available for open tabs. It verifies the served frontend and unchanged gateway PID after the swap; a failed verification restores the prior frontend without stopping the service. This frontend-only recovery does not touch backend state. Use a full update when frontend changes require new backend behavior, even if the API epoch has not changed.
+
+As with full updates, the source is the selected checkout's working tree. Use a clean checkout or a committed snapshot to avoid deploying unfinished edits, and avoid concurrent edits/builds during staging. Refresh the browser or accept the PWA update prompt to load the new UI. Retained assets accumulate until the next full release update.
 
 If startup/health fails, the new service is stopped and the failed release remains selected for inspection. There is **no automatic rollback**: the new executable may already have written persistent state. After checking that the previous release can safely read the current storage, you may explicitly run:
 

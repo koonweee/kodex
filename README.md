@@ -137,6 +137,8 @@ For prerequisites, tests, schema generation, and production-style static serving
 
 For persistent hosting on your Mac, use the [login service and update commands](docs/macos-service.md). The service runs a compiled release independently of your development checkout and works with private Tailscale HTTPS. It downloads the complete official Codex runtime pinned to the checked-in app-server schema and verifies its checksum; it does not extract binaries from the desktop app.
 
+For compatible UI changes, `./tools/kodex-service update-frontend --repo "$PWD"` builds and deploys only frontend assets while keeping the gateway, active chats, and terminals running. Use the full `update` command for backend changes.
+
 ## Project status
 
 The [native app-server redesign](plans/native-app-server-redesign.md) is validated for the intended personal-account deployment, including fresh sign-in and cold authenticated restart. Organization-managed storage confinement is unsupported. Target-device PWA checks were explicitly skipped and remain unverified. The subsequent [macOS login-service deployment](plans/macos-login-service.md) is installed and validated separately.
