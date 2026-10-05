@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Alert } from "@mantine/core";
 import type {
   ClipboardEvent as ReactClipboardEvent,
   ChangeEvent as ReactChangeEvent,
@@ -29,6 +30,7 @@ import { AssistantSelectionAction } from "../timeline/AssistantSelectionAction";
 import { useThreadGoal } from "../goals/useThreadGoal";
 import { GoalModal } from "../goals/GoalModal";
 import type { GoalControls } from "../goals/GoalControls";
+import { useGoalCommand } from "../goals/useGoalCommand";
 
 export type ComposerDraftControls = {
   clearText: () => void;
@@ -141,13 +143,20 @@ export function ComposerPanel({
   currentGoalThreadId.current = goalThreadId;
   const [goalEditorThreadId, setGoalEditorThreadId] = useState<string | null>(null);
   useEffect(() => { setGoalEditorThreadId(null); }, [goalThreadId]);
+  const openGoalEditor = () => { threadGoal.resetError(); setGoalEditorThreadId(goalThreadId); };
+  const goalCommand = useGoalCommand({
+    threadId: goalThreadId, draftText: draftState.composerText,
+    hasExtraInput: pendingAttachments.length > 0 || draftState.annotations.length > 0 || draftState.skillBindings.length > 0,
+    canSubmit: canCompose && !isComposerSubmitting && (!selectedThreadPresent || isSelectedTimelineReady),
+    updateGoal: threadGoal.update, onOpen: openGoalEditor,
+  });
   const goalControls: GoalControls | undefined = goalThreadId ? {
     goal: threadGoal.goal,
     ready: threadGoal.ready,
     pending: threadGoal.pending,
     error: threadGoal.error,
     compact: isNarrowComposer,
-    onOpen: () => { threadGoal.resetError(); setGoalEditorThreadId(goalThreadId); },
+    onOpen: openGoalEditor,
     onReload: threadGoal.reload,
     onToggleStatus: () => {
       if (!threadGoal.goal || threadGoal.pending || !threadGoal.ready) return;
@@ -158,7 +167,7 @@ export function ComposerPanel({
   } : undefined;
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const internalComposerShellRef = useRef<HTMLDivElement | null>(null);
-  const isComposerBusy = isComposerSubmitting;
+  const isComposerBusy = isComposerSubmitting || goalCommand.pending;
   const isEntryPending = selectedThreadPresent && !isSelectedTimelineReady && !isDraftComposerTransitioning;
   const isComposerDisabled = !canCompose || isComposerBusy;
   const isComposerControlsDisabled = isComposerDisabled || isEntryPending;
@@ -186,8 +195,9 @@ export function ComposerPanel({
     return slashCommandItems({
       canCompact: selectedThreadPresent && activeSelectedTurnId === null,
       compactDisabledReason,
+      canSetGoal: goalThreadId !== null,
     });
-  }, [activeSelectedTurnId, selectedThreadPresent]);
+  }, [activeSelectedTurnId, selectedThreadPresent, goalThreadId]);
   const filteredSlashCommands = useMemo(
     () => filterSlashCommands(slashCommands, draftState.slashToken?.query ?? ""),
     [draftState.slashToken?.query, slashCommands],
@@ -355,7 +365,7 @@ export function ComposerPanel({
     isComposerControlsDisabled,
     isComposerDisabled,
     isComposerDragActive,
-    isComposerSubmitting,
+    isComposerSubmitting: isComposerBusy,
     isDraftComposerTransitioning,
     isDraftThreadSelected,
     isEntryPending,
@@ -371,7 +381,9 @@ export function ComposerPanel({
     onImageOpen,
     onRemovePendingAttachment,
     onStopTurn,
-    onSubmitTurn,
+    onSubmitTurn: (...args: Parameters<ComposerPanelProps["onSubmitTurn"]>) => {
+      if (!goalCommand.handleSubmit(args[0], args[2])) onSubmitTurn(...args);
+    },
     pendingAttachments,
     selectedGitBranch,
     selectedThreadPresent,
@@ -387,6 +399,7 @@ export function ComposerPanel({
   };
 
   return <>
+    {goalCommand.error ? <Alert color="red" role="alert">{goalCommand.error}</Alert> : null}
     <AssistantSelectionAction composerShellRef={internalComposerShellRef}
       disabled={isComposerControlsDisabled || !selectedThreadPresent} draftKey={composerDraftKey}
       onAdd={draftState.addAnnotation} />

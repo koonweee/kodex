@@ -1,6 +1,6 @@
 import { replaceComposerTriggerToken, type ComposerTriggerToken } from "./composerTriggers";
 
-export type SlashCommandId = "compact";
+export type SlashCommandId = "compact" | "goal";
 
 export type SlashCommandItem = {
   description: string;
@@ -17,18 +17,27 @@ const SLASH_COMMANDS: Omit<SlashCommandItem, "disabledReason">[] = [
     label: "Compact",
     token: "/compact",
   },
+  {
+    description: "Set an objective or manage the chat goal",
+    id: "goal",
+    label: "Goal",
+    token: "/goal",
+  },
 ];
 
 export function slashCommandItems({
   canCompact,
   compactDisabledReason,
+  canSetGoal = false,
 }: {
   canCompact: boolean;
   compactDisabledReason: string;
+  canSetGoal?: boolean;
 }): SlashCommandItem[] {
   return SLASH_COMMANDS.map((command) => ({
     ...command,
-    disabledReason: command.id === "compact" && !canCompact ? compactDisabledReason : undefined,
+    disabledReason: command.id === "goal" && !canSetGoal ? "Select an existing chat before setting a goal"
+      : command.id === "compact" && !canCompact ? compactDisabledReason : undefined,
   }));
 }
 
@@ -58,7 +67,7 @@ export function slashCommandFromSubmittedText(text: string): SlashCommandId | "u
   }
   const commandToken = `/${commandMatch[1]}`;
   const command = SLASH_COMMANDS.find((item) => item.token === commandToken);
-  return command && command.token === trimmed ? command.id : "unknown";
+  return command && (command.id === "goal" || command.token === trimmed) ? command.id : "unknown";
 }
 
 export function replaceSlashCommandToken(

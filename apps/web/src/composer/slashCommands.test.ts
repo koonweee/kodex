@@ -15,6 +15,10 @@ describe("slash command helpers", () => {
     expect(slashCommandFromSubmittedText("/compact")).toBe("compact");
     expect(slashCommandFromSubmittedText("  /compact  ")).toBe("compact");
     expect(slashCommandFromSubmittedText("/compact now")).toBe("unknown");
+    expect(slashCommandFromSubmittedText("/goal")).toBe("goal");
+    expect(slashCommandFromSubmittedText("  /goal Ship the dashboard\nwith tests  ")).toBe("goal");
+    expect(slashCommandFromSubmittedText("/goalpost later")).toBe("unknown");
+    expect(slashCommandFromSubmittedText("Please set /goal Ship it")).toBeNull();
     expect(slashCommandFromSubmittedText("/nope")).toBe("unknown");
     expect(slashCommandFromSubmittedText("/nope please")).toBe("unknown");
     expect(slashCommandFromSubmittedText("Please run /compact")).toBeNull();

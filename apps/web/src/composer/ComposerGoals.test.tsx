@@ -101,4 +101,117 @@ describe("composer goals", () => {
     await userEvent.click(screen.getByRole("button", { name: "Open attachment menu" }));
     expect(screen.queryByRole("menuitem", { name: "Set goal" })).not.toBeInTheDocument();
   });
+
+  it("sets an active goal directly from /goal without submitting model input", async () => {
+    const onSubmitTurn = vi.fn();
+    composer({ onSubmitTurn });
+    const input = screen.getByRole("textbox", { name: "Message composer" });
+    fireEvent.change(input, { target: { value: "/goal Ship the dashboard\nwith tests" } });
+    fireEvent.submit(input.closest("form")!);
+    await waitFor(() => expect(updateThreadGoal).toHaveBeenCalledWith("thread-1", {
+      objective: "Ship the dashboard\nwith tests", status: "active",
+    }));
+    await waitFor(() => expect(input).toHaveValue(""));
+    expect(onSubmitTurn).not.toHaveBeenCalled();
+  });
+
+  it("opens goal management for bare /goal without changing native state", async () => {
+    const onSubmitTurn = vi.fn();
+    composer({ onSubmitTurn });
+    const input = screen.getByRole("textbox", { name: "Message composer" });
+    fireEvent.change(input, { target: { value: " /goal " } });
+    fireEvent.submit(input.closest("form")!);
+    expect(await screen.findByRole("dialog", { name: "Goal" })).toBeInTheDocument();
+    expect(input).toHaveValue("");
+    expect(updateThreadGoal).not.toHaveBeenCalled();
+    expect(onSubmitTurn).not.toHaveBeenCalled();
+  });
+
+  it("preserves a failed /goal draft and permits retry", async () => {
+    vi.mocked(updateThreadGoal).mockRejectedValueOnce(new Error("Goal unavailable"));
+    composer();
+    const input = screen.getByRole("textbox", { name: "Message composer" });
+    fireEvent.change(input, { target: { value: "/goal Ship it" } });
+    fireEvent.submit(input.closest("form")!);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Goal unavailable");
+    expect(input).toHaveValue("/goal Ship it");
+    fireEvent.submit(input.closest("form")!);
+    await waitFor(() => expect(updateThreadGoal).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(input).toHaveValue(""));
+  });
+
+  it.each(["attachment", "annotation"])("rejects /goal with a %s and preserves its draft", async (kind) => {
+    const draftStore = new Map([["thread-1", { composerText: "/goal Ship it", skillBindings: [],
+      annotations: kind === "annotation" ? [{ id: "annotation-1", text: "Quoted answer", comment: "Revise" }] : [] }]]);
+    const onSubmitTurn = vi.fn();
+    composer({ composerDraftKey: "thread-1", composerDraftStore: draftStore, onSubmitTurn,
+      pendingAttachments: kind === "attachment" ? [{ id: "file-1", kind: "file", status: "pending", file: new File(["x"], "notes.txt") }] : [] });
+    const input = screen.getByRole("textbox", { name: "Message composer" });
+    fireEvent.submit(input.closest("form")!);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/\/goal does not support attachments, annotations, or skill mentions/i);
+    expect(input).toHaveValue("/goal Ship it");
+    expect(updateThreadGoal).not.toHaveBeenCalled();
+    expect(onSubmitTurn).not.toHaveBeenCalled();
+    expect(draftStore.get("thread-1")?.annotations?.length).toBe(kind === "annotation" ? 1 : 0);
+  });
+
+  it("rejects /goal in an unmaterialized draft without starting a chat", async () => {
+    const onSubmitTurn = vi.fn();
+    composer({ goalThreadId: null, isDraftThreadSelected: true, selectedThreadPresent: false, onSubmitTurn });
+    const input = screen.getByRole("textbox", { name: "Message composer" });
+    fireEvent.change(input, { target: { value: "/goal Ship it" } });
+    fireEvent.submit(input.closest("form")!);
+    expect(await screen.findByRole("alert")).toHaveTextContent("/goal is only available in an existing chat");
+    expect(input).toHaveValue("/goal Ship it");
+    expect(onSubmitTurn).not.toHaveBeenCalled();
+    expect(updateThreadGoal).not.toHaveBeenCalled();
+  });
+
+  it("does not clear another chat draft when a goal command completes", async () => {
+    let resolveUpdate!: (value: { goal: ThreadGoal }) => void;
+    vi.mocked(updateThreadGoal).mockReturnValue(new Promise((resolve) => { resolveUpdate = resolve; }));
+    const draftStore = new Map([["thread-2", { composerText: "Second chat draft", skillBindings: [] }]]);
+    const rendered = composer({ composerDraftKey: "thread-1", composerDraftStore: draftStore });
+    const input = screen.getByRole("textbox", { name: "Message composer" });
+    fireEvent.change(input, { target: { value: "/goal First goal" } });
+    fireEvent.submit(input.closest("form")!);
+    await waitFor(() => expect(updateThreadGoal).toHaveBeenCalled());
+    rendered.changeProps({ goalThreadId: "thread-2", composerDraftKey: "thread-2" });
+    expect(input).toHaveValue("Second chat draft");
+    await act(async () => { resolveUpdate({ goal }); });
+    expect(input).toHaveValue("Second chat draft");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("rejects queueing a goal command without mutating or losing its text", async () => {
+    const onSubmitTurn = vi.fn();
+    composer({ onSubmitTurn });
+    const input = screen.getByRole("textbox", { name: "Message composer" });
+    fireEvent.change(input, { target: { value: "/goal Ship it" } });
+    await userEvent.click(screen.getByRole("button", { name: "Open attachment menu" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Queue message" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("/goal cannot be queued");
+    expect(input).toHaveValue("/goal Ship it");
+    expect(updateThreadGoal).not.toHaveBeenCalled();
+    expect(onSubmitTurn).not.toHaveBeenCalled();
+  });
+
+  it("keeps ordinary text mentioning /goal on the normal submit path", () => {
+    const onSubmitTurn = vi.fn();
+    composer({ onSubmitTurn });
+    const input = screen.getByRole("textbox", { name: "Message composer" });
+    fireEvent.change(input, { target: { value: "Explain /goal Ship it" } });
+    fireEvent.submit(input.closest("form")!);
+    expect(onSubmitTurn).toHaveBeenCalled();
+    expect(updateThreadGoal).not.toHaveBeenCalled();
+  });
+
+  it("offers /goal in slash suggestions and inserts it without starting work", async () => {
+    composer();
+    const input = screen.getByRole("textbox", { name: "Message composer" });
+    fireEvent.change(input, { target: { value: "/go", selectionStart: 3, selectionEnd: 3 } });
+    await userEvent.click(await screen.findByRole("option", { name: /goal/i }));
+    expect(input).toHaveValue("/goal ");
+    expect(updateThreadGoal).not.toHaveBeenCalled();
+  });
 });

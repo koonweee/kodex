@@ -16,6 +16,34 @@ for (const shape of [
 ]) {
   test.describe(shape.name, () => {
     test.use({ viewport: { width: shape.width, height: 844 }, hasTouch: shape.hasTouch, isMobile: shape.isMobile });
+    test("goal slash commands open management and set native goals across tabs", async ({ context }) => {
+      const fixture = await nativeSettingsFixture(context);
+      try {
+        const first = await fixture.page("first");
+        const second = await fixture.page("second");
+        await expect.poll(() => fixture.connected("first") && fixture.connected("second")).toBe(true);
+        const input = pane(first).getByRole("textbox", { name: "Message composer", exact: true });
+        await input.fill("/goal");
+        await activate(first.getByRole("option", { name: /\/goal/ }), shape.hasTouch);
+        await activate(pane(first).getByRole("button", { name: "Send message", exact: true }), shape.hasTouch);
+        const dialog = first.getByRole("dialog", { name: "Goal", exact: true });
+        await expect(dialog).toBeVisible();
+        expect(mutations(fixture)).toEqual([]);
+        await activate(dialog.getByRole("button", { name: "Close goal", exact: true }), shape.hasTouch);
+        await input.fill("/goal Verify reconnect convergence");
+        await activate(pane(first).getByRole("button", { name: "Send message", exact: true }), shape.hasTouch);
+        await expect.poll(() => mutations(fixture)).toEqual([{ objective: "Verify reconnect convergence", status: "active" }]);
+        for (const page of [first, second]) await expect(manageGoal(page, "Active")).toBeVisible();
+        await expect(input).toHaveValue("");
+        await input.fill("/goal");
+        await activate(first.getByRole("option", { name: /\/goal/ }), shape.hasTouch);
+        await activate(pane(first).getByRole("button", { name: "Send message", exact: true }), shape.hasTouch);
+        await expect(dialog.getByRole("textbox", { name: "Objective", exact: true })).toHaveValue("Verify reconnect convergence");
+        expect(fixture.requests.filter((entry) => entry.key.startsWith("POST ") && /(?:input|turn|queue)/.test(entry.key))).toEqual([]);
+      } finally { await fixture.close(); }
+      expect(fixture.unexpected).toEqual([]);
+      expect(fixture.errors).toEqual([]);
+    });
     test("set, edit, pause, resume, and clear native goals converge across tabs", async ({ context }) => {
       const fixture = await nativeSettingsFixture(context);
       try {
