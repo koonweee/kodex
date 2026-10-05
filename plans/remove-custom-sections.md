@@ -2,7 +2,7 @@
 
 ## Status
 
-Active: implementation and automated validation complete; deployment verification pending.
+Complete.
 
 ## Scope
 
@@ -21,3 +21,5 @@ Backend validation: five removal/pin/visibility regressions passed after failing
 Frontend validation: 858 tests, production build and trim passed. Independent review covered native pin/refill ownership, ordinary-list overlap filtering, and pagination when the first ordinary page contains only pinned rows. Browser coverage includes desktop, narrow fine pointer and narrow touch, two-tab pin/order/unpin, stale snapshots and actual SSE reconnects.
 
 All 38 affected browser flows passed, including the final reviewed four native-pin flows. Browser fixture review corrected a stale project-creation helper and avoids implying pin/unpin preserves previous custom membership.
+
+Deployed 2026-10-05 using the installed macOS service updater. Live sidebar returns the pinned-only contract and retains `kirbot-pi-rewrite`; the old section route returns 404. Sign-in and private HTTPS remain healthy. Browser update verified Pinned and the existing project/chats visible, no Add section control, and no sidebar error. Existing native custom-section storage was left untouched and is not read or managed by Kodex.

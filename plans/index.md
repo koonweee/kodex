@@ -19,7 +19,7 @@ Focused subsystem replacements are encouraged wherever they reduce maintained co
 
 | Plan | Status | Scope | Notes |
 | --- | --- | --- | --- |
-| [Remove custom sections](remove-custom-sections.md) | Active | Keep Pinned, Projects and Chats | Remove section management, APIs and cached state. |
+| [Remove custom sections](remove-custom-sections.md) | Complete | Keep Pinned, Projects and Chats | Remove section management, APIs and cached state. |
 | [Sidebar load recovery](sidebar-load-recovery.md) | Complete | Canceled SQLite transaction recovery and visible sidebar errors | Preserve native projects through section refills; remove redundant editor move controls. |
 | [Project directory picker](project-directory-picker.md) | Complete | Home-bounded root selection and project-root execution | Root-only directory picker with selection/removal and error recovery; new project chat/terminal execution uses the sole root. Build, trims, 856 frontend tests, backend regressions and desktop/mobile two-tab browser checks pass; deployment remains separate. |
 | [macOS login service](macos-login-service.md) | Complete | Per-user launchd hosting, staged updates and private HTTPS instructions | 18 tests and independent review pass. Installed and running with login autostart; live stop/start/restart/update, port conflicts, crash recovery and private HTTPS verified. Existing proxy preserved; fresh account needs sign-in. |
