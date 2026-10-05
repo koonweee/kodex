@@ -63,7 +63,7 @@ You will need:
 - The stable Rust toolchain.
 - Node.js and npm.
 
-Start a disposable development instance while the [native redesign](plans/native-app-server-redesign.md) is underway:
+Start a disposable development instance:
 
 ```bash
 KODEX_DATA_DIR="$(mktemp -d)/instance" KODEX_CODEX_BINARY=/absolute/path/to/codex cargo run -p kodex-gateway
@@ -128,6 +128,8 @@ For prerequisites, tests, schema generation, and production-style static serving
 - [Plans](plans/index.md) — completed milestones, active work, and future extensions.
 
 ## Project status
+
+The [native app-server redesign](plans/native-app-server-redesign.md) is validated for the intended personal-account deployment, including fresh sign-in and cold authenticated restart. Organization-managed storage confinement is unsupported. Target-device PWA checks were explicitly skipped and remain unverified; production has not been restarted.
 
 Kodex is an actively developed personal project. The Rust gateway and React client are functional, but the security and deployment model remains deliberately local/private-network only. The repository no longer contains a native iOS client; mobile access is through the responsive PWA.
 
