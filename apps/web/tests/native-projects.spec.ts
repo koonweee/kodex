@@ -13,7 +13,7 @@ for (const shape of shapes) {
   test.describe(shape.name, () => {
     test.use({ viewport: { width: shape.width, height: 844 }, hasTouch: shape.hasTouch, isMobile: shape.isMobile });
 
-    test("native project edits, ordering and chat membership converge across two tabs", async ({ context }) => {
+    test("native project edits, ordering and external chat membership converge across two tabs", async ({ context }) => {
       const fixture = await nativeProjectsFixture(context);
       await projectDirectoriesFixture(context);
       try {
@@ -73,16 +73,19 @@ for (const shape of shapes) {
         }
         expect(fixture.connections.get("second")).toBe(secondConnections);
 
-        await second.getByRole("button", { name: "Thread actions", exact: true }).click();
-        await second.getByRole("menuitem", { name: "Beta", exact: true }).click();
+        fixture.state.threads.find((entry) => entry.id === "history")!.projectId = "beta";
+        fixture.emit("thread.project_updated", { threadId: "history", projectId: "beta" });
         for (const page of [first, second]) await expectProject(page, "Beta");
-        await first.getByRole("button", { name: "Thread actions", exact: true }).click();
-        await first.getByRole("menuitem", { name: "No project", exact: true }).click();
+        fixture.state.threads.find((entry) => entry.id === "history")!.projectId = null;
+        fixture.emit("thread.project_updated", { threadId: "history", projectId: null });
         for (const page of [first, second]) {
           await expectProject(page, "No project");
           await expect(page.getByText(preservedHistory, { exact: true })).toBeVisible();
+          await page.getByRole("button", { name: "Thread actions", exact: true }).click();
+          await expect(page.getByText("Move chat to project", { exact: true })).toHaveCount(0);
+          await expect(page.getByRole("menuitem", { name: "No project", exact: true })).toHaveCount(0);
+          await page.keyboard.press("Escape");
         }
-        expect(fixture.requests.filter((entry) => entry.key === "PATCH /v1/threads/history/project").map((entry) => entry.body)).toEqual([{ projectId: "beta" }, { projectId: null }]);
         expect(fixture.state.threads.find((entry) => entry.id === "history")?.cwd).toBe(executionCwd);
         expect(fixture.requests.some((entry) => /\/v1\/threads\/[^/]+$/.test(entry.key) && entry.key.startsWith("DELETE"))).toBe(false);
         expect(fixture.expectedCreateErrors).toHaveLength(1);
@@ -95,8 +98,8 @@ for (const shape of shapes) {
   });
 }
 
-test.describe("narrow detail recovery", () => {
-  test.use({ viewport: { width: 390, height: 844 } });
+test.describe("unlisted detail recovery", () => {
+  test.use({ viewport: { width: 1280, height: 844 } });
 
   test("deletion and real stream reopen recover unlisted membership without stale responses winning", async ({ context }) => {
     const fixture = await nativeProjectsFixture(context);
@@ -104,7 +107,7 @@ test.describe("narrow detail recovery", () => {
       const first = await fixture.page("first", "/projects/alpha");
       const second = await fixture.page("second", "/threads/unlisted");
       await expect(first.getByRole("heading", { name: "Alpha", exact: true })).toBeVisible();
-      await expectProject(second, "Alpha");
+      await expectUnlistedProject(second, "Alpha");
       await expect(second.getByText(preservedHistory, { exact: true })).toBeVisible();
       await expect.poll(() => fixture.connected("first") && fixture.connected("second")).toBe(true);
 
@@ -120,16 +123,14 @@ test.describe("narrow detail recovery", () => {
       const confirm = first.getByRole("dialog", { name: "Delete Alpha?", exact: true });
       await expect(confirm.getByText("Its chats will remain available without a project. Files are unchanged.")).toBeVisible();
       await confirm.getByRole("button", { name: "Delete project", exact: true }).click();
-      await expectProject(second, "No project");
+      await expectUnlistedProject(second, null);
       await expect.poll(() => fixture.wasAborted("second", "sidebar") && fixture.wasAborted("second", "detail")).toBe(true);
       await fixture.release("second", "sidebar");
       await fixture.release("second", "detail");
-      await expectProject(second, "No project");
+      await expectUnlistedProject(second, null);
       const sidebar = await openSidebar(second);
       await expect(sidebar.getByRole("group", { name: "Alpha", exact: true })).toHaveCount(0);
       await expect(sidebar.getByRole("button", { name: "Unlisted history", exact: true })).toHaveCount(0);
-      // Close the mobile sidebar without navigating or reloading the unlisted chat.
-      await second.getByRole("button", { name: "Show thread", exact: true }).click();
       await expect(second.getByText(preservedHistory, { exact: true })).toBeVisible();
       expect(fixture.state.threads).toHaveLength(2);
       expect(fixture.state.threads.every((entry) => entry.projectId === null && entry.cwd === executionCwd)).toBe(true);
@@ -140,10 +141,10 @@ test.describe("narrow detail recovery", () => {
       fixture.state.threads.find((entry) => entry.id === "unlisted")!.projectId = "beta";
       fixture.emit("project.changed", { projectId: "beta", changeType: "updated" }, "first");
       fixture.emit("thread.project_updated", { threadId: "unlisted", projectId: "beta" }, "first");
-      await expectProject(second, "No project");
+      await expectUnlistedProject(second, null);
       fixture.disconnect("second");
       await expect.poll(() => fixture.connections.get("second") ?? 0).toBeGreaterThan(beforeReconnect);
-      await expectProject(second, "Recovered Beta");
+      await expectUnlistedProject(second, "Recovered Beta");
       await expect(second.getByText(preservedHistory, { exact: true })).toBeVisible();
       expect(fixture.requests.filter((entry) => entry.client === "second" && entry.key === "POST /v1/threads/unlisted/attach").length).toBeGreaterThan(readsBeforeReconnect);
       expect(fixture.state.threads.find((entry) => entry.id === "unlisted")?.cwd).toBe(executionCwd);
@@ -178,8 +179,35 @@ async function openHistory(page: Page) {
 }
 
 async function expectProject(page: Page, name: string) {
-  await page.getByRole("button", { name: "Thread actions", exact: true }).click();
-  await expect(page.getByRole("menuitem", { name, exact: true })).toBeDisabled();
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("menu", { name: "Thread actions", exact: true })).toBeHidden();
+  const sidebar = await openSidebar(page);
+  if (name === "No project") {
+    await sidebar.getByRole("button", { name: "Chats", exact: true }).click();
+    await expect(sidebar.getByRole("button", { name: "History chat", exact: true })).toBeVisible();
+  } else {
+    await sidebar.getByRole("button", { name: "Projects", exact: true }).click();
+    const group = sidebar.getByRole("group", { name, exact: true });
+    const expand = group.getByRole("button", { name: `Expand ${name}`, exact: true });
+    if (await expand.isVisible()) await expand.click();
+    await expect(group.getByRole("button", { name: "History chat", exact: true })).toBeVisible();
+  }
+  const showThread = page.getByRole("button", { name: "Show thread", exact: true });
+  if (await showThread.isVisible()) await showThread.click();
+}
+
+async function expectUnlistedProject(page: Page, name: string | null) {
+  // The loaded chat is absent from the sidebar. Its retained project-chat draft
+  // action must use the exact canonical project, including after reconnects.
+  await page.locator(".dv-tab").filter({ hasText: "Unlisted history" }).click({ button: "right" });
+  const action = page.getByText("New chat in project", { exact: true });
+  if (name === null) {
+    await expect(action).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    return;
+  }
+  await action.click();
+  const draft = page.locator('.kodex-thread-pane[data-workspace-pane-active="true"]');
+  await expect(draft.getByRole("button", { name: `Project: ${name}`, exact: true })).toBeVisible();
+  await page.locator(".dv-tab").filter({ hasText: "New thread" }).locator(".dv-default-tab-action").click();
+  await page.locator(".dv-tab").filter({ hasText: "Unlisted history" }).click();
+  await expect(page.getByText(preservedHistory, { exact: true })).toBeVisible();
 }

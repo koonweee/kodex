@@ -96,20 +96,6 @@ impl CodexClient {
         Ok(())
     }
 
-    pub async fn thread_assign_project(
-        &self,
-        thread_id: String,
-        project_id: Option<String>,
-    ) -> ApiResult<super::ThreadCommandResponse> {
-        let payload = self
-            .request(
-                "thread/metadata/update",
-                json!({"threadId":thread_id,"projectId":project_id.unwrap_or_default()}),
-            )
-            .await?;
-        super::ThreadCommandResponse::from_payload(payload)
-    }
-
     pub async fn project_list_page(
         &self,
         cursor: Option<String>,

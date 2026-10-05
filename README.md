@@ -93,7 +93,7 @@ Widget resource/catalog reads use one bounded runtime-local FIFO after canonical
 
 Project creation uses a directory browser rooted at the gateway user's home. Select one existing root; its folder name becomes the project name. The picker cannot navigate above home, including through symlinks. New project chats and project terminals use the sole project root automatically; projects with zero or multiple roots must be corrected before starting them. Existing chats retain their native working directory.
 
-The sidebar contains Pinned, Projects, and standalone Chats. Pinning and pinned order use native app-server state and preserve a chat’s project and working directory. Kodex does not expose custom sections or section management. Chats with pre-existing native custom-section membership remain visible in their normal project/chat lists.
+The sidebar contains Pinned, Projects, and standalone Chats. Pinning and pinned order use native app-server state and preserve a chat’s project and working directory. Kodex does not expose chat reassignment between projects, custom sections or section management. Chats with pre-existing native custom-section membership remain visible in their normal project/chat lists.
 
 The subagent viewer lists native persisted descendants, including unloaded children, with native cursor pagination. Discovery runs independently of the parent timeline. The viewer remains read-only. Opening a child separately disables input when native capability explicitly denies it; unknown capability stays unknown and native dispatch decides eligibility.
 

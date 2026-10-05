@@ -5,7 +5,7 @@ import type { Approval, ApprovalListResponse, Capabilities, EventEnvelope, Threa
 
 test("two tabs converge from native approval snapshots after responding, missed events and runtime replacement", async ({ context }) => {
   const capabilities: Capabilities = {
-    gateway: { apiVersion: "1", instanceId: "native-approval-fixture", version: "test", sse: true, approvals: true, gatewayAuth: false, trustedNetworkOnly: true },
+    gateway: { apiVersion: "2", instanceId: "native-approval-fixture", version: "test", sse: true, approvals: true, gatewayAuth: false, trustedNetworkOnly: true },
     appServer: { ready: true, experimentalApi: true, schemaVersion: "0.160.0", detectedVersion: "0.160.0", detectedVersionMatchesSchema: true },
   };
   const detail: ThreadViewResponse = {

@@ -15,7 +15,7 @@ export async function nativeSettingsFixture(context: BrowserContext) {
   };
   const badge: UnreadBadgeResponse = { count: 0, readRevision: 0 };
   const capabilities: Capabilities = {
-    gateway: { apiVersion: "1", instanceId: "native-settings-fixture", version: "test", sse: true, approvals: true, terminals: { enabled: false }, gatewayAuth: false, trustedNetworkOnly: true },
+    gateway: { apiVersion: "2", instanceId: "native-settings-fixture", version: "test", sse: true, approvals: true, terminals: { enabled: false }, gatewayAuth: false, trustedNetworkOnly: true },
     appServer: { ready: true, experimentalApi: true, schemaVersion: "0.160.0", detectedVersion: "0.160.0", detectedVersionMatchesSchema: true },
   };
   const clients = new Map<Page, string>();

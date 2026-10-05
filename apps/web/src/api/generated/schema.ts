@@ -1659,22 +1659,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/threads/{threadId}/project": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch: operations["update_thread_project"];
-        trace?: never;
-    };
     "/v1/threads/{threadId}/queued-inputs": {
         parameters: {
             query?: never;
@@ -1965,7 +1949,7 @@ export interface components {
             retryable: boolean;
         };
         /** @enum {string} */
-        ApiVersion: "1";
+        ApiVersion: "2";
         AppServerCapabilities: {
             detectedVersion?: string | null;
             detectedVersionMatchesSchema?: boolean | null;
@@ -3348,9 +3332,6 @@ export interface components {
         ThreadPinRequest: {
             beforeThreadId?: string | null;
             pinned: boolean;
-        };
-        ThreadProjectUpdateRequest: {
-            projectId: string | null;
         };
         ThreadProjectUpdated: {
             projectId: string | null;
@@ -6511,31 +6492,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-        };
-    };
-    update_thread_project: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                threadId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ThreadProjectUpdateRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ThreadCommandResponse"];
-                };
             };
         };
     };

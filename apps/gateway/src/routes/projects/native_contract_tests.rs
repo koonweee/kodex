@@ -9,6 +9,37 @@ use super::tests::{native_project, response_json, test_state};
 use crate::build_router;
 
 #[tokio::test]
+async fn removed_chat_project_assignment_is_not_served_or_forwarded() {
+    let (state, server) = test_state().await;
+    let app = build_router(state);
+    for project_id in [json!("project-2"), json!(null)] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::patch("/v1/threads/thread-1/project")
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({"projectId": project_id}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+    assert!(server.requests.lock().unwrap().is_empty());
+    let response = app
+        .oneshot(Request::get("/openapi.json").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let contract = response_json(response).await;
+    assert!(contract["paths"]
+        .get("/v1/threads/{threadId}/project")
+        .is_none());
+    assert!(contract["components"]["schemas"]
+        .get("ThreadProjectUpdateRequest")
+        .is_none());
+}
+
+#[tokio::test]
 async fn native_project_read_preserves_all_roots_metadata_and_native_timestamps() {
     let (state, server) = test_state().await;
     let mut project = native_project("project-1", "/workspace/first");
@@ -187,64 +218,6 @@ async fn native_project_move_and_delete_forward_single_native_commands() {
         server.requests.lock().unwrap().as_slice(),
         &[("project/delete".into(), json!({"projectId":"project-1"}))]
     );
-}
-
-#[tokio::test]
-async fn native_membership_update_requires_an_explicit_nullable_project_id_and_keeps_cwd() {
-    let (state, server) = test_state().await;
-    let app = build_router(state);
-    let missing = app
-        .clone()
-        .oneshot(
-            Request::patch("/v1/threads/thread-1/project")
-                .header("content-type", "application/json")
-                .body(Body::from("{}"))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(missing.status(), StatusCode::UNPROCESSABLE_ENTITY);
-    assert!(server.requests.lock().unwrap().is_empty());
-    for project_id in [json!("project-2"), json!(null)] {
-        server.requests.lock().unwrap().clear();
-        server.queued_responses.lock().unwrap().push(json!({"thread":{
-            "id":"thread-1","projectId":project_id,"cwd":"/execution/unchanged","status":{"type":"idle"},"createdAt":1,"updatedAt":2,
-        }}));
-        let response = app
-            .clone()
-            .oneshot(
-                Request::patch("/v1/threads/thread-1/project")
-                    .header("content-type", "application/json")
-                    .body(Body::from(json!({"projectId":project_id}).to_string()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let response = response_json(response).await;
-        assert_eq!(response["thread"]["projectId"], project_id);
-        assert_eq!(response["thread"]["cwd"], "/execution/unchanged");
-        let requests = server.requests.lock().unwrap().clone();
-        assert_eq!(requests.len(), 2);
-        assert_eq!(
-            requests[1],
-            (
-                "thread/turns/list".into(),
-                json!({
-                    "threadId": "thread-1", "cursor": null, "sortDirection": "desc",
-                    "itemsView": "notLoaded", "limit": 8,
-                })
-            )
-        );
-        let expected = project_id.as_str().unwrap_or("");
-        assert_eq!(
-            &server.requests.lock().unwrap()[0],
-            &(
-                "thread/metadata/update".into(),
-                json!({"threadId":"thread-1","projectId":expected})
-            )
-        );
-    }
 }
 
 #[tokio::test]

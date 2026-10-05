@@ -36,7 +36,7 @@ for (const shape of [
         }
         const routes: Record<string, unknown> = {
           "GET /v1/capabilities": {
-            gateway: { apiVersion: "1", instanceId: "project-navigation", version: "test", sse: true, approvals: true, terminals: { enabled: true }, gatewayAuth: false, trustedNetworkOnly: true },
+            gateway: { apiVersion: "2", instanceId: "project-navigation", version: "test", sse: true, approvals: true, terminals: { enabled: true }, gatewayAuth: false, trustedNetworkOnly: true },
             appServer: { ready: true, experimentalApi: true, schemaVersion: "0.160.0", detectedVersion: "0.160.0", detectedVersionMatchesSchema: true },
           },
           "GET /v1/projects/project-1": project,

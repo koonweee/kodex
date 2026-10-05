@@ -193,10 +193,6 @@ export async function moveProject(projectId: string, beforeProjectId: string | n
   await unwrapNoContent(api.POST("/v1/projects/{projectId}/move", { params: { path: { projectId } }, body: { beforeProjectId } }));
 }
 
-export async function assignThreadProject(threadId: string, projectId: string | null): Promise<void> {
-  await unwrap(api.PATCH("/v1/threads/{threadId}/project", { params: { path: { threadId } }, body: { projectId } }));
-}
-
 export async function listThreadsPage(
   projectId: string,
   options: { cursor?: string | null; limit?: number; signal?: AbortSignal } = {},

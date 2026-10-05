@@ -220,13 +220,16 @@ async fn exercise(
     anyhow::ensure!(listed["projects"][1]["id"] == rootless_id);
     anyhow::ensure!(listed["projects"][2]["id"] == project_id);
 
-    let moved = api(
-        &session.app,
-        "PATCH",
-        &format!("/v1/threads/{thread_id}/project"),
-        Some(json!({"projectId":rootless_id})),
-    )
-    .await?;
+    // Membership changes made by another native client still project through
+    // gateway notifications and reads after the browser move action is removed.
+    let moved = session
+        .state
+        .app_server
+        .request(
+            "thread/metadata/update",
+            json!({"threadId":thread_id,"projectId":rootless_id}),
+        )
+        .await?;
     session
         .notification("thread/project/updated", "threadId", &thread_id)
         .await?;

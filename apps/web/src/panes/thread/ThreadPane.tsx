@@ -453,7 +453,6 @@ function ExistingThreadPane({
                     placement: { sourcePaneId: pane.id },
                   })
                 }
-                onProjectAssignmentError={(error) => setPaneErrorMessage(errorMessageFrom(error))}
                 onArchiveThread={threadActions.onArchiveThread}
                 onPinThread={threadActions.onPinThread}
                 onRenameThread={() => setRenameModalOpen(true)}

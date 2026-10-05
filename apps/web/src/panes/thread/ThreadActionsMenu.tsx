@@ -2,14 +2,12 @@ import { Menu, Switch } from "@mantine/core";
 import { Archive, Copy, CopyPlus, MoreHorizontal, Pencil, Pin, PinOff } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 import type { ThreadSummary } from "../../api/client";
-import { ThreadProjectMenuItems } from "../../projects/ThreadProjectMenuItems";
 import { AdaptiveIconButton } from "../../ui/AdaptiveIconButton";
 import { copyTextToClipboard } from "../../shared/clipboard";
 
 export function ThreadActionsMenu({
   onDuplicatePane,
   onArchiveThread,
-  onProjectAssignmentError,
   onPinThread,
   onRenameThread,
   onSetThread,
@@ -20,7 +18,6 @@ export function ThreadActionsMenu({
 }: {
   pinPending?: boolean;
   onDuplicatePane: () => void;
-  onProjectAssignmentError: (error: unknown) => void;
   onArchiveThread?: (threadId: string) => void;
   onPinThread?: (threadId: string) => void;
   onRenameThread: () => void;
@@ -57,7 +54,6 @@ export function ThreadActionsMenu({
             >
               {thread.pinned ? "Unpin thread" : "Pin thread"}
             </Menu.Item>
-            <ThreadProjectMenuItems threadId={thread.id} projectId={thread.projectId ?? null} onError={onProjectAssignmentError} />
             <Menu.Item leftSection={<Pencil size={14} />} onClick={onRenameThread}>
               Rename thread
             </Menu.Item>

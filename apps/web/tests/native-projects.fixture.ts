@@ -31,7 +31,7 @@ export async function nativeProjectsFixture(context: BrowserContext) {
   let failFirstCreate = false;
   let seq = 0;
   const capabilities: Capabilities = {
-    gateway: { apiVersion: "1", instanceId: "native-project-fixture", version: "test", sse: true, approvals: true, terminals: { enabled: true }, gatewayAuth: false, trustedNetworkOnly: true },
+    gateway: { apiVersion: "2", instanceId: "native-project-fixture", version: "test", sse: true, approvals: true, terminals: { enabled: true }, gatewayAuth: false, trustedNetworkOnly: true },
     appServer: { ready: true, experimentalApi: true, schemaVersion: "0.160.0", detectedVersion: "0.160.0", detectedVersionMatchesSchema: true },
   };
   // Keep native notifications independent of refills caused by reconnects.
@@ -185,11 +185,6 @@ export async function nativeProjectsFixture(context: BrowserContext) {
         pinThread(target.id, input.pinned, input.beforeThreadId);
         emit("thread.pins_updated", {});
         return route.fulfill({ status: 204 });
-      }
-      if (target && action === "project" && request.method() === "PATCH") {
-        target.projectId = (body as { projectId: string | null }).projectId;
-        emit("thread.project_updated", { threadId: target.id, projectId: target.projectId });
-        return respond(route, { thread: target, rawPayload: {} });
       }
       if (target && action === "attach" && request.method() === "POST") return respond(route, detail(target), 200, `${client}:detail`);
       if (target && action === "app-surface" && request.method() === "GET") return respond(route, { session: null });

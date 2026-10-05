@@ -47,10 +47,6 @@ pub fn router() -> Router<AppState> {
         .route("/v1/threads/{thread_id}", get(get_thread))
         .route("/v1/threads/{thread_id}/name", patch(rename_thread))
         .route(
-            "/v1/threads/{thread_id}/project",
-            patch(update_thread_project),
-        )
-        .route(
             "/v1/threads/{thread_id}/notifications",
             patch(update_thread_notifications),
         )
@@ -392,33 +388,6 @@ async fn list_all_threads(
         .retain(|thread| !thread_is_archived(thread));
     apply_thread_list_response_state(&state, &mut response).await?;
     Ok(response)
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ThreadProjectUpdateRequest {
-    #[serde(deserialize_with = "required_nullable_project_id")]
-    #[schema(required = true)]
-    pub project_id: Option<String>,
-}
-
-fn required_nullable_project_id<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<String>, D::Error> {
-    Option::<String>::deserialize(deserializer)
-}
-
-#[utoipa::path(patch, path = "/v1/threads/{threadId}/project", request_body = ThreadProjectUpdateRequest, responses((status = 200, body = ThreadCommandResponse)))]
-pub async fn update_thread_project(
-    State(state): State<AppState>,
-    Path(thread_id): Path<String>,
-    Json(request): Json<ThreadProjectUpdateRequest>,
-) -> ApiResult<Json<ThreadCommandResponse>> {
-    let mut response = app_server_api::client(&state.app_server)
-        .thread_assign_project(thread_id, request.project_id)
-        .await?;
-    apply_thread_command_response_state(&state, &mut response).await?;
-    Ok(Json(response))
 }
 
 #[utoipa::path(post, path = "/v1/threads", request_body = CreateThreadRequest, responses((status = 200, body = ThreadCommandResponse)))]
