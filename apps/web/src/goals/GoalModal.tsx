@@ -77,7 +77,7 @@ export function GoalModal({ goal, pending, error, ready = true, onReload, onClos
   return (
     <Modal opened onClose={onClose} title="Goal" centered size="md" closeButtonProps={{ "aria-label": "Close goal" }}>
       <form onSubmit={save}>
-        <Stack gap="md" className="kodex-goal-modal">
+        <Stack gap="md" pt="md" className="kodex-goal-modal">
           {goal ? (
             <Group justify="space-between" gap="xs">
               <Text size="sm" fw={600}>{goalStatusLabel(goal)}</Text>

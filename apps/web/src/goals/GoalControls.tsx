@@ -40,7 +40,7 @@ export function GoalButton({ controls }: { controls: GoalControls }) {
   if (!goal) return error ? <AdaptiveIconButton color="red" label="Goal unavailable" onClick={onOpen}><AlertCircle /></AdaptiveIconButton> : null;
   return (
     <AdaptiveIconButton iconColor="inherit" className="kodex-goal-icon" label={`Manage goal: ${goalStatusLabel(goal)}`}
-      tooltip={`Goal: ${goal.objective}`} onClick={onOpen} data-goal-status={goal.status}>
+      tooltip={<span className="kodex-goal-tooltip">Goal: {goal.objective}</span>} onClick={onOpen} data-goal-status={goal.status}>
       <Target />
     </AdaptiveIconButton>
   );

@@ -32,6 +32,14 @@
   overflow-wrap: anywhere;
 }
 
+.kodex-goal-tooltip {
+  display: block;
+  max-width: min(336px, calc(100vw - 48px));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .kodex-goal-icon,
 .kodex-goal-icon:hover,
 .kodex-goal-icon:active {
