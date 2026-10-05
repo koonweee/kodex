@@ -130,6 +130,7 @@ describe("MVP composer settings flows", () => {
     expect(await screen.findByLabelText(/50% context left/i)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i }));
+    await clickMenuItem(/^Reasoning$/i);
     await clickMenuItem(/^high$/i);
     await userEvent.click(await screen.findByRole("button", { name: /model: gpt-5\.4, high/i }));
     await clickFastSwitch();
@@ -392,8 +393,10 @@ describe("MVP composer settings flows", () => {
     await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i });
     await userEvent.click(screen.getByRole("button", { name: /^new thread$/i }));
     await userEvent.click(getActiveModelButton(/model: gpt-5\.4, medium/i));
+    await clickMenuItem(/^Model$/i);
     await clickMenuItem(/^gpt-5\.4$/i);
     await userEvent.click(getActiveModelButton(/model: gpt-5\.4, medium/i));
+    await clickMenuItem(/^Reasoning$/i);
     await clickMenuItem(/^high$/i);
     await userEvent.click(getActiveModelButton(/model: gpt-5\.4, high/i));
     await clickFastSwitch();
@@ -711,6 +714,7 @@ describe("MVP composer settings flows", () => {
     const projectGroup = await screen.findByRole("group", { name: "Kodex" });
     await userEvent.click(within(projectGroup).getByRole("button", { name: /create thread in kodex|new thread/i }));
     await userEvent.click(getActiveModelButton(/model: gpt-5\.4, medium/i));
+    await clickMenuItem(/^Model$/i);
     await clickMenuItem(/^gpt-5\.4-mini$/i);
     expect(await screen.findByRole("button", { name: /model: gpt-5\.4-mini, medium/i })).toBeInTheDocument();
     await userEvent.type(getActiveComposer(), "mini");
@@ -719,6 +723,7 @@ describe("MVP composer settings flows", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /^new thread$/i }));
     await userEvent.click(getActiveModelButton(/model: gpt-5\.4, medium/i));
+    await clickMenuItem(/^Model$/i);
     await clickMenuItem(/^gpt-5\.3-codex-spark$/i);
     expect(await screen.findByRole("button", { name: /model: gpt-5\.3-codex-spark, medium/i })).toBeInTheDocument();
     await userEvent.type(getActiveComposer(), "spark");

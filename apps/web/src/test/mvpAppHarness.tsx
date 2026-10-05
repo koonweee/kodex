@@ -593,7 +593,7 @@ function timelineElement(container: HTMLElement) {
 async function clickMenuItem(name: RegExp, screen: typeof import("@testing-library/react").screen, waitFor: typeof import("@testing-library/react").waitFor, fireEvent: typeof import("@testing-library/react").fireEvent) {
   let item: HTMLElement | undefined;
   await waitFor(() => {
-    item = screen.queryAllByRole("menuitem", { hidden: true }).find((element) => name.test(element.textContent ?? ""));
+    item = screen.queryAllByRole("menuitem", { hidden: true, name })[0];
     expect(item).toBeInTheDocument();
   });
   expect(item).toBeInTheDocument();

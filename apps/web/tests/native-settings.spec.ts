@@ -37,6 +37,7 @@ for (const shape of [
         await expect(first.getByRole("img", { name: "Fast responses enabled" })).toBeVisible();
         await expect(second.getByRole("img", { name: "Fast responses enabled" })).toHaveCount(0);
         await modelButton(second, "medium").click();
+        await second.getByRole("menuitem", { name: "Reasoning", exact: true }).click();
         await second.getByRole("menuitem", { name: "High", exact: true }).click();
         await expect.poll(() => fixture.pending).toEqual([{ effort: "high" }]);
         await expect(modelButton(second, "medium")).toBeVisible();

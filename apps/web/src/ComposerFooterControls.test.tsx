@@ -1,5 +1,5 @@
 import { MantineProvider } from "@mantine/core";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -37,17 +37,40 @@ const settings: ComposerSettings = {
 
 describe("ComposerFooterControls", () => {
   it.each([
-    { label: "Fast", role: "menuitemcheckbox", expected: { fast: true, serviceTier: "fast" } },
-    { label: "High", role: "menuitem", expected: { effort: "high" } },
-    { label: "gpt-5.4", role: "menuitem", expected: { model: model.id } },
-  ])("emits only the $label intent instead of a stale complete settings form", async ({ label, role, expected }) => {
+    { label: "Fast", role: "menuitemcheckbox", submenu: null, expected: { fast: true, serviceTier: "fast" } },
+    { label: "High", role: "menuitem", submenu: "Reasoning", expected: { effort: "high" } },
+    { label: "gpt-5.4", role: "menuitem", submenu: "Model", expected: { model: model.id } },
+  ])("emits only the $label intent instead of a stale complete settings form", async ({ label, role, submenu, expected }) => {
     const onSettingsChange = vi.fn();
     renderWithProvider(
       <ComposerFooterControls models={[reasoningModel]} settings={{ model: model.id, effort: "medium", fast: false }} onSettingsChange={onSettingsChange} />,
     );
     await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i }));
-    await userEvent.click(await screen.findByRole(role, { name: label }));
+    if (submenu) {
+      await userEvent.click(await screen.findByRole("menuitem", { name: submenu, hidden: true }));
+    }
+    await userEvent.click(await screen.findByRole(role, { name: label, hidden: true }));
     expect(onSettingsChange).toHaveBeenCalledExactlyOnceWith(expected);
+  });
+
+  it("supports keyboard submenu navigation, returns focus on Back, and reopens at root", async () => {
+    const onSettingsChange = vi.fn();
+    renderWithProvider(<ComposerFooterControls models={[reasoningModel]} settings={settings} onSettingsChange={onSettingsChange} />);
+    const trigger = screen.getByRole("button", { name: /model: gpt-5\.4, medium/i });
+    await userEvent.click(trigger);
+    const reasoning = await screen.findByRole("menuitem", { name: "Reasoning", hidden: true });
+    reasoning.focus();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(screen.getByRole("menu", { hidden: true })).toHaveAttribute("aria-label", "Reasoning");
+    expect(screen.getByRole("menuitem", { name: "Medium", hidden: true })).toHaveFocus();
+    await userEvent.keyboard("{ArrowLeft}");
+    expect(screen.getByRole("menuitem", { name: "Reasoning", hidden: true })).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+    expect(onSettingsChange).toHaveBeenCalledExactlyOnceWith({ effort: "high" });
+    await userEvent.click(trigger);
+    expect(screen.getByRole("menuitem", { name: "Reasoning", hidden: true })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "High", hidden: true })).not.toBeInTheDocument();
   });
 
   it("does not invent a future reasoning effort when the native read returns none", () => {
@@ -89,10 +112,19 @@ describe("ComposerFooterControls", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i }));
 
-    await waitFor(() => {
-      expect(screen.getByRole("menuitem", { name: /^gpt-5\.4$/i, hidden: true })).toBeInTheDocument();
-    });
+    expect(await screen.findByRole("menuitem", { name: "Model", hidden: true })).toHaveTextContent("gpt-5.4");
+    expect(screen.getByRole("menuitem", { name: "Reasoning", hidden: true })).toHaveTextContent("Medium");
+    expect(screen.queryByRole("menuitem", { name: /^gpt-5\.4$/i, hidden: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: /^xhigh$/i, hidden: true })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("menuitem", { name: "Model", hidden: true }));
+    expect(screen.getByRole("menu", { hidden: true })).toHaveAttribute("aria-label", "Model");
+    expect(screen.getByRole("menuitem", { name: /^gpt-5\.4$/i, hidden: true })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("menuitem", { name: "Back", hidden: true }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Reasoning", hidden: true }));
+    expect(screen.getByRole("menu", { hidden: true })).toHaveAttribute("aria-label", "Reasoning");
     expect(screen.getByRole("menuitem", { name: /^xhigh$/i, hidden: true })).toHaveTextContent("xHigh");
+    await userEvent.click(screen.getByRole("menuitem", { name: "Back", hidden: true }));
 
     const fastItem = screen.getByRole("menuitemcheckbox", { name: /fast/i, hidden: true });
     expect(fastItem).not.toHaveAttribute("data-disabled");
@@ -100,7 +132,7 @@ describe("ComposerFooterControls", () => {
     fastItem.focus();
     expect(fastItem).toHaveFocus();
     await userEvent.keyboard("{ArrowUp}");
-    expect(screen.getByRole("menuitem", { name: /^xhigh$/i, hidden: true })).toHaveFocus();
+    expect(screen.getByRole("menuitem", { name: "Reasoning", hidden: true })).toHaveFocus();
     fastItem.focus();
     await userEvent.keyboard("{Enter}");
     expect(onSettingsChange).toHaveBeenCalledWith({ fast: true, serviceTier: "fast" });
@@ -126,7 +158,7 @@ describe("ComposerFooterControls", () => {
     );
 
     expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("menu", { name: /permission profiles/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menu", { name: /permission profiles/i, hidden: true })).not.toBeInTheDocument();
   });
 });
 

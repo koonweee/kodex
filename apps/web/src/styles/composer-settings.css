@@ -1,0 +1,73 @@
+.kodex-run-settings-menu {
+  max-height: min(420px, calc(100dvh - 20px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.kodex-run-settings-header {
+  display: none;
+}
+
+.kodex-run-settings-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.kodex-run-settings-summary > :last-child {
+  min-width: 0;
+  color: var(--kodex-text-secondary);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.kodex-mantine-menu-dropdown .kodex-composer-fast-row,
+.kodex-mantine-menu-dropdown .kodex-composer-fast-row[data-hovered],
+.kodex-mantine-menu-dropdown .kodex-composer-fast-row[data-active="true"],
+.kodex-mantine-menu-dropdown .kodex-composer-fast-row[data-active="true"][data-hovered] {
+  background: transparent !important;
+  color: var(--kodex-text-secondary) !important;
+  cursor: default;
+}
+
+.kodex-mantine-menu-dropdown .kodex-composer-fast-row .kodex-mantine-menu-item-section[data-position="right"] {
+  pointer-events: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kodex-mantine-menu-dropdown .kodex-composer-fast-row:hover,
+  .kodex-mantine-menu-dropdown .kodex-composer-fast-row[data-active="true"]:hover {
+    background: transparent !important;
+    color: var(--kodex-text-secondary) !important;
+    cursor: default;
+  }
+}
+
+@media (pointer: coarse), (any-pointer: coarse) {
+  .kodex-run-settings-menu [data-menu-item] {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 700px) and (pointer: coarse), (max-width: 700px) and (any-pointer: coarse) {
+  .kodex-run-settings-menu {
+    position: fixed !important;
+    top: auto !important;
+    right: 12px !important;
+    bottom: calc(12px + env(safe-area-inset-bottom)) !important;
+    left: 12px !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    max-height: min(420px, calc(100dvh - 24px - env(safe-area-inset-bottom)));
+    border-radius: 18px;
+    padding: 8px;
+  }
+
+  .kodex-run-settings-header {
+    display: flex;
+    min-height: 44px;
+    padding: 0 2px 6px 8px;
+  }
+}

@@ -529,36 +529,6 @@
   overflow-wrap: anywhere;
 }
 
-.kodex-run-settings-header {
-  display: none;
-}
-
-.kodex-run-settings-chip-row {
-  display: grid;
-  gap: 2px;
-}
-
-.kodex-run-settings-chip-row[data-density="compact"] {
-  gap: 4px;
-}
-
-.kodex-run-settings-chip {
-  min-width: 0;
-}
-
-.kodex-mantine-menu-dropdown .kodex-composer-fast-row,
-.kodex-mantine-menu-dropdown .kodex-composer-fast-row[data-hovered],
-.kodex-mantine-menu-dropdown .kodex-composer-fast-row[data-active="true"],
-.kodex-mantine-menu-dropdown .kodex-composer-fast-row[data-active="true"][data-hovered] {
-  background: transparent !important;
-  color: var(--kodex-text-secondary) !important;
-  cursor: default;
-}
-
-.kodex-mantine-menu-dropdown .kodex-composer-fast-row .kodex-mantine-menu-item-section[data-position="right"] {
-  pointer-events: none;
-}
-
 .kodex-context-usage {
   display: inline-grid;
   place-items: center;
@@ -575,13 +545,6 @@
 
   .kodex-skill-popup-row:hover {
     background: var(--kodex-bg-selected);
-  }
-
-  .kodex-mantine-menu-dropdown .kodex-composer-fast-row:hover,
-  .kodex-mantine-menu-dropdown .kodex-composer-fast-row[data-active="true"]:hover {
-    background: transparent !important;
-    color: var(--kodex-text-secondary) !important;
-    cursor: default;
   }
 }
 
@@ -609,84 +572,6 @@
 
   .kodex-composer-hero {
     font-size: 30px;
-  }
-}
-
-@media (max-width: 700px) and (pointer: coarse), (max-width: 700px) and (any-pointer: coarse) {
-  .kodex-run-settings-menu {
-    position: fixed !important;
-    top: auto !important;
-  }
-
-  .kodex-run-settings-menu {
-    right: 12px !important;
-    bottom: 12px !important;
-    left: 12px !important;
-    width: auto !important;
-    min-width: 0 !important;
-    max-width: none !important;
-    max-height: min(340px, calc(100dvh - 24px));
-    border-radius: 18px;
-    padding: 8px;
-    overflow-y: auto;
-  }
-
-  .kodex-run-settings-header {
-    display: flex;
-    min-height: 28px;
-    padding: 0 2px 6px 8px;
-  }
-
-  /* Scoped mobile run-settings menu exceptions; default Menu chrome comes from theme.components. */
-  .kodex-run-settings-menu .mantine-Menu-label {
-    padding: 4px 8px 5px;
-    font-size: 11px;
-    line-height: 1;
-  }
-
-  .kodex-run-settings-menu .mantine-Menu-divider {
-    margin: 7px 2px;
-  }
-
-  .kodex-run-settings-chip-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-    min-width: 0;
-  }
-
-  .kodex-run-settings-chip-row[data-section="model"] {
-    gap: 4px;
-  }
-
-  .kodex-run-settings-chip-row[data-section="reasoning"] {
-    gap: 5px;
-  }
-
-  .kodex-mantine-menu-dropdown .kodex-run-settings-chip {
-    width: auto;
-    min-height: 28px;
-    border: 1px solid var(--kodex-border-subtle);
-    border-radius: var(--kodex-radius-round);
-    padding: 5px 9px;
-    font-size: 12px;
-    line-height: 1;
-  }
-
-  .kodex-mantine-menu-dropdown .kodex-run-settings-chip .kodex-mantine-menu-item-section {
-    margin-inline-end: 4px;
-  }
-
-  .kodex-mantine-menu-dropdown .kodex-run-settings-chip[data-active="true"] {
-    border-color: var(--kodex-border-accent-soft);
-    background: var(--kodex-bg-selected);
-    color: var(--kodex-text-primary);
-  }
-
-  .kodex-mantine-menu-dropdown .kodex-run-settings-chip[data-tone="danger"][data-active="true"] {
-    border-color: var(--kodex-border-danger);
-    background: var(--kodex-bg-danger);
-    color: var(--kodex-text-danger);
   }
 }
 

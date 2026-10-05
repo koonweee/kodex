@@ -1,9 +1,9 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 
 import type { EventEnvelope, ThreadSettingsUpdateRequest, ThreadViewPatch } from "../api/client";
-import { App, FakeEventSource, baseRoutes, highReasoningModel, mockGateway, requestJson, thread, threadDetail } from "../test/mvpAppHarness";
+import { App, FakeEventSource, baseRoutes, clickMenuItem, highReasoningModel, mockGateway, requestJson, thread, threadDetail } from "../test/mvpAppHarness";
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); FakeEventSource.instances.length = 0; });
 
@@ -39,7 +39,8 @@ it("shares native applied settings across clients while disjoint stale picker in
   expect(second.queryByRole("img", { name: "Fast responses enabled" })).not.toBeInTheDocument();
 
   await userEvent.click(second.getByRole("button", { name: "Model: gpt-5.4, medium" }));
-  await userEvent.click(await screen.findByRole("menuitem", { name: "High" }));
+  await clickMenuItem(/^Reasoning$/, screen, waitFor, fireEvent);
+  await clickMenuItem(/^High$/, screen, waitFor, fireEvent);
   await waitFor(() => expect(patches).toEqual([{ serviceTier: "fast" }, { effort: "high" }]));
   nativeSettings = { ...nativeSettings, effort: "high" };
   act(() => { for (const stream of streams) stream.emit(settingsChanged(2)); });

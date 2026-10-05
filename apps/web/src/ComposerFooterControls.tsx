@@ -1,7 +1,7 @@
 import { Box, Button, Group, Menu, Switch, Text, Tooltip } from "@mantine/core";
-import { AlertCircle, Check, Gauge, X } from "lucide-react";
+import { AlertCircle, ArrowLeft, Check, ChevronRight, Gauge, X } from "lucide-react";
 import type { CSSProperties } from "react";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 import type { ModelSummary } from "./api/client";
 import { AdaptiveIconButton } from "./ui/AdaptiveIconButton";
@@ -48,6 +48,39 @@ export function ComposerFooterControls({
   const selectedEffort = settings?.effort ?? (forNextTurn ? null : selectedModel?.defaultReasoningEffort ?? null);
   const supportedEfforts = selectedModel?.supportedReasoningEfforts ?? [];
   const [modelMenuOpened, setModelMenuOpened] = useState(false);
+  const [submenu, setSubmenu] = useState<"model" | "reasoning" | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const modelSubmenuRef = useRef<HTMLButtonElement>(null);
+  const reasoningSubmenuRef = useRef<HTMLButtonElement>(null);
+  const returnToRef = useRef<"model" | "reasoning" | null>(null);
+
+  useLayoutEffect(() => {
+    if (!modelMenuOpened) {
+      return;
+    }
+    if (submenu) {
+      const dropdown = dropdownRef.current;
+      const option = dropdown?.querySelector<HTMLButtonElement>('[data-submenu-option][data-active="true"]')
+        ?? dropdown?.querySelector<HTMLButtonElement>("[data-submenu-option]");
+      option?.focus();
+    } else if (returnToRef.current) {
+      (returnToRef.current === "model" ? modelSubmenuRef : reasoningSubmenuRef).current?.focus();
+      returnToRef.current = null;
+    }
+  }, [modelMenuOpened, submenu]);
+
+  function changeMenuOpened(opened: boolean) {
+    setModelMenuOpened(opened);
+    if (!opened) {
+      setSubmenu(null);
+      returnToRef.current = null;
+    }
+  }
+
+  function goBack() {
+    returnToRef.current = submenu;
+    setSubmenu(null);
+  }
 
   function updateSettings(next: Partial<ComposerSettings>) {
     onSettingsChange(next);
@@ -55,7 +88,7 @@ export function ComposerFooterControls({
 
   function toggleFast(checked: boolean) {
     updateSettings({ fast: checked, serviceTier: checked ? "fast" : null });
-    setModelMenuOpened(false);
+    changeMenuOpened(false);
   }
 
   return (
@@ -78,7 +111,7 @@ export function ComposerFooterControls({
           </Tooltip>
         ) : null}
 
-        <Menu position="top-start" withinPortal opened={modelMenuOpened} onChange={setModelMenuOpened}>
+        <Menu position="top-start" withinPortal opened={modelMenuOpened} onChange={changeMenuOpened} middlewares={{ flip: true, shift: { padding: 10, crossAxis: true } }}>
           <Menu.Target>
             <Button
               aria-label={settings ? `Model: ${selectedModelLabel}${selectedEffort ? `, ${selectedEffort}` : ""}` : settingsError ? "Chat settings unavailable" : "Loading chat settings"}
@@ -97,57 +130,101 @@ export function ComposerFooterControls({
               ) : null}
             </Button>
           </Menu.Target>
-          <Menu.Dropdown aria-label="Model and speed controls" className="kodex-composer-menu kodex-run-settings-menu">
-            <MobileMenuHeader title="Run settings" onClose={() => setModelMenuOpened(false)} />
-            <Menu.Label>Model</Menu.Label>
-            <Box className="kodex-run-settings-chip-row" data-section="model">
-              {models.map((model) => (
+          <Menu.Dropdown
+            aria-label={submenu === "model" ? "Model" : submenu === "reasoning" ? "Reasoning" : "Model and speed controls"}
+            aria-labelledby=""
+            className="kodex-composer-menu kodex-run-settings-menu"
+            ref={dropdownRef}
+            onKeyDown={(event) => {
+              if (submenu && event.key === "ArrowLeft") {
+                event.preventDefault();
+                event.stopPropagation();
+                goBack();
+              }
+            }}
+          >
+            <MobileMenuHeader title={submenu === "model" ? "Model" : submenu === "reasoning" ? "Reasoning" : "Run settings"} onClose={() => changeMenuOpened(false)} />
+            {submenu ? (
+              <>
+                <Menu.Item closeMenuOnClick={false} leftSection={<ArrowLeft size={14} />} onClick={goBack}>Back</Menu.Item>
+                <Menu.Divider />
+                <Menu.Label>{submenu === "model" ? "Model" : "Reasoning"}</Menu.Label>
+                {submenu === "model" ? models.map((model) => (
+                  <Menu.Item
+                    key={model.id}
+                    data-submenu-option
+                    data-active={selectedModel?.id === model.id ? "true" : undefined}
+                    leftSection={selectedModel?.id === model.id ? <Check size={14} /> : undefined}
+                    onClick={() => {
+                      updateSettings({ model: model.id });
+                      changeMenuOpened(false);
+                    }}
+                  >
+                    {model.model}
+                  </Menu.Item>
+                )) : supportedEfforts.map((effort) => (
+                  <Menu.Item
+                    key={effort.reasoningEffort}
+                    data-submenu-option
+                    data-active={selectedEffort === effort.reasoningEffort ? "true" : undefined}
+                    leftSection={selectedEffort === effort.reasoningEffort ? <Check size={14} /> : <Gauge size={14} />}
+                    onClick={() => {
+                      updateSettings({ effort: effort.reasoningEffort });
+                      changeMenuOpened(false);
+                    }}
+                  >
+                    {reasoningEffortLabel(effort.reasoningEffort)}
+                  </Menu.Item>
+                ))}
+              </>
+            ) : (
+              <>
                 <Menu.Item
-                  className="kodex-run-settings-chip"
-                  key={model.id}
-                  data-active={selectedModel?.id === model.id ? "true" : undefined}
-                  leftSection={selectedModel?.id === model.id ? <Check size={14} /> : undefined}
-                  onClick={() => {
-                    updateSettings({ model: model.id });
-                    setModelMenuOpened(false);
+                  aria-label="Model"
+                  aria-haspopup="menu"
+                  closeMenuOnClick={false}
+                  ref={modelSubmenuRef}
+                  rightSection={<ChevronRight size={14} />}
+                  onClick={() => setSubmenu("model")}
+                  onKeyDown={(event) => {
+                    if (event.key === "ArrowRight") {
+                      event.preventDefault();
+                      setSubmenu("model");
+                    }
                   }}
                 >
-                  {model.model}
+                  <span className="kodex-run-settings-summary"><span>Model</span><span>{selectedModelLabel}</span></span>
                 </Menu.Item>
-              ))}
-            </Box>
-            {supportedEfforts.length > 0 ? (
-              <>
+                {supportedEfforts.length > 0 ? (
+                  <Menu.Item
+                    aria-label="Reasoning"
+                    aria-haspopup="menu"
+                    closeMenuOnClick={false}
+                    ref={reasoningSubmenuRef}
+                    rightSection={<ChevronRight size={14} />}
+                    onClick={() => setSubmenu("reasoning")}
+                    onKeyDown={(event) => {
+                      if (event.key === "ArrowRight") {
+                        event.preventDefault();
+                        setSubmenu("reasoning");
+                      }
+                    }}
+                  >
+                    <span className="kodex-run-settings-summary"><span>Reasoning</span><span>{selectedEffort ? reasoningEffortLabel(selectedEffort) : "Default"}</span></span>
+                  </Menu.Item>
+                ) : null}
                 <Menu.Divider />
-                <Menu.Label>Reasoning</Menu.Label>
-                <Box className="kodex-run-settings-chip-row" data-section="reasoning">
-                  {supportedEfforts.map((effort) => (
-                    <Menu.Item
-                      className="kodex-run-settings-chip"
-                      key={effort.reasoningEffort}
-                      data-active={selectedEffort === effort.reasoningEffort ? "true" : undefined}
-                      leftSection={selectedEffort === effort.reasoningEffort ? <Check size={14} /> : <Gauge size={14} />}
-                      onClick={() => {
-                        updateSettings({ effort: effort.reasoningEffort });
-                        setModelMenuOpened(false);
-                      }}
-                    >
-                      {reasoningEffortLabel(effort.reasoningEffort)}
-                    </Menu.Item>
-                  ))}
-                </Box>
+                <CheckboxMenuItem
+                  checked={settings?.fast ?? false}
+                  className="kodex-composer-fast-row"
+                  leftSection={<SolidBoltIcon />}
+                  onChange={toggleFast}
+                  rightSection={<Switch aria-hidden="true" checked={settings?.fast ?? false} readOnly size="xs" tabIndex={-1} />}
+                >
+                  Fast
+                </CheckboxMenuItem>
               </>
-            ) : null}
-            <Menu.Divider />
-            <CheckboxMenuItem
-              checked={settings?.fast ?? false}
-              className="kodex-composer-fast-row"
-              leftSection={<SolidBoltIcon />}
-              onChange={toggleFast}
-              rightSection={<Switch aria-hidden="true" checked={settings?.fast ?? false} readOnly size="xs" tabIndex={-1} />}
-            >
-              Fast
-            </CheckboxMenuItem>
+            )}
           </Menu.Dropdown>
         </Menu>
       </Group>

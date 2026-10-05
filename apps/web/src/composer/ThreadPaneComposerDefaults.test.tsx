@@ -59,6 +59,7 @@ it("refills a cancelled initial defaults read without losing text or later overw
   expect(screen.getByRole("button", { name: "Model: gpt-5.4, high" })).toBeInTheDocument();
   expect(screen.getByLabelText("Message composer")).toHaveValue("Keep this draft");
   await userEvent.click(screen.getByRole("button", { name: "Model: gpt-5.4, high" }));
+  await clickMenuItem(/^Reasoning$/i, screen, waitFor, fireEvent);
   await clickMenuItem(/^xhigh$/i, screen, waitFor, fireEvent);
   nativeEffort = "medium";
   await act(async () => { await refreshNativeConfig(client); });

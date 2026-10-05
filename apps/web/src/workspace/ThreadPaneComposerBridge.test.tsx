@@ -152,6 +152,7 @@ describe("ThreadPaneComposerBridge", () => {
     const first = within(screen.getByRole("region", { name: /first thread pane/i }));
     await userEvent.type(first.getByLabelText(/message composer/i), "Keep my unsent text");
     await userEvent.click(await first.findByRole("button", { name: "Model: gpt-5.4, medium" }));
+    await clickMenuItem(/^Reasoning$/i);
     await clickMenuItem(/^high$/i);
     expect(await first.findByRole("alert")).toHaveTextContent("Native change rejected");
     expect(first.getByRole("button", { name: "Model: gpt-5.4, medium" })).toBeInTheDocument();
@@ -225,6 +226,7 @@ describe("ThreadPaneComposerBridge", () => {
     const secondPane = within(screen.getByRole("region", { name: /second thread pane/i }));
     await firstPane.findByRole("button", { name: "Model: gpt-5.4, high" });
     await userEvent.click(await secondPane.findByRole("button", { name: "Model: gpt-5.4, medium" }));
+    await clickMenuItem(/^Reasoning$/i);
     await clickMenuItem(/^xhigh$/i);
     await secondPane.findByRole("button", { name: "Model: gpt-5.4, xhigh" });
     expect(firstPane.getByRole("button", { name: "Model: gpt-5.4, high" })).toBeInTheDocument();
@@ -261,6 +263,7 @@ describe("ThreadPaneComposerBridge", () => {
     await userEvent.type(firstPane.getByLabelText(/message composer/i), "First draft");
     await userEvent.type(secondPane.getByLabelText(/message composer/i), "Second draft");
     await userEvent.click(secondPane.getByRole("button", { name: "Model: gpt-5.4, high" }));
+    await clickMenuItem(/^Reasoning$/i);
     await clickMenuItem(/^xhigh$/i);
     for (const pane of [firstPane, secondPane]) {
       await pane.findByRole("button", { name: "Model: gpt-5.4, xhigh" });

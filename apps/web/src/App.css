@@ -6,6 +6,7 @@
 @import "./styles/app-surface.css";
 @import "./styles/terminal.css";
 @import "./styles/composer.css";
+@import "./styles/composer-settings.css";
 @import "./styles/mobile-composer.css";
 @import "./styles/sidebar.css";
 @import "./styles/automations.css";
