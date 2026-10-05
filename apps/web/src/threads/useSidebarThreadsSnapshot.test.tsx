@@ -11,13 +11,13 @@ import { useSidebarThreadsSnapshot } from "./useSidebarThreadsSnapshot";
 vi.mock("../api/client", () => ({ getSidebarThreads: vi.fn() }));
 
 const project = { id: "native-project", name: "Native", roots: [{ path: "/shared" }], metadata: {}, position: 0, createdAt: 1, updatedAt: 1, recencyAt: null };
-const thread: SidebarThreadSummary = { parentThreadId: null, canAcceptDirectInput: null, id: "native-chat", projectId: project.id, cwd: "/shared", name: "Native chat", status: "idle", createdAt: 1, updatedAt: 1, notificationsEnabled: true, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false, unreadCompletedAgentTurn: false };
+const thread: SidebarThreadSummary = { parentThreadId: null, canAcceptDirectInput: null, id: "native-chat", projectId: project.id, cwd: "/shared", name: "Native chat", status: "idle", createdAt: 1, updatedAt: 1, notificationsEnabled: true, pinned: false, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false, unreadCompletedAgentTurn: false };
 function snapshot(assigned: boolean, deleted = false): SidebarThreadsResponse {
   return {
     projects: deleted ? [] : [project],
     projectThreads: deleted ? {} : { [project.id]: { threads: assigned ? [thread] : [] } },
     chatThreads: { threads: assigned ? [] : [{ ...thread, projectId: null }] },
-    sections: [], sectionThreads: {},
+    pinnedThreads: { threads: [] },
   };
 }
 
@@ -68,15 +68,13 @@ describe("native sidebar membership snapshots", () => {
     expect(second.client.getQueryData(queryKeys.chatThreads)).toEqual(first.client.getQueryData(queryKeys.chatThreads));
   });
 
-  it("replaces native section order and membership in two clients after cancelling an older snapshot", async () => {
-    const section = { id: "native-section", name: "Research" };
-    const secondThread = { ...thread, id: "second-chat", name: "Second chat", section };
-    const sectionSnapshot = (rows: SidebarThreadSummary[]): SidebarThreadsResponse => ({
+  it("replaces native pinned order and membership in two clients after cancelling an older snapshot", async () => {
+    const secondThread = { ...thread, id: "second-chat", name: "Second chat", pinned: true };
+    const pinnedSnapshot = (rows: SidebarThreadSummary[]): SidebarThreadsResponse => ({
       ...snapshot(false),
-      sections: [section],
-      sectionThreads: { [section.id]: { threads: rows } },
+      pinnedThreads: { threads: rows },
     });
-    const oldSnapshot = sectionSnapshot([{ ...thread, section }, secondThread]);
+    const oldSnapshot = pinnedSnapshot([{ ...thread, pinned: true }, secondThread]);
     let latest = oldSnapshot;
     let calls = 0;
     let releaseOld!: (value: SidebarThreadsResponse) => void;
@@ -91,18 +89,18 @@ describe("native sidebar membership snapshots", () => {
     });
     const first = mountClient();
     await waitFor(() => expect(first.result.current.sidebarSnapshotReady).toBe(true));
-    expect(first.client.getQueryData<ThreadSummary[]>(["threads", "section", section.id])?.map((row) => row.id))
+    expect(first.client.getQueryData<ThreadSummary[]>(queryKeys.pinnedThreads)?.map((row) => row.id))
       .toEqual([thread.id, secondThread.id]);
     const second = mountClient();
     await waitFor(() => expect(releaseOld).toBeDefined());
-    latest = sectionSnapshot([secondThread]);
+    latest = pinnedSnapshot([secondThread]);
     await act(async () => {
       await Promise.all([refreshProjectState(first.client), refreshProjectState(second.client)]);
     });
     expect(oldSignal?.aborted).toBe(true);
     await act(async () => { releaseOld(oldSnapshot); });
     for (const browser of [first, second]) {
-      expect(browser.client.getQueryData<ThreadSummary[]>(["threads", "section", section.id])?.map((row) => row.id))
+      expect(browser.client.getQueryData<ThreadSummary[]>(queryKeys.pinnedThreads)?.map((row) => row.id))
         .toEqual([secondThread.id]);
     }
   });

@@ -33,7 +33,7 @@ function snapshot(rows: ThreadTimelineRow[], revision: number): ThreadViewRespon
   return {
     thread: {
       id: "thread-1", parentThreadId: null, canAcceptDirectInput: null, cwd: "/workspace", status: "idle", createdAt: 0, updatedAt: 0,
-      notificationsEnabled: true, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false, unreadCompletedAgentTurn: false,
+      notificationsEnabled: true, pinned: false, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false, unreadCompletedAgentTurn: false,
     },
     liveState: "idle",
     timeline: { viewRevision: revision, liveState: "idle", rows, turns: [], pendingApprovalRequests: [], pendingUserInputRequests: [] },

@@ -7,8 +7,7 @@ export function mergeThreadSummaryMetadata(current: ThreadSummary, update: Threa
   return {
     ...preserveNewerThreadReadState(current, update),
     projectId: current.projectId,
-    section: current.section,
-    sectionEnteredAt: current.sectionEnteredAt,
+    pinned: current.pinned,
     parentThreadId: current.parentThreadId,
     canAcceptDirectInput: current.canAcceptDirectInput,
   };

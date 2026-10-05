@@ -20,7 +20,7 @@ function thread(state = read(), overrides: Partial<ThreadSummary> = {}): ThreadS
   return {
     id: threadId, name: "Read chat", cwd: "/repo", projectId: null,
     parentThreadId: null, canAcceptDirectInput: true, status: "idle",
-    createdAt: 1, updatedAt: 1, notificationsEnabled: true, rawPayload: {},
+    createdAt: 1, updatedAt: 1, notificationsEnabled: true, pinned: false, rawPayload: {},
     ...marker, ...overrides,
   };
 }

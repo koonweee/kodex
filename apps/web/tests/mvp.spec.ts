@@ -270,8 +270,9 @@ test("creates and selects a project", async ({ page }) => {
 
   await expect(page.locator(".kodex-project-title").filter({ hasText: "Kodex" })).toBeVisible();
   await page.getByRole("button", { name: /add project/i }).first().click();
-  await page.getByLabel(/project name/i).fill("Scratch");
-  await page.getByLabel(/root directories/i).fill("/tmp/scratch");
+  const dialog = page.getByRole("dialog", { name: /add project/i });
+  await dialog.getByRole("button", { name: "Scratch", exact: true }).click();
+  await dialog.getByRole("button", { name: "Use this directory", exact: true }).click();
   await page.getByRole("dialog", { name: /add project/i }).getByRole("button", { name: /add project/i }).click();
 
   await expect(page.locator(".kodex-project-title").filter({ hasText: "Scratch" })).toBeVisible();
@@ -1187,7 +1188,7 @@ test("restores selected thread model settings when switching threads", async ({ 
         projects: [{ ...project, roots: [{ path: "/tmp" }] }],
         projectThreads: { [project.id]: { threads: [] } },
         chatThreads: { threads: Object.values(threadsById).map((thread) => ({ ...thread, projectId: null, cwd: "/tmp", status: "idle", rawPayload: { model: thread.model }, createdAt: 1777500000, updatedAt: 1777501000 })) },
-        sections: [], sectionThreads: {},
+        pinnedThreads: { threads: [] },
       } });
       return;
     }
@@ -1529,8 +1530,12 @@ async function responseFor(key: string, route: Route, projects = [project], thre
       projects,
       projectThreads: Object.fromEntries(projects.map((project) => [project.id, { threads: threads.filter((entry) => entry.projectId === project.id) }])),
       chatThreads: { threads: [] },
-      sections: [], sectionThreads: {},
+      pinnedThreads: { threads: [] },
     } };
+  }
+  if (key === "GET /v1/directories") {
+    const path = new URL(route.request().url()).searchParams.get("path") ?? "/home/kodex";
+    return { body: { path, homePath: "/home/kodex", parentPath: path === "/home/kodex" ? null : "/home/kodex", directories: path === "/home/kodex" ? [{ name: "Scratch", path: "/home/kodex/Scratch" }] : [] } };
   }
   if (key === "GET /v1/projects") {
     return { body: { projects } };

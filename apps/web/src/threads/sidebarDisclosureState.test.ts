@@ -15,7 +15,7 @@ describe("sidebar disclosure state", () => {
       {
         chatsSectionCollapsed: true,
         collapsedProjectIds: new Set(["project-1", "project-2"]),
-        collapsedSectionIds: new Set(),
+        pinnedCollapsed: false,
         projectsSectionCollapsed: true,
       },
       storage,
@@ -24,7 +24,7 @@ describe("sidebar disclosure state", () => {
     expect(loadSidebarDisclosureState(storage)).toEqual({
       chatsSectionCollapsed: true,
       collapsedProjectIds: new Set(["project-1", "project-2"]),
-      collapsedSectionIds: new Set(),
+      pinnedCollapsed: false,
       projectsSectionCollapsed: true,
     });
   });
@@ -37,14 +37,14 @@ describe("sidebar disclosure state", () => {
       JSON.stringify({
         chatsSectionCollapsed: "true",
         collapsedProjectIds: ["project-1", "", 3, "project-2"],
-        collapsedSectionIds: ["section-1", "", 3],
+        pinnedCollapsed: "true",
       }),
     );
 
     expect(loadSidebarDisclosureState(storage)).toEqual({
       chatsSectionCollapsed: false,
       collapsedProjectIds: new Set(["project-1", "project-2"]),
-      collapsedSectionIds: new Set(["section-1"]),
+      pinnedCollapsed: false,
       projectsSectionCollapsed: false,
     });
   });

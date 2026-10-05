@@ -121,7 +121,7 @@ function sidebarSnapshot({
     projects,
     projectThreads: Object.fromEntries(projects.map((project) => [project.id, { threads: threads.filter((thread) => thread.projectId === project.id) }])),
     chatThreads: { threads: chats },
-    sections: [], sectionThreads: {},
+    pinnedThreads: { threads: [] },
   };
 }
 
@@ -745,8 +745,7 @@ describe("MVP shell flows", () => {
   });
 
   it("seeds the sidebar from the gateway snapshot endpoint", async () => {
-    const pinnedSection = { id: "01984de2-8f74-7c91-a3b2-5c5e937cf318", name: "Pinned" };
-    const pinnedThread = { ...thread, section: pinnedSection };
+    const pinnedThread = { ...thread, pinned: true };
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
@@ -761,7 +760,7 @@ describe("MVP shell flows", () => {
             },
           },
           chatThreads: { threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-          sections: [pinnedSection], sectionThreads: { [pinnedSection.id]: { threads: [pinnedThread], nextCursor: null } },
+          pinnedThreads: { threads: [pinnedThread], nextCursor: null },
         },
       }),
     );
@@ -770,7 +769,7 @@ describe("MVP shell flows", () => {
 
     await waitFor(() => expect(gateway.callsFor("GET", "/v1/sidebar/threads")).toHaveLength(1));
     const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
-    const pinnedGroup = await screen.findByRole("group", { name: "Pinned section" });
+    const pinnedGroup = await screen.findByRole("group", { name: "Pinned" });
     expect(within(pinnedGroup).getByRole("button", { name: /^implement frontend$/i })).toBeInTheDocument();
     expect(within(kodexGroup).queryByRole("button", { name: /^implement frontend$/i })).not.toBeInTheDocument();
     expect(within(kodexGroup).getByRole("button", { name: /^second thread$/i })).toBeInTheDocument();
@@ -779,7 +778,7 @@ describe("MVP shell flows", () => {
     expect(gateway.callsFor("GET", "/v1/chats/threads")).toHaveLength(0);
   });
 
-  it("uses scoped endpoints for invalidated sidebar sections after a startup snapshot", async () => {
+  it("uses scoped endpoints for invalidated sidebar lists after a startup snapshot", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const chatThread = {
       ...thread,
@@ -826,7 +825,7 @@ describe("MVP shell flows", () => {
             },
           },
           chatThreads: { threads: [untitledChatThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-          sections: [], sectionThreads: {},
+          pinnedThreads: { threads: [] },
         },
       }),
     );
@@ -925,7 +924,7 @@ describe("MVP shell flows", () => {
             },
           },
           chatThreads: { threads: chatThreads, nextCursor: "chat-next", backwardsCursor: null, rawPayload: {} },
-          sections: [], sectionThreads: {},
+          pinnedThreads: { threads: [] },
         },
       }),
     );

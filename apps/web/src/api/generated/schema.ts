@@ -629,6 +629,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/pinned-threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_pinned_threads"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects": {
         parameters: {
             query?: never;
@@ -965,38 +981,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/self-control/thread-sections": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["create_section"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/self-control/thread-sections/{sectionId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["delete_section"];
-        options?: never;
-        head?: never;
-        patch: operations["update_section"];
-        trace?: never;
-    };
     "/v1/self-control/thread-spawns": {
         parameters: {
             query?: never;
@@ -1213,6 +1197,22 @@ export interface paths {
         patch: operations["rename_self_control_thread"];
         trace?: never;
     };
+    "/v1/self-control/threads/{threadId}/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["self_control_set_thread_pinned"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/self-control/threads/{threadId}/queued-inputs": {
         parameters: {
             query?: never;
@@ -1241,22 +1241,6 @@ export interface paths {
         put?: never;
         /** Resume a thread through self-control */
         post: operations["resume_self_control_thread"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/self-control/threads/{threadId}/section": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["move_thread"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1410,54 +1394,6 @@ export interface paths {
         put?: never;
         post?: never;
         delete: operations["delete_terminal"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/thread-sections": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_thread_sections"];
-        put?: never;
-        post: operations["create_thread_section"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/thread-sections/{sectionId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["delete_thread_section"];
-        options?: never;
-        head?: never;
-        patch: operations["update_thread_section"];
-        trace?: never;
-    };
-    "/v1/thread-sections/{sectionId}/threads": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_section_threads"];
-        put?: never;
-        post?: never;
-        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1691,6 +1627,22 @@ export interface paths {
         patch: operations["update_thread_notifications"];
         trace?: never;
     };
+    "/v1/threads/{threadId}/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["set_thread_pinned"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/threads/{threadId}/project": {
         parameters: {
             query?: never;
@@ -1797,22 +1749,6 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["resume_thread"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/threads/{threadId}/section": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["move_thread_to_section"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2411,10 +2347,6 @@ export interface components {
             sandbox?: string | null;
             serviceTier?: string | null;
         };
-        CreateThreadSectionRequest: {
-            appearance?: null | components["schemas"]["ThreadSectionAppearance"];
-            name: string;
-        };
         CreditsSnapshot: {
             balance?: string | null;
             hasCredits: boolean;
@@ -2712,10 +2644,6 @@ export interface components {
         MoveProjectRequest: {
             beforeProjectId?: string | null;
         };
-        MoveThreadToSectionRequest: {
-            beforeThreadId?: string | null;
-            sectionId: string | null;
-        };
         NativeConfigLayerMetadata: {
             filePath?: string | null;
             kind: string;
@@ -2780,6 +2708,11 @@ export interface components {
             /** Format: int32 */
             limit?: number | null;
             projectId?: string | null;
+        };
+        PinnedThreadListQuery: {
+            cursor?: string | null;
+            /** Format: int32 */
+            limit?: number | null;
         };
         PluginDetail: {
             apps?: components["schemas"]["AppSummary"][];
@@ -3074,9 +3007,6 @@ export interface components {
             serviceTier?: string | null;
             source?: components["schemas"]["SelfControlSource"];
         };
-        SelfControlCreateThreadSectionRequest: components["schemas"]["CreateThreadSectionRequest"] & {
-            source?: components["schemas"]["SelfControlSource"];
-        };
         SelfControlGeneratedAppSurfaceUpsertRequest: {
             csp?: components["schemas"]["AppSurfaceCsp"];
             displayModes?: string[];
@@ -3095,9 +3025,6 @@ export interface components {
             completedTurnId: string;
             /** Format: int64 */
             readRevision: number;
-            source?: components["schemas"]["SelfControlSource"];
-        };
-        SelfControlMoveThreadToSectionRequest: components["schemas"]["MoveThreadToSectionRequest"] & {
             source?: components["schemas"]["SelfControlSource"];
         };
         SelfControlMutationRequest: {
@@ -3158,6 +3085,9 @@ export interface components {
             payload?: unknown;
             source?: components["schemas"]["SelfControlSource"];
         };
+        SelfControlThreadPinRequest: components["schemas"]["ThreadPinRequest"] & {
+            source?: components["schemas"]["SelfControlSource"];
+        };
         SelfControlThreadSettingsUpdateRequest: components["schemas"]["ThreadSettingsUpdateRequest"] & {
             source?: components["schemas"]["SelfControlSource"];
         };
@@ -3190,9 +3120,6 @@ export interface components {
             remainingSelfControlDepth: number;
             threadId: string;
         };
-        SelfControlUpdateThreadSectionRequest: components["schemas"]["UpdateThreadSectionRequest"] & {
-            source?: components["schemas"]["SelfControlSource"];
-        };
         SidebarThreadListResponse: {
             backwardsCursor?: string | null;
             nextCursor?: string | null;
@@ -3214,6 +3141,7 @@ export interface components {
             name?: string | null;
             notificationsEnabled: boolean;
             parentThreadId: string | null;
+            pinned: boolean;
             preview?: unknown;
             projectId?: string | null;
             /** Format: int64 */
@@ -3221,9 +3149,6 @@ export interface components {
             readStateKnown: boolean;
             reasoningEffort?: string | null;
             sandbox?: unknown;
-            section?: null | components["schemas"]["ThreadSection"];
-            /** Format: int64 */
-            sectionEnteredAt?: number | null;
             seenCompletedTurnId: string | null;
             serviceTier?: string | null;
             source?: string | null;
@@ -3234,14 +3159,11 @@ export interface components {
         };
         SidebarThreadsResponse: {
             chatThreads: components["schemas"]["SidebarThreadListResponse"];
+            pinnedThreads: components["schemas"]["SidebarThreadListResponse"];
             projectThreads: {
                 [key: string]: components["schemas"]["SidebarThreadListResponse"];
             };
             projects: components["schemas"]["Project"][];
-            sectionThreads: {
-                [key: string]: components["schemas"]["SidebarThreadListResponse"];
-            };
-            sections: components["schemas"]["ThreadSection"][];
         };
         SkillErrorInfo: {
             message: string;
@@ -3368,6 +3290,10 @@ export interface components {
         ThreadNotificationSettingsUpdateRequest: {
             enabled: boolean;
         };
+        ThreadPinRequest: {
+            beforeThreadId?: string | null;
+            pinned: boolean;
+        };
         ThreadProjectUpdateRequest: {
             projectId: string | null;
         };
@@ -3387,27 +3313,6 @@ export interface components {
             updatedAt: string;
         };
         ThreadReadStateUpdate: components["schemas"]["ThreadRead"];
-        ThreadSection: {
-            appearance?: null | components["schemas"]["ThreadSectionAppearance"];
-            id: string;
-            name: string;
-        };
-        ThreadSectionAppearance: {
-            color?: string | null;
-            icon?: string | null;
-        };
-        ThreadSectionListQuery: {
-            cursor?: string | null;
-            /** Format: int32 */
-            limit?: number | null;
-        };
-        ThreadSectionListResponse: {
-            nextCursor?: string | null;
-            sections: components["schemas"]["ThreadSection"][];
-        };
-        ThreadSectionResponse: {
-            section: components["schemas"]["ThreadSection"];
-        };
         ThreadSettingsResponse: {
             activePermissionProfile?: null | components["schemas"]["ActivePermissionProfile"];
             effort?: string | null;
@@ -3472,6 +3377,7 @@ export interface components {
             name?: string | null;
             notificationsEnabled: boolean;
             parentThreadId: string | null;
+            pinned: boolean;
             preview?: unknown;
             projectId?: string | null;
             rawPayload: unknown;
@@ -3480,9 +3386,6 @@ export interface components {
             readStateKnown: boolean;
             reasoningEffort?: string | null;
             sandbox?: unknown;
-            section?: null | components["schemas"]["ThreadSection"];
-            /** Format: int64 */
-            sectionEnteredAt?: number | null;
             seenCompletedTurnId: string | null;
             serviceTier?: string | null;
             source?: string | null;
@@ -3646,6 +3549,7 @@ export interface components {
             name?: string | null;
             notificationsEnabled: boolean;
             parentThreadId: string | null;
+            pinned: boolean;
             preview?: unknown;
             projectId?: string | null;
             /** Format: int64 */
@@ -3653,9 +3557,6 @@ export interface components {
             readStateKnown: boolean;
             reasoningEffort?: string | null;
             sandbox?: unknown;
-            section?: null | components["schemas"]["ThreadSection"];
-            /** Format: int64 */
-            sectionEnteredAt?: number | null;
             seenCompletedTurnId: string | null;
             serviceTier?: string | null;
             source?: string | null;
@@ -3797,10 +3698,6 @@ export interface components {
             } | null;
             name?: string | null;
             roots?: components["schemas"]["ProjectRoot"][] | null;
-        };
-        UpdateThreadSectionRequest: {
-            appearance?: null | components["schemas"]["ThreadSectionAppearance"];
-            name: string;
         };
         UserInput: {
             text: string;
@@ -4876,6 +4773,28 @@ export interface operations {
             };
         };
     };
+    list_pinned_threads: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadListResponse"];
+                };
+            };
+        };
+    };
     list_projects: {
         parameters: {
             query?: never;
@@ -5425,77 +5344,6 @@ export interface operations {
             };
         };
     };
-    create_section: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SelfControlCreateThreadSectionRequest"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ThreadSectionResponse"];
-                };
-            };
-        };
-    };
-    delete_section: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sectionId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SelfControlMutationRequest"];
-            };
-        };
-        responses: {
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    update_section: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sectionId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SelfControlUpdateThreadSectionRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ThreadSectionResponse"];
-                };
-            };
-        };
-    };
     spawn_self_control_thread: {
         parameters: {
             query?: never;
@@ -5857,6 +5705,29 @@ export interface operations {
             };
         };
     };
+    self_control_set_thread_pinned: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlThreadPinRequest"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_self_control_queued_inputs: {
         parameters: {
             query?: never;
@@ -5900,29 +5771,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ThreadCommandResponse"];
                 };
-            };
-        };
-    };
-    move_thread: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                threadId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SelfControlMoveThreadToSectionRequest"];
-            };
-        };
-        responses: {
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };
@@ -6159,119 +6007,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TerminalDeleteResponse"];
-                };
-            };
-        };
-    };
-    list_thread_sections: {
-        parameters: {
-            query?: {
-                cursor?: string | null;
-                limit?: number | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ThreadSectionListResponse"];
-                };
-            };
-        };
-    };
-    create_thread_section: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateThreadSectionRequest"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ThreadSectionResponse"];
-                };
-            };
-        };
-    };
-    delete_thread_section: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sectionId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    update_thread_section: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sectionId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateThreadSectionRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ThreadSectionResponse"];
-                };
-            };
-        };
-    };
-    list_section_threads: {
-        parameters: {
-            query?: {
-                cursor?: string | null;
-                limit?: number | null;
-            };
-            header?: never;
-            path: {
-                sectionId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ThreadListResponse"];
                 };
             };
         };
@@ -6634,6 +6369,29 @@ export interface operations {
             };
         };
     };
+    set_thread_pinned: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadPinRequest"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     update_thread_project: {
         parameters: {
             query?: never;
@@ -6848,29 +6606,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ThreadCommandResponse"];
                 };
-            };
-        };
-    };
-    move_thread_to_section: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                threadId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MoveThreadToSectionRequest"];
-            };
-        };
-        responses: {
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };

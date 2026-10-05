@@ -843,7 +843,7 @@ function snapshot({
       sandbox: null,
       gitInfo: null,
       notificationsEnabled: true,
-      section: null,
+      pinned: false,
       preview: null,
       latestCompletedTurnId: null,
       seenCompletedTurnId: null,

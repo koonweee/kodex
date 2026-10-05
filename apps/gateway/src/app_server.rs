@@ -581,7 +581,6 @@ pub mod tests {
         pub queued_errors: StdMutex<Vec<ApiError>>,
         pub queued_responses: StdMutex<Vec<Value>>,
         pub native_projects: StdMutex<HashMap<String, Value>>,
-        pub native_sections: StdMutex<Option<Vec<Value>>>,
         pub thread_list_responses_by_section_id: StdMutex<HashMap<String, Value>>,
         pub thread_list_responses_by_project_id: StdMutex<HashMap<String, Value>>,
         pub next_response: StdMutex<Option<Value>>,
@@ -994,11 +993,6 @@ done
                 .lock()
                 .unwrap()
                 .push((method.to_string(), params.clone()));
-            if method == "threadSection/list" {
-                if let Some(sections) = self.native_sections.lock().unwrap().as_ref() {
-                    return Ok(json!({"data":sections,"nextCursor":null}));
-                }
-            }
             if method == "thread/list" {
                 if let Some(section_id) = params.get("sectionId").and_then(Value::as_str) {
                     if let Some(response) = self
@@ -1101,7 +1095,7 @@ done
 
     fn default_test_response(method: &str) -> Value {
         match method {
-            "project/list" | "threadSection/list" => json!({"data": [], "nextCursor": null}),
+            "project/list" => json!({"data": [], "nextCursor": null}),
             "thread/list" => json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
             "thread/loaded/list" => json!({"data": [], "nextCursor": null}),
             "thread/queue/list" => json!({"data": [], "nextCursor": null}),

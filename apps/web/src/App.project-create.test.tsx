@@ -12,7 +12,7 @@ it("registers the selected root as a native project and reuses its idempotency k
   let calls = 0;
   let projects = [project];
   const gateway = mockGateway(baseRoutes({
-    "GET /v1/sidebar/threads": () => ({ projects, projectThreads: {}, chatThreads: { threads: [] }, sections: [], sectionThreads: {} }),
+    "GET /v1/sidebar/threads": () => ({ projects, projectThreads: {}, chatThreads: { threads: [] }, pinnedThreads: { threads: [] } }),
     "GET /v1/directories": (request: Request) => {
       const path = new URL(request.url).searchParams.get("path") ?? "/home/kodex";
       return { path, homePath: "/home/kodex", parentPath: path === "/home/kodex" ? null : "/home/kodex", directories: path === "/home/kodex" ? [{ name: "Research", path: "/home/kodex/Research" }] : [] };

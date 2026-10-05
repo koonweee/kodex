@@ -66,7 +66,6 @@ export type ThreadViewThreadSummary = components["schemas"]["ThreadViewThreadSum
 export type ThreadSubagentSummary = components["schemas"]["ThreadSubagentSummary"];
 export type ThreadSubagentListResponse = components["schemas"]["ThreadSubagentListResponse"];
 export type TextElement = components["schemas"]["TextElement"];
-export type ThreadSection = components["schemas"]["ThreadSection"];
 export type ThreadSummary = components["schemas"]["ThreadSummary"];
 export type ThreadTimelineFileChangeEntry = components["schemas"]["ThreadTimelineFileChangeEntry"];
 export type ThreadTimelineRow = components["schemas"]["ThreadTimelineRow"];
@@ -329,29 +328,15 @@ export async function updateThreadSettings(
   );
 }
 
-export async function createThreadSection(name: string): Promise<ThreadSection> {
-  const response = await unwrap(api.POST("/v1/thread-sections", { body: { name } }));
-  return response.section;
-}
-
-export async function renameThreadSection(sectionId: string, name: string): Promise<ThreadSection> {
-  const response = await unwrap(api.PATCH("/v1/thread-sections/{sectionId}", { params: { path: { sectionId } }, body: { name } }));
-  return response.section;
-}
-
-export async function deleteThreadSection(sectionId: string): Promise<void> {
-  await unwrapNoContent(api.DELETE("/v1/thread-sections/{sectionId}", { params: { path: { sectionId } } }));
-}
-
-export async function moveThreadToSection(threadId: string, sectionId: string | null, beforeThreadId?: string | null): Promise<void> {
-  await unwrapNoContent(api.POST("/v1/threads/{threadId}/section", {
-    params: { path: { threadId } }, body: { sectionId, ...(beforeThreadId !== undefined ? { beforeThreadId } : {}) },
+export async function setThreadPinned(threadId: string, pinned: boolean, beforeThreadId?: string | null): Promise<void> {
+  await unwrapNoContent(api.POST("/v1/threads/{threadId}/pin", {
+    params: { path: { threadId } }, body: { pinned, ...(beforeThreadId !== undefined ? { beforeThreadId } : {}) },
   }));
 }
 
-export async function listSectionThreads(sectionId: string, { cursor, signal }: { cursor?: string | null; signal?: AbortSignal } = {}): Promise<ThreadListResponse> {
-  return unwrap(api.GET("/v1/thread-sections/{sectionId}/threads", {
-    params: { path: { sectionId }, query: { ...(cursor ? { cursor } : {}), limit: 100 } }, signal, cache: "no-store",
+export async function listPinnedThreads({ cursor, signal }: { cursor?: string | null; signal?: AbortSignal } = {}): Promise<ThreadListResponse> {
+  return unwrap(api.GET("/v1/pinned-threads", {
+    params: { query: { ...(cursor ? { cursor } : {}), limit: 100 } }, signal, cache: "no-store",
   }));
 }
 

@@ -27,13 +27,13 @@ export function updateThreadEverywhere(
   queryClient.setQueryData<ThreadSummary[]>(queryKeys.chatThreads, (current) =>
     updateThreadList(current, threadId, patcher),
   );
-  queryClient.setQueriesData<ThreadSummary[]>({ queryKey: queryKeys.sectionThreadsRoot }, (current) =>
+  queryClient.setQueriesData<ThreadSummary[]>({ queryKey: queryKeys.pinnedThreads }, (current) =>
     updateThreadList(current, threadId, patcher),
   );
 }
 
 export function removeThreadEverywhere(queryClient: QueryClient, threadId: string) {
-  for (const queryKey of [queryKeys.projectThreadsRoot, queryKeys.sectionThreadsRoot, queryKeys.chatThreads]) {
+  for (const queryKey of [queryKeys.projectThreadsRoot, queryKeys.pinnedThreads, queryKeys.chatThreads]) {
     queryClient.setQueriesData<ThreadSummary[]>({ queryKey }, (current) => removeThreadFromList(current, threadId));
   }
 }
@@ -121,13 +121,12 @@ export function mergeChatThreadData(
   return mergedLoadedThreads.map((thread) => ({
     ...thread,
     projectId: loadedThreads.find((loaded) => loaded.id === thread.id)?.projectId ?? null,
-    section: loadedThreads.find((loaded) => loaded.id === thread.id)?.section ?? null,
-    sectionEnteredAt: loadedThreads.find((loaded) => loaded.id === thread.id)?.sectionEnteredAt ?? null,
+    pinned: loadedThreads.find((loaded) => loaded.id === thread.id)?.pinned ?? false,
   }));
 }
 
 export function findCachedThread(queryClient: QueryClient, threadId: string): ThreadSummary | null {
-  for (const [, threads] of [...queryClient.getQueriesData<ThreadSummary[]>({ queryKey: queryKeys.projectThreadsRoot }), ...queryClient.getQueriesData<ThreadSummary[]>({ queryKey: queryKeys.sectionThreadsRoot })]) {
+  for (const [, threads] of [...queryClient.getQueriesData<ThreadSummary[]>({ queryKey: queryKeys.projectThreadsRoot }), ...queryClient.getQueriesData<ThreadSummary[]>({ queryKey: queryKeys.pinnedThreads })]) {
     const thread = threads?.find((item) => item.id === threadId);
     if (thread) {
       return thread;
@@ -167,8 +166,7 @@ function mergeProjectThreads(
   return mergedHydratedThreads.map((thread) => ({
     ...thread,
     projectId: loadedThreads.find((loaded) => loaded.id === thread.id)?.projectId ?? null,
-    section: loadedThreads.find((loaded) => loaded.id === thread.id)?.section ?? null,
-    sectionEnteredAt: loadedThreads.find((loaded) => loaded.id === thread.id)?.sectionEnteredAt ?? null,
+    pinned: loadedThreads.find((loaded) => loaded.id === thread.id)?.pinned ?? false,
   }));
 }
 

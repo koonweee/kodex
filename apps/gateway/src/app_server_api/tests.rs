@@ -310,7 +310,6 @@ async fn adapter_maps_thread_list_read_archive_and_turn_start_interrupt_methods(
                 "cursor": null,
                 "limit": 50,
                 "projectId": null,
-                "sectionId": null,
                 "sortKey": "updated_at",
                 "sortDirection": "desc",
                 "archived": false,

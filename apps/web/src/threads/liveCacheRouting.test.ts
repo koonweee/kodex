@@ -64,7 +64,7 @@ function threadSummary(id: string, overrides: Partial<ThreadSummary> = {}): Thre
     id,
     name: "Live thread",
     notificationsEnabled: true,
-    section: null,
+    pinned: false,
     preview: null,
     rawPayload: {},
     latestCompletedTurnId: null,

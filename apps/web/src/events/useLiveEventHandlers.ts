@@ -9,7 +9,7 @@ import { applyThreadSettingsEvent } from "../composer/threadSettingsCache";
 import type { EventEnvelope, RateLimitSnapshot } from "../api/client";
 import { applyNativeConfigEvent } from "../api/nativeConfigCache";
 import { queryKeys } from "../api/queryKeys";
-import { applyThreadSectionsEvent } from "../sections/cache";
+import { applyThreadPinsEvent } from "../threads/pinnedCache";
 import { applyProjectEvent } from "../projects/cache";
 import { applyAppSurfaceEvent } from "../appSurfaces/cache";
 import { applyApprovalInvalidation } from "../approvals/cache";
@@ -66,7 +66,7 @@ export function useLiveEventHandlers({
       applyQueueEvent: (event) => applyQueueEvent(queryClient, event),
       applyUnreadBadgeEvent: (event) => applyUnreadBadgeEvent(queryClient, event),
       applyAccountEvent: (event) => applyAccountEvent(queryClient, event),
-      applyThreadSectionsEvent: (event) => applyThreadSectionsEvent(queryClient, event),
+      applyThreadPinsEvent: (event) => applyThreadPinsEvent(queryClient, event),
       applyProjectEvent: (event) => applyProjectEvent(queryClient, event),
       applyThreadSettingsEvent: (event) => applyThreadSettingsEvent(queryClient, event),
       applyAutomationStreamEvent,

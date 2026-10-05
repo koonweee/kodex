@@ -9,7 +9,7 @@ export function findKnownThreadSelection(
   threadId: string,
   threadsByProjectId: ThreadsByProjectId,
   chatThreads: ThreadSummary[],
-  sectionThreads: ThreadSummary[],
+  pinnedThreads: ThreadSummary[],
 ): KnownThreadSelection | null {
   for (const [projectId, threads] of Object.entries(threadsByProjectId)) {
     if (threads.some((thread) => thread.id === threadId)) {
@@ -19,8 +19,8 @@ export function findKnownThreadSelection(
   if (chatThreads.some((thread) => thread.id === threadId)) {
     return { kind: "chat" };
   }
-  const sectionThread = sectionThreads.find((thread) => thread.id === threadId);
-  if (sectionThread) return sectionThread.projectId ? { kind: "project", projectId: sectionThread.projectId } : { kind: "chat" };
+  const pinnedThread = pinnedThreads.find((thread) => thread.id === threadId);
+  if (pinnedThread) return pinnedThread.projectId ? { kind: "project", projectId: pinnedThread.projectId } : { kind: "chat" };
   return null;
 }
 
@@ -28,7 +28,7 @@ export function findKnownThread(
   threadId: string,
   threadsByProjectId: ThreadsByProjectId,
   chatThreads: ThreadSummary[],
-  sectionThreads: ThreadSummary[],
+  pinnedThreads: ThreadSummary[],
   routeSelectedThread: ThreadSummary | null,
 ): ThreadSummary | null {
   for (const threads of Object.values(threadsByProjectId)) {
@@ -39,7 +39,7 @@ export function findKnownThread(
   }
   return (
     chatThreads.find((thread) => thread.id === threadId) ??
-    sectionThreads.find((thread) => thread.id === threadId) ??
+    pinnedThreads.find((thread) => thread.id === threadId) ??
     (routeSelectedThread?.id === threadId ? routeSelectedThread : null)
   );
 }

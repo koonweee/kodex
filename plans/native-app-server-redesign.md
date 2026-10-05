@@ -1,3 +1,5 @@
+<!-- Current product scope: custom sections were removed after the redesign; see remove-custom-sections.md. Historical validation records below describe the earlier implementation. -->
+
 # Native App-server Redesign
 
 ## Status
@@ -35,7 +37,7 @@ Kodex becomes a responsive browser interface over an independently owned app-ser
 - Remove automatic AI-generated titles. Use native preview text and manual naming.
 - Replace complete subsystems when that leaves a simpler maintained design. Preserve retained workflows and meaningful behavior tests, not old modules, internal APIs, table layouts or implementation-specific assertions.
 
-The user's general direction is to keep behavior simple and native wherever possible. Apply that default to remaining design choices: queued messages use native thread settings when executed; existing-thread settings are shared instead of per-pane one-shot overlays; sidebar organization uses native sections/order, including a “Pinned” section convention, instead of overlapping pin models and attention-driven resorting. Per-pane unsent text/attachment drafts remain local. Accept native limitations instead of preserving old semantics through extra machinery, except where an explicitly retained workflow requires a justified extension. These defaults do not need separate product-approval gates; revisit them only if implementation reveals a conflict with a retained requirement or correctness guarantee.
+The user's general direction is to keep behavior simple and native wherever possible. Apply that default to remaining design choices: queued messages use native thread settings when executed; existing-thread settings are shared instead of per-pane one-shot overlays; sidebar organization exposes only native Pinned membership/order, Projects and standalone Chats, instead of custom section management, overlapping pin models and attention-driven resorting. Per-pane unsent text/attachment drafts remain local. Accept native limitations instead of preserving old semantics through extra machinery, except where an explicitly retained workflow requires a justified extension. These defaults do not need separate product-approval gates; revisit them only if implementation reveals a conflict with a retained requirement or correctness guarantee.
 
 ## Target ownership
 

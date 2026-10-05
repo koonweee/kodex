@@ -2,8 +2,7 @@ import { Badge, Box, Group, Menu, Stack, Text, Tooltip } from "@mantine/core";
 import { Archive, MoreHorizontal, Pin, PinOff } from "lucide-react";
 import { memo, useRef, type PointerEvent as ReactPointerEvent } from "react";
 import type { Approval, ThreadSummary } from "../api/client";
-import { PINNED_SECTION_ID } from "../sections/cache";
-import { SectionMenuItems, type ThreadSectionActions } from "../sections/SectionMenuItems";
+import { PinnedOrderMenuItems, type PinnedThreadActions } from "./PinnedOrderMenuItems";
 import { threadDisplayTitle, threadInProgress, threadNeedsApproval } from "./helpers";
 import { SidebarIconButton } from "./SidebarIconButton";
 import { SidebarRowFrame } from "./sidebarRows";
@@ -13,7 +12,7 @@ const VISIBLE_THREAD_LIMIT = 5;
 type SidebarPaginationState = "idle" | "loading" | "error";
 function threadDisplayTitleWithPending(thread: ThreadSummary, pending: Set<string>) { return pending.has(thread.id) ? SIDEBAR_TEXT.newThread : threadDisplayTitle(thread); }
 
-export type ThreadListRowProps = ThreadSectionActions & {
+export type ThreadListRowProps = PinnedThreadActions & {
   previousThreadId?: string;
   followingThreadId?: string | null;
   canMoveDown?: boolean;
@@ -39,13 +38,13 @@ export const ThreadListRow = memo(function ThreadListRow({
   onUnpinThread,
   pendingTitleThreadIds,
   showThreadArchiveAction,
-  thread, sections, onMoveThreadToSection, sectionMovePending, previousThreadId, followingThreadId, canMoveDown,
+  thread, onMovePinnedThread, pinPending, previousThreadId, followingThreadId, canMoveDown,
 }: ThreadListRowProps) {
   const needsApproval = threadNeedsApproval(thread, approvals);
   const isThreadInProgress = threadInProgress(thread);
   const hasUnreadAgentTurn = thread.unreadCompletedAgentTurn === true;
   const displayTitle = threadDisplayTitleWithPending(thread, pendingTitleThreadIds);
-  const isPinned = thread.section?.id === PINNED_SECTION_ID;
+  const isPinned = thread.pinned;
   const pinLabel = isPinned ? SIDEBAR_TEXT.unpinThread : SIDEBAR_TEXT.pinThread;
   const focusPointerType = useRef<string | null>(null);
 
@@ -74,7 +73,7 @@ export const ThreadListRow = memo(function ThreadListRow({
           data-pinned={isPinned ? "true" : undefined}
           density="compact"
           label={pinLabel}
-          disabled={sectionMovePending}
+          disabled={pinPending}
           onClick={(event) => {
             event.stopPropagation();
             if (isPinned) {
@@ -138,10 +137,10 @@ export const ThreadListRow = memo(function ThreadListRow({
               </Box>
             </Tooltip>
           ) : null}
-          {onMoveThreadToSection ? <Menu position="bottom-end" withinPortal>
+          {onMovePinnedThread ? <Menu position="bottom-end" withinPortal>
             <Menu.Target><SidebarIconButton density="compact" label={`Thread actions for ${displayTitle}`} tooltip={false}><MoreHorizontal /></SidebarIconButton></Menu.Target>
             <Menu.Dropdown>
-              <SectionMenuItems thread={thread} sections={sections} onMoveThreadToSection={onMoveThreadToSection} sectionMovePending={sectionMovePending} previousThreadId={previousThreadId} followingThreadId={followingThreadId} canMoveDown={canMoveDown} />
+              <PinnedOrderMenuItems threadId={thread.id} onMovePinnedThread={onMovePinnedThread} pinPending={pinPending} previousThreadId={previousThreadId} followingThreadId={followingThreadId} canMoveDown={canMoveDown} />
               <Menu.Item onClick={() => onArchiveThread(thread.id)}>Archive thread</Menu.Item>
             </Menu.Dropdown>
           </Menu> : null}
@@ -191,9 +190,8 @@ export const ThreadListRow = memo(function ThreadListRow({
 
 export function areThreadListRowPropsEqual(previous: ThreadListRowProps, next: ThreadListRowProps) {
   return (
-    previous.sections === next.sections &&
-    previous.onMoveThreadToSection === next.onMoveThreadToSection &&
-    previous.sectionMovePending === next.sectionMovePending &&
+    previous.onMovePinnedThread === next.onMovePinnedThread &&
+    previous.pinPending === next.pinPending &&
     previous.previousThreadId === next.previousThreadId &&
     previous.followingThreadId === next.followingThreadId &&
     previous.canMoveDown === next.canMoveDown &&
@@ -225,9 +223,9 @@ export function ThreadList({
   pendingTitleThreadIds,
   paginationState = "idle",
   selectedThreadId,
-  threads, sections, onMoveThreadToSection, sectionMovePending, sectionOrder,
-}: ThreadSectionActions & {
-  sectionOrder?: ThreadSummary[];
+  threads, onMovePinnedThread, pinPending, pinnedOrder,
+}: PinnedThreadActions & {
+  pinnedOrder?: ThreadSummary[];
   approvals: Approval[];
   className: string;
   expanded: boolean;
@@ -257,10 +255,10 @@ export function ThreadList({
     <Stack className={className} gap={6}>
       {visibleThreads.map((thread) => (
         <ThreadListRow
-          sections={sections} onMoveThreadToSection={onMoveThreadToSection} sectionMovePending={sectionMovePending}
-          previousThreadId={sectionOrder?.[sectionOrder.findIndex((row) => row.id === thread.id) - 1]?.id}
-          followingThreadId={sectionOrder ? sectionOrder[sectionOrder.findIndex((row) => row.id === thread.id) + 2]?.id ?? (hasMore ? undefined : null) : undefined}
-          canMoveDown={sectionOrder ? sectionOrder.findIndex((row) => row.id === thread.id) < sectionOrder.length - 1 && (sectionOrder.findIndex((row) => row.id === thread.id) + 2 < sectionOrder.length || !hasMore) : undefined}
+          onMovePinnedThread={onMovePinnedThread} pinPending={pinPending}
+          previousThreadId={pinnedOrder?.[pinnedOrder.findIndex((row) => row.id === thread.id) - 1]?.id}
+          followingThreadId={pinnedOrder ? pinnedOrder[pinnedOrder.findIndex((row) => row.id === thread.id) + 2]?.id ?? (hasMore ? undefined : null) : undefined}
+          canMoveDown={pinnedOrder ? pinnedOrder.findIndex((row) => row.id === thread.id) < pinnedOrder.length - 1 && (pinnedOrder.findIndex((row) => row.id === thread.id) + 2 < pinnedOrder.length || !hasMore) : undefined}
           approvals={approvals}
           isSelected={thread.id === selectedThreadId}
           key={thread.id}

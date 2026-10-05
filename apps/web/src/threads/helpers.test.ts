@@ -13,7 +13,7 @@ function threadSummary(
     cwd: "/tmp/kodex",
     id,
     name: id,
-    notificationsEnabled: true,
+    notificationsEnabled: true, pinned: false,
     rawPayload: {},
     latestCompletedTurnId: null,
     seenCompletedTurnId: null,

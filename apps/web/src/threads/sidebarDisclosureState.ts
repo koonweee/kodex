@@ -5,21 +5,21 @@ export const SIDEBAR_DISCLOSURE_STORAGE_KEY = "kodex.sidebar.disclosureState";
 export type SidebarDisclosureState = {
   chatsSectionCollapsed: boolean;
   collapsedProjectIds: Set<string>;
-  collapsedSectionIds: Set<string>;
+  pinnedCollapsed: boolean;
   projectsSectionCollapsed: boolean;
 };
 
 const DEFAULT_SIDEBAR_DISCLOSURE_STATE: SidebarDisclosureState = {
   chatsSectionCollapsed: false,
   collapsedProjectIds: new Set(),
-  collapsedSectionIds: new Set(),
+  pinnedCollapsed: false,
   projectsSectionCollapsed: false,
 };
 
 type SidebarDisclosureStorageValue = {
   chatsSectionCollapsed?: unknown;
   collapsedProjectIds?: unknown;
-  collapsedSectionIds?: unknown;
+  pinnedCollapsed?: unknown;
   projectsSectionCollapsed?: unknown;
 };
 
@@ -44,8 +44,7 @@ export function loadSidebarDisclosureState(storage: InstanceStorage | null = nul
       collapsedProjectIds: Array.isArray(parsed.collapsedProjectIds)
         ? new Set(parsed.collapsedProjectIds.filter((item): item is string => typeof item === "string" && item.length > 0))
         : new Set(),
-      collapsedSectionIds: Array.isArray(parsed.collapsedSectionIds)
-        ? new Set(parsed.collapsedSectionIds.filter((item): item is string => typeof item === "string" && item.length > 0)) : new Set(),
+      pinnedCollapsed: parsed.pinnedCollapsed === true,
       projectsSectionCollapsed:
         typeof parsed.projectsSectionCollapsed === "boolean" ? parsed.projectsSectionCollapsed : false,
     };
@@ -68,7 +67,7 @@ export function saveSidebarDisclosureState(
       JSON.stringify({
         chatsSectionCollapsed: state.chatsSectionCollapsed,
         collapsedProjectIds: Array.from(state.collapsedProjectIds),
-        collapsedSectionIds: Array.from(state.collapsedSectionIds),
+        pinnedCollapsed: state.pinnedCollapsed,
         projectsSectionCollapsed: state.projectsSectionCollapsed,
       }),
     );
@@ -81,6 +80,5 @@ function cloneDefaultState(): SidebarDisclosureState {
   return {
     ...DEFAULT_SIDEBAR_DISCLOSURE_STATE,
     collapsedProjectIds: new Set(DEFAULT_SIDEBAR_DISCLOSURE_STATE.collapsedProjectIds),
-    collapsedSectionIds: new Set(DEFAULT_SIDEBAR_DISCLOSURE_STATE.collapsedSectionIds),
   };
 }

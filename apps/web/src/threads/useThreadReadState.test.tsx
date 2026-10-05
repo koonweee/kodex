@@ -12,7 +12,7 @@ vi.mock("../api/client", async (importActual) => ({
 const thread: ThreadSummary = {
   id: "outside-sidebar", name: "Canonical deep link", projectId: null, cwd: "/repo",
   parentThreadId: null, canAcceptDirectInput: true, status: "idle", createdAt: 1, updatedAt: 1,
-  notificationsEnabled: true, rawPayload: {}, latestCompletedTurnId: "turn-a", seenCompletedTurnId: null,
+  notificationsEnabled: true, pinned: false, rawPayload: {}, latestCompletedTurnId: "turn-a", seenCompletedTurnId: null,
   readRevision: 10, readStateKnown: true, unreadCompletedAgentTurn: true,
 };
 const terminal: TimelineTurn = { turnId: "turn-a", itemIds: [], status: "completed" };

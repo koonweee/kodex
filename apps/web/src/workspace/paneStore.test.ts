@@ -27,7 +27,7 @@ describe("paneStore", () => {
     expect(firstStore.load().panes[0]?.target).toEqual({ mode: "draft" });
 
     firstStore.save(oldState);
-    saveSidebarDisclosureState({ chatsSectionCollapsed: false, collapsedProjectIds: new Set(["project-1"]), collapsedSectionIds: new Set(), projectsSectionCollapsed: false }, firstTab);
+    saveSidebarDisclosureState({ chatsSectionCollapsed: false, collapsedProjectIds: new Set(["project-1"]), pinnedCollapsed: false, projectsSectionCollapsed: false }, firstTab);
 
     expect(createBrowserWorkspacePaneStore(secondTab).load()).toEqual(oldState);
     expect(loadSidebarDisclosureState(secondTab).collapsedProjectIds).toEqual(new Set(["project-1"]));

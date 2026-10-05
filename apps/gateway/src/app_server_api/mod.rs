@@ -13,11 +13,11 @@ mod mcp_apps;
 #[cfg(test)]
 mod mcp_apps_tests;
 mod mcp_config;
+mod pins;
 mod projects;
 mod queue;
 #[cfg(test)]
 mod queue_tests;
-mod sections;
 mod subagents;
 
 mod timeline;
@@ -28,11 +28,9 @@ pub use items::{ThreadItemEntry, ThreadItemsListPage};
 pub(crate) use mcp_apps::mcp_result_text;
 pub use mcp_apps::{McpResourceReadRequest, McpResourceReadTarget, McpServerConnectionStatus};
 pub use mcp_config::*;
+pub use pins::PINNED_THREAD_SECTION_ID;
 pub use projects::{Project, ProjectPage, ProjectRoot};
 pub use queue::{NativeQueuePage, NativeQueuedSubmission};
-pub use sections::{
-    ThreadSection, ThreadSectionAppearance, ThreadSectionPage, PINNED_THREAD_SECTION_ID,
-};
 pub use subagents::{ThreadSubagentListResponse, ThreadSubagentSummary};
 #[cfg(test)]
 pub(crate) use timeline::TIMELINE_PREVIEW_STRING_LIMIT;
@@ -818,8 +816,7 @@ pub struct ThreadSummary {
     pub agent_role: Option<String>,
     pub sandbox: Option<Value>,
     pub git_info: Option<GitInfo>,
-    pub section: Option<ThreadSection>,
-    pub section_entered_at: Option<i64>,
+    pub pinned: bool,
     pub preview: Option<Value>,
     #[schema(required = true)]
     pub latest_completed_turn_id: Option<String>,
@@ -880,15 +877,11 @@ impl ThreadSummary {
             agent_role: optional_string(payload, "agentRole"),
             sandbox: optional_value(payload, "sandbox"),
             git_info: optional_git_info(payload)?,
-            section: payload
+            pinned: payload
                 .get("section")
-                .filter(|value| !value.is_null())
-                .map(|value| {
-                    serde_json::from_value(value.clone())
-                        .map_err(|error| bad_gateway(format!("thread section: {error}")))
-                })
-                .transpose()?,
-            section_entered_at: optional_i64(payload, "sectionEnteredAt"),
+                .and_then(|section| section.get("id"))
+                .and_then(Value::as_str)
+                == Some(PINNED_THREAD_SECTION_ID),
             preview: payload.get("preview").cloned(),
             latest_completed_turn_id: None,
             seen_completed_turn_id: None,
@@ -1034,8 +1027,7 @@ pub struct ThreadViewThreadSummary {
     pub agent_role: Option<String>,
     pub sandbox: Option<Value>,
     pub git_info: Option<GitInfo>,
-    pub section: Option<ThreadSection>,
-    pub section_entered_at: Option<i64>,
+    pub pinned: bool,
     pub preview: Option<Value>,
     #[schema(required = true)]
     pub latest_completed_turn_id: Option<String>,
@@ -1070,8 +1062,7 @@ impl From<ThreadSummary> for ThreadViewThreadSummary {
             agent_role: thread.agent_role,
             sandbox: thread.sandbox,
             git_info: thread.git_info,
-            section: thread.section,
-            section_entered_at: thread.section_entered_at,
+            pinned: thread.pinned,
             preview: thread.preview,
             latest_completed_turn_id: thread.latest_completed_turn_id,
             seen_completed_turn_id: thread.seen_completed_turn_id,

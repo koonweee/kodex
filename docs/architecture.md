@@ -9,14 +9,14 @@ Kodex is a browser-based workspace built around an external Codex app-server. It
 | React PWA | Renders projects, threads, timelines, approvals, terminals, settings, and app surfaces. Holds only browser-local interaction state where possible. |
 | Rust gateway | Supervises app-server, exposes HTTP/SSE/WebSocket APIs, brokers approvals, projects app-server state, and owns local capabilities. |
 | Codex app-server | Runs Codex sessions and owns durable transcripts, ordinary queues, native organization/settings and Codex account state. |
-| SQLite | Stores promotion transfers, generated-app grants, read markers, automation schedules/run correlation, notifications and diagnostic events. Native queue payloads/order, projects, sections/order, thread settings and approvals are not persisted here. |
+| SQLite | Stores promotion transfers, generated-app grants, read markers, automation schedules/run correlation, notifications and diagnostic events. Native queue payloads/order, projects, pins/order, thread settings and approvals are not persisted here. |
 | Host integrations | Provide PTY terminal sessions, supported local-file previews, uploads and static frontend serving. |
 
 ## State ownership
 
 Shared state must survive reloads, reconnects, and multiple browser tabs. Kodex therefore keeps shared lifecycle decisions in the gateway or upstream app-server instead of deriving them from one browser's event stream.
 
-- App-server owns native project roots, metadata, order and thread membership, thread sections and member order, descendant relationships and input capabilities, durable transcript history, Codex session lifecycle, effective thread settings and native approval requests. Project roots organize chats; they neither grant filesystem permissions nor change existing chat working directories.
+- App-server owns native project roots, metadata, order and thread membership, pinned membership and member order, descendant relationships and input capabilities, durable transcript history, Codex session lifecycle, effective thread settings and native approval requests. Project roots organize chats; they neither grant filesystem permissions nor change existing chat working directories.
 - Gateway mirrors native approvals in connection-scoped memory and projects canonical thread state.
 - App-server owns ordinary queued input, order and dispatch. The gateway owns narrow promotion-transfer recovery, read state, automation schedules/run correlation, notifications and generated-app grants.
 - The browser may own drafts, focus, open dialogs, scroll position, and other per-tab presentation state.
@@ -58,7 +58,7 @@ App-surface events cancel stale reads and refill the authoritative gateway query
 
 Native project notifications invalidate authoritative sidebar snapshots rather than patching a second project registry. Project deletion also refreshes open thread snapshots, because the native membership notification excludes archived threads. A lagged SSE stream emits its existing refresh signals and closes at its previous cursor. Reconnection replays operational invalidations, and the browser refills current native state.
 
-Native sections supply sidebar headings, membership and ordered pages. Pinned is a native reserved section, not an independent Kodex flag. A chat belongs to at most one section; unpinning clears membership without remembering a previous section. Projects remain independent of sections. Section mutations have no native notification in the pinned runtime, so successful gateway writes publish a global `thread.sections_updated` refill marker. Browser reconnect/foreground recovery cancels stale sidebar and open-detail reads before reading native state. Activity and unread badges do not reorder section members.
+Pinned uses app-server’s reserved native section internally, with no independent Kodex pin table. Public contracts expose pinned membership and ordered pages only; custom sections have no management routes, tools, UI or caches. Pinning preserves projects and working directories; unpinning clears membership without remembering a previous section. Normal project/chat reads include existing custom-section members. Native pin mutations have no notification in the pinned runtime, so successful gateway writes publish a global `thread.pins_updated` refill marker. Browser reconnect/foreground recovery cancels stale sidebar and open-detail reads before reading native state. Activity and unread badges do not reorder pinned chats.
 
 Existing-chat settings are read from native session state. Picker edits submit only changed fields; native queue acceptance is not an applied settings snapshot. Applied notifications carry a gateway refill marker, so replay cannot overwrite a newer read with an old settings object. Reconnect and foreground checks cancel stale reads and refill active queries. Draft choices are creation data, including native config for reasoning effort. Fresh native chats cannot resume full settings before their first turn; the browser refills unavailable settings when the canonical turn-start event confirms that boundary.
 

@@ -278,7 +278,7 @@ function ExistingThreadPane({
 
   useEffect(() => {
     return subscribeLiveEvent((event) => {
-      if (event.kind === "thread.sections_updated" || subagentsEventInvalidatesThread(event, threadId) || projectEventInvalidatesThread(event, threadId)) {
+      if (event.kind === "thread.pins_updated" || subagentsEventInvalidatesThread(event, threadId) || projectEventInvalidatesThread(event, threadId)) {
         cancelQueuedTimelineEvents();
         void refreshSnapshot(true);
         return;
@@ -445,7 +445,7 @@ function ExistingThreadPane({
                 </AdaptiveIconButton>
               ) : null}
               <ThreadActionsMenu
-                sections={threadActions.sections} onMoveThreadToSection={threadActions.onMoveThreadToSection} sectionMovePending={threadActions.sectionMovePending}
+                pinPending={threadActions.pinPending}
                 onDuplicatePane={() =>
                   void openThreadPane(threadId, title, {
                     duplicate: true,
@@ -476,10 +476,8 @@ function ExistingThreadPane({
       pane,
       renderThreadPaneHeaderActions,
       thread,
-      threadActions.sections,
-      threadActions.sectionMovePending,
+      threadActions.pinPending,
       threadActions.onArchiveThread,
-      threadActions.onMoveThreadToSection,
       threadActions.onPinThread,
       threadActions.onSetThreadNotificationsEnabled,
       threadActions.onUnpinThread,

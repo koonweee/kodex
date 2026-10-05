@@ -1,7 +1,7 @@
 import { SidebarSnapshotError, type SidebarSnapshotStatus } from "./SidebarSnapshotError";
 import { ThreadList } from "./ThreadSidebarRows";
-import { NativeSectionsSidebar } from "../sections/NativeSectionsSidebar";
-import type { ThreadSectionActions } from "../sections/SectionMenuItems";
+import { PinnedThreadsSidebar } from "./PinnedThreadsSidebar";
+import type { PinnedThreadActions } from "./PinnedOrderMenuItems";
 import {
   AppShell,
   Box,
@@ -86,14 +86,14 @@ type SidebarPaginationState = "idle" | "loading" | "error";
 
 export type WorkspaceSidebarDataState = {
   chatThreads: SidebarDataLoadState;
-  sections: SidebarDataLoadState;
+  pinnedThreads: SidebarDataLoadState;
   projects: SidebarDataLoadState;
   projectThreadsById: Record<string, SidebarDataLoadState>;
 };
 
 const DEFAULT_DATA_STATE: WorkspaceSidebarDataState = {
   chatThreads: "loaded",
-  sections: "loaded",
+  pinnedThreads: "loaded",
   projects: "loaded",
   projectThreadsById: {},
 };
@@ -120,7 +120,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onMoveProject,
   onSelectAutomations,
   onSelectChatThread,
-  onSelectSectionThread,
+  onSelectPinnedThread,
   onSelectProjectSettings,
   onSelectThread,
   onShowThread = () => undefined,
@@ -129,7 +129,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onSidebarExpandClick,
   onThreadActionHoverChange,
   onUnpinThread,
-  onSectionsChanged, sectionThreads, sections = [], sectionThreadsById = {}, sectionThreadHasMoreById = {}, sectionThreadPaginationStateById = {}, onLoadMoreSectionThreads, onMoveThreadToSection, sectionMovePending,
+  pinnedThreads, pinnedThreadsHasMore = false, pinnedThreadsPaginationState = "idle", onLoadMorePinnedThreads, onMovePinnedThread, pinPending,
   pendingTitleThreadIds,
   projectThreadHasMoreById = {},
   projectThreadPaginationStateById = {},
@@ -142,12 +142,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   sidebarWidth,
   threadsByProjectId,
   usageLimitLines,
-}: ThreadSectionActions & {
-  onSectionsChanged?: () => void;
-  sectionThreadsById?: Record<string, ThreadSummary[]>;
-  sectionThreadHasMoreById?: Record<string, boolean>;
-  sectionThreadPaginationStateById?: Record<string, SidebarPaginationState>;
-  onLoadMoreSectionThreads?: (sectionId: string) => void;
+}: PinnedThreadActions & {
+  pinnedThreadsHasMore?: boolean;
+  pinnedThreadsPaginationState?: SidebarPaginationState;
+  onLoadMorePinnedThreads?: () => void;
   account: AccountResponse | null;
   approvals: Approval[];
   chatThreads: ThreadSummary[];
@@ -169,7 +167,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onMoveProject: (projectId: string, beforeProjectId: string | null) => void;
   onSelectAutomations: () => void;
   onSelectChatThread: (threadId: string) => void;
-  onSelectSectionThread: (threadId: string) => void;
+  onSelectPinnedThread: (threadId: string) => void;
   onSelectProjectSettings: (projectId: string) => void;
   onSelectThread: (projectId: string, threadId: string) => void;
   onShowThread?: () => void;
@@ -179,7 +177,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onThreadActionHoverChange: (threadId: string | null) => void;
   onUnpinThread: (threadId: string) => void;
   pendingTitleThreadIds: Set<string>;
-  sectionThreads: ThreadSummary[];
+  pinnedThreads: ThreadSummary[];
   projectThreadHasMoreById?: Record<string, boolean>;
   projectThreadPaginationStateById?: Record<string, SidebarPaginationState>;
   projects: Project[];
@@ -215,24 +213,22 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     [previewProjectIds, projects],
   );
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
-  const visibleChatThreads = normalizedSearchQuery
-    ? chatThreads.filter((thread) => threadMatchesSearch(thread, normalizedSearchQuery, pendingTitleThreadIds))
-    : chatThreads;
+  const visibleChatThreads = chatThreads.filter((thread) => !thread.pinned && (!normalizedSearchQuery || threadMatchesSearch(thread, normalizedSearchQuery, pendingTitleThreadIds)));
   const {
     chatsSectionCollapsed,
     collapsedProjectIds,
-    collapsedSectionIds,
+    pinnedCollapsed,
     projectsSectionCollapsed,
   } = sidebarDisclosureState;
   const recentThreads = useMemo(
     () =>
       recentSidebarThreads({
         chatThreads,
-        sectionThreads,
+        pinnedThreads,
         projects,
         threadsByProjectId,
       }),
-    [chatThreads, sectionThreads, projects, threadsByProjectId],
+    [chatThreads, pinnedThreads, projects, threadsByProjectId],
   );
 
   useEffect(() => {
@@ -420,7 +416,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     } else if (thread.location.kind === "chat") {
       onSelectChatThread(thread.thread.id);
     } else {
-      onSelectSectionThread(thread.thread.id);
+      onSelectPinnedThread(thread.thread.id);
     }
   }
 
@@ -498,23 +494,18 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
               <Box
                 className="kodex-sidebar-scroll"
                 data-chats-state={dataState.chatThreads}
-                data-sections-state={dataState.sections}
+                data-pinned-state={dataState.pinnedThreads}
                 data-projects-state={dataState.projects}
                 ref={sidebarScrollRef}
               >
-                <NativeSectionsSidebar
-                  onSectionsChanged={onSectionsChanged}
-                  sections={sections} threadsBySectionId={sectionThreadsById} collapsedSectionIds={collapsedSectionIds}
-                  onToggleSection={(id) => updateSidebarDisclosureState((current) => {
-                    const next = new Set(current.collapsedSectionIds);
-                    if (next.has(id)) next.delete(id); else next.add(id);
-                    return { ...current, collapsedSectionIds: next };
-                  })}
-                  searchQuery={normalizedSearchQuery} hasMoreById={sectionThreadHasMoreById} paginationStates={sectionThreadPaginationStateById}
-                  onLoadMore={onLoadMoreSectionThreads} approvals={approvals} hoveredThreadActionId={hoveredThreadActionId}
+                <PinnedThreadsSidebar
+                  threads={pinnedThreads} collapsed={pinnedCollapsed}
+                  onToggle={() => updateSidebarDisclosureState((current) => ({ ...current, pinnedCollapsed: !current.pinnedCollapsed }))}
+                  searchQuery={normalizedSearchQuery} hasMore={pinnedThreadsHasMore} paginationState={pinnedThreadsPaginationState}
+                  onLoadMore={onLoadMorePinnedThreads} approvals={approvals} hoveredThreadActionId={hoveredThreadActionId}
                   onArchiveThread={onArchiveThread} onPinThread={onPinThread} onUnpinThread={onUnpinThread}
-                  onMoveThreadToSection={onMoveThreadToSection} sectionMovePending={sectionMovePending}
-                  onSelectThread={onSelectSectionThread} onThreadActionHoverChange={onThreadActionHoverChange}
+                  onMovePinnedThread={onMovePinnedThread} pinPending={pinPending}
+                  onSelectThread={onSelectPinnedThread} onThreadActionHoverChange={onThreadActionHoverChange}
                   pendingTitleThreadIds={pendingTitleThreadIds} selectedThreadId={selectedThreadId}
                 />
                 {sidebarScope === "projects" ? (
@@ -542,7 +533,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                           />
                         ) : projects.length > 0 ? (
                           displayedProjects.map((project) => {
-                            const projectThreads = threadsByProjectId[project.id] ?? [];
+                            const projectThreads = (threadsByProjectId[project.id] ?? []).filter((thread) => !thread.pinned);
                             const visibleProjectThreads = normalizedSearchQuery
                               ? projectThreads.filter((thread) =>
                                   threadMatchesSearch(thread, normalizedSearchQuery, pendingTitleThreadIds),
@@ -616,9 +607,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                                     },
                                   ]}
                                 />
-                                {renderedProjectThreads.length > 0 ? (
+                                {renderedProjectThreads.length > 0 || (!projectCollapsed && projectThreadsHaveMore) ? (
                                   <ThreadList
-                                sections={sections} onMoveThreadToSection={onMoveThreadToSection} sectionMovePending={sectionMovePending}
+                          pinPending={pinPending}
                                     approvals={approvals}
                                     className="kodex-project-thread-list"
                                     expanded={projectCollapsed || showAllProjectThreads}
@@ -669,9 +660,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                     onToggle={() => handleSectionCollapseToggle("chatsSectionCollapsed")}
                     trailingActions={[{ icon: <SquarePen />, label: SIDEBAR_TEXT.newChat, onClick: onCreateChat }]}
                   />
-                  {!chatsSectionCollapsed && visibleChatThreads.length > 0 ? (
+                  {!chatsSectionCollapsed && (visibleChatThreads.length > 0 || chatThreadsHasMore) ? (
                     <ThreadList
-                                sections={sections} onMoveThreadToSection={onMoveThreadToSection} sectionMovePending={sectionMovePending}
+                                pinPending={pinPending}
                       approvals={approvals}
                       className="kodex-chat-thread-list"
                       expanded={chatThreadsExpanded}
@@ -818,18 +809,18 @@ function CollapsedSidebarRail({
 }
 
 type RecentSidebarThread = {
-  location: { kind: "chat" } | { kind: "section" } | { kind: "project"; projectId: string };
+  location: { kind: "chat" } | { kind: "pinned" } | { kind: "project"; projectId: string };
   thread: ThreadSummary;
 };
 
 function recentSidebarThreads({
   chatThreads,
-  sectionThreads,
+  pinnedThreads,
   projects,
   threadsByProjectId,
 }: {
   chatThreads: ThreadSummary[];
-  sectionThreads: ThreadSummary[];
+  pinnedThreads: ThreadSummary[];
   projects: Project[];
   threadsByProjectId: ThreadsByProjectId;
 }): RecentSidebarThread[] {
@@ -845,13 +836,13 @@ function recentSidebarThreads({
     }
   }
   const projectIds = new Set(projects.map((project) => project.id));
-  for (const thread of sectionThreads) {
+  for (const thread of pinnedThreads) {
     if (byThreadId.has(thread.id)) {
       continue;
     }
     const projectId = thread.projectId && projectIds.has(thread.projectId) ? thread.projectId : null;
     byThreadId.set(thread.id, {
-      location: projectId ? { kind: "project", projectId } : { kind: "section" },
+      location: projectId ? { kind: "project", projectId } : { kind: "pinned" },
       thread,
     });
   }

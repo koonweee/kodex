@@ -27,13 +27,13 @@ mod native_identity_tests;
 #[cfg(test)]
 mod native_mcp_history_tests;
 #[cfg(test)]
+mod native_pins_tests;
+#[cfg(test)]
 mod native_read_errors_tests;
 #[cfg(test)]
 mod native_read_markers_tests;
 #[cfg(test)]
 mod native_revert_tests;
-#[cfg(test)]
-mod native_sections_tests;
 #[cfg(test)]
 mod native_skill_tests;
 #[cfg(test)]
@@ -42,16 +42,15 @@ mod native_subagent_tests;
 mod native_thread_settings_tests;
 pub mod notifications;
 pub mod permission_profiles;
+pub mod pins;
 pub mod projects;
 #[cfg(test)]
 mod removed_previews_tests;
 pub mod self_control;
-pub mod self_control_sections;
 pub mod skills;
 pub mod subagents;
 pub mod terminals;
 pub mod thread_presence;
-pub mod thread_sections;
 pub mod thread_settings;
 pub mod threads;
 pub mod turns;
@@ -1486,9 +1485,7 @@ mod tests {
             "/v1/threads",
             "/v1/sidebar/threads",
             "/v1/chats/threads",
-            "/v1/thread-sections",
-            "/v1/thread-sections/{sectionId}",
-            "/v1/thread-sections/{sectionId}/threads",
+            "/v1/pinned-threads",
             "/v1/threads/{threadId}",
             "/v1/threads/{threadId}/timeline/pages",
             "/v1/threads/{threadId}/subagents",
@@ -1499,7 +1496,7 @@ mod tests {
             "/v1/threads/{threadId}/resume",
             "/v1/threads/{threadId}/fork",
             "/v1/threads/{threadId}/archive",
-            "/v1/threads/{threadId}/section",
+            "/v1/threads/{threadId}/pin",
             "/v1/threads/{threadId}/turns",
             "/v1/threads/{threadId}/compact",
             "/v1/threads/{threadId}/turns/{turnId}/steer",
@@ -1558,9 +1555,7 @@ mod tests {
             "/v1/self-control/threads/{threadId}/name",
             "/v1/self-control/threads/{threadId}/settings",
             "/v1/self-control/threads/{threadId}/archive",
-            "/v1/self-control/threads/{threadId}/section",
-            "/v1/self-control/thread-sections",
-            "/v1/self-control/thread-sections/{sectionId}",
+            "/v1/self-control/threads/{threadId}/pin",
             "/v1/self-control/threads/{threadId}/seen",
             "/v1/self-control/threads/{threadId}/compact",
             "/v1/self-control/threads/{threadId}/interrupt-current",
@@ -2266,8 +2261,8 @@ mod tests {
             ("POST", "archive", source.clone()),
             (
                 "POST",
-                "section",
-                json!({"sectionId":null,"source":source_value.clone()}),
+                "pin",
+                json!({"pinned":false,"source":source_value.clone()}),
             ),
             (
                 "POST",
@@ -2311,7 +2306,7 @@ mod tests {
                 response.status(),
                 if path == "settings" {
                     StatusCode::ACCEPTED
-                } else if path == "section" {
+                } else if path == "pin" {
                     StatusCode::NO_CONTENT
                 } else {
                     StatusCode::OK
@@ -2358,7 +2353,7 @@ mod tests {
             "self_control.thread_renamed",
             "self_control.thread_settings_update_queued",
             "self_control.thread_archived",
-            "self_control.thread_section_moved",
+            "self_control.thread_pin_updated",
             "self_control.thread_seen",
             "self_control.thread_compacted",
             "self_control.thread_interrupted_current",
@@ -3309,7 +3304,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sidebar_threads_snapshot_groups_native_projects_chats_and_sections() {
+    async fn sidebar_threads_snapshot_groups_native_projects_chats_and_pins() {
         let (mut state, app_server) = test_state().await;
         let home = tempdir().unwrap();
         Arc::make_mut(&mut state.config).projects.home_dir = home.path().to_path_buf();
@@ -3395,8 +3390,7 @@ mod tests {
         queued.push(
             json!({"data": [chat_thread], "nextCursor": "chat-next", "backwardsCursor": null}),
         );
-        let section = json!({"id":"section-native","name":"Native section","appearance":null});
-        *app_server.native_sections.lock().unwrap() = Some(vec![section.clone()]);
+        let section = json!({"id":crate::app_server_api::PINNED_THREAD_SECTION_ID,"name":"Pinned","appearance":null});
         let mut section_thread = thread_summary("section-thread");
         section_thread["projectId"] = json!(project_one.id);
         section_thread["section"] = section.clone();
@@ -3406,7 +3400,7 @@ mod tests {
             .lock()
             .unwrap()
             .insert(
-                "section-native".into(),
+                crate::app_server_api::PINNED_THREAD_SECTION_ID.into(),
                 json!({"data":[section_thread],"nextCursor":"section-next","backwardsCursor":null}),
             );
         app_server.queued_responses.lock().unwrap().extend(queued);
@@ -3483,11 +3477,9 @@ mod tests {
         assert_eq!(body["chatThreads"]["nextCursor"], "chat-next");
         assert!(body["chatThreads"]["rawPayload"].is_null());
         assert!(body["chatThreads"]["threads"][0]["rawPayload"].is_null());
-        assert_eq!(body["sections"], json!([section]));
-        let section_page = &body["sectionThreads"]["section-native"];
+        let section_page = &body["pinnedThreads"];
         assert_eq!(section_page["threads"][0]["id"], "section-thread");
-        assert_eq!(section_page["threads"][0]["section"], section);
-        assert_eq!(section_page["threads"][0]["sectionEnteredAt"], 123);
+        assert_eq!(section_page["threads"][0]["pinned"], true);
         assert_eq!(section_page["threads"][0]["projectId"], project_one.id);
         assert_eq!(section_page["nextCursor"], "section-next");
         assert!(section_page["rawPayload"].is_null());
@@ -3520,7 +3512,9 @@ mod tests {
         );
 
         let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 12);
+        assert!(!requests
+            .iter()
+            .any(|(method, _)| method.starts_with("threadSection/")));
         assert_eq!(requests[0].0, "project/list");
         let mut completion_reads = requests
             .iter()
@@ -3568,7 +3562,8 @@ mod tests {
         let section_request = requests
             .iter()
             .find(|(method, params)| {
-                method == "thread/list" && params["sectionId"] == "section-native"
+                method == "thread/list"
+                    && params["sectionId"] == crate::app_server_api::PINNED_THREAD_SECTION_ID
             })
             .unwrap();
         assert_eq!(section_request.1["sortKey"], "section_position");
@@ -4570,15 +4565,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn thread_list_and_detail_preserve_native_sections_and_notification_preferences() {
+    async fn thread_list_and_detail_preserve_native_pins_and_notification_preferences() {
         let (state, app_server) = test_state().await;
         state
             .store
             .set_thread_notifications_enabled("thread-2", false)
             .await
             .unwrap();
-        let section =
-            json!({"id":"native-section","name":"Research","appearance":{"icon":"opaque"}});
+        let section = json!({"id":crate::app_server_api::PINNED_THREAD_SECTION_ID,"name":"Pinned","appearance":null});
         let mut section_thread = thread_summary("thread-1");
         section_thread["section"] = section.clone();
         section_thread["sectionEnteredAt"] = json!(99);
@@ -4596,10 +4590,9 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
-        assert_eq!(body["threads"][0]["section"], section);
-        assert_eq!(body["threads"][0]["sectionEnteredAt"], 99);
+        assert_eq!(body["threads"][0]["pinned"], true);
         assert!(body["threads"][0].get("pinnedAt").is_none());
-        assert_eq!(body["threads"][1]["section"], Value::Null);
+        assert_eq!(body["threads"][1]["pinned"], false);
         assert_eq!(body["threads"][0]["notificationsEnabled"], json!(true));
         assert_eq!(body["threads"][1]["notificationsEnabled"], json!(false));
         assert_eq!(body["rawPayload"]["data"][0]["section"], section);
@@ -4621,8 +4614,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
-        assert_eq!(body["thread"]["section"], section);
-        assert_eq!(body["thread"]["sectionEnteredAt"], 99);
+        assert_eq!(body["thread"]["pinned"], true);
         assert!(body["thread"].get("pinnedAt").is_none());
         assert_eq!(body["thread"]["notificationsEnabled"], json!(true));
     }
@@ -9339,7 +9331,6 @@ mod tests {
             if method != "thread/list" || !params["projectId"].is_string() {
                 return Ok(match method {
                     "thread/read" => json!({"thread": thread_summary("thread-1")}),
-                    "threadSection/list" => json!({"data":[],"nextCursor":null}),
                     "thread/list" => {
                         json!({"data": [], "nextCursor": null, "backwardsCursor": null})
                     }

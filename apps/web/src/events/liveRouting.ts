@@ -14,7 +14,7 @@ export type LiveEventRouteHandlers = {
   applyThreadSettingsEvent: (event: EventEnvelope) => void;
   applyAutomationStreamEvent: (event: EventEnvelope) => void;
   applyQueueEvent: (event: EventEnvelope) => void;
-  applyThreadSectionsEvent: (event: EventEnvelope) => void;
+  applyThreadPinsEvent: (event: EventEnvelope) => void;
   applyThreadUpsert: (update: ThreadUpsert) => void;
   applyThreadMetadataEvent: (event: EventEnvelope) => void;
   applyThreadReadStateEvent: (event: EventEnvelope) => void;
@@ -32,7 +32,7 @@ export function routeGlobalLiveEvent(event: EventEnvelope, handlers: LiveEventRo
   routeSharedLiveEvent(event, handlers);
   handlers.applyUnreadBadgeEvent(event);
   if (event.kind === "thread.subagents_changed") handlers.applySubagentsEvent(event);
-  if (event.kind === "thread.sections_updated") handlers.applyThreadSectionsEvent(event);
+  if (event.kind === "thread.pins_updated") handlers.applyThreadPinsEvent(event);
   if (event.kind === "project.changed" || event.kind === "thread.project_updated") {
     handlers.applyProjectEvent(event);
   }

@@ -45,7 +45,7 @@ for (const shape of [
           if (url.pathname.endsWith("/queued-inputs")) return route.fulfill({ json: { queuedInputs: [], transfers: [], nextCursor: null } });
           childReads.push(child.id);
           const detail: ThreadViewResponse = {
-            thread: { ...child, cwd: "/native/child", projectId: null, createdAt: 0, notificationsEnabled: true, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false, unreadCompletedAgentTurn: false },
+            thread: { ...child, pinned: false, cwd: "/native/child", projectId: null, createdAt: 0, notificationsEnabled: true, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false, unreadCompletedAgentTurn: false },
             liveState: child.status === "notLoaded" ? "notLoaded" : "idle",
             timeline: { activeTurnId: null, liveState: child.status === "notLoaded" ? "notLoaded" : "idle", pendingApprovalRequests: [], pendingUserInputRequests: [], rows: [], turns: [], viewRevision: 1 },
           };

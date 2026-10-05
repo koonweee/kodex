@@ -14,7 +14,7 @@ it("renames sparsely and deletes only the project registry entry", async () => {
     "GET /v1/sidebar/threads": () => ({
       projects,
       projectThreads: Object.fromEntries(projects.map((entry) => [entry.id, { threads: entry.id === projectId ? [{ ...thread, projectId }] : [] }])),
-      chatThreads: { threads: projectId ? [] : [{ ...thread, projectId }] }, sections: [], sectionThreads: {},
+      chatThreads: { threads: projectId ? [] : [{ ...thread, projectId }] }, pinnedThreads: { threads: [] },
     }),
     "PATCH /v1/projects/project-1": async (request: Request) => {
       const patch = await request.json();

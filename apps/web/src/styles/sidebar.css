@@ -205,7 +205,7 @@
   margin-top: 18px;
 }
 
-.kodex-native-section {
+.kodex-pinned-threads {
   display: grid;
   gap: 6px;
 }
@@ -627,14 +627,14 @@
     gap: 4px;
   }
 
-  .kodex-native-section,
+  .kodex-pinned-threads,
   .kodex-sidebar-section {
     gap: 4px;
   }
 
   .kodex-project-tree,
   .kodex-project-thread-list,
-  .kodex-section-thread-list,
+  .kodex-pinned-thread-list,
   .kodex-chat-thread-list {
     gap: 4px !important;
   }

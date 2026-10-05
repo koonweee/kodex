@@ -3,7 +3,7 @@ import type { Project, ThreadSummary, ThreadViewResponse } from "../src/api/clie
 
 const projectCwd = "/tmp/kodex-project";
 const project: Project = { id: "project-1", name: "Kodex", roots: [{ path: projectCwd }], metadata: {}, position: 0, createdAt: 1791072000, updatedAt: 1791072000, recencyAt: null };
-const thread: ThreadSummary = { id: "thread-1", name: "Project chat", projectId: project.id, cwd: projectCwd, status: "idle", rawPayload: {},
+const thread: ThreadSummary = { pinned: false, id: "thread-1", name: "Project chat", projectId: project.id, cwd: projectCwd, status: "idle", rawPayload: {},
   createdAt: 0, updatedAt: 0, parentThreadId: null, canAcceptDirectInput: true, notificationsEnabled: true,
   latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: true, unreadCompletedAgentTurn: false };
 const detail: ThreadViewResponse = {
@@ -40,7 +40,7 @@ for (const shape of [
             appServer: { ready: true, experimentalApi: true, schemaVersion: "0.160.0", detectedVersion: "0.160.0", detectedVersionMatchesSchema: true },
           },
           "GET /v1/projects/project-1": project,
-          "GET /v1/sidebar/threads": { projects: [project], projectThreads: { [project.id]: { threads: [thread] } }, chatThreads: { threads: [] }, sections: [], sectionThreads: {} },
+          "GET /v1/sidebar/threads": { projects: [project], projectThreads: { [project.id]: { threads: [thread] } }, chatThreads: { threads: [] }, pinnedThreads: { threads: [] } },
           "GET /v1/threads/unread-badge": { count: 0, readRevision: 0 },
           "GET /v1/threads/thread-1": detail,
           "GET /v1/threads/thread-1/settings": { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null },

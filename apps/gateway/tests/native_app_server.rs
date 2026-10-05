@@ -18,6 +18,8 @@ mod mcp_auth;
 mod mcp_control;
 #[path = "native_app_server/mcp_widget.rs"]
 mod mcp_widget;
+#[path = "native_app_server/pins.rs"]
+mod pins;
 #[path = "native_app_server/producers.rs"]
 mod producers;
 #[path = "native_app_server/projects.rs"]
@@ -30,8 +32,6 @@ mod queue;
 mod read_markers;
 #[path = "native_app_server/revert.rs"]
 mod revert;
-#[path = "native_app_server/sections.rs"]
-mod sections;
 #[path = "native_app_server/settings.rs"]
 mod settings;
 #[path = "native_app_server/skills.rs"]

@@ -19,24 +19,23 @@ describe("WorkspaceSidebar project reorder", () => {
     vi.restoreAllMocks();
   });
 
-  it("keeps custom sections visible across project and chat scopes without duplicating project membership", () => {
-    const section = { id: "research", name: "Research" };
-    const member = threadSummary(1, { projectId: "project-1", section, name: "Section member" });
-    const onSelectSectionThread = vi.fn();
+  it("keeps Pinned visible across project and chat scopes without custom section management", () => {
+    const member = threadSummary(1, { projectId: "project-1", pinned: true, name: "Pinned member" });
+    const onSelectPinnedThread = vi.fn();
     renderSidebar({
-      sections: [section], sectionThreads: [member], sectionThreadsById: { [section.id]: [member] },
-      onSelectSectionThread, projects: [projectSummary("project-1", "Project")],
-      threadsByProjectId: { "project-1": [threadSummary(2, { name: "Unsectioned project chat" })] },
+      pinnedThreads: [member], onSelectPinnedThread, projects: [projectSummary("project-1", "Project")],
+      threadsByProjectId: { "project-1": [member, threadSummary(2, { name: "Project chat" })] },
     });
-    expect(screen.getAllByRole("button", { name: "Section member" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Add section" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Pinned member" })).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "Chats" }));
-    expect(screen.getByRole("group", { name: "Research section" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Section member" }));
-    expect(onSelectSectionThread).toHaveBeenCalledWith(member.id);
-    fireEvent.click(screen.getByRole("button", { name: "Collapse Research section" }));
-    expect(screen.queryByRole("button", { name: "Section member" })).not.toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Pinned" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Pinned member" }));
+    expect(onSelectPinnedThread).toHaveBeenCalledWith(member.id);
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Pinned" }));
+    expect(screen.queryByRole("button", { name: "Pinned member" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Projects" }));
-    expect(screen.getByRole("button", { name: "Expand Research section" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Expand Pinned" })).toBeInTheDocument();
   });
 
   it("requests a native relative move when a project is dragged before another project", () => {
@@ -240,7 +239,7 @@ describe("WorkspaceSidebar project reorder", () => {
             onMoveProject={vi.fn()}
             onSelectAutomations={vi.fn()}
             onSelectChatThread={vi.fn()}
-            onSelectSectionThread={vi.fn()}
+            onSelectPinnedThread={vi.fn()}
             onSelectProjectSettings={vi.fn()}
             onSelectThread={vi.fn()}
             onShowDebugEventsChange={vi.fn()}
@@ -249,7 +248,7 @@ describe("WorkspaceSidebar project reorder", () => {
             onThreadActionHoverChange={vi.fn()}
             onUnpinThread={vi.fn()}
             pendingTitleThreadIds={new Set()}
-            sectionThreads={[]}
+            pinnedThreads={[]}
             projectThreadHasMoreById={{ "project-1": true }}
             projectThreadPaginationStateById={{ "project-1": "error" }}
             projects={[projectSummary("project-1", "Project")]}
@@ -542,7 +541,7 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar
           onMoveProject={vi.fn()}
           onSelectAutomations={vi.fn()}
           onSelectChatThread={vi.fn()}
-          onSelectSectionThread={vi.fn()}
+          onSelectPinnedThread={vi.fn()}
           onSelectProjectSettings={vi.fn()}
           onSelectThread={vi.fn()}
           onShowDebugEventsChange={vi.fn()}
@@ -551,7 +550,7 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar
           onThreadActionHoverChange={vi.fn()}
           onUnpinThread={vi.fn()}
           pendingTitleThreadIds={new Set()}
-          sectionThreads={[]}
+          pinnedThreads={[]}
           projects={[]}
           selectedMainPane="thread"
           selectedProjectId={null}
@@ -606,7 +605,7 @@ function threadSummary(index: number, overrides: Partial<ThreadSummary> = {}): T
     projectId: "project-1",
     id: `thread-${index}`,
     name: `Thread ${index}`,
-    notificationsEnabled: true,
+    notificationsEnabled: true, pinned: false,
     rawPayload: {},
     latestCompletedTurnId: null,
     seenCompletedTurnId: null,

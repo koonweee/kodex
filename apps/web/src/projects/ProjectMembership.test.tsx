@@ -17,7 +17,7 @@ it("refreshes canonical chat details after assignment without waiting for a nati
     "GET /v1/sidebar/threads": () => ({
       projects: [project, destination],
       projectThreads: { [project.id]: { threads: member.projectId === project.id ? [member] : [] }, [destination.id]: { threads: member.projectId === destination.id ? [member] : [] } },
-      chatThreads: { threads: member.projectId === null ? [member] : [] }, sections: [], sectionThreads: {},
+      chatThreads: { threads: member.projectId === null ? [member] : [] }, pinnedThreads: { threads: [] },
     }),
     "POST /v1/threads/thread-1/attach": (request: Request) => {
       if (!holdNext) return threadDetail(member);
@@ -51,7 +51,7 @@ it("refreshes canonical chat details after assignment without waiting for a nati
 it("uses canonical membership for a deep link outside the current sidebar page", async () => {
   let member = { ...thread, projectId: project.id as string | null };
   const gateway = mockGateway(baseRoutes({
-    "GET /v1/sidebar/threads": { projects: [project], projectThreads: { [project.id]: { threads: [] } }, chatThreads: { threads: [] }, sections: [], sectionThreads: {} },
+    "GET /v1/sidebar/threads": { projects: [project], projectThreads: { [project.id]: { threads: [] } }, chatThreads: { threads: [] }, pinnedThreads: { threads: [] } },
     "POST /v1/threads/thread-1/attach": () => threadDetail(member),
     "PATCH /v1/threads/thread-1/project": () => { member = { ...member, projectId: null }; return { thread: member, rawPayload: {} }; },
   }));

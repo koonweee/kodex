@@ -8,16 +8,16 @@ export type AutomationThreadOption = {
 
 export function automationThreadOptions({
   chatThreads,
-  sectionThreads,
+  pinnedThreads,
   projectThreads,
 }: {
   chatThreads: ThreadSummary[];
-  sectionThreads: ThreadSummary[];
+  pinnedThreads: ThreadSummary[];
   projectThreads: ThreadSummary[];
 }): AutomationThreadOption[] {
   const seen = new Set<string>();
   const options: AutomationThreadOption[] = [];
-  for (const thread of [...sectionThreads, ...projectThreads, ...chatThreads]) {
+  for (const thread of [...pinnedThreads, ...projectThreads, ...chatThreads]) {
     if (seen.has(thread.id)) {
       continue;
     }

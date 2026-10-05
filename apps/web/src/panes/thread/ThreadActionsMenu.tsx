@@ -3,8 +3,6 @@ import { Archive, Copy, CopyPlus, MoreHorizontal, Pencil, Pin, PinOff } from "lu
 import type { Dispatch, SetStateAction } from "react";
 import type { ThreadSummary } from "../../api/client";
 import { ThreadProjectMenuItems } from "../../projects/ThreadProjectMenuItems";
-import { PINNED_SECTION_ID } from "../../sections/cache";
-import { SectionMenuItems, type ThreadSectionActions } from "../../sections/SectionMenuItems";
 import { AdaptiveIconButton } from "../../ui/AdaptiveIconButton";
 import { copyTextToClipboard } from "../../shared/clipboard";
 
@@ -18,8 +16,9 @@ export function ThreadActionsMenu({
   onSetThreadNotificationsEnabled,
   onUnpinThread,
   thread,
-  threadId, sections, onMoveThreadToSection, sectionMovePending,
-}: ThreadSectionActions & {
+  threadId, pinPending,
+}: {
+  pinPending?: boolean;
   onDuplicatePane: () => void;
   onProjectAssignmentError: (error: unknown) => void;
   onArchiveThread?: (threadId: string) => void;
@@ -46,19 +45,18 @@ export function ThreadActionsMenu({
         {thread ? (
           <>
             <Menu.Item
-              disabled={sectionMovePending}
-              leftSection={thread.section?.id === PINNED_SECTION_ID ? <PinOff size={14} /> : <Pin size={14} />}
+              disabled={pinPending}
+              leftSection={thread.pinned ? <PinOff size={14} /> : <Pin size={14} />}
               onClick={() => {
-                if (thread.section?.id === PINNED_SECTION_ID) {
+                if (thread.pinned) {
                   onUnpinThread?.(thread.id);
                   return;
                 }
                 onPinThread?.(thread.id);
               }}
             >
-              {thread.section?.id === PINNED_SECTION_ID ? "Unpin thread" : "Pin thread"}
+              {thread.pinned ? "Unpin thread" : "Pin thread"}
             </Menu.Item>
-            <SectionMenuItems thread={thread} sections={sections} onMoveThreadToSection={onMoveThreadToSection} sectionMovePending={sectionMovePending} />
             <ThreadProjectMenuItems threadId={thread.id} projectId={thread.projectId ?? null} onError={onProjectAssignmentError} />
             <Menu.Item leftSection={<Pencil size={14} />} onClick={onRenameThread}>
               Rename thread

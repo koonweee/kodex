@@ -6,7 +6,7 @@ import { App, baseRoutes, FakeEventSource, mockGateway, project, thread } from "
 
 const snapshot = {
   projects: [project], projectThreads: { [project.id]: { threads: [thread] } },
-  chatThreads: { threads: [] }, sections: [], sectionThreads: {},
+  chatThreads: { threads: [] }, pinnedThreads: { threads: [] },
 };
 const failure = () => new Response(JSON.stringify({ message: "database is locked" }), { status: 500 });
 

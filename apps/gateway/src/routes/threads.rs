@@ -19,7 +19,7 @@ use crate::{
     api::AppState,
     app_server_api::{
         self, GitInfo, RawAppServerResponse, ThreadCommandResponse, ThreadDetailResponse,
-        ThreadListResponse, ThreadSection, ThreadStatus, ThreadSummary, ThreadViewResponse,
+        ThreadListResponse, ThreadStatus, ThreadSummary, ThreadViewResponse,
     },
     error::{ApiError, ApiResult},
     routes::projects::Project,
@@ -95,8 +95,7 @@ pub struct SidebarThreadsResponse {
     pub projects: Vec<Project>,
     pub project_threads: BTreeMap<String, SidebarThreadListResponse>,
     pub chat_threads: SidebarThreadListResponse,
-    pub sections: Vec<ThreadSection>,
-    pub section_threads: BTreeMap<String, SidebarThreadListResponse>,
+    pub pinned_threads: SidebarThreadListResponse,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -131,8 +130,7 @@ pub struct SidebarThreadSummary {
     pub agent_role: Option<String>,
     pub sandbox: Option<Value>,
     pub git_info: Option<GitInfo>,
-    pub section: Option<ThreadSection>,
-    pub section_entered_at: Option<i64>,
+    pub pinned: bool,
     pub preview: Option<Value>,
     #[schema(required = true)]
     pub latest_completed_turn_id: Option<String>,
@@ -166,8 +164,7 @@ impl From<ThreadSummary> for SidebarThreadSummary {
             agent_role: thread.agent_role,
             sandbox: thread.sandbox,
             git_info: thread.git_info,
-            section: thread.section,
-            section_entered_at: thread.section_entered_at,
+            pinned: thread.pinned,
             preview: thread.preview,
             latest_completed_turn_id: thread.latest_completed_turn_id,
             seen_completed_turn_id: thread.seen_completed_turn_id,
@@ -316,95 +313,54 @@ pub async fn list_threads(
 pub async fn get_sidebar_threads(
     State(state): State<AppState>,
 ) -> ApiResult<Json<SidebarThreadsResponse>> {
-    let (projects, sections) = tokio::try_join!(
-        super::projects::list_project_records(&state),
-        super::thread_sections::all_thread_sections(&state),
-    )?;
-    let ((project_threads, section_threads), chat_threads) = tokio::try_join!(
-        sidebar_group_threads(&state, &projects, &sections),
+    let projects = super::projects::list_project_records(&state).await?;
+    let (project_threads, pinned_threads, chat_threads) = tokio::try_join!(
+        sidebar_project_threads(&state, &projects),
+        super::pins::pinned_threads_response(&state, None, Some(SIDEBAR_INITIAL_THREAD_LIST_LIMIT)),
         chat_thread_list_response(&state, None, Some(SIDEBAR_INITIAL_THREAD_LIST_LIMIT)),
     )?;
-
     Ok(Json(SidebarThreadsResponse {
         projects,
         project_threads,
+        pinned_threads: SidebarThreadListResponse::from(pinned_threads),
         chat_threads: SidebarThreadListResponse::from(chat_threads),
-        sections,
-        section_threads,
     }))
 }
 
-enum SidebarGroup {
-    Project(String),
-    Section(String),
-}
-
-async fn sidebar_group_threads(
+async fn sidebar_project_threads(
     state: &AppState,
     projects: &[Project],
-    sections: &[ThreadSection],
-) -> ApiResult<(
-    BTreeMap<String, SidebarThreadListResponse>,
-    BTreeMap<String, SidebarThreadListResponse>,
-)> {
+) -> ApiResult<BTreeMap<String, SidebarThreadListResponse>> {
     let mut project_threads = BTreeMap::new();
-    let mut section_threads = BTreeMap::new();
     let mut pending = JoinSet::new();
-    let mut iter = projects
-        .iter()
-        .map(|project| SidebarGroup::Project(project.id.clone()))
-        .chain(
-            sections
-                .iter()
-                .map(|section| SidebarGroup::Section(section.id.clone())),
-        );
-
+    let mut iter = projects.iter();
     loop {
         while pending.len() < SIDEBAR_GROUP_FETCH_CONCURRENCY {
-            let Some(group) = iter.next() else {
+            let Some(project) = iter.next() else {
                 break;
             };
+            let id = project.id.clone();
             let state = state.clone();
             pending.spawn(async move {
-                let response = match &group {
-                    SidebarGroup::Project(id) => {
-                        list_project_threads(
-                            &state,
-                            id.clone(),
-                            None,
-                            Some(SIDEBAR_INITIAL_THREAD_LIST_LIMIT),
-                        )
-                        .await?
-                    }
-                    SidebarGroup::Section(id) => {
-                        super::thread_sections::section_threads_response(
-                            &state,
-                            id.clone(),
-                            None,
-                            Some(SIDEBAR_INITIAL_THREAD_LIST_LIMIT),
-                        )
-                        .await?
-                    }
-                };
-                Ok::<_, ApiError>((group, SidebarThreadListResponse::from(response)))
+                let response = list_project_threads(
+                    &state,
+                    id.clone(),
+                    None,
+                    Some(SIDEBAR_INITIAL_THREAD_LIST_LIMIT),
+                )
+                .await?;
+                Ok::<_, ApiError>((id, SidebarThreadListResponse::from(response)))
             });
         }
         let Some(result) = pending.join_next().await else {
             break;
         };
-        let (group, response) = result.map_err(|error| {
-            ApiError::Other(anyhow::anyhow!("sidebar group task failed: {error}"))
+        let (id, response) = result.map_err(|error| {
+            ApiError::Other(anyhow::anyhow!("sidebar project task failed: {error}"))
         })??;
-        match group {
-            SidebarGroup::Project(id) => {
-                project_threads.insert(id, response);
-            }
-            SidebarGroup::Section(id) => {
-                section_threads.insert(id, response);
-            }
-        }
+        project_threads.insert(id, response);
     }
-    Ok((project_threads, section_threads))
+    Ok(project_threads)
 }
 
 async fn list_project_threads(

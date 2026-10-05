@@ -21,7 +21,7 @@ type CurrentRef<T> = { current: T };
 
 export function useSidebarThreadCaches({
   chatThreadsRef,
-  sectionThreadsRef,
+  pinnedThreadsRef,
   queryClient,
   routeSelectedThreadRef,
   selectedThreadIdRef,
@@ -30,7 +30,7 @@ export function useSidebarThreadCaches({
   threadsByProjectIdRef,
 }: {
   chatThreadsRef: CurrentRef<ThreadSummary[]>;
-  sectionThreadsRef: CurrentRef<ThreadSummary[]>;
+  pinnedThreadsRef: CurrentRef<ThreadSummary[]>;
   queryClient: QueryClient;
   routeSelectedThreadRef: CurrentRef<ThreadSummary | null>;
   selectedThreadIdRef: CurrentRef<string | null>;
@@ -92,11 +92,11 @@ export function useSidebarThreadCaches({
         return { scope: "project", projectId, thread };
       }
     }
-    const sectionThread = sectionThreadsRef.current.find((thread) => thread.id === threadId);
-    if (sectionThread?.section) return { scope: "section", sectionId: sectionThread.section.id, thread: sectionThread };
+    const pinnedThread = pinnedThreadsRef.current.find((thread) => thread.id === threadId);
+    if (pinnedThread) return { scope: "pinned", thread: pinnedThread };
     const chatThread = chatThreadsRef.current.find((thread) => thread.id === threadId);
     return chatThread ? { scope: "chat", thread: chatThread } : null;
-  }, [chatThreadsRef, sectionThreadsRef, threadsByProjectIdRef]);
+  }, [chatThreadsRef, pinnedThreadsRef, threadsByProjectIdRef]);
 
   const refreshSidebarThreadsForLiveEvent = useCallback((event: EventEnvelope) => {
     const route = sidebarLiveCacheRoute(event, event.threadId ? findThreadSidebarLocation(event.threadId) : null);
@@ -106,7 +106,7 @@ export function useSidebarThreadCaches({
     if (route.location.scope === "project") {
       recordCacheInvalidation("projectThreads");
       void queryClient.invalidateQueries({ queryKey: queryKeys.projectThreads(route.location.projectId) });
-    } else if (route.location.scope === "section") {
+    } else if (route.location.scope === "pinned") {
       void refreshProjectState(queryClient);
     } else {
       recordCacheInvalidation("chatThreads");

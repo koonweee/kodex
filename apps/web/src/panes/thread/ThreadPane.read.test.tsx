@@ -97,7 +97,7 @@ function VisiblePane() {
 
 function snapshot(turnId: string, revision: number): ThreadViewResponse {
   return {
-    thread: { id: "deep-link", name: "Unlisted chat", projectId: null, cwd: "/native", status: "idle", notificationsEnabled: true,
+    thread: { id: "deep-link", name: "Unlisted chat", projectId: null, cwd: "/native", status: "idle", notificationsEnabled: true, pinned: false,
       latestCompletedTurnId: turnId, seenCompletedTurnId: null, readRevision: revision, readStateKnown: true, unreadCompletedAgentTurn: true,
       parentThreadId: null, canAcceptDirectInput: true, createdAt: 1, updatedAt: 2 },
     liveState: "idle", timeline: { liveState: "idle", activeTurnId: null, pendingApprovalRequests: [], pendingUserInputRequests: [],

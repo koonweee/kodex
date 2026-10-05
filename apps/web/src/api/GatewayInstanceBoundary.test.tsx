@@ -85,7 +85,7 @@ function SettingsProbe({ read, queryKey }: { read: (signal: AbortSignal) => Prom
 function threadDetail(id: string): ThreadViewResponse {
   return {
     liveState: "idle",
-    thread: { parentThreadId: null, canAcceptDirectInput: null, id, projectId: null, createdAt: 0, updatedAt: 0, cwd: "/workspace", status: "idle", notificationsEnabled: true, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false, unreadCompletedAgentTurn: false },
+    thread: { parentThreadId: null, canAcceptDirectInput: null, id, projectId: null, createdAt: 0, updatedAt: 0, cwd: "/workspace", status: "idle", notificationsEnabled: true, pinned: false, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false, unreadCompletedAgentTurn: false },
     timeline: { activeTurnId: null, liveState: "idle", pendingApprovalRequests: [], pendingUserInputRequests: [], rows: [], turns: [], viewRevision: 0 },
   };
 }

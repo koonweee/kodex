@@ -22,7 +22,7 @@ function threadSummary(id: string): ThreadSummary {
     cwd: "/tmp/kodex",
     id,
     name: id,
-    notificationsEnabled: true,
+    notificationsEnabled: true, pinned: false,
     rawPayload: {},
     latestCompletedTurnId: null,
     seenCompletedTurnId: null,
@@ -55,7 +55,7 @@ describe("ThreadListRow memo comparison", () => {
     const unchangedRow = rowProps();
     const previouslySelectedRow = rowProps({ isSelected: true });
     const newlyHoveredRow = rowProps({ showThreadArchiveAction: true });
-    const newlyPinnedRow = rowProps({ thread: { ...thread, section: { id: "01984de2-8f74-7c91-a3b2-5c5e937cf318", name: "Pinned" } } });
+    const newlyPinnedRow = rowProps({ thread: { ...thread, pinned: true } });
 
     expect(areThreadListRowPropsEqual(unchangedRow, { ...unchangedRow })).toBe(true);
     expect(areThreadListRowPropsEqual(unchangedRow, previouslySelectedRow)).toBe(false);

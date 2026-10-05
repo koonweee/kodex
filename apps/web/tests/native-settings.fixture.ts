@@ -6,7 +6,7 @@ import type { AppSurfaceSession, Automation, AutomationRun, Capabilities, EventE
 export async function nativeSettingsFixture(context: BrowserContext) {
   const settings: ThreadSettingsResponse = { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null };
   const detail: ThreadViewResponse = {
-    thread: { parentThreadId: null, canAcceptDirectInput: null, id: "settings-chat", name: "Native settings chat", projectId: null, cwd: "/execution/settings", status: "idle", createdAt: 0, updatedAt: 0, notificationsEnabled: true, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: true, unreadCompletedAgentTurn: false },
+    thread: { pinned: false, parentThreadId: null, canAcceptDirectInput: null, id: "settings-chat", name: "Native settings chat", projectId: null, cwd: "/execution/settings", status: "idle", createdAt: 0, updatedAt: 0, notificationsEnabled: true, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: true, unreadCompletedAgentTurn: false },
     liveState: "idle",
     timeline: { activeTurnId: null, liveState: "idle", pendingApprovalRequests: [], pendingUserInputRequests: [], rows: [], turns: [], viewRevision: 1 },
   };
@@ -95,7 +95,7 @@ export async function nativeSettingsFixture(context: BrowserContext) {
       "GET /v1/account": { account: null, requiresOpenaiAuth: false, rawPayload: {} },
       "GET /v1/account/rate-limits": { rateLimits: null, rawPayload: {} },
       "GET /v1/approvals": { runtimeId: "native-settings-runtime", revision: 0, approvals: [] },
-      "GET /v1/sidebar/threads": { projects: [], projectThreads: {}, chatThreads: { threads: [detail.thread] }, sections: [], sectionThreads: {} },
+      "GET /v1/sidebar/threads": { projects: [], projectThreads: {}, chatThreads: { threads: [detail.thread] }, pinnedThreads: { threads: [] } },
       "GET /v1/projects": { projects: [] },
       "GET /v1/automations": { automations },
       "GET /v1/models": { models: [{ id: "gpt-5.4", model: "gpt-5.4", displayName: "GPT-5.4", description: "Test model", defaultReasoningEffort: "medium", isDefault: true, hidden: false, inputModalities: ["text"], supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced" }, { reasoningEffort: "high", description: "Deeper reasoning" }], rawPayload: {} }], rawPayload: {} },

@@ -39,7 +39,7 @@ export type ShellSelectionActions = {
   handleSelectAutomations: () => void;
   handleShowWorkspace: () => void;
   handleSelectChatThread: (threadId: string) => void;
-  handleSelectSectionThread: (threadId: string) => void;
+  handleSelectPinnedThread: (threadId: string) => void;
   handleSelectProjectSettings: (projectId: string) => void;
   handleSelectThread: (projectId: string, threadId: string) => void;
   selectMaterializedThread: (options: { projectId: string | null; thread: ThreadSummary }) => void;
@@ -59,13 +59,13 @@ export type ShellSelectionRefs = {
 export function useShellSelection({
   chatThreadsRef,
   initialRoute,
-  sectionThreadsRef,
+  pinnedThreadsRef,
   resetComposerDraft,
   threadsByProjectIdRef,
 }: {
   chatThreadsRef: CurrentRef<ThreadSummary[]>;
   initialRoute: KodexRoute;
-  sectionThreadsRef: CurrentRef<ThreadSummary[]>;
+  pinnedThreadsRef: CurrentRef<ThreadSummary[]>;
   resetComposerDraft: () => void;
   threadsByProjectIdRef: CurrentRef<ThreadsByProjectId>;
 }): ShellSelectionState & ShellSelectionActions & ShellSelectionRefs {
@@ -146,7 +146,7 @@ export function useShellSelection({
       threadId,
       threadsByProjectIdRef.current,
       chatThreadsRef.current,
-      sectionThreadsRef.current,
+      pinnedThreadsRef.current,
     );
     if (knownSelection?.kind === "project") {
       selectKnownProjectThread(knownSelection.projectId, threadId);
@@ -168,7 +168,7 @@ export function useShellSelection({
     setSelectedThreadIdWithRef(threadId);
   }, [
     chatThreadsRef,
-    sectionThreadsRef,
+    pinnedThreadsRef,
     selectKnownChatThread,
     selectKnownProjectThread,
     setRouteSelectedThreadState,
@@ -250,7 +250,7 @@ export function useShellSelection({
     selectKnownChatThread(threadId);
   }, [selectKnownChatThread]);
 
-  const handleSelectSectionThread = useCallback((threadId: string) => {
+  const handleSelectPinnedThread = useCallback((threadId: string) => {
     setRouteThreadPaneId(null);
     pushKodexRoute({ panel: null, threadId: null });
     selectRouteThread(threadId);
@@ -425,7 +425,7 @@ export function useShellSelection({
     handleFocusWorkspaceThreadPane,
     handleSelectAutomations,
     handleSelectChatThread,
-    handleSelectSectionThread,
+    handleSelectPinnedThread,
     handleSelectProjectSettings,
     handleSelectThread,
     mobilePanel,

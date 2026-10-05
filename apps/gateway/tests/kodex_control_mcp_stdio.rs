@@ -45,30 +45,20 @@ async fn kodex_control_mcp_stdio_lists_tools() -> anyhow::Result<()> {
         let tool = tools.iter().find(|tool| tool.name == name).unwrap();
         assert!(tool.input_schema["properties"].get("cwd").is_some());
     }
-    for name in ["pin_thread", "unpin_thread"] {
+    for name in [
+        "list_thread_sections",
+        "list_section_threads",
+        "create_thread_section",
+        "update_thread_section",
+        "delete_thread_section",
+        "move_thread_to_section",
+    ] {
         assert!(tools.iter().all(|tool| tool.name != name));
     }
-    for name in ["list_thread_sections", "list_section_threads"] {
-        assert!(tools.iter().any(|tool| tool.name == name));
-    }
-    assert_tool_requires(&tools, "create_thread_section", &["name"]);
-    assert_tool_requires(&tools, "update_thread_section", &["sectionId", "name"]);
-    assert_tool_requires(&tools, "delete_thread_section", &["sectionId"]);
-    assert_tool_requires(&tools, "move_thread_to_section", &["threadId", "sectionId"]);
-    let placement = tools
-        .iter()
-        .find(|tool| tool.name == "move_thread_to_section")
-        .unwrap();
-    let section_id = &placement.input_schema["properties"]["sectionId"];
-    assert!(
-        section_id["type"]
-            .as_array()
-            .is_some_and(|types| types.iter().any(|kind| kind == "null"))
-            || section_id["anyOf"]
-                .as_array()
-                .is_some_and(|variants| variants.iter().any(|variant| variant["type"] == "null")),
-        "explicit null must be advertised for leaving a section: {section_id}"
-    );
+    assert!(tools.iter().any(|tool| tool.name == "list_pinned_threads"));
+    assert_tool_requires(&tools, "pin_thread", &["threadId", "pinned"]);
+    let pin = tools.iter().find(|tool| tool.name == "pin_thread").unwrap();
+    assert!(pin.input_schema["properties"].get("sectionId").is_none());
     assert_tool_requires(&tools, "rename_thread", &["threadId", "name"]);
     assert_tool_requires(&tools, "update_thread_settings", &["threadId", "settings"]);
     assert_tool_requires(
@@ -193,45 +183,28 @@ async fn kodex_control_mcp_smokes_new_tools_against_fake_gateway() -> anyhow::Re
 
     let listed: Value = client
         .call_tool(
-            CallToolRequestParams::new("list_thread_sections").with_arguments(JsonObject::new()),
+            CallToolRequestParams::new("list_pinned_threads").with_arguments(JsonObject::new()),
         )
         .await?
         .into_typed()?;
-    assert_eq!(listed["sections"][0]["id"], "section-1");
-    for (name, arguments, expected) in [
-        (
-            "create_thread_section",
-            json!({"name":"Research"}),
-            json!({"section":{"id":"section-1","name":"Research"}}),
-        ),
-        (
-            "update_thread_section",
-            json!({"sectionId":"section-1","name":"Renamed research","appearance":null}),
-            json!({"section":{"id":"section-1","name":"Renamed research","appearance":null}}),
-        ),
-        (
-            "move_thread_to_section",
-            json!({"threadId":"thread-spawned","sectionId":null}),
-            Value::Null,
-        ),
-        (
-            "delete_thread_section",
-            json!({"sectionId":"section-1"}),
-            Value::Null,
-        ),
-    ] {
-        let value: Value = client
+    assert_eq!(listed["threads"][0]["id"], "thread-spawned");
+    for pinned in [true, false] {
+        let result: Value = client
             .call_tool(
-                CallToolRequestParams::new(name)
-                    .with_arguments(arguments.as_object().unwrap().clone()),
+                CallToolRequestParams::new("pin_thread").with_arguments(
+                    json!({"threadId":"thread-spawned","pinned":pinned})
+                        .as_object()
+                        .unwrap()
+                        .clone(),
+                ),
             )
             .await?
             .into_typed()?;
-        assert_eq!(value, expected, "{name} response");
+        assert_eq!(result, Value::Null);
     }
-    let missing_section = client
+    let missing_pin = client
         .call_tool(
-            CallToolRequestParams::new("move_thread_to_section").with_arguments(
+            CallToolRequestParams::new("pin_thread").with_arguments(
                 json!({"threadId":"thread-spawned"})
                     .as_object()
                     .unwrap()
@@ -240,8 +213,8 @@ async fn kodex_control_mcp_smokes_new_tools_against_fake_gateway() -> anyhow::Re
         )
         .await;
     assert!(
-        missing_section.is_err(),
-        "omission must not silently clear native membership"
+        missing_pin.is_err(),
+        "omission must not silently unpin a chat"
     );
 
     let mut app_surface_args = JsonObject::new();
@@ -315,34 +288,10 @@ async fn kodex_control_mcp_smokes_new_tools_against_fake_gateway() -> anyhow::Re
             && request.body["model"] == "gpt-test-2"
             && request.body.get("settings").is_none()
     }));
-    for (method, path, body) in [
-        (
-            Method::POST,
-            "/v1/self-control/thread-sections",
-            json!({"name":"Research"}),
-        ),
-        (
-            Method::PATCH,
-            "/v1/self-control/thread-sections/section-1",
-            json!({"name":"Renamed research","appearance":null}),
-        ),
-        (
-            Method::POST,
-            "/v1/self-control/threads/thread-spawned/section",
-            json!({"sectionId":null}),
-        ),
-        (
-            Method::DELETE,
-            "/v1/self-control/thread-sections/section-1",
-            json!({}),
-        ),
-    ] {
-        let matching: Vec<_> = requests
-            .iter()
-            .filter(|request| request.method == method && request.path == path)
-            .collect();
-        assert_eq!(matching.len(), 1, "{method} {path}: {matching:?}");
-        assert_eq!(matching[0].body, body);
+    for pinned in [true, false] {
+        assert!(requests.iter().any(|request| request.method == Method::POST
+            && request.path == "/v1/self-control/threads/thread-spawned/pin"
+            && request.body == json!({"pinned":pinned})));
     }
     assert!(requests.iter().any(|request| {
         request.method == Method::POST
@@ -436,17 +385,10 @@ async fn fake_gateway_handler(
         (Method::POST, "/v1/self-control/approvals/approval-1/decision") => {
             json!({"approvalId": "approval-1", "policy": {"allowed": true}})
         }
-        (Method::GET, "/v1/thread-sections") => {
-            json!({"sections":[{"id":"section-1","name":"Research"}],"nextCursor":null})
+        (Method::GET, "/v1/pinned-threads") => {
+            json!({"threads":[{"id":"thread-spawned","pinned":true}],"nextCursor":null})
         }
-        (Method::POST, "/v1/self-control/thread-sections") => {
-            json!({"section":{"id":"section-1","name":request_body["name"]}})
-        }
-        (Method::PATCH, "/v1/self-control/thread-sections/section-1") => {
-            json!({"section":{"id":"section-1","name":request_body["name"],"appearance":request_body["appearance"]}})
-        }
-        (Method::POST, "/v1/self-control/threads/thread-spawned/section")
-        | (Method::DELETE, "/v1/self-control/thread-sections/section-1") => {
+        (Method::POST, "/v1/self-control/threads/thread-spawned/pin") => {
             return StatusCode::NO_CONTENT.into_response()
         }
         (Method::GET, "/v1/self-control/events") => {
@@ -461,7 +403,7 @@ async fn fake_gateway_handler(
             }
         }
         (Method::GET, "/v1/self-control/sidebar/threads") => {
-            json!({"projectThreads": {}, "chatThreads": {"threads":[]}, "sections":[], "sectionThreads":{}})
+            json!({"projectThreads": {}, "chatThreads": {"threads":[]}, "pinnedThreads":{"threads":[]}})
         }
         _ => {
             return (StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))).into_response();

@@ -10,7 +10,7 @@ test("two tabs converge from native approval snapshots after responding, missed 
   };
   const detail: ThreadViewResponse = {
     liveState: "idle",
-    thread: { id: "thread-1", name: "Approval review", cwd: "/workspace", status: "idle", createdAt: 0, updatedAt: 0, notificationsEnabled: true, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false, unreadCompletedAgentTurn: false },
+    thread: { pinned: false, id: "thread-1", name: "Approval review", cwd: "/workspace", status: "idle", createdAt: 0, updatedAt: 0, notificationsEnabled: true, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false, unreadCompletedAgentTurn: false },
     timeline: { activeTurnId: null, liveState: "idle", pendingApprovalRequests: [], pendingUserInputRequests: [], rows: [], turns: [], viewRevision: 0 },
   };
   const approval: Approval = {
@@ -55,7 +55,7 @@ test("two tabs converge from native approval snapshots after responding, missed 
       let body: unknown;
       switch (key) {
         case "GET /v1/capabilities": body = capabilities; break;
-        case "GET /v1/sidebar/threads": body = { projects: [], projectThreads: {}, chatThreads: { threads: [detail.thread] }, sections: [], sectionThreads: {} }; break;
+        case "GET /v1/sidebar/threads": body = { projects: [], projectThreads: {}, chatThreads: { threads: [detail.thread] }, pinnedThreads: { threads: [] } }; break;
         case "GET /v1/threads/thread-1":
         case "POST /v1/threads/thread-1/attach": body = detail; break;
         case "GET /v1/threads/thread-1/settings": body = { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null }; break;

@@ -35,10 +35,7 @@ export function useSidebarThreadsSnapshot({
           .map(([queryKey, data]) => [typeof queryKey[2] === "string" ? queryKey[2] : "", data] as const)
           .filter(([projectId]) => projectId.length > 0),
       );
-      const beforeSectionSnapshots = new Map(
-        queryClient.getQueriesData<ThreadSummary[]>({ queryKey: queryKeys.sectionThreadsRoot })
-          .map(([key, data]) => [String(key[2]), data]),
-      );
+      const beforePinnedSnapshot = queryClient.getQueryData<ThreadSummary[]>(queryKeys.pinnedThreads);
       const snapshot = await getSidebarThreads(signal);
       signal.throwIfAborted();
       queryClient.setQueryData<Project[]>(queryKeys.projects, snapshot.projects);
@@ -67,16 +64,9 @@ export function useSidebarThreadsSnapshot({
       );
       onChatThreadsCursorChange(snapshot.chatThreads.nextCursor ?? null);
 
-      for (const sectionId of beforeSectionSnapshots.keys()) {
-        if (!(sectionId in snapshot.sectionThreads)) {
-          queryClient.setQueryData<ThreadSummary[]>(queryKeys.sectionThreads(sectionId), []);
-        }
-      }
-      for (const [sectionId, response] of Object.entries(snapshot.sectionThreads)) {
-        queryClient.setQueryData<ThreadSummary[]>(queryKeys.sectionThreads(sectionId), (current) =>
-          mergeChatThreadData(current, response.threads.map(sidebarThreadToThreadSummary), beforeSectionSnapshots.get(sectionId)),
-        );
-      }
+      queryClient.setQueryData<ThreadSummary[]>(queryKeys.pinnedThreads, (current) =>
+        mergeChatThreadData(current, snapshot.pinnedThreads.threads.map(sidebarThreadToThreadSummary), beforePinnedSnapshot),
+      );
       return snapshot;
     },
   });

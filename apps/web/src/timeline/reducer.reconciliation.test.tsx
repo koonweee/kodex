@@ -12,7 +12,7 @@ function snapshot(text: string, viewRevision: number): ThreadViewResponse {
     thread: {
       id: "thread-1", parentThreadId: null, canAcceptDirectInput: true,
       cwd: "/workspace", status: "active", createdAt: 0, updatedAt: 0,
-      notificationsEnabled: true, latestCompletedTurnId: null, seenCompletedTurnId: null,
+      notificationsEnabled: true, pinned: false, latestCompletedTurnId: null, seenCompletedTurnId: null,
       readRevision: 0, readStateKnown: true, unreadCompletedAgentTurn: false,
     },
     liveState: "streaming",

@@ -404,7 +404,7 @@ function threadDetail(text: string, viewRevision: number): ThreadViewResponse {
       status: "active",
       source: "local",
       preview: text,
-      notificationsEnabled: true,
+      notificationsEnabled: true, pinned: false,
       createdAt: 1777500000,
       latestCompletedTurnId: null,
       seenCompletedTurnId: null,

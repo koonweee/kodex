@@ -172,7 +172,7 @@ describe("thread events", () => {
   });
 
   it("rejects malformed notification setting update events", () => {
-    expect(threadNotificationsUpdateFromEvent(event({ kind: "thread.sections_updated" }))).toBeNull();
+    expect(threadNotificationsUpdateFromEvent(event({ kind: "thread.pins_updated" }))).toBeNull();
     expect(
       threadNotificationsUpdateFromEvent(
         event({
@@ -184,7 +184,7 @@ describe("thread events", () => {
   });
 
   it("rejects malformed thread upsert events", () => {
-    expect(threadUpsertFromEvent(event({ kind: "thread.sections_updated" }))).toBeNull();
+    expect(threadUpsertFromEvent(event({ kind: "thread.pins_updated" }))).toBeNull();
     expect(
       threadUpsertFromEvent(
         event({

@@ -32,7 +32,7 @@ it("loads each client's editable pane from one attach snapshot and reattaches on
   let snapshot: ThreadViewResponse = {
     thread: {
       id: "shared", name: "Native initial page", projectId: null, cwd: "/native",
-      status: "idle", notificationsEnabled: true, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false,
+      status: "idle", notificationsEnabled: true, pinned: false, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false,
       unreadCompletedAgentTurn: false, createdAt: 1, updatedAt: 2,
       parentThreadId: null, canAcceptDirectInput: true,
     },
@@ -82,7 +82,7 @@ it("loads the canonical initial snapshot after StrictMode cleanup without waitin
   const snapshot: ThreadViewResponse = {
     thread: {
       id: "thread-strict", name: "Canonical chat", projectId: "native-project", cwd: "/canonical",
-      status: "idle", notificationsEnabled: true, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false,
+      status: "idle", notificationsEnabled: true, pinned: false, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false,
       unreadCompletedAgentTurn: false, createdAt: 1, updatedAt: 2,
       parentThreadId: null, canAcceptDirectInput: null,
     },
@@ -137,7 +137,7 @@ it("commits one editable-pane refill in StrictMode and queues one newer repair b
   const snapshot = (text: string, viewRevision: number): ThreadViewResponse => ({
     thread: {
       id: "shared", name: "Shared chat", projectId: null, cwd: "/native", status: "active",
-      notificationsEnabled: true, latestCompletedTurnId: null, seenCompletedTurnId: null,
+      notificationsEnabled: true, pinned: false, latestCompletedTurnId: null, seenCompletedTurnId: null,
       readRevision: 0, readStateKnown: false, unreadCompletedAgentTurn: false,
       createdAt: 1, updatedAt: 2, parentThreadId: null, canAcceptDirectInput: true,
     },
@@ -220,7 +220,7 @@ it("shows a native attach failure without a prose-based retry loop and recovers 
   const snapshot: ThreadViewResponse = {
     thread: {
       id: "unavailable", name: "Recovered chat", projectId: null, cwd: "/native", status: "idle",
-      notificationsEnabled: true, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false, unreadCompletedAgentTurn: false,
+      notificationsEnabled: true, pinned: false, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false, unreadCompletedAgentTurn: false,
       createdAt: 1, updatedAt: 2, parentThreadId: null, canAcceptDirectInput: true,
     },
     liveState: "idle",
@@ -258,7 +258,7 @@ it("keeps direct-input capability owned by canonical detail when older sidebar a
   vi.stubGlobal("EventSource", UnopenedEventSource);
   const seed: ThreadSummary = {
     id: "child", parentThreadId: "parent", canAcceptDirectInput: null, name: "Child", cwd: "/native",
-    projectId: null, status: "idle", notificationsEnabled: true, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false,
+    projectId: null, status: "idle", notificationsEnabled: true, pinned: false, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false,
     unreadCompletedAgentTurn: false, createdAt: 1, updatedAt: 2, rawPayload: {},
   };
   let detail: ThreadViewResponse = {
