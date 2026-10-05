@@ -86,7 +86,7 @@ async fn real_native_installed_control_bundle_uses_its_owned_gateway_and_explici
         let rejected=client.mcp_tool_call(McpServerToolCallRequest {server:server.name.clone(),thread_id:invoking_id.clone(),tool:"open_app_surface".into(),arguments:Some(json!({"title":"No implicit target","html":"<h1>Reject</h1>","fallbackContent":"Reject"})),meta:None}).await;
         match rejected {
             Ok(rejected) => anyhow::ensure!(rejected.is_error==Some(true),"installed handler accepted implicit thread target"),
-            Err(kodex_gateway::error::ApiError::BadGateway(message)) if message.starts_with("app-server error -32602:") && message.contains("missing field `threadId`") => {},
+            Err(kodex_gateway::error::ApiError::NativeRpc(error)) if error.code == -32602 && error.message.contains("missing field `threadId`") => {},
             Err(error) => return Err(anyhow::anyhow!("unexpected missing-target failure: {error}")),
         }
         Ok::<_,anyhow::Error>(())

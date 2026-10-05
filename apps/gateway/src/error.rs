@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use utoipa::ToSchema;
 
+use crate::app_server::JsonRpcError;
+
 pub type ApiResult<T> = Result<T, ApiError>;
 
 #[derive(Debug, Error)]
@@ -25,6 +27,8 @@ pub enum ApiError {
     AppServerUnavailable,
     #[error("retryable app-server error: {0}")]
     Retryable(String),
+    #[error("{}", native_rpc_public_error(.0))]
+    NativeRpc(JsonRpcError),
     #[error("bad gateway: {0}")]
     BadGateway(String),
     #[error(transparent)]
@@ -85,6 +89,7 @@ impl NativeConfigWriteErrorCode {
 impl ApiError {
     pub fn status_code(&self) -> StatusCode {
         match self {
+            Self::NativeRpc(error) => native_rpc_public_error(error).status_code(),
             Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
             Self::UnsupportedMediaType(_) => StatusCode::UNSUPPORTED_MEDIA_TYPE,
@@ -102,6 +107,7 @@ impl ApiError {
 
     pub fn body(&self) -> ApiErrorBody {
         match self {
+            Self::NativeRpc(error) => native_rpc_public_error(error).body(),
             Self::NotFound(message) => ApiErrorBody {
                 code: "not_found".to_string(),
                 message: message.clone(),
@@ -178,4 +184,24 @@ impl From<serde_json::Error> for ApiError {
     fn from(error: serde_json::Error) -> Self {
         Self::Other(anyhow::Error::new(error))
     }
+}
+
+// Native failures retain their wire fields until the HTTP response boundary.
+// Config errors expose only the approved code because data can contain secrets.
+fn native_rpc_public_error(error: &JsonRpcError) -> ApiError {
+    if error.code == -32001 {
+        return ApiError::Retryable(error.message.clone());
+    }
+    if let Some(code) = error.config_write_error_code() {
+        return ApiError::NativeConfigWrite(code);
+    }
+    let message = if let Some(data) = &error.data {
+        format!(
+            "app-server error {}: {}; data: {}",
+            error.code, error.message, data
+        )
+    } else {
+        format!("app-server error {}: {}", error.code, error.message)
+    };
+    ApiError::BadGateway(message)
 }

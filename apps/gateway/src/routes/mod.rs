@@ -33,6 +33,8 @@ mod native_read_errors_tests;
 #[cfg(test)]
 mod native_read_markers_tests;
 #[cfg(test)]
+mod native_reads_tests;
+#[cfg(test)]
 mod native_revert_tests;
 #[cfg(test)]
 mod native_skill_tests;
@@ -4982,9 +4984,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn file_preview_maps_rollout_missing_thread_app_server_error_to_not_found() {
+    async fn file_preview_maps_native_missing_thread_error_to_not_found() {
         let store = Store::in_memory().await.unwrap();
-        let app_server = Arc::new(MissingRolloutAppServer);
+        let app_server = Arc::new(MissingNativeThreadAppServer);
         let state = AppState::new(Config::default(), store, app_server);
         let dir = tempdir().unwrap();
         let image = dir.path().join("preview.local");
@@ -5862,6 +5864,10 @@ mod tests {
             .lock()
             .unwrap()
             .push(active_thread_read_response("thread-1", "fresh-turn"));
+        app_server.queued_responses.lock().unwrap().push(
+            json!({"data":[{"id":"fresh-turn", "status":"inProgress", "items":[]}],
+                "nextCursor":null, "backwardsCursor":null}),
+        );
         app_server
             .queued_responses
             .lock()
@@ -5884,9 +5890,12 @@ mod tests {
         assert_eq!(body["interruptedTurnId"], "fresh-turn");
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "thread/read");
-        assert_eq!(requests[1].0, "turn/interrupt");
+        assert_eq!(requests[0].1["includeTurns"], false);
+        assert_eq!(requests[1].0, "thread/turns/list");
+        assert_eq!(requests[1].1["itemsView"], "notLoaded");
+        assert_eq!(requests[2].0, "turn/interrupt");
         assert_eq!(
-            requests[1].1,
+            requests[2].1,
             json!({"threadId": "thread-1", "turnId": "fresh-turn"})
         );
     }
@@ -6358,9 +6367,11 @@ mod tests {
             .queued_errors
             .lock()
             .unwrap()
-            .push(ApiError::BadGateway(
-                "app-server error -32600: thread not found: thread-1".to_string(),
-            ));
+            .push(ApiError::NativeRpc(crate::app_server::JsonRpcError {
+                code: -32600,
+                message: "thread not found: thread-1".into(),
+                data: Some(json!({"diagnostic": "loaded thread unavailable"})),
+            }));
         app_server.queued_responses.lock().unwrap().extend([
             json!({
                 "thread": thread_summary("thread-1"),
@@ -9621,7 +9632,7 @@ mod tests {
 
     struct RetryableAppServer;
 
-    struct MissingRolloutAppServer;
+    struct MissingNativeThreadAppServer;
 
     #[derive(Default)]
     struct NotMaterializedThreadHistoryAppServer {
@@ -9662,7 +9673,7 @@ mod tests {
     }
 
     #[async_trait]
-    impl AppServer for MissingRolloutAppServer {
+    impl AppServer for MissingNativeThreadAppServer {
         fn is_ready(&self) -> bool {
             true
         }
@@ -9672,10 +9683,11 @@ mod tests {
         }
 
         async fn request(&self, _method: &str, _params: Value) -> ApiResult<Value> {
-            Err(ApiError::BadGateway(
-                "app-server error -32602: no rollout found for thread id thread-missing"
-                    .to_string(),
-            ))
+            Err(ApiError::NativeRpc(crate::app_server::JsonRpcError {
+                code: -32600,
+                message: "thread not loaded: thread-missing".into(),
+                data: None,
+            }))
         }
 
         async fn respond(&self, _request_id: &str, _result: Value) -> ApiResult<()> {
@@ -9699,9 +9711,11 @@ mod tests {
                 .unwrap()
                 .push((method.to_string(), params));
             if method == "thread/turns/list" {
-                return Err(ApiError::BadGateway(
-                    "app-server error -32600: thread thread-1 is not materialized yet; thread/turns/list is unavailable before first user message".to_string(),
-                ));
+                return Err(ApiError::NativeRpc(crate::app_server::JsonRpcError {
+                    code: -32600,
+                    message: "thread thread-1 is not materialized yet; thread/turns/list is unavailable before first user message".into(),
+                    data: None,
+                }));
             }
             Ok(json!({
                 "thread": {

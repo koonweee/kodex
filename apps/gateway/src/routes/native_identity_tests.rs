@@ -130,20 +130,30 @@ async fn native_identity_omitted_ids_get_distinct_gateway_ids_without_retrying_r
 
 #[tokio::test]
 async fn native_identity_only_exact_requested_thread_absence_permits_resume() {
-    for rejection in [
-        "app-server error -32600: thread not found: other-chat",
-        "app-server error -32603: thread not found: native-chat",
-        "app-server error -32600: thread not found: native-chat-extra",
-        "app-server error -32600: unknown thread state for native-chat",
-        "app-server error -32600: no rollout found for thread id native-chat",
-        "thread not found: native-chat",
+    for (code, message) in [
+        (-32600, "thread not found: other-chat"),
+        (-32603, "thread not found: native-chat"),
+        (-32600, "thread not found: native-chat-extra"),
+        (-32600, "unknown thread state for native-chat"),
+        (-32600, "no rollout found for thread id native-chat"),
+        (
+            -32600,
+            "app-server error -32600: thread not found: native-chat",
+        ),
     ] {
+        let rejection = format!("{code}: {message}");
         let (state, native) = state().await;
         native
             .queued_errors
             .lock()
             .unwrap()
-            .push(crate::error::ApiError::BadGateway(rejection.into()));
+            .push(crate::error::ApiError::NativeRpc(
+                crate::app_server::JsonRpcError {
+                    code,
+                    message: message.into(),
+                    data: Some(json!({"detail":"native failure"})),
+                },
+            ));
         let (status, body) = request(&state, "POST", "/v1/threads/native-chat/input", json!({
             "input":[{"type":"text","text":"one native attempt"}], "clientUserMessageId":"fixed-client"
         })).await;

@@ -145,7 +145,7 @@ async fn turn_start_resuming_missing_thread_once(
         .await
     {
         Ok(response) => Ok(response),
-        Err(error) if is_unloaded_thread_rejection(&error, thread_id) => {
+        Err(error) if app_server_api::is_thread_not_loaded_error(&error, thread_id) => {
             resume_thread_for_turn_start(state, &client, thread_id).await?;
             client
                 .turn_start(thread_id.to_string(), input, options, Some(client_id))
@@ -168,11 +168,6 @@ async fn resume_thread_for_turn_start(
         .thread_resume(thread_id.to_string(), serde_json::json!({}))
         .await?;
     super::threads::apply_thread_command_response_state(state, &mut response).await
-}
-
-fn is_unloaded_thread_rejection(error: &ApiError, thread_id: &str) -> bool {
-    matches!(error, ApiError::BadGateway(message)
-        if message == &format!("app-server error -32600: thread not found: {thread_id}"))
 }
 
 #[utoipa::path(post, path = "/v1/threads/{threadId}/turns", request_body = TurnStartRequest, responses((status = 200, body = RawAppServerResponse)))]

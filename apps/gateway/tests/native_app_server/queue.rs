@@ -399,8 +399,8 @@ async fn assert_pages(
 
 fn assert_native_rejection(error: &anyhow::Error, message: &str) -> anyhow::Result<()> {
     anyhow::ensure!(
-        matches!(error.downcast_ref::<ApiError>(), Some(ApiError::BadGateway(actual))
-            if actual == &format!("app-server error -32600: {message}")),
+        matches!(error.downcast_ref::<ApiError>(), Some(ApiError::NativeRpc(actual))
+            if actual.code == -32600 && actual.message == message),
         "expected definitive native invalid request, got {error:#}",
     );
     Ok(())

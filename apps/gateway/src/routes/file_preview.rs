@@ -94,19 +94,19 @@ async fn read_preview_thread(
     thread_id: &str,
 ) -> ApiResult<app_server_api::ThreadSummary> {
     let response = match app_server_api::client(&state.app_server)
-        .thread_read(thread_id.to_string())
+        .thread_read_summary(thread_id.to_string())
         .await
     {
         Ok(response) => response,
-        Err(ApiError::BadGateway(message)) if message_mentions_missing_thread(&message) => {
+        Err(error) if app_server_api::is_thread_read_missing_error(&error, thread_id) => {
             return Err(preview_not_found());
         }
         Err(error) => return Err(error),
     };
-    if response.thread.id != thread_id {
+    if response.id != thread_id {
         return Err(preview_not_found());
     }
-    Ok(response.thread)
+    Ok(response)
 }
 
 async fn canonical_thread_preview_path(path: &str, thread_cwd: &FsPath) -> ApiResult<PathBuf> {
@@ -278,16 +278,6 @@ fn content_disposition(disposition: &str, path: &FsPath, fallback_file_name: &st
 
 fn preview_not_found() -> ApiError {
     ApiError::NotFound("file preview".to_string())
-}
-
-fn message_mentions_missing_thread(message: &str) -> bool {
-    let message = message.to_ascii_lowercase();
-    (message.contains("thread")
-        && (message.contains("not found")
-            || message.contains("no such")
-            || message.contains("does not exist")
-            || message.contains("unknown")))
-        || message.contains("no rollout found for thread id")
 }
 
 #[derive(Debug, Clone, Copy)]

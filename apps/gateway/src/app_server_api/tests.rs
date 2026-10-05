@@ -6,7 +6,7 @@ use std::sync::{
 use async_trait::async_trait;
 
 use crate::{
-    app_server::AppServer,
+    app_server::{AppServer, JsonRpcError},
     error::{ApiError, ApiResult},
 };
 
@@ -53,7 +53,7 @@ impl AppServer for RecordingServer {
 #[derive(Default)]
 struct NotMaterializedHistoryServer {
     requests: StdMutex<Vec<(String, Value)>>,
-    turns_error: Option<&'static str>,
+    turns_error: Option<JsonRpcError>,
 }
 
 #[async_trait]
@@ -72,9 +72,11 @@ impl AppServer for NotMaterializedHistoryServer {
             .unwrap()
             .push((method.to_string(), params));
         if method == "thread/turns/list" {
-            return Err(ApiError::BadGateway(
-                    self.turns_error.unwrap_or("app-server error -32600: thread thread-1 is not materialized yet; thread/turns/list is unavailable before first user message").to_string(),
-                ));
+            return Err(ApiError::NativeRpc(self.turns_error.clone().unwrap_or(JsonRpcError {
+                code: -32600,
+                message: "thread thread-1 is not materialized yet; thread/turns/list is unavailable before first user message".into(),
+                data: None,
+            })));
         }
         Ok(json!({
             "thread": {
@@ -541,7 +543,11 @@ async fn recent_history_before_first_user_message_returns_an_empty_native_window
 #[tokio::test]
 async fn unsupported_native_history_is_not_misreported_as_an_empty_thread() {
     let server = Arc::new(NotMaterializedHistoryServer {
-        turns_error: Some("app-server error -32601: list_turns is not supported yet"),
+        turns_error: Some(JsonRpcError {
+            code: -32601,
+            message: "list_turns is not supported yet".into(),
+            data: None,
+        }),
         ..Default::default()
     });
     let client = CodexClient::new(server.clone());
@@ -552,9 +558,53 @@ async fn unsupported_native_history_is_not_misreported_as_an_empty_thread() {
         .unwrap_err();
 
     assert!(
-        matches!(error, ApiError::BadGateway(message) if message.contains("list_turns is not supported yet"))
+        matches!(error, ApiError::NativeRpc(error) if error.code == -32601 && error.message == "list_turns is not supported yet")
     );
     assert_eq!(server.requests.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn unrelated_native_failures_cannot_prove_empty_history() {
+    let expected = "thread thread-1 is not materialized yet; thread/turns/list is unavailable before first user message";
+    for (code, message) in [
+        (-32603, expected.to_owned()),
+        (-32600, expected.replace("thread-1", "thread-other")),
+        (-32600, format!("unrelated failure: {expected}")),
+        (-32600, format!("{expected}; native history read failed")),
+    ] {
+        let server = Arc::new(NotMaterializedHistoryServer {
+            turns_error: Some(JsonRpcError {
+                code,
+                message: message.clone(),
+                data: Some(json!({"diagnostic":"retained"})),
+            }),
+            ..Default::default()
+        });
+        let client = CodexClient::new(server);
+        let error = client
+            .thread_read_history_window("thread-1".into(), 50)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, ApiError::NativeRpc(error) if error.code == code && error.message == message && error.data.is_some())
+        );
+    }
+}
+
+#[test]
+fn rendered_gateway_errors_do_not_authorize_native_recovery() {
+    let error = ApiError::BadGateway("app-server error -32600: thread not found: thread-1".into());
+    assert!(!super::client::is_thread_not_loaded_error(
+        &error, "thread-1"
+    ));
+    let native = ApiError::NativeRpc(JsonRpcError {
+        code: -32600,
+        message: "thread not found: thread-1".into(),
+        data: Some(json!({"detail": "native context"})),
+    });
+    assert!(super::client::is_thread_not_loaded_error(
+        &native, "thread-1"
+    ));
 }
 
 #[test]

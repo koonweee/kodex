@@ -20,7 +20,7 @@ use tokio::{
 
 use crate::{
     config::CodexConfig,
-    error::{ApiError, ApiResult},
+    error::{ApiError, ApiResult, NativeConfigWriteErrorCode},
     schema::{
         client_request_message, initialized_notification_message, validate_client_notification,
         validate_client_request,
@@ -47,6 +47,15 @@ pub struct JsonRpcError {
     pub message: String,
     #[serde(default)]
     pub data: Option<Value>,
+}
+
+impl JsonRpcError {
+    pub(crate) fn config_write_error_code(&self) -> Option<NativeConfigWriteErrorCode> {
+        self.data
+            .as_ref()
+            .and_then(|data| data.get("config_write_error_code"))
+            .and_then(|code| serde_json::from_value(code.clone()).ok())
+    }
 }
 
 #[async_trait]
@@ -298,10 +307,6 @@ impl AppServer for JsonRpcAppServer {
                 log_app_server_timing(method, started_at, Some(serialized_json_len(&value)), "ok");
                 Ok(value)
             }
-            Ok(Err(error)) if error.code == -32001 => {
-                log_app_server_timing(method, started_at, None, "retryable");
-                Err(ApiError::Retryable(error.message))
-            }
             Ok(Err(error)) => {
                 let error = api_error_from_rpc(error);
                 log_app_server_timing(method, started_at, None, api_error_classification(&error));
@@ -360,25 +365,7 @@ fn serialized_json_len(value: &Value) -> usize {
 }
 
 fn api_error_from_rpc(error: JsonRpcError) -> ApiError {
-    if let Some(code) = error
-        .data
-        .as_ref()
-        .and_then(|data| data.get("config_write_error_code"))
-        .and_then(|code| serde_json::from_value(code.clone()).ok())
-    {
-        // Keep only the known native code. Native validation errors and data can
-        // include submitted secret values, so they are not public error text.
-        return ApiError::NativeConfigWrite(code);
-    }
-    let message = if let Some(data) = error.data {
-        format!(
-            "app-server error {}: {}; data: {}",
-            error.code, error.message, data
-        )
-    } else {
-        format!("app-server error {}: {}", error.code, error.message)
-    };
-    ApiError::BadGateway(message)
+    ApiError::NativeRpc(error)
 }
 
 fn api_error_classification(error: &ApiError) -> &'static str {
@@ -390,7 +377,11 @@ fn api_error_classification(error: &ApiError) -> &'static str {
         ApiError::NativeConfigWrite(_) => "config_write_error",
         ApiError::AppServerUnavailable => "unavailable",
         ApiError::Retryable(_) => "retryable",
-        ApiError::BadGateway(_) => "bad_gateway",
+        ApiError::NativeRpc(error) if error.code == -32001 => "retryable",
+        ApiError::NativeRpc(error) if error.config_write_error_code().is_some() => {
+            "config_write_error"
+        }
+        ApiError::NativeRpc(_) | ApiError::BadGateway(_) => "bad_gateway",
         ApiError::Store(_) => "store_error",
         ApiError::Io(_) => "io_error",
         ApiError::Other(_) => "internal_error",
@@ -623,15 +614,51 @@ pub mod tests {
     }
 
     #[test]
+    fn native_rpc_error_retains_structured_fields_internally() {
+        let error = api_error_from_rpc(JsonRpcError {
+            code: -32600,
+            message: "thread not found: thread-1".into(),
+            data: Some(json!({"detail": "native diagnostic"})),
+        });
+        let ApiError::NativeRpc(error) = error else {
+            panic!("flattened native error: {error:?}")
+        };
+        assert_eq!(error.code, -32600);
+        assert_eq!(error.message, "thread not found: thread-1");
+        assert_eq!(error.data, Some(json!({"detail": "native diagnostic"})));
+    }
+
+    #[test]
+    fn native_overload_retains_fields_and_public_retryable_status() {
+        let error = api_error_from_rpc(JsonRpcError {
+            code: -32001,
+            message: "server overloaded".into(),
+            data: Some(json!({"wait": 5})),
+        });
+        assert!(
+            matches!(&error, ApiError::NativeRpc(native) if native.code == -32001 && native.data == Some(json!({"wait": 5})))
+        );
+        assert_eq!(
+            error.status_code(),
+            axum::http::StatusCode::TOO_MANY_REQUESTS
+        );
+        assert_eq!(error.body().code, "app_server_retryable");
+        assert!(error.body().retryable);
+    }
+
+    #[test]
     fn native_config_version_conflict_is_typed_and_does_not_expose_raw_error_data() {
         let error = api_error_from_rpc(JsonRpcError {
             code: -32600,
-            message: "Configuration was modified since last read. Fetch latest version and retry."
+            message: "Configuration was modified since last read. Submitted value: secret-token."
                 .into(),
             data: Some(
                 json!({"config_write_error_code":"configVersionConflict","untrusted":"secret-token"}),
             ),
         });
+        assert!(
+            matches!(&error, ApiError::NativeRpc(native) if native.code == -32600 && native.data.as_ref().unwrap()["untrusted"] == "secret-token")
+        );
         assert_eq!(error.status_code(), axum::http::StatusCode::CONFLICT);
         let body = serde_json::to_value(error.body()).unwrap();
         assert_eq!(body["code"], "config_version_conflict");
@@ -641,6 +668,7 @@ pub mod tests {
         );
         assert_eq!(body["retryable"], false);
         assert!(!body.to_string().contains("secret-token"));
+        assert!(!error.to_string().contains("secret-token"));
     }
 
     #[test]

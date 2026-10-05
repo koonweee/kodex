@@ -324,7 +324,7 @@ async fn active_native_attach_uses_stable_page_ids_and_keeps_live_receipt_after_
 
 struct RejectedResumeNative {
     requests: Mutex<Vec<(String, Value)>>,
-    resume_error: String,
+    resume_error: crate::app_server::JsonRpcError,
     readable: bool,
 }
 
@@ -341,18 +341,18 @@ impl AppServer for RejectedResumeNative {
     async fn request(&self, method: &str, params: Value) -> ApiResult<Value> {
         self.requests.lock().unwrap().push((method.into(), params));
         match method {
-            "thread/resume" => Err(ApiError::BadGateway(self.resume_error.clone())),
+            "thread/resume" => Err(ApiError::NativeRpc(self.resume_error.clone())),
             "thread/read" if self.readable => {
                 let mut response = resume_response(false, false);
                 response.as_object_mut().unwrap().remove("initialTurnsPage");
                 Ok(json!({"thread": response["thread"]}))
             }
-            "thread/read" => Err(ApiError::BadGateway(format!(
-                "app-server error -32600: thread not found: {THREAD}"
-            ))),
-            "thread/turns/list" => Err(ApiError::BadGateway(format!(
-                "app-server error -32600: thread {THREAD} is not materialized yet; thread/turns/list is unavailable before first user message"
-            ))),
+            "thread/read" => Err(ApiError::NativeRpc(crate::app_server::JsonRpcError {
+                code: -32600, message: format!("thread not found: {THREAD}"), data: None,
+            })),
+            "thread/turns/list" => Err(ApiError::NativeRpc(crate::app_server::JsonRpcError {
+                code: -32600, message: format!("thread {THREAD} is not materialized yet; thread/turns/list is unavailable before first user message"), data: None,
+            })),
             _ => Err(ApiError::BadGateway(format!("unexpected native call: {method}"))),
         }
     }
@@ -363,7 +363,7 @@ impl AppServer for RejectedResumeNative {
 }
 
 async fn rejected_resume_state(
-    error: String,
+    error: crate::app_server::JsonRpcError,
     readable: bool,
 ) -> (AppState, Arc<RejectedResumeNative>) {
     let native = Arc::new(RejectedResumeNative {
@@ -382,7 +382,11 @@ async fn rejected_resume_state(
 #[tokio::test]
 async fn native_attach_reads_fresh_shell_only_after_exact_native_missing_rollout_rejection() {
     let (state, native) = rejected_resume_state(
-        format!("app-server error -32600: no rollout found for thread id {THREAD}"),
+        crate::app_server::JsonRpcError {
+            code: -32600,
+            message: format!("no rollout found for thread id {THREAD}"),
+            data: Some(json!({"detail": "not materialized"})),
+        },
         true,
     )
     .await;
@@ -425,7 +429,11 @@ async fn native_attach_reads_fresh_shell_only_after_exact_native_missing_rollout
 #[tokio::test]
 async fn native_attach_cannot_fabricate_or_import_an_unknown_thread_after_missing_rollout() {
     let (state, native) = rejected_resume_state(
-        format!("app-server error -32600: no rollout found for thread id {THREAD}"),
+        crate::app_server::JsonRpcError {
+            code: -32600,
+            message: format!("no rollout found for thread id {THREAD}"),
+            data: Some(json!({"detail": "not materialized"})),
+        },
         false,
     )
     .await;
@@ -452,17 +460,36 @@ async fn native_attach_cannot_fabricate_or_import_an_unknown_thread_after_missin
 #[tokio::test]
 async fn native_attach_does_not_hide_other_native_errors_with_history_fallback() {
     for error in [
-        "app-server error -32601: paginated_threads is not supported yet".to_string(),
-        format!("app-server error -32600: no rollout found for thread id {THREAD}-other"),
-        format!("app-server error -32000: upstream reported -32600: no rollout found for thread id {THREAD}"),
+        crate::app_server::JsonRpcError {
+            code: -32601,
+            message: "paginated_threads is not supported yet".into(),
+            data: None,
+        },
+        crate::app_server::JsonRpcError {
+            code: -32600,
+            message: format!("no rollout found for thread id {THREAD}-other"),
+            data: None,
+        },
+        crate::app_server::JsonRpcError {
+            code: -32000,
+            message: format!("upstream reported -32600: no rollout found for thread id {THREAD}"),
+            data: None,
+        },
     ] {
         let (state, native) = rejected_resume_state(error.clone(), true).await;
         let (status, body) = attach(&state).await;
-        assert_eq!(status, StatusCode::BAD_GATEWAY, "{error}: {body}");
-        assert_eq!(body["message"], error);
+        assert_eq!(status, StatusCode::BAD_GATEWAY, "{error:?}: {body}");
+        assert_eq!(
+            body["message"],
+            format!("app-server error {}: {}", error.code, error.message)
+        );
         assert!(state.thread_views.live_state(THREAD).await.is_none());
         let calls = native.requests.lock().unwrap();
-        assert_eq!(calls.len(), 1, "an unrelated rejection must not read or retry: {calls:?}");
+        assert_eq!(
+            calls.len(),
+            1,
+            "an unrelated rejection must not read or retry: {calls:?}"
+        );
         assert_eq!(calls[0].0, "thread/resume");
     }
 }

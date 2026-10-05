@@ -251,7 +251,9 @@ pub(crate) async fn active_turn(
     {
         Ok(page) => page,
         Err(error)
-            if app_server_api::is_thread_not_materialized_before_first_user_message(&error) =>
+            if app_server_api::is_thread_not_materialized_before_first_user_message(
+                &error, thread_id,
+            ) =>
         {
             return Ok(None)
         }

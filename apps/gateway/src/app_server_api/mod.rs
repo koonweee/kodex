@@ -21,8 +21,11 @@ mod queue_tests;
 mod subagents;
 
 mod timeline;
-pub(crate) use client::is_thread_not_materialized_before_first_user_message;
 pub use client::{client, CodexClient};
+pub(crate) use client::{
+    is_thread_not_loaded_error, is_thread_not_materialized_before_first_user_message,
+    is_thread_read_missing_error,
+};
 pub use config::*;
 pub use items::{ThreadItemEntry, ThreadItemsListPage};
 pub(crate) use mcp_apps::mcp_result_text;

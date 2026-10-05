@@ -7,8 +7,10 @@ use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use crate::{
     api::AppState,
-    app_server_api::{self, ThreadLiveState, TimelineFileAttachment, UserInput},
-    error::ApiResult,
+    app_server_api::{
+        self, SortDirection, ThreadStatus, ThreadTurnItemsView, TimelineFileAttachment, UserInput,
+    },
+    error::{ApiError, ApiResult},
     events, thread_view,
 };
 
@@ -34,56 +36,54 @@ pub async fn refreshed_active_turn_id(
     state: &AppState,
     thread_id: &str,
 ) -> ApiResult<Option<String>> {
-    let revision = state.store.latest_event_seq().await?;
-    let snapshot = match app_server_api::client(&state.app_server)
-        .thread_read(thread_id.to_string())
+    let client = app_server_api::client(&state.app_server);
+    let thread = client.thread_read_summary(thread_id.to_string()).await?;
+    if thread.id != thread_id {
+        return Err(ApiError::BadGateway(
+            "native Stop metadata returned a different thread".into(),
+        ));
+    }
+    if thread.status != ThreadStatus::Active {
+        return Ok(None);
+    }
+    // Only the latest native header is needed to select Stop's target. A
+    // header is not a transcript snapshot and must never replace live rows.
+    let page = match client
+        .thread_turns_list_page(
+            thread_id.to_string(),
+            None,
+            SortDirection::Desc,
+            ThreadTurnItemsView::NotLoaded,
+            Some(1),
+        )
         .await
     {
-        Ok(snapshot) => snapshot,
+        Ok(page) => page,
         Err(error)
-            if app_server_api::is_thread_not_materialized_before_first_user_message(&error) =>
+            if app_server_api::is_thread_not_materialized_before_first_user_message(
+                &error, thread_id,
+            ) =>
         {
             return Ok(None);
         }
         Err(error) => return Err(error),
     };
-    let active_turn_id = snapshot.timeline.active_turn_id.clone();
-    let timeline = state
-        .thread_views
-        .refresh_from_turns(thread_id, &snapshot.turns, revision)
-        .await?;
-    if active_turn_id.is_none() && timeline.active_turn_id.is_some() {
-        record_idle_after_missing_active_turn(state, thread_id).await?;
+    let turn = page.data.first().ok_or_else(|| {
+        ApiError::BadGateway(
+            "native Stop metadata is active but the turn header is unavailable".into(),
+        )
+    })?;
+    match turn
+        .raw_payload
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+    {
+        Some("inProgress") => Ok(Some(turn.id.clone())),
+        Some("completed" | "interrupted" | "failed") => Ok(None),
+        _ => Err(ApiError::BadGateway(
+            "native Stop header has a missing or invalid required status".into(),
+        )),
     }
-    Ok(active_turn_id)
-}
-
-pub async fn record_idle_after_missing_active_turn(
-    state: &AppState,
-    thread_id: &str,
-) -> ApiResult<()> {
-    thread_view::record_thread_live_state(
-        &state.thread_views,
-        thread_id,
-        ThreadLiveState::Idle,
-        async {
-            Ok(state
-                .store
-                .append_event(crate::store::NewEvent {
-                    project_id: None,
-                    thread_id: Some(thread_id.to_string()),
-                    turn_id: None,
-                    item_id: None,
-                    kind: crate::events_replay::THREAD_VIEW_CURSOR_KIND.to_string(),
-                    codex_method: None,
-                    payload: serde_json::json!({"reason": "missing_active_turn"}),
-                })
-                .await?
-                .seq)
-        },
-    )
-    .await?;
-    Ok(())
 }
 
 pub async fn record_pending_user_projection(

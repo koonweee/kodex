@@ -141,7 +141,9 @@ impl CodexClient {
             .await
         {
             Ok(page) => page,
-            Err(error) if is_thread_history_not_materialized_error(&error) => {
+            Err(error)
+                if is_thread_not_materialized_before_first_user_message(&error, &thread_id) =>
+            {
                 ThreadTurnsListPage::empty()
             }
             Err(error) => return Err(error),
@@ -168,9 +170,7 @@ impl CodexClient {
             // The pinned native runtime cannot resume a fresh loaded shell
             // before persistence. A native read must independently prove that
             // it exists; never fabricate an empty view from this rejection.
-            Err(ApiError::BadGateway(message)) if message.split("; data: ").next() == Some(
-                format!("app-server error -32600: no rollout found for thread id {thread_id}").as_str()
-            ) => return self.thread_read_history_window(thread_id, limit).await,
+            Err(error) if is_thread_rollout_missing_error(&error, &thread_id) => return self.thread_read_history_window(thread_id, limit).await,
             Err(error) => return Err(error),
         };
         let mut page = ThreadTurnsListPage::from_payload(
@@ -194,7 +194,9 @@ impl CodexClient {
                 .await
             {
                 Ok(page) => page,
-                Err(error) if is_thread_history_not_materialized_error(&error) => {
+                Err(error)
+                    if is_thread_not_materialized_before_first_user_message(&error, &thread_id) =>
+                {
                     ThreadTurnsListPage::empty()
                 }
                 Err(error) => return Err(error),
@@ -252,7 +254,7 @@ impl CodexClient {
     pub async fn thread_completion_head(&self, thread_id: String) -> ApiResult<Vec<String>> {
         let page = match self
             .thread_turns_list_page(
-                thread_id,
+                thread_id.clone(),
                 None,
                 SortDirection::Desc,
                 ThreadTurnItemsView::NotLoaded,
@@ -261,7 +263,11 @@ impl CodexClient {
             .await
         {
             Ok(page) => page,
-            Err(error) if is_thread_history_not_materialized_error(&error) => return Ok(Vec::new()),
+            Err(error)
+                if is_thread_not_materialized_before_first_user_message(&error, &thread_id) =>
+            {
+                return Ok(Vec::new())
+            }
             Err(error) => return Err(error),
         };
         super::validate_native_next_cursor(&page.raw_payload)?;
@@ -687,26 +693,38 @@ fn reject_external_thread_import(payload: &Value) -> ApiResult<()> {
     Ok(())
 }
 
-fn is_thread_history_not_materialized_error(error: &ApiError) -> bool {
-    let Some(normalized) = normalized_bad_gateway_message(error) else {
-        return false;
-    };
-    is_thread_not_materialized_before_first_user_message(error)
-        && normalized.contains("thread/turns/list")
+// These exact messages belong to the pinned 0.160.0 runtime. The generic
+// invalid-request code also covers unrelated failures and is never sufficient
+// evidence to retry input, activate a chat, or fabricate empty history.
+pub(crate) fn is_thread_not_loaded_error(error: &ApiError, thread_id: &str) -> bool {
+    native_invalid_request_matches(error, &format!("thread not found: {thread_id}"))
 }
 
-pub(crate) fn is_thread_not_materialized_before_first_user_message(error: &ApiError) -> bool {
-    let Some(normalized) = normalized_bad_gateway_message(error) else {
-        return false;
-    };
-    normalized.contains("not materialized yet") && normalized.contains("before first user message")
+pub(crate) fn is_thread_read_missing_error(error: &ApiError, thread_id: &str) -> bool {
+    native_invalid_request_matches(error, &format!("thread not loaded: {thread_id}"))
+        || is_thread_not_loaded_error(error, thread_id)
+        || is_thread_rollout_missing_error(error, thread_id)
 }
 
-fn normalized_bad_gateway_message(error: &ApiError) -> Option<String> {
-    let ApiError::BadGateway(message) = error else {
-        return None;
-    };
-    Some(message.to_ascii_lowercase())
+fn is_thread_rollout_missing_error(error: &ApiError, thread_id: &str) -> bool {
+    native_invalid_request_matches(
+        error,
+        &format!("no rollout found for thread id {thread_id}"),
+    )
+}
+
+pub(crate) fn is_thread_not_materialized_before_first_user_message(
+    error: &ApiError,
+    thread_id: &str,
+) -> bool {
+    native_invalid_request_matches(error, &format!(
+        "thread {thread_id} is not materialized yet; thread/turns/list is unavailable before first user message"
+    ))
+}
+
+fn native_invalid_request_matches(error: &ApiError, expected_message: &str) -> bool {
+    matches!(error, ApiError::NativeRpc(error)
+        if error.code == -32600 && error.message == expected_message)
 }
 
 pub fn client(app_server: &DynAppServer) -> CodexClient {
