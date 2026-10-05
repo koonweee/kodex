@@ -7,6 +7,8 @@ const firstQuote = "Keep the gateway authoritative.";
 const secondQuote = "Use a bounded native read.";
 const discardedQuote = "Preserve browser drafts.";
 const assistantText = `${firstQuote}\n\n${secondQuote}\n\n${discardedQuote}`;
+const firstComment = 'Explain the "source of truth".';
+const secondComment = "Show how the read stays bounded.";
 
 for (const shape of [
   { name: "desktop", width: 1280, hasTouch: false, isMobile: false },
@@ -41,13 +43,13 @@ for (const shape of [
         await expect(second.getByRole("button", { name: /^\d+ annotations?$/ })).toHaveCount(0);
         const comment = activePane(first).getByRole("textbox", { name: "Annotation 1 comment", exact: true });
         await click(comment, shape.hasTouch);
-        await comment.fill('Explain the "source of truth".');
+        await comment.fill(firstComment);
         await expect(comment).toBeFocused();
         if (shape.hasTouch) {
           const originalComment = await comment.elementHandle();
           await first.setViewportSize({ width: shape.width, height: 420 });
           await expect(comment).toBeFocused();
-          await expect(comment).toHaveValue('Explain the "source of truth".');
+          await expect(comment).toHaveValue(firstComment);
           await expect(comment).toBeInViewport();
           expect(await originalComment!.evaluate((element) => element.isConnected && element === document.activeElement)).toBe(true);
           await first.screenshot({ path: test.info().outputPath("annotation-keyboard-viewport.png") });
@@ -62,8 +64,10 @@ for (const shape of [
         await expect(activePane(first).locator("blockquote")).toHaveText(firstQuote);
         await addExcerpt(first, secondQuote, shape.hasTouch);
         await expect(activePane(first).locator("blockquote")).toHaveText([firstQuote, secondQuote]);
-        await expect(activePane(first).getByRole("textbox", { name: "Annotation 1 comment", exact: true })).toHaveValue('Explain the "source of truth".');
-        await expect(activePane(first).getByRole("textbox", { name: "Annotation 2 comment", exact: true })).toHaveValue("");
+        await expect(activePane(first).getByRole("textbox", { name: "Annotation 1 comment", exact: true })).toHaveValue(firstComment);
+        const secondCommentInput = activePane(first).getByRole("textbox", { name: "Annotation 2 comment", exact: true });
+        await expect(secondCommentInput).toHaveValue("");
+        await secondCommentInput.fill(secondComment);
         await click(activePane(first).getByRole("button", { name: "2 annotations", exact: true }), shape.hasTouch);
         await expect(activePane(first).getByRole("textbox", { name: "Annotation 1 comment", exact: true })).toBeHidden();
         await click(activePane(first).getByRole("button", { name: "2 annotations", exact: true }), shape.hasTouch);
@@ -80,8 +84,9 @@ for (const shape of [
         const submittedText = [
           "Review these.", "", "<response_annotations>", "<annotation1>",
           `Assistant text: ${JSON.stringify(firstQuote)}`,
-          `User annotation: ${JSON.stringify('Explain the "source of truth".')}`,
+          `User annotation: ${JSON.stringify(firstComment)}`,
           "</annotation1>", "<annotation2>", `Assistant text: ${JSON.stringify(secondQuote)}`,
+          `User annotation: ${JSON.stringify(secondComment)}`,
           "</annotation2>", "</response_annotations>",
         ].join("\n");
         const submitted = fixture.requests.find((request) => request.key === inputKey)!.body as { input: unknown; clientUserMessageId: string };
@@ -96,13 +101,14 @@ for (const shape of [
           turns: [{ id: "turn-answer", status: "completed" }, { id: "turn-1", status: "inProgress" }],
         });
         for (const page of [first, second]) {
-          const userBubble = activePane(page).locator(".kodex-user-message-bubble").filter({ hasText: "Review these." });
-          await expect(userBubble).toContainText(`Assistant text: ${JSON.stringify(firstQuote)}`);
-          await expect(userBubble).toContainText(`Assistant text: ${JSON.stringify(secondQuote)}`);
-          await expect(userBubble).toContainText(`User annotation: ${JSON.stringify('Explain the "source of truth".')}`);
+          await expectSentAnnotations(page, shape.hasTouch);
           await expect(page.getByRole("button", { name: /^\d+ annotations?$/ })).toHaveCount(0);
         }
+        await expectReadableCopy(first, shape.hasTouch);
         await second.screenshot({ path: test.info().outputPath("annotation-canonical-history.png") });
+        await second.reload();
+        await expectSentAnnotations(second, shape.hasTouch);
+        await expect(second.getByRole("button", { name: /^\d+ annotations?$/ })).toHaveCount(0);
       } finally { await fixture.close(); }
       expect(fixture.unexpected).toEqual([]);
       expect(fixture.errors).toEqual([]);
@@ -146,6 +152,55 @@ function activePane(page: Page) { return page.locator('.kodex-thread-pane[data-w
 function answer(page: Page) { return activePane(page).locator(".kodex-assistant-markdown"); }
 function composer(page: Page) { return activePane(page).getByLabel("Message composer", { exact: true }); }
 async function click(locator: Locator, touch: boolean) { if (touch) await locator.tap(); else await locator.click(); }
+async function expectSentAnnotations(page: Page, touch: boolean) {
+  const bubble = activePane(page).locator(".kodex-user-message-bubble").filter({ hasText: "Review these." });
+  await expect(bubble).toHaveCount(1);
+  await expect(bubble.getByText("Review these.", { exact: true })).toBeVisible();
+  await expect(bubble).not.toContainText("<response_annotations>");
+  await expect(bubble).not.toContainText("Assistant text:");
+  await expect(bubble).not.toContainText("User annotation:");
+  await expect(bubble.getByRole("group", { name: /^Annotation \d+$/ })).toHaveCount(2);
+  const first = bubble.getByRole("group", { name: "Annotation 1", exact: true });
+  const second = bubble.getByRole("group", { name: "Annotation 2", exact: true });
+  const firstToggle = first.getByLabel("Quoted from assistant, annotation 1", { exact: true });
+  const secondToggle = second.getByLabel("Quoted from assistant, annotation 2", { exact: true });
+  await expect(firstToggle).toHaveText("Quoted from assistant");
+  await expect(secondToggle).toHaveText("Quoted from assistant");
+  await expect(first.locator("blockquote")).toHaveText(firstQuote);
+  await expect(second.locator("blockquote")).toHaveText(secondQuote);
+  await expect(first.locator("blockquote")).toBeVisible();
+  await expect(second.locator("blockquote")).toBeVisible();
+  await expect(first.getByText(firstComment, { exact: true })).toBeVisible();
+  await expect(second.getByText(secondComment, { exact: true })).toBeVisible();
+
+  await click(firstToggle, touch);
+  await expect(first.locator("blockquote")).toBeHidden();
+  await expect(second.locator("blockquote")).toBeVisible();
+  await expect(first.getByText(firstComment, { exact: true })).toBeVisible();
+  await click(secondToggle, touch);
+  await expect(second.locator("blockquote")).toBeHidden();
+  await expect(second.getByText(secondComment, { exact: true })).toBeVisible();
+  await click(firstToggle, touch);
+  await expect(first.locator("blockquote")).toBeVisible();
+  await expect(second.locator("blockquote")).toBeHidden();
+  await click(secondToggle, touch);
+  await expect(second.locator("blockquote")).toBeVisible();
+}
+async function expectReadableCopy(page: Page, touch: boolean) {
+  // Observe the clipboard API payload without replacing the user's clipboard.
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+      writeText: async (text: string) => { document.documentElement.dataset.copiedMessage = text; },
+    } });
+  });
+  const row = activePane(page).locator(".kodex-user-message-row").filter({ hasText: "Review these." });
+  if (!touch) await row.hover();
+  await click(row.getByRole("button", { name: "Copy message", exact: true }), touch);
+  await expect(row.getByRole("button", { name: "Copied message", exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.copiedMessage)).toBe([
+    "Review these.", "", `> ${firstQuote}`, "", firstComment, "", `> ${secondQuote}`, "", secondComment,
+  ].join("\n"));
+}
 async function collapseTouchComposer(page: Page, touch: boolean) {
   const collapse = activePane(page).getByRole("button", { name: "Collapse composer", exact: true });
   if (touch && await collapse.isVisible()) await collapse.tap();

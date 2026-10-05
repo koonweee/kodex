@@ -1,0 +1,64 @@
+.kodex-user-annotations {
+  display: grid;
+  gap: 18px;
+  padding: 4px 2px;
+  white-space: normal;
+}
+
+.kodex-user-annotation-main {
+  padding-bottom: 14px;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  white-space: pre-wrap;
+}
+
+.kodex-user-annotation-quote {
+  border-radius: var(--kodex-radius-md);
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--kodex-bg-user-bubble) 88%, var(--kodex-bg-thread-surface));
+  color: var(--kodex-text-on-accent);
+}
+
+.kodex-user-annotation-quote summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+  list-style: none;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.kodex-user-annotation-quote summary::-webkit-details-marker {
+  display: none;
+}
+
+.kodex-user-annotation-quote summary span {
+  flex: 1;
+}
+
+.kodex-user-annotation-quote summary svg {
+  flex: none;
+}
+
+.kodex-user-annotation-quote[open] .kodex-user-annotation-chevron {
+  transform: rotate(180deg);
+}
+
+.kodex-user-annotation-quote blockquote {
+  margin: 8px 0 2px;
+  padding-left: 10px;
+  border-left: 2px solid color-mix(in srgb, currentColor 45%, transparent);
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.kodex-user-annotation-comment {
+  margin: 10px 2px 2px;
+  white-space: pre-wrap;
+}
+
+@media (any-pointer: coarse) {
+  .kodex-user-annotation-quote summary {
+    min-height: 44px;
+  }
+}
