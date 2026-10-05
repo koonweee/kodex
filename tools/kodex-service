@@ -4,15 +4,18 @@ import argparse
 import contextlib
 import fcntl
 import json
+import hashlib
 import os
 from pathlib import Path
 import plistlib
+import platform
 import re
 import shutil
 import socket
 import subprocess
 import sys
 import tempfile
+import tarfile
 import time
 import urllib.request
 import uuid
@@ -48,21 +51,72 @@ def check_port(port):
         ) from error
 
 
-def package_native(binary, stage):
-    # Signed macOS app executables may require their bundle to run after relocation.
-    binary = binary.resolve(strict=True)
-    bundle = next((parent for parent in binary.parents if parent.suffix == '.app'), None)
-    if bundle:
-        run(['/usr/bin/ditto', bundle, stage / 'native.app'])
-        (stage / 'codex').symlink_to(Path('native.app') / binary.relative_to(bundle))
-    else:
-        shutil.copy2(binary, stage / 'codex')
+# Official OpenAI release asset digests, deliberately pinned alongside the schema.
+# Review the new release's complete package and digests before adding a version.
+OFFICIAL_PACKAGE_SHA256 = {
+    '0.160.0': {
+        'aarch64-apple-darwin': '007df41b607dbbc8d204b9746ce7fed2d4ce6c813f44c32ceee54175ca796525',
+        'x86_64-apple-darwin': '4d50514b2d8acd81ca8cfee55b667b3dc4f7681b65bf3299ff06b11a064f8861',
+    },
+}
+
+
+def native_environment(home):
+    env = {key: os.environ[key] for key in ('HOME', 'PATH', 'USER', 'TMPDIR') if key in os.environ}
+    env['CODEX_HOME'] = str(home)
+    return env
+
+
+def acquire_native(version, stage):
+    architecture = {'arm64': 'aarch64', 'aarch64': 'aarch64', 'x86_64': 'x86_64'}.get(platform.machine())
+    target = f'{architecture}-apple-darwin'
+    digest = OFFICIAL_PACKAGE_SHA256.get(version, {}).get(target)
+    if not digest:
+        raise ServiceError(f'No verified upstream package pinned for Codex {version} on {platform.machine()}')
+    asset = f'codex-package-{target}.tar.gz'
+    url = f'https://github.com/openai/codex/releases/download/rust-v{version}/{asset}'
+    archive = stage / '.native.tar.gz'
+    actual = hashlib.sha256()
+    try:
+        with urllib.request.urlopen(url, timeout=30) as response, archive.open('wb') as output:
+            for chunk in iter(lambda: response.read(1024 * 1024), b''):
+                actual.update(chunk)
+                output.write(chunk)
+        if actual.hexdigest() != digest:
+            raise ServiceError(f'Codex download checksum mismatch for {asset}; service unchanged')
+        native = stage / 'native'
+        with tarfile.open(archive) as package:
+            members = package.getmembers()
+            if any(Path(member.name).is_absolute() or '..' in Path(member.name).parts
+                   or not (member.isfile() or member.isdir()) for member in members):
+                raise ServiceError('Unsupported Codex archive layout; service unchanged')
+            package.extractall(native, members=members)
+    except OSError as error:
+        raise ServiceError(f'Could not acquire pinned Codex {version}: {error}; service unchanged') from error
+    finally:
+        archive.unlink(missing_ok=True)
+    metadata = json.loads((native / 'codex-package.json').read_text())
+    if (metadata.get('layoutVersion') != 1 or metadata.get('version') != version
+            or metadata.get('target') != target or metadata.get('variant') != 'codex'
+            or metadata.get('entrypoint') != 'bin/codex'
+            or metadata.get('resourcesDir') != 'codex-resources' or metadata.get('pathDir') != 'codex-path'):
+        raise ServiceError('Unsupported pinned Codex package metadata; service unchanged')
+    for name in ('bin/codex', 'bin/codex-code-mode-host', 'codex-path/rg', 'codex-resources/zsh/bin/zsh'):
+        path = native / name
+        if not path.is_file() or not os.access(path, os.X_OK):
+            raise ServiceError(f'Pinned Codex package missing executable {name}; service unchanged')
+    if native_version(native / 'bin/codex') != version:
+        raise ServiceError('Codex executable version mismatch; service unchanged')
+    with tempfile.TemporaryDirectory(prefix='kodex-host-check-') as home:
+        run([native / 'bin/codex-code-mode-host', '--help'], capture_output=True,
+            text=True, timeout=15, env=native_environment(home))
+    (stage / 'codex').symlink_to('native/bin/codex')
+    return {'asset': asset, 'sha256': digest, 'url': url}
 
 
 def native_version(binary):
     with tempfile.TemporaryDirectory(prefix='kodex-version-') as home:
-        env = {key: os.environ[key] for key in ('HOME', 'PATH', 'USER', 'TMPDIR') if key in os.environ}
-        env['CODEX_HOME'] = home
+        env = native_environment(home)
         result = run([binary, '--version'], capture_output=True, text=True, timeout=15, env=env)
     match = re.fullmatch(r'codex-cli (\S+)\s*', result.stdout)
     if not match:
@@ -81,13 +135,12 @@ class Service:
 
     def config(self):
         if not self.config_path.exists():
-            raise ServiceError('Not installed. Run install --codex-binary /absolute/path/to/codex')
+            raise ServiceError('Not installed. Run install --repo /absolute/path/to/kodex')
         config = json.loads(self.config_path.read_text())
         if not isinstance(config['port'], int) or not 1024 <= config['port'] <= 65535:
             raise ServiceError('port must be an integer between 1024 and 65535')
-        for field in ('data_dir', 'codex_binary'):
-            if not Path(config[field]).is_absolute():
-                raise ServiceError(f'{field} must be an absolute path')
+        if not Path(config['data_dir']).is_absolute():
+            raise ServiceError('data_dir must be an absolute path')
         return config
 
     def environment(self, release):
@@ -228,17 +281,12 @@ class Service:
         repo = repo.resolve(strict=True)
         source = (repo / 'apps/gateway/src/schema.rs').read_text()
         version = re.search(r'APP_SERVER_SCHEMA_VERSION: &str = "([^"]+)"', source)[1]
-        binary = Path(self.config()['codex_binary'])
-        if native_version(binary) != version:
-            raise ServiceError(f'Codex version mismatch: checkout requires {version}; service unchanged')
         releases = self.root / 'releases'
         releases.mkdir(exist_ok=True)
         stage = Path(tempfile.mkdtemp(prefix='.stage-', dir=releases))
         try:
+            native = acquire_native(version, stage)
             shutil.copy2(repo / 'tools/kodex-service', stage / 'kodex-service')
-            package_native(binary, stage)
-            if native_version(stage / 'codex') != version:
-                raise ServiceError('Copied Codex executable version mismatch')
             run(['cargo', 'build', '--release', '--locked', '-p', 'kodex-gateway',
                  '--target-dir', repo / 'target'], cwd=repo)
             run(['npm', 'ci'], cwd=repo / 'apps/web')
@@ -249,7 +297,7 @@ class Service:
             marketplace = stage / 'marketplace'
             shutil.copytree(repo / 'plugins', marketplace / 'plugins')
             shutil.copytree(repo / '.agents/plugins', marketplace / '.agents/plugins')
-            (stage / 'manifest.json').write_text(json.dumps({'schema_version': version}))
+            (stage / 'manifest.json').write_text(json.dumps({'schema_version': version, 'native': native}))
             destination = releases / (time.strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:8])
             stage.rename(destination)
             return destination
@@ -308,7 +356,6 @@ def main():
     parser.add_argument('--root', type=Path, default=Path.home() / '.local/share/kodex')
     commands = parser.add_subparsers(dest='command', required=True)
     install = commands.add_parser('install', help='configure and build; starts Kodex, autostart initially off')
-    install.add_argument('--codex-binary', type=Path, required=True)
     install.add_argument('--port', type=int, default=8787)
     install.add_argument('--data-dir', type=Path, default=Path.home() / '.kodex/native-v1')
     for command in ('install', 'update'):
@@ -338,7 +385,6 @@ def main():
             check_port(args.port)
             app.config_path.write_text(json.dumps({
                 'port': args.port, 'data_dir': str(args.data_dir.expanduser().resolve()),
-                'codex_binary': str(args.codex_binary.expanduser().resolve()),
                 'path': os.environ.get('PATH', '/usr/bin:/bin'), 'environment': {},
                 'repo': str((args.repo or Path(__file__).resolve().parent.parent).resolve()),
             }, indent=2) + '\n')

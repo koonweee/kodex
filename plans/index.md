@@ -19,6 +19,7 @@ Focused subsystem replacements are encouraged wherever they reduce maintained co
 
 | Plan | Status | Scope | Notes |
 | --- | --- | --- | --- |
+| [Pinned upstream runtime](pinned-runtime-distribution.md) | Active | Direct official runtime acquisition | Fix missing helper packaging; audit adjacent shortcuts. |
 | [Remove custom sections](remove-custom-sections.md) | Complete | Keep Pinned, Projects and Chats | Remove section management, APIs and cached state. |
 | [Sidebar load recovery](sidebar-load-recovery.md) | Complete | Canceled SQLite transaction recovery and visible sidebar errors | Preserve native projects through section refills; remove redundant editor move controls. |
 | [Project directory picker](project-directory-picker.md) | Complete | Home-bounded root selection and project-root execution | Root-only directory picker with selection/removal and error recovery; new project chat/terminal execution uses the sole root. Build, trims, 856 frontend tests, backend regressions and desktop/mobile two-tab browser checks pass; deployment remains separate. |

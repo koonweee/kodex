@@ -1,5 +1,7 @@
 //! Real protocol proof with a pinned executable, disposable home, and local model.
 //! Interactive account sign-in is deliberately not completed or claimed by this test.
+#[path = "native_app_server/code_mode.rs"]
+mod code_mode;
 #[path = "native_app_server/compaction.rs"]
 mod compaction;
 #[path = "native_app_server/config.rs"]

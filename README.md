@@ -131,7 +131,7 @@ For prerequisites, tests, schema generation, and production-style static serving
 - [Kodex Control](docs/kodex-control.md) — install and develop the bundled plugin and MCP server.
 - [Plans](plans/index.md) — completed milestones, active work, and future extensions.
 
-For persistent hosting on your Mac, use the [login service and update commands](docs/macos-service.md). The service runs a compiled release independently of your development checkout and works with private Tailscale HTTPS.
+For persistent hosting on your Mac, use the [login service and update commands](docs/macos-service.md). The service runs a compiled release independently of your development checkout and works with private Tailscale HTTPS. It downloads the complete official Codex runtime pinned to the checked-in app-server schema and verifies its checksum; it does not extract binaries from the desktop app.
 
 ## Project status
 

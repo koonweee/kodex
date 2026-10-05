@@ -122,27 +122,32 @@ async fn exercise(
         .notification("project/changed", "projectId", &survivor_id)
         .await?;
     for project_id in [&project_id, &rootless_id] {
-        reject_implicit_cwd(&session.app, project_id).await?;
+        reject_execution(&session.app, json!({"projectId":project_id})).await?;
+        reject_execution(
+            &session.app,
+            json!({"projectId":project_id, "cwd":secondary}),
+        )
+        .await?;
     }
-    let rootless_thread = api(
+    let project = api(
         &session.app,
-        "POST",
-        "/v1/threads",
-        Some(json!({
-            "projectId":rootless_id, "cwd":fixture.workspace
-        })),
+        "PATCH",
+        &format!("/v1/projects/{project_id}"),
+        Some(json!({"roots":[{"path":secondary}]})),
     )
     .await?;
-    anyhow::ensure!(
-        rootless_thread["thread"]["cwd"] == fixture.workspace.to_string_lossy().as_ref()
-    );
+    session
+        .notification("project/changed", "projectId", &project_id)
+        .await?;
+    anyhow::ensure!(project["roots"] == json!([{"path":secondary}]));
+    anyhow::ensure!(project["metadata"]["unknown-native-key"] == "preserved");
 
     let thread = api(
         &session.app,
         "POST",
         "/v1/threads",
         Some(json!({
-            "projectId":project_id, "cwd":secondary
+            "projectId":project_id
         })),
     )
     .await?;
@@ -157,12 +162,7 @@ async fn exercise(
         ),
         ModelResponse::message("project cwd proved"),
     ]);
-    start_turn(
-        &session.app,
-        &thread_id,
-        "Check the chosen working directory",
-    )
-    .await?;
+    start_turn(&session.app, &thread_id, "Check the project root directory").await?;
     session.completed_turn(&thread_id, "completed").await?;
     fixture.next_model_request().await?;
     let continuation = fixture.next_model_request().await?;
@@ -266,18 +266,18 @@ async fn exercise(
     Ok((project_id, survivor_id, thread_id, cwd))
 }
 
-async fn reject_implicit_cwd(app: &Router, project_id: &str) -> anyhow::Result<()> {
+async fn reject_execution(app: &Router, payload: Value) -> anyhow::Result<()> {
     let response = app
         .clone()
         .oneshot(
             Request::post("/v1/threads")
                 .header("content-type", "application/json")
-                .body(Body::from(json!({"projectId":project_id}).to_string()))?,
+                .body(Body::from(payload.to_string()))?,
         )
         .await?;
     anyhow::ensure!(
         response.status() == StatusCode::BAD_REQUEST,
-        "ambiguous execution cwd was accepted"
+        "execution without a single project root was accepted"
     );
     Ok(())
 }

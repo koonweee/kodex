@@ -25,7 +25,7 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 
 - Work in small, reviewable chunks tied to the active milestone.
 - Commit frequently at coherent boundaries, after tests pass and relevant docs are updated.
-- For the installed macOS login service, use `~/.local/share/kodex/kodex-service update` only when deployment is requested; `restart` does not build. Follow [docs/macos-service.md](docs/macos-service.md). Do not use the legacy tmux restart workflow to update a launchd-managed instance. Service-tool changes use `python3 -m unittest discover -s tools/tests -p 'test_kodex_service.py'`; live lifecycle checks affect the running service and need deployment scope.
+- For the installed macOS login service, use `~/.local/share/kodex/kodex-service update` only when deployment is requested; `restart` does not build. When changing the service controller itself, run `./tools/kodex-service update` from the tested checkout so the new packaging logic applies on that first update. The service downloads the official runtime pinned to the checked-in schema; do not source it from desktop app internals. Follow [docs/macos-service.md](docs/macos-service.md). Do not use the legacy tmux restart workflow to update a launchd-managed instance. Service-tool changes use `python3 -m unittest discover -s tools/tests -p 'test_kodex_service.py'`; live lifecycle checks affect the running service and need deployment scope.
 - Keep each commit focused on one sensible unit of work.
 - Do not mix unrelated changes in a commit.
 - Do not commit generated output, user-owned changes, or unrelated workspace changes unless they are part of the current task.

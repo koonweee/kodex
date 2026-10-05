@@ -4,14 +4,12 @@ Run the compiled gateway under your normal macOS account using launchd. The gate
 
 ## Install
 
-Prerequisites: a logged-in macOS GUI session, Python 3.9+ (the Command Line Tools Python works), Rust, npm, and the Codex executable version required by `apps/gateway/src/schema.rs`. Run commands as yourself, never with sudo. The initial installation builds and starts Kodex; it does not enable login autostart until requested.
+Prerequisites: a logged-in macOS GUI session, Python 3.9+ (the Command Line Tools Python works), Rust, npm, and internet access to the official OpenAI Codex GitHub releases. Run commands as yourself, never with sudo. The initial installation builds and starts Kodex; it does not enable login autostart until requested.
 
 From the repository:
 
 ```bash
-./tools/kodex-service install \
-  --codex-binary /absolute/path/to/codex \
-  --repo "$PWD"
+./tools/kodex-service install --repo "$PWD"
 
 ~/.local/share/kodex/kodex-service autostart on
 ~/.local/share/kodex/kodex-service status
@@ -39,9 +37,9 @@ The installation layout is:
 ~/Library/LaunchAgents/dev.kodex.gateway.plist  # present when autostart is enabled
 ```
 
-Pass a real executable, not a shell wrapper that depends on adjacent files. For the current desktop bundle this is `/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex`, not its `bin/codex` wrapper. An executable inside an `.app` is packaged with its enclosing bundle using macOS `ditto`, preserving the resources needed for signed execution.
+Each release downloads the complete official [OpenAI Codex package](https://github.com/openai/codex/releases/tag/rust-v0.160.0) matching the checkout's `APP_SERVER_SCHEMA_VERSION` and Mac architecture. The controller pins the official archive SHA256 for each supported version/architecture; an unknown version, checksum mismatch, unsafe archive, missing helper, or failed native startup check aborts staging. Updating the schema version requires reviewing and adding the new package digests in `tools/kodex-service`.
 
-Each release includes a copy of the selected Codex executable, verified against the checkout's schema version. Updating the desktop app or editing the checkout cannot silently change the installed release. Plugin sources are packaged too; existing installed plugin caches still follow native plugin update semantics.
+The extracted `native/` directory retains upstream `bin/codex`, `bin/codex-code-mode-host`, `codex-package.json`, `codex-resources`, and `codex-path`; the release's `codex` symlink names its native entrypoint. Staging checks the executable's version and runs the helper's `--help` using temporary dedicated homes. Production still uses the gateway's dedicated Kodex `CODEX_HOME`. Each release owns its native package so rollback has no shared cache or desktop-app dependency. Plugin sources are packaged too; existing installed plugin caches still follow native plugin update semantics.
 
 ## Daily commands
 
@@ -76,9 +74,17 @@ kodex-service update
 kodex-service update --repo /absolute/path/to/kodex
 ```
 
+When changing the service controller itself, invoke the new checkout controller for that update:
+
+```bash
+./tools/kodex-service update --repo "$PWD"
+```
+
+The installed command executes its current release's controller, so it cannot apply a new acquisition/build implementation until that controller is installed. This checkout command also upgrades an existing installation from desktop extraction to official downloads.
+
 The default checkout was recorded at install time. Production frontend builds explicitly use same-origin API routing, overriding development API-base settings. The update command builds the current working tree, including uncommitted changes; it does not pull Git or run the full test suite. Avoid editing or concurrently building that checkout during the update.
 
-Update verifies the configured Codex source executable against the checkout's schema, builds Rust with `--release --locked`, runs `npm ci` and the frontend build, and stages the complete release while the current service keeps running. Only after staging succeeds does it stop the owned job, switch the release pointers, start, and verify readiness. Updates also start a previously stopped installation. Login autostart is unchanged. A build failure leaves the running release untouched.
+Update downloads and verifies the official native package pinned for the checkout's schema, builds Rust with `--release --locked`, runs `npm ci` and the frontend build, and stages the complete release while the current service keeps running. Only after staging succeeds does it stop the owned job, switch the release pointers, start, and verify readiness. Updates also start a previously stopped installation. Login autostart is unchanged. A build failure leaves the running release untouched.
 
 If startup/health fails, the new service is stopped and the failed release remains selected for inspection. There is **no automatic rollback**: the new executable may already have written persistent state. After checking that the previous release can safely read the current storage, you may explicitly run:
 
@@ -88,7 +94,7 @@ kodex-service rollback --data-compatible
 
 This swaps current/previous and starts the previous release. It never restores databases, credentials, history or project files. Incompatible storage changes require a separately planned fresh instance or other explicit policy; this tool adds no migration mechanism. Older release directories are retained, not automatically deleted. Remove only inactive releases you no longer need, after checking both symlink targets and any installed native plugin references.
 
-Edit `~/.local/share/kodex/config.json` for subsequent starts/updates. It records the source checkout, source Codex executable, data directory, port and explicit tool PATH. Shell profiles are not sourced by launchd. Changing the Codex source path takes effect on **update**, which creates a newly pinned release. The optional `environment` object accepts only the three `KODEX_VAPID_*` values, `KODEX_NOTIFICATIONS_RECHECK_DELAY_MS` and `RUST_LOG`. Configuration errors must be fixed before startup. Desktop `CODEX_HOME`, ambient API credentials and old production environment files are not inherited. Do not put secrets in the plist or commit the private configuration.
+Edit `~/.local/share/kodex/config.json` for subsequent starts/updates. It records the source checkout, data directory, port and explicit tool PATH. Shell profiles are not sourced by launchd. New installations omit `codex_binary`. Earlier values are ignored by the updated controller; retain the key while old controller releases remain rollback targets, since those older controllers still validate it. Native version selection now comes from the checkout schema and verified upstream package digests. The optional `environment` object accepts only the three `KODEX_VAPID_*` values, `KODEX_NOTIFICATIONS_RECHECK_DELAY_MS` and `RUST_LOG`. Configuration errors must be fixed before startup. Desktop `CODEX_HOME`, ambient API credentials and old production environment files are not inherited. Do not put secrets in the plist or commit the private configuration.
 
 ## Private HTTPS with Tailscale
 

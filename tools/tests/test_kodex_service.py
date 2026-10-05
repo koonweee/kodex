@@ -3,6 +3,9 @@ import importlib.machinery
 import importlib.util
 from pathlib import Path
 import json
+import hashlib
+import io
+import tarfile
 import socket
 import tempfile
 import unittest
@@ -25,7 +28,7 @@ class LifecycleTests(unittest.TestCase):
         self.app.root.mkdir()
         self.app.config_path.write_text(json.dumps({
             'port': 18787, 'data_dir': str(self.root / 'data'),
-            'codex_binary': '/fake/codex', 'path': '/usr/bin:/bin',
+            'path': '/usr/bin:/bin',
         }))
         self.actions = []
 
@@ -144,12 +147,11 @@ class LifecycleTests(unittest.TestCase):
         (repo / 'target/release/kodex-gateway').write_text('executable')
         (repo / 'apps/web/dist/index.html').write_text('frontend')
         (repo / '.agents/plugins/marketplace.json').write_text('{}')
-        codex = self.root / 'native'
-        codex.write_text('native executable')
-        config = self.app.config()
-        config['codex_binary'] = str(codex)
-        self.app.config_path.write_text(json.dumps(config))
-        with patch.object(service, 'native_version', return_value='0.160.0'), \
+        def acquire(version, stage):
+            self.assertEqual(version, '0.160.0')
+            (stage / 'codex').write_text('native executable')
+            return {'asset':'official-package', 'sha256':'verified'}
+        with patch.object(service, 'acquire_native', side_effect=acquire), \
              patch.object(service, 'run') as commands, \
              patch.dict(service.os.environ, {'VITE_KODEX_API_BASE_URL': 'http://other-gateway'}):
             release = self.app.build(repo)
@@ -180,7 +182,7 @@ class LifecycleTests(unittest.TestCase):
         repo = self.root / 'repo'
         (repo / 'apps/gateway/src').mkdir(parents=True)
         (repo / 'apps/gateway/src/schema.rs').write_text('APP_SERVER_SCHEMA_VERSION: &str = "0.160.0"')
-        with patch.object(service, 'native_version', return_value='0.159.0'), \
+        with patch.object(service, 'acquire_native', side_effect=service.ServiceError('version mismatch')), \
              patch.object(service, 'run') as commands:
             with self.assertRaisesRegex(service.ServiceError, 'version mismatch'):
                 self.app.build(repo)
@@ -224,21 +226,100 @@ class LifecycleTests(unittest.TestCase):
              patch.object(service.urllib.request, 'build_opener', return_value=opener):
             self.app.health(release)
 
-    def test_native_app_bundle_is_packaged_with_its_resources(self):
-        source = self.root / 'CodexCLI.app/Contents/MacOS/codex'
-        source.parent.mkdir(parents=True)
-        source.write_text('signed executable')
-        resources = source.parents[1] / 'Resources'
-        resources.mkdir()
-        (resources / 'required').write_text('resource')
-        stage = self.root / 'stage'
-        stage.mkdir()
-        def ditto(args):
-            service.shutil.copytree(args[1], args[2])
-        with patch.object(service, 'run', side_effect=ditto):
-            service.package_native(source, stage)
-        self.assertEqual((stage / 'codex').read_text(), 'signed executable')
-        self.assertEqual((stage / 'native.app/Contents/Resources/required').read_text(), 'resource')
+    def official_archive(self, missing_host=False, unsafe=False):
+        stream = io.BytesIO()
+        with tarfile.open(fileobj=stream, mode='w:gz') as archive:
+            files = {
+                'codex-package.json': json.dumps({'layoutVersion':1,'version':'0.160.0',
+                    'target':'aarch64-apple-darwin','variant':'codex','entrypoint':'bin/codex',
+                    'resourcesDir':'codex-resources','pathDir':'codex-path'}),
+                'bin/codex':'native executable', 'codex-path/rg':'search',
+                'codex-resources/zsh/bin/zsh':'shell',
+            }
+            if not missing_host: files['bin/codex-code-mode-host'] = 'helper'
+            if unsafe: files['../escape'] = 'escape'
+            for name, content in files.items():
+                data = content.encode()
+                info = tarfile.TarInfo(name); info.size = len(data); info.mode = 0o755
+                archive.addfile(info, io.BytesIO(data))
+        return stream.getvalue()
+
+    def acquire_fixture(self, data, digest=None):
+        stage = self.root / 'stage'; stage.mkdir()
+        expected = digest or hashlib.sha256(data).hexdigest()
+        with patch.object(service.platform, 'machine', return_value='arm64'), \
+             patch.dict(service.OFFICIAL_PACKAGE_SHA256, {'0.160.0': {'aarch64-apple-darwin': expected}}), \
+             patch.object(service.urllib.request, 'urlopen', return_value=io.BytesIO(data)) as download, \
+             patch.object(service, 'native_version', return_value='0.160.0'), \
+             patch.object(service, 'run') as run:
+            provenance = service.acquire_native('0.160.0', stage)
+        return stage, provenance, download, run
+
+    def test_official_pinned_distribution_includes_helper_and_native_resources(self):
+        data = self.official_archive()
+        stage, provenance, download, run = self.acquire_fixture(data)
+        self.assertEqual((stage / 'codex').resolve(), stage / 'native/bin/codex')
+        self.assertEqual((stage / 'native/bin/codex-code-mode-host').read_text(), 'helper')
+        self.assertEqual((stage / 'native/codex-path/rg').read_text(), 'search')
+        self.assertEqual((stage / 'native/codex-resources/zsh/bin/zsh').read_text(), 'shell')
+        self.assertEqual(provenance['asset'], 'codex-package-aarch64-apple-darwin.tar.gz')
+        self.assertEqual(provenance['sha256'], hashlib.sha256(data).hexdigest())
+        self.assertIn('/openai/codex/releases/download/rust-v0.160.0/', download.call_args.args[0])
+        self.assertEqual(run.call_args.args[0], [stage / 'native/bin/codex-code-mode-host', '--help'])
+        self.assertEqual(run.call_args.kwargs['env']['CODEX_HOME'].startswith(str(stage)), False)
+
+    def test_corrupt_download_is_rejected_before_extraction_or_execution(self):
+        with self.assertRaisesRegex(service.ServiceError, 'checksum'):
+            self.acquire_fixture(self.official_archive(), '0' * 64)
+        self.assertFalse((self.root / 'stage/native').exists())
+
+    def test_official_package_without_helper_is_rejected(self):
+        with self.assertRaisesRegex(service.ServiceError, 'codex-code-mode-host'):
+            self.acquire_fixture(self.official_archive(missing_host=True))
+
+    def test_unsafe_official_archive_path_is_rejected(self):
+        with self.assertRaisesRegex(service.ServiceError, 'archive'):
+            self.acquire_fixture(self.official_archive(unsafe=True))
+        self.assertFalse((self.root / 'escape').exists())
+
+    def test_unpinned_version_never_downloads(self):
+        with patch.object(service.urllib.request, 'urlopen') as download:
+            with self.assertRaisesRegex(service.ServiceError, 'pinned'):
+                service.acquire_native('0.999.0', self.root)
+        download.assert_not_called()
+
+    def test_corrupt_download_leaves_the_live_release_running(self):
+        old = self.release('old')
+        service.link(self.app.root / 'current', old)
+        repo = self.root / 'repo'
+        (repo / 'apps/gateway/src').mkdir(parents=True)
+        (repo / 'apps/gateway/src/schema.rs').write_text('APP_SERVER_SCHEMA_VERSION: &str = "0.160.0"')
+        with patch.object(service.platform, 'machine', return_value='arm64'), \
+             patch.object(service.urllib.request, 'urlopen', return_value=io.BytesIO(b'corrupt')), \
+             patch.object(self.app, 'stop') as stop:
+            with self.assertRaisesRegex(service.ServiceError, 'checksum'):
+                self.app.update(repo)
+        stop.assert_not_called()
+        self.assertEqual((self.app.root / 'current').resolve(), old)
+        self.assertFalse(any(path.name.startswith('.stage-') for path in old.parent.iterdir()))
+
+    def test_failed_helper_startup_leaves_the_live_release_running(self):
+        old = self.release('old')
+        service.link(self.app.root / 'current', old)
+        repo = self.root / 'repo'
+        (repo / 'apps/gateway/src').mkdir(parents=True)
+        (repo / 'apps/gateway/src/schema.rs').write_text('APP_SERVER_SCHEMA_VERSION: &str = "0.160.0"')
+        data = self.official_archive()
+        with patch.object(service.platform, 'machine', return_value='arm64'), \
+             patch.dict(service.OFFICIAL_PACKAGE_SHA256, {'0.160.0': {'aarch64-apple-darwin': hashlib.sha256(data).hexdigest()}}), \
+             patch.object(service.urllib.request, 'urlopen', return_value=io.BytesIO(data)), \
+             patch.object(service, 'native_version', return_value='0.160.0'), \
+             patch.object(service, 'run', side_effect=service.subprocess.CalledProcessError(1, 'host')), \
+             patch.object(self.app, 'stop') as stop:
+            with self.assertRaises(service.subprocess.CalledProcessError):
+                self.app.update(repo)
+        stop.assert_not_called()
+        self.assertEqual((self.app.root / 'current').resolve(), old)
 
     def test_explicit_rollback_swaps_releases_without_touching_data(self):
         old, new = self.release('old'), self.release('new')
