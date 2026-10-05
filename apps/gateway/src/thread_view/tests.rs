@@ -2,6 +2,7 @@ use super::*;
 use crate::app_server_api::{
     ByteRange, TextElement, ThreadTimelineRow, ThreadTimelineWorkDetailRow,
 };
+use std::future::ready;
 
 fn agent_message_item(id: &str, text: &str) -> Value {
     json!({
@@ -122,7 +123,7 @@ async fn session_reconciles_pending_user_input_when_snapshot_materializes_item()
             text_elements: Vec::new(),
         }],
         &[],
-        (1, 1),
+        (1, std::future::ready(Ok(1))),
     )
     .await
     .unwrap();
@@ -172,7 +173,7 @@ async fn session_reconciles_pending_skill_mention_user_input() {
             },
         ],
         &[],
-        (1, 1),
+        (1, std::future::ready(Ok(1))),
     )
     .await
     .unwrap();
@@ -239,7 +240,7 @@ async fn active_snapshot_preserves_distinct_native_user_items_with_matching_skil
     });
     let live_item_snapshot = ThreadItemSnapshot::from_payload(&live_item).unwrap();
     sessions
-        .with_thread_view("thread-1", 1, |view| {
+        .with_thread_view("thread-1", ready(Ok(1)), |view| {
             view.upsert_item(
                 "thread-1",
                 "turn-1",
@@ -249,7 +250,8 @@ async fn active_snapshot_preserves_distinct_native_user_items_with_matching_skil
                 Some(1),
             );
         })
-        .await;
+        .await
+        .unwrap();
     let active_turn = ThreadTurnSnapshot {
         id: "turn-1".to_string(),
         status: "inProgress".to_string(),
@@ -320,7 +322,7 @@ async fn pending_user_input_returns_turn_scoped_patch() {
             text_elements: Vec::new(),
         }],
         &[],
-        (2, 2),
+        (2, std::future::ready(Ok(2))),
     )
     .await
     .unwrap()
@@ -352,12 +354,26 @@ async fn pending_user_input_returns_turn_scoped_patch() {
 #[tokio::test]
 async fn session_applies_live_delta_then_snapshot_without_duplicate() {
     let sessions = ThreadViewStore::default();
-    record_item_delta(&sessions, "thread-1", "turn-1", "agent-1", "Hello", 1)
-        .await
-        .unwrap();
-    record_item_delta(&sessions, "thread-1", "turn-1", "agent-1", " world", 2)
-        .await
-        .unwrap();
+    record_item_delta(
+        &sessions,
+        "thread-1",
+        "turn-1",
+        "agent-1",
+        "Hello",
+        std::future::ready(Ok(1)),
+    )
+    .await
+    .unwrap();
+    record_item_delta(
+        &sessions,
+        "thread-1",
+        "turn-1",
+        "agent-1",
+        " world",
+        std::future::ready(Ok(2)),
+    )
+    .await
+    .unwrap();
 
     let patch = patch_for_thread(&sessions, "thread-1").await.unwrap();
     assert_eq!(patch.items.len(), 1);
@@ -403,7 +419,7 @@ async fn completed_snapshot_drops_unmaterialized_live_items_for_terminal_turn() 
         "turn-1",
         "agent-live",
         "Draft answer",
-        1,
+        std::future::ready(Ok(1)),
     )
     .await
     .unwrap();
@@ -455,9 +471,16 @@ async fn item_delta_patch_upserts_only_affected_turn_rows() {
     .await
     .unwrap();
 
-    let patch = record_item_delta_patch(&sessions, "thread-1", "turn-1", "agent-1", "Hello", 2)
-        .await
-        .unwrap();
+    let patch = record_item_delta_patch(
+        &sessions,
+        "thread-1",
+        "turn-1",
+        "agent-1",
+        "Hello",
+        std::future::ready(Ok(2)),
+    )
+    .await
+    .unwrap();
 
     assert_eq!(patch.scope, ThreadViewPatchScope::Turn);
     assert!(patch.validate_scope().is_ok());
@@ -517,10 +540,16 @@ async fn serialized_patch_sizes_do_not_include_historical_flat_items() {
         "full snapshot patch should not duplicate flat timeline items"
     );
 
-    let turn_patch =
-        record_item_delta_patch(&sessions, "thread-1", "turn-live", "agent-live", "hello", 2)
-            .await
-            .unwrap();
+    let turn_patch = record_item_delta_patch(
+        &sessions,
+        "thread-1",
+        "turn-live",
+        "agent-live",
+        "hello",
+        std::future::ready(Ok(2)),
+    )
+    .await
+    .unwrap();
     let serialized_turn = serde_json::to_value(&turn_patch).unwrap();
     assert!(serialized_turn.get("items").is_none());
     assert!(
@@ -532,9 +561,14 @@ async fn serialized_patch_sizes_do_not_include_historical_flat_items() {
         "active-turn patch should scale with the active turn, not historical rows"
     );
 
-    let lifecycle_patch = record_thread_live_state(&sessions, "thread-1", ThreadLiveState::Idle, 3)
-        .await
-        .unwrap();
+    let lifecycle_patch = record_thread_live_state(
+        &sessions,
+        "thread-1",
+        ThreadLiveState::Idle,
+        std::future::ready(Ok(3)),
+    )
+    .await
+    .unwrap();
     let serialized_lifecycle = serde_json::to_value(&lifecycle_patch).unwrap();
     assert!(serialized_lifecycle.get("items").is_none());
     assert!(
@@ -546,13 +580,25 @@ async fn serialized_patch_sizes_do_not_include_historical_flat_items() {
 #[tokio::test]
 async fn lifecycle_patch_carries_no_timeline_payload() {
     let sessions = ThreadViewStore::default();
-    record_item_delta_patch(&sessions, "thread-1", "turn-1", "agent-1", "Hello", 1)
-        .await
-        .unwrap();
+    record_item_delta_patch(
+        &sessions,
+        "thread-1",
+        "turn-1",
+        "agent-1",
+        "Hello",
+        std::future::ready(Ok(1)),
+    )
+    .await
+    .unwrap();
 
-    let patch = record_thread_live_state(&sessions, "thread-1", ThreadLiveState::Idle, 2)
-        .await
-        .unwrap();
+    let patch = record_thread_live_state(
+        &sessions,
+        "thread-1",
+        ThreadLiveState::Idle,
+        std::future::ready(Ok(2)),
+    )
+    .await
+    .unwrap();
 
     assert_eq!(patch.scope, ThreadViewPatchScope::Lifecycle);
     assert!(patch.validate_scope().is_ok());
@@ -589,7 +635,7 @@ async fn row_delta_scope_validation_rejects_empty_or_cross_turn_payloads() {
         item,
         item_snapshot,
         Some("running"),
-        1,
+        std::future::ready(Ok(1)),
     )
     .await
     .unwrap();
@@ -661,7 +707,7 @@ async fn item_upsert_returns_row_delta_and_terminal_turn_status_returns_turn_pat
         item,
         item_snapshot,
         Some("running"),
-        1,
+        std::future::ready(Ok(1)),
     )
     .await
     .unwrap();
@@ -682,10 +728,14 @@ async fn item_upsert_returns_row_delta_and_terminal_turn_status_returns_turn_pat
         raw_payload: json!({}),
         items: Vec::new(),
     };
-    let (_newly_terminal, status_patch) =
-        record_turn_status(&sessions, "thread-1", &completed_turn, 2)
-            .await
-            .unwrap();
+    let (_newly_terminal, status_patch) = record_turn_status(
+        &sessions,
+        "thread-1",
+        &completed_turn,
+        std::future::ready(Ok(2)),
+    )
+    .await
+    .unwrap();
     assert_eq!(status_patch.scope, ThreadViewPatchScope::Turn);
     assert!(status_patch.validate_scope().is_ok());
     assert_eq!(status_patch.affected_turn_ids, vec!["turn-1"]);
@@ -708,7 +758,7 @@ async fn first_live_item_upsert_without_base_falls_back_to_turn_patch() {
         item,
         item_snapshot,
         Some("running"),
-        1,
+        std::future::ready(Ok(1)),
     )
     .await
     .unwrap();
@@ -743,7 +793,7 @@ async fn repeated_live_item_upserts_emit_bounded_row_delta_patches() {
             item,
             item_snapshot,
             Some("running"),
-            index + 2,
+            std::future::ready(Ok(index + 2)),
         )
         .await
         .unwrap();
@@ -863,7 +913,7 @@ async fn terminal_snapshot_preserves_unmaterialized_live_command_rows() {
         command,
         command_snapshot,
         Some("completed"),
-        1,
+        std::future::ready(Ok(1)),
     )
     .await
     .unwrap();
@@ -1138,7 +1188,7 @@ async fn terminal_turn_patch_preserves_live_command_rows() {
         command,
         command_snapshot,
         Some("running"),
-        1,
+        std::future::ready(Ok(1)),
     )
     .await
     .unwrap();
@@ -1151,10 +1201,14 @@ async fn terminal_turn_patch_preserves_live_command_rows() {
         raw_payload: json!({}),
         items: Vec::new(),
     };
-    let (_newly_terminal, status_patch) =
-        record_turn_status(&sessions, "thread-1", &completed_turn, 2)
-            .await
-            .unwrap();
+    let (_newly_terminal, status_patch) = record_turn_status(
+        &sessions,
+        "thread-1",
+        &completed_turn,
+        std::future::ready(Ok(2)),
+    )
+    .await
+    .unwrap();
 
     let activity = status_patch
         .rows
@@ -1174,9 +1228,16 @@ async fn terminal_turn_patch_preserves_live_command_rows() {
 #[tokio::test]
 async fn live_item_activity_does_not_invent_turn_timestamps() {
     let sessions = ThreadViewStore::default();
-    record_item_delta(&sessions, "thread-1", "turn-1", "agent-1", "Working", 1)
-        .await
-        .unwrap();
+    record_item_delta(
+        &sessions,
+        "thread-1",
+        "turn-1",
+        "agent-1",
+        "Working",
+        std::future::ready(Ok(1)),
+    )
+    .await
+    .unwrap();
 
     let patch = patch_for_thread(&sessions, "thread-1").await.unwrap();
 
@@ -1192,9 +1253,16 @@ async fn live_item_activity_does_not_invent_turn_timestamps() {
 #[tokio::test]
 async fn terminal_turn_status_preserves_turn_duration_in_live_patch() {
     let sessions = ThreadViewStore::default();
-    record_item_delta(&sessions, "thread-1", "turn-1", "agent-1", "Working", 1)
-        .await
-        .unwrap();
+    record_item_delta(
+        &sessions,
+        "thread-1",
+        "turn-1",
+        "agent-1",
+        "Working",
+        std::future::ready(Ok(1)),
+    )
+    .await
+    .unwrap();
 
     let completed_turn = ThreadTurnSnapshot {
         id: "turn-1".to_string(),
@@ -1204,9 +1272,14 @@ async fn terminal_turn_status_preserves_turn_duration_in_live_patch() {
         raw_payload: json!({}),
         items: Vec::new(),
     };
-    record_turn_status(&sessions, "thread-1", &completed_turn, 2)
-        .await
-        .unwrap();
+    record_turn_status(
+        &sessions,
+        "thread-1",
+        &completed_turn,
+        std::future::ready(Ok(2)),
+    )
+    .await
+    .unwrap();
 
     let patch = patch_for_thread(&sessions, "thread-1").await.unwrap();
 
@@ -1231,7 +1304,7 @@ async fn item_completion_does_not_complete_active_turn() {
         item,
         item_snapshot,
         Some("completed"),
-        1,
+        std::future::ready(Ok(1)),
     )
     .await
     .unwrap();
@@ -1247,9 +1320,16 @@ async fn item_completion_does_not_complete_active_turn() {
 #[tokio::test]
 async fn session_ignores_late_delta_after_turn_completion() {
     let sessions = ThreadViewStore::default();
-    record_item_delta(&sessions, "thread-1", "turn-1", "agent-1", "Done", 1)
-        .await
-        .unwrap();
+    record_item_delta(
+        &sessions,
+        "thread-1",
+        "turn-1",
+        "agent-1",
+        "Done",
+        std::future::ready(Ok(1)),
+    )
+    .await
+    .unwrap();
     let completed_turn = ThreadTurnSnapshot {
         id: "turn-1".to_string(),
         status: "completed".to_string(),
@@ -1260,13 +1340,25 @@ async fn session_ignores_late_delta_after_turn_completion() {
             ThreadItemSnapshot::from_payload(&agent_message_item("agent-1", "Done")).unwrap(),
         ],
     };
-    record_turn_status(&sessions, "thread-1", &completed_turn, 2)
-        .await
-        .unwrap();
+    record_turn_status(
+        &sessions,
+        "thread-1",
+        &completed_turn,
+        std::future::ready(Ok(2)),
+    )
+    .await
+    .unwrap();
 
-    record_item_delta(&sessions, "thread-1", "turn-1", "agent-1", " stale", 3)
-        .await
-        .unwrap();
+    record_item_delta(
+        &sessions,
+        "thread-1",
+        "turn-1",
+        "agent-1",
+        " stale",
+        std::future::ready(Ok(3)),
+    )
+    .await
+    .unwrap();
 
     let patch = patch_for_thread(&sessions, "thread-1").await.unwrap();
     assert_eq!(patch.live_state, ThreadLiveState::Idle);
@@ -1278,12 +1370,27 @@ async fn session_ignores_late_delta_after_turn_completion() {
 #[tokio::test]
 async fn active_snapshot_does_not_truncate_newer_live_text() {
     let sessions = ThreadViewStore::default();
-    record_item_delta(&sessions, "thread-1", "turn-1", "agent-1", "Hello", 1)
-        .await
-        .unwrap();
-    record_item_delta(&sessions, "thread-1", "turn-1", "agent-1", " world", 2)
-        .await
-        .unwrap();
+    record_item_delta(
+        &sessions,
+        "thread-1",
+        "turn-1",
+        "agent-1",
+        "Hello",
+        std::future::ready(Ok(1)),
+    )
+    .await
+    .unwrap();
+    let captured_revision = 1;
+    record_item_delta(
+        &sessions,
+        "thread-1",
+        "turn-1",
+        "agent-1",
+        " world",
+        std::future::ready(Ok(2)),
+    )
+    .await
+    .unwrap();
 
     let stale_active_turn = ThreadTurnSnapshot {
         id: "turn-1".to_string(),
@@ -1295,9 +1402,14 @@ async fn active_snapshot_does_not_truncate_newer_live_text() {
             ThreadItemSnapshot::from_payload(&agent_message_item("agent-1", "Hello")).unwrap(),
         ],
     };
-    let timeline = build_thread_timeline(&sessions, "thread-1", &[stale_active_turn], 3)
-        .await
-        .unwrap();
+    let timeline = build_thread_timeline(
+        &sessions,
+        "thread-1",
+        &[stale_active_turn],
+        captured_revision,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(timeline.items.len(), 1);
     assert_eq!(timeline.items[0].id, "projection-turn-1-agent-1");
@@ -1314,9 +1426,16 @@ async fn active_snapshot_does_not_truncate_newer_live_text() {
 #[tokio::test]
 async fn active_snapshot_collapses_duplicate_live_assistant_text() {
     let sessions = ThreadViewStore::default();
-    record_item_delta(&sessions, "thread-1", "turn-1", "delta-item", "Repeated", 1)
-        .await
-        .unwrap();
+    record_item_delta(
+        &sessions,
+        "thread-1",
+        "turn-1",
+        "delta-item",
+        "Repeated",
+        std::future::ready(Ok(1)),
+    )
+    .await
+    .unwrap();
 
     let active_turn = ThreadTurnSnapshot {
         id: "turn-1".to_string(),
@@ -1362,7 +1481,7 @@ async fn active_snapshot_preserves_distinct_native_user_items_with_identical_con
         live_user,
         live_user_snapshot,
         Some("completed"),
-        1,
+        std::future::ready(Ok(1)),
     )
     .await
     .unwrap();
@@ -1413,7 +1532,7 @@ async fn active_snapshot_collapses_equivalent_gateway_stream_assistant_item() {
         live_assistant,
         live_assistant_snapshot,
         Some("completed"),
-        1,
+        std::future::ready(Ok(1)),
     )
     .await
     .unwrap();
@@ -1481,9 +1600,16 @@ async fn history_window_prepends_older_rows_without_deleting_live_tail() {
     )
     .await
     .unwrap();
-    record_item_delta(&sessions, "thread-1", "turn-3", "agent-3", "Live", 2)
-        .await
-        .unwrap();
+    record_item_delta(
+        &sessions,
+        "thread-1",
+        "turn-3",
+        "agent-3",
+        "Live",
+        std::future::ready(Ok(2)),
+    )
+    .await
+    .unwrap();
 
     let older_turn = ThreadTurnSnapshot {
         id: "turn-1".to_string(),
@@ -1663,12 +1789,26 @@ async fn head_refresh_preserves_expanded_window_older_cursor() {
 #[tokio::test]
 async fn completed_snapshot_collapses_live_duplicate_assistant_text() {
     let sessions = ThreadViewStore::default();
-    record_item_delta(&sessions, "thread-1", "turn-1", "item-2", "Done", 1)
-        .await
-        .unwrap();
-    record_item_delta(&sessions, "thread-1", "turn-1", "msg-final", "Done", 2)
-        .await
-        .unwrap();
+    record_item_delta(
+        &sessions,
+        "thread-1",
+        "turn-1",
+        "item-2",
+        "Done",
+        std::future::ready(Ok(1)),
+    )
+    .await
+    .unwrap();
+    record_item_delta(
+        &sessions,
+        "thread-1",
+        "turn-1",
+        "msg-final",
+        "Done",
+        std::future::ready(Ok(2)),
+    )
+    .await
+    .unwrap();
 
     let completed_turn = ThreadTurnSnapshot {
         id: "turn-1".to_string(),
@@ -1701,7 +1841,7 @@ async fn completed_snapshot_prunes_missing_live_context_compaction_marker() {
         compact_item,
         compact_snapshot,
         Some("running"),
-        1,
+        std::future::ready(Ok(1)),
     )
     .await
     .unwrap();
@@ -1750,7 +1890,7 @@ async fn terminal_turn_patch_removes_missing_live_context_compaction_marker() {
         compact_item,
         compact_snapshot,
         Some("running"),
-        1,
+        std::future::ready(Ok(1)),
     )
     .await
     .unwrap();
@@ -1769,10 +1909,14 @@ async fn terminal_turn_patch_removes_missing_live_context_compaction_marker() {
             ThreadItemSnapshot::from_payload(&agent_message_item("agent-1", "Done")).unwrap(),
         ],
     };
-    let (_newly_terminal, status_patch) =
-        record_turn_status(&sessions, "thread-1", &completed_turn, 2)
-            .await
-            .unwrap();
+    let (_newly_terminal, status_patch) = record_turn_status(
+        &sessions,
+        "thread-1",
+        &completed_turn,
+        std::future::ready(Ok(2)),
+    )
+    .await
+    .unwrap();
 
     assert_eq!(status_patch.affected_turn_ids, vec!["turn-1"]);
     assert!(status_patch
@@ -1797,7 +1941,7 @@ async fn recent_snapshot_prunes_live_context_compaction_when_source_turn_dropped
         compact_item,
         compact_snapshot,
         Some("running"),
-        1,
+        std::future::ready(Ok(1)),
     )
     .await
     .unwrap();

@@ -1,5 +1,6 @@
-import { expect, test } from "@playwright/test";
-import type { ThreadTimelineRow } from "../src/api/client";
+import { expect, test, type Page } from "@playwright/test";
+import type { ThreadTimelineRow, ThreadViewPatch, ThreadViewResponse } from "../src/api/client";
+import type { LiveDiagnosticsSnapshot } from "../src/events/liveDiagnostics";
 import { nativeSettingsFixture } from "./native-settings.fixture";
 
 for (const shape of [
@@ -64,6 +65,111 @@ for (const shape of [
       expect(fixture.errors).toEqual([]);
     });
   });
+}
+
+test("partial lifecycle coverage refills late text once and converges after a missed stream", async ({ context }) => {
+  const fixture = await nativeSettingsFixture(context);
+  fixture.detail.thread.status = "active";
+  fixture.detail.liveState = "streaming";
+  fixture.detail.timeline = answerTimeline("Seed", 1);
+  const completedAttaches = new Map<Page, number>();
+  context.on("response", async (response) => {
+    const request = response.request();
+    if (request.method() !== "POST" || !response.url().endsWith("/v1/threads/settings-chat/attach") || response.status() !== 200) return;
+    if (await response.finished() || request.failure()) return;
+    const page = response.frame().page();
+    completedAttaches.set(page, (completedAttaches.get(page) ?? 0) + 1);
+  });
+  const attaches = (client: string) => fixture.requests.filter((request) => request.client === client
+    && request.key === "POST /v1/threads/settings-chat/attach" && request.failure() !== "net::ERR_ABORTED").length;
+  try {
+    const first = await fixture.page("first");
+    const second = await fixture.page("second");
+    for (const page of [first, second]) {
+      await expect(answer(page)).toHaveText("Seed");
+      // Settle the initial pane read and actual EventSource-open recovery before
+      // budgeting the race. Aborted StrictMode setup is not a completed read.
+      await expect.poll(() => completedAttaches.get(page) ?? 0).toBe(2);
+    }
+    await expect.poll(() => fixture.connected("first") && fixture.connected("second")).toBe(true);
+    const initialReads = { first: attaches("first"), second: attaches("second") };
+    const opens = new Map(fixture.connections);
+    const observerReads = fixture.requests.filter((request) => request.key === "GET /v1/threads/settings-chat").length;
+    const lifecycle: ThreadViewPatch = {
+      scope: "lifecycle", threadId: fixture.detail.thread.id, viewRevision: 3,
+      activeTurnId: "turn-answer", liveState: "streaming", pendingApprovalRequests: [], pendingUserInputRequests: [],
+    };
+    const lateText = { threadId: fixture.detail.thread.id, turnId: "turn-answer", itemId: "answer", delta: " A", viewRevision: 2 };
+
+    // Observe a completed reducer batch so these two payloads cannot be sorted
+    // into revision order inside one batch. No transcript state is injected.
+    const beforeLifecycle = await reducerEvents(first);
+    fixture.publishCanonicalEvent({ kind: "thread_view.patch", payload: lifecycle, seq: 30 }, "first");
+    await expect.poll(() => reducerEvents(first)).toBeGreaterThan(beforeLifecycle);
+    fixture.detail.timeline = answerTimeline("Seed A", 3);
+    fixture.holdNext("first", "snapshot", "late-text");
+    // Equal transport cursor still carries uncopied projection data. The partial
+    // lifecycle revision is not proof that this older text is already visible.
+    fixture.publishCanonicalEvent({ kind: "thread_view.item_delta", payload: lateText, seq: 30 }, "first");
+    await expect.poll(() => fixture.isHeld("first", "snapshot", "late-text")).toBe(true);
+    expect(fixture.wasAborted("first", "snapshot", "late-text")).toBe(false);
+    await expect(answer(first)).toHaveText("Seed");
+    await expect(answer(second)).toHaveText("Seed");
+    expect(attaches("first")).toBe(initialReads.first + 1);
+    expect(attaches("second")).toBe(initialReads.second);
+    expect(fixture.connections).toEqual(opens);
+    await fixture.release("first", "snapshot", "late-text");
+    await expect(answer(first)).toHaveText("Seed A");
+
+    const beforeReplay = await reducerEvents(first);
+    fixture.publishCanonicalEvent({ kind: "thread_view.patch", payload: lifecycle, seq: 31 }, "first");
+    fixture.publishCanonicalEvent({ kind: "thread_view.item_delta", payload: lateText, seq: 32 }, "first");
+    await expect.poll(() => reducerEvents(first)).toBeGreaterThanOrEqual(beforeReplay + 2);
+    await expect(answer(first)).toHaveText("Seed A");
+    expect(attaches("first")).toBe(initialReads.first + 1);
+
+    // A lower envelope cursor must also deliver a genuinely newer projection.
+    fixture.detail.timeline = answerTimeline("Seed A B", 4);
+    fixture.publishCanonicalEvent({ kind: "thread_view.item_delta", payload: { ...lateText, delta: " B", viewRevision: 4 }, seq: 29 }, "first");
+    await expect(answer(first)).toHaveText("Seed A B");
+    await expect(answer(second)).toHaveText("Seed");
+    expect(attaches("first")).toBe(initialReads.first + 1);
+    expect(fixture.connections).toEqual(opens);
+
+    fixture.disconnect("second");
+    await expect.poll(() => fixture.connections.get("second") ?? 0).toBe((opens.get("second") ?? 0) + 1);
+    await expect(answer(second)).toHaveText("Seed A B");
+    expect(attaches("second")).toBe(initialReads.second + 1);
+    expect(attaches("first")).toBe(initialReads.first + 1);
+    expect(fixture.requests.filter((request) => request.key === "GET /v1/threads/settings-chat")).toHaveLength(observerReads);
+  } finally {
+    await fixture.close();
+  }
+  expect(fixture.unexpected).toEqual([]);
+  expect(fixture.errors).toEqual([]);
+});
+
+function answer(page: Page) {
+  return page.locator('.kodex-thread-pane[data-workspace-pane-active="true"] .kodex-assistant-markdown');
+}
+
+async function reducerEvents(page: Page) {
+  const diagnostics = await page.evaluate<LiveDiagnosticsSnapshot | undefined>(() => window.__KODEX_LIVE_DIAGNOSTICS__?.());
+  return diagnostics?.reducerEventCount ?? 0;
+}
+
+function answerTimeline(text: string, viewRevision: number): ThreadViewResponse["timeline"] {
+  return {
+    activeTurnId: "turn-answer", liveState: "streaming", pendingApprovalRequests: [], pendingUserInputRequests: [], viewRevision,
+    turns: [{ id: "turn-answer", status: "inProgress" }],
+    rows: [{
+      id: "answer", kind: "assistant_message", status: "inProgress", turnId: "turn-answer", displayOrder: 1,
+      item: { id: "answer", itemId: "answer", itemType: "agentMessage", threadId: "settings-chat", turnId: "turn-answer", status: "inProgress", displayOrder: 1, codexMethod: "item/started",
+        payload: { source: "gatewayStream", turnId: "turn-answer", itemId: "answer", item: { id: "answer", type: "agentMessage", text }, itemSnapshot: { id: "answer", itemType: "agentMessage" } },
+      },
+      items: [], collapsedRows: [], fileChanges: [],
+    }],
+  };
 }
 
 function row(id: string, displayOrder: number): ThreadTimelineRow {

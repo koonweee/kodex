@@ -62,7 +62,7 @@ describe("app surface cache events", () => {
     }
   });
 
-  it("refills submission, error and archive state without interpreting event payloads", async () => {
+  it("refills archived state without interpreting event payloads", async () => {
     const queryClient = new QueryClient();
     let current: AppSurfaceSession | null = appSurfaceSession();
     const read = vi.fn(() => Promise.resolve(current));
@@ -72,17 +72,11 @@ describe("app surface cache events", () => {
     const cleanup = observer.subscribe(() => {});
     try {
       await vi.waitFor(() => expect(queryClient.getQueryData(queryKeys.appSurface("thread-1"))).toEqual(current));
-      for (const [kind, next] of [
-        ["app_surface.session_submitted", appSurfaceSession({ status: "submitted", submittedMessage: "Pick mockup A", submittedRevision: 1 })],
-        ["app_surface.session_error", appSurfaceSession({ status: "errored" })],
-        ["app_surface.session_archived", null],
-      ] as const) {
-        current = next;
-        const previousReads = read.mock.calls.length;
-        applyAppSurfaceEvent(queryClient, { ...appSurfaceEvent(kind, null), threadId: "thread-1" });
-        await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(previousReads + 1));
-        expect(queryClient.getQueryData(queryKeys.appSurface("thread-1"))).toEqual(current);
-      }
+      current = null;
+      const previousReads = read.mock.calls.length;
+      applyAppSurfaceEvent(queryClient, { ...appSurfaceEvent("app_surface.session_archived", null), threadId: "thread-1" });
+      await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(previousReads + 1));
+      expect(queryClient.getQueryData(queryKeys.appSurface("thread-1"))).toBeNull();
     } finally {
       cleanup();
       queryClient.clear();
@@ -123,11 +117,6 @@ function appSurfaceSession(overrides: Partial<AppSurfaceSession> = {}): AppSurfa
     resourceUri: "ui://kodex/generated/session-1",
     revision: 1,
     status: "active",
-    submitAvailable: true,
-    submittedAt: null,
-    submittedMessage: null,
-    submittedMetadata: null,
-    submittedRevision: null,
     threadId: "thread-1",
     title: "Mockups",
     updatedAt: "2026-04-30T00:00:00Z",

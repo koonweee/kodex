@@ -20,9 +20,17 @@ fn user_item(id: &str, client_id: Option<&str>) -> Value {
 }
 
 async fn pending(sessions: &ThreadViewStore, client_id: &str, seq: i64) -> Option<ThreadViewPatch> {
-    record_pending_user_input(sessions, THREAD, TURN, client_id, &input(), &[], (seq, seq))
-        .await
-        .unwrap()
+    record_pending_user_input(
+        sessions,
+        THREAD,
+        TURN,
+        client_id,
+        &input(),
+        &[],
+        (seq, std::future::ready(Ok(seq))),
+    )
+    .await
+    .unwrap()
 }
 
 async fn echo(sessions: &ThreadViewStore, item: Value, seq: i64) {
@@ -34,7 +42,7 @@ async fn echo(sessions: &ThreadViewStore, item: Value, seq: i64) {
         item,
         snapshot,
         Some("completed"),
-        seq,
+        std::future::ready(Ok(seq)),
     )
     .await
     .unwrap();
@@ -219,7 +227,7 @@ async fn pending_identity_is_scoped_to_its_turn_and_repeated_ack_does_not_duplic
         item,
         snapshot,
         Some("completed"),
-        1,
+        std::future::ready(Ok(1)),
     )
     .await
     .unwrap();

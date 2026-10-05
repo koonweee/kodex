@@ -541,19 +541,28 @@ async fn native_thread_status_changed_emits_exact_canonical_status_patch() {
 }
 
 #[tokio::test]
-async fn native_not_loaded_status_clears_active_runtime_routing() {
+async fn native_not_loaded_status_clears_active_canonical_projection() {
     let state = test_state().await;
-    state
-        .store
-        .upsert_thread_runtime_state(ThreadRuntimeState {
-            thread_id: "thread-1".to_string(),
-            status: ThreadRuntimeStatus::Active,
-            active_turn_id: Some("stale-turn".to_string()),
-            updated_at: Utc::now(),
-            last_event_seq: Some(10),
-        })
-        .await
-        .unwrap();
+    ingest_inbound(
+        InboundMessage::Notification {
+            method: "turn/started".to_string(),
+            params: json!({
+                "threadId":"thread-1",
+                "turn":{"id":"stale-turn","status":"inProgress","items":[]}
+            }),
+        },
+        &state,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        state
+            .thread_views
+            .active_turn_id("thread-1")
+            .await
+            .as_deref(),
+        Some("stale-turn")
+    );
     let mut receiver = state.events.subscribe();
 
     ingest_inbound(
@@ -577,20 +586,15 @@ async fn native_not_loaded_status_clears_active_runtime_routing() {
     assert_eq!(patch.payload["liveState"], "notLoaded");
     assert_eq!(patch.payload["threadStatus"], "notLoaded");
 
-    let runtime = state
-        .store
-        .get_thread_runtime_state("thread-1")
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(runtime.status, ThreadRuntimeStatus::Idle);
-    assert_eq!(runtime.active_turn_id, None);
-    assert!(runtime.last_event_seq.is_some());
-
-    let routed_active_turn_id = crate::turn_lifecycle::routed_active_turn_id(&state, "thread-1")
-        .await
-        .unwrap();
-    assert_eq!(routed_active_turn_id, None);
+    assert_eq!(state.thread_views.active_turn_id("thread-1").await, None);
+    assert_eq!(
+        state
+            .thread_views
+            .patch_for_thread("thread-1")
+            .await
+            .live_state,
+        ThreadLiveState::NotLoaded
+    );
 }
 
 #[tokio::test]

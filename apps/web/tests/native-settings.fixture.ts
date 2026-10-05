@@ -138,9 +138,13 @@ export async function nativeSettingsFixture(context: BrowserContext) {
     if (key === "POST /v1/threads/settings-chat/input") {
       detail.thread.status = "active";
       detail.liveState = "streaming";
-      detail.timeline = { ...detail.timeline, activeTurnId: "turn-1", liveState: "streaming", turns: [{ id: "turn-1", status: "inProgress" }], viewRevision: 2 };
-      const patch: ThreadViewPatch = { ...detail.timeline, scope: "lifecycle", threadId: detail.thread.id, affectedTurnIds: ["turn-1"] };
-      emit("thread_view.patch", patch);
+      const revision = Math.max(seq, detail.timeline.viewRevision ?? 0) + 1;
+      detail.timeline = { ...detail.timeline, activeTurnId: "turn-1", liveState: "streaming", turns: [{ id: "turn-1", status: "inProgress" }], viewRevision: revision };
+      const patch: ThreadViewPatch = {
+        scope: "lifecycle", threadId: detail.thread.id, viewRevision: revision,
+        activeTurnId: "turn-1", liveState: "streaming", pendingApprovalRequests: [], pendingUserInputRequests: [],
+      };
+      emit("thread_view.patch", patch, undefined, revision);
       return respond(route, { payload: {turn: {id:"turn-1",status:"inProgress"}} });
     }
     if (key === "POST /v1/threads/settings-chat/queued-inputs") {
@@ -214,7 +218,7 @@ export async function nativeSettingsFixture(context: BrowserContext) {
   return {
     settings, requests, pending, connections, unexpected, errors, settingsChanged,
     detail, badge, queuedInputs, transfers, deliveredTransfers, automations, automationRuns,
-    appSurfaceChanged(kind: "app_surface.session_upserted" | "app_surface.session_submitted" | "app_surface.session_archived", session: AppSurfaceSession, client?: string) { emit(kind, session, client); },
+    appSurfaceChanged(kind: "app_surface.session_upserted" | "app_surface.session_archived", session: AppSurfaceSession, client?: string) { emit(kind, session, client); },
     automationRunChanged(automationId: string, client?: string) { emit("automation.run_updated", { automationId }, client); },
     queueChanged(client?: string, transfer = false) { emit(transfer ? "turn_queue.transfer_changed" : "turn_queue.changed", { threadId: detail.thread.id }, client); },
     readChanged(read: ThreadRead, count: number, client?: string) {
@@ -223,11 +227,15 @@ export async function nativeSettingsFixture(context: BrowserContext) {
       emit("thread.read_updated", read, client);
     },
     publishTimeline(timeline: ThreadViewResponse["timeline"], client?: string) {
-      detail.timeline = timeline;
+      const revision = Math.max(seq + 1, (detail.timeline.viewRevision ?? 0) + 1, timeline.viewRevision ?? 0);
+      detail.timeline = { ...timeline, viewRevision: revision };
       detail.liveState = timeline.liveState;
       detail.thread.status = timeline.liveState === "streaming" ? "active" : "idle";
-      const patch: ThreadViewPatch = { ...timeline, scope: "full_snapshot", threadId: detail.thread.id, affectedTurnIds: timeline.turns.map((turn) => turn.id) };
-      emit("thread_view.patch", patch, client, Math.max(seq + 1, timeline.viewRevision ?? 0));
+      const patch: ThreadViewPatch = { ...detail.timeline, scope: "full_snapshot", threadId: detail.thread.id, affectedTurnIds: timeline.turns.map((turn) => turn.id) };
+      emit("thread_view.patch", patch, client, revision);
+    },
+    publishCanonicalEvent(event: Pick<EventEnvelope, "seq" | "payload"> & { kind: "thread_view.patch" | "thread_view.item_delta" }, client: string) {
+      emit(event.kind, event.payload, client, event.seq);
     },
     configChanged(client?: string) { emit("config.changed", {}, client); },
     mcpOAuthCompleted(name: string, success: boolean, error: string | null, client?: string) { emit("mcp.oauth_login_completed", { name, threadId: null, success, error }, client); },

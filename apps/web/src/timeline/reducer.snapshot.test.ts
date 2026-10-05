@@ -760,7 +760,7 @@ describe("timeline canonical snapshots and patches", () => {
     expect(state.hiddenItems).toEqual([]);
   });
 
-  it("keeps existing stale-patch behavior for row-delta revisions", () => {
+  it("keeps current projection while advancing the cursor for a covered row-delta patch", () => {
     let state = applyTimelineSnapshot(createTimelineState(), snapshot({
       viewRevision: 5,
       activeTurnId: "turn-1",
@@ -779,7 +779,7 @@ describe("timeline canonical snapshots and patches", () => {
     }));
 
     expect(state.items.map((item) => item.text)).toEqual(["Fresh"]);
-    expect(state.viewRevision).toBe(6);
+    expect(state.viewRevision).toBe(5);
     expect(state.lastSeq).toBe(6);
   });
 

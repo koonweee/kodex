@@ -142,6 +142,12 @@ export type TimelineState = {
   isLoadingOlderHistory: boolean;
   lastSeq: number;
   viewRevision: number;
+  // Only a complete canonical window proves that earlier partial payloads are
+  // present. This ephemeral witness is independent of the transport cursor.
+  snapshotCoverageRevision: number;
+  // Local commit-phase work only. An opaque token survives partial updates until
+  // a complete canonical snapshot resolves the missing coverage.
+  snapshotRefillIntent: object | null;
 };
 
 export type TimelineIndexes = {
@@ -171,6 +177,8 @@ export type TimelineDraft = {
   isLoadingOlderHistory?: boolean;
   lastSeq: number;
   viewRevision: number;
+  snapshotCoverageRevision: number;
+  snapshotRefillIntent: object | null;
 };
 
 const stateIndexes = new WeakMap<TimelineState, TimelineIndexes>();
@@ -187,6 +195,8 @@ export function createTimelineState(): TimelineState {
     isLoadingOlderHistory: false,
     lastSeq: 0,
     viewRevision: 0,
+    snapshotCoverageRevision: 0,
+    snapshotRefillIntent: null,
   });
 }
 
@@ -205,6 +215,8 @@ export function createTimelineStateFromDraft(draft: TimelineDraft): TimelineStat
     isLoadingOlderHistory: draft.isLoadingOlderHistory ?? false,
     lastSeq: draft.lastSeq,
     viewRevision: draft.viewRevision,
+    snapshotCoverageRevision: draft.snapshotCoverageRevision,
+    snapshotRefillIntent: draft.snapshotRefillIntent,
   } as TimelineState;
   let itemsCache: TimelineItem[] | null = null;
   let hiddenItemsCache: TimelineItem[] | null = null;

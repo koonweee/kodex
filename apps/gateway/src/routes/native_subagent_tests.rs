@@ -252,17 +252,6 @@ fn native_subagent_input_capability_and_parent_survive_canonical_summary_project
 #[tokio::test]
 async fn native_subagent_explicit_input_denial_prevents_native_queue_admission() {
     let (state, native) = state().await;
-    state
-        .store
-        .upsert_thread_runtime_state(crate::store::ThreadRuntimeState {
-            thread_id: "child".into(),
-            status: crate::store::ThreadRuntimeStatus::Starting,
-            active_turn_id: None,
-            updated_at: chrono::Utc::now(),
-            last_event_seq: None,
-        })
-        .await
-        .unwrap();
     *native.next_response.lock().unwrap() =
         Some(json!({"thread":child("child","root","active",json!(false))}));
     let response = build_router(state.clone())
@@ -363,17 +352,6 @@ async fn native_subagent_input_denial_cannot_delete_or_steer_a_native_queue_row(
 #[tokio::test]
 async fn native_subagent_unknown_input_capability_does_not_infer_denial_from_role() {
     let (state, native) = state().await;
-    state
-        .store
-        .upsert_thread_runtime_state(crate::store::ThreadRuntimeState {
-            thread_id: "child".into(),
-            status: crate::store::ThreadRuntimeStatus::Starting,
-            active_turn_id: None,
-            updated_at: chrono::Utc::now(),
-            last_event_seq: None,
-        })
-        .await
-        .unwrap();
     let input = json!([{"type":"text","text":"Native dispatch will decide"}]);
     native.queued_responses.lock().unwrap().extend([
         json!({"thread":child("child","root","notLoaded",Value::Null)}),

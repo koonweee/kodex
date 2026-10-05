@@ -37,7 +37,8 @@ pub use subagents::{ThreadSubagentListResponse, ThreadSubagentSummary};
 #[cfg(test)]
 pub(crate) use timeline::TIMELINE_PREVIEW_STRING_LIMIT;
 pub(crate) use timeline::{
-    canonical_timeline_item_id, compact_timeline_item_payload, thread_timeline_rows_from_items,
+    canonical_timeline_item_id, compact_timeline_item_payload, thread_live_state_from_turn_status,
+    thread_timeline_rows_from_items,
 };
 pub use timeline::{
     PendingTimelineRequestSummary, ThreadTimelineFileChangeEntry, ThreadTimelineRow,

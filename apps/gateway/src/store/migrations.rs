@@ -1,5 +1,3 @@
-use sqlx::Row;
-
 use crate::error::{ApiError, ApiResult};
 
 use super::Store;
@@ -46,32 +44,11 @@ impl Store {
                 permissions_json text not null default '{}',
                 grants_json text not null,
                 provenance_json text not null,
-                submitted_revision integer,
-                submitted_message text,
-                submitted_metadata_json text,
                 created_at text not null,
                 updated_at text not null,
-                submitted_at text,
                 archived_at text
             )
             "#,
-        )
-        .execute(&self.pool)
-        .await?;
-        self.add_column_if_missing(
-            "app_surface_sessions",
-            "bridge_token",
-            "text not null default ''",
-        )
-        .await?;
-        self.add_column_if_missing(
-            "app_surface_sessions",
-            "permissions_json",
-            "text not null default '{}'",
-        )
-        .await?;
-        sqlx::query(
-            "update app_surface_sessions set bridge_token = lower(hex(randomblob(16))) where bridge_token = ''",
         )
         .execute(&self.pool)
         .await?;
@@ -176,12 +153,6 @@ impl Store {
         )
         .execute(&self.pool)
         .await?;
-        self.add_column_if_missing(
-            "notification_deliveries",
-            "delivered_subscription_ids_json",
-            "text not null default '[]'",
-        )
-        .await?;
         sqlx::query(
             r#"
             create table if not exists thread_notification_settings (
@@ -195,23 +166,11 @@ impl Store {
         .await?;
         sqlx::query(
             r#"
-            create table if not exists thread_runtime_state (
-                thread_id text primary key,
-                status text not null,
-                active_turn_id text,
-                updated_at text not null,
-                last_event_seq integer
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-        sqlx::query(
-            r#"
             create table if not exists automations (
                 id text primary key,
                 name text not null,
                 prompt text not null,
+                provenance text,
                 target_thread_id text not null,
                 start_at text not null,
                 repeat_every_seconds integer not null,
@@ -230,8 +189,6 @@ impl Store {
         )
         .execute(&self.pool)
         .await?;
-        self.add_column_if_missing("automations", "provenance", "text")
-            .await?;
         sqlx::query(
             r#"
             create table if not exists automation_runs (
@@ -274,25 +231,6 @@ impl Store {
         Ok(())
     }
 
-    async fn add_column_if_missing(
-        &self,
-        table: &str,
-        column: &str,
-        definition: &str,
-    ) -> ApiResult<()> {
-        let pragma = format!("pragma table_info({table})");
-        let columns = sqlx::query(&pragma).fetch_all(&self.pool).await?;
-        let exists = columns.iter().any(|row| {
-            row.try_get::<String, _>("name")
-                .is_ok_and(|name| name == column)
-        });
-        if !exists {
-            let statement = format!("alter table {table} add column {column} {definition}");
-            sqlx::query(&statement).execute(&self.pool).await?;
-        }
-        Ok(())
-    }
-
     pub async fn assert_wal(&self) -> ApiResult<()> {
         let mode: String = sqlx::query_scalar("pragma journal_mode")
             .fetch_one(&self.pool)
@@ -313,6 +251,17 @@ mod tests {
     use tempfile::tempdir;
 
     use crate::store::{NewEvent, Store};
+
+    #[tokio::test]
+    async fn fresh_database_has_no_native_runtime_authority() {
+        let store = Store::in_memory().await.unwrap();
+        let exists: bool = sqlx::query_scalar("select exists(select 1 from sqlite_master where type = 'table' and name = 'thread_runtime_state')")
+            .fetch_one(store.pool()).await.unwrap();
+        assert!(
+            !exists,
+            "native execution state must not have a durable gateway mirror"
+        );
+    }
 
     #[tokio::test]
     async fn fresh_database_has_no_thread_settings_authority() {
@@ -370,8 +319,7 @@ mod tests {
                 "queue_transfers",
                 "thread_notification_settings",
                 "thread_read_revision",
-                "thread_reads",
-                "thread_runtime_state"
+                "thread_reads"
             ]
         );
     }

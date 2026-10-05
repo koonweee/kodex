@@ -11,7 +11,7 @@ use crate::{
     api::{build_router, AppState},
     app_server::tests::RecordingAppServer,
     config::Config,
-    store::{Store, ThreadRuntimeStatus},
+    store::Store,
 };
 
 async fn state() -> (AppState, Arc<RecordingAppServer>) {
@@ -129,14 +129,51 @@ async fn native_identity_omitted_ids_get_distinct_gateway_ids_without_retrying_r
 }
 
 #[tokio::test]
-async fn native_identity_submission_ignores_stale_gateway_routing_state() {
-    for status in [ThreadRuntimeStatus::Starting, ThreadRuntimeStatus::Syncing] {
+async fn native_identity_only_exact_requested_thread_absence_permits_resume() {
+    for rejection in [
+        "app-server error -32600: thread not found: other-chat",
+        "app-server error -32603: thread not found: native-chat",
+        "app-server error -32600: thread not found: native-chat-extra",
+        "app-server error -32600: unknown thread state for native-chat",
+        "app-server error -32600: no rollout found for thread id native-chat",
+        "thread not found: native-chat",
+    ] {
         let (state, native) = state().await;
-        state
-            .store
-            .set_thread_runtime_pending("native-chat", status)
-            .await
-            .unwrap();
+        native
+            .queued_errors
+            .lock()
+            .unwrap()
+            .push(crate::error::ApiError::BadGateway(rejection.into()));
+        let (status, body) = request(&state, "POST", "/v1/threads/native-chat/input", json!({
+            "input":[{"type":"text","text":"one native attempt"}], "clientUserMessageId":"fixed-client"
+        })).await;
+        assert_eq!(status, StatusCode::BAD_GATEWAY, "{rejection}: {body}");
+        let calls = native.requests.lock().unwrap();
+        assert_eq!(
+            calls.len(),
+            1,
+            "nonmatching native error must not activate or resubmit: {rejection}: {calls:?}"
+        );
+        assert_eq!(calls[0].0, "turn/start");
+        assert_eq!(calls[0].1["clientUserMessageId"], "fixed-client");
+    }
+}
+
+#[tokio::test]
+async fn native_identity_submission_ignores_stale_gateway_routing_state() {
+    for status in [
+        crate::app_server_api::ThreadLiveState::Streaming,
+        crate::app_server_api::ThreadLiveState::Syncing,
+    ] {
+        let (state, native) = state().await;
+        crate::thread_view::record_thread_live_state(
+            &state.thread_views,
+            "native-chat",
+            status,
+            std::future::ready(Ok(0)),
+        )
+        .await
+        .unwrap();
         let (status, body) = request(
             &state,
             "POST",

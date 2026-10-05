@@ -12,6 +12,8 @@ pub mod kodex_control_plugin;
 pub mod mcp;
 pub mod models;
 #[cfg(test)]
+mod native_compaction_tests;
+#[cfg(test)]
 mod native_config_tests;
 #[cfg(test)]
 mod native_control_target_tests;
@@ -23,6 +25,8 @@ mod native_history_tests;
 mod native_identity_tests;
 #[cfg(test)]
 mod native_mcp_history_tests;
+#[cfg(test)]
+mod native_read_errors_tests;
 #[cfg(test)]
 mod native_read_markers_tests;
 #[cfg(test)]
@@ -95,7 +99,6 @@ mod tests {
         store::{
             EventEnvelope, NewApproval, NewAutomation, NewEvent, NewNotificationDelivery,
             NewPushSubscription, NotificationDeliveryStatus, PushSubscription, Store,
-            ThreadRuntimeState, ThreadRuntimeStatus,
         },
         thread_view,
     };
@@ -3942,30 +3945,30 @@ mod tests {
 
     #[tokio::test]
     async fn thread_attach_returns_native_canonical_view_despite_stale_gateway_state() {
-        for stale_live_view in [true, false] {
+        for stale_live_view in [ThreadLiveState::Streaming, ThreadLiveState::Syncing] {
             let (state, app_server) = test_state().await;
-            if stale_live_view {
-                thread_view::record_thread_live_state(
-                    &state.thread_views,
-                    "thread-1",
-                    ThreadLiveState::Streaming,
-                    1,
-                )
-                .await
-                .unwrap();
-            } else {
-                state
-                    .store
-                    .upsert_thread_runtime_state(ThreadRuntimeState {
-                        thread_id: "thread-1".to_string(),
-                        status: ThreadRuntimeStatus::Idle,
-                        active_turn_id: None,
-                        updated_at: chrono::Utc::now(),
-                        last_event_seq: None,
-                    })
-                    .await
-                    .unwrap();
-            }
+            thread_view::record_thread_live_state(
+                &state.thread_views,
+                "thread-1",
+                stale_live_view,
+                async {
+                    Ok(state
+                        .store
+                        .append_event(NewEvent {
+                            project_id: None,
+                            thread_id: Some("thread-1".into()),
+                            turn_id: None,
+                            item_id: None,
+                            kind: crate::events_replay::THREAD_VIEW_CURSOR_KIND.into(),
+                            codex_method: Some("thread/status/changed".into()),
+                            payload: json!({}),
+                        })
+                        .await?
+                        .seq)
+                },
+            )
+            .await
+            .unwrap();
             *app_server.next_response.lock().unwrap() = Some(json!({
                 "thread": thread_summary("thread-1"),
                 "initialTurnsPage": {"data": [], "nextCursor": null, "backwardsCursor": null}
@@ -4288,7 +4291,7 @@ mod tests {
             "turn-3",
             "item-agent-3",
             "live tail",
-            100,
+            std::future::ready(Ok(100)),
         )
         .await
         .unwrap();
@@ -4394,171 +4397,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn thread_detail_retries_transient_rollout_load_error() {
-        let (state, app_server) = test_state().await;
-        app_server.queued_errors.lock().unwrap().push(ApiError::BadGateway(
-            "app-server error -32603: failed to load rollout `/Users/example/.codex/sessions/2026/05/07/rollout-2026-05-07T16-08-24-019e042c-2a66-73c1-8b68-94e5be3f51af.jsonl`".to_string(),
-        ));
-        app_server.queued_responses.lock().unwrap().push(json!({
-            "thread": {
-                "id": "thread-1",
-                "cliVersion": "0.130.0",
-                "cwd": "/workspace",
-                "ephemeral": false,
-                "modelProvider": "openai",
-                "preview": "hi",
-                "source": "cli",
-                "status": {"type": "idle"},
-                "turns": [],
-                "createdAt": 1_767_225_600_i64,
-                "updatedAt": 1_767_225_610_i64
-            }
-        }));
-        let app = build_router(state);
-
-        let response = app
-            .oneshot(
-                Request::get("/v1/threads/thread-1")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 4);
-        assert_eq!(
-            requests[0],
-            (
-                "thread/read".to_string(),
-                json!({"threadId": "thread-1", "includeTurns": false})
-            )
-        );
-        assert_eq!(
-            requests[1],
-            (
-                "thread/read".to_string(),
-                json!({"threadId": "thread-1", "includeTurns": false})
-            )
-        );
-        assert_eq!(requests[2].0, "thread/turns/list");
-        assert_eq!(requests[2].1["itemsView"], "full");
-        assert_eq!(requests[3].1["itemsView"], "notLoaded");
-    }
-
-    #[tokio::test]
-    async fn thread_detail_retries_empty_rollout_read_error() {
-        let (state, app_server) = test_state().await;
-        app_server.queued_errors.lock().unwrap().push(ApiError::BadGateway(
-            "app-server error -32603: failed to read thread: thread-store internal error: failed to read thread /Users/example/.codex/sessions/2026/05/20/rollout-2026-05-20T22-32-32-019e4905-6c37-7662-987f-6032cc5f8793.jsonl: rollout at /Users/example/.codex/sessions/2026/05/20/rollout-2026-05-20T22-32-32-019e4905-6c37-7662-987f-6032cc5f8793.jsonl is empty".to_string(),
-        ));
-        app_server.queued_responses.lock().unwrap().push(json!({
-            "thread": {
-                "id": "thread-1",
-                "cliVersion": "0.130.0",
-                "cwd": "/workspace",
-                "ephemeral": false,
-                "modelProvider": "openai",
-                "preview": "hi",
-                "source": "cli",
-                "status": {"type": "idle"},
-                "turns": [],
-                "createdAt": 1_767_225_600_i64,
-                "updatedAt": 1_767_225_610_i64
-            }
-        }));
-        let app = build_router(state);
-
-        let response = app
-            .oneshot(
-                Request::get("/v1/threads/thread-1")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 4);
-        assert_eq!(
-            requests[0],
-            (
-                "thread/read".to_string(),
-                json!({"threadId": "thread-1", "includeTurns": false})
-            )
-        );
-        assert_eq!(
-            requests[1],
-            (
-                "thread/read".to_string(),
-                json!({"threadId": "thread-1", "includeTurns": false})
-            )
-        );
-        assert_eq!(requests[2].0, "thread/turns/list");
-        assert_eq!(requests[3].1["itemsView"], "notLoaded");
-    }
-
-    #[tokio::test]
-    async fn thread_detail_retries_transient_thread_history_load_error() {
-        let (state, app_server) = test_state().await;
-        app_server
-            .queued_errors
-            .lock()
-            .unwrap()
-            .push(ApiError::BadGateway(
-                "app-server error -32603: FAILED TO LOAD THREAD HISTORY".to_string(),
-            ));
-        app_server.queued_responses.lock().unwrap().push(json!({
-            "thread": {
-                "id": "thread-1",
-                "cliVersion": "0.130.0",
-                "cwd": "/workspace",
-                "ephemeral": false,
-                "modelProvider": "openai",
-                "preview": "hi",
-                "source": "cli",
-                "status": {"type": "idle"},
-                "turns": [],
-                "createdAt": 1_767_225_600_i64,
-                "updatedAt": 1_767_225_610_i64
-            }
-        }));
-        let app = build_router(state);
-
-        let response = app
-            .oneshot(
-                Request::get("/v1/threads/thread-1")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 4);
-        assert_eq!(
-            requests[0],
-            (
-                "thread/read".to_string(),
-                json!({"threadId": "thread-1", "includeTurns": false})
-            )
-        );
-        assert_eq!(
-            requests[1],
-            (
-                "thread/read".to_string(),
-                json!({"threadId": "thread-1", "includeTurns": false})
-            )
-        );
-        assert_eq!(requests[2].0, "thread/turns/list");
-        assert_eq!(requests[2].1["itemsView"], "full");
-        assert_eq!(requests[3].1["itemsView"], "notLoaded");
-    }
-
-    #[tokio::test]
     async fn thread_detail_returns_in_memory_session_when_turn_history_is_not_materialized() {
         let store = Store::in_memory().await.unwrap();
         let app_server = Arc::new(NotMaterializedThreadHistoryAppServer::default());
@@ -4585,7 +4423,7 @@ mod tests {
                 text_elements: Vec::new(),
             }],
             &[],
-            (pending.seq, pending.seq),
+            (pending.seq, std::future::ready(Ok(pending.seq))),
         )
         .await
         .unwrap();
@@ -5831,7 +5669,18 @@ mod tests {
         assert_eq!(active_after_message.status(), StatusCode::OK);
         let active_after_message = response_json(active_after_message).await;
         assert_eq!(active_after_message["session"]["status"], "active");
-        assert!(active_after_message["session"]["submittedMessage"].is_null());
+        for retired_field in [
+            "submittedMessage",
+            "submittedRevision",
+            "submittedMetadata",
+            "submittedAt",
+            "submitAvailable",
+        ] {
+            assert!(
+                active_after_message["session"].get(retired_field).is_none(),
+                "retired artifact lifecycle field {retired_field}"
+            );
+        }
 
         {
             let requests = app_server.requests.lock().unwrap();
@@ -6075,85 +5924,6 @@ mod tests {
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0].0, "thread/read");
-    }
-
-    #[tokio::test]
-    async fn compact_thread_starts_app_server_compaction_and_marks_syncing() {
-        let (state, app_server) = test_state().await;
-        app_server
-            .queued_responses
-            .lock()
-            .unwrap()
-            .push(thread_read_response("thread-1", 0));
-        app_server
-            .queued_responses
-            .lock()
-            .unwrap()
-            .push(json!({"started": true}));
-        let mut events = state.events.subscribe();
-        let app = build_router(state);
-
-        let response = app
-            .oneshot(
-                Request::post("/v1/threads/thread-1/compact")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["disposition"], "started");
-        assert_eq!(body["rawPayload"], json!({"started": true}));
-        let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests[0].0, "thread/read");
-        assert_eq!(requests[1].0, "thread/compact/start");
-        assert_eq!(requests[1].1, json!({"threadId": "thread-1"}));
-
-        let event = timeout(Duration::from_secs(2), events.recv())
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(event.kind, "thread_view.patch");
-        assert_eq!(event.codex_method.as_deref(), Some("thread_view/patch"));
-        assert_eq!(event.thread_id.as_deref(), Some("thread-1"));
-        assert_eq!(event.payload["liveState"], "syncing");
-    }
-
-    #[tokio::test]
-    async fn compact_thread_rejects_gateway_busy_runtime_without_app_server_call() {
-        let (state, app_server) = test_state().await;
-        state
-            .store
-            .upsert_thread_runtime_state(ThreadRuntimeState {
-                thread_id: "thread-1".to_string(),
-                status: ThreadRuntimeStatus::Syncing,
-                active_turn_id: None,
-                updated_at: chrono::Utc::now(),
-                last_event_seq: None,
-            })
-            .await
-            .unwrap();
-        let app = build_router(state);
-
-        let response = app
-            .oneshot(
-                Request::post("/v1/threads/thread-1/compact")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::CONFLICT);
-        let body = response_json(response).await;
-        assert_eq!(body["code"], "conflict");
-        assert!(body["message"]
-            .as_str()
-            .unwrap()
-            .contains("task is in progress"));
-        assert!(app_server.requests.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -8883,7 +8653,7 @@ mod tests {
             "turn-1",
             "item-1",
             "hello",
-            1,
+            std::future::ready(Ok(1)),
         )
         .await
         .unwrap();
@@ -9633,7 +9403,7 @@ mod tests {
             turn_id,
             "agent-active",
             "working",
-            1,
+            std::future::ready(Ok(1)),
         )
         .await
         .unwrap();

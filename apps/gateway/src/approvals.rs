@@ -261,6 +261,23 @@ async fn hydrate_locked(
     mirror: &RequestMirror,
     thread_id: &str,
 ) -> ApiResult<ThreadTimelineSnapshot> {
+    let approvals = pending_approvals_locked(state, mirror, thread_id).await?;
+    // The mirror gate remains held, so this revision already belongs to a
+    // completed publication and cannot copy an older request list over it.
+    thread_view::record_pending_requests(
+        &state.thread_views,
+        thread_id,
+        &approvals,
+        std::future::ready(Ok(mirror.revision)),
+    )
+    .await
+}
+
+async fn pending_approvals_locked(
+    state: &AppState,
+    mirror: &RequestMirror,
+    thread_id: &str,
+) -> ApiResult<Vec<Approval>> {
     let mut approvals = state
         .store
         .list_approvals(Some("pending".into()), Some(thread_id.to_string()))
@@ -274,13 +291,7 @@ async fn hydrate_locked(
             })
             .cloned(),
     );
-    thread_view::record_pending_requests(
-        &state.thread_views,
-        thread_id,
-        &approvals,
-        mirror.revision,
-    )
-    .await
+    Ok(approvals)
 }
 
 async fn publish_change(
@@ -303,26 +314,41 @@ async fn publish_change(
     mirror.revision = event.seq;
     let _ = state.events.send(event);
     for thread_id in affected {
-        // Each projection needs its own cursor so SSE does not discard it as a
-        // duplicate of the global invalidation. Only the cursor is durable.
-        let cursor = state
-            .store
-            .append_event(NewEvent {
-                project_id: None,
-                thread_id: Some(thread_id.clone()),
-                turn_id: None,
-                item_id: None,
-                kind: crate::events_replay::THREAD_VIEW_CURSOR_KIND.into(),
-                codex_method: None,
-                payload: json!({}),
-            })
-            .await?;
-        mirror.revision = cursor.seq;
-        hydrate_locked(state, mirror, &thread_id).await?;
-        let patch =
-            thread_view::lifecycle_patch_for_thread(&state.thread_views, &thread_id).await?;
+        let approvals = pending_approvals_locked(state, mirror, &thread_id).await?;
+        // Allocate under the projection exclusion: later snapshots cannot
+        // claim this cursor before its request list enters the view.
+        let snapshot = thread_view::record_pending_requests(
+            &state.thread_views,
+            &thread_id,
+            &approvals,
+            async {
+                let cursor = state
+                    .store
+                    .append_event(NewEvent {
+                        project_id: None,
+                        thread_id: Some(thread_id.clone()),
+                        turn_id: None,
+                        item_id: None,
+                        kind: crate::events_replay::THREAD_VIEW_CURSOR_KIND.into(),
+                        codex_method: None,
+                        payload: json!({}),
+                    })
+                    .await?;
+                mirror.revision = cursor.seq;
+                Ok(cursor.seq)
+            },
+        )
+        .await?;
+        let patch = thread_view::ThreadViewPatch::lifecycle(
+            snapshot.view_revision,
+            thread_id.clone(),
+            snapshot.active_turn_id,
+            snapshot.live_state,
+            snapshot.pending_approval_requests,
+            snapshot.pending_user_input_requests,
+        );
         let _ = state.events.send(synthetic_event(
-            cursor.seq,
+            mirror.revision,
             Some(thread_id),
             patch.active_turn_id.clone(),
             None,

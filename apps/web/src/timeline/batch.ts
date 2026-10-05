@@ -1,22 +1,53 @@
 import type { EventEnvelope } from "../api/client";
-import { applyLiveTimelineUpdate, type TimelineState } from "./reducer";
+import { applyLiveTimelineUpdate, canApplyThreadViewItemDelta, requireTimelineSnapshot, withTimelineLastSeq, type TimelineState } from "./reducer";
+import { threadViewProjectionRevision } from "./threadViewEvents";
 
 export function applyTimelineEventBatch(state: TimelineState, events: EventEnvelope[]): TimelineState {
   if (events.length === 0) {
     return state;
   }
 
-  return coalesceTimelineEventBatch(events).reduce(applyLiveTimelineUpdate, state);
+  const next = coalesceTimelineEventBatch(events, state.snapshotCoverageRevision, state.viewRevision).reduce((current, event) => {
+    const requiresSnapshot = !canApplyThreadViewItemDelta(current, event);
+    const updated = applyLiveTimelineUpdate(current, event);
+    return requiresSnapshot ? requireTimelineSnapshot(updated) : updated;
+  }, state);
+  // Covered and coalesced projections still contribute to the transport cursor.
+  return withTimelineLastSeq(next, events.reduce((cursor, event) => Math.max(cursor, event.seq), next.lastSeq));
 }
 
-export function coalesceTimelineEventBatch(events: EventEnvelope[]): EventEnvelope[] {
-  const sorted = [...events].sort((left, right) => left.seq - right.seq);
+export function coalesceTimelineEventBatch(events: EventEnvelope[], snapshotCoverageRevision = -1, viewRevision = snapshotCoverageRevision): EventEnvelope[] {
+  // Filter before concatenating: a snapshot may already contain only the prefix
+  // of a queued delta batch. The last delta's cursor cannot describe that cut.
+  const seenDeltas = new Set<string>();
+  const sorted = [...events].sort(compareProjectionOrder).filter((event) => {
+    if (event.kind !== "thread_view.item_delta") return true;
+    const revision = threadViewProjectionRevision(event);
+    if (revision === null) return true;
+    const key = `${itemDeltaCoalesceKey(event)}:${revision}`;
+    if (revision <= snapshotCoverageRevision || seenDeltas.has(key)) return false;
+    seenDeltas.add(key);
+    return true;
+  });
   const result: EventEnvelope[] = [];
   const turnPatchIndexes = new Map<string, number>();
   const rowDeltaPatchIndexes = new Map<string, number>();
   const itemDeltaIndexes = new Map<string, number>();
 
   for (const event of sorted) {
+    const revision = threadViewProjectionRevision(event);
+    const coveredPartial = revision !== null && revision <= viewRevision
+      && (event.kind === "thread_view.item_delta" || recordPayload(event.payload)?.scope !== "full_snapshot");
+    viewRevision = Math.max(viewRevision, revision ?? -1);
+    // Do not hide a potentially missed partial payload inside a newer merged
+    // revision. The reducer must see it and request the canonical refill.
+    if (coveredPartial) {
+      itemDeltaIndexes.clear();
+      rowDeltaPatchIndexes.clear();
+      turnPatchIndexes.clear();
+      result.push(event);
+      continue;
+    }
     if (event.kind === "thread_view.refresh_required" || isNonRowDeltaThreadViewPatch(event)) {
       itemDeltaIndexes.clear();
       rowDeltaPatchIndexes.clear();
@@ -69,7 +100,11 @@ export function coalesceTimelineEventBatch(events: EventEnvelope[]): EventEnvelo
     result[existingIndex] = event;
   }
 
-  return result.sort((left, right) => left.seq - right.seq);
+  return result.sort(compareProjectionOrder);
+}
+
+function compareProjectionOrder(left: EventEnvelope, right: EventEnvelope): number {
+  return (threadViewProjectionRevision(left) ?? left.seq) - (threadViewProjectionRevision(right) ?? right.seq);
 }
 
 function isRowDeltaThreadViewPatch(event: EventEnvelope): boolean {

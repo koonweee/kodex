@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use serde_json::{json, Value};
-use tokio::time::{sleep, Duration};
 
 use crate::{
     app_server::DynAppServer,
@@ -11,8 +10,6 @@ use crate::{
 
 use super::*;
 
-const ROLLOUT_LOAD_RETRY_ATTEMPTS: usize = 6;
-const ROLLOUT_LOAD_RETRY_DELAY: Duration = Duration::from_millis(50);
 #[derive(Clone)]
 pub struct CodexClient {
     app_server: DynAppServer,
@@ -92,7 +89,7 @@ impl CodexClient {
 
     pub async fn thread_read(&self, thread_id: String) -> ApiResult<ThreadDetailResponse> {
         let payload = self
-            .request_retrying_rollout_load(
+            .request(
                 "thread/read",
                 json!({ "threadId": thread_id, "includeTurns": true }),
             )
@@ -102,7 +99,7 @@ impl CodexClient {
 
     pub async fn thread_read_summary(&self, thread_id: String) -> ApiResult<ThreadSummary> {
         let payload = self
-            .request_retrying_rollout_load(
+            .request(
                 "thread/read",
                 json!({ "threadId": thread_id, "includeTurns": false }),
             )
@@ -128,7 +125,7 @@ impl CodexClient {
         limit: u32,
     ) -> ApiResult<ThreadDetailResponse> {
         let payload = self
-            .request_retrying_rollout_load(
+            .request(
                 "thread/read",
                 json!({ "threadId": thread_id, "includeTurns": false }),
             )
@@ -236,7 +233,7 @@ impl CodexClient {
         limit: Option<u32>,
     ) -> ApiResult<ThreadTurnsListPage> {
         let payload = self
-            .request_retrying_rollout_load(
+            .request(
                 "thread/turns/list",
                 json!({
                     "threadId": thread_id,
@@ -672,23 +669,6 @@ impl CodexClient {
         Ok(RawAppServerResponse { payload })
     }
 
-    async fn request_retrying_rollout_load(&self, method: &str, params: Value) -> ApiResult<Value> {
-        let mut attempt = 0;
-        loop {
-            match self.request(method, params.clone()).await {
-                Ok(payload) => return Ok(payload),
-                Err(error)
-                    if attempt + 1 < ROLLOUT_LOAD_RETRY_ATTEMPTS
-                        && is_rollout_load_error(&error) =>
-                {
-                    attempt += 1;
-                    sleep(ROLLOUT_LOAD_RETRY_DELAY).await;
-                }
-                Err(error) => return Err(error),
-            }
-        }
-    }
-
     pub(super) async fn request(&self, method: &str, params: Value) -> ApiResult<Value> {
         validate_client_request_params(method, params.clone())?;
         self.app_server.request(method, params).await
@@ -705,16 +685,6 @@ fn reject_external_thread_import(payload: &Value) -> ApiResult<()> {
         ));
     }
     Ok(())
-}
-
-fn is_rollout_load_error(error: &ApiError) -> bool {
-    let ApiError::BadGateway(message) = error else {
-        return false;
-    };
-    let normalized = message.to_ascii_lowercase();
-    normalized.contains("failed to load rollout")
-        || normalized.contains("failed to load thread history")
-        || (normalized.contains("rollout at") && normalized.contains(" is empty"))
 }
 
 fn is_thread_history_not_materialized_error(error: &ApiError) -> bool {

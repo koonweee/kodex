@@ -2088,12 +2088,6 @@ export interface components {
             /** Format: int64 */
             revision: number;
             status: components["schemas"]["AppSurfaceSessionStatus"];
-            /** Format: date-time */
-            submittedAt?: string | null;
-            submittedMessage?: string | null;
-            submittedMetadata?: unknown;
-            /** Format: int64 */
-            submittedRevision?: number | null;
             threadId: string;
             title: string;
             /** Format: date-time */
@@ -2119,13 +2113,6 @@ export interface components {
             /** Format: int64 */
             revision: number;
             status: components["schemas"]["AppSurfaceSessionStatus"];
-            submitAvailable: boolean;
-            /** Format: date-time */
-            submittedAt?: string | null;
-            submittedMessage?: string | null;
-            submittedMetadata?: unknown;
-            /** Format: int64 */
-            submittedRevision?: number | null;
             threadId: string;
             title: string;
             /** Format: date-time */
@@ -2138,7 +2125,7 @@ export interface components {
             session: components["schemas"]["AppSurfaceSessionDto"];
         };
         /** @enum {string} */
-        AppSurfaceSessionStatus: "active" | "submitting" | "submitted" | "archived" | "errored";
+        AppSurfaceSessionStatus: "active" | "archived";
         AppSurfaceToolGrant: {
             name?: string | null;
             server: string;

@@ -1,5 +1,5 @@
 import { Badge, Box, Text } from "@mantine/core";
-import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AppSurfaceBridgeRequest, AppSurfaceBridgeResponse, AppSurfaceSession } from "../api/client";
@@ -12,7 +12,6 @@ const APP_SURFACE_TEXT = {
   frame: "App surface",
   sandboxConfigError:
     "App surface sandbox proxy must be configured on a different origin. Set VITE_KODEX_APP_SURFACE_SANDBOX_URL.",
-  submitted: "Submitted",
   submitting: "Working",
 };
 
@@ -47,7 +46,7 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
   const [documentError, setDocumentError] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const [resourceHtml, setResourceHtml] = useState("");
-  const statusLabel = session.status === "submitted" ? APP_SURFACE_TEXT.submitted : isBridgePending ? APP_SURFACE_TEXT.submitting : null;
+  const statusLabel = isBridgePending ? APP_SURFACE_TEXT.submitting : null;
   const frameTitle = useMemo(() => `${APP_SURFACE_TEXT.frame}: ${session.title}`, [session.title]);
   const sandboxUrl = useMemo(resolveAppSurfaceSandboxUrl, []);
   const sandboxError = sandboxUrl ? null : APP_SURFACE_TEXT.sandboxConfigError;
@@ -197,7 +196,7 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
       {statusLabel ? (
         <Badge
           className="kodex-app-surface-status"
-          leftSection={isBridgePending ? <Loader2 size={12} /> : <CheckCircle2 size={12} />}
+          leftSection={<Loader2 size={12} />}
           size="sm"
           variant="light"
         >

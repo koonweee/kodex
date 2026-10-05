@@ -69,7 +69,7 @@ async fn native_revert_clears_history_live_input_and_cursors_and_replays_a_refil
             text_elements: vec![],
         }],
         &[],
-        (before, before),
+        (before, std::future::ready(Ok(before))),
     )
     .await
     .unwrap();
@@ -198,11 +198,24 @@ async fn native_revert_fences_all_pre_reset_history_merges_even_for_unseen_threa
 #[tokio::test]
 async fn http_sse_delivers_refill_signals_without_rewinding_transcript_high_water() {
     let state = state().await;
+    let previous = state
+        .store
+        .append_event(NewEvent {
+            project_id: None,
+            thread_id: Some(THREAD.into()),
+            turn_id: None,
+            item_id: None,
+            kind: "gateway.warning".into(),
+            codex_method: None,
+            payload: json!({"message": "Already in the replay snapshot"}),
+        })
+        .await
+        .unwrap();
     let mut headers = HeaderMap::new();
     headers.insert(header::ACCEPT, "text/event-stream".parse().unwrap());
     let query = EventsQuery {
         thread_id: Some(THREAD.into()),
-        cursor: None,
+        cursor: Some(0),
         project_id: None,
         exclude_thread_id: None,
         include_global: None,
@@ -212,6 +225,7 @@ async fn http_sse_delivers_refill_signals_without_rewinding_transcript_high_wate
         .await
         .unwrap()
         .into_body();
+    assert_eq!(next_sse(&mut body).await.id, previous.id);
     let metadata = EventMetadata::from_payload(&json!({"threadId": THREAD}));
     let first = append_timeline_changed_cursor(&state, &metadata, "first", None)
         .await
@@ -219,7 +233,11 @@ async fn http_sse_delivers_refill_signals_without_rewinding_transcript_high_wate
     let second = append_timeline_changed_cursor(&state, &metadata, "second", None)
         .await
         .unwrap();
-    let patch = state.thread_views.reset_history(THREAD, second.seq).await;
+    let patch = state
+        .thread_views
+        .reset_history(THREAD, std::future::ready(Ok(second.seq)))
+        .await
+        .unwrap();
     state
         .events
         .send(
@@ -241,28 +259,17 @@ async fn http_sse_delivers_refill_signals_without_rewinding_transcript_high_wate
         );
         assert_eq!(refill.seq, cursor);
     }
-    // Refills do not lower the data watermark: an obsolete canonical patch is
-    // still discarded, and the next frame must be the newer native projection.
-    let obsolete = state.thread_views.patch_for_thread(THREAD).await;
-    state
-        .events
-        .send(
-            synthetic_event(
-                second.seq,
-                Some(THREAD.into()),
-                None,
-                None,
-                THREAD_VIEW_PATCH_EVENT_KIND,
-                Some("thread_view/patch"),
-                obsolete,
-            )
-            .unwrap(),
-        )
-        .unwrap();
+    // Refills do not lower the replay cutoff. A delayed broadcast of an event
+    // already delivered by replay remains suppressed.
+    state.events.send(previous).unwrap();
     let third = append_timeline_changed_cursor(&state, &metadata, "third", None)
         .await
         .unwrap();
-    let patch = state.thread_views.reset_history(THREAD, third.seq).await;
+    let patch = state
+        .thread_views
+        .reset_history(THREAD, std::future::ready(Ok(third.seq)))
+        .await
+        .unwrap();
     state
         .events
         .send(

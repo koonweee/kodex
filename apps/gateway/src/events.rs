@@ -10,7 +10,6 @@ use axum::{
     },
     Json,
 };
-use chrono::Utc;
 use futures_core::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -36,7 +35,7 @@ use crate::{
     routes::threads::{ThreadReadStateUpdate, THREAD_READ_UPDATED_EVENT},
     schema::is_supported_approval_method,
     skills,
-    store::{EventEnvelope, NewApproval, NewEvent, ThreadRuntimeState, ThreadRuntimeStatus},
+    store::{EventEnvelope, NewApproval, NewEvent},
     thread_view::{self, THREAD_VIEW_ITEM_DELTA_EVENT_KIND, THREAD_VIEW_PATCH_EVENT_KIND},
 };
 
@@ -262,25 +261,17 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
                         .invalidate_thread_completion_head(thread_id)
                         .await?;
                     crate::routes::threads::broadcast_thread_read_update(state, read).await?;
-                    let cursor = append_timeline_changed_cursor(
-                        state,
-                        &metadata,
-                        "thread_view.history_reset",
-                        Some(&method),
-                    )
-                    .await?;
                     let patch = state
                         .thread_views
-                        .reset_history(thread_id, cursor.seq)
-                        .await;
-                    state
-                        .store
-                        .upsert_thread_runtime_state(ThreadRuntimeState {
-                            thread_id: thread_id.to_string(),
-                            status: ThreadRuntimeStatus::Idle,
-                            active_turn_id: None,
-                            updated_at: Utc::now(),
-                            last_event_seq: Some(cursor.seq),
+                        .reset_history(thread_id, async {
+                            Ok(append_timeline_changed_cursor(
+                                state,
+                                &metadata,
+                                "thread_view.history_reset",
+                                Some(&method),
+                            )
+                            .await?
+                            .seq)
                         })
                         .await?;
                     let reset = thread_view_patch_payload_event(state, patch).await?;
@@ -555,12 +546,17 @@ async fn event_stream(
         loop {
             let received = timeout(Duration::from_secs(5), receiver.recv()).await;
             match received {
-                // Refill signals intentionally share the observed cursor and
-                // may follow a canonical patch at that cursor. They carry no
-                // transcript rows and must not be dropped as duplicate data.
+                // Suppress only operational events already covered by replay.
+                // Independent publishers can broadcast committed events out of
+                // order, so the latest live cursor is not a delivery cutoff.
+                // Canonical payloads use projection revisions; their wrappers
+                // and refill signals may share an observed transport cursor.
                 Ok(Ok(event))
-                    if (event.seq > high_water
-                        || event.kind == thread_view::THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND)
+                    if (event.seq > replay_high_water
+                        || matches!(event.kind.as_str(),
+                            THREAD_VIEW_PATCH_EVENT_KIND
+                                | THREAD_VIEW_ITEM_DELTA_EVENT_KIND
+                                | thread_view::THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND))
                         && event_matches(&event, &query)
                         && is_sse_live_event_for_query(&event, &query) =>
                 {
@@ -748,22 +744,24 @@ async fn timeline_item_delta_event(
     let Some(turn_id) = metadata.turn_id.clone() else {
         return Ok(Vec::new());
     };
-    let cursor = append_timeline_changed_cursor(
-        state,
-        metadata,
-        "thread_view.item_delta_observed",
-        Some(method),
-    )
-    .await?;
     let delta = string_field(params, &["delta", "text", "content"]).unwrap_or_default();
     let _phase = string_field(params, &["phase"]);
-    let outcome = thread_view::record_item_delta(
+    let (outcome, view_revision) = thread_view::record_item_delta(
         &state.thread_views,
         &thread_id,
         &turn_id,
         &item_id,
         &delta,
-        cursor.seq,
+        async {
+            Ok(append_timeline_changed_cursor(
+                state,
+                metadata,
+                "thread_view.item_delta_observed",
+                Some(method),
+            )
+            .await?
+            .seq)
+        },
     )
     .await?;
     match outcome {
@@ -782,7 +780,7 @@ async fn timeline_item_delta_event(
                 turn_id,
                 item_id,
                 delta,
-                view_revision: cursor.seq,
+                view_revision,
             },
         )
         .await?,
@@ -822,13 +820,6 @@ async fn timeline_item_upsert_event(
         item: app_server_api::compact_timeline_item_payload(item),
         item_snapshot,
     };
-    let cursor = append_timeline_changed_cursor(
-        state,
-        metadata,
-        "thread_view.item_upsert_observed",
-        Some("item/upsert"),
-    )
-    .await?;
     let patch = thread_view::record_item_upsert(
         &state.thread_views,
         &thread_id,
@@ -836,7 +827,16 @@ async fn timeline_item_upsert_event(
         item.clone(),
         payload.item_snapshot.clone(),
         item_upsert_item_status(method),
-        cursor.seq,
+        async {
+            Ok(append_timeline_changed_cursor(
+                state,
+                metadata,
+                "thread_view.item_upsert_observed",
+                Some("item/upsert"),
+            )
+            .await?
+            .seq)
+        },
     )
     .await?;
     Ok(vec![thread_view_patch_payload_event(state, patch).await?])
@@ -912,17 +912,20 @@ async fn timeline_turn_upsert_event(
     let Ok(turn) = turn_snapshot_from_value(turn) else {
         return Ok(NormalizedTimelineEvents::default());
     };
-    let cursor = append_timeline_changed_cursor(
-        state,
-        metadata,
-        "thread_view.turn_changed",
-        Some("turn/upsert"),
-    )
-    .await?;
     let mut events = Vec::new();
     let terminal = is_terminal_turn_status(&turn.status);
     let (newly_terminal, patch) =
-        thread_view::record_turn_status(&state.thread_views, &thread_id, &turn, cursor.seq).await?;
+        thread_view::record_turn_status(&state.thread_views, &thread_id, &turn, async {
+            Ok(append_timeline_changed_cursor(
+                state,
+                metadata,
+                "thread_view.turn_changed",
+                Some("turn/upsert"),
+            )
+            .await?
+            .seq)
+        })
+        .await?;
     events.push(thread_view_patch_payload_event(state, patch).await?);
     if terminal {
         if let Some(event) =
@@ -932,13 +935,11 @@ async fn timeline_turn_upsert_event(
         }
     }
     if newly_terminal {
-        let completed_cursor = append_completed_turn_cursor(state, metadata, "turn/upsert").await?;
-        let _ = thread_view::record_turn_status(
-            &state.thread_views,
-            &thread_id,
-            &turn,
-            completed_cursor.seq,
-        )
+        let _ = thread_view::record_turn_status(&state.thread_views, &thread_id, &turn, async {
+            Ok(append_completed_turn_cursor(state, metadata, "turn/upsert")
+                .await?
+                .seq)
+        })
         .await?;
         let planned = state
             .store
@@ -963,24 +964,6 @@ async fn timeline_turn_upsert_event(
             )
             .await?;
     }
-    let runtime = if terminal {
-        ThreadRuntimeState {
-            thread_id: metadata.thread_id.clone().unwrap_or_default(),
-            status: ThreadRuntimeStatus::Idle,
-            active_turn_id: None,
-            updated_at: Utc::now(),
-            last_event_seq: Some(cursor.seq),
-        }
-    } else {
-        ThreadRuntimeState {
-            thread_id: metadata.thread_id.clone().unwrap_or_default(),
-            status: ThreadRuntimeStatus::Active,
-            active_turn_id: None,
-            updated_at: Utc::now(),
-            last_event_seq: Some(cursor.seq),
-        }
-    };
-    state.store.upsert_thread_runtime_state(runtime).await?;
     Ok(NormalizedTimelineEvents { events })
 }
 
@@ -1219,46 +1202,25 @@ async fn timeline_thread_status_event(
     let Some(status) = status_value.and_then(thread_status_from_value) else {
         return Ok(NormalizedTimelineEvents::default());
     };
-    let cursor =
-        append_timeline_changed_cursor(state, metadata, "thread_view.status_changed", Some(method))
-            .await?;
     let mut events = Vec::new();
     let mut patch = thread_view::record_thread_live_state(
         &state.thread_views,
         &thread_id,
         live_state_from_thread_status(status),
-        cursor.seq,
+        async {
+            Ok(append_timeline_changed_cursor(
+                state,
+                metadata,
+                "thread_view.status_changed",
+                Some(method),
+            )
+            .await?
+            .seq)
+        },
     )
     .await?;
     patch.thread_status = Some(status);
     events.push(thread_view_patch_payload_event(state, patch).await?);
-    match status {
-        ThreadStatus::Idle | ThreadStatus::SystemError | ThreadStatus::NotLoaded => {
-            state
-                .store
-                .upsert_thread_runtime_state(ThreadRuntimeState {
-                    thread_id: thread_id.clone(),
-                    status: ThreadRuntimeStatus::Idle,
-                    active_turn_id: None,
-                    updated_at: Utc::now(),
-                    last_event_seq: Some(cursor.seq),
-                })
-                .await?;
-            return Ok(NormalizedTimelineEvents { events });
-        }
-        ThreadStatus::Active => {
-            state
-                .store
-                .upsert_thread_runtime_state(ThreadRuntimeState {
-                    thread_id: thread_id.clone(),
-                    status: ThreadRuntimeStatus::Active,
-                    active_turn_id: None,
-                    updated_at: Utc::now(),
-                    last_event_seq: Some(cursor.seq),
-                })
-                .await?;
-        }
-    }
     Ok(NormalizedTimelineEvents { events })
 }
 
@@ -1484,3 +1446,7 @@ mod lag_tests;
 #[cfg(test)]
 #[path = "events/revert_tests.rs"]
 mod revert_tests;
+
+#[cfg(test)]
+#[path = "events/projection_sequence_tests.rs"]
+mod projection_sequence_tests;

@@ -93,7 +93,7 @@ async fn native_skill_input_routes_active_steering_without_rewriting_selections(
         "native-turn",
         "native-agent-message",
         "Working",
-        1,
+        std::future::ready(Ok(1)),
     )
     .await
     .unwrap();

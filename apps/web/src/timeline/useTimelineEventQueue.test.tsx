@@ -36,7 +36,7 @@ describe("useTimelineEventQueue", () => {
     const reducerCalls: string[][] = [];
 
     const { result } = renderHook(() => {
-      const [, setTimeline] = useState<TimelineState>(() => createTimelineState());
+      const [timeline, setTimeline] = useState<TimelineState>(() => createTimelineState());
       return useTimelineEventQueue({
         flushDelayMs: 64,
         reduceEvents: (current, events) => {
@@ -44,6 +44,7 @@ describe("useTimelineEventQueue", () => {
           return current;
         },
         setTimeline,
+        timeline,
       });
     });
 

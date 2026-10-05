@@ -113,7 +113,7 @@ describe("timeline event batching", () => {
     expect(state.items).toHaveLength(1);
     expect(state.items[0]).toMatchObject({ text: "Hello" });
     expect(state.lastSeq).toBe(3);
-    expect(state.viewRevision).toBe(1);
+    expect(state.viewRevision).toBe(3);
   });
 
   it("does not coalesce item deltas across authoritative patches", () => {
@@ -131,7 +131,7 @@ describe("timeline event batching", () => {
     expect(state.items).toHaveLength(1);
     expect(state.items[0]).toMatchObject({ text: "CanonicalD" });
     expect(state.lastSeq).toBe(4);
-    expect(state.viewRevision).toBe(3);
+    expect(state.viewRevision).toBe(4);
   });
 
   it("replaces the complete affected turn while preserving other large-thread rows", () => {

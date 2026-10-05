@@ -40,8 +40,6 @@ const GATEWAY_SSE_EVENT_TYPES = [
   "app_surface.model_context_updated",
   "app_surface.presentation_requested",
   "app_surface.session_archived",
-  "app_surface.session_error",
-  "app_surface.session_submitted",
   "app_surface.session_upserted",
   "config.changed",
   "mcp.oauth_login_completed",

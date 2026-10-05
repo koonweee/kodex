@@ -78,6 +78,7 @@ const scenarios = [
     viewport: { width: 1440, height: 900 },
     path: "/threads/thread-long",
     scenario: "long",
+    seedWorkspace: workspaceState([threadPane("pane-thread-long", "thread-long", "Long timeline rendering")], "pane-thread-long"),
     matrix: "One Dockview pane with 640 canonical timeline rows, file diffs, commands, and markdown.",
     action: async ({ page }) => {
       await waitForTimelineRows(page);
@@ -110,21 +111,23 @@ const scenarios = [
     id: "desktop-mixed-panes",
     label: "Desktop mixed pane types",
     viewport: { width: 1720, height: 940 },
-    path: "/threads/thread-1",
+    path: "/threads/thread-long",
     scenario: "mixed",
     seedWorkspace: workspaceState([
       threadPane("pane-thread-long", "thread-long", "Long timeline rendering"),
-      generatedUiPane("pane-ui-1", "thread-1", "Generated UI"),
+      appSurfacePane("pane-ui-1", "thread-1", "App surface"),
       terminalPane("pane-terminal-1"),
       threadPane("pane-thread-stream", "thread-stream", "Long running active turn"),
     ], "pane-thread-long"),
     matrix: "Thread, generated UI iframe, terminal/xterm, and active thread panes in one Dockview layout.",
     action: async ({ page }) => {
       await waitForPaneCount(page, 4);
-      await page.locator(".kodex-generated-ui-pane iframe").first().waitFor({ state: "visible" });
+      await page.locator(".kodex-app-surface-pane iframe").first().waitFor({ state: "visible" });
+      await page.frameLocator(".kodex-app-surface-pane iframe").frameLocator('iframe[title="App surface content"]').getByRole("heading", { name: "Performance mockup chooser" }).waitFor({ state: "visible" });
       await page.locator(".kodex-terminal-pane").first().waitFor({ state: "visible" });
       await scrollTimeline(page, 3200);
-      await page.locator(".kodex-generated-ui-pane").first().click();
+      await page.locator(".kodex-app-surface-pane").first().click();
+      await page.getByText(streamingText(120), { exact: true }).waitFor({ state: "visible", timeout: 10000 });
     },
   },
   {
@@ -152,9 +155,9 @@ const scenarios = [
         await page.getByRole("button", { name: /duplicate pane/i }).first().click();
         await page.waitForTimeout(120);
       }
-      await page.getByRole("button", { name: /open generated ui/i }).first().click();
+      await page.getByRole("button", { name: /open app surface/i }).first().click();
       await waitForPaneCount(page, 5);
-      await page.locator(".kodex-generated-ui-pane iframe").first().waitFor({ state: "visible" });
+      await page.locator(".kodex-app-surface-pane iframe").first().waitFor({ state: "visible" });
     },
   },
   {
@@ -239,7 +242,7 @@ const scenarios = [
     action: async ({ page }) => {
       await waitForTimelineRows(page);
       await page.getByRole("button", { name: /show app surface/i }).click({ timeout: 10000 });
-      await page.locator(".kodex-generated-ui-pane iframe").first().waitFor({ state: "visible" });
+      await page.locator(".kodex-app-surface-pane iframe").first().waitFor({ state: "visible" });
     },
   },
 ];
@@ -277,6 +280,7 @@ async function main() {
           : "skipped by default; rerun with --agent-browser to collect optional CLI profiles",
     }];
     await writeReports({ agentProfiles, baseUrl, results });
+    if (results.some((result) => result.errors.length > 0 || result.failedRequests.length > 0)) process.exitCode = 1;
     agentProfiles = agentBrowserAvailable && shouldRunAgentBrowserProfiles
       ? await runAgentBrowserProfiles(baseUrl)
       : agentProfiles;
@@ -378,20 +382,24 @@ function numberOption(value, name) {
 
 async function runScenario(baseUrl, scenario) {
   await setServerScenario(baseUrl, scenario.scenario);
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ channel: "chromium", headless: true });
   const context = await browser.newContext(contextOptions(scenario));
   await installPerfObserver(context, scenario.seedWorkspace, cliOptions.colorScheme);
   const page = await context.newPage();
   const client = await context.newCDPSession(page);
   const errors = [];
   const failedRequests = [];
+  const abortedRequests = [];
   page.on("console", (message) => {
     if (["error", "warning"].includes(message.type())) {
       errors.push(`${message.type()}: ${message.text()}`);
     }
   });
   page.on("pageerror", (error) => errors.push(`pageerror: ${error.message}`));
-  page.on("requestfailed", (request) => failedRequests.push(`${request.method()} ${request.url()} ${request.failure()?.errorText ?? ""}`));
+  page.on("requestfailed", (request) => {
+    const failure = `${request.method()} ${request.url()} ${request.failure()?.errorText ?? ""}`;
+    (request.failure()?.errorText === "net::ERR_ABORTED" ? abortedRequests : failedRequests).push(failure);
+  });
   page.on("response", (response) => {
     if (response.status() >= 400) {
       failedRequests.push(`${response.status()} ${response.request().method()} ${response.url()}`);
@@ -411,6 +419,8 @@ async function runScenario(baseUrl, scenario) {
     await page.screenshot({ path: screenshotPath, fullPage: false });
   } catch (error) {
     errors.push(`scenario failure: ${error instanceof Error ? error.message : String(error)}`);
+    await fs.writeFile(path.join(OUT_DIR, `${scenario.id}.failure.txt`), await page.locator("body").innerText());
+    await page.screenshot({ path: screenshotPath, fullPage: false });
   } finally {
     await stopChromeTrace(client, tracePath).catch((error) => {
       errors.push(`trace failure: ${error instanceof Error ? error.message : String(error)}`);
@@ -429,6 +439,7 @@ async function runScenario(baseUrl, scenario) {
     screenshotPath: rel(screenshotPath),
     errors: unique(errors).slice(0, 20),
     failedRequests: unique(failedRequests).slice(0, 20),
+    abortedRequests: unique(abortedRequests),
     ...metrics,
   };
 
@@ -685,10 +696,10 @@ async function runAgentBrowserProfiles(baseUrl) {
       id: "agent-desktop-mixed-panes",
       scenario: "mixed",
       viewport: ["1720", "940"],
-      path: "/threads/thread-1",
+      path: "/threads/thread-long",
       setup: workspaceState([
         threadPane("pane-thread-long", "thread-long", "Long timeline rendering"),
-        generatedUiPane("pane-ui-1", "thread-1", "Generated UI"),
+        appSurfacePane("pane-ui-1", "thread-1", "App surface"),
         terminalPane("pane-terminal-1"),
         threadPane("pane-thread-stream", "thread-stream", "Long running active turn"),
       ], "pane-thread-long"),
@@ -875,6 +886,7 @@ function detectConcerns(results) {
 
 async function startProfileServer(port) {
   let activeScenario = "baseline";
+  const streamState = { count: 0 };
   let terminalIndex = 0;
   const terminalSessions = new Map();
   const sseClients = new Set();
@@ -891,6 +903,7 @@ async function startProfileServer(port) {
         if (request.method === "POST") {
           const body = await readJson(request);
           activeScenario = typeof body.scenario === "string" ? body.scenario : "baseline";
+          streamState.count = 0;
           json(response, { scenario: activeScenario });
           return;
         }
@@ -898,12 +911,13 @@ async function startProfileServer(port) {
         return;
       }
       if (url.pathname === "/v1/events") {
-        handleSse(request, response, activeScenario, sseClients);
+        handleSse(request, response, activeScenario, sseClients, streamState);
         return;
       }
       if (url.pathname.startsWith("/v1/")) {
         await handleApi({
           activeScenario,
+          streamState,
           request,
           response,
           terminalSessions,
@@ -959,8 +973,14 @@ async function startProfileServer(port) {
   };
 }
 
-async function handleApi({ activeScenario, request, response, terminalSessions, terminalIndexRef, url }) {
+async function handleApi({ activeScenario, streamState, request, response, terminalSessions, terminalIndexRef, url }) {
   const key = `${request.method} ${url.pathname}`;
+  if (key === "PUT /v1/thread-view-presence") {
+    const body = await readJson(request);
+    if (typeof body.clientId !== "string" || !Array.isArray(body.visibleThreadIds)) throw new Error("Invalid presence snapshot");
+    response.writeHead(204).end();
+    return;
+  }
   if (key === "GET /v1/threads/unread-badge") {
     json(response, profileUnreadBadge);
     return;
@@ -1023,19 +1043,19 @@ async function handleApi({ activeScenario, request, response, terminalSessions, 
       json(response, { code: "not_found", message: threadId, retryable: false }, 404);
       return;
     }
-    json(response, threadDetailFor(summary, activeScenario));
+    json(response, threadDetailFor(summary, streamState.count));
     return;
   }
   const timelinePageMatch = url.pathname.match(/^\/v1\/threads\/([^/]+)\/timeline\/pages$/);
   if (request.method === "GET" && timelinePageMatch) {
     const threadId = decodeURIComponent(timelinePageMatch[1]);
     const summary = threadSummaries.find((thread) => thread.id === threadId) ?? threadSummaries[0];
-    json(response, threadDetailFor(summary, activeScenario));
+    json(response, threadDetailFor(summary, streamState.count));
     return;
   }
   const subagentsMatch = url.pathname.match(/^\/v1\/threads\/([^/]+)\/subagents$/);
   if (request.method === "GET" && subagentsMatch) {
-    json(response, { subagents: [] });
+    json(response, { subagents: [], nextCursor: null });
     return;
   }
   const queuedInputsMatch = url.pathname.match(/^\/v1\/threads\/([^/]+)\/queued-inputs$/);
@@ -1067,7 +1087,7 @@ async function handleApi({ activeScenario, request, response, terminalSessions, 
     return;
   }
   if (key === "GET /v1/approvals") {
-    json(response, { approvals: activeScenario === "approvals" ? [approval()] : [] });
+    json(response, { runtimeId: "profile-runtime", revision: 1, approvals: activeScenario === "approvals" ? [approval()] : [] });
     return;
   }
   if (request.method === "POST" && url.pathname.startsWith("/v1/approvals/")) {
@@ -1103,7 +1123,7 @@ async function handleApi({ activeScenario, request, response, terminalSessions, 
     return;
   }
   if (key === "GET /v1/composer-settings") {
-    json(response, { model: null, effort: null, serviceTier: null, permissionProfileId: null, permissionsPreset: null });
+    json(response, { model: null, effort: null, serviceTier: null, permissionProfileId: null, permissionsPreset: null, writeTarget: null });
     return;
   }
   if (key === "PATCH /v1/composer-settings") {
@@ -1184,7 +1204,7 @@ async function handleApi({ activeScenario, request, response, terminalSessions, 
   json(response, { code: "not_found", message: key, retryable: false }, 404);
 }
 
-function handleSse(request, response, activeScenario, clients) {
+function handleSse(request, response, activeScenario, clients, streamState) {
   writeCors(response);
   response.writeHead(200, {
     "Cache-Control": "no-cache",
@@ -1195,13 +1215,16 @@ function handleSse(request, response, activeScenario, clients) {
   clients.add(response);
   let timer = null;
   if (activeScenario === "stream-heavy" || (request.url ?? "").includes("thread-stream")) {
-    let index = 0;
+    let index = streamState.count;
     timer = setInterval(() => {
       if (index >= 120) {
         clearInterval(timer);
         return;
       }
       const event = itemDeltaEvent(index + 2, ` token-${index}`, "thread-stream", "turn-stream", "stream-agent");
+      // The actual-open refill must describe text already emitted at this
+      // revision, just like the canonical gateway projection.
+      streamState.count = index + 1;
       response.write(`event: thread_view.item_delta\ndata: ${JSON.stringify(event)}\n\n`);
       index += 1;
     }, 20);
@@ -1233,10 +1256,10 @@ async function serveStatic(response, requestPath) {
   response.end(data);
 }
 
-function threadDetailFor(summary, activeScenario) {
+function threadDetailFor(summary, streamedCount) {
   const rowCount = summary.id === "thread-long" ? 640 : summary.id === "thread-stream" ? 24 : 36;
-  const turns = summary.id === "thread-stream" ? streamTurns(summary.id) : turnsFor(summary.id, rowCount);
-  return threadDetailBody(summary, turns, summary.status === "active" ? "streaming" : "idle", activeScenario);
+  const turns = summary.id === "thread-stream" ? streamTurns(summary.id, streamedCount) : turnsFor(summary.id, rowCount);
+  return threadDetailBody(summary, turns, summary.status === "active" ? "streaming" : "idle", summary.id === "thread-stream" ? streamedCount + 1 : 1);
 }
 
 function turnsFor(threadId, count) {
@@ -1301,33 +1324,35 @@ function turnsFor(threadId, count) {
   return turns;
 }
 
-function streamTurns(threadId) {
+function streamTurns(threadId, streamedCount) {
   const base = turnsFor(threadId, 23);
   base.push({
     id: "turn-stream",
-    status: "running",
+    status: "inProgress",
     startedAt: 1777501000,
     items: [{
       id: "stream-agent",
       itemType: "agentMessage",
-      rawPayload: { id: "stream-agent", type: "agentMessage", text: "Streaming seed" },
+      rawPayload: { id: "stream-agent", type: "agentMessage", text: streamingText(streamedCount) },
     }],
     rawPayload: {},
   });
   return base;
 }
 
-function threadDetailBody(sourceThread, turns = [], liveState = "idle") {
+function streamingText(count) {
+  return `Streaming seed${Array.from({ length: count }, (_, index) => ` token-${index}`).join("")}`;
+}
+
+function threadDetailBody(sourceThread, turns = [], liveState = "idle", viewRevision = 1) {
   return {
     thread: sourceThread,
-    turns,
     liveState,
-    timeline: timelineFromTurns(sourceThread, turns, liveState),
-    rawPayload: {},
+    timeline: timelineFromTurns(sourceThread, turns, liveState, viewRevision),
   };
 }
 
-function timelineFromTurns(sourceThread, turns, liveState) {
+function timelineFromTurns(sourceThread, turns, liveState, viewRevision) {
   let displayOrder = 0;
   const activeTurn = [...turns].reverse().find((turn) => !["completed", "failed", "cancelled"].includes(turn.status));
   const items = turns.flatMap((turn) =>
@@ -1342,23 +1367,22 @@ function timelineFromTurns(sourceThread, turns, liveState) {
         status: turn.status === "completed" ? "completed" : turn.status,
         displayOrder,
         codexMethod: turn.status === "completed" ? "item/completed" : "item/upsert",
-        timestampMs: displayOrder,
+        timestampMs: (turn.completedAt ?? turn.startedAt) * 1000,
         payload: {
           source: "appServerSnapshot",
           turnId: turn.id,
           itemId: item.id,
           item: item.rawPayload,
-          itemSnapshot: item,
+          itemSnapshot: { id: item.id, itemType: item.itemType },
         },
       };
     }),
   );
   return {
-    viewRevision: 1,
+    viewRevision,
     activeTurnId: activeTurn?.id ?? null,
     liveState,
     rows: canonicalRowsFromSnapshotItems(items),
-    items,
     pendingApprovalRequests: [],
     pendingUserInputRequests: [],
     turns: turns.map((turn) => ({ id: turn.id, status: turn.status, startedAt: turn.startedAt, completedAt: turn.completedAt })),
@@ -1521,15 +1545,11 @@ function appSurfaceSession(threadId) {
     id: "session-1",
     provenance: { source: "profile" },
     provider: "generated",
+    permissions: {},
     resourceMimeType: "text/html",
     resourceUri: "ui://kodex/generated/session-1",
     revision: 1,
     status: "active",
-    submitAvailable: true,
-    submittedAt: null,
-    submittedMessage: null,
-    submittedMetadata: null,
-    submittedRevision: null,
     threadId,
     title: "Performance mockup chooser",
     updatedAt: "2026-06-05T00:00:00Z",
@@ -1565,6 +1585,7 @@ function approval() {
     turnId: "turn-approval",
     itemId: "item-approval",
     method: "command_execution",
+    source: "native",
     status: "pending",
     payload: { command: "cargo test", cwd: profileCwd, reason: "Verify profile flow" },
     response: null,
@@ -1589,6 +1610,9 @@ function threadSummary(id, name, preview, status, projectId = project.id) {
     cwd: profileCwd,
     status,
     source: "local",
+    parentThreadId: null,
+    canAcceptDirectInput: true,
+    notificationsEnabled: true,
     preview,
     latestCompletedTurnId,
     seenCompletedTurnId: status === "active" ? null : latestCompletedTurnId,
@@ -1614,8 +1638,8 @@ function threadPane(id, threadId, title) {
   return { id, kind: "thread", target: { mode: "existing", threadId }, title };
 }
 
-function generatedUiPane(id, threadId, title) {
-  return { id, kind: "generatedUi", target: { mode: "latest", threadId }, title };
+function appSurfacePane(id, threadId, title) {
+  return { id, kind: "appSurface", target: { mode: "latest", threadId }, title };
 }
 
 function terminalPane(id) {
@@ -1627,7 +1651,7 @@ async function expectText(page, text, timeout = 7000) {
 }
 
 async function waitForPaneCount(page, count) {
-  await page.waitForFunction((expected) => document.querySelectorAll(".kodex-workspace-pane-host").length >= expected, count);
+  await page.waitForFunction((expected) => document.querySelectorAll(".kodex-workspace-pane-host").length === expected, count);
 }
 
 async function waitForTimelineRows(page) {

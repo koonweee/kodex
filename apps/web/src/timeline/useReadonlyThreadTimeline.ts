@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 
-import type { EventEnvelope, ThreadSummary } from "../api/client";
+import type { ThreadSummary } from "../api/client";
 import { getThreadDetail } from "../api/client";
 import { useGatewayInstanceValidation, useGatewayStreamConnected } from "../api/GatewayInstanceBoundary";
 import { isApprovalEvent } from "../approvals/state";
 import { createEventStreamClient } from "../events/stream";
 import { applyTimelineEventBatch } from "./batch";
 import { idleTimelineEntry, type TimelineEntry } from "./entry";
-import { applyTimelineSnapshot, canApplyThreadViewItemDelta, createTimelineState, type TimelineState } from "./reducer";
+import { applyTimelineSnapshot, createTimelineState, type TimelineState } from "./reducer";
 import {
   isCanonicalThreadViewRenderEvent,
   threadViewSummaryToThreadSummary,
@@ -63,22 +63,12 @@ export function useReadonlyThreadTimeline({
     );
   }
 
-  function reduceQueuedTimelineEvents(current: TimelineState, events: EventEnvelope[]) {
-    if (events.length === 0) {
-      return current;
-    }
-    const shouldRefresh = events.some((event) => !canApplyThreadViewItemDelta(current, event));
-    const next = applyTimelineEventBatch(current, events);
-    if (shouldRefresh) {
-      requestTimelineRefresh.current?.();
-    }
-    return next;
-  }
-
   const { cancelQueuedTimelineEvents, enqueueTimelineEvent } = useTimelineEventQueue({
     flushDelayMs: timelineEventFlushDelayMs,
-    reduceEvents: reduceQueuedTimelineEvents,
+    onSnapshotRequired: () => requestTimelineRefresh.current?.(),
+    reduceEvents: applyTimelineEventBatch,
     setTimeline,
+    timeline,
   });
 
   useEffect(() => {

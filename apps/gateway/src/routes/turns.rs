@@ -9,11 +9,11 @@ use utoipa::ToSchema;
 use crate::{
     api::AppState,
     app_server_api::{
-        self, CodexClient, RawAppServerResponse, ThreadLiveState, TimelineFileAttachment,
+        self, CodexClient, RawAppServerResponse, ThreadStatus, TimelineFileAttachment,
         TurnStartOptions, UserInput,
     },
     error::{ApiError, ApiResult},
-    events, thread_view, turn_lifecycle,
+    turn_lifecycle,
 };
 
 pub fn router() -> Router<AppState> {
@@ -110,50 +110,21 @@ pub async fn compact_thread(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
 ) -> ApiResult<Json<ThreadCompactResponse>> {
-    let submit_guard = state.thread_input_locks.lock(&thread_id).await;
-    if turn_lifecycle::routed_active_turn_id(&state, &thread_id)
-        .await?
-        .is_some()
-    {
+    let _submit_guard = state.thread_input_locks.lock(&thread_id).await;
+    let client = app_server_api::client(&state.app_server);
+    if client.thread_read_summary(thread_id.clone()).await?.status == ThreadStatus::Active {
         return Err(ApiError::Conflict(
             "cannot compact while a task is in progress".to_string(),
         ));
     }
 
-    turn_lifecycle::record_compaction_starting(&state, &thread_id).await?;
-    drop(submit_guard);
-    let response = match app_server_api::client(&state.app_server)
-        .thread_compact_start(thread_id.clone())
-        .await
-    {
-        Ok(response) => response,
-        Err(error) => {
-            turn_lifecycle::record_turn_start_failed(&state, &thread_id).await?;
-            return Err(error);
-        }
-    };
-    broadcast_thread_live_state(&state, &thread_id, ThreadLiveState::Syncing).await?;
+    // Keep other Kodex compaction requests behind this admission check until the
+    // native acknowledgement. Native lifecycle events own the visible state.
+    let response = client.thread_compact_start(thread_id).await?;
     Ok(Json(ThreadCompactResponse {
         disposition: ThreadCompactDisposition::Started,
         raw_payload: Some(response.payload),
     }))
-}
-
-async fn broadcast_thread_live_state(
-    state: &AppState,
-    thread_id: &str,
-    live_state: ThreadLiveState,
-) -> ApiResult<()> {
-    let patch = thread_view::record_thread_live_state(
-        &state.thread_views,
-        thread_id,
-        live_state,
-        state.store.latest_event_seq().await?,
-    )
-    .await?;
-    let event = events::thread_view_patch_payload_event(state, patch).await?;
-    let _ = state.events.send(event);
-    Ok(())
 }
 
 async fn turn_start_resuming_missing_thread_once(
@@ -174,7 +145,7 @@ async fn turn_start_resuming_missing_thread_once(
         .await
     {
         Ok(response) => Ok(response),
-        Err(error) if app_server_error_mentions_missing_thread(&error) => {
+        Err(error) if is_unloaded_thread_rejection(&error, thread_id) => {
             resume_thread_for_turn_start(state, &client, thread_id).await?;
             client
                 .turn_start(thread_id.to_string(), input, options, Some(client_id))
@@ -199,21 +170,9 @@ async fn resume_thread_for_turn_start(
     super::threads::apply_thread_command_response_state(state, &mut response).await
 }
 
-fn app_server_error_mentions_missing_thread(error: &ApiError) -> bool {
-    match error {
-        ApiError::BadGateway(message) => message_mentions_missing_thread(message),
-        _ => false,
-    }
-}
-
-fn message_mentions_missing_thread(message: &str) -> bool {
-    let message = message.to_ascii_lowercase();
-    (message.contains("thread")
-        && (message.contains("not found")
-            || message.contains("no such")
-            || message.contains("does not exist")
-            || message.contains("unknown")))
-        || message.contains("no rollout found for thread id")
+fn is_unloaded_thread_rejection(error: &ApiError, thread_id: &str) -> bool {
+    matches!(error, ApiError::BadGateway(message)
+        if message == &format!("app-server error -32600: thread not found: {thread_id}"))
 }
 
 #[utoipa::path(post, path = "/v1/threads/{threadId}/turns", request_body = TurnStartRequest, responses((status = 200, body = RawAppServerResponse)))]

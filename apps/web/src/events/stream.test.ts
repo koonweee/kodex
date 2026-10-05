@@ -382,7 +382,6 @@ describe("event stream client", () => {
         revision: 1,
         status: "active",
         documentUrl: "/v1/app-surfaces/session-1/document?revision=1",
-        submitAvailable: true,
         csp: { connectDomains: [], resourceDomains: [] },
         displayModes: ["pane"],
         fallbackContent: "Mockups",

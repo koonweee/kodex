@@ -16,14 +16,12 @@ import { projectEventInvalidatesThread } from "../../projects/cache";
 import { queryKeys } from "../../api/queryKeys";
 import { recordReducerBatch } from "../../events/liveDiagnostics";
 import { errorMessageFrom } from "../../shared/values";
-import { applyTimelineEventBatch, coalesceTimelineEventBatch } from "../../timeline/batch";
+import { applyTimelineEventBatch } from "../../timeline/batch";
 import { idleTimelineEntry, type TimelineEntry } from "../../timeline/entry";
 import {
-  applyLiveTimelineUpdate,
   addOptimisticUserMessage,
   applyTimelineHistoryWindow,
   applyTimelineSnapshot,
-  canApplyThreadViewItemDelta,
   createTimelineState,
   markOptimisticUserMessageSent,
   removeOptimisticUserMessage,
@@ -233,28 +231,17 @@ function ExistingThreadPane({
       return current;
     }
     const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
-    let shouldRefresh = false;
-    let validationState = current;
-    const coalescedEvents = coalesceTimelineEventBatch(events);
-    for (const event of coalescedEvents) {
-      if (!canApplyThreadViewItemDelta(validationState, event)) {
-        shouldRefresh = true;
-        break;
-      }
-      validationState = applyLiveTimelineUpdate(validationState, event);
-    }
-    const next = applyTimelineEventBatch(current, coalescedEvents);
+    const next = applyTimelineEventBatch(current, events);
     const finishedAt = typeof performance !== "undefined" ? performance.now() : startedAt;
     recordReducerBatch(events.length, finishedAt - startedAt);
-    if (shouldRefresh) {
-      void refreshSnapshot();
-    }
     return next;
   }
 
   const { cancelQueuedTimelineEvents, enqueueTimelineEvent } = useTimelineEventQueue({
+    onSnapshotRequired: () => { void refreshSnapshot(); },
     reduceEvents: reduceQueuedPaneTimelineEvents,
     setTimeline,
+    timeline,
   });
 
   useEffect(() => {

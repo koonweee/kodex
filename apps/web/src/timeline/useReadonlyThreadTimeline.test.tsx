@@ -1,7 +1,8 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { attachThread, getThreadDetail, type EventEnvelope, type ThreadViewResponse } from "../api/client";
+import { attachThread, getThreadDetail, type EventEnvelope, type ThreadTimelineRow, type ThreadViewPatch, type ThreadViewResponse } from "../api/client";
 import type { TimelineState } from "./reducer";
 import { useReadonlyThreadTimeline } from "./useReadonlyThreadTimeline";
 
@@ -191,6 +192,178 @@ describe("useReadonlyThreadTimeline", () => {
 
     expect(timelineText(result.current.timeline)).toBe("Recovered");
     expect(getThreadDetail).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["lifecycle", "row_delta"] as const)("refills text overtaken by a partial %s patch without refilling old events again", async (scope) => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    let release!: (snapshot: ThreadViewResponse) => void;
+    const refill = new Promise<ThreadViewResponse>((resolve) => { release = resolve; });
+    vi.mocked(getThreadDetail).mockReset().mockResolvedValue(threadDetail("Base", 1));
+    const onError = vi.fn();
+    const { result } = renderHook(() => useReadonlyThreadTimeline({ onError, threadId: "thread-1" }), { wrapper: StrictMode });
+    await waitFor(() => expect(timelineText(result.current.timeline)).toBe("Base"));
+    const initialReads = vi.mocked(getThreadDetail).mock.calls.length;
+    vi.mocked(getThreadDetail).mockReturnValue(refill);
+    const row = threadDetail("Pending input", 3).timeline.rows![0];
+    const pendingRow: ThreadTimelineRow = {
+      ...row, id: "pending-row", kind: "user_message", displayOrder: 2,
+      item: {
+        ...row.item!, id: "pending-input", itemId: "pending-input", itemType: "userMessage", displayOrder: 2,
+        payload: {
+          source: "gatewayStream", turnId: "turn-1", itemId: "pending-input",
+          item: { id: "pending-input", type: "userMessage", content: [{ type: "text", text: "Pending input" }] },
+          itemSnapshot: { id: "pending-input", itemType: "userMessage", clientId: "pending-client" },
+        },
+      },
+    };
+    const partial: ThreadViewPatch = {
+      scope, threadId: "thread-1", viewRevision: 3, liveState: "streaming", activeTurnId: "turn-1",
+      pendingApprovalRequests: [], pendingUserInputRequests: [],
+      ...(scope === "row_delta" ? { rows: [pendingRow], affectedTurnIds: ["turn-1"] } : {}),
+    };
+    const stream = FakeEventSource.instances[0];
+    const partialEvent = { ...refreshRequiredEvent(4), kind: "thread_view.patch", payload: partial };
+    act(() => stream.emitNamed("thread_view.patch", partialEvent));
+    await waitFor(() => expect(result.current.timeline.viewRevision).toBe(3));
+
+    // The newer partial patch does not contain this earlier native text.
+    const delayed = itemDeltaEvent({ delta: " A", seq: 2 });
+    act(() => stream.emitNamed("thread_view.item_delta", delayed));
+    await waitFor(() => expect(getThreadDetail).toHaveBeenCalledTimes(initialReads + 1));
+    expect(vi.mocked(getThreadDetail).mock.calls[initialReads][1]?.aborted).toBe(false);
+    expect(timelineText(result.current.timeline)).not.toContain("Base A");
+
+    const canonical = threadDetail("Base A", 3);
+    if (scope === "row_delta") canonical.timeline.rows!.push(pendingRow);
+    await act(async () => { release(canonical); await refill; });
+    expect(timelineText(result.current.timeline)).toBe(scope === "row_delta" ? "Base APending input" : "Base A");
+    act(() => {
+      stream.emitNamed("thread_view.patch", { ...partialEvent, seq: 20 });
+      stream.emitNamed("thread_view.item_delta", { ...delayed, seq: 21 });
+    });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 40)); });
+    expect(getThreadDetail).toHaveBeenCalledTimes(initialReads + 1);
+    expect(attachThread).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("starts a new recovery for a newer uncovered partial while the earlier StrictMode refill is held", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    vi.mocked(getThreadDetail).mockReset().mockResolvedValue(threadDetail("Base", 1));
+    const onError = vi.fn();
+    const { result } = renderHook(() => useReadonlyThreadTimeline({ onError, threadId: "thread-1" }), { wrapper: StrictMode });
+    await waitFor(() => expect(timelineText(result.current.timeline)).toBe("Base"));
+    const initialReads = vi.mocked(getThreadDetail).mock.calls.length;
+    let releaseEarlier!: (snapshot: ThreadViewResponse) => void;
+    let releaseNewer!: (snapshot: ThreadViewResponse) => void;
+    const earlier = new Promise<ThreadViewResponse>((resolve) => { releaseEarlier = resolve; });
+    const newer = new Promise<ThreadViewResponse>((resolve) => { releaseNewer = resolve; });
+    vi.mocked(getThreadDetail).mockReturnValueOnce(earlier).mockReturnValue(newer);
+    const stream = FakeEventSource.instances[0];
+    const lifecycle = (revision: number): EventEnvelope => ({
+      ...refreshRequiredEvent(revision), kind: "thread_view.patch",
+      payload: {
+        scope: "lifecycle", threadId: "thread-1", viewRevision: revision,
+        liveState: "streaming", activeTurnId: "turn-1", pendingApprovalRequests: [], pendingUserInputRequests: [],
+      },
+    });
+    act(() => stream.emitNamed("thread_view.patch", lifecycle(3)));
+    await waitFor(() => expect(result.current.timeline.viewRevision).toBe(3));
+    act(() => stream.emitNamed("thread_view.item_delta", itemDeltaEvent({ delta: " A", seq: 2 })));
+    await waitFor(() => expect(getThreadDetail).toHaveBeenCalledTimes(initialReads + 1));
+    const earlierSignal = vi.mocked(getThreadDetail).mock.calls[initialReads][1];
+    expect(earlierSignal?.aborted).toBe(false);
+
+    act(() => stream.emitNamed("thread_view.patch", lifecycle(5)));
+    await waitFor(() => expect(result.current.timeline.viewRevision).toBe(5));
+    act(() => stream.emitNamed("thread_view.item_delta", itemDeltaEvent({ delta: " B", seq: 4 })));
+    await waitFor(() => expect(getThreadDetail).toHaveBeenCalledTimes(initialReads + 2));
+    expect(earlierSignal?.aborted).toBe(true);
+    expect(vi.mocked(getThreadDetail).mock.calls[initialReads + 1][1]?.aborted).toBe(false);
+    await act(async () => { releaseEarlier(threadDetail("Base A", 3)); await earlier; });
+    expect(timelineText(result.current.timeline)).toBe("Base");
+    await act(async () => { releaseNewer(threadDetail("Base A B", 5)); await newer; });
+    expect(timelineText(result.current.timeline)).toBe("Base A B");
+    act(() => stream.emitNamed("thread_view.item_delta", itemDeltaEvent({ delta: " B", seq: 4 })));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 40)); });
+    expect(getThreadDetail).toHaveBeenCalledTimes(initialReads + 2);
+    expect(onError).not.toHaveBeenCalled();
+    expect(attachThread).not.toHaveBeenCalled();
+  });
+
+  it("does not retry a failed committed refill on rerender, but recovers from a later uncovered event", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    vi.mocked(getThreadDetail).mockReset().mockResolvedValue(threadDetail("Base", 1));
+    const onError = vi.fn();
+    const { result, rerender } = renderHook(() => useReadonlyThreadTimeline({ onError, threadId: "thread-1" }), { wrapper: StrictMode });
+    await waitFor(() => expect(timelineText(result.current.timeline)).toBe("Base"));
+    const initialReads = vi.mocked(getThreadDetail).mock.calls.length;
+    vi.mocked(getThreadDetail).mockRejectedValue(new Error("Native read unavailable"));
+    const stream = FakeEventSource.instances[0];
+    const lifecycle = (revision: number): EventEnvelope => ({
+      ...refreshRequiredEvent(revision), kind: "thread_view.patch",
+      payload: {
+        scope: "lifecycle", threadId: "thread-1", viewRevision: revision,
+        liveState: "streaming", activeTurnId: "turn-1", pendingApprovalRequests: [], pendingUserInputRequests: [],
+      },
+    });
+    act(() => stream.emitNamed("thread_view.patch", lifecycle(3)));
+    await waitFor(() => expect(result.current.timeline.viewRevision).toBe(3));
+    act(() => stream.emitNamed("thread_view.item_delta", itemDeltaEvent({ delta: " A", seq: 2 })));
+    await waitFor(() => expect(onError).toHaveBeenCalledTimes(1));
+    rerender();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 40)); });
+    expect(getThreadDetail).toHaveBeenCalledTimes(initialReads + 1);
+    expect(timelineText(result.current.timeline)).toBe("Base");
+
+    vi.mocked(getThreadDetail).mockResolvedValue(threadDetail("Base A B", 5));
+    act(() => stream.emitNamed("thread_view.patch", lifecycle(5)));
+    await waitFor(() => expect(result.current.timeline.viewRevision).toBe(5));
+    act(() => stream.emitNamed("thread_view.item_delta", itemDeltaEvent({ delta: " B", seq: 4 })));
+    await waitFor(() => expect(timelineText(result.current.timeline)).toBe("Base A B"));
+    expect(getThreadDetail).toHaveBeenCalledTimes(initialReads + 2);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(attachThread).not.toHaveBeenCalled();
+  });
+
+  it("finishes an outstanding repair when a valid newer delta overtakes its held snapshot", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    vi.mocked(getThreadDetail).mockReset().mockResolvedValue(threadDetail("Base", 1));
+    const onError = vi.fn();
+    const { result } = renderHook(() => useReadonlyThreadTimeline({ onError, threadId: "thread-1" }));
+    await waitFor(() => expect(timelineText(result.current.timeline)).toBe("Base"));
+    let releaseEarlier!: (snapshot: ThreadViewResponse) => void;
+    let releaseNewer!: (snapshot: ThreadViewResponse) => void;
+    const earlier = new Promise<ThreadViewResponse>((resolve) => { releaseEarlier = resolve; });
+    const newer = new Promise<ThreadViewResponse>((resolve) => { releaseNewer = resolve; });
+    vi.mocked(getThreadDetail).mockReturnValueOnce(earlier).mockReturnValue(newer);
+    const stream = FakeEventSource.instances[0];
+    act(() => stream.emitNamed("thread_view.patch", {
+      ...refreshRequiredEvent(3), kind: "thread_view.patch",
+      payload: {
+        scope: "lifecycle", threadId: "thread-1", viewRevision: 3,
+        liveState: "streaming", activeTurnId: "turn-1", pendingApprovalRequests: [], pendingUserInputRequests: [],
+      },
+    }));
+    await waitFor(() => expect(result.current.timeline.viewRevision).toBe(3));
+    act(() => stream.emitNamed("thread_view.item_delta", itemDeltaEvent({ delta: " A", seq: 2 })));
+    await waitFor(() => expect(getThreadDetail).toHaveBeenCalledTimes(2));
+    const earlierSignal = vi.mocked(getThreadDetail).mock.calls[1][1];
+
+    // This delta is appendable, but does not fill the missing earlier text. It
+    // makes the held R3 response stale, so recovery still needs a fresh R4 read.
+    act(() => stream.emitNamed("thread_view.item_delta", itemDeltaEvent({ delta: " B", seq: 4 })));
+    await waitFor(() => expect(timelineText(result.current.timeline)).toBe("Base B"));
+    await waitFor(() => expect(getThreadDetail).toHaveBeenCalledTimes(3));
+    expect(earlierSignal?.aborted).toBe(true);
+    await act(async () => { releaseEarlier(threadDetail("Base A", 3)); await earlier; });
+    expect(timelineText(result.current.timeline)).toBe("Base B");
+    await act(async () => { releaseNewer(threadDetail("Base A B", 4)); await newer; });
+    expect(timelineText(result.current.timeline)).toBe("Base A B");
+    act(() => stream.emitNamed("thread_view.item_delta", itemDeltaEvent({ delta: " B", seq: 4 })));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 40)); });
+    expect(getThreadDetail).toHaveBeenCalledTimes(3);
+    expect(onError).not.toHaveBeenCalled();
   });
 });
 

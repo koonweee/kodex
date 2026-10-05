@@ -30,9 +30,21 @@ for (const shape of [
         for (const page of [first, second]) {
           await expect(page.locator(".kodex-user-message-bubble").filter({ hasText: "Pick mockup A" })).toHaveCount(1);
           await openApp(page, shape.hasTouch);
-          await expect(page.getByText("Submitted", { exact: true })).toBeVisible();
+          await expect(page.getByText("Working", { exact: true })).toHaveCount(0);
+          await expect(frame(page, "Generated chooser 1").getByRole("button", { name: "Choose A", exact: true })).toBeVisible();
+        }
+        // Acknowledgment leaves the artifact active. Another identical message
+        // is a separate native receipt, not a one-shot submitted artifact.
+        await click(frame(first, "Generated chooser 1").getByRole("button", { name: "Choose A", exact: true }), shape.hasTouch);
+        await expect.poll(fixture.hasPendingBridge).toBe(true);
+        await fixture.releaseBridge();
+        for (const page of [first, second]) {
+          await showChat(page, shape.width, shape.hasTouch);
+          await expect(page.locator(".kodex-user-message-bubble").filter({ hasText: "Pick mockup A" })).toHaveCount(2);
+          await openApp(page, shape.hasTouch);
         }
         expect(fixture.calls.filter(({ key }) => key === "POST /v1/app-surfaces/generated-session/bridge").map(({ body }) => body)).toEqual([
+          { id: "choose", method: "ui/message", params: { role: "user", content: { type: "text", text: "Pick mockup A" } }, revision: 1, bridgeToken: "generated-session-token" },
           { id: "choose", method: "ui/message", params: { role: "user", content: { type: "text", text: "Pick mockup A" } }, revision: 1, bridgeToken: "generated-session-token" },
         ]);
 

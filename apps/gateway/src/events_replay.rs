@@ -12,9 +12,9 @@ use crate::{
     queue, queue_transfer,
     routes::{
         app_surfaces::{
-            APP_SURFACE_ARCHIVED_EVENT, APP_SURFACE_BRIDGE_CALL_EVENT, APP_SURFACE_ERROR_EVENT,
+            APP_SURFACE_ARCHIVED_EVENT, APP_SURFACE_BRIDGE_CALL_EVENT,
             APP_SURFACE_MODEL_CONTEXT_UPDATED_EVENT, APP_SURFACE_PRESENTATION_REQUESTED_EVENT,
-            APP_SURFACE_SUBMITTED_EVENT, APP_SURFACE_UPSERTED_EVENT,
+            APP_SURFACE_UPSERTED_EVENT,
         },
         thread_sections::THREAD_SECTIONS_UPDATED_EVENT,
         thread_settings::THREAD_SETTINGS_UPDATED_EVENT,
@@ -105,9 +105,7 @@ pub(crate) fn is_operational_replay_event(event: &EventEnvelope) -> bool {
             | THREAD_SUBAGENTS_CHANGED_EVENT
             | APP_SURFACE_UPSERTED_EVENT
             | APP_SURFACE_PRESENTATION_REQUESTED_EVENT
-            | APP_SURFACE_SUBMITTED_EVENT
             | APP_SURFACE_ARCHIVED_EVENT
-            | APP_SURFACE_ERROR_EVENT
             | APP_SURFACE_BRIDGE_CALL_EVENT
             | APP_SURFACE_MODEL_CONTEXT_UPDATED_EVENT
             | automations::AUTOMATION_UPSERT_EVENT
@@ -200,7 +198,7 @@ mod tests {
         for kind in [
             APP_SURFACE_UPSERTED_EVENT,
             APP_SURFACE_PRESENTATION_REQUESTED_EVENT,
-            APP_SURFACE_SUBMITTED_EVENT,
+            APP_SURFACE_BRIDGE_CALL_EVENT,
             APP_SURFACE_ARCHIVED_EVENT,
         ] {
             let event = event(kind, 1, "thread-1");
@@ -224,7 +222,7 @@ mod tests {
                 event(APP_SURFACE_UPSERTED_EVENT, 1, "thread-1"),
                 event(APP_SURFACE_PRESENTATION_REQUESTED_EVENT, 2, "thread-1"),
                 event(APP_SURFACE_ARCHIVED_EVENT, 3, "thread-2"),
-                event(APP_SURFACE_SUBMITTED_EVENT, 4, "thread-1"),
+                event(APP_SURFACE_BRIDGE_CALL_EVENT, 4, "thread-1"),
             ],
             &query,
         )
@@ -238,7 +236,7 @@ mod tests {
             vec![
                 APP_SURFACE_UPSERTED_EVENT,
                 APP_SURFACE_PRESENTATION_REQUESTED_EVENT,
-                APP_SURFACE_SUBMITTED_EVENT,
+                APP_SURFACE_BRIDGE_CALL_EVENT,
             ]
         );
     }
@@ -258,7 +256,7 @@ mod tests {
             vec![
                 global_event(ACCOUNT_RATE_LIMITS_UPDATED_EVENT, 1),
                 event(APP_SURFACE_UPSERTED_EVENT, 2, "thread-1"),
-                event(APP_SURFACE_SUBMITTED_EVENT, 3, "thread-2"),
+                event(APP_SURFACE_BRIDGE_CALL_EVENT, 3, "thread-2"),
                 event(APP_SURFACE_PRESENTATION_REQUESTED_EVENT, 4, "thread-3"),
                 event(APP_SURFACE_ARCHIVED_EVENT, 5, "thread-4"),
             ],
@@ -274,7 +272,7 @@ mod tests {
             vec![
                 (ACCOUNT_RATE_LIMITS_UPDATED_EVENT, None),
                 (APP_SURFACE_UPSERTED_EVENT, Some("thread-1")),
-                (APP_SURFACE_SUBMITTED_EVENT, Some("thread-2")),
+                (APP_SURFACE_BRIDGE_CALL_EVENT, Some("thread-2")),
                 (APP_SURFACE_PRESENTATION_REQUESTED_EVENT, Some("thread-3")),
             ]
         );

@@ -29,6 +29,8 @@ export function timelineState(overrides: Partial<TimelineState> = {}): TimelineS
     isLoadingOlderHistory: false,
     lastSeq: 0,
     viewRevision: 0,
+    snapshotCoverageRevision: 0,
+    snapshotRefillIntent: null,
     ...overrides,
   };
 }

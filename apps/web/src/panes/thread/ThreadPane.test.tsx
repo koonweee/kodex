@@ -132,6 +132,89 @@ it("loads the canonical initial snapshot after StrictMode cleanup without waitin
   expect(onFailed).not.toHaveBeenCalled();
 });
 
+it("commits one editable-pane refill in StrictMode and queues one newer repair behind a held attach", async () => {
+  vi.stubGlobal("EventSource", UnopenedEventSource);
+  const snapshot = (text: string, viewRevision: number): ThreadViewResponse => ({
+    thread: {
+      id: "shared", name: "Shared chat", projectId: null, cwd: "/native", status: "active",
+      notificationsEnabled: true, latestCompletedTurnId: null, seenCompletedTurnId: null,
+      readRevision: 0, readStateKnown: false, unreadCompletedAgentTurn: false,
+      createdAt: 1, updatedAt: 2, parentThreadId: null, canAcceptDirectInput: true,
+    },
+    liveState: "streaming",
+    timeline: {
+      liveState: "streaming", activeTurnId: "turn-1", pendingApprovalRequests: [], pendingUserInputRequests: [],
+      viewRevision, turns: [{ id: "turn-1", status: "inProgress" }],
+      rows: [{
+        id: "answer", kind: "assistant_message", displayOrder: 1, status: "inProgress", turnId: "turn-1",
+        items: [], fileChanges: [], collapsedRows: [],
+        item: {
+          id: "answer", itemId: "answer", itemType: "agentMessage", threadId: "shared", turnId: "turn-1",
+          status: "inProgress", displayOrder: 1, codexMethod: "item/started",
+          payload: {
+            source: "gatewayStream", turnId: "turn-1", itemId: "answer",
+            item: { id: "answer", type: "agentMessage", text }, itemSnapshot: { id: "answer", itemType: "agentMessage" },
+          },
+        },
+      }],
+    },
+  });
+  let reply: ThreadViewResponse | Promise<ThreadViewResponse> = snapshot("Base", 1);
+  const signals: AbortSignal[] = [];
+  const gateway = mockGateway({
+    "POST /v1/threads/shared/attach": (request: Request) => { signals.push(request.signal); return reply; },
+    "GET /v1/threads/shared/app-surface": { session: null },
+  });
+  const store = createMemoryWorkspacePaneStore({
+    schemaVersion: 1, activePaneId: "shared-pane", dockviewLayout: null,
+    panes: [{ id: "shared-pane", kind: "thread", target: { mode: "existing", threadId: "shared" } }],
+  });
+  render(<StrictMode><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <MantineProvider><WorkspaceProvider paneStore={store}><ActiveThreadPane /></WorkspaceProvider></MantineProvider>
+  </QueryClientProvider></StrictMode>);
+  expect(await screen.findByText("Base")).toBeInTheDocument();
+  const initialReads = signals.length;
+  const stream = UnopenedEventSource.instances.at(-1)!;
+  let releaseEarlier!: (value: ThreadViewResponse) => void;
+  reply = new Promise<ThreadViewResponse>((resolve) => { releaseEarlier = resolve; });
+  const delta = (text: string, revision: number): EventEnvelope => ({
+    id: `delta-${revision}`, seq: revision, kind: "thread_view.item_delta", threadId: "shared", turnId: "turn-1", itemId: "answer",
+    receivedAt: "2026-10-05T00:00:00Z",
+    payload: { threadId: "shared", turnId: "turn-1", itemId: "answer", delta: text, viewRevision: revision },
+  });
+  await act(async () => {
+    stream.emit({
+      id: "lifecycle-3", seq: 3, kind: "thread_view.patch", threadId: "shared", receivedAt: "2026-10-05T00:00:00Z",
+      payload: { scope: "lifecycle", threadId: "shared", viewRevision: 3, liveState: "streaming", activeTurnId: "turn-1", pendingApprovalRequests: [], pendingUserInputRequests: [] },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 40));
+  });
+  expect(signals).toHaveLength(initialReads);
+  act(() => stream.emit(delta(" A", 2)));
+  await waitFor(() => expect(signals).toHaveLength(initialReads + 1));
+  expect(signals[initialReads].aborted).toBe(false);
+  act(() => stream.emit(delta(" B", 4)));
+  expect(await screen.findByText("Base B")).toBeInTheDocument();
+  // Editable panes retain the current read, then perform one queued newer read.
+  expect(signals).toHaveLength(initialReads + 1);
+  let releaseNewer!: (value: ThreadViewResponse) => void;
+  reply = new Promise<ThreadViewResponse>((resolve) => { releaseNewer = resolve; });
+  await act(async () => releaseEarlier(snapshot("Base A", 3)));
+  await waitFor(() => expect(signals).toHaveLength(initialReads + 2));
+  expect(screen.getByText("Base B")).toBeInTheDocument();
+  expect(signals[initialReads + 1].aborted).toBe(false);
+  await act(async () => releaseNewer(snapshot("Base A B", 4)));
+  expect(await screen.findByText("Base A B")).toBeInTheDocument();
+  await act(async () => {
+    stream.emit(delta(" A", 2));
+    stream.emit(delta(" B", 4));
+    await new Promise((resolve) => setTimeout(resolve, 40));
+  });
+  expect(signals).toHaveLength(initialReads + 2);
+  expect(screen.getAllByText("Base A B")).toHaveLength(1);
+  expect(gateway.callsFor("GET", "/v1/threads/shared")).toHaveLength(0);
+});
+
 it("shows a native attach failure without a prose-based retry loop and recovers on stream open", async () => {
   vi.stubGlobal("EventSource", UnopenedEventSource);
   const snapshot: ThreadViewResponse = {

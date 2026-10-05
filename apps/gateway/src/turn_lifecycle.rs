@@ -8,13 +8,9 @@ use tokio::sync::{Mutex, OwnedMutexGuard};
 use crate::{
     api::AppState,
     app_server_api::{self, ThreadLiveState, TimelineFileAttachment, UserInput},
-    error::{ApiError, ApiResult},
-    events,
-    store::{ThreadRuntimeState, ThreadRuntimeStatus},
-    thread_view,
+    error::ApiResult,
+    events, thread_view,
 };
-
-const GATEWAY_PENDING_TURN_START_ID: &str = "__gateway_pending_turn_start__";
 
 #[derive(Clone, Default)]
 pub struct ThreadInputLocks {
@@ -32,33 +28,6 @@ impl ThreadInputLocks {
             .clone();
         lock.lock_owned().await
     }
-}
-
-pub async fn current_active_turn_id(
-    state: &AppState,
-    thread_id: &str,
-) -> ApiResult<Option<String>> {
-    if let Some(active_turn_id) = state.thread_views.active_turn_id(thread_id).await {
-        return Ok(Some(active_turn_id));
-    }
-    let revision = state.store.latest_event_seq().await?;
-    let snapshot = match app_server_api::client(&state.app_server)
-        .thread_read(thread_id.to_string())
-        .await
-    {
-        Ok(snapshot) => snapshot,
-        Err(error)
-            if app_server_api::is_thread_not_materialized_before_first_user_message(&error) =>
-        {
-            return Ok(None);
-        }
-        Err(error) => return Err(error),
-    };
-    let timeline = state
-        .thread_views
-        .refresh_from_turns(thread_id, &snapshot.turns, revision)
-        .await?;
-    Ok(timeline.active_turn_id)
 }
 
 pub async fn refreshed_active_turn_id(
@@ -89,68 +58,6 @@ pub async fn refreshed_active_turn_id(
     Ok(active_turn_id)
 }
 
-pub async fn routed_active_turn_id(state: &AppState, thread_id: &str) -> ApiResult<Option<String>> {
-    if let Some(runtime) = state.store.get_thread_runtime_state(thread_id).await? {
-        match runtime.status {
-            ThreadRuntimeStatus::Syncing | ThreadRuntimeStatus::Starting => {
-                return Ok(Some(
-                    runtime
-                        .active_turn_id
-                        .unwrap_or_else(|| GATEWAY_PENDING_TURN_START_ID.to_string()),
-                ));
-            }
-            ThreadRuntimeStatus::Idle => {
-                return refreshed_active_turn_id(state, thread_id).await;
-            }
-            _ => {}
-        }
-    }
-    refreshed_active_turn_id(state, thread_id).await
-}
-
-pub async fn record_turn_start_failed(state: &AppState, thread_id: &str) -> ApiResult<()> {
-    state
-        .store
-        .upsert_thread_runtime_state(ThreadRuntimeState {
-            thread_id: thread_id.to_string(),
-            status: ThreadRuntimeStatus::Idle,
-            active_turn_id: None,
-            updated_at: chrono::Utc::now(),
-            last_event_seq: Some(state.store.latest_event_seq().await?),
-        })
-        .await
-}
-
-pub async fn record_turn_started(
-    state: &AppState,
-    thread_id: &str,
-    turn_id: Option<&str>,
-) -> ApiResult<()> {
-    state
-        .store
-        .upsert_thread_runtime_state(ThreadRuntimeState {
-            thread_id: thread_id.to_string(),
-            status: ThreadRuntimeStatus::Active,
-            active_turn_id: turn_id.map(str::to_string),
-            updated_at: chrono::Utc::now(),
-            last_event_seq: Some(state.store.latest_event_seq().await?),
-        })
-        .await
-}
-
-pub async fn record_compaction_starting(state: &AppState, thread_id: &str) -> ApiResult<()> {
-    state
-        .store
-        .upsert_thread_runtime_state(ThreadRuntimeState {
-            thread_id: thread_id.to_string(),
-            status: ThreadRuntimeStatus::Syncing,
-            active_turn_id: None,
-            updated_at: chrono::Utc::now(),
-            last_event_seq: Some(state.store.latest_event_seq().await?),
-        })
-        .await
-}
-
 pub async fn record_idle_after_missing_active_turn(
     state: &AppState,
     thread_id: &str,
@@ -159,7 +66,21 @@ pub async fn record_idle_after_missing_active_turn(
         &state.thread_views,
         thread_id,
         ThreadLiveState::Idle,
-        state.store.latest_event_seq().await?,
+        async {
+            Ok(state
+                .store
+                .append_event(crate::store::NewEvent {
+                    project_id: None,
+                    thread_id: Some(thread_id.to_string()),
+                    turn_id: None,
+                    item_id: None,
+                    kind: crate::events_replay::THREAD_VIEW_CURSOR_KIND.to_string(),
+                    codex_method: None,
+                    payload: serde_json::json!({"reason": "missing_active_turn"}),
+                })
+                .await?
+                .seq)
+        },
     )
     .await?;
     Ok(())
@@ -182,18 +103,6 @@ pub async fn record_pending_user_projection(
     {
         return Ok(());
     }
-    let event = state
-        .store
-        .append_event(crate::store::NewEvent {
-            project_id: None,
-            thread_id: Some(thread_id.to_string()),
-            turn_id: Some(turn_id.to_string()),
-            item_id: None,
-            kind: "timeline.pending_user_input".to_string(),
-            codex_method: Some("turn/input".to_string()),
-            payload: serde_json::json!({ "threadId": thread_id, "turnId": turn_id }),
-        })
-        .await?;
     if let Some(patch) = thread_view::record_pending_user_input(
         &state.thread_views,
         thread_id,
@@ -201,7 +110,21 @@ pub async fn record_pending_user_projection(
         client_id,
         input,
         attachments,
-        (submission_revision, event.seq),
+        (submission_revision, async {
+            Ok(state
+                .store
+                .append_event(crate::store::NewEvent {
+                    project_id: None,
+                    thread_id: Some(thread_id.to_string()),
+                    turn_id: Some(turn_id.to_string()),
+                    item_id: None,
+                    kind: "timeline.pending_user_input".to_string(),
+                    codex_method: Some("turn/input".to_string()),
+                    payload: serde_json::json!({ "threadId": thread_id, "turnId": turn_id }),
+                })
+                .await?
+                .seq)
+        }),
     )
     .await?
     {
@@ -222,14 +145,4 @@ pub fn pending_projection_turn_id(payload: &serde_json::Value) -> Option<String>
                 .and_then(serde_json::Value::as_str)
         })
         .map(str::to_string)
-}
-
-pub fn is_non_steerable_error(error: &ApiError) -> bool {
-    let message = error.to_string().to_ascii_lowercase();
-    message.contains("not steerable")
-        || message.contains("activeturnnotsteerable")
-        || message.contains("cannot steer")
-        || message.contains("no active turn")
-        || message.contains("expectedturnid")
-        || message.contains("expected turn")
 }

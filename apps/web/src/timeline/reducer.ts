@@ -18,6 +18,7 @@ import {
   type TimelinePresentationItem,
 } from "./presentation";
 import type { CollabAgentNameMap } from "./presentationCollab";
+import { threadViewProjectionRevision } from "./threadViewEvents";
 import {
   compactTimelineStores,
   createEmptyTimelineIndexes,
@@ -77,9 +78,12 @@ export function applyLiveTimelineUpdate(state: TimelineState, event: EventEnvelo
 }
 
 export function canApplyThreadViewItemDelta(state: TimelineState, event: EventEnvelope): boolean {
-  if (event.kind !== "thread_view.item_delta" || event.seq < state.lastSeq) {
-    return canApplyThreadViewRowDelta(state, event);
+  if (event.kind !== "thread_view.item_delta") {
+    return canApplyThreadViewPatch(state, event);
   }
+  const revision = threadViewProjectionRevision(event);
+  if (revision === null) return false;
+  if (revision <= state.viewRevision) return revision <= state.snapshotCoverageRevision;
   const payload = recordPayload(event.payload);
   const itemId = stringPayload(payload?.itemId) ?? event.itemId;
   const turnId = stringPayload(payload?.turnId) ?? event.turnId;
@@ -94,11 +98,13 @@ export function canApplyThreadViewItemDelta(state: TimelineState, event: EventEn
   });
 }
 
-function canApplyThreadViewRowDelta(state: TimelineState, event: EventEnvelope): boolean {
-  if (event.kind !== "thread_view.patch" || event.seq < state.lastSeq) {
+function canApplyThreadViewPatch(state: TimelineState, event: EventEnvelope): boolean {
+  if (event.kind !== "thread_view.patch") {
     return true;
   }
   const patch = event.payload as ThreadViewPatchPayload;
+  if (patch.scope === "full_snapshot") return true;
+  if ((patch.viewRevision ?? 0) <= state.viewRevision) return (patch.viewRevision ?? 0) <= state.snapshotCoverageRevision;
   if (patch.scope !== "row_delta") {
     return true;
   }
@@ -265,6 +271,8 @@ function applyCanonicalTimelineSnapshot(
     rows,
     lastSeq: Math.max(state.lastSeq, revision),
     viewRevision: Math.max(state.viewRevision, revision),
+    snapshotCoverageRevision: revision,
+    snapshotRefillIntent: null,
   });
   return withSnapshotTurnMetadata(next, snapshot);
 }
@@ -378,6 +386,8 @@ function canonicalTimelineItemToViewItem(
       indexes,
       lastSeq: 0,
       viewRevision: 0,
+      snapshotCoverageRevision: 0,
+      snapshotRefillIntent: null,
     },
     nextItem,
   );
@@ -390,6 +400,8 @@ function addTimelineRowItemsToIndexes(row: TimelineRow, indexes: ReturnType<type
     indexes,
     lastSeq: 0,
     viewRevision: 0,
+    snapshotCoverageRevision: 0,
+    snapshotRefillIntent: null,
   };
   if (row.type === "item") {
     addOrReplaceItem(draft, row.item);
@@ -481,11 +493,8 @@ function canonicalSnapshotItemReceivedAt(item: ThreadTimelineSnapshotItem): stri
 function applyThreadViewPatch(state: TimelineState, event: EventEnvelope): TimelineState {
   const patch = event.payload as ThreadViewPatchPayload;
   const revision = patch.viewRevision ?? 0;
-  if (event.seq < state.lastSeq) {
-    return state;
-  }
-  if (revision <= state.viewRevision) {
-    return withIgnoredProjectionPatchCursor(state, patch, event.seq);
+  if (revision < state.viewRevision || (revision === state.viewRevision && (patch.scope !== "full_snapshot" || revision <= state.snapshotCoverageRevision))) {
+    return withTimelineLastSeq(state, Math.max(state.lastSeq, event.seq));
   }
   const threadId = event.threadId ?? patch.threadId;
   if (!threadId) {
@@ -493,20 +502,21 @@ function applyThreadViewPatch(state: TimelineState, event: EventEnvelope): Timel
   }
 
   if (!isThreadViewPatchScope(patch.scope)) {
-    return withTimelineLastSeq(state, Math.max(event.seq, revision));
+    return withTimelineLastSeq(state, Math.max(state.lastSeq, event.seq));
   }
-  if (patch.scope === "row_delta" && !canApplyThreadViewRowDelta(state, event)) {
+  if (patch.scope === "row_delta" && !canApplyThreadViewPatch(state, event)) {
     return withTimelineLastSeq(state, Math.max(state.lastSeq, event.seq));
   }
 
   let next = patch.scope === "lifecycle" ? state : applyCanonicalRowsPatch(state, threadId, patch);
-  next = withProjectionPatchLiveState(next, patch, event.seq);
-  return withTimelineLastSeq(next, Math.max(event.seq, revision));
+  next = withProjectionPatchLiveState(next, patch);
+  return withTimelineLastSeq(next, Math.max(state.lastSeq, event.seq));
 }
 
 function applyThreadViewItemDelta(state: TimelineState, event: EventEnvelope): TimelineState {
-  if (event.seq <= state.lastSeq) {
-    return state;
+  const revision = threadViewProjectionRevision(event);
+  if (revision === null || revision <= state.viewRevision) {
+    return withTimelineLastSeq(state, Math.max(state.lastSeq, event.seq));
   }
   const payload = recordPayload(event.payload);
   const itemId = stringPayload(payload?.itemId) ?? event.itemId;
@@ -532,7 +542,10 @@ function applyThreadViewItemDelta(state: TimelineState, event: EventEnvelope): T
   if (!applied) {
     return applyThreadViewDeltaRefreshRequired(state, event);
   }
-  return withTimelineLastSeq(rebuildTimelineRows(state, rows), Math.max(state.lastSeq, event.seq));
+  return createTimelineStateFromDraft(timelineDraftFromState(rebuildTimelineRows(state, rows), {
+    lastSeq: Math.max(state.lastSeq, event.seq),
+    viewRevision: revision,
+  }));
 }
 
 function rowHasAppendableDeltaTarget(row: TimelineRow, target: ItemDeltaTarget): boolean {
@@ -816,8 +829,12 @@ function withSnapshotTurnMetadata(state: TimelineState, snapshot: ThreadViewResp
   return createTimelineStateFromDraft(next);
 }
 
-function withProjectionPatchLiveState(state: TimelineState, patch: ThreadViewPatchPayload, eventSeq: number): TimelineState {
-  const next = timelineDraftFromState(state);
+function withProjectionPatchLiveState(state: TimelineState, patch: ThreadViewPatchPayload): TimelineState {
+  const next = timelineDraftFromState(state, {
+    viewRevision: Math.max(state.viewRevision, patch.viewRevision ?? 0),
+    snapshotCoverageRevision: patch.scope === "full_snapshot" ? patch.viewRevision : state.snapshotCoverageRevision,
+    snapshotRefillIntent: patch.scope === "full_snapshot" ? null : state.snapshotRefillIntent,
+  });
   for (const turn of patch.turns ?? []) {
     upsertTimelineTurnSnapshot(next, {
       turnId: turn.id,
@@ -830,39 +847,14 @@ function withProjectionPatchLiveState(state: TimelineState, patch: ThreadViewPat
     return createTimelineStateFromDraft(next);
   }
   return createTimelineStateFromDraft({
+    ...next,
     activeTurnId: patch.liveState === "idle" ? null : (patch.activeTurnId ?? state.activeTurnId),
-    indexes: next.indexes,
-    rows: next.rows,
     pendingApprovalRequests: patch.pendingApprovalRequests ?? state.pendingApprovalRequests,
     pendingUserInputRequests: patch.pendingUserInputRequests ?? state.pendingUserInputRequests,
-    olderCursor: state.olderCursor,
-    hasOlderHistory: state.hasOlderHistory,
-    isLoadingOlderHistory: state.isLoadingOlderHistory,
-    lastSeq: state.lastSeq,
-    viewRevision: Math.max(state.viewRevision, patch.viewRevision ?? 0, eventSeq),
   });
 }
 
-function withIgnoredProjectionPatchCursor(
-  state: TimelineState,
-  patch: ThreadViewPatchPayload,
-  eventSeq: number,
-): TimelineState {
-  return createTimelineStateFromDraft({
-    activeTurnId: patch.liveState === "idle" && eventSeq >= state.lastSeq ? null : state.activeTurnId,
-    indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
-    rows: state.rows,
-    pendingApprovalRequests: state.pendingApprovalRequests,
-    pendingUserInputRequests: state.pendingUserInputRequests,
-    olderCursor: state.olderCursor,
-    hasOlderHistory: state.hasOlderHistory,
-    isLoadingOlderHistory: state.isLoadingOlderHistory,
-    lastSeq: Math.max(state.lastSeq, eventSeq),
-    viewRevision: Math.max(state.viewRevision, patch.viewRevision ?? 0, eventSeq),
-  });
-}
-
-function withTimelineLastSeq(state: TimelineState, lastSeq: number): TimelineState {
+export function withTimelineLastSeq(state: TimelineState, lastSeq: number): TimelineState {
   if (state.lastSeq === lastSeq) {
     return state;
   }
@@ -877,7 +869,14 @@ function withTimelineLastSeq(state: TimelineState, lastSeq: number): TimelineSta
     isLoadingOlderHistory: state.isLoadingOlderHistory,
     lastSeq,
     viewRevision: state.viewRevision,
+    snapshotCoverageRevision: state.snapshotCoverageRevision,
+    snapshotRefillIntent: state.snapshotRefillIntent,
   });
+}
+
+export function requireTimelineSnapshot(state: TimelineState): TimelineState {
+  if (state.snapshotRefillIntent) return state;
+  return createTimelineStateFromDraft(timelineDraftFromState(state, { snapshotRefillIntent: {} }));
 }
 
 function optimisticUserMessageId(clientRequestId: string): string {
@@ -1099,6 +1098,8 @@ function timelineDraftFromState(
     isLoadingOlderHistory: state.isLoadingOlderHistory,
     lastSeq: state.lastSeq,
     viewRevision: state.viewRevision,
+    snapshotCoverageRevision: state.snapshotCoverageRevision,
+    snapshotRefillIntent: state.snapshotRefillIntent,
     ...overrides,
   };
 }

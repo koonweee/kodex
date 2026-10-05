@@ -299,7 +299,8 @@ test("renders selected thread snapshot output", async ({ page }) => {
   await expect(activeThreadPane(page).getByText(/snapshot assistant output/i)).toBeVisible();
 });
 
-test("renders app surface as a workspace pane and submits from the frame", async ({ page }) => {
+test("renders app surface as a workspace pane and acknowledges repeated frame messages", async ({ page }) => {
+  const bridgeRequests: unknown[] = [];
   const interactiveSession = {
     archivedAt: null,
     createdAt: "2026-04-30T00:00:00Z",
@@ -317,16 +318,10 @@ test("renders app surface as a workspace pane and submits from the frame", async
     resourceUri: "ui://kodex/generated/session-1",
     revision: 1,
     status: "active",
-    submitAvailable: true,
-    submittedAt: null,
-    submittedMessage: null,
-    submittedMetadata: null,
-    submittedRevision: null,
     threadId: thread.id,
     title: "Mockup chooser",
     updatedAt: "2026-04-30T00:00:00Z",
   };
-  let appSurfaceSubmitted = false;
   await page.unroute("**/v1/**");
   await page.route("**/v1/**", async (route) => {
     const request = route.request();
@@ -343,17 +338,7 @@ test("renders app surface as a workspace pane and submits from the frame", async
         status: 200,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          session: appSurfaceSubmitted
-            ? {
-                ...interactiveSession,
-                status: "submitted",
-                submitAvailable: false,
-                submittedAt: "2026-04-30T00:00:05Z",
-                submittedMessage: "Pick mockup A",
-                submittedMetadata: { choice: "a" },
-                submittedRevision: 1,
-              }
-            : interactiveSession,
+          session: interactiveSession,
         }),
       });
       return;
@@ -368,7 +353,17 @@ test("renders app surface as a workspace pane and submits from the frame", async
             <body style="font-family: system-ui; margin: 0; padding: 16px">
               <h1>Mockup chooser</h1>
               <p>Compare two responsive concepts.</p>
-              <button onclick="window.parent.postMessage({jsonrpc:'2.0', id:'submit-1', method:'ui/message', params:{role:'user', content:{type:'text', text:'Pick mockup A'}, _meta:{choice:'a'}}}, '*')">Choose A</button>
+              <button id="choose">Choose A</button>
+              <output aria-live="polite"></output>
+              <script>
+                let nextId = 0;
+                document.getElementById('choose').onclick = () => window.parent.postMessage({jsonrpc:'2.0', id:'submit-' + (++nextId), method:'ui/message', params:{role:'user', content:{type:'text', text:'Pick mockup A'}}}, '*');
+                window.addEventListener('message', (event) => {
+                  if (event.data?.jsonrpc === '2.0' && event.data?.result && event.data?.id === 'submit-' + nextId) {
+                    document.querySelector('output').textContent = 'Acknowledged ' + nextId;
+                  }
+                });
+              </script>
             </body>
           </html>`,
       });
@@ -376,12 +371,13 @@ test("renders app surface as a workspace pane and submits from the frame", async
     }
 
     if (key === "POST /v1/app-surfaces/session-1/bridge") {
-      appSurfaceSubmitted = true;
+      const body = request.postDataJSON();
+      bridgeRequests.push(body);
       await route.fulfill({
         status: 200,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: "submit-1",
+          id: body.id,
           result: { input: { payload: { turnId: "turn-app-surface" } } },
         }),
       });
@@ -427,12 +423,18 @@ test("renders app surface as a workspace pane and submits from the frame", async
   expect(desktopFrameLayout.paneBottom - desktopFrameLayout.frameBottom).toBeLessThanOrEqual(10);
   expect(desktopFrameLayout.frameHeight).toBeGreaterThanOrEqual(desktopFrameLayout.paneHeight - 16);
 
-  const frameSubmit = page
+  const frame = page
     .frameLocator('iframe[title="App surface: Mockup chooser"]')
-    .frameLocator('iframe[title="App surface content"]')
-    .getByRole("button", { name: "Choose A" });
-  await frameSubmit.click();
-  await expect(page.getByText(/submitted/i)).toBeVisible();
+    .frameLocator('iframe[title="App surface content"]');
+  for (const count of [1, 2]) {
+    await frame.getByRole("button", { name: "Choose A" }).click();
+    await expect(frame.getByText(`Acknowledged ${count}`, { exact: true })).toBeVisible();
+    await expect(appSurfacePane).toBeVisible();
+  }
+  expect(bridgeRequests).toEqual([1, 2].map((count) => ({
+    id: `submit-${count}`, method: "ui/message", revision: 1, bridgeToken: "bridge-token-1",
+    params: { role: "user", content: { type: "text", text: "Pick mockup A" } },
+  })));
 });
 
 test("opens idle historical snapshots without unread or stop state after refresh interval", async ({ page }) => {

@@ -25,9 +25,7 @@ use crate::{
 };
 
 pub const APP_SURFACE_UPSERTED_EVENT: &str = "app_surface.session_upserted";
-pub const APP_SURFACE_SUBMITTED_EVENT: &str = "app_surface.session_submitted";
 pub const APP_SURFACE_ARCHIVED_EVENT: &str = "app_surface.session_archived";
-pub const APP_SURFACE_ERROR_EVENT: &str = "app_surface.session_error";
 pub const APP_SURFACE_BRIDGE_CALL_EVENT: &str = "app_surface.bridge_call";
 pub const APP_SURFACE_MODEL_CONTEXT_UPDATED_EVENT: &str = "app_surface.model_context_updated";
 pub const APP_SURFACE_PRESENTATION_REQUESTED_EVENT: &str = "app_surface.presentation_requested";
@@ -77,15 +75,10 @@ pub struct AppSurfaceSessionDto {
     pub permissions: AppSurfacePermissions,
     pub grants: AppSurfaceGrants,
     pub provenance: Value,
-    pub submitted_revision: Option<i64>,
-    pub submitted_message: Option<String>,
-    pub submitted_metadata: Option<Value>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    pub submitted_at: Option<DateTime<Utc>>,
     pub archived_at: Option<DateTime<Utc>>,
     pub document_url: String,
-    pub submit_available: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -723,9 +716,6 @@ pub(crate) fn session_dto(session: AppSurfaceSession) -> AppSurfaceSessionDto {
         session.revision
     );
     AppSurfaceSessionDto {
-        submit_available: session.status == AppSurfaceSessionStatus::Active
-            && session.submitted_revision != Some(session.revision)
-            && session.archived_at.is_none(),
         id: session.id,
         thread_id: session.thread_id,
         provider: session.provider,
@@ -741,12 +731,8 @@ pub(crate) fn session_dto(session: AppSurfaceSession) -> AppSurfaceSessionDto {
         permissions: session.permissions,
         grants: session.grants,
         provenance: session.provenance,
-        submitted_revision: session.submitted_revision,
-        submitted_message: session.submitted_message,
-        submitted_metadata: session.submitted_metadata,
         created_at: session.created_at,
         updated_at: session.updated_at,
-        submitted_at: session.submitted_at,
         archived_at: session.archived_at,
         document_url,
     }

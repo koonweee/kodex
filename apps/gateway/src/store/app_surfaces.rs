@@ -19,7 +19,7 @@ impl Store {
         let now = Utc::now();
         let existing = sqlx::query(
             r#"
-            select id, revision, status
+            select id, revision
             from app_surface_sessions
             where thread_id = ?
             "#,
@@ -38,12 +38,6 @@ impl Store {
         let (id, revision) = if let Some(row) = existing {
             let id: String = row.try_get("id")?;
             let revision: i64 = row.try_get("revision")?;
-            let status: String = row.try_get("status")?;
-            if AppSurfaceSessionStatus::from_str(&status)? == AppSurfaceSessionStatus::Submitting {
-                return Err(ApiError::Conflict(
-                    "app surface submit is in progress".to_string(),
-                ));
-            }
             let next_revision = revision + 1;
             let resource_uri = upsert
                 .resource_uri
@@ -64,11 +58,7 @@ impl Store {
                     permissions_json = ?,
                     grants_json = ?,
                     provenance_json = ?,
-                    submitted_revision = null,
-                    submitted_message = null,
-                    submitted_metadata_json = null,
                     updated_at = ?,
-                    submitted_at = null,
                     archived_at = null
                 where id = ?
                 "#,
@@ -183,22 +173,12 @@ impl Store {
         &self,
         thread_id: &str,
     ) -> ApiResult<Option<AppSurfaceSession>> {
-        if self
-            .latest_app_surface_session(thread_id)
-            .await?
-            .is_some_and(|session| session.status == AppSurfaceSessionStatus::Submitting)
-        {
-            return Err(ApiError::Conflict(
-                "app surface submit is in progress".to_string(),
-            ));
-        }
         let now = Utc::now();
         let result = sqlx::query(
             r#"
             update app_surface_sessions
             set status = ?, archived_at = ?, updated_at = ?
             where thread_id = ?
-              and status != ?
               and archived_at is null
             "#,
         )
@@ -206,94 +186,12 @@ impl Store {
         .bind(now)
         .bind(now)
         .bind(thread_id)
-        .bind(AppSurfaceSessionStatus::Submitting.as_str())
         .execute(&self.pool)
         .await?;
         if result.rows_affected() == 0 {
             return Ok(None);
         }
         self.latest_app_surface_session(thread_id).await
-    }
-
-    pub async fn submit_app_surface_session(
-        &self,
-        session_id: &str,
-        revision: i64,
-        message: &str,
-        metadata: Option<Value>,
-    ) -> ApiResult<AppSurfaceSession> {
-        let now = Utc::now();
-        let metadata_json = metadata.as_ref().map(serde_json::to_string).transpose()?;
-        let result = sqlx::query(
-            r#"
-            update app_surface_sessions
-            set status = ?,
-                submitted_revision = ?,
-                submitted_message = ?,
-                submitted_metadata_json = ?,
-                submitted_at = ?,
-                updated_at = ?
-            where id = ?
-              and revision = ?
-              and status = ?
-              and archived_at is null
-            "#,
-        )
-        .bind(AppSurfaceSessionStatus::Submitted.as_str())
-        .bind(revision)
-        .bind(message)
-        .bind(metadata_json)
-        .bind(now)
-        .bind(now)
-        .bind(session_id)
-        .bind(revision)
-        .bind(AppSurfaceSessionStatus::Active.as_str())
-        .execute(&self.pool)
-        .await?;
-        if result.rows_affected() == 0 {
-            return Err(ApiError::Conflict(
-                "app surface session is not active at the requested revision".to_string(),
-            ));
-        }
-        self.get_app_surface_session(session_id).await
-    }
-
-    pub async fn mark_app_surface_session_errored(
-        &self,
-        session_id: &str,
-        revision: i64,
-        error_message: &str,
-    ) -> ApiResult<AppSurfaceSession> {
-        let now = Utc::now();
-        let metadata_json = serde_json::to_string(&serde_json::json!({
-            "message": error_message
-        }))?;
-        let result = sqlx::query(
-            r#"
-            update app_surface_sessions
-            set status = ?,
-                submitted_metadata_json = ?,
-                updated_at = ?
-            where id = ?
-              and revision = ?
-              and status = ?
-              and archived_at is null
-            "#,
-        )
-        .bind(AppSurfaceSessionStatus::Errored.as_str())
-        .bind(metadata_json)
-        .bind(now)
-        .bind(session_id)
-        .bind(revision)
-        .bind(AppSurfaceSessionStatus::Active.as_str())
-        .execute(&self.pool)
-        .await?;
-        if result.rows_affected() == 0 {
-            return Err(ApiError::Conflict(
-                "app surface session is not active at the requested revision".to_string(),
-            ));
-        }
-        self.get_app_surface_session(session_id).await
     }
 }
 
@@ -347,9 +245,7 @@ fn app_surface_session_query() -> sqlx::QueryBuilder<'static, sqlx::Sqlite> {
         select s.id, s.thread_id, s.bridge_token, s.provider, s.title, s.resource_uri,
                s.resource_mime_type, r.text as html, s.fallback_content, s.revision,
                s.status, s.display_modes_json, s.csp_json, s.permissions_json, s.grants_json,
-               s.provenance_json, s.submitted_revision, s.submitted_message,
-               s.submitted_metadata_json, s.created_at, s.updated_at,
-               s.submitted_at, s.archived_at
+               s.provenance_json, s.created_at, s.updated_at, s.archived_at
         from app_surface_sessions s
         join app_surface_resources r
           on r.session_id = s.id and r.revision = s.revision
@@ -363,7 +259,6 @@ fn row_to_app_surface_session(row: sqlx::sqlite::SqliteRow) -> ApiResult<AppSurf
     let permissions_json: String = row.try_get("permissions_json")?;
     let grants_json: String = row.try_get("grants_json")?;
     let provenance_json: String = row.try_get("provenance_json")?;
-    let submitted_metadata_json: Option<String> = row.try_get("submitted_metadata_json")?;
     Ok(AppSurfaceSession {
         id: row.try_get("id")?,
         thread_id: row.try_get("thread_id")?,
@@ -381,14 +276,8 @@ fn row_to_app_surface_session(row: sqlx::sqlite::SqliteRow) -> ApiResult<AppSurf
         permissions: serde_json::from_str::<AppSurfacePermissions>(&permissions_json)?,
         grants: serde_json::from_str::<AppSurfaceGrants>(&grants_json)?,
         provenance: serde_json::from_str::<Value>(&provenance_json)?,
-        submitted_revision: row.try_get("submitted_revision")?,
-        submitted_message: row.try_get("submitted_message")?,
-        submitted_metadata: submitted_metadata_json
-            .map(|value| serde_json::from_str(&value))
-            .transpose()?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
-        submitted_at: row.try_get("submitted_at")?,
         archived_at: row.try_get("archived_at")?,
     })
 }
@@ -471,50 +360,5 @@ mod tests {
             .unwrap();
         assert_eq!(latest.id, first.id);
         assert_eq!(latest.revision, 2);
-    }
-
-    #[tokio::test]
-    async fn app_surface_submit_marks_exact_active_revision() {
-        let store = Store::in_memory().await.unwrap();
-        let session = store
-            .upsert_app_surface_session(AppSurfaceSessionUpsert {
-                thread_id: "thread-1".to_string(),
-                provider: AppSurfaceProvider::Generated,
-                title: "Chooser".to_string(),
-                resource_uri: None,
-                resource_mime_type: "text/html;profile=mcp-app".to_string(),
-                html: "<main>One</main>".to_string(),
-                fallback_content: "Choose an option".to_string(),
-                display_modes: vec!["inline".to_string()],
-                csp: AppSurfaceCsp::default(),
-                permissions: AppSurfacePermissions::default(),
-                grants: AppSurfaceGrants {
-                    can_send_message: true,
-                    ..Default::default()
-                },
-                provenance: json!({"source": "test"}),
-            })
-            .await
-            .unwrap();
-
-        let submitted = store
-            .submit_app_surface_session(
-                &session.id,
-                session.revision,
-                "Pick A",
-                Some(json!({"choice": "a"})),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(submitted.status, AppSurfaceSessionStatus::Submitted);
-        assert_eq!(submitted.submitted_revision, Some(session.revision));
-        assert_eq!(submitted.submitted_message.as_deref(), Some("Pick A"));
-        assert_eq!(submitted.submitted_metadata, Some(json!({"choice": "a"})));
-
-        let stale = store
-            .submit_app_surface_session(&session.id, session.revision, "Again", None)
-            .await;
-        assert!(matches!(stale, Err(ApiError::Conflict(_))));
     }
 }

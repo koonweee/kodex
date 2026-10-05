@@ -18,7 +18,6 @@ mod events;
 mod migrations;
 mod notifications;
 mod queue_transfers;
-mod runtime;
 mod threads;
 
 pub use queue_transfers::{QueueTransfer, QueueTransferPhase};
@@ -86,30 +85,21 @@ impl AppSurfaceProvider {
 #[serde(rename_all = "camelCase")]
 pub enum AppSurfaceSessionStatus {
     Active,
-    Submitting,
-    Submitted,
     Archived,
-    Errored,
 }
 
 impl AppSurfaceSessionStatus {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Active => "active",
-            Self::Submitting => "submitting",
-            Self::Submitted => "submitted",
             Self::Archived => "archived",
-            Self::Errored => "errored",
         }
     }
 
     fn from_str(value: &str) -> ApiResult<Self> {
         match value {
             "active" => Ok(Self::Active),
-            "submitting" => Ok(Self::Submitting),
-            "submitted" => Ok(Self::Submitted),
             "archived" => Ok(Self::Archived),
-            "errored" => Ok(Self::Errored),
             _ => Err(ApiError::Other(anyhow::anyhow!(
                 "unknown app surface session status {value}"
             ))),
@@ -198,12 +188,8 @@ pub struct AppSurfaceSession {
     pub permissions: AppSurfacePermissions,
     pub grants: AppSurfaceGrants,
     pub provenance: Value,
-    pub submitted_revision: Option<i64>,
-    pub submitted_message: Option<String>,
-    pub submitted_metadata: Option<Value>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    pub submitted_at: Option<DateTime<Utc>>,
     pub archived_at: Option<DateTime<Utc>>,
 }
 
@@ -474,50 +460,6 @@ pub struct AutomationRun {
     pub error: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ThreadRuntimeState {
-    pub thread_id: String,
-    pub status: ThreadRuntimeStatus,
-    pub active_turn_id: Option<String>,
-    pub updated_at: DateTime<Utc>,
-    pub last_event_seq: Option<i64>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ThreadRuntimeStatus {
-    Starting,
-    Syncing,
-    Active,
-    Streaming,
-    Idle,
-    Unknown,
-}
-
-impl ThreadRuntimeStatus {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Starting => "starting",
-            Self::Syncing => "syncing",
-            Self::Active => "active",
-            Self::Streaming => "streaming",
-            Self::Idle => "idle",
-            Self::Unknown => "unknown",
-        }
-    }
-
-    fn from_persisted(value: &str) -> Self {
-        match value {
-            "starting" => Self::Starting,
-            "syncing" => Self::Syncing,
-            "active" => Self::Active,
-            "streaming" => Self::Streaming,
-            "idle" => Self::Idle,
-            "unknown" => Self::Unknown,
-            _ => Self::Unknown,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]

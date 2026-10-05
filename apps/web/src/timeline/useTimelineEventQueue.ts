@@ -1,4 +1,4 @@
-import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef } from "react";
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useEffectEvent, useRef } from "react";
 
 import type { EventEnvelope, ThreadViewPatch } from "../api/client";
 import type { TimelineState } from "./reducer";
@@ -9,12 +9,16 @@ const DEFAULT_TIMELINE_EVENT_FLUSH_DELAY_MS = 64;
 
 export function useTimelineEventQueue({
   flushDelayMs = defaultTimelineEventFlushDelayMs(),
+  onSnapshotRequired,
   reduceEvents,
   setTimeline,
+  timeline,
 }: {
   flushDelayMs?: number;
+  onSnapshotRequired?: () => void;
   reduceEvents: TimelineEventQueueReducer;
   setTimeline: Dispatch<SetStateAction<TimelineState>>;
+  timeline: TimelineState;
 }) {
   const queuedTimelineEvents = useRef<EventEnvelope[]>([]);
   const timelineFlushFrame = useRef<number | null>(null);
@@ -23,6 +27,19 @@ export function useTimelineEventQueue({
   const latestReduceEvents = useRef(reduceEvents);
   latestFlushDelayMs.current = flushDelayMs;
   latestReduceEvents.current = reduceEvents;
+  const handledRefill = useRef<{ intent: object; revision: number } | null>(null);
+  const requestSnapshot = useEffectEvent(() => onSnapshotRequired?.());
+  const { snapshotRefillIntent, viewRevision } = timeline;
+
+  useEffect(() => {
+    if (!snapshotRefillIntent) return;
+    if (handledRefill.current?.intent === snapshotRefillIntent && handledRefill.current.revision === viewRevision) return;
+    // State updaters may be evaluated more than once. Only committed work can
+    // request I/O; unchanged renders and errors must not retry it. A newer
+    // projection during an outstanding repair needs a fresh canonical read.
+    handledRefill.current = { intent: snapshotRefillIntent, revision: viewRevision };
+    requestSnapshot();
+  }, [snapshotRefillIntent, viewRevision]);
 
   const flushQueuedTimelineEvents = useCallback(() => {
     if (timelineFlushFrame.current !== null) {

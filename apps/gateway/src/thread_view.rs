@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    future::Future,
     sync::Arc,
 };
 
@@ -13,7 +14,8 @@ pub use crate::thread_view_patch::{
 };
 use crate::{
     app_server_api::{
-        canonical_timeline_item_id, compact_timeline_item_payload, thread_timeline_rows_from_items,
+        canonical_timeline_item_id, compact_timeline_item_payload,
+        thread_live_state_from_turn_status, thread_timeline_rows_from_items,
         visible_text_from_thread_item, visible_text_from_user_input, PendingTimelineRequestSummary,
         ThreadItemSnapshot, ThreadLiveState, ThreadTimelineSnapshot, ThreadTimelineSnapshotItem,
         ThreadTimelineSnapshotTurn, ThreadTimelineWindowPage, ThreadTurnSnapshot,
@@ -75,8 +77,13 @@ impl ThreadViewStore {
         Ok(())
     }
 
-    pub async fn reset_history(&self, thread_id: &str, revision: i64) -> ThreadViewPatch {
+    pub async fn reset_history(
+        &self,
+        thread_id: &str,
+        revision: impl Future<Output = ApiResult<i64>>,
+    ) -> ApiResult<ThreadViewPatch> {
         let mut sessions = self.sessions.write().await;
+        let revision = revision.await?;
         let view = sessions.entry(thread_id.to_string()).or_default();
         *view = ThreadView {
             thread_id: thread_id.to_string(),
@@ -84,7 +91,7 @@ impl ThreadViewStore {
             history_reset_revision: view.history_reset_revision.max(revision),
             ..ThreadView::default()
         };
-        view.to_patch()
+        Ok(view.to_patch())
     }
 
     pub async fn refresh_from_turns(
@@ -112,7 +119,7 @@ impl ThreadViewStore {
             history_page.loaded_turn_count = view.history_turns.len() as u32;
         }
         let base = ThreadTimelineSnapshot::from_turns(thread_id, &view.history_turns);
-        Ok(view.refresh_from_base(thread_id, base, revision))
+        Ok(view.refresh_from_base(thread_id, base, revision, &incoming_ids, true))
     }
 
     pub async fn refresh_from_history_window(
@@ -125,10 +132,14 @@ impl ThreadViewStore {
         let mut sessions = self.sessions.write().await;
         let view = sessions.entry(thread_id.to_string()).or_default();
         view.ensure_history_current(revision)?;
+        let incoming_ids = turns
+            .iter()
+            .map(|turn| turn.id.clone())
+            .collect::<HashSet<_>>();
         let reset_window = history_page
             .as_ref()
             .is_some_and(|history_page| history_page.reset_window);
-        if reset_window {
+        if reset_window && revision >= view.revision {
             view.items.retain(|item| is_live_status(&item.status));
             let live_turn_ids = view
                 .items
@@ -139,10 +150,6 @@ impl ThreadViewStore {
         }
         let mut next_turns = Vec::new();
         if !reset_window {
-            let incoming_ids = turns
-                .iter()
-                .map(|turn| turn.id.clone())
-                .collect::<HashSet<_>>();
             next_turns = view
                 .history_turns
                 .iter()
@@ -169,7 +176,7 @@ impl ThreadViewStore {
         view.history_turns = next_turns;
         view.history_page = history_page;
         let base = ThreadTimelineSnapshot::from_turns(thread_id, &view.history_turns);
-        Ok(view.refresh_from_base(thread_id, base, revision))
+        Ok(view.refresh_from_base(thread_id, base, revision, &incoming_ids, true))
     }
 
     pub async fn prepend_history_page(
@@ -183,10 +190,11 @@ impl ThreadViewStore {
         let view = sessions.entry(thread_id.to_string()).or_default();
         view.ensure_history_current(revision)?;
         let mut next_turns = turns.to_vec();
-        let mut seen = next_turns
+        let incoming_ids = next_turns
             .iter()
             .map(|turn| turn.id.clone())
             .collect::<HashSet<_>>();
+        let mut seen = incoming_ids.clone();
         next_turns.extend(
             view.history_turns
                 .iter()
@@ -199,7 +207,7 @@ impl ThreadViewStore {
         view.history_turns = next_turns;
         view.history_page = history_page;
         let base = ThreadTimelineSnapshot::from_turns(thread_id, &view.history_turns);
-        Ok(view.refresh_from_base(thread_id, base, revision))
+        Ok(view.refresh_from_base(thread_id, base, revision, &incoming_ids, false))
     }
 
     pub async fn history_page(&self, thread_id: &str) -> Option<ThreadTimelineWindowPage> {
@@ -246,15 +254,24 @@ impl ThreadViewStore {
             .map(|view| view.live_state)
     }
 
-    async fn with_thread_view<F, R>(&self, thread_id: &str, revision: i64, update: F) -> R
+    async fn with_thread_view<F, R>(
+        &self,
+        thread_id: &str,
+        revision: impl Future<Output = ApiResult<i64>>,
+        update: F,
+    ) -> ApiResult<R>
     where
         F: FnOnce(&mut ThreadView) -> R,
     {
         let mut sessions = self.sessions.write().await;
+        // The allocator performs local SQL only. Keep it unpolled until this
+        // exclusion is held so no snapshot can claim its cursor before the
+        // corresponding synchronous mutation has entered the projection.
+        let revision = revision.await?;
         let view = sessions.entry(thread_id.to_string()).or_default();
         view.thread_id = thread_id.to_string();
         view.revision = view.revision.max(revision);
-        update(view)
+        Ok(update(view))
     }
 }
 
@@ -299,11 +316,77 @@ impl ThreadView {
         thread_id: &str,
         mut base: ThreadTimelineSnapshot,
         revision: i64,
+        incoming_turn_ids: &HashSet<String>,
+        incoming_is_head: bool,
     ) -> ThreadTimelineSnapshot {
         let existing_items = std::mem::take(&mut self.items);
         let existing_turns = std::mem::take(&mut self.turns);
         let existing_active_turn_id = self.active_turn_id.clone();
         let existing_live_state = self.live_state;
+        let stale_read = revision < self.revision;
+        let current_is_authoritative =
+            |turn_id: &str| stale_read || !incoming_turn_ids.contains(turn_id);
+        let incoming_active = base
+            .turns
+            .iter()
+            .rev()
+            .find(|turn| {
+                incoming_turn_ids.contains(&turn.id) && !is_terminal_turn_status(&turn.status)
+            })
+            .map(|turn| {
+                (
+                    turn.id.clone(),
+                    thread_live_state_from_turn_status(&turn.status),
+                )
+            });
+        let incoming_ends_active = existing_active_turn_id.as_deref().is_some_and(|id| {
+            base.turns.iter().any(|turn| {
+                turn.id == id
+                    && incoming_turn_ids.contains(id)
+                    && is_terminal_turn_status(&turn.status)
+            })
+        });
+        let incoming_lifecycle = if stale_read {
+            None
+        } else {
+            incoming_active
+                .as_ref()
+                .map(|(id, live_state)| (Some(id.clone()), *live_state))
+                .or_else(|| incoming_ends_active.then_some((None, ThreadLiveState::Idle)))
+        };
+        let current_turns = existing_turns
+            .iter()
+            .map(|turn| (turn.id.as_str(), turn))
+            .collect::<HashMap<_, _>>();
+        // A response owns only the turns it returned, and only when its read
+        // did not precede a newer projection commit. Cached/stale metadata must
+        // not reopen a completed turn or erase rows using an old terminal flag.
+        for turn in &mut base.turns {
+            if current_is_authoritative(&turn.id) {
+                if let Some(current) = current_turns.get(turn.id.as_str()) {
+                    let started_at = current.started_at.or(turn.started_at);
+                    let completed_at = if is_terminal_turn_status(&current.status) {
+                        current.completed_at.or(turn.completed_at)
+                    } else {
+                        current.completed_at
+                    };
+                    *turn = (*current).clone();
+                    turn.started_at = started_at;
+                    turn.completed_at = completed_at;
+                }
+            }
+        }
+        for item in &mut base.items {
+            if current_is_authoritative(&item.turn_id) {
+                if let Some(current) = current_turns.get(item.turn_id.as_str()) {
+                    item.status = if is_terminal_turn_status(&current.status) {
+                        "completed".into()
+                    } else {
+                        current.status.clone()
+                    };
+                }
+            }
+        }
         let mut base_item_indexes = base
             .items
             .iter()
@@ -372,7 +455,7 @@ impl ThreadView {
         for item in existing_items {
             let key = scoped_item_key(&item.turn_id, &item.item_id);
             if let Some(base_index) = base_item_indexes.get(&key).copied() {
-                if should_preserve_live_item_over_snapshot(&item, &base.items[base_index]) {
+                if current_is_authoritative(&item.turn_id) {
                     let display_order = base.items[base_index].display_order;
                     let mut preserved_item = item.clone();
                     preserved_item.display_order = display_order;
@@ -386,44 +469,27 @@ impl ThreadView {
             {
                 continue;
             }
-            if gateway_stream_assistant_text_key(&item)
-                .is_some_and(|key| base_assistant_text_keys.contains(&key))
-            {
-                continue;
-            }
-            if existing_activity_content_key(&item)
-                .is_some_and(|key| base_activity_content_keys.contains(&key))
-            {
-                continue;
-            }
             let terminal_turn_item = terminal_turn_ids.contains(&item.turn_id);
-            if terminal_turn_item && !is_preservable_terminal_activity(&item) {
-                continue;
-            }
-            if is_prunable_empty_reasoning(&item) {
-                continue;
-            }
-            if is_prunable_missing_context_compaction(
-                &item,
-                &base.turns,
-                base.active_turn_id.as_deref(),
-            ) {
-                continue;
-            }
-            if !terminal_turn_item
-                && is_live_status(&item.status)
-                && base.active_turn_id.is_none()
-                && (matches!(
-                    base.live_state,
-                    ThreadLiveState::Streaming | ThreadLiveState::Syncing
-                ) || (existing_active_turn_id.as_deref() == Some(item.turn_id.as_str())
-                    && matches!(
-                        existing_live_state,
-                        ThreadLiveState::Streaming | ThreadLiveState::Syncing
-                    )))
+            if !stale_read
+                && incoming_is_head
+                && is_prunable_missing_context_compaction(
+                    &item,
+                    &base.turns,
+                    incoming_active.as_ref().map(|(id, _)| id.as_str()),
+                )
             {
-                base.active_turn_id = Some(item.turn_id.clone());
-                base.live_state = ThreadLiveState::Streaming;
+                continue;
+            }
+            if !current_is_authoritative(&item.turn_id) {
+                if gateway_stream_assistant_text_key(&item)
+                    .is_some_and(|key| base_assistant_text_keys.contains(&key))
+                    || existing_activity_content_key(&item)
+                        .is_some_and(|key| base_activity_content_keys.contains(&key))
+                    || (terminal_turn_item && !is_preservable_terminal_activity(&item))
+                    || is_prunable_empty_reasoning(&item)
+                {
+                    continue;
+                }
             }
             let mut item = item;
             if !terminal_turn_item {
@@ -441,6 +507,19 @@ impl ThreadView {
         base.view_revision = self.revision.max(revision);
         base.pending_approval_requests = self.pending_approval_requests.clone();
         base.pending_user_input_requests = self.pending_user_input_requests.clone();
+        let retains_active_row = existing_active_turn_id.as_deref().is_some_and(|id| {
+            base.items
+                .iter()
+                .any(|item| item.turn_id == id && is_live_status(&item.status))
+        });
+        // A current head can retire an absent compaction marker, but a bounded
+        // page omitting a still-visible live tail does not prove it ended.
+        let fallback_lifecycle = if !stale_read && incoming_is_head && !retains_active_row {
+            (None, ThreadLiveState::Idle)
+        } else {
+            (existing_active_turn_id, existing_live_state)
+        };
+        (base.active_turn_id, base.live_state) = incoming_lifecycle.unwrap_or(fallback_lifecycle);
         merge_missing_turns(&mut base.turns, &existing_turns, &base.items);
         base.turns = ordered_turns_for_items(&base.turns, &base.items);
         normalize_timeline_item_display_order(
@@ -866,14 +945,14 @@ pub async fn record_pending_requests(
     sessions: &ThreadViewStore,
     thread_id: &str,
     approvals: &[Approval],
-    revision: i64,
+    revision: impl Future<Output = ApiResult<i64>>,
 ) -> ApiResult<ThreadTimelineSnapshot> {
-    Ok(sessions
+    sessions
         .with_thread_view(thread_id, revision, |view| {
             view.set_pending_requests(approvals);
             view.to_snapshot()
         })
-        .await)
+        .await
 }
 
 pub async fn patch_for_thread(
@@ -883,15 +962,6 @@ pub async fn patch_for_thread(
     Ok(sessions.patch_for_thread(thread_id).await)
 }
 
-pub async fn lifecycle_patch_for_thread(
-    sessions: &ThreadViewStore,
-    thread_id: &str,
-) -> ApiResult<ThreadViewPatch> {
-    Ok(sessions
-        .with_thread_view(thread_id, 0, |view| view.lifecycle_patch())
-        .await)
-}
-
 pub async fn record_item_upsert(
     sessions: &ThreadViewStore,
     thread_id: &str,
@@ -899,7 +969,7 @@ pub async fn record_item_upsert(
     item: Value,
     mut item_snapshot: ThreadItemSnapshot,
     turn_status: Option<&str>,
-    updated_seq: i64,
+    updated_seq: impl Future<Output = ApiResult<i64>>,
 ) -> ApiResult<ThreadViewPatch> {
     item_snapshot.raw_payload = item.clone();
     let patch = sessions
@@ -915,7 +985,7 @@ pub async fn record_item_upsert(
             );
             view.row_delta_or_turn_patch(turn_id, before_rows)
         })
-        .await;
+        .await?;
     Ok(patch)
 }
 
@@ -1007,13 +1077,14 @@ pub(crate) async fn record_item_delta(
     turn_id: &str,
     item_id: &str,
     delta: &str,
-    updated_seq: i64,
-) -> ApiResult<ItemDeltaApplyOutcome> {
+    updated_seq: impl Future<Output = ApiResult<i64>>,
+) -> ApiResult<(ItemDeltaApplyOutcome, i64)> {
     let outcome = sessions
         .with_thread_view(thread_id, updated_seq, |view| {
-            view.append_delta(thread_id, turn_id, item_id, delta)
+            let outcome = view.append_delta(thread_id, turn_id, item_id, delta);
+            (outcome, view.revision)
         })
-        .await;
+        .await?;
     Ok(outcome)
 }
 
@@ -1023,14 +1094,14 @@ pub async fn record_item_delta_patch(
     turn_id: &str,
     item_id: &str,
     delta: &str,
-    updated_seq: i64,
+    updated_seq: impl Future<Output = ApiResult<i64>>,
 ) -> ApiResult<ThreadViewPatch> {
     let patch = sessions
         .with_thread_view(thread_id, updated_seq, |view| {
             let _ = view.append_delta(thread_id, turn_id, item_id, delta);
             view.turn_patch(turn_id)
         })
-        .await;
+        .await?;
     Ok(patch)
 }
 
@@ -1038,7 +1109,7 @@ pub async fn record_turn_status(
     sessions: &ThreadViewStore,
     thread_id: &str,
     turn: &ThreadTurnSnapshot,
-    updated_seq: i64,
+    updated_seq: impl Future<Output = ApiResult<i64>>,
 ) -> ApiResult<(bool, ThreadViewPatch)> {
     let (newly_terminal, patch) = sessions
         .with_thread_view(thread_id, updated_seq, |view| {
@@ -1051,7 +1122,7 @@ pub async fn record_turn_status(
             };
             (newly_terminal, patch)
         })
-        .await;
+        .await?;
     Ok((newly_terminal, patch))
 }
 
@@ -1059,14 +1130,14 @@ pub async fn record_thread_live_state(
     sessions: &ThreadViewStore,
     thread_id: &str,
     live_state: ThreadLiveState,
-    updated_seq: i64,
+    updated_seq: impl Future<Output = ApiResult<i64>>,
 ) -> ApiResult<ThreadViewPatch> {
     let patch = sessions
         .with_thread_view(thread_id, updated_seq, |view| {
             view.set_live_state(live_state, None);
             view.lifecycle_patch()
         })
-        .await;
+        .await?;
     Ok(patch)
 }
 
@@ -1077,7 +1148,7 @@ pub async fn record_pending_user_input(
     client_id: &str,
     input: &[UserInput],
     attachments: &[TimelineFileAttachment],
-    (submission_revision, updated_seq): (i64, i64),
+    (submission_revision, updated_seq): (i64, impl Future<Output = ApiResult<i64>>),
 ) -> ApiResult<Option<ThreadViewPatch>> {
     if attachments.is_empty() && visible_text_from_user_input(input).is_none() {
         return Ok(None);
@@ -1122,7 +1193,7 @@ pub async fn record_pending_user_input(
             );
             Some(view.turn_patch(turn_id))
         })
-        .await;
+        .await?;
     Ok(patch)
 }
 
@@ -1160,26 +1231,6 @@ fn remove_materialized_pending_match(
             || item.turn_id != turn_id
             || user_message_client_id(item) != Some(client_id)
     });
-}
-
-fn should_preserve_live_item_over_snapshot(
-    live_item: &ThreadTimelineSnapshotItem,
-    snapshot_item: &ThreadTimelineSnapshotItem,
-) -> bool {
-    // Same app-server item identity only: a just-arrived live delta can be newer
-    // than a bounded snapshot read. Do not reconcile unrelated transcript rows by
-    // text here; materialized history remains app-server-owned.
-    if !is_live_status(&live_item.status) || !is_live_status(&snapshot_item.status) {
-        return false;
-    }
-    if live_item
-        .timestamp_ms
-        .zip(snapshot_item.timestamp_ms)
-        .is_some_and(|(live_timestamp, snapshot_timestamp)| live_timestamp > snapshot_timestamp)
-    {
-        return true;
-    }
-    false
 }
 
 fn is_pending_user_item(item: &ThreadTimelineSnapshotItem) -> bool {
@@ -1473,3 +1524,7 @@ mod tests;
 #[cfg(test)]
 #[path = "thread_view/identity_tests.rs"]
 mod identity_tests;
+
+#[cfg(test)]
+#[path = "thread_view/commit_tests.rs"]
+mod commit_tests;

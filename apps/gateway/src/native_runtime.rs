@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::config::Config;
 
-const INSTANCE_FORMAT: u32 = 3;
+const INSTANCE_FORMAT: u32 = 4;
 const MARKER: &str = "instance.json";
 const LOCK: &str = ".instance.lock";
 
@@ -306,6 +306,31 @@ mod tests {
             b"old native credentials"
         );
         assert!(!dir.path().join(LOCK).exists());
+    }
+
+    #[test]
+    fn retired_lifecycle_schema_is_rejected_without_opening_or_mutating_it() {
+        let dir = tempdir().unwrap();
+        let marker = serde_json::to_vec(&InstanceMarker {
+            format: 3,
+            id: Uuid::new_v4(),
+        })
+        .unwrap();
+        fs::write(dir.path().join(MARKER), &marker).unwrap();
+        fs::write(
+            dir.path().join("gateway.db"),
+            b"retired durable runtime state",
+        )
+        .unwrap();
+        let mut config = fixture(dir.path());
+        assert!(prepare_at(&mut config, &[]).is_err());
+        assert_eq!(fs::read(dir.path().join(MARKER)).unwrap(), marker);
+        assert_eq!(
+            fs::read(dir.path().join("gateway.db")).unwrap(),
+            b"retired durable runtime state"
+        );
+        assert!(!dir.path().join(LOCK).exists());
+        assert!(!dir.path().join("codex-home").exists());
     }
 
     #[test]

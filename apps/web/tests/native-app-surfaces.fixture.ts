@@ -14,7 +14,7 @@ export async function nativeAppSurfacesFixture(context: BrowserContext) {
   const calls: Array<{ page: Page; key: string; body: unknown }> = [];
   const holdNext = new Set<Page>();
   const heldReads = new Map<Page, { send: () => Promise<void>; aborted: () => boolean }>();
-  let pendingBridge: { send: () => Promise<void>; session: AppSurfaceSession } | null = null;
+  let pendingBridge: { send: () => Promise<void> } | null = null;
 
   function register(value: AppSurfaceSession) {
     current = value;
@@ -25,19 +25,21 @@ export async function nativeAppSurfacesFixture(context: BrowserContext) {
     try { await route.fulfill({ json: body }); }
     catch (error) { if (route.request().failure()?.errorText !== "net::ERR_ABORTED") throw error; }
   }
+  let receiptCount = 0;
   function publishReceipt() {
-    const id = "native-app-user";
+    receiptCount += 1;
+    const id = `native-app-user-${receiptCount}`;
     const turnId = "native-app-turn";
-    const clientId = "native-bridge-generated-client";
+    const clientId = `native-bridge-generated-client-${receiptCount}`;
     const item: ThreadTimelineSnapshotItem = {
-      id: `row-${id}`, threadId, turnId, itemId: id, itemType: "userMessage", status: "completed", codexMethod: "item/completed", displayOrder: 1,
+      id: `row-${id}`, threadId, turnId, itemId: id, itemType: "userMessage", status: "completed", codexMethod: "item/completed", displayOrder: receiptCount,
       payload: { source: "gatewayStream", turnId, itemId: id,
         item: { id, type: "userMessage", clientId, content: [{ type: "text", text: "Pick mockup A" }] },
         itemSnapshot: { id, clientId, itemType: "userMessage" } },
     };
     fixture.publishTimeline({ activeTurnId: turnId, liveState: "streaming", pendingApprovalRequests: [], pendingUserInputRequests: [],
       viewRevision: fixture.detail.timeline.viewRevision + 1, turns: [{ id: turnId, status: "inProgress" }],
-      rows: [{ id: item.id, turnId, kind: "user_message", status: "completed", displayOrder: 1, item, items: [], collapsedRows: [], fileChanges: [] }] });
+      rows: [...fixture.detail.timeline.rows, { id: item.id, turnId, kind: "user_message", status: "completed", displayOrder: receiptCount, item, items: [], collapsedRows: [], fileChanges: [] }] });
   }
   await context.route(/\/v1\/(?:threads\/settings-chat\/app-surface|app-surfaces\/[^/]+\/(?:document|bridge))(?:\?.*)?$/, async (route) => {
     const request = route.request();
@@ -63,7 +65,7 @@ export async function nativeAppSurfacesFixture(context: BrowserContext) {
     if (body.method === "ui/message" && target.provider === "generated") {
       if (pendingBridge) throw new Error("Duplicate generated app submission");
       publishReceipt();
-      pendingBridge = { session: target, send: () => respond(route, { id: body.id, result: { input: { payload: { turn: { id: "native-app-turn", status: "inProgress" } } } } }) };
+      pendingBridge = { send: () => respond(route, { id: body.id, result: { input: { payload: { turn: { id: "native-app-turn", status: "inProgress" } } } } }) };
       return;
     }
     if (body.method === "ui/initialize" && target.provider === "mcp") {
@@ -87,9 +89,6 @@ export async function nativeAppSurfacesFixture(context: BrowserContext) {
       if (!pendingBridge) throw new Error("No held bridge acknowledgement");
       const pending = pendingBridge;
       pendingBridge = null;
-      const submitted: AppSurfaceSession = { ...pending.session, status: "submitted", submitAvailable: false, submittedMessage: "Pick mockup A", submittedRevision: pending.session.revision, submittedAt: "2026-10-05T00:00:01Z" };
-      register(submitted);
-      fixture.appSurfaceChanged("app_surface.session_submitted", submitted);
       await pending.send();
     },
     update(provider: "generated" | "mcp", revision: number, client?: string) {
@@ -130,8 +129,7 @@ function session(provider: "generated" | "mcp", revision: number): AppSurfaceSes
     csp: { connectDomains: [], resourceDomains: [] }, displayModes: ["pane"], documentUrl: `/v1/app-surfaces/${id}/document?revision=${revision}`,
     fallbackContent: "App fixture", grants: { canOpenLinks: false, canSendMessage: true, canUpdateModelContext: false, resources: [{ server: "account-server", uri: "docs://account/document" }], tools: [{ server: "account-server", tool: "native_lookup" }] },
     bridgeToken: `${id}-token`, permissions: {}, provenance: provider === "mcp" ? { mcp: { server: "account-server", arguments: { document: "account-document" }, result: { content: [{ type: "text", text: "Originating account result" }] } } } : { source: "generated" },
-    resourceMimeType: "text/html", resourceUri: `ui://fixture/${id}`, submitAvailable: true,
-    submittedAt: null, submittedMessage: null, submittedMetadata: null, submittedRevision: null,
+    resourceMimeType: "text/html", resourceUri: `ui://fixture/${id}`,
   };
 }
 

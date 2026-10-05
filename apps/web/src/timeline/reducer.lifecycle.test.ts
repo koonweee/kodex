@@ -65,7 +65,7 @@ describe("timeline reducer lifecycle", () => {
     });
     expect(state.rows[0].type === "item" ? state.rows[0].item.text : "").toBe("Hello world");
     expect(state.lastSeq).toBe(4);
-    expect(state.viewRevision).toBe(3);
+    expect(state.viewRevision).toBe(4);
   });
 
   it("does not create transcript rows for canonical deltas without a base row", () => {
@@ -102,7 +102,7 @@ describe("timeline reducer lifecycle", () => {
       status: "completed",
     });
     expect(state.lastSeq).toBe(4);
-    expect(state.viewRevision).toBe(3);
+    expect(state.viewRevision).toBe(2);
   });
 
   it("lets canonical thread view patches replace older canonical text", () => {
@@ -178,7 +178,7 @@ describe("timeline reducer lifecycle", () => {
     expect(state.viewRevision).toBe(8);
   });
 
-  it("clears an active turn from a duplicate terminal projection patch", () => {
+  it("applies a terminal projection once and only advances the cursor for its duplicate", () => {
     let state = applyLiveTimelineUpdate(createTimelineState(), event({
       seq: 10,
       kind: "thread_view.patch",
@@ -192,21 +192,28 @@ describe("timeline reducer lifecycle", () => {
       }),
     }));
 
-    state = applyLiveTimelineUpdate(state, event({
-      seq: 11,
+    const terminal = event({
+      seq: 12,
       kind: "thread_view.patch",
       codexMethod: "thread_view/patch",
       payload: projectionPatchWithLiveState({
-        viewRevision: 10,
+        viewRevision: 11,
         activeTurnId: null,
         liveState: "idle",
         status: "completed",
         text: "Done",
       }),
-    }));
+    });
+    state = applyLiveTimelineUpdate(state, terminal);
 
     expect(state.activeTurnId).toBeNull();
-    expect(state.lastSeq).toBe(11);
+    expect(state.items.map((item) => item.text)).toEqual(["Done"]);
+    expect(state.lastSeq).toBe(12);
+    expect(state.viewRevision).toBe(11);
+    state = applyLiveTimelineUpdate(state, { ...terminal, seq: 13 });
+    expect(state.activeTurnId).toBeNull();
+    expect(state.items.map((item) => item.text)).toEqual(["Done"]);
+    expect(state.lastSeq).toBe(13);
     expect(state.viewRevision).toBe(11);
   });
 

@@ -5,9 +5,7 @@ import { queryKeys } from "../api/queryKeys";
 
 const APP_SURFACE_EVENTS = new Set([
   "app_surface.session_upserted",
-  "app_surface.session_submitted",
   "app_surface.session_archived",
-  "app_surface.session_error",
 ]);
 
 export function applyAppSurfaceEvent(queryClient: QueryClient, event: EventEnvelope) {
