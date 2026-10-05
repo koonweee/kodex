@@ -73,9 +73,15 @@ describe("ComposerFooterControls", () => {
     expect(screen.queryByRole("menuitem", { name: "High", hidden: true })).not.toBeInTheDocument();
   });
 
-  it("does not invent a future reasoning effort when the native read returns none", () => {
-    renderWithProvider(<ComposerFooterControls forNextTurn models={[reasoningModel]} settings={{ model: model.id, fast: false }} onSettingsChange={vi.fn()} />);
-    expect(screen.getByRole("button", { name: "Model: gpt-5.4" })).not.toHaveTextContent("Medium");
+  it.each(["low", "medium"])("displays the advertised %s default without writing an override", async (effort) => {
+    const onSettingsChange = vi.fn();
+    renderWithProvider(<ComposerFooterControls models={[{ ...reasoningModel, defaultReasoningEffort: effort }]} settings={{ model: model.id, fast: false }} onSettingsChange={onSettingsChange} />);
+    const label = effort === "low" ? "Low" : "Medium";
+    const trigger = screen.getByRole("button", { name: `Model: gpt-5.4, ${effort}` });
+    expect(trigger).toHaveTextContent(label);
+    await userEvent.click(trigger);
+    expect(await screen.findByRole("menuitem", { name: "Reasoning", hidden: true })).toHaveTextContent(label);
+    expect(onSettingsChange).not.toHaveBeenCalled();
   });
 
   it("displays the actual native model when it is absent from the catalog", () => {

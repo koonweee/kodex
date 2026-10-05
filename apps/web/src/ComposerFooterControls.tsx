@@ -23,7 +23,6 @@ export type ContextUsage = {
 type ComposerFooterControlsProps = {
   contextUsage?: ContextUsage | null;
   disabled?: boolean;
-  forNextTurn?: boolean;
   models: ModelSummary[];
   showContextUsage?: boolean;
   settingsError?: string | null;
@@ -34,7 +33,6 @@ type ComposerFooterControlsProps = {
 export function ComposerFooterControls({
   contextUsage,
   disabled = false,
-  forNextTurn = false,
   models,
   showContextUsage = true,
   settingsError,
@@ -45,7 +43,7 @@ export function ComposerFooterControls({
   const selectedModel = settings?.model ? models.find((model) => model.id === settings.model) ?? null : defaultModel;
   const selectedModelLabel = selectedModel ? modelFullLabel(selectedModel) : settings?.model ?? "Model";
   const selectedModelShortLabel = selectedModelLabel.replace(/^gpt-/i, "");
-  const selectedEffort = settings?.effort ?? (forNextTurn ? null : selectedModel?.defaultReasoningEffort ?? null);
+  const selectedEffort = settings?.effort ?? selectedModel?.defaultReasoningEffort ?? null;
   const supportedEfforts = selectedModel?.supportedReasoningEfforts ?? [];
   const [modelMenuOpened, setModelMenuOpened] = useState(false);
   const [submenu, setSubmenu] = useState<"model" | "reasoning" | null>(null);

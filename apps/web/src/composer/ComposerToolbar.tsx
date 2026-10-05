@@ -99,7 +99,6 @@ export const ComposerToolbar = memo(function ComposerToolbar({
         <ComposerFooterControls
           contextUsage={contextUsage}
           disabled={disabled || settingsDisabled}
-          forNextTurn={selectedThreadPresent}
           models={models}
           showContextUsage={showContextUsage}
           settingsError={settingsError}
