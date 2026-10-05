@@ -53,6 +53,7 @@ export type TimelineItem = {
   path?: string;
   imageSrc?: string;
   messagePhase?: string;
+  asyncQuestions?: { title: string; options: string[] }[];
   resultSummary?: string;
   summary?: string;
   toolName?: string;

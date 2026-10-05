@@ -1,3 +1,4 @@
+import { AsyncQuestionReplyProvider } from "../../composer/AsyncQuestionReplyProvider";
 import { refreshUnreadBadge } from "../../notifications/unreadBadge";
 import { useThreadReadState } from "../../threads/useThreadReadState";
 import { mergeThreadReadState, preserveNewerThreadReadState } from "../../threads/readState";
@@ -597,21 +598,23 @@ function ExistingThreadPane({
                 <TimelineLoadingSkeleton />
               ) : (
                 <Suspense fallback={<TimelineLoadingSkeleton />}>
-                  <TimelineView
-                    approvals={threadApprovals}
-                    imagePreviewUrlsByPath={imagePreviewUrlsByPath}
-                    onApprovalDecision={onApprovalDecision}
-                    onImageOpen={onImageOpen}
-                    onLoadOlderHistory={loadOlderHistory}
-                    onMarkdownOpen={onMarkdownOpen}
-                    onOverflowAboveChange={setTimelineOverflowAbove}
-                    onOverflowBelowChange={setTimelineOverflowBelow}
-                    onReady={() => {}}
-                    scrollParentElement={scrollParentElement}
-                    showDebug={showDebugEvents}
-                    threadId={threadId}
-                    timeline={timeline}
-                  />
+                  <AsyncQuestionReplyProvider key={threadId} threadId={threadId} enabled={isReady && thread?.canAcceptDirectInput !== false}>
+                    <TimelineView
+                      approvals={threadApprovals}
+                      imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+                      onApprovalDecision={onApprovalDecision}
+                      onImageOpen={onImageOpen}
+                      onLoadOlderHistory={loadOlderHistory}
+                      onMarkdownOpen={onMarkdownOpen}
+                      onOverflowAboveChange={setTimelineOverflowAbove}
+                      onOverflowBelowChange={setTimelineOverflowBelow}
+                      onReady={() => {}}
+                      scrollParentElement={scrollParentElement}
+                      showDebug={showDebugEvents}
+                      threadId={threadId}
+                      timeline={timeline}
+                    />
+                  </AsyncQuestionReplyProvider>
                 </Suspense>
               )}
             </div>

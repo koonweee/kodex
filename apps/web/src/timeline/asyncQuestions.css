@@ -1,0 +1,24 @@
+.kodex-async-question {
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  padding: var(--mantine-spacing-md);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.kodex-async-question-choices .mantine-Button-root {
+  height: auto;
+  min-height: 34px;
+  padding-block: 8px;
+  max-width: 100%;
+}
+.kodex-async-question-choices .mantine-Button-label {
+  white-space: normal;
+  text-align: left;
+}
+@media (max-width: 40em) {
+  .kodex-async-question-choices { flex-direction: column; align-items: stretch; }
+}
+@media (pointer: coarse) {
+  .kodex-async-question .mantine-Button-root { min-height: 44px; }
+  .kodex-async-question textarea { font-size: 16px; }
+}

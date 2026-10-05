@@ -27,6 +27,7 @@ import {
   timelineItemLabels,
   unknownRenderer,
 } from "./rendererShared";
+import { AsyncQuestionCard } from "./AsyncQuestionCard";
 import type { TimelineItem } from "./reducer";
 
 export {
@@ -151,7 +152,9 @@ function TimelineItemRendererImpl({
           ) : null}
         </Group>
       ) : null}
-      {render(item, { imagePreviewUrlsByPath, onImageOpen, onMarkdownOpen, threadId, toolbarTimestampMs })}
+      {isMessage && item.kind !== "user_message" && (item.asyncQuestions?.length ?? 0) > 0
+        ? <AsyncQuestionCard item={item} threadId={threadId} onImageOpen={onImageOpen} onMarkdownOpen={onMarkdownOpen} />
+        : render(item, { imagePreviewUrlsByPath, onImageOpen, onMarkdownOpen, threadId, toolbarTimestampMs })}
       {showDebug ? <DebugDisclosure item={item} /> : null}
     </Box>
   );

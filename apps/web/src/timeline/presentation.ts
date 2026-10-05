@@ -20,6 +20,7 @@ import {
   stringValue,
   summarizeValue,
 } from "./presentationShared";
+import { asyncQuestions } from "./asyncQuestions";
 import { payloadText, reasoningSummary } from "./presentationText";
 import { actionLabel, webSearchAction } from "./presentationWeb";
 
@@ -41,14 +42,16 @@ export function createPresentationItem(
   const base = createBaseItem(event, id, itemType || existingItem?.kind || "", status);
 
   if (itemType === "assistant_message") {
+    const questions = asyncQuestions(event.payload);
     const messagePhase = stringValue(item.phase) || stringValue(payloadRecord(event.payload)?.phase);
     return {
       item: {
         ...base,
         messagePhase,
+        asyncQuestions: questions,
         text,
       },
-      hidden: !text && status !== "running",
+      hidden: !text && questions.length === 0 && status !== "running",
       text: "Empty assistant message",
     };
   }
