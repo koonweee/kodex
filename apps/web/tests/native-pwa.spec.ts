@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Request } from "@playwright/test";
 import { appendFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -111,6 +111,123 @@ test.describe("real built PWA", () => {
         body: JSON.stringify({ registration, cacheEntries: initialCache, networkResponses, reloads }, null, 2),
         contentType: "application/json",
       });
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  test("handles a browser-dispatched Push and reads the current zero badge without a subscription", async ({ context }, testInfo) => {
+    test.setTimeout(60_000);
+    const fixture = await nativeTerminalFixture(context);
+    const pendingBadgeReads = new Set<Request>();
+    context.on("request", (request) => {
+      if (request.url() === `${fixture.baseUrl}/v1/threads/unread-badge` && request.serviceWorker()) pendingBadgeReads.add(request);
+    });
+    context.on("requestfinished", (request) => { pendingBadgeReads.delete(request); });
+    context.on("requestfailed", (request) => { pendingBadgeReads.delete(request); });
+    try {
+      await context.grantPermissions(["notifications"], { origin: fixture.baseUrl });
+      const page = await fixture.page();
+      await expect.poll(() => page.evaluate(() => navigator.serviceWorker.controller?.state)).toBe("activated");
+      expect(await page.evaluate(() => Notification.permission)).toBe("granted");
+      expect(await page.evaluate(async () => (await navigator.serviceWorker.getRegistration())!.pushManager.getSubscription())).toBeNull();
+      const worker = context.serviceWorkers().find((worker) => worker.url() === `${fixture.baseUrl}/sw.js`)!;
+      expect(worker).toBeDefined();
+      const cdp = await context.newCDPSession(page);
+      let registrationId: string | undefined;
+      const workerErrors: string[] = [];
+      const displayedNotifications: Array<{ origin: string; registrationId: string; tag: string; title?: string; body?: string }> = [];
+      cdp.on("ServiceWorker.workerRegistrationUpdated", ({ registrations }) => {
+        for (const registration of registrations) {
+          if (!registration.isDeleted && registration.scopeURL === `${fixture.baseUrl}/`) registrationId = registration.registrationId;
+        }
+      });
+      cdp.on("ServiceWorker.workerErrorReported", ({ errorMessage }) => { workerErrors.push(errorMessage.errorMessage); });
+      cdp.on("BackgroundService.backgroundServiceEventReceived", ({ backgroundServiceEvent: event }) => {
+        if (event.service !== "notifications" || event.eventName !== "Notification displayed") return;
+        const metadata = new Map(event.eventMetadata.map(({ key, value }) => [key, value]));
+        displayedNotifications.push({
+          origin: event.origin, registrationId: event.serviceWorkerRegistrationId, tag: event.instanceId,
+          title: metadata.get("Title"), body: metadata.get("Body"),
+        });
+      });
+      await cdp.send("ServiceWorker.enable");
+      await cdp.send("BackgroundService.startObserving", { service: "notifications" });
+      await cdp.send("BackgroundService.setRecording", { service: "notifications", shouldRecord: true });
+      await expect.poll(() => registrationId).toBeDefined();
+
+      // Remove the app client and drain its existing badge messages so the next
+      // worker-owned network read belongs to Push, not a foreground refill.
+      await page.goto("about:blank");
+      await expect.poll(() => pendingBadgeReads.size).toBe(0);
+      await worker.evaluate(() => {
+        globalThis.addEventListener("push", (event) => { Reflect.set(globalThis, "pwaProofTrustedPush", event.isTrusted); }, { once: true });
+        const registration = Reflect.get(globalThis, "registration") as ServiceWorkerRegistration;
+        const nativeShow = registration.showNotification;
+        const calls: Array<{ title: string; options?: NotificationOptions; fulfilled: boolean; error?: string }> = [];
+        Reflect.set(globalThis, "pwaProofNotificationCalls", calls);
+        // Observe the real call and original promise, without replacing the
+        // browser result. Native DevTools display events are asserted below.
+        registration.showNotification = function (title, options) {
+          const call: (typeof calls)[number] = { title, options, fulfilled: false };
+          calls.push(call);
+          const promise = nativeShow.call(this, title, options);
+          void promise.then(() => { call.fulfilled = true; }, (error) => { call.error = String(error); });
+          return promise;
+        };
+      });
+      const payload = {
+        kind: "unreadAgentMessage", threadId: "pwa-worker-proof", title: "Native worker notification",
+        body: "Delivery is independent of the current unread count.", route: "/?threadId=pwa-worker-proof",
+        // An old payload count must not replace the fresh gateway inventory.
+        badgeCount: 999, readRevision: 999,
+      };
+      const badgeResponsePromise = context.waitForEvent("response", {
+        predicate: (response) => response.url() === `${fixture.baseUrl}/v1/threads/unread-badge` && response.request().serviceWorker() !== null,
+      });
+      await cdp.send("ServiceWorker.deliverPushMessage", { origin: fixture.baseUrl, registrationId: registrationId!, data: JSON.stringify(payload) });
+      const badgeResponse = await badgeResponsePromise;
+      expect(badgeResponse.status()).toBe(200);
+      expect(badgeResponse.fromServiceWorker()).toBe(false);
+      const badge = await badgeResponse.json() as components["schemas"]["UnreadBadgeResponse"];
+      expect(badge.count).toBe(0);
+      expect(Number.isSafeInteger(badge.readRevision)).toBe(true);
+      await expect.poll(() => worker.evaluate(() => Reflect.get(globalThis, "pwaProofNotificationCalls"))).toEqual([{
+        title: payload.title, fulfilled: true,
+        options: { badge: "/kodex-badge.png", body: payload.body, data: payload, icon: "/icon-192.png", tag: `kodex-unread-agent-message:${payload.threadId}` },
+      }]);
+      await expect.poll(() => displayedNotifications).toEqual([{
+        origin: `${fixture.baseUrl}/`, registrationId, tag: `kodex-unread-agent-message:${payload.threadId}`,
+        title: payload.title, body: payload.body,
+      }]);
+      // Platform notification lifetimes are independent of worker completion.
+      // Validate any still-visible inventory without requiring OS persistence.
+      const notificationInventory = await worker.evaluate(async () => {
+        const registration = Reflect.get(globalThis, "registration") as ServiceWorkerRegistration;
+        return (await registration.getNotifications()).map((notification) => ({
+          title: notification.title, body: notification.body, tag: notification.tag, data: notification.data,
+        }));
+      });
+      expect(notificationInventory.length).toBeLessThanOrEqual(1);
+      for (const notification of notificationInventory) {
+        expect(notification).toEqual({ title: payload.title, body: payload.body, tag: `kodex-unread-agent-message:${payload.threadId}`, data: payload });
+      }
+      expect(await worker.evaluate(() => Reflect.get(globalThis, "pwaProofTrustedPush"))).toBe(true);
+
+      // CDP dispatch exercises the actual worker and browser display boundary.
+      // It does not prove provider delivery, notification clicks, or OS badges.
+      await worker.evaluate(async () => {
+        const registration = Reflect.get(globalThis, "registration") as ServiceWorkerRegistration;
+        for (const notification of await registration.getNotifications()) notification.close();
+      });
+      await expect.poll(() => pendingBadgeReads.size).toBe(0);
+      expect(workerErrors).toEqual([]);
+      await fixture.assertClean();
+      await testInfo.attach("native-pwa-push-evidence", {
+        body: JSON.stringify({ registrationId, trustedPush: true, notification: payload, authoritativeBadge: badge, subscription: null, displayedNotifications, notificationInventory }, null, 2),
+        contentType: "application/json",
+      });
+      await cdp.detach();
     } finally {
       await fixture.close();
     }

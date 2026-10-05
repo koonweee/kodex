@@ -157,6 +157,44 @@ describe("service worker push handling", () => {
 
     expect(openWindow).toHaveBeenCalledWith("https://kodex.test/");
   });
+
+  it.each([
+    ["the requested chat", "/?threadId=thread-1#answer", "https://kodex.test/?threadId=thread-1#answer"],
+    ["the app root for a foreign route", "//outside.test/chat", "https://kodex.test/"],
+  ])("reuses an existing Kodex window for %s and focuses it after navigation", async (_case, route, destination) => {
+    let releaseNavigation!: () => void;
+    const navigate = vi.fn(() => new Promise<void>((resolve) => { releaseNavigation = resolve; }));
+    const focus = vi.fn().mockResolvedValue(undefined);
+    const foreignNavigate = vi.fn();
+    const foreignFocus = vi.fn();
+    const close = vi.fn();
+    const { listeners, matchAll, openWindow } = await installServiceWorker({
+      clients: [
+        { url: "https://outside.test/", navigate: foreignNavigate, focus: foreignFocus },
+        { url: "https://kodex.test/?threadId=another-chat", navigate, focus },
+      ],
+    });
+    const pending: Array<Promise<unknown>> = [];
+
+    // This invokes the real worker handler with mocked platform clients; it
+    // does not simulate a trusted browser/OS notification click.
+    listeners.get("notificationclick")?.({
+      notification: { close, data: { kind: "unreadAgentMessage", route, threadId: "thread-1" } },
+      waitUntil: (promise: Promise<unknown>) => pending.push(promise),
+    });
+    await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith(destination));
+    expect(close).toHaveBeenCalledOnce();
+    expect(matchAll).toHaveBeenCalledWith({ includeUncontrolled: true, type: "window" });
+    expect(focus).not.toHaveBeenCalled();
+    expect(foreignNavigate).not.toHaveBeenCalled();
+    expect(foreignFocus).not.toHaveBeenCalled();
+
+    releaseNavigation();
+    await Promise.all(pending);
+    expect(navigate).toHaveBeenCalledOnce();
+    expect(focus).toHaveBeenCalledOnce();
+    expect(openWindow).not.toHaveBeenCalled();
+  });
 });
 
 async function installServiceWorker({
