@@ -6,12 +6,10 @@ import { ProjectEditor } from "./ProjectEditor";
 export function ProjectPane({
   onShowMobileSidebar,
   project,
-  projects,
   onDeleted,
 }: {
   onShowMobileSidebar: () => void;
   project: Project | null;
-  projects: Project[];
   onDeleted: () => void;
 }) {
   const title = project?.name ?? "Project";
@@ -30,7 +28,7 @@ export function ProjectPane({
       </Group>
       {project ? (
         <Box className="kodex-project-pane-scroll">
-          <ProjectEditor key={project.id} project={project} projects={projects} onDeleted={onDeleted} />
+          <ProjectEditor key={project.id} project={project} onDeleted={onDeleted} />
         </Box>
       ) : (
         <Alert color="gray" title="Project unavailable">

@@ -58,13 +58,17 @@ for (const shape of shapes) {
           roots: [{ path: pickerRoot }], metadata: { owner: "another-native-client" },
         });
 
-        await first.getByRole("textbox", { name: "Move before", exact: true }).click();
-        await first.getByRole("option", { name: "Alpha", exact: true }).click();
-        await first.getByRole("button", { name: "Move project", exact: true }).click();
-        await expect.poll(() => fixture.requests.filter((entry) => entry.key === "POST /v1/projects/created-1/move").map((entry) => entry.body)).toEqual([{ beforeProjectId: "alpha" }]);
+        if (!shape.hasTouch) {
+          const sidebar = await openSidebar(first);
+          await sidebar.getByRole("group", { name: "Renamed research", exact: true }).locator(".kodex-project-row").dragTo(
+            sidebar.getByRole("group", { name: "Alpha", exact: true }).locator(".kodex-project-row"),
+            { targetPosition: { x: 30, y: 2 } },
+          );
+          await expect.poll(() => fixture.requests.filter((entry) => entry.key === "POST /v1/projects/created-1/move").map((entry) => entry.body)).toEqual([{ beforeProjectId: "alpha" }]);
+        }
         for (const page of [first, second]) {
           const sidebar = await openSidebar(page);
-          await expect.poll(() => sidebar.getByRole("group", { name: /^(Alpha|Beta|Renamed research)$/ }).evaluateAll((groups) => groups.map((group) => group.getAttribute("aria-label")))).toEqual(["Renamed research", "Alpha", "Beta"]);
+          await expect.poll(() => sidebar.getByRole("group", { name: /^(Alpha|Beta|Renamed research)$/ }).evaluateAll((groups) => groups.map((group) => group.getAttribute("aria-label")))).toEqual(shape.hasTouch ? ["Alpha", "Beta", "Renamed research"] : ["Renamed research", "Alpha", "Beta"]);
           await openHistory(page);
         }
         expect(fixture.connections.get("second")).toBe(secondConnections);

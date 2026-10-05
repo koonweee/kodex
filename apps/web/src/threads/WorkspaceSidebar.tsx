@@ -1,3 +1,4 @@
+import { SidebarSnapshotError, type SidebarSnapshotStatus } from "./SidebarSnapshotError";
 import { ThreadList } from "./ThreadSidebarRows";
 import { NativeSectionsSidebar } from "../sections/NativeSectionsSidebar";
 import type { ThreadSectionActions } from "../sections/SectionMenuItems";
@@ -104,6 +105,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   chatThreadsHasMore = false,
   chatThreadsPaginationState = "idle",
   dataState = DEFAULT_DATA_STATE,
+  sidebarSnapshotStatus,
   hoveredThreadActionId,
   onArchiveThread,
   onCreateChat,
@@ -152,6 +154,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   chatThreadsHasMore?: boolean;
   chatThreadsPaginationState?: SidebarPaginationState;
   dataState?: WorkspaceSidebarDataState;
+  sidebarSnapshotStatus?: SidebarSnapshotStatus;
   hoveredThreadActionId: string | null;
   onArchiveThread: (threadId: string) => void;
   onCreateChat: () => void;
@@ -485,6 +488,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                 {SIDEBAR_TEXT.chats}
               </button>
             </Box>
+            <SidebarSnapshotError status={sidebarSnapshotStatus} />
             <Box
               className="kodex-sidebar-scroll-frame"
               data-can-scroll-bottom={sidebarScrollState.bottom ? "true" : undefined}

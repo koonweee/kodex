@@ -91,7 +91,7 @@ Widget resource/catalog reads use one bounded runtime-local FIFO after canonical
 
 Project creation uses a directory browser rooted at the gateway user's home. Select one existing root; its folder name becomes the project name. The picker cannot navigate above home, including through symlinks. New project chats and project terminals use the sole project root automatically; projects with zero or multiple roots must be corrected before starting them. Existing chats retain their native working directory.
 
-Sidebar sections use native ordering. Pinning moves a chat to Pinned; unpinning leaves it without a section. Section moves preserve its project and working directory. Custom sections can be renamed or deleted without deleting their chats.
+Sidebar sections are named groups for chats, independent of projects; creating a section does not move or delete projects. Sections use native ordering. Pinning moves a chat to Pinned; unpinning leaves it without a section. Section moves preserve its project and working directory. Custom sections can be renamed or deleted without deleting their chats.
 
 The subagent viewer lists native persisted descendants, including unloaded children, with native cursor pagination. Discovery runs independently of the parent timeline. The viewer remains read-only. Opening a child separately disables input when native capability explicitly denies it; unknown capability stays unknown and native dispatch decides eligibility.
 

@@ -1082,13 +1082,17 @@ function KodexShell({
         projectPaneProps={{
           onShowMobileSidebar: handleShowMobileSidebar,
           project: selectedProjectPane,
-          projects: orderedProjects,
           onDeleted: handleCreateChat,
         }}
           sidebarCollapsed={sidebarCollapsed}
           useSingleThreadWorkspace={useSingleThreadWorkspace}
           workspaceSidebarProps={{
           account, approvals, chatThreads, dataState: sidebarDataState, hoveredThreadActionId,
+          sidebarSnapshotStatus: {
+            failed: sidebarThreadsQuery.isError,
+            retrying: sidebarThreadsQuery.isFetching,
+            onRetry: () => { void sidebarThreadsQuery.refetch(); },
+          },
           chatThreadsHasMore: chatThreadsNextCursor !== null,
           chatThreadsPaginationState,
           onArchiveThread: handleArchiveThreadById,

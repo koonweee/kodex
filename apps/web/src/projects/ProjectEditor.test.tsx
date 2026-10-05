@@ -7,7 +7,7 @@ import { App, baseRoutes, mockGateway, project, requestJson, thread } from "../t
 
 afterEach(() => vi.restoreAllMocks());
 
-it("renames sparsely, uses native relative ordering and deletes only the project registry entry", async () => {
+it("renames sparsely and deletes only the project registry entry", async () => {
   let projects: Project[] = [{ ...project, metadata: { retained: "native-other-client" } }, { ...project, id: "second", name: "Second", roots: [], position: 1 }];
   let projectId: string | null = project.id;
   const gateway = mockGateway(baseRoutes({
@@ -21,7 +21,6 @@ it("renames sparsely, uses native relative ordering and deletes only the project
       projects = projects.map((entry) => entry.id === project.id ? { ...entry, ...patch } : entry);
       return projects.find((entry) => entry.id === project.id);
     },
-    "POST /v1/projects/project-1/move": () => { projects = [projects[1], projects[0]].map((entry, position) => ({ ...entry, position })); return new Response(null, { status: 204 }); },
     "DELETE /v1/projects/project-1": () => { projects = projects.filter((entry) => entry.id !== project.id); projectId = null; return new Response(null, { status: 204 }); },
   }));
   render(<App />);
@@ -34,10 +33,6 @@ it("renames sparsely, uses native relative ordering and deletes only the project
   expect(await requestJson(gateway.callsFor("PATCH", "/v1/projects/project-1")[0])).toEqual({ name: "Renamed" });
   expect(projects[0].metadata).toEqual({ retained: "native-other-client" });
   expect(projects[0].roots).toEqual(project.roots);
-  await waitFor(() => expect(screen.getByRole("button", { name: "Move project" })).toBeEnabled());
-  await userEvent.click(screen.getByRole("button", { name: "Move project" }));
-  await waitFor(() => expect(screen.getAllByRole("group", { name: /Renamed|Second/ }).map((group) => group.getAttribute("aria-label"))).toEqual(["Second", "Renamed"]));
-  expect(await requestJson(gateway.callsFor("POST", "/v1/projects/project-1/move")[0])).toEqual({ beforeProjectId: null });
   await waitFor(() => expect(screen.getByRole("button", { name: "Delete project" })).toBeEnabled());
   await userEvent.click(screen.getByRole("button", { name: "Delete project" }));
   const confirm = await screen.findByRole("dialog", { name: "Delete Renamed?" });

@@ -38,6 +38,36 @@ function mountClient() {
 afterEach(() => vi.clearAllMocks());
 
 describe("native sidebar membership snapshots", () => {
+  it("preserves the last good snapshot after a second client's failed reconnect and converges on explicit retry", async () => {
+    let latest = snapshot(true);
+    let failing = false;
+    vi.mocked(getSidebarThreads).mockImplementation(async () => {
+      if (failing) throw new Error("database is locked");
+      return latest;
+    });
+    const first = mountClient();
+    const second = mountClient();
+    await waitFor(() => {
+      expect(first.result.current.sidebarSnapshotReady).toBe(true);
+      expect(second.result.current.sidebarSnapshotReady).toBe(true);
+    });
+    latest = snapshot(false);
+    await act(async () => { await refreshProjectState(first.client); });
+    expect(first.client.getQueryData(queryKeys.projectThreads(project.id))).toEqual([]);
+    expect(second.result.current.sidebarThreadsQuery.isError).toBe(false);
+    failing = true;
+    await act(async () => { await refreshProjectState(second.client); });
+    await waitFor(() => expect(second.result.current.sidebarThreadsQuery.isError).toBe(true));
+    expect(second.result.current.sidebarSnapshotReady).toBe(true);
+    expect(second.client.getQueryData(queryKeys.projects)).toEqual([project]);
+    expect(second.client.getQueryData<ThreadSummary[]>(queryKeys.projectThreads(project.id))?.map((row) => row.id)).toEqual([thread.id]);
+    failing = false;
+    await act(async () => { await second.result.current.sidebarThreadsQuery.refetch(); });
+    await waitFor(() => expect(second.result.current.sidebarThreadsQuery.isError).toBe(false));
+    expect(second.client.getQueryData(queryKeys.projectThreads(project.id))).toEqual(first.client.getQueryData(queryKeys.projectThreads(project.id)));
+    expect(second.client.getQueryData(queryKeys.chatThreads)).toEqual(first.client.getQueryData(queryKeys.chatThreads));
+  });
+
   it("replaces native section order and membership in two clients after cancelling an older snapshot", async () => {
     const section = { id: "native-section", name: "Research" };
     const secondThread = { ...thread, id: "second-chat", name: "Second chat", section };
