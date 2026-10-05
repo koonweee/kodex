@@ -22,7 +22,9 @@ type TerminalSocket = {
   sizes: Array<{ rows: number; cols: number }>;
 };
 
-export async function nativeTerminalFixture(context: BrowserContext) {
+export async function nativeTerminalFixture(context: BrowserContext, options?: {
+  notifications?: { publicKey: string; privateKey: string; subject: string };
+}) {
   const binary = resolve(process.env.KODEX_TEST_GATEWAY_BINARY!);
   const codex = resolve(process.env.KODEX_TEST_CODEX_BINARY!);
   const repository = fileURLToPath(new URL("../../../", import.meta.url));
@@ -49,6 +51,11 @@ export async function nativeTerminalFixture(context: BrowserContext) {
       KODEX_CODEX_BINARY: codex,
       KODEX_FRONTEND_DIST: frontendDist,
       KODEX_CODEX_ARGS: "app-server --listen stdio:// -c features.plugins=false -c features.apps=false -c analytics.enabled=false -c otel.exporter=\"none\" -c otel.trace_exporter=\"none\" -c otel.metrics_exporter=\"none\"",
+      ...(options?.notifications ? {
+        KODEX_VAPID_PUBLIC_KEY: options.notifications.publicKey,
+        KODEX_VAPID_PRIVATE_KEY: options.notifications.privateKey,
+        KODEX_VAPID_SUBJECT: options.notifications.subject,
+      } : {}),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
