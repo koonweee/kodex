@@ -240,6 +240,21 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual((stage / 'codex').read_text(), 'signed executable')
         self.assertEqual((stage / 'native.app/Contents/Resources/required').read_text(), 'resource')
 
+    def test_explicit_rollback_swaps_releases_without_touching_data(self):
+        old, new = self.release('old'), self.release('new')
+        service.link(self.app.root / 'previous', old)
+        service.link(self.app.root / 'current', new)
+        data = self.root / 'data'
+        data.mkdir()
+        (data / 'gateway.db').write_bytes(b'preserve current storage')
+        with patch.object(self.app, 'stop', side_effect=lambda: self.actions.append('stop')), \
+             patch.object(self.app, 'start', side_effect=lambda: self.actions.append('start')):
+            self.app.rollback(True)
+        self.assertEqual(self.actions, ['stop', 'start'])
+        self.assertEqual((self.app.root / 'current').resolve(), old)
+        self.assertEqual((self.app.root / 'previous').resolve(), new)
+        self.assertEqual((data / 'gateway.db').read_bytes(), b'preserve current storage')
+
 
 if __name__ == '__main__':
     unittest.main()
