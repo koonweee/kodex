@@ -1,0 +1,229 @@
+"""Service lifecycle tests; no real launchd jobs or user storage are touched."""
+import importlib.machinery
+import importlib.util
+from pathlib import Path
+import json
+import socket
+import tempfile
+import unittest
+import urllib.parse
+from unittest.mock import patch
+
+SOURCE = Path(__file__).resolve().parents[1] / 'kodex-service'
+loader = importlib.machinery.SourceFileLoader('kodex_service', str(SOURCE))
+spec = importlib.util.spec_from_loader(loader.name, loader)
+service = importlib.util.module_from_spec(spec)
+loader.exec_module(service)
+
+
+class LifecycleTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.app = service.Service(self.root / 'installed', self.root / 'agents')
+        self.app.root.mkdir()
+        self.app.config_path.write_text(json.dumps({
+            'port': 18787, 'data_dir': str(self.root / 'data'),
+            'codex_binary': '/fake/codex', 'path': '/usr/bin:/bin',
+        }))
+        self.actions = []
+
+    def release(self, name):
+        path = self.app.root / 'releases' / name
+        path.mkdir(parents=True)
+        (path / 'frontend').mkdir()
+        (path / 'frontend/index.html').write_text(name)
+        (path / 'kodex-gateway').write_text('gateway')
+        (path / 'codex').write_text('native')
+        (path / 'manifest.json').write_text(json.dumps({'schema_version': '0.160.0'}))
+        return path
+
+    def test_port_conflict_is_detected(self):
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            listener.listen()
+            with self.assertRaisesRegex(service.ServiceError, 'already in use'):
+                service.check_port(listener.getsockname()[1])
+
+    def test_build_failure_never_stops_existing_service(self):
+        old = self.release('old')
+        service.link(self.app.root / 'current', old)
+        with patch.object(self.app, 'build', side_effect=service.ServiceError('build failed')), \
+             patch.object(self.app, 'stop') as stop:
+            with self.assertRaisesRegex(service.ServiceError, 'build failed'):
+                self.app.update(self.root)
+        stop.assert_not_called()
+        self.assertEqual((self.app.root / 'current').resolve(), old)
+
+    def test_update_stages_before_stop_and_preserves_previous(self):
+        old, new = self.release('old'), self.release('new')
+        service.link(self.app.root / 'current', old)
+        def build(repo):
+            self.actions.append('build')
+            return new
+        with patch.object(self.app, 'build', side_effect=build), \
+             patch.object(self.app, 'stop', side_effect=lambda: self.actions.append('stop')), \
+             patch.object(self.app, 'start', side_effect=lambda: self.actions.append('start')):
+            self.app.update(self.root)
+        self.assertEqual(self.actions, ['build', 'stop', 'start'])
+        self.assertEqual((self.app.root / 'current').resolve(), new)
+        self.assertEqual((self.app.root / 'previous').resolve(), old)
+
+    def test_failed_health_stops_new_release_without_automatic_data_rollback(self):
+        old, new = self.release('old'), self.release('new')
+        service.link(self.app.root / 'current', old)
+        with patch.object(self.app, 'build', return_value=new), \
+             patch.object(self.app, 'stop') as stop, \
+             patch.object(self.app, 'start', side_effect=service.ServiceError('unhealthy')):
+            with self.assertRaisesRegex(service.ServiceError, 'unhealthy'):
+                self.app.update(self.root)
+        self.assertEqual(stop.call_count, 2)
+        self.assertEqual((self.app.root / 'current').resolve(), new)
+        self.assertEqual((self.app.root / 'previous').resolve(), old)
+
+    def test_autostart_toggle_does_not_start_or_stop_service(self):
+        self.app.write_plist()
+        with patch.object(self.app, 'start') as start, patch.object(self.app, 'stop') as stop:
+            self.app.autostart(True)
+            self.assertTrue(self.app.login_plist.exists())
+            self.app.autostart(False)
+            self.assertFalse(self.app.login_plist.exists())
+        start.assert_not_called()
+        stop.assert_not_called()
+
+    def test_start_conflict_does_not_bootstrap_or_kill_other_process(self):
+        self.release('new')
+        service.link(self.app.root / 'current', self.app.root / 'releases/new')
+        with patch.object(self.app, 'job', return_value=None), \
+             patch.object(service, 'check_port', side_effect=service.ServiceError('already in use')), \
+             patch.object(service, 'run') as run:
+            with self.assertRaisesRegex(service.ServiceError, 'already in use'):
+                self.app.start()
+        run.assert_not_called()
+
+    def test_runtime_environment_does_not_inherit_desktop_or_gateway_overrides(self):
+        release = self.release('new')
+        with patch.dict(service.os.environ, {'CODEX_HOME': '/desktop', 'KODEX_DATA_DIR': '/old',
+                                            'OPENAI_API_KEY': 'secret', 'ENV': '/injected'}):
+            env = self.app.environment(release)
+        self.assertNotIn('CODEX_HOME', env)
+        self.assertNotIn('OPENAI_API_KEY', env)
+        self.assertNotIn('ENV', env)
+        self.assertEqual(env['KODEX_DATA_DIR'], str(self.root / 'data'))
+        self.assertEqual(env['KODEX_CODEX_BINARY'], str(release / 'codex'))
+        self.assertEqual(env['KODEX_FRONTEND_DIST'], str(release / 'frontend'))
+
+    def test_rollback_requires_explicit_data_compatibility_acknowledgment(self):
+        with self.assertRaisesRegex(service.ServiceError, 'data-compatible'):
+            self.app.rollback(False)
+
+    def test_other_installation_cannot_be_stopped(self):
+        from types import SimpleNamespace
+        result = SimpleNamespace(returncode=0, stdout='working directory = /another/root\n pid = 123\n')
+        with patch.object(service.subprocess, 'run', return_value=result), \
+             patch.object(service, 'run') as mutation:
+            with self.assertRaisesRegex(service.ServiceError, 'another installation'):
+                self.app.stop()
+        mutation.assert_not_called()
+
+    def test_other_installation_autostart_cannot_be_removed(self):
+        self.app.login_plist.parent.mkdir()
+        self.app.login_plist.write_bytes(service.plistlib.dumps({'WorkingDirectory': '/another/root'}))
+        with self.assertRaisesRegex(service.ServiceError, 'another installation'):
+            self.app.autostart(False)
+        self.assertTrue(self.app.login_plist.exists())
+
+    def test_build_packages_release_and_forces_same_origin(self):
+        repo = self.root / 'repo'
+        for folder in ('tools', 'apps/gateway/src', 'apps/web/dist', 'target/release',
+                       'plugins/kodex-control', '.agents/plugins'):
+            (repo / folder).mkdir(parents=True)
+        (repo / 'apps/gateway/src/schema.rs').write_text('APP_SERVER_SCHEMA_VERSION: &str = "0.160.0"')
+        (repo / 'tools/kodex-service').write_text('controller')
+        (repo / 'target/release/kodex-gateway').write_text('executable')
+        (repo / 'apps/web/dist/index.html').write_text('frontend')
+        (repo / '.agents/plugins/marketplace.json').write_text('{}')
+        codex = self.root / 'native'
+        codex.write_text('native executable')
+        config = self.app.config()
+        config['codex_binary'] = str(codex)
+        self.app.config_path.write_text(json.dumps(config))
+        with patch.object(service, 'native_version', return_value='0.160.0'), \
+             patch.object(service, 'run') as commands, \
+             patch.dict(service.os.environ, {'VITE_KODEX_API_BASE_URL': 'http://other-gateway'}):
+            release = self.app.build(repo)
+        build = next(call for call in commands.call_args_list if call.args[0][:3] == ['npm', 'run', 'build'])
+        self.assertEqual(build.kwargs['env']['VITE_KODEX_API_BASE_URL'], '')
+        self.assertEqual((release / 'frontend/index.html').read_text(), 'frontend')
+        self.assertTrue((release / 'marketplace/.agents/plugins/marketplace.json').is_file())
+        self.assertEqual((release / 'codex').read_text(), 'native executable')
+
+    def test_login_port_conflict_never_executes_gateway(self):
+        release = self.release('new')
+        service.link(self.app.root / 'current', release)
+        with patch.object(service, 'check_port', side_effect=service.ServiceError('already in use')), \
+             patch.object(service.os, 'execve') as execute:
+            self.app.execute()
+        execute.assert_not_called()
+
+    def test_stop_waits_for_owned_process_without_killing_listener(self):
+        with patch.object(self.app, 'job', return_value={'pid': 123}), \
+             patch.object(service, 'run') as commands, \
+             patch.object(service.os, 'kill', side_effect=[None, ProcessLookupError]) as probe, \
+             patch.object(service.time, 'sleep'):
+            self.app.stop()
+        commands.assert_called_once_with([service.LAUNCHCTL, 'bootout', self.app.target])
+        self.assertEqual(probe.call_args_list, [unittest.mock.call(123, 0), unittest.mock.call(123, 0)])
+
+    def test_wrong_native_version_refuses_build_before_commands(self):
+        repo = self.root / 'repo'
+        (repo / 'apps/gateway/src').mkdir(parents=True)
+        (repo / 'apps/gateway/src/schema.rs').write_text('APP_SERVER_SCHEMA_VERSION: &str = "0.160.0"')
+        with patch.object(service, 'native_version', return_value='0.159.0'), \
+             patch.object(service, 'run') as commands:
+            with self.assertRaisesRegex(service.ServiceError, 'version mismatch'):
+                self.app.build(repo)
+        commands.assert_not_called()
+
+    def health_fixture(self, instance='owned', ready=True):
+        import io
+        from types import SimpleNamespace
+        release = self.release('health')
+        (self.root / 'data').mkdir()
+        (self.root / 'data/instance.json').write_text(json.dumps({'id': 'owned'}))
+        responses = {
+            '/v1/capabilities': json.dumps({'gateway': {'instanceId': instance}, 'appServer': {
+                'schemaVersion': '0.160.0', 'detectedVersionMatchesSchema': True}}).encode(),
+            '/readyz': json.dumps({'ready': ready}).encode(), '/': b'health',
+        }
+        opener = SimpleNamespace(open=lambda url, timeout: io.BytesIO(responses[urllib.parse.urlparse(url).path]))
+        return release, opener
+
+    def test_health_requires_ready_native_and_exact_instance(self):
+        from types import SimpleNamespace
+        for instance, ready in [('other', True), ('owned', False)]:
+            with self.subTest(instance=instance, ready=ready):
+                if (self.root / 'data').exists():
+                    service.shutil.rmtree(self.root / 'data')
+                    service.shutil.rmtree(self.app.root / 'releases/health')
+                release, opener = self.health_fixture(instance, ready)
+                with patch.object(self.app, 'job', return_value={'pid': 42}), \
+                     patch.object(service.subprocess, 'run', return_value=SimpleNamespace(stdout='42')), \
+                     patch.object(service.urllib.request, 'build_opener', return_value=opener), \
+                     patch.object(service.time, 'monotonic', side_effect=[0, 0, 61]), \
+                     patch.object(service.time, 'sleep'):
+                    with self.assertRaisesRegex(service.ServiceError, 'Health check failed'):
+                        self.app.health(release)
+
+    def test_health_accepts_owned_ready_release(self):
+        from types import SimpleNamespace
+        release, opener = self.health_fixture()
+        with patch.object(self.app, 'job', return_value={'pid': 42}), \
+             patch.object(service.subprocess, 'run', return_value=SimpleNamespace(stdout='42')), \
+             patch.object(service.urllib.request, 'build_opener', return_value=opener):
+            self.app.health(release)
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -1,0 +1,363 @@
+#!/usr/bin/env python3
+"""Install and operate Kodex as a macOS per-user launchd service (Python 3.9+)."""
+import argparse
+import contextlib
+import fcntl
+import json
+import os
+from pathlib import Path
+import plistlib
+import re
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.request
+import uuid
+
+LABEL = 'dev.kodex.gateway'
+LAUNCHCTL = '/bin/launchctl'
+
+
+class ServiceError(Exception):
+    pass
+
+
+def run(args, **kwargs):
+    return subprocess.run([str(arg) for arg in args], check=True, **kwargs)
+
+
+def link(path, target):
+    temporary = path.with_name(path.name + '.new')
+    temporary.unlink(missing_ok=True)
+    temporary.symlink_to(target)
+    temporary.replace(path)
+
+
+def check_port(port):
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+            listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            listener.bind(('127.0.0.1', port))
+    except OSError as error:
+        raise ServiceError(
+            f'Port 127.0.0.1:{port} unavailable (already in use or bind denied). '
+            f'No process was killed. Inspect: lsof -nP -iTCP:{port} -sTCP:LISTEN'
+        ) from error
+
+
+def native_version(binary):
+    with tempfile.TemporaryDirectory(prefix='kodex-version-') as home:
+        env = {key: os.environ[key] for key in ('HOME', 'PATH', 'USER', 'TMPDIR') if key in os.environ}
+        env['CODEX_HOME'] = home
+        result = run([binary, '--version'], capture_output=True, text=True, timeout=15, env=env)
+    match = re.fullmatch(r'codex-cli (\S+)\s*', result.stdout)
+    if not match:
+        raise ServiceError('Configured Codex executable returned an unknown version format')
+    return match[1]
+
+
+class Service:
+    def __init__(self, root, agents=None):
+        self.root = root.expanduser().resolve()
+        self.config_path = self.root / 'config.json'
+        self.plist = self.root / f'{LABEL}.plist'
+        self.login_plist = (agents or Path.home() / 'Library/LaunchAgents') / self.plist.name
+        self.domain = f'gui/{os.getuid()}'
+        self.target = f'{self.domain}/{LABEL}'
+
+    def config(self):
+        if not self.config_path.exists():
+            raise ServiceError('Not installed. Run install --codex-binary /absolute/path/to/codex')
+        config = json.loads(self.config_path.read_text())
+        if not isinstance(config['port'], int) or not 1024 <= config['port'] <= 65535:
+            raise ServiceError('port must be an integer between 1024 and 65535')
+        for field in ('data_dir', 'codex_binary'):
+            if not Path(config[field]).is_absolute():
+                raise ServiceError(f'{field} must be an absolute path')
+        return config
+
+    def environment(self, release):
+        config = self.config()
+        env = {key: os.environ[key] for key in ('HOME', 'USER', 'LOGNAME', 'TMPDIR') if key in os.environ}
+        env.update({
+            'PATH': config['path'], 'LANG': 'en_US.UTF-8',
+            'KODEX_BIND': f"127.0.0.1:{config['port']}",
+            'KODEX_DATA_DIR': config['data_dir'],
+            'KODEX_CODEX_BINARY': str(release / 'codex'),
+            'KODEX_FRONTEND_DIST': str(release / 'frontend'),
+            'KODEX_KODEX_CONTROL_MARKETPLACE_PATH': str(release / 'marketplace/.agents/plugins/marketplace.json'),
+        })
+        # Explicit, narrowly scoped optional settings; never import an old production env file.
+        optional = config.get('environment', {})
+        allowed = {'KODEX_VAPID_PUBLIC_KEY', 'KODEX_VAPID_PRIVATE_KEY', 'KODEX_VAPID_SUBJECT',
+                   'KODEX_NOTIFICATIONS_RECHECK_DELAY_MS', 'RUST_LOG'}
+        if set(optional) - allowed or any(not isinstance(value, str) for value in optional.values()):
+            raise ServiceError('Unsupported environment setting in service config')
+        env.update(optional)
+        return env
+
+    def check_login_owner(self):
+        if self.login_plist.exists():
+            owner = plistlib.loads(self.login_plist.read_bytes()).get('WorkingDirectory')
+            if not owner or Path(owner).resolve() != self.root:
+                raise ServiceError('Login job belongs to another installation; use its management command')
+
+    def job(self):
+        result = subprocess.run([LAUNCHCTL, 'print', self.target], capture_output=True, text=True)
+        if result.returncode:
+            if 'Could not find service' in result.stderr or 'Could not find specified service' in result.stderr:
+                return None
+            raise ServiceError(f'Cannot inspect launchd job: {result.stderr.strip()}')
+        owner = re.search(r'^\s*working directory = (.+)$', result.stdout, re.MULTILINE)
+        if not owner or Path(owner[1].strip()).resolve() != self.root:
+            raise ServiceError('Loaded job belongs to another installation; use its management command')
+        match = re.search(r'^\s*pid = (\d+)\s*$', result.stdout, re.MULTILINE)
+        return {'pid': int(match[1]) if match else None}
+
+    def write_plist(self):
+        self.check_login_owner()
+        logs = self.root / 'logs'
+        logs.mkdir(exist_ok=True)
+        payload = {
+            'Label': LABEL,
+            'ProgramArguments': [sys.executable, str(self.root / 'current/kodex-service'),
+                                 '--root', str(self.root), '_run'],
+            'WorkingDirectory': str(self.root),
+            'RunAtLoad': True,
+            'KeepAlive': {'SuccessfulExit': False},
+            'ThrottleInterval': 30,
+            'ExitTimeOut': 20,
+            'StandardOutPath': str(logs / 'gateway.log'),
+            'StandardErrorPath': str(logs / 'gateway-error.log'),
+        }
+        self.plist.write_bytes(plistlib.dumps(payload))
+        if self.login_plist.exists():
+            shutil.copy2(self.plist, self.login_plist)
+
+    def start(self):
+        release = (self.root / 'current').resolve(strict=True)
+        job = self.job()
+        if job and not job['pid']:
+            self.stop()
+            job = None
+        if job is None:
+            check_port(self.config()['port'])
+            self.write_plist()
+            run([LAUNCHCTL, 'bootstrap', self.domain, self.plist])
+        try:
+            self.health(release)
+        except Exception:
+            self.stop()
+            raise
+        print(f"Kodex ready at http://127.0.0.1:{self.config()['port']}")
+
+    def stop(self):
+        job = self.job()
+        if job is None:
+            return
+        run([LAUNCHCTL, 'bootout', self.target])
+        # bootout can return before the executable has finished its graceful shutdown.
+        if job['pid']:
+            deadline = time.monotonic() + 35
+            while time.monotonic() < deadline:
+                try:
+                    os.kill(job['pid'], 0)
+                except ProcessLookupError:
+                    return
+                time.sleep(0.2)
+            raise ServiceError('Gateway did not exit; release was not replaced')
+
+    def health(self, release):
+        endpoint = f"http://127.0.0.1:{self.config()['port']}"
+        manifest = json.loads((release / 'manifest.json').read_text())
+        expected_index = (release / 'frontend/index.html').read_bytes()
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            try:
+                def read(path):
+                    with opener.open(endpoint + path, timeout=2) as response:
+                        return response.read()
+                job = self.job()
+                if not job or not job['pid']:
+                    raise ValueError('job has no running process')
+                owners = subprocess.run(['/usr/sbin/lsof', '-nP', '-t',
+                                         f'-iTCP:{self.config()["port"]}', '-sTCP:LISTEN'],
+                                        capture_output=True, text=True)
+                if str(job['pid']) not in owners.stdout.split():
+                    raise ValueError('listener is not the owned launchd process')
+                capabilities = json.loads(read('/v1/capabilities'))
+                marker = json.loads((Path(self.config()['data_dir']) / 'instance.json').read_text())
+                native = capabilities['appServer']
+                if (json.loads(read('/readyz'))['ready'] is True
+                        and capabilities['gateway']['instanceId'] == marker['id']
+                        and native['schemaVersion'] == manifest['schema_version']
+                        and native['detectedVersionMatchesSchema'] is True
+                        and read('/') == expected_index):
+                    return
+            except (OSError, ValueError, KeyError):
+                pass
+            time.sleep(0.5)
+        raise ServiceError(f'Health check failed at {endpoint}; inspect kodex-service logs. '
+                           'Service stopped; no automatic data rollback was attempted.')
+
+    def autostart(self, enabled):
+        self.check_login_owner()
+        if enabled:
+            self.login_plist.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(self.plist, self.login_plist)
+        else:
+            self.login_plist.unlink(missing_ok=True)
+        print(f"Login autostart {'enabled' if enabled else 'disabled'}; current process unchanged")
+
+    def build(self, repo):
+        repo = repo.resolve(strict=True)
+        source = (repo / 'apps/gateway/src/schema.rs').read_text()
+        version = re.search(r'APP_SERVER_SCHEMA_VERSION: &str = "([^"]+)"', source)[1]
+        binary = Path(self.config()['codex_binary'])
+        if native_version(binary) != version:
+            raise ServiceError(f'Codex version mismatch: checkout requires {version}; service unchanged')
+        releases = self.root / 'releases'
+        releases.mkdir(exist_ok=True)
+        stage = Path(tempfile.mkdtemp(prefix='.stage-', dir=releases))
+        try:
+            shutil.copy2(repo / 'tools/kodex-service', stage / 'kodex-service')
+            shutil.copy2(binary, stage / 'codex')
+            if native_version(stage / 'codex') != version:
+                raise ServiceError('Copied Codex executable version mismatch')
+            run(['cargo', 'build', '--release', '--locked', '-p', 'kodex-gateway',
+                 '--target-dir', repo / 'target'], cwd=repo)
+            run(['npm', 'ci'], cwd=repo / 'apps/web')
+            build_env = dict(os.environ, VITE_KODEX_API_BASE_URL='')
+            run(['npm', 'run', 'build'], cwd=repo / 'apps/web', env=build_env)
+            shutil.copy2(repo / 'target/release/kodex-gateway', stage / 'kodex-gateway')
+            shutil.copytree(repo / 'apps/web/dist', stage / 'frontend')
+            marketplace = stage / 'marketplace'
+            shutil.copytree(repo / 'plugins', marketplace / 'plugins')
+            shutil.copytree(repo / '.agents/plugins', marketplace / '.agents/plugins')
+            (stage / 'manifest.json').write_text(json.dumps({'schema_version': version}))
+            destination = releases / (time.strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:8])
+            stage.rename(destination)
+            return destination
+        except BaseException:
+            shutil.rmtree(stage)
+            raise
+
+    def update(self, repo):
+        release = self.build(repo)  # Build failures cannot stop or replace the live release.
+        self.stop()
+        current = self.root / 'current'
+        if current.exists():
+            link(self.root / 'previous', current.resolve())
+        link(current, release)
+        try:
+            self.start()
+        except Exception:
+            self.stop()
+            raise
+
+    def rollback(self, compatible):
+        if not compatible:
+            raise ServiceError('Rollback requires --data-compatible after reviewing storage compatibility; '
+                               'persistent state is never rolled back')
+        previous = (self.root / 'previous').resolve(strict=True)
+        current = (self.root / 'current').resolve(strict=True)
+        self.stop()
+        link(self.root / 'current', previous)
+        link(self.root / 'previous', current)
+        self.start()
+
+    def execute(self):
+        release = (self.root / 'current').resolve(strict=True)
+        try:
+            check_port(self.config()['port'])
+        except ServiceError as error:
+            # Applies on login/crash restart too. Successful exit avoids a port-conflict restart loop.
+            print(error, file=sys.stderr)
+            return
+        os.execve(release / 'kodex-gateway', [str(release / 'kodex-gateway')], self.environment(release))
+
+
+@contextlib.contextmanager
+def locked(root):
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with (root / '.service.lock').open('a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise ServiceError('Another service management command is running') from error
+        yield
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--root', type=Path, default=Path.home() / '.local/share/kodex')
+    commands = parser.add_subparsers(dest='command', required=True)
+    install = commands.add_parser('install', help='configure and build; starts Kodex, autostart initially off')
+    install.add_argument('--codex-binary', type=Path, required=True)
+    install.add_argument('--port', type=int, default=8787)
+    install.add_argument('--data-dir', type=Path, default=Path.home() / '.kodex/native-v1')
+    for command in ('install', 'update'):
+        sub = install if command == 'install' else commands.add_parser(command)
+        sub.add_argument('--repo', type=Path, default=None)
+    for command in ('start', 'stop', 'restart', 'status', 'logs', '_run'):
+        commands.add_parser(command)
+    commands.add_parser('autostart').add_argument('setting', choices=['on', 'off'])
+    commands.add_parser('rollback').add_argument('--data-compatible', action='store_true')
+    args = parser.parse_args()
+    if sys.platform != 'darwin' or os.getuid() == 0:
+        raise ServiceError('Run as your normal logged-in macOS user, not root')
+    app = Service(args.root)
+    if args.command == '_run':
+        app.execute()
+        return
+    if args.command == 'logs':
+        run(['/usr/bin/tail', '-n', '100', '-F', app.root / 'logs/gateway.log',
+             app.root / 'logs/gateway-error.log'])
+        return
+    with locked(app.root):
+        if args.command == 'install':
+            if app.config_path.exists():
+                raise ServiceError('Already configured; use update --repo /path/to/kodex')
+            if app.job() is not None or app.login_plist.exists():
+                raise ServiceError('A Kodex launchd installation already exists; use its management command')
+            check_port(args.port)
+            app.config_path.write_text(json.dumps({
+                'port': args.port, 'data_dir': str(args.data_dir.expanduser().resolve()),
+                'codex_binary': str(args.codex_binary.expanduser().resolve()),
+                'path': os.environ.get('PATH', '/usr/bin:/bin'), 'environment': {},
+                'repo': str((args.repo or Path(__file__).resolve().parent.parent).resolve()),
+            }, indent=2) + '\n')
+            app.config_path.chmod(0o600)
+            app.config()
+            link(app.root / 'kodex-service', app.root / 'current/kodex-service')
+            app.write_plist()
+            app.update(args.repo or Path(app.config()['repo']))
+        elif args.command == 'update':
+            app.update(args.repo or Path(app.config()['repo']))
+        elif args.command == 'start':
+            app.start()
+        elif args.command == 'stop':
+            app.stop()
+        elif args.command == 'restart':
+            app.stop()
+            app.start()
+        elif args.command == 'autostart':
+            app.autostart(args.setting == 'on')
+        elif args.command == 'rollback':
+            app.rollback(args.data_compatible)
+        elif args.command == 'status':
+            print(json.dumps({'job': app.job(), 'autostart': app.login_plist.exists(),
+                              'current': str((app.root / 'current').resolve()),
+                              'url': f"http://127.0.0.1:{app.config()['port']}"}, indent=2))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (ServiceError, OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
+        print(f'kodex-service: {error}', file=sys.stderr)
+        sys.exit(1)

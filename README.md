@@ -127,6 +127,8 @@ For prerequisites, tests, schema generation, and production-style static serving
 - [Kodex Control](docs/kodex-control.md) — install and develop the bundled plugin and MCP server.
 - [Plans](plans/index.md) — completed milestones, active work, and future extensions.
 
+For persistent hosting on your Mac, use the [login service and update commands](docs/macos-service.md). The service runs a compiled release independently of your development checkout and works with private Tailscale HTTPS.
+
 ## Project status
 
 The [native app-server redesign](plans/native-app-server-redesign.md) is validated for the intended personal-account deployment, including fresh sign-in and cold authenticated restart. Organization-managed storage confinement is unsupported. Target-device PWA checks were explicitly skipped and remain unverified; production has not been restarted.

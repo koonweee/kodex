@@ -16,6 +16,8 @@ ChatGPT or Codex login routes only manage upstream account state through app-ser
 
 Use loopback for single-device access. For access from another device, bind only to a trusted VPN or tailnet address and provide HTTPS where browser features require a secure context.
 
+For macOS login hosting, installation, start/stop and staged updates, see the [macOS service guide](macos-service.md).
+
 ## Gateway configuration
 
 Defaults:
