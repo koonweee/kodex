@@ -104,6 +104,7 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 
 ## Parallel Work
 
+- Use GPT-6.1 Sol with high reasoning for future subagent spawns, as requested by the user.
 - Use subagents for independent, parallelizable work when the active environment and instructions permit it.
 - Give subagents bounded ownership of files, modules, or questions.
 - Do not delegate work that blocks the immediate next local step.
