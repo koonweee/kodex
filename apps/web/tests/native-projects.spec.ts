@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { executionCwd, nativeProjectsFixture, preservedHistory } from "./native-projects.fixture";
+import { pickerRoot, projectDirectoriesFixture } from "./project-directories.fixture";
 
 const shapes = [
   { name: "desktop", width: 1280, hasTouch: false, isMobile: false },
@@ -14,6 +15,7 @@ for (const shape of shapes) {
 
     test("native project edits, ordering and chat membership converge across two tabs", async ({ context }) => {
       const fixture = await nativeProjectsFixture(context);
+      await projectDirectoriesFixture(context);
       try {
         const first = await fixture.page("first", "/threads/history");
         const second = await fixture.page("second", "/threads/history");
@@ -30,18 +32,19 @@ for (const shape of shapes) {
         await openSidebar(first);
         await first.getByRole("button", { name: "Add project", exact: true }).click();
         const create = first.getByRole("dialog", { name: "Add project", exact: true });
-        await create.getByRole("textbox", { name: "Project name", exact: true }).fill("Research");
-        await create.getByRole("textbox", { name: "Root directories", exact: true }).fill("/repos/one\n/repos/two");
+        await create.getByRole("button", { name: "repos", exact: true }).click();
+        await create.getByRole("button", { name: "Research", exact: true }).click();
+        await create.getByRole("button", { name: "Use this directory", exact: true }).click();
         await create.getByRole("button", { name: "Add project", exact: true }).click();
         await expect(create.getByText("Create reply lost; retry this intent.")).toBeVisible();
         await create.getByRole("button", { name: "Add project", exact: true }).click();
         await expect(create).toHaveCount(0);
         const createRequests = fixture.requests.filter((entry) => entry.key === "POST /v1/projects");
         expect(createRequests).toHaveLength(2);
-        expect(createRequests[0].body).toEqual({ name: "Research", roots: [{ path: "/repos/one" }, { path: "/repos/two" }], idempotencyKey: expect.any(String) });
+        expect(createRequests[0].body).toEqual({ name: "Research", roots: [{ path: pickerRoot }], idempotencyKey: expect.any(String) });
         expect(createRequests[1].body).toEqual(createRequests[0].body);
         expect(fixture.state.projects.filter((entry) => entry.name === "Research")).toHaveLength(1);
-        await expect(first.getByRole("textbox", { name: "Working directory", exact: true })).toHaveValue("");
+        await expect(first.locator('.kodex-thread-pane[data-workspace-pane-active="true"]').getByRole("textbox", { name: "Message composer", exact: true })).toBeEnabled();
 
         // Another native client writes metadata Kodex does not expose in its form.
         fixture.state.projects.find((entry) => entry.id === "created-1")!.metadata = { owner: "another-native-client" };
@@ -52,7 +55,7 @@ for (const shape of shapes) {
         await expect(first.getByRole("heading", { name: "Renamed research", exact: true })).toBeVisible();
         expect(fixture.requests.filter((entry) => entry.key === "PATCH /v1/projects/created-1").map((entry) => entry.body)).toEqual([{ name: "Renamed research" }]);
         expect(fixture.state.projects.find((entry) => entry.id === "created-1")).toMatchObject({
-          roots: [{ path: "/repos/one" }, { path: "/repos/two" }], metadata: { owner: "another-native-client" },
+          roots: [{ path: pickerRoot }], metadata: { owner: "another-native-client" },
         });
 
         await first.getByRole("textbox", { name: "Move before", exact: true }).click();

@@ -5,6 +5,7 @@ pub mod automations;
 pub mod capabilities;
 pub mod composer_settings;
 mod config_writes;
+pub mod directories;
 pub mod events;
 pub mod file_preview;
 pub mod health;

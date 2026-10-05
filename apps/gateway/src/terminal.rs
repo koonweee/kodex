@@ -460,6 +460,9 @@ pub enum TerminalSessionStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateTerminalSession {
+    /// Resolves the sole native project root for project terminals; omit for an existing chat's cwd.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -728,6 +731,7 @@ read exit_line
             let terminal = state
                 .terminals
                 .create_session(CreateTerminalSession {
+                    project_id: None,
                     command: Some(format!(
                         "/bin/sh {} {mode}",
                         shlex::try_quote(script.to_str().unwrap()).unwrap(),
@@ -862,6 +866,7 @@ read exit_line
         for _ in 0..MAX_TERMINAL_SESSIONS {
             let terminal = manager
                 .create_session(CreateTerminalSession {
+                    project_id: None,
                     command: Some("/bin/sh".to_string()),
                     cwd: None,
                     title: None,
@@ -873,6 +878,7 @@ read exit_line
 
         let error = manager
             .create_session(CreateTerminalSession {
+                project_id: None,
                 command: Some("/bin/sh".to_string()),
                 cwd: None,
                 title: None,
@@ -893,6 +899,7 @@ read exit_line
             TerminalManager::new(temp.path().to_path_buf(), temp.path().join("codex-home"));
         let terminal = manager
             .create_session(CreateTerminalSession {
+                project_id: None,
                 command: Some("/bin/sh".to_string()),
                 cwd: None,
                 title: None,
@@ -912,6 +919,7 @@ read exit_line
             TerminalManager::new(temp.path().to_path_buf(), temp.path().join("codex-home"));
         let terminal = manager
             .create_session(CreateTerminalSession {
+                project_id: None,
                 command: Some("/bin/sh".to_string()),
                 cwd: None,
                 title: None,
@@ -949,6 +957,7 @@ read exit_line
             handles.push(tokio::spawn(async move {
                 manager
                     .create_session(CreateTerminalSession {
+                        project_id: None,
                         command: Some("/bin/sh".to_string()),
                         cwd: None,
                         title: None,

@@ -59,6 +59,17 @@ async function notificationMenuItem(name: RegExp) {
   return item!;
 }
 
+function directoryListing(request: Request) {
+  const path = new URL(request.url).searchParams.get("path") ?? "/home/example";
+  return { path, homePath: "/home/example", parentPath: path === "/home/example" ? null : "/home/example", directories: path === "/home/example" ? [{ name: "scratch", path: "/home/example/scratch" }] : [] };
+}
+
+async function chooseScratchProjectRoot() {
+  const dialog = within(screen.getByRole("dialog", { name: /add project/i }));
+  await userEvent.click(await dialog.findByRole("button", { name: "scratch" }));
+  await userEvent.click(await dialog.findByRole("button", { name: "Use this directory" }));
+}
+
 function addProjectSubmitButton() {
   return within(screen.getByRole("dialog", { name: /add project/i })).getByRole("button", { name: /add project/i });
 }
@@ -139,6 +150,7 @@ describe("MVP shell flows", () => {
             const projectId = new URL(request.url).searchParams.get("projectId");
             return { threads: threads.filter((thread) => !projectId || thread.projectId === projectId) };
           },
+          "GET /v1/directories": directoryListing,
           "POST /v1/projects": () => {
             projects = [project, scratchProject];
             return scratchProject;
@@ -163,8 +175,7 @@ describe("MVP shell flows", () => {
       expect(await screen.findByRole("button", { name: /^implement frontend$/i })).toBeInTheDocument();
 
       await userEvent.click(screen.getByRole("button", { name: /add project/i }));
-      await userEvent.type(screen.getByLabelText(/project name/i), "scratch");
-      await userEvent.type(screen.getByLabelText(/root directories/i), "/home/example/scratch");
+      await chooseScratchProjectRoot();
       await userEvent.click(addProjectSubmitButton());
 
       await waitFor(() => {
@@ -1849,6 +1860,7 @@ describe("MVP shell flows", () => {
             ? newProjectThreads
             : { threads: [thread], nextCursor: null, backwardsCursor: null, rawPayload: {} };
         },
+        "GET /v1/directories": directoryListing,
         "POST /v1/projects": () => {
           projects = [project, scratchProject];
           return scratchProject;
@@ -1860,8 +1872,7 @@ describe("MVP shell flows", () => {
 
     expect(await screen.findByRole("button", { name: /^implement frontend$/i })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /add project/i }));
-    await userEvent.type(screen.getByLabelText(/project name/i), "scratch");
-    await userEvent.type(screen.getByLabelText(/root directories/i), "/home/example/scratch");
+    await chooseScratchProjectRoot();
     await userEvent.click(addProjectSubmitButton());
 
     await waitFor(() => {

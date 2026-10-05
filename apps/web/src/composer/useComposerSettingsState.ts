@@ -36,9 +36,9 @@ export function useComposerSettingsState({
         queryFn: listModels,
       });
       setModels((current) => (sameModelSummaries(current, nextModels) ? current : nextModels));
-      const executionCwd = cwd === undefined
+      const executionCwd = projectId !== null
         ? singleProjectRoot(projects.find((project) => project.id === projectId))
-        : cwd;
+        : cwd ?? null;
       if (projectId !== null && !executionCwd) return null;
       const settings = await queryClient.fetchQuery({
         queryKey: queryKeys.composerSettings(projectId, executionCwd),

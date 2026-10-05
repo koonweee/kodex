@@ -89,6 +89,26 @@ describe("TerminalPane", () => {
     );
   });
 
+  it("resolves project terminals at the native root and retains project routing for a new sibling", async () => {
+    renderTerminalPane(workspacePane({ projectId: "project-1", cwd: "/stale-project-root" }));
+    expect(useGatewayTerminalSession).toHaveBeenCalledWith(true, {
+      createRequest: { command: undefined, projectId: "project-1", title: undefined },
+      preferredTerminalId: null,
+      reuseRunning: false,
+    });
+    await waitFor(() => expect(workspaceMocks.updatePane).toHaveBeenCalledWith("pane-terminal", {
+      target: { command: "/bin/zsh", cwd: session.cwd, projectId: "project-1", terminalId: session.id },
+      title: session.title,
+    }));
+    const actions = workspaceMocks.setPaneHeaderActions.mock.calls.find(([paneId]) => paneId === "pane-terminal")?.[1];
+    render(<MantineProvider>{actions}</MantineProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "New terminal" }));
+    await waitFor(() => expect(workspaceMocks.openNewTerminalPane).toHaveBeenCalledWith({
+      projectId: "project-1",
+      placement: { direction: "within", sourcePaneId: "pane-terminal" },
+    }));
+  });
+
   it("reuses the pane target terminal id without rewriting the pane", () => {
     renderTerminalPane(workspacePane({ terminalId: "terminal-1" }));
 

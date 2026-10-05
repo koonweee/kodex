@@ -146,16 +146,21 @@ pub(crate) async fn project_execution_cwd(
     explicit_cwd: Option<String>,
 ) -> ApiResult<String> {
     let project = read_project_record(state, project_id).await?;
-    let cwd = match explicit_cwd {
-        Some(cwd) => cwd,
-        None if project.roots.len() == 1 => project.roots[0].path.clone(),
-        None => {
-            return Err(ApiError::BadRequest(
-                "an explicit cwd is required for a project with zero or multiple roots".into(),
-            ))
-        }
+    let [root] = project.roots.as_slice() else {
+        return Err(ApiError::BadRequest(
+            "choose one project root directory before starting a chat or terminal".into(),
+        ));
     };
+    let cwd = root.path.clone();
     validate_execution_cwd(&cwd)?;
+    if explicit_cwd
+        .as_deref()
+        .is_some_and(|explicit| explicit != cwd)
+    {
+        return Err(ApiError::BadRequest(
+            "working directory must match the project root".into(),
+        ));
+    }
     Ok(cwd)
 }
 

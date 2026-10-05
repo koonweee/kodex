@@ -38,6 +38,7 @@ export type McpServerStatus = components["schemas"]["McpServerStatus"];
 export type ModelSummary = components["schemas"]["ModelSummary"];
 export type PendingTimelineRequestSummary = components["schemas"]["PendingTimelineRequestSummary"];
 export type PermissionProfileSummary = components["schemas"]["PermissionProfileSummary"];
+export type DirectoryListResponse = components["schemas"]["DirectoryListResponse"];
 export type Project = components["schemas"]["Project"];
 export type CreateProjectRequest = components["schemas"]["CreateProjectRequest"];
 export type UpdateProjectRequest = components["schemas"]["UpdateProjectRequest"];
@@ -159,6 +160,10 @@ export async function createTerminalSession(request: CreateTerminalSession = {})
 
 export async function deleteTerminalSession(terminalId: string): Promise<TerminalDeleteResponse> {
   return unwrap(api.DELETE("/v1/terminals/{terminalId}", { params: { path: { terminalId } } }));
+}
+
+export async function listDirectories(path?: string, signal?: AbortSignal): Promise<DirectoryListResponse> {
+  return unwrap(api.GET("/v1/directories", { params: { query: { path } }, signal, cache: "no-store" }));
 }
 
 export async function listProjects(signal?: AbortSignal): Promise<Project[]> {

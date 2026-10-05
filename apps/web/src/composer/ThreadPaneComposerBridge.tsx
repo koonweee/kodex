@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Autocomplete, Box, Button } from "@mantine/core";
+import { Alert, Button } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
 
 import { getComposerSettings, type Project } from "../api/client";
@@ -65,8 +65,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
   const threadSettings = useThreadSettings(inputStateReadable ? existingThreadId : null);
   const draftProjectId = target.mode === "draft" && typeof target.projectId === "string" ? target.projectId : null;
   const currentProject = draftProjectId ? projects.find((project) => project.id === draftProjectId) ?? null : null;
-  const explicitCwd = typeof target.cwd === "string" ? target.cwd : null;
-  const composerCwd = thread?.cwd ?? (explicitCwd !== null ? explicitCwd.trim() || null : singleProjectRoot(currentProject));
+  const composerCwd = isDraftPane ? singleProjectRoot(currentProject) : thread?.cwd ?? null;
   const canCompose = !isNativeReadOnly && (!isDraftPane || draftProjectId === null || (currentProject !== null && composerCwd !== null));
   const [draftComposerEdited, setDraftComposerEdited] = useState(false);
   const [draftComposerSettings, setDraftComposerSettings] = useState<ComposerSettings>(composerDefaults);
@@ -103,14 +102,13 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
       if (createdDraftThreadRef.current) {
         return createdDraftThreadRef.current;
       }
-      if (draftProjectId && !composerCwd) throw new Error("Choose a working directory before starting this chat.");
+      if (draftProjectId && !composerCwd) throw new Error("Edit this project to choose one root directory before starting a chat.");
       const hydratedSettings = !draftComposerEdited
         ? await hydrateComposerDefaults(draftProjectId, composerCwd)
         : null;
       const createdThread = await onCreateDraftThread({
         ...request,
         composerSettings: hydratedSettings ?? request.composerSettings,
-        ...(draftProjectId && composerCwd ? { cwd: composerCwd } : {}),
       });
       createdDraftThreadRef.current = createdThread;
       return createdThread;
@@ -177,12 +175,10 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
 
   return (
     <>
-    {isDraftPane && currentProject ? (
-      <Box px="md" pt="xs">
-        <Autocomplete label="Working directory" description="This chat's execution directory; it can be outside the project roots." value={explicitCwd ?? composerCwd ?? ""} data={currentProject.roots.map((root) => root.path)} onChange={(cwd) => {
-          void updatePane(pane.id, { target: { mode: "draft", projectId: draftProjectId, cwd } }).catch(onError);
-        }} />
-      </Box>
+    {isDraftPane && draftProjectId && !composerCwd ? (
+      <Alert color="red" mx="md" mt="xs">
+        Edit this project to choose one root directory before starting a chat.
+      </Alert>
     ) : null}
     {!isDraftPane && threadSettings.error ? (
       <Alert color="red" title="Chat settings error" mx="md" mt="xs">

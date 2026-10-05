@@ -45,8 +45,13 @@ pub async fn list_terminals(
 #[utoipa::path(post, path = "/v1/terminals", request_body = CreateTerminalSession, responses((status = 201, body = TerminalSessionResponse)))]
 pub async fn create_terminal(
     State(state): State<AppState>,
-    Json(request): Json<CreateTerminalSession>,
+    Json(mut request): Json<CreateTerminalSession>,
 ) -> ApiResult<(StatusCode, Json<TerminalSessionResponse>)> {
+    if let Some(project_id) = request.project_id.as_deref() {
+        request.cwd = Some(
+            super::projects::project_execution_cwd(&state, project_id, request.cwd.take()).await?,
+        );
+    }
     let terminal = state
         .terminals
         .create_session(request)

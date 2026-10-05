@@ -9,6 +9,7 @@ export type AppSurfacePaneTarget =
   | { mode: "session"; threadId: string; sessionId: string };
 
 export type TerminalPaneTarget = {
+  projectId?: string | null;
   reuseRunning?: boolean;
   command?: string | null;
   cwd?: string | null;

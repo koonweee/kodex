@@ -4,6 +4,7 @@ import { flushSync } from "react-dom";
 
 import {
   type Approval,
+  type CreateTerminalSession,
   type ApprovalResponse,
   type EventEnvelope,
   type ThreadSummary,
@@ -65,7 +66,7 @@ type ThreadPaneChromeState = {
 export type WorkspacePaneTabStatus = "connected" | "connecting" | "error" | "closed";
 type WorkspacePaneCloseOptions = { nextActivePaneId?: string | null };
 type WorkspacePaneFocusOptions = { pulse?: boolean };
-type WorkspaceTerminalOpenOptions = WorkspacePaneOpenOptions & { command?: string | null; cwd?: string | null };
+type WorkspaceTerminalOpenOptions = WorkspacePaneOpenOptions & Pick<CreateTerminalSession, "command" | "cwd" | "projectId">;
 
 type WorkspaceProviderProps = {
   approvals?: Approval[];
@@ -705,7 +706,8 @@ export function WorkspaceProvider({
         target: {
           command: options.command ?? null,
           cwd: options.cwd ?? null,
-          reuseRunning: !options.command && !options.cwd,
+          ...(options.projectId ? { projectId: options.projectId } : {}),
+          reuseRunning: !options.command && !options.cwd && !options.projectId,
         },
         title: "Terminal",
       };
@@ -723,6 +725,7 @@ export function WorkspaceProvider({
           target: {
             command: options.command ?? null,
             cwd: options.cwd ?? null,
+            ...(options.projectId ? { projectId: options.projectId } : {}),
           },
           title: "Terminal",
         },
@@ -960,14 +963,16 @@ function findPaneByIdentity(panes: WorkspacePane[], pane: WorkspacePane): Worksp
 function terminalPaneForRequest(options: WorkspaceTerminalOpenOptions): (panes: WorkspacePane[]) => WorkspacePane | null {
   const command = options.command ?? null;
   const cwd = options.cwd ?? null;
+  const projectId = options.projectId ?? null;
   return (panes) => {
     const terminalPanes = [...panes].reverse().filter((pane) => pane.kind === "terminal");
-    if (!command && !cwd) {
+    if (!command && !cwd && !projectId) {
       return terminalPanes[0] ?? null;
     }
     return terminalPanes.find((pane) => {
       const target = paneTargetRecord(pane);
       return (
+        (projectId ? target.projectId === projectId : !target.projectId) &&
         (!command || target.command === command) &&
         (!cwd || target.cwd === cwd)
       );

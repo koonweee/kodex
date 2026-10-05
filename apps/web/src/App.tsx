@@ -59,6 +59,7 @@ import type { ComposerSettings } from "./ComposerFooterControls";
 import type { ComposerDraftStore } from "./composer/useComposerDraftState";
 import { automationThreadOptions } from "./automations/threadOptions";
 import { createThreadOptions } from "./composer/settings";
+import { singleProjectRoot } from "./projects/roots";
 import { useComposerSettingsState } from "./composer/useComposerSettingsState";
 import { installLiveLongTaskObserver } from "./events/liveDiagnostics";
 import { routeGlobalLiveEvent } from "./events/liveRouting";
@@ -645,18 +646,18 @@ function KodexShell({
     composerSettings: paneComposerSettings,
     firstMessageText,
     projectId,
-    cwd,
   }: {
     composerSettings?: ComposerSettings;
     firstMessageText: string;
     projectId?: string;
-    cwd?: string;
   }) {
     draftComposerTransitionOriginRef.current = composerShellRef.current?.getBoundingClientRect() ?? null;
     const threadSettings = paneComposerSettings ?? composerDefaults;
+    const cwd = projectId ? singleProjectRoot(orderedProjects.find((project) => project.id === projectId)) : null;
+    if (projectId && !cwd) throw new Error("Edit this project to choose one root directory before starting a chat.");
     const thread = optimisticThreadSummary(
       projectId
-        ? await createThread(projectId, { ...createThreadOptions(threadSettings), cwd })
+        ? await createThread(projectId, { ...createThreadOptions(threadSettings), cwd: cwd! })
         : await createChatThread(firstMessageText, createThreadOptions(threadSettings)),
       firstMessageText,
     );

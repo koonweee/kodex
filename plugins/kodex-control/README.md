@@ -19,7 +19,7 @@ This preserves the base version and rewrites only the `+codex...` suffix, for ex
 
 The MCP server calls the running gateway over `KODEX_GATEWAY_URL`, defaulting to `http://127.0.0.1:8787`. Non-loopback URLs are refused unless `KODEX_ALLOW_REMOTE_SELF_CONTROL=1` is set.
 
-Projects use native IDs and may have zero, one, or several organizational roots. `create_thread` and `spawn_thread` accept an explicit absolute `cwd`; it is required for zero-root and multiple-root projects. A single root supplies the default. Roots do not grant filesystem access, and changing a thread's project does not move its files or change its working directory.
+Projects use native IDs and may have zero, one, or several organizational roots. `create_thread` and `spawn_thread` require the selected project to have exactly one root and execute there. If supplied, `cwd` must match that root; it cannot override it. Correct zero-root or multiple-root projects before starting a chat. Roots do not grant filesystem access, and changing a thread's project does not move its files or change its working directory.
 
 `send_thread_input` activates only the explicitly targeted chat and submits one native queue row. It does not steer an active turn or override the native queue pause after Stop. A paused queue requires an explicit Start in Kodex; ordinary queued chats remain dormant after restart until loaded. Queue rows carry native input and use the chat settings at execution, without frozen per-row execution options.
 

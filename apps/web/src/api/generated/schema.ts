@@ -340,6 +340,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/directories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Browse directories inside the gateway user's home */
+        get: operations["list_directories"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -2378,6 +2395,8 @@ export interface components {
         CreateTerminalSession: {
             command?: string | null;
             cwd?: string | null;
+            /** @description Resolves the sole native project root for project terminals; omit for an existing chat's cwd. */
+            projectId?: string | null;
             title?: string | null;
         };
         CreateThreadRequest: {
@@ -2408,6 +2427,20 @@ export interface components {
             configured: boolean;
             subscribed: boolean;
             subscription?: null | components["schemas"]["PushSubscriptionResponse"];
+        };
+        DirectoryEntry: {
+            name: string;
+            path: string;
+        };
+        DirectoryListQuery: {
+            /** @description Absolute directory to browse; omission starts at the gateway user's home. */
+            path?: string | null;
+        };
+        DirectoryListResponse: {
+            directories: components["schemas"]["DirectoryEntry"][];
+            homePath: string;
+            parentPath?: string | null;
+            path: string;
         };
         EventEnvelope: {
             codexMethod?: string | null;
@@ -4361,6 +4394,42 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["EventListResponse"];
                 };
+            };
+        };
+    };
+    list_directories: {
+        parameters: {
+            query?: {
+                /** @description Absolute directory to browse; omission starts at the gateway user's home. */
+                path?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectoryListResponse"];
+                };
+            };
+            /** @description Path is outside home, unreadable or not a directory */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Directory does not exist */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

@@ -55,7 +55,7 @@ async fn native_project_create_passes_roots_without_creating_directories() {
 }
 
 #[tokio::test]
-async fn native_project_multiple_roots_require_an_explicit_execution_cwd() {
+async fn native_project_multiple_roots_cannot_choose_an_arbitrary_execution_cwd() {
     for endpoint in ["/v1/threads", "/v1/self-control/threads"] {
         let (state, server) = test_state().await;
         let mut project = native_project("project-1", "/workspace/first");
@@ -248,7 +248,7 @@ async fn native_membership_update_requires_an_explicit_nullable_project_id_and_k
 }
 
 #[tokio::test]
-async fn explicit_execution_cwd_is_independent_of_zero_one_or_multiple_project_roots() {
+async fn explicit_execution_cwd_cannot_override_the_single_project_root() {
     for roots in [
         json!([]),
         json!([{"path":"/root/one"}]),
@@ -274,36 +274,24 @@ async fn explicit_execution_cwd_is_independent_of_zero_one_or_multiple_project_r
                 )
                 .await
                 .unwrap();
-            assert_eq!(response.status(), StatusCode::OK, "{endpoint}: {roots}");
-            let response = response_json(response).await;
-            assert_eq!(response["thread"]["projectId"], "project-1");
-            assert_eq!(response["thread"]["cwd"], "/outside/roots");
+            assert_eq!(
+                response.status(),
+                StatusCode::BAD_REQUEST,
+                "{endpoint}: {roots}"
+            );
             let requests = server.requests.lock().unwrap();
-            let (_, params) = requests
-                .iter()
-                .find(|(method, _)| method == "thread/start")
-                .unwrap();
-            assert_eq!(params["cwd"], "/outside/roots");
-            assert!(params.get("runtimeWorkspaceRoots").is_none());
-            assert!(params.get("additionalWritableRoots").is_none());
+            assert!(requests.iter().all(|(method, _)| method != "thread/start"));
         }
     }
 }
 
 #[tokio::test]
-async fn project_config_queries_require_an_unambiguous_cwd_and_accept_explicit_context() {
+async fn project_config_queries_cannot_override_missing_or_multiple_roots() {
     for roots in [
         json!([]),
         json!([{"path":"/root/one"},{"path":"/root/two"}]),
     ] {
-        for (endpoint, method, payload) in [
-            ("/v1/composer-settings", "config/read", json!({"config":{}})),
-            (
-                "/v1/permission-profiles",
-                "permissionProfile/list",
-                json!({"data":[],"nextCursor":null}),
-            ),
-        ] {
+        for endpoint in ["/v1/composer-settings", "/v1/permission-profiles"] {
             let (state, server) = test_state().await;
             let mut project = native_project("project-1", "/unused");
             project["roots"] = roots.clone();
@@ -324,7 +312,6 @@ async fn project_config_queries_require_an_unambiguous_cwd_and_accept_explicit_c
                 .unwrap();
             assert_eq!(response.status(), StatusCode::BAD_REQUEST);
             assert_eq!(server.requests.lock().unwrap().len(), 1);
-            server.queued_responses.lock().unwrap().push(payload);
             let response = app
                 .oneshot(
                     Request::get(format!("{endpoint}?projectId=project-1&cwd=/outside/roots"))
@@ -333,15 +320,102 @@ async fn project_config_queries_require_an_unambiguous_cwd_and_accept_explicit_c
                 )
                 .await
                 .unwrap();
-            assert_eq!(response.status(), StatusCode::OK, "{endpoint}");
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{endpoint}");
             let requests = server.requests.lock().unwrap();
-            let (_, params) = requests
+            assert!(requests
                 .iter()
-                .find(|(requested, _)| requested == method)
-                .unwrap();
-            assert_eq!(params["cwd"], "/outside/roots");
+                .all(|(requested, _)| requested == "project/read"));
         }
     }
+}
+
+#[tokio::test]
+async fn explicit_execution_cwd_equal_to_the_single_root_remains_supported() {
+    let (state, server) = test_state().await;
+    server
+        .native_projects
+        .lock()
+        .unwrap()
+        .insert("project-1".into(), native_project("project-1", "/root/one"));
+    assert_eq!(
+        super::project_execution_cwd(&state, "project-1", Some("/root/one".into()))
+            .await
+            .unwrap(),
+        "/root/one"
+    );
+    assert_eq!(
+        super::settings_cwd(&state, Some("project-1"), Some("/root/one".into()))
+            .await
+            .unwrap(),
+        Some("/root/one".into())
+    );
+    assert!(
+        super::settings_cwd(&state, Some("project-1"), Some("/outside/roots".into()))
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn a_stale_client_cannot_keep_an_old_project_root_after_another_client_changes_it() {
+    let (state, server) = test_state().await;
+    server
+        .native_projects
+        .lock()
+        .unwrap()
+        .insert("project-1".into(), native_project("project-1", "/root/old"));
+    assert_eq!(
+        super::project_execution_cwd(&state, "project-1", None)
+            .await
+            .unwrap(),
+        "/root/old"
+    );
+    server
+        .native_projects
+        .lock()
+        .unwrap()
+        .get_mut("project-1")
+        .unwrap()["roots"] = json!([{"path":"/root/new"}]);
+    assert!(
+        super::project_execution_cwd(&state, "project-1", Some("/root/old".into()))
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        super::project_execution_cwd(&state, "project-1", None)
+            .await
+            .unwrap(),
+        "/root/new"
+    );
+}
+
+#[tokio::test]
+async fn project_terminal_cwd_cannot_override_the_native_project_root() {
+    let (state, server) = test_state().await;
+    let root = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    server.native_projects.lock().unwrap().insert(
+        "project-1".into(),
+        native_project("project-1", root.path().to_str().unwrap()),
+    );
+    let response = build_router(state.clone())
+        .oneshot(
+            Request::post("/v1/terminals")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({"projectId":"project-1","cwd":outside.path(),"command":"/usr/bin/true"})
+                        .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(state.terminals.list_sessions().await.is_empty());
+    assert_eq!(
+        server.requests.lock().unwrap().as_slice(),
+        &[("project/read".into(), json!({"projectId":"project-1"}))]
+    );
 }
 
 #[tokio::test]

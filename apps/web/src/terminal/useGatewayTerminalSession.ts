@@ -67,7 +67,7 @@ export function useGatewayTerminalSession(opened: boolean, options: GatewayTermi
     return () => {
       cancelled = true;
     };
-  }, [createRequest.command, createRequest.cwd, createRequest.title, opened, preferredTerminalId, reuseRunning]);
+  }, [createRequest.command, createRequest.cwd, createRequest.projectId, createRequest.title, opened, preferredTerminalId, reuseRunning]);
 
   const createNewSession = useCallback(async () => {
     const currentTerminalId = state.session?.id ?? null;

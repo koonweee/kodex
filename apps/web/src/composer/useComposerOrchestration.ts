@@ -39,7 +39,7 @@ import { isTouchInputDevice } from "../shared/inputCapabilities";
 import { createClientRequestId } from "../shared/id";
 import type { PendingAttachment } from "./types";
 
-type DraftThreadCreateRequest = { composerSettings?: ComposerSettings; firstMessageText: string; projectId?: string; cwd?: string };
+type DraftThreadCreateRequest = { composerSettings?: ComposerSettings; firstMessageText: string; projectId?: string };
 type DraftThreadCreateResult = { threadId: string };
 
 type UseComposerOrchestrationParams = {

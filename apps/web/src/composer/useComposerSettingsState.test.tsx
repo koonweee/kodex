@@ -30,3 +30,21 @@ it("keeps cwd-specific hydration out of global defaults even when responses fini
   await act(async () => { releaseSlow(nativeSettings("slow-model")); expect(await slow).toMatchObject({ model: "slow-model" }); });
   expect(hook.result.current.composerDefaults.model).toBe("global-model");
 });
+
+it.each([
+  { roots: [{ path: "/project-root" }], expectedCwd: "/project-root" },
+  { roots: [{ path: "/project-root with trailing space " }], expectedCwd: "/project-root with trailing space " },
+  { roots: [], expectedCwd: null },
+  { roots: [{ path: "/one" }, { path: "/two" }], expectedCwd: null },
+])("hydrates project defaults only at the sole root despite an explicit draft override (%j)", async ({ roots, expectedCwd }) => {
+  vi.mocked(listModels).mockResolvedValue([]);
+  vi.mocked(getComposerSettings).mockResolvedValue(nativeSettings("project-model"));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const hook = renderHook(() => useComposerSettingsState({
+    projects: [{ id: "project", name: "Project", roots, metadata: {}, position: 0, createdAt: 1, updatedAt: 1, recencyAt: null }],
+    onError: vi.fn(),
+  }), { wrapper: ({ children }: PropsWithChildren) => <QueryClientProvider client={client}>{children}</QueryClientProvider> });
+  await act(async () => { await hook.result.current.hydrateComposerDefaults("project", "/outside-roots"); });
+  if (expectedCwd) expect(getComposerSettings).toHaveBeenCalledWith("project", expectedCwd, expect.any(AbortSignal));
+  else expect(getComposerSettings).not.toHaveBeenCalled();
+});

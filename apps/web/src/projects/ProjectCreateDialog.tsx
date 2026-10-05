@@ -1,4 +1,4 @@
-import { Alert, Button, Modal, Stack, Textarea, TextInput } from "@mantine/core";
+import { Alert, Button, Modal, Stack } from "@mantine/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 
@@ -8,7 +8,7 @@ import { createClientRequestId } from "../shared/id";
 import { errorMessageFrom } from "../shared/values";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
 import { refreshProjectState } from "./cache";
-import { projectRootsFromText } from "./roots";
+import { DirectoryPicker } from "./DirectoryPicker";
 
 export function WorkspaceProjectCreateDialog({ onClose, onCreated, onError }: {
   onClose: () => void;
@@ -24,8 +24,7 @@ export function WorkspaceProjectCreateDialog({ onClose, onCreated, onError }: {
 
 export function ProjectCreateDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (project: Project) => void }) {
   const queryClient = useQueryClient();
-  const [name, setName] = useState("");
-  const [roots, setRoots] = useState("");
+  const [root, setRoot] = useState<string | null>(null);
   const attempt = useRef<{ body: string; idempotencyKey: string } | null>(null);
   const create = useMutation({
     mutationFn: createProject,
@@ -40,8 +39,8 @@ export function ProjectCreateDialog({ onClose, onCreated }: { onClose: () => voi
   });
 
   function submit() {
-    const fields = { name: name.trim(), roots: projectRootsFromText(roots) };
-    if (!fields.name) return;
+    if (!root) return;
+    const fields = { name: root.split("/").filter(Boolean).at(-1) ?? root, roots: [{ path: root }] };
     const body = JSON.stringify(fields);
     if (attempt.current?.body !== body) attempt.current = { body, idempotencyKey: createClientRequestId() };
     const request: CreateProjectRequest = { ...fields, idempotencyKey: attempt.current.idempotencyKey };
@@ -52,10 +51,9 @@ export function ProjectCreateDialog({ onClose, onCreated }: { onClose: () => voi
     <Modal opened onClose={onClose} title="Add project" closeOnClickOutside={!create.isPending} closeOnEscape={!create.isPending} withCloseButton={!create.isPending}>
       <form onSubmit={(event) => { event.preventDefault(); submit(); }}>
         <Stack>
-          <TextInput label="Project name" value={name} onChange={(event) => setName(event.currentTarget.value)} required disabled={create.isPending} />
-          <Textarea label="Root directories" description="One absolute path per line. Leave empty to choose a working directory when starting a chat." value={roots} onChange={(event) => setRoots(event.currentTarget.value)} minRows={3} disabled={create.isPending} />
+          <DirectoryPicker value={root} onChange={(value) => { setRoot(value); create.reset(); }} disabled={create.isPending} />
           {create.error ? <Alert color="red">{errorMessageFrom(create.error)}</Alert> : null}
-          <Button type="submit" disabled={!name.trim()} loading={create.isPending}>Add project</Button>
+          <Button type="submit" disabled={!root} loading={create.isPending}>Add project</Button>
         </Stack>
       </form>
     </Modal>

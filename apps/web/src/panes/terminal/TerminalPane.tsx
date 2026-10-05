@@ -37,14 +37,15 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
   const { openNewTerminalPane, setPaneHeaderActions, setPaneTabStatus, updatePane } = useWorkspace();
   const targetTerminalId = typeof target.terminalId === "string" ? target.terminalId : null;
   const targetCwd = typeof target.cwd === "string" ? target.cwd : null;
+  const targetProjectId = typeof target.projectId === "string" ? target.projectId : null;
   const targetCommand = typeof target.command === "string" ? target.command : null;
   const createRequest = useMemo(
     () => ({
       command: targetCommand ?? undefined,
-      cwd: targetCwd ?? undefined,
+      ...(targetProjectId ? { projectId: targetProjectId } : { cwd: targetCwd ?? undefined }),
       title: pane.title ?? undefined,
     }),
-    [pane.title, targetCommand, targetCwd],
+    [pane.title, targetCommand, targetCwd, targetProjectId],
   );
   const { error, isLoading, recoverSession, session, stopSession } = useGatewayTerminalSession(true, {
     createRequest,
@@ -67,7 +68,7 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
       target: {
         ...target,
         command: targetCommand ?? session.command,
-        cwd: targetCwd ?? session.cwd,
+        cwd: targetProjectId ? session.cwd : targetCwd ?? session.cwd,
         terminalId: session.id,
       },
       title: pane.title ?? session.title,
@@ -78,7 +79,7 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
           patchingSessionIdRef.current = null;
         }
       });
-  }, [pane.id, pane.title, session, target, targetCommand, targetCwd, targetTerminalId, updatePane]);
+  }, [pane.id, pane.title, session, target, targetCommand, targetCwd, targetProjectId, targetTerminalId, updatePane]);
 
   const handleConnectionStateChange = useCallback((state: TerminalConnectionState) => {
     setConnectionState(state);
@@ -123,10 +124,10 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
   const handleOpenTerminalTab = useCallback(() => {
     void openNewTerminalPane({
       ...(targetCommand ? { command: targetCommand } : {}),
-      ...(session?.cwd ?? targetCwd ? { cwd: session?.cwd ?? targetCwd } : {}),
+      ...(targetProjectId ? { projectId: targetProjectId } : session?.cwd ?? targetCwd ? { cwd: session?.cwd ?? targetCwd } : {}),
       placement: { direction: "within", sourcePaneId: pane.id },
     });
-  }, [openNewTerminalPane, pane.id, session?.cwd, targetCommand, targetCwd]);
+  }, [openNewTerminalPane, pane.id, session?.cwd, targetCommand, targetCwd, targetProjectId]);
   const paneHeaderActions = useMemo(
     () => (
       <Group className="kodex-terminal-pane-actions" gap={4} wrap="nowrap">

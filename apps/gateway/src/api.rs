@@ -63,6 +63,7 @@ use crate::{
             AppServerCapabilities, CapabilitiesResponse, GatewayCapabilities, TerminalCapabilities,
         },
         composer_settings::ComposerSettingsQuery,
+        directories::{DirectoryEntry, DirectoryListQuery, DirectoryListResponse},
         events::EventListResponse,
         file_preview::FilePreviewQuery,
         health::{HealthResponse, ReadyResponse},
@@ -216,6 +217,7 @@ impl AppState {
         crate::events::events,
         crate::events::debug_events,
         crate::routes::projects::list_projects,
+        crate::routes::directories::list_directories,
         crate::routes::projects::create_project,
         crate::routes::projects::get_project,
         crate::routes::projects::update_project,
@@ -379,6 +381,9 @@ impl AppState {
         ThreadProjectUpdated,
         Project,
         ProjectListResponse,
+        DirectoryEntry,
+        DirectoryListQuery,
+        DirectoryListResponse,
         CreateProjectRequest,
         UpdateProjectRequest,
         MoveProjectRequest,
@@ -612,6 +617,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::composer_settings::router())
         .merge(routes::events::router())
         .merge(routes::projects::router())
+        .merge(routes::directories::router())
         .merge(routes::threads::router())
         .merge(routes::subagents::router())
         .merge(routes::thread_sections::router())
