@@ -643,7 +643,12 @@ fn row_is_final_response(row: &ThreadTimelineWorkDetailRow) -> bool {
 }
 
 fn row_is_prominent_turn_result(row: &ThreadTimelineWorkDetailRow) -> bool {
-    row.kind == "user_message" || row.kind == "image_generation" || row.kind == "context_compaction"
+    // Async questions can be final_answer messages before the turn's final reply.
+    // Keep every final answer visible, not just the first one selected above.
+    row_is_final_response(row)
+        || row.kind == "user_message"
+        || row.kind == "image_generation"
+        || row.kind == "context_compaction"
 }
 
 fn is_timeline_activity_item(item: &ThreadTimelineSnapshotItem) -> bool {

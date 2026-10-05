@@ -1538,3 +1538,7 @@ mod commit_tests;
 #[cfg(test)]
 #[path = "thread_view/failure_tests.rs"]
 mod failure_tests;
+
+#[cfg(test)]
+#[path = "thread_view/work_rows_tests.rs"]
+mod work_rows_tests;
