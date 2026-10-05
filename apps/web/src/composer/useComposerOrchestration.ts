@@ -120,7 +120,7 @@ export function useComposerOrchestration({
     ) {
       return;
     }
-    if (isComposerSubmittingRef.current) {
+    if (isComposerSubmittingRef.current || (previousContext && !previousContext.selectedThreadId && !selectedThreadId)) {
       return;
     }
 

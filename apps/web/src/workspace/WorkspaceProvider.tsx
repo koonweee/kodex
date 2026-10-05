@@ -662,9 +662,27 @@ export function WorkspaceProvider({
 
   const openDraftThreadPane = useCallback(
     async (projectId?: string | null, options: WorkspacePaneOpenOptions = {}) => {
-      focusPaneOrAppend(createDraftThreadPane(projectId), "draftThread", options);
+      const pane = createDraftThreadPane(projectId);
+      setWorkspace((current) => {
+        const existing = current.panes.find((candidate) => candidate.kind === "thread" && candidate.target.mode === "draft");
+        if (!existing) {
+          recordPanePlacementHint(pane.id, "draftThread", options);
+          return {
+            ...current,
+            panes: [...current.panes, pane],
+            activePaneId: options.activate === false && hasPaneId(current, current.activePaneId) ? current.activePaneId : pane.id,
+            dockviewLayout: null,
+          };
+        }
+        if (options.activate !== false) pulsePane(existing.id);
+        return {
+          ...current,
+          activePaneId: options.activate === false ? current.activePaneId : existing.id,
+          panes: current.panes.map((candidate) => candidate.id === existing.id ? { ...pane, id: existing.id } : candidate),
+        };
+      });
     },
-    [focusPaneOrAppend],
+    [recordPanePlacementHint, pulsePane],
   );
 
   const openAppSurfacePane = useCallback(

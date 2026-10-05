@@ -42,6 +42,21 @@ describe("WorkspaceProvider pane commands", () => {
     vi.clearAllMocks();
   });
 
+  it("reuses the draft pane across projects without changing other panes", async () => {
+    const store = createMemoryWorkspacePaneStore(workspaceState([
+      draftThreadPane("pane-draft"),
+      threadPane("pane-thread-1", "thread-1", "Thread 1"),
+    ], "pane-thread-1"));
+    renderProvider(store);
+    fireEvent.click(screen.getByRole("button", { name: "New project chat" }));
+    await waitFor(() => expect(store.getState().activePaneId).toBe("pane-draft"));
+    expect(store.getState().panes).toHaveLength(2);
+    expect(store.getState().panes[0]?.target).toEqual({ mode: "draft", projectId: "project-1" });
+    fireEvent.click(screen.getByRole("button", { name: "New projectless chat" }));
+    await waitFor(() => expect(store.getState().panes[0]?.target).toEqual({ mode: "draft" }));
+    expect(store.getState().panes).toHaveLength(2);
+  });
+
   it("focuses an existing thread pane unless duplicate is requested", async () => {
     const store = createMemoryWorkspacePaneStore(workspaceState([
       threadPane("pane-thread-1", "thread-1", "Thread 1"),
@@ -356,6 +371,8 @@ function CommandHarness() {
       <span data-testid="canonical-pane-context">{workspace.paneThreadContextsById["pane-thread-1"]?.projectId ?? "none"}|{workspace.paneThreadContextsById["pane-thread-1"]?.cwd ?? "none"}</span>
       <button onClick={() => workspace.setPaneThreadContext("pane-thread-1", { id: "thread-1", projectId: "native-project", cwd: "/native-cwd" })}>Receive native pane context</button>
       <button onClick={() => workspace.closePane("pane-thread-1", null)}>Close native context pane</button>
+      <button onClick={() => void workspace.openDraftThreadPane("project-1")}>New project chat</button>
+      <button onClick={() => void workspace.openDraftThreadPane(null)}>New projectless chat</button>
       <span data-testid="pane-count">{workspace.workspace.panes.length}</span>
       <span data-testid="active-pane">{workspace.workspace.activePaneId ?? "none"}</span>
       <span data-testid="focus-pulses">{JSON.stringify(workspace.focusPulseByPaneId)}</span>

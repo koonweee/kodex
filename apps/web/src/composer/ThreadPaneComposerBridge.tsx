@@ -93,7 +93,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
   const composerSettingsErrorMessage = isDraftPane ? null : threadSettings.error;
   const composerDraftKey = existingThreadId
     ? `pane:${pane.id}:thread:${existingThreadId}`
-    : `pane:${pane.id}:draft:${draftProjectId ?? "chat"}`;
+    : `pane:${pane.id}:draft`;
   const createDraftThreadForPane = useCallback<ThreadPaneComposerBridgeProps["onCreateDraftThread"]>(
     async (request) => {
       if (!isDraftPane) {

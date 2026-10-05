@@ -332,7 +332,10 @@ Work:
   hook/store that consumes workspace-stream events.
 - Keep same-thread duplicate panes sharing the resource event subscription and
   resource reducer state while retaining pane-local scroll/expanded-row state.
-- Keep composer drafts keyed by pane id for unsent draft state.
+- Keep composer drafts keyed by pane id for unsent draft state. New chat reuses
+  an existing draft pane across project selections, preserving text, attachments
+  and dock position. Only create a pane when no draft is open. This is per-tab
+  presentation state; existing native chats are unchanged.
 - Materialize draft panes by calling existing thread create APIs, then update the
   local pane target to `{ mode: "existing", threadId }`.
 - Route send, queue, stop, compact, approval decisions, read receipts, and older
