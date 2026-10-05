@@ -1,6 +1,6 @@
 import { chromium, expect, test, type BrowserContext, type CDPSession, type Worker } from "@playwright/test";
 import { createECDH } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -67,11 +67,17 @@ test("delivers a real provider Test push to the built worker in a disposable Chr
 
     cdp = await context.newCDPSession(page);
     let registrationId: string | undefined;
+    let version: { versionId: string; registrationId: string; runningStatus: string } | undefined;
     let workerErrorCount = 0;
     const displays: Array<{ origin: string; registrationId: string; tag: string; title?: string; body?: string }> = [];
     cdp.on("ServiceWorker.workerRegistrationUpdated", ({ registrations }) => {
       for (const registration of registrations) {
         if (!registration.isDeleted && registration.scopeURL === `${fixture!.baseUrl}/`) registrationId = registration.registrationId;
+      }
+    });
+    cdp.on("ServiceWorker.workerVersionUpdated", ({ versions }) => {
+      for (const current of versions) {
+        if (current.scriptURL === `${fixture!.baseUrl}/sw.js` && current.status === "activated") version = current;
       }
     });
     cdp.on("ServiceWorker.workerErrorReported", () => { workerErrorCount += 1; });
@@ -108,23 +114,48 @@ test("delivers a real provider Test push to the built worker in a disposable Chr
     // browser boundary; the gateway sends the encrypted message via FCM.
     await page.goto("about:blank");
     expect(context.pages().every((entry) => !entry.url().startsWith(fixture!.baseUrl))).toBe(true);
-    const sent = await gatewayJson<components["schemas"]["TestNotificationResponse"]>(
-      fixture.baseUrl, "/v1/notifications/test", "POST", 200,
-    );
-    expect({ configured: sent.configured, activeSubscriptions: sent.activeSubscriptionCount, enqueued: sent.enqueued, deliveries: sent.deliveryIds.length })
-      .toEqual({ configured: true, activeSubscriptions: 1, enqueued: true, deliveries: 1 });
+    const sendTest = async () => {
+      const sent = await gatewayJson<components["schemas"]["TestNotificationResponse"]>(
+        fixture!.baseUrl, "/v1/notifications/test", "POST", 200,
+      );
+      expect({ configured: sent.configured, activeSubscriptions: sent.activeSubscriptionCount, enqueued: sent.enqueued, deliveries: sent.deliveryIds.length })
+        .toEqual({ configured: true, activeSubscriptions: 1, enqueued: true, deliveries: 1 });
+      return sent.deliveryIds[0];
+    };
+    const warmDeliveryId = await sendTest();
     const payload = { kind: "test", title: "Kodex test notification", body: "Push notifications are working.", route: "/" };
-    await expect.poll(() => displays, { timeout: 45_000 }).toEqual([{
+    const expectedDisplay = {
       origin: `${fixture.baseUrl}/`, registrationId, tag: "kodex-test-notification", title: payload.title, body: payload.body,
-    }]);
+    };
+    await expect.poll(() => displays, { timeout: 45_000 }).toEqual([expectedDisplay]);
     expect(await worker.evaluate(() => Reflect.get(globalThis, "providerProofPush"))).toEqual({ trusted: true, payload });
+
+    await worker.evaluate(async () => {
+      const registration = Reflect.get(globalThis, "registration") as ServiceWorkerRegistration;
+      for (const notification of await registration.getNotifications()) notification.close();
+    });
+    await expect.poll(() => version?.registrationId).toBe(registrationId);
+    const coldVersionId = version!.versionId;
+    await cdp.send("ServiceWorker.stopWorker", { versionId: coldVersionId });
+    await expect.poll(() => ({ versionId: version?.versionId, state: version?.runningStatus }))
+      .toEqual({ versionId: coldVersionId, state: "stopped" });
+    // Do not read or execute worker code, navigate, or request a native start
+    // between this stopped witness and the real provider delivery below.
+    const coldDeliveryId = await sendTest();
+    expect(coldDeliveryId).not.toBe(warmDeliveryId);
+    await expect.poll(() => displays, { timeout: 45_000 }).toEqual([expectedDisplay, expectedDisplay]);
+    await expect.poll(() => ({ versionId: version?.versionId, state: version?.runningStatus }))
+      .toEqual({ versionId: coldVersionId, state: "running" });
     expect(workerErrorCount).toBe(0);
     await fixture.assertClean();
 
     // Test notifications intentionally do not refresh unread badges. This
     // proves provider delivery and browser display, not OS installation/clicks.
+    const evidencePath = testInfo.outputPath("native-pwa-provider-evidence.json");
+    await writeFile(evidencePath, JSON.stringify({ chromeVersion: context.browser()?.version(), providerOrigin, trustedWarmPush: true,
+      coldWake: { versionId: coldVersionId, before: "stopped", after: "running" }, displays }, null, 2));
     await testInfo.attach("native-pwa-provider-evidence", {
-      body: JSON.stringify({ chromeVersion: context.browser()?.version(), providerOrigin, trustedPush: true, displays }, null, 2),
+      path: evidencePath,
       contentType: "application/json",
     });
   } finally {
@@ -140,15 +171,23 @@ test("delivers a real provider Test push to the built worker in a disposable Chr
       expect(disabled.subscribed).toBe(false);
       if (subscriptionSaved) expect(disabled.subscription?.enabled).toBe(false);
     });
-    if (worker) await cleanup("unsubscribe browser and close notifications", async () => {
-      const result = await bounded(worker!.evaluate(async () => {
-        const registration = Reflect.get(globalThis, "registration") as ServiceWorkerRegistration;
-        const subscription = await registration.pushManager.getSubscription();
-        const unsubscribed = subscription ? await subscription.unsubscribe() : true;
-        for (const notification of await registration.getNotifications()) notification.close();
-        return { unsubscribed, remaining: (await registration.pushManager.getSubscription()) !== null };
-      }), 10_000, "Browser subscription cleanup timed out");
-      expect(result).toEqual({ unsubscribed: true, remaining: false });
+    if (context && fixture) await cleanup("unsubscribe browser and close notifications", async () => {
+      // The stopped worker's execution context is gone. Use a fresh client
+      // only after the delivery assertions, including when cold delivery fails.
+      const cleanupPage = await context!.newPage();
+      try {
+        await cleanupPage.goto(fixture!.baseUrl, { timeout: 10_000 });
+        const result = await bounded(cleanupPage.evaluate(async () => {
+          const registration = await navigator.serviceWorker.ready;
+          const subscription = await registration.pushManager.getSubscription();
+          const unsubscribed = subscription ? await subscription.unsubscribe() : true;
+          for (const notification of await registration.getNotifications()) notification.close();
+          return { unsubscribed, remaining: (await registration.pushManager.getSubscription()) !== null };
+        }), 10_000, "Browser subscription cleanup timed out");
+        expect(result).toEqual({ unsubscribed: true, remaining: false });
+      } finally {
+        await cleanupPage.close();
+      }
     });
     if (cdp) await cleanup("detach browser observer", () => cdp!.detach());
     if (fixture) await cleanup("close disposable gateway", () => fixture!.close());

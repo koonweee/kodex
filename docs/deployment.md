@@ -85,6 +85,8 @@ Preferences > Notifications reconciles the current browser subscription with gat
 
 Reconnection and returning to a tab refill notification status, including changes from another tab. Enable/Disable success is shown only while the current authoritative device status confirms it. Missing browser capabilities, registration failures and gateway errors remain visible; a failed status read is not treated as a disabled subscription.
 
+Browser subscription status does not confirm your device's OS notification settings. On macOS with Chrome 152 or newer, an installed Kodex PWA has its own OS notification permission. Check System Settings > Notifications > Kodex and its app-icon badge setting if alerts or Dock badges do not appear. A successful `setAppBadge()` call can leave the Dock badge invisible when those settings disallow it. See [Chrome's macOS notification guidance](https://developer.chrome.com/blog/notification-attribution-macos). Kodex’s Enabled status confirms the browser subscription; it does not establish that OS-level delivery is enabled.
+
 Push on phones and tablets requires a secure browser context. Localhost is accepted for development; remote access over a private network generally needs HTTPS termination. HTTPS does not make a public deployment safe—the gateway must remain private.
 
 ## Fresh launch verification

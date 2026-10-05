@@ -307,6 +307,9 @@ function NotificationsPreferencesPanel({
         </Text>
         <Badge data-tone={pushEnabled ? "success" : unavailable ? "neutral" : "info"}>{statusText}</Badge>
       </Group>
+      <Text c="dimmed" size="sm">
+        Your device’s notification settings also control alerts and app badges.
+      </Text>
 
       <Stack className="kodex-preferences-setting" gap={10}>
         {checking ? (
