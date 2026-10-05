@@ -12,6 +12,7 @@ export type LiveEventRouteHandlers = {
   applyAccountEvent: (event: EventEnvelope) => void;
   applyProjectEvent: (event: EventEnvelope) => void;
   applyThreadSettingsEvent: (event: EventEnvelope) => void;
+  applyThreadGoalEvent: (event: EventEnvelope) => void;
   applyAutomationStreamEvent: (event: EventEnvelope) => void;
   applyQueueEvent: (event: EventEnvelope) => void;
   applyThreadPinsEvent: (event: EventEnvelope) => void;
@@ -38,6 +39,9 @@ export function routeGlobalLiveEvent(event: EventEnvelope, handlers: LiveEventRo
   }
   if (event.kind === "thread.settings_updated" || event.kind === "thread_view.patch") {
     handlers.applyThreadSettingsEvent(event);
+  }
+  if (event.kind === "thread.goal_changed" || event.kind === "thread_view.patch") {
+    handlers.applyThreadGoalEvent(event);
   }
   if (event.kind === "account.updated" || event.kind === "account.login_completed") {
     handlers.applyAccountEvent(event);

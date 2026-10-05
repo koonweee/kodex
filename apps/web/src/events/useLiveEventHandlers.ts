@@ -6,6 +6,7 @@ import { applyAutomationRunEvent } from "../automations/runsCache";
 import { applyUnreadBadgeEvent } from "../notifications/unreadBadge";
 import { applyAccountEvent } from "../account/cache";
 import { applyThreadSettingsEvent } from "../composer/threadSettingsCache";
+import { applyThreadGoalEvent } from "../goals/goalCache";
 import type { EventEnvelope, RateLimitSnapshot } from "../api/client";
 import { applyNativeConfigEvent } from "../api/nativeConfigCache";
 import { queryKeys } from "../api/queryKeys";
@@ -69,6 +70,7 @@ export function useLiveEventHandlers({
       applyThreadPinsEvent: (event) => applyThreadPinsEvent(queryClient, event),
       applyProjectEvent: (event) => applyProjectEvent(queryClient, event),
       applyThreadSettingsEvent: (event) => applyThreadSettingsEvent(queryClient, event),
+      applyThreadGoalEvent: (event) => applyThreadGoalEvent(queryClient, event),
       applyAutomationStreamEvent,
       applyThreadUpsert,
       applyThreadMetadataEvent,

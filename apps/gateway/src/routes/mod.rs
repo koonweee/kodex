@@ -41,6 +41,8 @@ mod native_skill_tests;
 #[cfg(test)]
 mod native_subagent_tests;
 #[cfg(test)]
+mod native_thread_goal_tests;
+#[cfg(test)]
 mod native_thread_settings_tests;
 pub mod notifications;
 pub mod permission_profiles;
@@ -52,6 +54,7 @@ pub mod self_control;
 pub mod skills;
 pub mod subagents;
 pub mod terminals;
+pub mod thread_goals;
 pub mod thread_presence;
 pub mod thread_settings;
 pub mod threads;

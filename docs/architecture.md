@@ -76,6 +76,9 @@ Control activates only explicitly named targets and queues once, honoring native
 
 Native client-message IDs are opaque correlation data, preserved without display trimming in canonical user snapshots and live events. A browser generates one ID before each explicit Send attempt; gateway-originated submissions receive one when omitted. Gateway pending rows reconcile by turn and client ID, including native receipts preceding RPC acknowledgement. Browser optimistic rows reconcile by their submitted client ID. Foreign or ID-less equal-text messages do not consume pending input; canonical native rows remain keyed by native item ID, including repeated client IDs. No idempotency or committed delivery is inferred from an RPC acknowledgement.
 
+Thread goals are native app-server state. The gateway forwards typed goal reads and sparse mutations without a goal table or continuation scheduler. Native `thread/goal/updated` and `thread/goal/cleared` notifications produce `thread.goal_changed` operational refill markers, including for model-originated changes. Browser goal queries cancel stale in-flight reads before refilling and recover on stream open and foreground checks; markers do not supply transcript rows or depend on transcript high-water cursors. Only unsaved modal drafts are browser-local. Goal mutation acknowledgments are followed by a native reread rather than installed over newer notifications. Objective and budget edits omit unchanged fields; explicit pause/resume changes status alone. The editor preserves drafts and asks for review when an edited field differs from the latest observed native value. The pinned goal API has no conditional-write version, so writes retain native last-writer semantics rather than adding a gateway revision store.
+
+
 The generated OpenAPI document is the API contract. With the gateway running, use:
 
 - `GET /docs` for interactive local API documentation.

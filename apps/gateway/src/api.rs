@@ -24,14 +24,16 @@ use crate::{
         PluginDetail, PluginInstallResponse, PluginInterface, PluginListResponse,
         PluginMarketplaceEntry, PluginReadResponse, PluginSummary, RateLimitsResponse,
         RawAppServerResponse, SkillErrorInfo, SkillInterface, SkillMetadata, SkillsCatalogResponse,
-        ThreadCommandResponse, ThreadItemSnapshot, ThreadListResponse, ThreadLiveState,
-        ThreadSettingsUpdateRequest, ThreadSubagentListResponse, ThreadSubagentSummary,
-        ThreadTimelineFileChangeEntry, ThreadTimelineRow, ThreadTimelineSnapshot,
-        ThreadTimelineSnapshotItem, ThreadTimelineWindowPage, ThreadTimelineWorkDetailRow,
-        ThreadTimelineWorkSummary, ThreadTurnSnapshot, ThreadViewResponse, ThreadViewThreadSummary,
-        TimelineFileAttachment, TimelineItemDeltaPayload, TimelineItemUpsertPayload,
-        TimelineSkillMention, TimelineThreadMetadataPayload, TimelineThreadStatusPayload,
-        TimelineTurnUpsertPayload, TimelineUpdateSource, UserInput,
+        ThreadCommandResponse, ThreadGoal, ThreadGoalClearResponse, ThreadGoalGetResponse,
+        ThreadGoalSetRequest, ThreadGoalSetResponse, ThreadGoalStatus, ThreadItemSnapshot,
+        ThreadListResponse, ThreadLiveState, ThreadSettingsUpdateRequest,
+        ThreadSubagentListResponse, ThreadSubagentSummary, ThreadTimelineFileChangeEntry,
+        ThreadTimelineRow, ThreadTimelineSnapshot, ThreadTimelineSnapshotItem,
+        ThreadTimelineWindowPage, ThreadTimelineWorkDetailRow, ThreadTimelineWorkSummary,
+        ThreadTurnSnapshot, ThreadViewResponse, ThreadViewThreadSummary, TimelineFileAttachment,
+        TimelineItemDeltaPayload, TimelineItemUpsertPayload, TimelineSkillMention,
+        TimelineThreadMetadataPayload, TimelineThreadStatusPayload, TimelineTurnUpsertPayload,
+        TimelineUpdateSource, UserInput,
     },
     config::Config,
     error::{ApiErrorBody, NativeConfigWriteErrorCode, NativeConfigWriteErrorData},
@@ -102,6 +104,7 @@ use crate::{
         skills::{SkillIconQuery, SkillsQuery},
         subagents::ThreadSubagentListQuery,
         terminals::TerminalDeleteResponse,
+        thread_goals::ThreadGoalChanged,
         thread_presence::{ThreadViewPresenceRequest, ThreadViewPresenceSnapshotRequest},
         thread_settings::{
             ThreadSettingsResponse, ThreadSettingsUpdateResponse, ThreadSettingsUpdated,
@@ -232,6 +235,9 @@ impl AppState {
         crate::routes::threads::attach_thread,
         crate::routes::threads::rename_thread,
         crate::routes::threads::update_thread_project,
+        crate::routes::thread_goals::get_thread_goal,
+        crate::routes::thread_goals::set_thread_goal,
+        crate::routes::thread_goals::clear_thread_goal,
         crate::routes::thread_settings::get_thread_settings,
         crate::routes::thread_settings::update_thread_settings,
         crate::routes::threads::update_thread_notifications,
@@ -414,6 +420,13 @@ impl AppState {
         CreateChatThreadRequest,
         RenameThreadRequest,
         RenameThreadResponse,
+        ThreadGoal,
+        ThreadGoalStatus,
+        ThreadGoalGetResponse,
+        ThreadGoalSetRequest,
+        ThreadGoalSetResponse,
+        ThreadGoalClearResponse,
+        ThreadGoalChanged,
         ThreadSettingsUpdateRequest,
         ThreadSettingsUpdateResponse,
         ThreadSettingsResponse,
@@ -602,6 +615,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::subagents::router())
         .merge(routes::pins::router())
         .merge(routes::thread_settings::router())
+        .merge(routes::thread_goals::router())
         .merge(routes::turns::router())
         .merge(routes::app_surfaces::router())
         .merge(crate::queue::router())

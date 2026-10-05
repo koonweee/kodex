@@ -38,6 +38,7 @@ test("device-code sign-in and native account changes converge across two tabs", 
       const request = route.request();
       const url = new URL(request.url());
       const key = `${request.method()} ${url.pathname}`;
+      if (key.startsWith("GET /v1/threads/") && key.endsWith("/goal")) return route.fulfill({ json: { goal: null } });
       if (key === "GET /v1/events") {
         await route.continue({ url: `http://127.0.0.1:${address.port}${url.pathname}${url.search}` });
         return;

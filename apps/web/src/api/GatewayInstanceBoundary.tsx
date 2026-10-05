@@ -12,6 +12,7 @@ import { refreshAccountQueries } from "../account/cache";
 import { refreshApprovalSnapshot } from "../approvals/cache";
 import { refreshProjectState } from "../projects/cache";
 import { refreshThreadSettings } from "../composer/threadSettingsCache";
+import { refreshThreadGoals } from "../goals/goalCache";
 import { PwaLifecycle } from "../pwa/PwaLifecycle";
 import { currentKodexRoute, isThemeWorkbenchRoute, replaceKodexRoute } from "../shell/browserRouting";
 import { getCapabilities, getProject, getThreadDetail } from "./client";
@@ -89,6 +90,7 @@ function GatewayInstanceGate({ children, queryClient }: GatewayInstanceBoundaryP
           void refreshApprovalSnapshot(queryClient);
           void refreshProjectState(queryClient);
           void refreshThreadSettings(queryClient);
+          void refreshThreadGoals(queryClient);
           void refreshNativeConfig(queryClient);
           void refreshAppSurfaceSessions(queryClient);
           void refreshThreadSubagents(queryClient);
@@ -119,6 +121,7 @@ function GatewayInstanceGate({ children, queryClient }: GatewayInstanceBoundaryP
       void refreshApprovalSnapshot(queryClient);
       void refreshProjectState(queryClient);
       void refreshThreadSettings(queryClient);
+      void refreshThreadGoals(queryClient);
       void refreshNativeConfig(queryClient);
       void refreshAppSurfaceSessions(queryClient);
       void refreshThreadSubagents(queryClient);

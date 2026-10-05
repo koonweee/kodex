@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from "react";
 
 import type { SkillMetadata } from "../api/client";
+import type { GoalControls } from "../goals/GoalControls";
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 import type { ComposerPanelProps } from "./ComposerPanel";
 import { InlineComposerPanel } from "./InlineComposerPanel";
@@ -20,6 +21,7 @@ const MOBILE_COMPOSER_TEXT = {
 };
 
 type MobileComposerPanelProps = ComposerPanelProps & {
+  goalControls?: GoalControls;
   queuePanel?: ReactNode;
   canSubmitComposer: boolean;
   draftState: ComposerDraftState;

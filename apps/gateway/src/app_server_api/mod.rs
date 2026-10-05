@@ -8,6 +8,7 @@ use crate::error::{ApiError, ApiResult};
 
 mod client;
 mod config;
+mod goals;
 mod items;
 mod mcp_apps;
 #[cfg(test)]
@@ -27,6 +28,7 @@ pub(crate) use client::{
     is_thread_read_missing_error,
 };
 pub use config::*;
+pub use goals::*;
 pub use items::{ThreadItemEntry, ThreadItemsListPage};
 pub(crate) use mcp_apps::mcp_result_text;
 pub use mcp_apps::{McpResourceReadRequest, McpResourceReadTarget, McpServerConnectionStatus};

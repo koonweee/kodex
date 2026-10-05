@@ -26,6 +26,9 @@ import { NativeQueuePanel } from "../queuedInputs/NativeQueuePanel";
 import { useComposerDraftState, type ComposerDraftStore } from "./useComposerDraftState";
 import { useSkillCatalog } from "./useSkillCatalog";
 import { AssistantSelectionAction } from "../timeline/AssistantSelectionAction";
+import { useThreadGoal } from "../goals/useThreadGoal";
+import { GoalModal } from "../goals/GoalModal";
+import type { GoalControls } from "../goals/GoalControls";
 
 export type ComposerDraftControls = {
   clearText: () => void;
@@ -45,6 +48,7 @@ export type ComposerPanelProps = {
   composerSettingsDisabled?: boolean;
   composerSettingsError: string | null;
   composerResetToken: number;
+  goalThreadId?: string | null;
   queueThreadId?: string | null;
   queueDialogActive?: boolean;
   composerDraftKey?: string;
@@ -96,6 +100,7 @@ export function ComposerPanel({
   composerSettingsDisabled,
   composerSettingsError,
   composerResetToken,
+  goalThreadId = null,
   queueThreadId,
   queueDialogActive = true,
   composerDraftKey,
@@ -131,6 +136,26 @@ export function ComposerPanel({
   const isNarrowComposer = useIsNarrowComposer();
   const inputCapabilities = useInputCapabilities();
   const isMobileComposer = isNarrowComposer && inputCapabilities.hasTouchInput;
+  const threadGoal = useThreadGoal(goalThreadId);
+  const currentGoalThreadId = useRef(goalThreadId);
+  currentGoalThreadId.current = goalThreadId;
+  const [goalEditorThreadId, setGoalEditorThreadId] = useState<string | null>(null);
+  useEffect(() => { setGoalEditorThreadId(null); }, [goalThreadId]);
+  const goalControls: GoalControls | undefined = goalThreadId ? {
+    goal: threadGoal.goal,
+    ready: threadGoal.ready,
+    pending: threadGoal.pending,
+    error: threadGoal.error,
+    compact: isNarrowComposer,
+    onOpen: () => { threadGoal.resetError(); setGoalEditorThreadId(goalThreadId); },
+    onReload: threadGoal.reload,
+    onToggleStatus: () => {
+      if (!threadGoal.goal || threadGoal.pending || !threadGoal.ready) return;
+      void threadGoal.update({ status: threadGoal.goal.status === "active" ? "paused" : "active" }).catch(() => {
+        if (currentGoalThreadId.current === goalThreadId) setGoalEditorThreadId(goalThreadId);
+      });
+    },
+  } : undefined;
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const internalComposerShellRef = useRef<HTMLDivElement | null>(null);
   const isComposerBusy = isComposerSubmitting;
@@ -307,6 +332,7 @@ export function ComposerPanel({
     onRestoreText={(text) => draftState.updateComposerText(text, null)} /> : null;
 
   const representationProps = {
+    goalControls,
     queuePanel,
     activeSelectedTurnId,
     attachmentInputRef,
@@ -369,6 +395,11 @@ export function ComposerPanel({
   ) : (
     <InlineComposerPanel {...representationProps} />
   )}
+    {goalThreadId && goalEditorThreadId === goalThreadId ? (
+      <GoalModal key={goalThreadId} goal={threadGoal.goal} pending={threadGoal.pending} error={threadGoal.error}
+        ready={threadGoal.ready} onReload={threadGoal.reload} onClose={() => setGoalEditorThreadId((current) => current === goalThreadId ? null : current)}
+        onUpdate={threadGoal.update} onClear={threadGoal.clear} />
+    ) : null}
   </>;
 }
 

@@ -128,6 +128,7 @@ function modelButtonInActiveThreadPane(page: Page, name: RegExp) {
 
 async function selectModelInActiveThreadPane(page: Page, modelName: string) {
   await activeThreadPane(page).getByRole("button", { name: /model:/i }).click();
+  await page.getByRole("menuitem", { name: "Model", exact: true }).click();
   await page.getByRole("menuitem", { name: modelName, exact: true }).click();
 }
 
@@ -328,6 +329,7 @@ test("renders app surface as a workspace pane and acknowledges repeated frame me
     const request = route.request();
     const url = new URL(request.url());
     const key = `${request.method()} ${url.pathname}`;
+    if (key.startsWith("GET /v1/threads/") && key.endsWith("/goal")) return route.fulfill({ json: { goal: null } });
 
     if (key === "GET /v1/events" && request.headers().accept?.includes("text/event-stream")) {
       await route.fulfill({ status: 200, headers: { "Content-Type": "text/event-stream" }, body: "" });
@@ -460,6 +462,7 @@ test("keeps long timeline content inside the thread viewer", async ({ page }) =>
     const request = route.request();
     const url = new URL(request.url());
     const key = `${request.method()} ${url.pathname}`;
+    if (key.startsWith("GET /v1/threads/") && key.endsWith("/goal")) return route.fulfill({ json: { goal: null } });
 
     if (key === "GET /v1/events" && request.headers().accept?.includes("text/event-stream")) {
       await route.fulfill({ status: 200, headers: { "Content-Type": "text/event-stream" }, body: "" });
@@ -657,6 +660,7 @@ test("keeps followed live output pinned to the scroll parent bottom", async ({ p
       const request = route.request();
       const url = new URL(request.url());
       const key = `${request.method()} ${url.pathname}`;
+      if (key.startsWith("GET /v1/threads/") && key.endsWith("/goal")) return route.fulfill({ json: { goal: null } });
       if (key === "GET /v1/events" && request.headers().accept?.includes("text/event-stream")) {
         await route.continue({ url: `http://127.0.0.1:${address.port}${url.pathname}${url.search}` });
         return;
@@ -833,6 +837,7 @@ test("keeps large file changes and following skill messages from overlapping", a
     const request = route.request();
     const url = new URL(request.url());
     const key = `${request.method()} ${url.pathname}`;
+    if (key.startsWith("GET /v1/threads/") && key.endsWith("/goal")) return route.fulfill({ json: { goal: null } });
 
     if (key === "GET /v1/events" && request.headers().accept?.includes("text/event-stream")) {
       const event = {
@@ -904,6 +909,7 @@ test("lets thread titles use the expanded sidebar width before truncating", asyn
     const request = route.request();
     const url = new URL(request.url());
     const key = `${request.method()} ${url.pathname}`;
+    if (key.startsWith("GET /v1/threads/") && key.endsWith("/goal")) return route.fulfill({ json: { goal: null } });
 
     if (key === "GET /v1/events" && request.headers().accept?.includes("text/event-stream")) {
       await route.fulfill({ status: 200, headers: { "Content-Type": "text/event-stream" }, body: "" });
@@ -979,6 +985,7 @@ test("resolves a pending approval", async ({ page }) => {
     const request = route.request();
     const url = new URL(request.url());
     const key = `${request.method()} ${url.pathname}`;
+    if (key.startsWith("GET /v1/threads/") && key.endsWith("/goal")) return route.fulfill({ json: { goal: null } });
 
     if (key === "GET /v1/events" && request.headers().accept?.includes("text/event-stream")) {
       await route.fulfill({
@@ -1063,6 +1070,7 @@ test("restores selected thread model settings when switching threads", async ({ 
     const method = request.method();
     const url = new URL(request.url());
     const key = `${method} ${url.pathname}`;
+    if (key.startsWith("GET /v1/threads/") && key.endsWith("/goal")) return route.fulfill({ json: { goal: null } });
 
     if (key === "GET /v1/events" && request.headers().accept?.includes("text/event-stream")) {
       await route.fulfill({
@@ -1369,6 +1377,7 @@ test("composer clears native fast service tier without replaying settings on sen
     const request = route.request();
     const url = new URL(request.url());
     const key = `${request.method()} ${url.pathname}`;
+    if (key.startsWith("GET /v1/threads/") && key.endsWith("/goal")) return route.fulfill({ json: { goal: null } });
 
     if (key === "GET /v1/events" && request.headers().accept?.includes("text/event-stream")) {
       await route.fulfill({ status: 200, headers: { "Content-Type": "text/event-stream" }, body: "" });
@@ -1483,6 +1492,7 @@ async function mockGateway(page: Page) {
     const request = route.request();
     const url = new URL(request.url());
     const key = `${request.method()} ${url.pathname}`;
+    if (key.startsWith("GET /v1/threads/") && key.endsWith("/goal")) return route.fulfill({ json: { goal: null } });
 
     if (key === "GET /v1/events" && request.headers().accept?.includes("text/event-stream")) {
       await route.fulfill({

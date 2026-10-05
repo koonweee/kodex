@@ -57,6 +57,8 @@ export type ThreadRead = components["schemas"]["ThreadRead"];
 export type MarkThreadSeenRequest = components["schemas"]["MarkThreadSeenRequest"];
 export type ThreadSettingsUpdateRequest = components["schemas"]["ThreadSettingsUpdateRequest"];
 export type ThreadSettingsResponse = components["schemas"]["ThreadSettingsResponse"];
+export type ThreadGoal = components["schemas"]["ThreadGoal"];
+export type ThreadGoalUpdateRequest = components["schemas"]["ThreadGoalSetRequest"];
 export type ThreadNotificationSettingsResponse = components["schemas"]["ThreadNotificationSettingsResponse"];
 export type ThreadViewPresenceSnapshotRequest = components["schemas"]["ThreadViewPresenceSnapshotRequest"];
 export type ThreadListResponse = components["schemas"]["ThreadListResponse"];
@@ -314,6 +316,24 @@ export async function setThreadNotificationsEnabled(
 export async function getThreadSettings(threadId: string, signal?: AbortSignal): Promise<ThreadSettingsResponse> {
   return unwrap(api.GET("/v1/threads/{threadId}/settings", {
     params: { path: { threadId } }, signal, cache: "no-store",
+  }));
+}
+
+export async function getThreadGoal(threadId: string, signal?: AbortSignal) {
+  return unwrap(api.GET("/v1/threads/{threadId}/goal", {
+    params: { path: { threadId } }, signal, cache: "no-store",
+  }));
+}
+
+export async function updateThreadGoal(threadId: string, input: ThreadGoalUpdateRequest) {
+  return unwrap(api.PATCH("/v1/threads/{threadId}/goal", {
+    params: { path: { threadId } }, body: input,
+  }));
+}
+
+export async function clearThreadGoal(threadId: string) {
+  return unwrap(api.DELETE("/v1/threads/{threadId}/goal", {
+    params: { path: { threadId } },
   }));
 }
 

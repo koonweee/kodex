@@ -1563,6 +1563,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/threads/{threadId}/goal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_thread_goal"];
+        put?: never;
+        post?: never;
+        delete: operations["clear_thread_goal"];
+        options?: never;
+        head?: never;
+        patch: operations["set_thread_goal"];
+        trace?: never;
+    };
     "/v1/threads/{threadId}/input": {
         parameters: {
             query?: never;
@@ -3256,6 +3272,42 @@ export interface components {
             disposition: components["schemas"]["ThreadCompactDisposition"];
             rawPayload?: unknown;
         };
+        ThreadGoal: {
+            /** Format: int64 */
+            createdAt: number;
+            objective: string;
+            status: components["schemas"]["ThreadGoalStatus"];
+            threadId: string;
+            /** Format: int64 */
+            timeUsedSeconds: number;
+            /** Format: int64 */
+            tokenBudget: number | null;
+            /** Format: int64 */
+            tokensUsed: number;
+            /** Format: int64 */
+            updatedAt: number;
+        };
+        /** @description Refill the authoritative native goal; this marker carries no goal snapshot. */
+        ThreadGoalChanged: {
+            threadId: string;
+        };
+        ThreadGoalClearResponse: {
+            cleared: boolean;
+        };
+        ThreadGoalGetResponse: {
+            goal: null | components["schemas"]["ThreadGoal"];
+        };
+        ThreadGoalSetRequest: {
+            objective?: string | null;
+            status?: null | components["schemas"]["ThreadGoalStatus"];
+            /** Format: int64 */
+            tokenBudget?: number | null;
+        };
+        ThreadGoalSetResponse: {
+            goal: components["schemas"]["ThreadGoal"];
+        };
+        /** @enum {string} */
+        ThreadGoalStatus: "active" | "paused" | "blocked" | "usageLimited" | "budgetLimited" | "complete";
         /** @enum {string} */
         ThreadInterruptCurrentDisposition: "interrupted" | "idle";
         ThreadInterruptCurrentResponse: {
@@ -6272,6 +6324,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadCommandResponse"];
+                };
+            };
+        };
+    };
+    get_thread_goal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadGoalGetResponse"];
+                };
+            };
+        };
+    };
+    clear_thread_goal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadGoalClearResponse"];
+                };
+            };
+        };
+    };
+    set_thread_goal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadGoalSetRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadGoalSetResponse"];
                 };
             };
         };

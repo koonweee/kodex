@@ -30,6 +30,7 @@ const GATEWAY_SSE_EVENT_TYPES = [
   "project.changed",
   "thread.project_updated",
   "thread.settings_updated",
+  "thread.goal_changed",
   "account.rate_limits_updated",
   "automation.item_deleted",
   "automation.item_upsert",

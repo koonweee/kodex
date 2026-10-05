@@ -311,11 +311,11 @@ describe("event stream client", () => {
     client.close();
   });
 
-  it("receives the native thread settings refill marker as a named SSE event", () => {
+  it.each(["thread.settings_updated", "thread.goal_changed"])("receives %s as a named SSE refill event", (kind) => {
     const received: EventEnvelope[] = [];
     const client = createEventStreamClient({ EventSourceCtor: FakeEventSource, onEvent: (event) => received.push(event) });
     client.connect();
-    const marker = { id: "settings", seq: 8, kind: "thread.settings_updated", threadId: "thread-1", payload: { threadId: "thread-1" }, receivedAt: "2026-10-04T00:00:00Z" };
+    const marker = { id: "refill", seq: 8, kind, threadId: "thread-1", payload: { threadId: "thread-1" }, receivedAt: "2026-10-04T00:00:00Z" };
     FakeEventSource.instances[0].emitNamed(marker.kind, marker);
     expect(received).toEqual([marker]);
     client.close();

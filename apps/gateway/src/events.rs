@@ -304,6 +304,10 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
                 let _ = state.events.send(event);
                 emitted = true;
             }
+            if let Some(event) = normalized_thread_goal_event(state, &method, &metadata).await? {
+                let _ = state.events.send(event);
+                emitted = true;
+            }
             let normalized = normalized_timeline_events(
                 state,
                 &method,
@@ -1153,6 +1157,34 @@ async fn normalized_account_event(
             kind: kind.to_string(),
             codex_method: Some(method.to_string()),
             payload,
+        })
+        .await
+        .map(Some)
+}
+
+async fn normalized_thread_goal_event(
+    state: &AppState,
+    method: &str,
+    metadata: &EventMetadata,
+) -> ApiResult<Option<EventEnvelope>> {
+    if !matches!(method, "thread/goal/updated" | "thread/goal/cleared") {
+        return Ok(None);
+    }
+    let Some(thread_id) = metadata.thread_id.clone() else {
+        return Ok(None);
+    };
+    state
+        .store
+        .append_event(NewEvent {
+            project_id: None,
+            thread_id: Some(thread_id.clone()),
+            turn_id: None,
+            item_id: None,
+            kind: crate::routes::thread_goals::THREAD_GOAL_CHANGED_EVENT.to_string(),
+            codex_method: Some(method.to_string()),
+            payload: serde_json::to_value(crate::routes::thread_goals::ThreadGoalChanged {
+                thread_id,
+            })?,
         })
         .await
         .map(Some)

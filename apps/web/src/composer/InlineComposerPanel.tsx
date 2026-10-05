@@ -7,6 +7,7 @@ import type { SkillMetadata } from "../api/client";
 import { AttachmentTray } from "./AttachmentTray";
 import { ComposerAnnotations } from "./ComposerAnnotations";
 import type { ComposerPanelProps } from "./ComposerPanel";
+import { GoalBar, type GoalControls } from "../goals/GoalControls";
 import { ComposerToolbar } from "./ComposerToolbar";
 import { SlashCommandPopup } from "./SlashCommandPopup";
 import { SkillMentionPopup } from "./SkillMentionPopup";
@@ -25,6 +26,7 @@ const COMPOSER_TEXT = {
 };
 
 type InlineComposerPanelProps = ComposerPanelProps & {
+  goalControls?: GoalControls;
   queuePanel?: ReactNode;
   canSubmitComposer: boolean;
   density?: "desktop" | "mobile";
@@ -63,6 +65,7 @@ export function InlineComposerPanel({
   expanded,
   draftProjectSelector,
   draftState,
+  goalControls,
   filteredSkills,
   filteredSlashCommands,
   handleTextareaKeyDown,
@@ -146,6 +149,7 @@ export function InlineComposerPanel({
         </Box>
       ) : null}
       {expanded ? null : queuePanel}
+      {goalControls && !goalControls.compact ? <GoalBar controls={goalControls} /> : null}
       <Box
         component="form"
         id={formId}
@@ -236,6 +240,7 @@ export function InlineComposerPanel({
         ) : null}
         {expanded && (skillPopupOpen || slashPopupOpen) ? null : (
           <ComposerToolbar
+            goalControls={goalControls}
             formId={formId}
             attachmentInputRef={attachmentInputRef}
             canSubmitComposer={canSubmitComposer}

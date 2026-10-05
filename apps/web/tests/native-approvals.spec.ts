@@ -46,6 +46,7 @@ test("two tabs converge from native approval snapshots after responding, missed 
       const request = route.request();
       const url = new URL(request.url());
       const key = `${request.method()} ${url.pathname}`;
+      if (key.startsWith("GET /v1/threads/") && key.endsWith("/goal")) return route.fulfill({ json: { goal: null } });
       const client = clients.get(request.frame().page()) ?? "";
       if (key === "GET /v1/events") {
         url.searchParams.set("client", client);

@@ -1,9 +1,12 @@
 import type { BrowserContext, Page, Route } from "@playwright/test";
 import { createServer, type ServerResponse } from "node:http";
 
+import type { components } from "../src/api/generated/schema";
+
 import type { AppSurfaceSession, Automation, AutomationRun, Capabilities, EventEnvelope, MarkThreadSeenRequest, QueuedInput, QueueTransfer, ThreadRead, ThreadSettingsResponse, UnreadBadgeResponse, ThreadSettingsUpdateRequest, ThreadViewPatch, ThreadViewResponse } from "../src/api/client";
 
 export async function nativeSettingsFixture(context: BrowserContext) {
+  let goal: components["schemas"]["ThreadGoal"] | null = null;
   const settings: ThreadSettingsResponse = { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null };
   const detail: ThreadViewResponse = {
     thread: { pinned: false, parentThreadId: null, canAcceptDirectInput: null, id: "settings-chat", name: "Native settings chat", projectId: null, cwd: "/execution/settings", status: "idle", createdAt: 0, updatedAt: 0, notificationsEnabled: true, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: true, unreadCompletedAgentTurn: false },
@@ -129,6 +132,24 @@ export async function nativeSettingsFixture(context: BrowserContext) {
       return respond(route, read, 200, `seen:${client}`);
     }
     if (key === "POST /v1/threads/settings-chat/attach") return respond(route, detail, 200, `snapshot:${client}`);
+    if (key === "GET /v1/threads/settings-chat/goal") return respond(route, { goal }, 200, `goal:${client}`);
+    if (key === "PATCH /v1/threads/settings-chat/goal") {
+      const update = body as components["schemas"]["ThreadGoalSetRequest"];
+      goal = { threadId: detail.thread.id, objective: "", status: "active", tokenBudget: null,
+        tokensUsed: 0, timeUsedSeconds: 0, createdAt: 0, updatedAt: 0, ...goal };
+      if (update.objective != null) goal.objective = update.objective;
+      if (update.status != null) goal.status = update.status;
+      if ("tokenBudget" in update) goal.tokenBudget = update.tokenBudget ?? null;
+      emit("thread.goal_changed", { threadId: detail.thread.id });
+      return respond(route, { goal });
+    }
+    if (key === "DELETE /v1/threads/settings-chat/goal") {
+      const cleared = goal !== null;
+      goal = null;
+      emit("thread.goal_changed", { threadId: detail.thread.id });
+      return respond(route, { cleared });
+    }
+    if (request.method() === "GET" && /^\/v1\/threads\/[^/]+\/goal$/.test(url.pathname)) return respond(route, { goal: null });
     if (key === "GET /v1/threads/settings-chat/settings") return respond(route, settings, 200, `settings:${client}`);
     if (key === "PATCH /v1/threads/settings-chat/settings") {
       pending.push(body as ThreadSettingsUpdateRequest);
@@ -217,6 +238,12 @@ export async function nativeSettingsFixture(context: BrowserContext) {
   });
   return {
     settings, requests, pending, connections, unexpected, errors, settingsChanged,
+    get goal() { return goal; },
+    setGoal(value: components["schemas"]["ThreadGoal"] | null, client?: string) {
+      goal = value;
+      emit("thread.goal_changed", { threadId: detail.thread.id }, client);
+    },
+    goalChanged(client?: string) { emit("thread.goal_changed", { threadId: detail.thread.id }, client); },
     detail, badge, queuedInputs, transfers, deliveredTransfers, automations, automationRuns,
     appSurfaceChanged(kind: "app_surface.session_upserted" | "app_surface.session_archived", session: AppSurfaceSession, client?: string) { emit(kind, session, client); },
     automationRunChanged(automationId: string, client?: string) { emit("automation.run_updated", { automationId }, client); },
@@ -259,10 +286,10 @@ export async function nativeSettingsFixture(context: BrowserContext) {
       Object.assign(settings, update);
       settingsChanged(client);
     },
-    holdNext(client: string, kind: "settings" | "snapshot" | "seen" | "badge" | "queue" | "runs" = "settings", label = "") { holds.set(`${kind}:${client}`, `${kind}:${client}:${label}`); },
-    isHeld(client: string, kind: "settings" | "snapshot" | "seen" | "badge" | "queue" | "runs" = "settings", label = "") { return held.has(`${kind}:${client}:${label}`); },
-    wasAborted(client: string, kind: "settings" | "snapshot" | "seen" | "badge" | "queue" | "runs" = "settings", label = "") { return held.get(`${kind}:${client}:${label}`)?.aborted() ?? false; },
-    async release(client: string, kind: "settings" | "snapshot" | "seen" | "badge" | "queue" | "runs" = "settings", label = "") {
+    holdNext(client: string, kind: "settings" | "snapshot" | "seen" | "badge" | "queue" | "runs" | "goal" = "settings", label = "") { holds.set(`${kind}:${client}`, `${kind}:${client}:${label}`); },
+    isHeld(client: string, kind: "settings" | "snapshot" | "seen" | "badge" | "queue" | "runs" | "goal" = "settings", label = "") { return held.has(`${kind}:${client}:${label}`); },
+    wasAborted(client: string, kind: "settings" | "snapshot" | "seen" | "badge" | "queue" | "runs" | "goal" = "settings", label = "") { return held.get(`${kind}:${client}:${label}`)?.aborted() ?? false; },
+    async release(client: string, kind: "settings" | "snapshot" | "seen" | "badge" | "queue" | "runs" | "goal" = "settings", label = "") {
       const key = `${kind}:${client}:${label}`;
       const reply = held.get(key);
       if (!reply) throw new Error(`No held ${kind} read for ${client}`);

@@ -247,6 +247,45 @@ mod tests {
     }
 
     #[test]
+    fn native_goal_requests_and_model_notifications_match_pinned_contract() {
+        for (method, params) in [
+            ("thread/goal/get", json!({"threadId":"thread-1"})),
+            ("thread/goal/clear", json!({"threadId":"thread-1"})),
+            (
+                "thread/goal/set",
+                json!({"threadId":"thread-1","objective":"Finish the feature"}),
+            ),
+            (
+                "thread/goal/set",
+                json!({"threadId":"thread-1","objective":null,"status":null,"tokenBudget":null}),
+            ),
+        ] {
+            validate_client_request_params(method, params).unwrap();
+        }
+        for status in [
+            "active",
+            "paused",
+            "blocked",
+            "usageLimited",
+            "budgetLimited",
+            "complete",
+        ] {
+            validate_server_notification(&json!({"jsonrpc":"2.0","method":"thread/goal/updated","params":{
+                "threadId":"thread-1","turnId":"turn-model","goal":{
+                    "threadId":"thread-1","objective":"Finish the feature","status":status,
+                    "tokenBudget":null,"tokensUsed":123,"timeUsedSeconds":45,"createdAt":1,"updatedAt":2
+                }
+            }})).unwrap();
+        }
+        validate_server_notification(&json!({"jsonrpc":"2.0","method":"thread/goal/cleared","params":{"threadId":"thread-1"}})).unwrap();
+        assert!(validate_client_request_params(
+            "thread/goal/set",
+            json!({"threadId":"thread-1","status":"stopped"})
+        )
+        .is_err());
+    }
+
+    #[test]
     fn native_settings_and_permissions_requests_are_supported() {
         validate_client_request(&client_request_message(
             1,

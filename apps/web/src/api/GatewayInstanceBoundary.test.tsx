@@ -384,6 +384,8 @@ describe("gateway instance bootstrap", () => {
   it.each([
     { kind: "thread", queryKey: queryKeys.threadSettings("native-chat"), trigger: "stream open" },
     { kind: "thread", queryKey: queryKeys.threadSettings("native-chat"), trigger: "foreground" },
+    { kind: "goal", queryKey: queryKeys.threadGoal("native-chat"), trigger: "stream open" },
+    { kind: "goal", queryKey: queryKeys.threadGoal("native-chat"), trigger: "foreground" },
     { kind: "native config", queryKey: queryKeys.composerSettings(null), trigger: "stream open" },
     { kind: "native config", queryKey: queryKeys.mcpConfiguredServers, trigger: "foreground" },
     { kind: "native subagents", queryKey: queryKeys.threadSubagents("ancestor"), trigger: "stream open" },

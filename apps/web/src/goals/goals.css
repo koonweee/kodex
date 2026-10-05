@@ -1,0 +1,51 @@
+.kodex-goal-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  border: 1px solid var(--kodex-border-subtle);
+  border-radius: var(--kodex-radius-composer);
+  color: var(--kodex-text-secondary);
+  background: var(--kodex-bg-raised);
+}
+
+.kodex-goal-bar > svg {
+  flex-shrink: 0;
+  color: var(--kodex-accent);
+}
+
+.kodex-goal-bar-summary {
+  flex: 1;
+  min-width: 0;
+}
+
+.kodex-goal-objective {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--kodex-text-primary);
+}
+
+.kodex-goal-usage {
+  overflow-wrap: anywhere;
+}
+
+.kodex-goal-icon,
+.kodex-goal-icon:hover,
+.kodex-goal-icon:active {
+  background: transparent;
+  border-color: transparent;
+}
+
+.kodex-goal-icon[data-goal-status="active"] {
+  color: var(--kodex-accent);
+}
+
+@media (pointer: coarse), (any-pointer: coarse) {
+  .kodex-goal-modal textarea,
+  .kodex-goal-modal input {
+    font-size: 16px;
+  }
+}

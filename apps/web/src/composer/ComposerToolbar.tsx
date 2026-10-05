@@ -1,11 +1,12 @@
 import { Group, Loader, Menu } from "@mantine/core";
-import { ArrowUp, ListPlus, Maximize2, Paperclip, Plus, Square } from "lucide-react";
+import { ArrowUp, ListPlus, Maximize2, Paperclip, Plus, Square, Target } from "lucide-react";
 import { memo } from "react";
 import type { RefObject } from "react";
 
 import { ComposerFooterControls } from "../ComposerFooterControls";
 import type { ComposerSettings, ComposerSettingsChange, ContextUsage } from "../ComposerFooterControls";
 import type { ModelSummary } from "../api/client";
+import { GoalButton, type GoalControls } from "../goals/GoalControls";
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 
 const COMPOSER_TOOLBAR_TEXT = {
@@ -19,6 +20,7 @@ const COMPOSER_TOOLBAR_TEXT = {
 };
 
 type ComposerToolbarProps = {
+  goalControls?: GoalControls;
   formId: string;
   attachmentInputRef: RefObject<HTMLInputElement | null>;
   canSubmitComposer: boolean;
@@ -39,6 +41,7 @@ type ComposerToolbarProps = {
 
 export const ComposerToolbar = memo(function ComposerToolbar({
   formId,
+  goalControls,
   attachmentInputRef,
   canSubmitComposer,
   contextUsage,
@@ -83,6 +86,12 @@ export const ComposerToolbar = memo(function ComposerToolbar({
             >
               {COMPOSER_TOOLBAR_TEXT.addAttachment}
             </Menu.Item>
+            {goalControls?.ready && !goalControls.goal ? (
+              <Menu.Item leftSection={<Target size={14} />} disabled={goalControls.pending} onClick={goalControls.onOpen}>
+                Set goal
+              </Menu.Item>
+            ) : null}
+            {goalControls?.error ? <Menu.Item onClick={goalControls.onReload}>Reload goal</Menu.Item> : null}
             {selectedThreadPresent ? (
               <Menu.Item
                 disabled={!canSubmitComposer}
@@ -105,6 +114,7 @@ export const ComposerToolbar = memo(function ComposerToolbar({
           settings={settings}
           onSettingsChange={onSettingsChange}
         />
+        {goalControls && (goalControls.compact || (goalControls.error && !goalControls.goal)) ? <GoalButton controls={goalControls} /> : null}
       </Group>
       {onExpandComposer ? (
         <AdaptiveIconButton

@@ -108,6 +108,7 @@ export async function nativeProjectsFixture(context: BrowserContext) {
     const request = route.request();
     const url = new URL(request.url());
     const key = `${request.method()} ${url.pathname}`;
+    if (key.startsWith("GET /v1/threads/") && key.endsWith("/goal")) return route.fulfill({ json: { goal: null } });
     const client = clients.get(request.frame().page()) ?? "";
     const body = request.postData() ? request.postDataJSON() as unknown : null;
     requests.push({ client, key, body });
