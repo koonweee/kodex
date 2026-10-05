@@ -5,6 +5,7 @@ import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode, Ref
 
 import type { SkillMetadata } from "../api/client";
 import { AttachmentTray } from "./AttachmentTray";
+import { ComposerAnnotations } from "./ComposerAnnotations";
 import type { ComposerPanelProps } from "./ComposerPanel";
 import { ComposerToolbar } from "./ComposerToolbar";
 import { SlashCommandPopup } from "./SlashCommandPopup";
@@ -197,6 +198,7 @@ export function InlineComposerPanel({
             onRemove={onRemovePendingAttachment}
           />
         ) : null}
+        <ComposerAnnotations draftState={draftState} disabled={isComposerControlsDisabled} onFocus={onFocusComposer} />
         <Textarea
           ref={textareaRef}
           aria-label="Message composer"

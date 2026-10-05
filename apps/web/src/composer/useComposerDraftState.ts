@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { SkillMetadata } from "../api/client";
+import { createClientRequestId } from "../shared/id";
+import { appendResponseAnnotations, type DraftAnnotation } from "./annotations";
 import { activeSlashCommandToken } from "./composerTriggers";
 import type { ComposerTriggerToken } from "./composerTriggers";
 import {
@@ -21,6 +23,7 @@ const DEFAULT_COMPOSER_DRAFT_KEY = "__default__";
 type StoredComposerDraft = {
   composerText: string;
   skillBindings: SkillMentionBinding[];
+  annotations?: DraftAnnotation[];
 };
 
 export type ComposerDraftStore = Map<string, StoredComposerDraft>;
@@ -36,6 +39,7 @@ export function useComposerDraftState(
   const initialDraft = draftsByKey.get(activeDraftKey);
   const [composerText, setComposerText] = useState(initialDraft?.composerText ?? "");
   const [skillBindings, setSkillBindings] = useState<SkillMentionBinding[]>(initialDraft?.skillBindings ?? []);
+  const [annotations, setAnnotations] = useState<DraftAnnotation[]>(initialDraft?.annotations ?? []);
   const [skillToken, setSkillToken] = useState<SkillMentionToken | null>(null);
   const [activeSkillIndex, setActiveSkillIndex] = useState(0);
   const [slashToken, setSlashToken] = useState<ComposerTriggerToken<"/"> | null>(null);
@@ -44,6 +48,7 @@ export function useComposerDraftState(
   const composerTextRef = useRef(composerText);
   const lastResetTokenRef = useRef(resetToken);
   const skillBindingsRef = useRef(skillBindings);
+  const annotationsRef = useRef(annotations);
   const skillTokenRef = useRef(skillToken);
   const slashTokenRef = useRef(slashToken);
   const draftEditRef = useRef(0);
@@ -57,7 +62,7 @@ export function useComposerDraftState(
       return;
     }
     draftEditRef.current += 1;
-    persistDraft(activeDraftKeyRef.current, composerTextRef.current, skillBindingsRef.current);
+    persistDraft(activeDraftKeyRef.current, composerTextRef.current, skillBindingsRef.current, annotationsRef.current);
     activeDraftKeyRef.current = activeDraftKey;
     restoreDraftForKey(activeDraftKey);
   }, [activeDraftKey]);
@@ -107,7 +112,7 @@ export function useComposerDraftState(
     if (slashTokenChanged) {
       slashTokenRef.current = nextSlashToken;
     }
-    persistDraft(activeDraftKeyRef.current, nextText, nextBindings);
+    persistDraft(activeDraftKeyRef.current, nextText, nextBindings, annotationsRef.current);
     setComposerText(nextText);
     if (bindingsChanged) {
       setSkillBindings(nextBindings);
@@ -135,7 +140,7 @@ export function useComposerDraftState(
     skillBindingsRef.current = nextBindings;
     skillTokenRef.current = null;
     slashTokenRef.current = null;
-    persistDraft(activeDraftKeyRef.current, replacement.text, nextBindings);
+    persistDraft(activeDraftKeyRef.current, replacement.text, nextBindings, annotationsRef.current);
     setComposerText(replacement.text);
     setSkillBindings(nextBindings);
     setSkillToken(null);
@@ -153,7 +158,7 @@ export function useComposerDraftState(
     skillBindingsRef.current = deletion.bindings;
     skillTokenRef.current = null;
     slashTokenRef.current = null;
-    persistDraft(activeDraftKeyRef.current, deletion.text, deletion.bindings);
+    persistDraft(activeDraftKeyRef.current, deletion.text, deletion.bindings, annotationsRef.current);
     setComposerText(deletion.text);
     setSkillBindings(deletion.bindings);
     setSkillToken(null);
@@ -167,7 +172,7 @@ export function useComposerDraftState(
     skillBindingsRef.current = validSkillMentionBindings(text, skillBindingsRef.current);
     skillTokenRef.current = null;
     slashTokenRef.current = null;
-    persistDraft(activeDraftKeyRef.current, text, skillBindingsRef.current);
+    persistDraft(activeDraftKeyRef.current, text, skillBindingsRef.current, annotationsRef.current);
     setComposerText(text);
     setSkillBindings(skillBindingsRef.current);
     setSkillToken(null);
@@ -179,13 +184,36 @@ export function useComposerDraftState(
     draftEditRef.current += 1;
     composerTextRef.current = "";
     skillBindingsRef.current = [];
+    annotationsRef.current = [];
     skillTokenRef.current = null;
     slashTokenRef.current = null;
     draftsByKey.delete(activeDraftKeyRef.current);
     setComposerText("");
     setSkillBindings([]);
+    setAnnotations([]);
     setSkillToken(null);
     setSlashToken(null);
+  }
+
+  function addAnnotation(text: string) {
+    changeAnnotations([...annotationsRef.current, { id: createClientRequestId(), text, comment: "" }]);
+  }
+
+  function updateAnnotation(id: string, comment: string) {
+    if (!annotationsRef.current.some((annotation) => annotation.id === id && annotation.comment !== comment)) return;
+    changeAnnotations(annotationsRef.current.map((annotation) => annotation.id === id ? { ...annotation, comment } : annotation));
+  }
+
+  function removeAnnotation(id: string) {
+    const next = annotationsRef.current.filter((annotation) => annotation.id !== id);
+    if (next.length !== annotationsRef.current.length) changeAnnotations(next);
+  }
+
+  function changeAnnotations(next: DraftAnnotation[]) {
+    draftEditRef.current += 1;
+    annotationsRef.current = next;
+    persistDraft(activeDraftKeyRef.current, composerTextRef.current, skillBindingsRef.current, next);
+    setAnnotations(next);
   }
 
   function captureSubmission() {
@@ -194,6 +222,7 @@ export function useComposerDraftState(
     const edit = draftEditRef.current;
     const text = composerTextRef.current;
     const bindings = [...skillBindingsRef.current];
+    const capturedAnnotations = [...annotationsRef.current];
     let clearedEdit: number | null = null;
     return {
       clearText() {
@@ -205,7 +234,7 @@ export function useComposerDraftState(
         if (clearedEdit === null || activeDraftKeyRef.current !== key || draftEditRef.current !== clearedEdit) return;
         clearedEdit = null;
         draftEditRef.current += 1;
-        persistDraft(key, text, bindings);
+        persistDraft(key, text, bindings, capturedAnnotations);
         restoreDraftForKey(key);
       },
     };
@@ -234,7 +263,7 @@ export function useComposerDraftState(
   }
 
   function currentSubmittedText() {
-    return currentSubmittedSkillBindings().text;
+    return appendResponseAnnotations(currentSubmittedSkillBindings().text, annotationsRef.current);
   }
 
   function currentSkillTextElements() {
@@ -251,14 +280,15 @@ export function useComposerDraftState(
     return trimmedSkillMentionBindings(composerTextRef.current, skillBindingsRef.current);
   }
 
-  function persistDraft(key: string, text: string, bindings: SkillMentionBinding[]) {
-    if (text.length === 0 && bindings.length === 0) {
+  function persistDraft(key: string, text: string, bindings: SkillMentionBinding[], draftAnnotations: DraftAnnotation[]) {
+    if (text.length === 0 && bindings.length === 0 && draftAnnotations.length === 0) {
       draftsByKey.delete(key);
       return;
     }
     draftsByKey.set(key, {
       composerText: text,
       skillBindings: [...bindings],
+      annotations: [...draftAnnotations],
     });
   }
 
@@ -266,9 +296,11 @@ export function useComposerDraftState(
     const storedDraft = draftsByKey.get(key);
     const nextText = storedDraft?.composerText ?? "";
     const nextBindings = storedDraft?.skillBindings ?? [];
+    const nextAnnotations = storedDraft?.annotations ?? [];
     if (
       composerTextRef.current === nextText &&
       skillMentionBindingsEqual(skillBindingsRef.current, nextBindings) &&
+      annotationsRef.current === nextAnnotations &&
       skillTokenRef.current === null &&
       slashTokenRef.current === null
     ) {
@@ -276,15 +308,19 @@ export function useComposerDraftState(
     }
     composerTextRef.current = nextText;
     skillBindingsRef.current = nextBindings;
+    annotationsRef.current = nextAnnotations;
     skillTokenRef.current = null;
     slashTokenRef.current = null;
     setComposerText(nextText);
     setSkillBindings(nextBindings);
+    setAnnotations(nextAnnotations);
     setSkillToken(null);
     setSlashToken(null);
   }
 
   return {
+    addAnnotation,
+    annotations,
     activeSlashIndex,
     activeSkillIndex,
     clampActiveSlashIndex,
@@ -299,6 +335,7 @@ export function useComposerDraftState(
     currentSubmittedText,
     currentTimelineSkillMentions,
     deleteBoundSkillBeforeCursor,
+    removeAnnotation,
     replaceSlashToken,
     selectSkill,
     setActiveSlashIndex,
@@ -307,6 +344,7 @@ export function useComposerDraftState(
     slashToken,
     skillToken,
     updateComposerText,
+    updateAnnotation,
   };
 }
 

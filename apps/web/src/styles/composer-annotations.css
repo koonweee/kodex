@@ -1,0 +1,36 @@
+.kodex-composer-annotations {
+  min-width: 0;
+  padding: 4px 8px;
+}
+
+.kodex-composer-annotation-list {
+  max-height: min(32vh, 280px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.kodex-composer-annotation {
+  padding: 6px 8px 10px;
+  border-bottom: 1px solid var(--mantine-color-default-border);
+}
+
+.kodex-composer-annotation blockquote {
+  margin: 0 0 8px;
+  padding-left: 10px;
+  border-left: 2px solid var(--mantine-color-default-border);
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+@media (any-pointer: coarse) {
+  .kodex-composer-annotations > button {
+    min-height: 44px;
+  }
+
+  .kodex-composer-annotation textarea {
+    font-size: 16px;
+  }
+}

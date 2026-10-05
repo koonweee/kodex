@@ -1,0 +1,14 @@
+.kodex-assistant-selection-action {
+  position: fixed;
+  z-index: 400;
+  filter: drop-shadow(0 3px 8px rgb(0 0 0 / 18%));
+}
+
+.kodex-assistant-selection-action .mantine-Button-root {
+  max-width: 100%;
+  min-height: 32px;
+}
+
+.kodex-assistant-selection-action[data-touch] .mantine-Button-root {
+  min-height: 44px;
+}

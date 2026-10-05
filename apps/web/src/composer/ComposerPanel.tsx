@@ -25,6 +25,7 @@ import type { PendingAttachment } from "./types";
 import { NativeQueuePanel } from "../queuedInputs/NativeQueuePanel";
 import { useComposerDraftState, type ComposerDraftStore } from "./useComposerDraftState";
 import { useSkillCatalog } from "./useSkillCatalog";
+import { AssistantSelectionAction } from "../timeline/AssistantSelectionAction";
 
 export type ComposerDraftControls = {
   clearText: () => void;
@@ -137,7 +138,7 @@ export function ComposerPanel({
   const isComposerDisabled = !canCompose || isComposerBusy;
   const isComposerControlsDisabled = isComposerDisabled || isEntryPending;
   const canSubmitComposer =
-    !isComposerControlsDisabled && (Boolean(draftState.composerText.trim()) || pendingAttachments.length > 0);
+    !isComposerControlsDisabled && (Boolean(draftState.composerText.trim()) || draftState.annotations.length > 0 || pendingAttachments.length > 0);
   const shouldShowStopAction = activeSelectedTurnId !== null && !canSubmitComposer && !isComposerSubmitting;
   const skillPopupOpen = !isComposerControlsDisabled && draftState.skillToken !== null;
   const slashPopupOpen = !isComposerControlsDisabled && draftState.slashToken !== null;
@@ -302,7 +303,7 @@ export function ComposerPanel({
   }, [composerShellRef]);
 
   const queuePanel = queueThreadId ? <NativeQueuePanel key={queueThreadId} threadId={queueThreadId} isActive={queueDialogActive}
-    canRestoreText={!draftState.composerText && pendingAttachments.length === 0 && !isComposerBusy}
+    canRestoreText={!draftState.composerText && draftState.annotations.length === 0 && pendingAttachments.length === 0 && !isComposerBusy}
     onRestoreText={(text) => draftState.updateComposerText(text, null)} /> : null;
 
   const representationProps = {
@@ -359,11 +360,16 @@ export function ComposerPanel({
     textareaRef,
   };
 
-  return isMobileComposer ? (
+  return <>
+    <AssistantSelectionAction composerShellRef={internalComposerShellRef}
+      disabled={isComposerControlsDisabled || !selectedThreadPresent} draftKey={composerDraftKey}
+      onAdd={draftState.addAnnotation} />
+    {isMobileComposer ? (
     <MobileComposerPanel {...representationProps} />
   ) : (
     <InlineComposerPanel {...representationProps} />
-  );
+  )}
+  </>;
 }
 
 function useIsNarrowComposer() {
