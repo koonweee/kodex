@@ -3,6 +3,146 @@ use tempfile::tempdir;
 use crate::{error::ApiError, store::Store};
 
 #[tokio::test]
+async fn cancelled_custom_begin_cannot_poison_the_pool_or_block_other_writers() {
+    use sqlx::Connection;
+    use std::{
+        future::Future,
+        sync::Arc,
+        task::{Context, Poll, Wake, Waker},
+    };
+    use tokio::{
+        sync::Notify,
+        time::{timeout, Duration},
+    };
+
+    struct BeginWake(Notify);
+    impl Wake for BeginWake {
+        fn wake(self: Arc<Self>) {
+            self.0.notify_one();
+        }
+        fn wake_by_ref(self: &Arc<Self>) {
+            self.0.notify_one();
+        }
+    }
+
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("cancelled-begin.db");
+    let store = Store::connect(&path).await.unwrap();
+    let other = Store::connect(&path).await.unwrap();
+    let mut cancelled = None;
+    // Drive only the BEGIN acknowledgment, then cancel at SQLx's second
+    // await (lock_handle), before its Transaction rollback guard exists.
+    for _ in 0..100 {
+        let mut connection = store.pool().acquire().await.unwrap();
+        let wake = Arc::new(BeginWake(Notify::new()));
+        let waker = Waker::from(wake.clone());
+        let mut cx = Context::from_waker(&waker);
+        let mut begin = Box::pin(connection.begin_with("BEGIN IMMEDIATE"));
+        match begin.as_mut().poll(&mut cx) {
+            Poll::Ready(result) => drop(result.unwrap()),
+            Poll::Pending => {
+                // The first wake acknowledges BEGIN; polling once more
+                // reaches the handle check. Earlier cancellation is safely
+                // rolled back by SQLx's worker acknowledgment.
+                timeout(Duration::from_secs(2), wake.0.notified())
+                    .await
+                    .unwrap();
+                if let Poll::Ready(result) = begin.as_mut().poll(&mut cx) {
+                    drop(result.unwrap());
+                }
+            }
+        }
+        drop(begin);
+        connection.ping().await.unwrap();
+        if connection.is_in_transaction() {
+            cancelled = Some(connection);
+            break;
+        }
+    }
+    let connection =
+        cancelled.expect("exercise cancellation after the custom BEGIN acknowledgment");
+    drop(connection);
+    // Wait for pool release so its cancellation cleanup has completed.
+    timeout(Duration::from_secs(2), async {
+        while store.pool().num_idle() < store.pool().size() as usize {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    // Acquiring all connections also ensures a poisoned idle connection cannot
+    // hide behind a healthy one in a pool with several connections.
+    let mut connections = Vec::new();
+    for _ in 0..store.pool().size() {
+        let connection = store.pool().acquire().await.unwrap();
+        assert!(
+            !connection.is_in_transaction(),
+            "cancelled BEGIN returned an open transaction to the pool"
+        );
+        connections.push(connection);
+    }
+    drop(connections);
+    timeout(
+        Duration::from_secs(2),
+        other.record_thread_completion("chat", "turn"),
+    )
+    .await
+    .expect("cancelled BEGIN must release the SQLite writer lock")
+    .unwrap();
+    let state = store
+        .record_thread_completion("chat", "next")
+        .await
+        .unwrap();
+    assert_eq!(state.latest_completed_turn_id.as_deref(), Some("next"));
+}
+
+#[tokio::test]
+async fn completed_and_guard_rolled_back_transactions_reuse_the_healthy_connection() {
+    let store = Store::in_memory().await.unwrap();
+    // A connection-local table proves that normal releases keep this connection
+    // instead of replacing it (which also protects in-memory test databases).
+    sqlx::query("create temp table connection_identity (value integer)")
+        .execute(store.pool())
+        .await
+        .unwrap();
+    let mut transaction = store.pool().begin_with("BEGIN IMMEDIATE").await.unwrap();
+    sqlx::query("insert into connection_identity values (1)")
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+    drop(transaction);
+    let count: i64 = sqlx::query_scalar("select count(*) from connection_identity")
+        .fetch_one(store.pool())
+        .await
+        .unwrap();
+    assert_eq!(count, 0, "guard-drop rollback must finish before reuse");
+    let head = store
+        .record_thread_completion("chat", "turn")
+        .await
+        .unwrap();
+    let seen = store
+        .mark_thread_seen("chat", "turn", head.read_revision)
+        .await
+        .unwrap();
+    assert!(!seen.unread_completed_agent_turn);
+    assert!(matches!(
+        store
+            .mark_thread_seen("chat", "stale", head.read_revision)
+            .await,
+        Err(ApiError::Conflict(_))
+    ));
+    assert_eq!(
+        store.get_thread_read("chat").await.unwrap().read_revision,
+        seen.read_revision
+    );
+    let count: i64 = sqlx::query_scalar("select count(*) from connection_identity")
+        .fetch_one(store.pool())
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
+#[tokio::test]
 async fn missing_read_marker_is_unknown_and_empty_reconcile_is_explicitly_known() {
     let store = Store::in_memory().await.unwrap();
     let unknown = store.get_thread_read("new").await.unwrap();

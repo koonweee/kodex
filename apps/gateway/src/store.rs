@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
-    Pool, Row, Sqlite,
+    Connection, Pool, Row, Sqlite,
 };
 use utoipa::ToSchema;
 
@@ -478,8 +478,7 @@ impl Store {
             tokio::fs::create_dir_all(parent).await?;
         }
 
-        let pool = SqlitePoolOptions::new()
-            .max_connections(5)
+        let pool = pool_options(5)
             .connect_with(
                 SqliteConnectOptions::new()
                     .filename(path)
@@ -493,10 +492,7 @@ impl Store {
     }
 
     pub async fn in_memory() -> ApiResult<Self> {
-        let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect("sqlite::memory:")
-            .await?;
+        let pool = pool_options(1).connect("sqlite::memory:").await?;
         let store = Self { pool };
         store.migrate().await?;
         Ok(store)
@@ -505,6 +501,21 @@ impl Store {
     pub fn pool(&self) -> &Pool<Sqlite> {
         &self.pool
     }
+}
+
+fn pool_options(max_connections: u32) -> SqlitePoolOptions {
+    SqlitePoolOptions::new()
+        .max_connections(max_connections)
+        .after_release(|connection, _| {
+            Box::pin(async move {
+                // SQLx 0.8 custom BEGIN has a cancellation window after the
+                // worker acknowledges BEGIN, before a Transaction guard exists.
+                // Flush ordinary guard-drop rollbacks before checking depth;
+                // discard only connections whose transaction remains open.
+                connection.ping().await?;
+                Ok(!connection.is_in_transaction())
+            })
+        })
 }
 
 fn row_to_event(row: sqlx::sqlite::SqliteRow) -> ApiResult<EventEnvelope> {
