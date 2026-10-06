@@ -195,10 +195,11 @@ test.describe("desktop long queue", () => {
       await page.mouse.down();
       await page.mouse.move(x, bounds.y + bounds.height - 8, { steps: 8 });
 
-      // No more pointer movement: holding at the edge must reveal another page.
-      const stationaryScroll = await list.evaluate((element) => element.scrollTop);
+      // Start the stationary phase at the top: movement may already have scrolled
+      // far enough that another full page would exceed the list's maximum scroll.
+      await list.evaluate((element) => { element.scrollTop = 0; });
       await expect.poll(() => list.evaluate((element) => element.scrollTop), { timeout: 5000 })
-        .toBeGreaterThan(stationaryScroll + bounds.height);
+        .toBeGreaterThan(bounds.height);
       await page.keyboard.press("Escape");
       await page.mouse.up();
       const cancelledScroll = await list.evaluate((element) => element.scrollTop);
