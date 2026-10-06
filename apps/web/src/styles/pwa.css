@@ -1,3 +1,22 @@
+/* A real, opaque top-edge element gives iOS standalone chrome a stable
+   surface to sample. Keep a pixel when the OS reports no top inset.
+   This mitigates iOS 27's system blur; verify on a Home Screen install. */
+.kodex-pwa-safe-area {
+  display: none;
+}
+
+@media (display-mode: standalone) {
+  .kodex-pwa-safe-area {
+    display: block;
+    position: fixed;
+    inset: 0 0 auto;
+    height: max(1px, env(safe-area-inset-top, 0px));
+    background: var(--kodex-bg-shell);
+    pointer-events: none;
+    z-index: 102;
+  }
+}
+
 .kodex-pwa-lifecycle {
   position: fixed;
   top: max(12px, env(safe-area-inset-top));

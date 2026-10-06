@@ -100,6 +100,8 @@ The command requires a running, healthy owned service and matching frontend API 
 
 As with full updates, the source is the selected checkout's working tree. Use a clean checkout or a committed snapshot to avoid deploying unfinished edits, and avoid concurrent edits/builds during staging. Refresh the browser or accept the PWA update prompt to load the new UI. Retained assets accumulate until the next full release update.
 
+On iOS 27 Home Screen installs, Kodex paints a theme-matched top safe-area surface to mitigate the system scroll-edge blur and keeps sidebar controls below the inset. This is a rendering workaround, not an Apple blur-control API: validate the chat and sidebar on an actual iPhone after accepting the PWA update. Desktop browser checks cover layout but cannot confirm the iOS compositor effect.
+
 If startup/health fails, the new service is stopped and the failed release remains selected for inspection. There is **no automatic rollback**: the new executable may already have written persistent state. After checking that the previous release can safely read the current storage, you may explicitly run:
 
 ```bash

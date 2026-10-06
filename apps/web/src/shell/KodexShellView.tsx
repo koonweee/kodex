@@ -90,6 +90,7 @@ export function KodexShellView({
       data-sidebar-collapsed={sidebarCollapsed ? "true" : undefined}
       data-sidebar-resizing={isSidebarResizing ? "true" : undefined}
     >
+      <div className="kodex-pwa-safe-area" aria-hidden="true" />
       <WorkspaceSidebarWithPaneActions
         {...workspaceSidebarProps}
         sidebarCollapsed={sidebarCollapsed}

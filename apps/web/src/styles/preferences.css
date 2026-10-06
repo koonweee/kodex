@@ -356,7 +356,7 @@
 
 @media (max-width: 900px) and (pointer: coarse), (max-width: 900px) and (any-pointer: coarse) {
   .kodex-sidebar {
-    padding-top: 4px !important;
+    padding-top: calc(4px + var(--kodex-mobile-safe-area-top, 0px)) !important;
   }
 }
 
