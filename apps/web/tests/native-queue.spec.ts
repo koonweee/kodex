@@ -95,6 +95,11 @@ for (const shape of [
           await composer(first).fill("First queued work");
           await composer(first).press("Meta+Enter");
         }
+        for (const page of [first, second]) {
+          await expect(queueRows(page)).toHaveCount(1);
+          await expect(queueRows(page).getByRole("button", { name: "Reorder queued message", exact: true })).toHaveCount(0);
+        }
+        await first.screenshot({ path: test.info().outputPath("native-single-queue.png") });
         await submit(second, "Second queued work", "Queue message", shape.hasTouch);
         for (const page of [first, second]) {
           await expect(queueRows(page)).toHaveCount(2);

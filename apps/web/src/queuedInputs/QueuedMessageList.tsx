@@ -107,7 +107,7 @@ export function QueuedMessageList({ rows, busy, partial, isActive, onReorder, on
           data-drop-target={preview && preview.target === index && preview.id !== row.id
             ? (index < ids.indexOf(preview.id) ? "before" : "after") : undefined}
           className="kodex-queue-row">
-          <AdaptiveIconButton density="compact" label="Reorder queued message" tooltip="Drag to reorder · ↑/↓ to move" className="kodex-queue-handle"
+          {rows.length > 1 ? <AdaptiveIconButton density="compact" label="Reorder queued message" tooltip="Drag to reorder · ↑/↓ to move" className="kodex-queue-handle"
             disabled={disabled} aria-describedby={instructionsId}
             data-hover-suppressed={suppressedHandleId === row.id || undefined}
             tooltipProps={{ disabled: disabled || suppressedHandleId === row.id }}
@@ -129,7 +129,7 @@ export function QueuedMessageList({ rows, busy, partial, isActive, onReorder, on
               if (event.key === "ArrowUp" || event.key === "ArrowDown") {
                 event.preventDefault(); cancel(); move(row.id, index + (event.key === "ArrowUp" ? -1 : 1));
               }
-            }}><GripVertical /></AdaptiveIconButton>
+            }}><GripVertical /></AdaptiveIconButton> : null}
           <div className="kodex-queue-preview" title={text}>
             <Text truncate className="kodex-queue-text">{text}</Text>
             {row.attachments.length > 0 ? <Text size="xs" className="kodex-queue-attachments">{row.attachments.length} attached file(s)</Text> : null}

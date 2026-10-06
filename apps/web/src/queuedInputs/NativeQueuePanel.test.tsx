@@ -20,6 +20,20 @@ function mount(onRestoreText = vi.fn()) {
   return client;
 }
 
+it("only offers reordering when there are multiple queued messages", async () => {
+  let rows = [row("Only message")];
+  mockGateway({ "GET /v1/threads/chat/queued-inputs": () => ({ queuedInputs: rows, transfers: [], nextCursor: null }) });
+  const client = mount();
+  await screen.findByRole("group", { name: "Queued message" });
+  expect(screen.queryByRole("button", { name: "Reorder queued message" })).not.toBeInTheDocument();
+  rows = [...rows, row("Second message")];
+  applyQueueEvent(client, { id: "1", seq: 1, kind: "turn_queue.changed", threadId: "chat", payload: { threadId: "chat" }, receivedAt: "2026-10-07T00:00:00Z" });
+  await waitFor(() => expect(screen.getAllByRole("button", { name: "Reorder queued message" })).toHaveLength(2));
+  rows = rows.slice(0, 1);
+  applyQueueEvent(client, { id: "2", seq: 2, kind: "turn_queue.changed", threadId: "chat", payload: { threadId: "chat" }, receivedAt: "2026-10-07T00:00:00Z" });
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Reorder queued message" })).not.toBeInTheDocument());
+});
+
 it("uses native order and eligibility, preserves unknown native input when editing, and submits one complete reorder", async () => {
   let rows = [{ ...row("b", true), input: [{ type: "text", text: "b", nativeKey: "keep" }, { type: "futureInput", opaque: [1, 2] }] }, row("a")];
   const writes: unknown[] = [];
