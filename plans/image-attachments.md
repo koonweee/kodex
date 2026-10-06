@@ -119,6 +119,7 @@ Implementation:
 - Extend timeline item extraction to preserve user input image parts from app-server payloads.
 - Render image thumbnails above the user message bubble.
 - Use local object URLs for optimistic pending messages only if needed; otherwise rely on app-server event payload paths or gateway preview URLs.
+- Preserve complete native image URLs in canonical live patches and history snapshots. Native history can materialize uploaded local images as inline data URLs; the ordinary text-preview limit must not truncate those sources. Regression coverage includes accepted-input materialization, a second client missing live events, restart/refill, and browser image decoding after queued delivery and reload.
 - Defer full-screen preview unless it stays small and does not block the main flow.
 
 Exit conditions:

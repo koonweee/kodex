@@ -961,7 +961,7 @@ pub(crate) fn compact_timeline_item_payload(item: &Value) -> TimelineDisplayItem
         questions: display_value(object, "questions"),
         text: display_string(object, "text"),
         message: display_string(object, "message"),
-        content: display_value(object, "content"),
+        content: display_content(object),
         file_attachments: display_value(object, "fileAttachments")
             .and_then(|value| serde_json::from_value(value).ok())
             .unwrap_or_default(),
@@ -1019,6 +1019,27 @@ fn display_string(object: &serde_json::Map<String, Value>, key: &str) -> Option<
         .get(key)
         .and_then(Value::as_str)
         .map(compact_preview_string)
+}
+
+fn display_content(object: &serde_json::Map<String, Value>) -> Option<Value> {
+    let content = object.get("content")?;
+    let mut preview = compact_timeline_preview_value(content);
+    if object.get("type").and_then(Value::as_str) != Some("userMessage") {
+        return Some(preview);
+    }
+    if let (Some(source), Some(projected)) = (content.as_array(), preview.as_array_mut()) {
+        for (source, projected) in source.iter().zip(projected) {
+            if source.get("type").and_then(Value::as_str) != Some("image") {
+                continue;
+            }
+            if let Some(url) = source.get("url").filter(|url| url.is_string()) {
+                // Native history can replace a local image path with a data URL.
+                // Image sources must remain complete to decode in every client.
+                projected["url"] = url.clone();
+            }
+        }
+    }
+    Some(preview)
 }
 
 fn display_value(object: &serde_json::Map<String, Value>, key: &str) -> Option<Value> {
