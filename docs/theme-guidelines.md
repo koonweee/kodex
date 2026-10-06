@@ -17,7 +17,7 @@ Appearance has a mode (`auto`, `light` or `dark`) plus independent light/dark th
 
 `theme/appearancePreferences.ts` owns validation and resolution shared by the initial HTML bootstrap and React. `appearanceStorage.ts` owns storage/migration, and `useAppearancePreferences.ts` subscribes to system changes and preference updates. Preserve the same first-paint and live resolution rules when extending them. Existing `kodex-color-scheme` values migrate to an explicit mode; new profiles default to Auto with Paper Light and OLED Black. Never persist system-triggered theme changes as explicit user selections.
 
-Palette-preview cards intentionally render candidate semantic pairs independently of the active theme. Their selection/focus chrome still uses the active theme's shared control styles. Focus is a thin, desaturated shared `focus-ring` outline with the shared offset, and must remain visible against adjacent surfaces. Textareas keep focus on the actual textarea; do not add a special composer focus color or move its ring to unrelated controls.
+Palette-preview cards intentionally render candidate semantic pairs independently of the active theme. Their selection/focus chrome still uses the active theme's shared control styles. Focus is a thin, desaturated shared `focus-ring` outline with the shared offset, and must remain visible against adjacent surfaces. Standard textareas keep focus on the actual textarea. The chat composer intentionally omits the textarea focus ring; its toolbar controls retain their shared focus indicators.
 
 ## Safe role pairings
 

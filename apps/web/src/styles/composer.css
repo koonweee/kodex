@@ -235,6 +235,11 @@
   resize: none;
 }
 
+.kodex-composer-textarea textarea:focus,
+.kodex-composer-textarea textarea:focus-within {
+  outline: none;
+}
+
 .kodex-composer-textarea textarea:disabled {
   background: transparent;
   color: var(--input-color);
