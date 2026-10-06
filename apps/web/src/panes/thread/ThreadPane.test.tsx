@@ -1,6 +1,6 @@
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -302,6 +302,39 @@ it("keeps direct-input capability owned by canonical detail when older sidebar a
   expect(gateway.callsFor("POST", "/v1/threads/child/attach")).toHaveLength(2);
   act(() => source.emit({ id: "old-metadata", seq: 3, threadId: "child", kind: "timeline.thread_metadata", payload: { thread: { ...seed, canAcceptDirectInput: false } }, receivedAt: "2026-10-04T00:00:00Z" }));
   expect(screen.getByText("Native input: true")).toBeInTheDocument();
+});
+
+it.each([false, true])("closes an unavailable pane and keeps a usable workspace (another pane: %s)", async (hasOtherPane) => {
+  vi.stubGlobal("EventSource", UnopenedEventSource);
+  mockGateway({
+    "POST /v1/threads/missing/attach": new Response(JSON.stringify({ code: "not_found", message: "Missing thread", retryable: false }), { status: 404, headers: { "Content-Type": "application/json" } }),
+  });
+  const store = createMemoryWorkspacePaneStore({
+    schemaVersion: 1, activePaneId: "missing-pane", dockviewLayout: null,
+    panes: [
+      { id: "missing-pane", kind: "thread", target: { mode: "existing", threadId: "missing" } },
+      ...(hasOtherPane ? [{ id: "other-pane", kind: "thread" as const, target: { mode: "draft" as const } }] : []),
+    ],
+  });
+  const browse = vi.fn();
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <MantineProvider env="test"><WorkspaceProvider paneStore={store} onShowMobileSidebar={browse}
+      renderThreadComposer={() => <div>Ready to compose</div>}>
+      <ActiveThreadPane />
+    </WorkspaceProvider></MantineProvider>
+  </QueryClientProvider>);
+  await screen.findByRole("heading", { name: "Thread not found or unavailable" });
+  fireEvent.click(screen.getByRole("button", { name: "Browse threads" }));
+  expect(browse).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole("button", { name: "Close pane" }));
+  expect(await screen.findByText("Ready to compose")).toBeInTheDocument();
+  await waitFor(async () => {
+    const workspace = await store.load();
+    expect(workspace?.panes).toHaveLength(1);
+    expect(workspace?.panes[0].id).not.toBe("missing-pane");
+    expect(workspace?.activePaneId).toBe(workspace?.panes[0].id);
+    if (hasOtherPane) expect(workspace?.panes[0].id).toBe("other-pane");
+  });
 });
 
 function ActiveThreadPane() {

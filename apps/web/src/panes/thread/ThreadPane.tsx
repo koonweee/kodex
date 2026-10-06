@@ -36,7 +36,7 @@ import type { WorkspacePaneComponentProps } from "../../workspace/paneTypes";
 import { paneTargetRecord } from "../../workspace/paneTypes";
 import { useWorkspace } from "../../workspace/WorkspaceProvider";
 import { AdaptiveIconButton } from "../../ui/AdaptiveIconButton";
-import { EmptyPanel } from "../../ui/EmptyPanel";
+import { ThreadUnavailablePane } from "./ThreadUnavailablePane";
 
 const TimelineView = lazy(() =>
   import("../../timeline/TimelineView").then((module) => ({ default: module.TimelineView })),
@@ -580,7 +580,7 @@ function ExistingThreadPane({
         ) : null}
       </div>
       {isUnavailable ? (
-        <ThreadUnavailablePane onBrowseThreads={onShowMobileSidebar} />
+        <ThreadUnavailablePane paneId={pane.id} onBrowseThreads={onShowMobileSidebar} />
       ) : (
         <Box className="kodex-thread-content" data-subagent-sidebar={paneAside ? "open" : "closed"}>
           <div
@@ -668,29 +668,6 @@ function mergeGitInfoPatch(current: ThreadSummary["gitInfo"], patch: unknown): T
 
 function stringOrNull(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function ThreadUnavailablePane({ onBrowseThreads }: { onBrowseThreads: () => void }) {
-  return (
-    <Box className="kodex-thread-empty kodex-thread-column">
-      <EmptyPanel
-        icon={<AlertCircle size={22} />}
-        title="Thread not found or unavailable"
-        text="This thread could not be loaded. It may have been archived, deleted, or unavailable from this gateway."
-      />
-      <Group className="kodex-thread-empty-actions" justify="center" gap="xs" wrap="nowrap">
-        <Button
-          className="kodex-thread-empty-action"
-          onClick={onBrowseThreads}
-          size="compact-sm"
-          type="button"
-          variant="light"
-        >
-          Browse threads
-        </Button>
-      </Group>
-    </Box>
-  );
 }
 
 function TimelineLoadingSkeleton() {
