@@ -70,9 +70,9 @@ export function ThemeWorkbench({
   const activeColorScheme = getKodexColorScheme(activeColorSchemeId);
 
   useEffect(() => {
-    writeStoredKodexColorScheme(activeColorSchemeId);
+    if (colorSchemeId === undefined) writeStoredKodexColorScheme(activeColorSchemeId);
     applyKodexColorScheme(document.documentElement, activeColorScheme);
-  }, [activeColorScheme, activeColorSchemeId]);
+  }, [activeColorScheme, activeColorSchemeId, colorSchemeId]);
 
   function handleColorSchemeChange(nextColorSchemeId: KodexColorSchemeId) {
     setLocalColorSchemeId(nextColorSchemeId);
@@ -111,8 +111,8 @@ export function ThemeWorkbench({
               >
                 <span>{scheme.label}</span>
                 <span aria-hidden="true" className="kodex-theme-workbench-swatches">
-                  {scheme.swatches.map((swatch) => (
-                    <span className="kodex-theme-workbench-swatch" key={swatch} style={{ background: swatch }} />
+                  {scheme.swatches.map((swatch, index) => (
+                    <span className="kodex-theme-workbench-swatch" key={index} style={{ background: swatch }} />
                   ))}
                 </span>
               </button>

@@ -1,6 +1,8 @@
+import { APPEARANCE_STORAGE_KEY, DEFAULT_APPEARANCE_PREFERENCES, parseAppearancePreferences, resolveAppearanceScheme } from "./theme/appearancePreferences";
 import type { KodexThemeTokens, KodexPalette } from "./theme/tokenContract";
+import { EXPANDED_KODEX_COLOR_SCHEMES, type ExpandedKodexColorSchemeId } from "./theme/themePalettes";
 
-export type KodexColorSchemeId = "oled-black" | "paper-light" | "dracula" | "monokai";
+export type KodexColorSchemeId = "oled-black" | "paper-light" | "dracula" | "monokai" | ExpandedKodexColorSchemeId;
 
 export type KodexColorSchemeDefinition = {
   id: KodexColorSchemeId;
@@ -25,7 +27,7 @@ export const KODEX_COLOR_SCHEMES: KodexColorSchemeDefinition[] = [
     mode: "dark",
     swatches: ["#050505", "#111111", "#2fa987"],
     rootVariables: {
-      "--kodex-focus-ring": "#78d7c0",
+      "--kodex-focus-ring": "#818181",
       "--kodex-border-control": "#818181",
       "--kodex-text-on-user-bubble": "#f6fffc",
       "--kodex-text-on-action": "#071a15",
@@ -103,7 +105,7 @@ export const KODEX_COLOR_SCHEMES: KodexColorSchemeDefinition[] = [
     mode: "light",
     swatches: ["#f4f1e8", "#fcfaf4", "#0d8a74"],
     rootVariables: {
-      "--kodex-focus-ring": "#0a725f",
+      "--kodex-focus-ring": "#85786a",
       "--kodex-border-control": "#85786a",
       "--kodex-text-on-user-bubble": "#f7fffc",
       "--kodex-text-on-action": "#f7fffc",
@@ -181,7 +183,7 @@ export const KODEX_COLOR_SCHEMES: KodexColorSchemeDefinition[] = [
     mode: "dark",
     swatches: ["#1c1f28", "#2a2d39", "#bd93f9"],
     rootVariables: {
-      "--kodex-focus-ring": "#bd93f9",
+      "--kodex-focus-ring": "#9096b2",
       "--kodex-border-control": "#9096b2",
       "--kodex-text-on-user-bubble": "#f8f8f2",
       "--kodex-text-on-action": "#211b2c",
@@ -259,7 +261,7 @@ export const KODEX_COLOR_SCHEMES: KodexColorSchemeDefinition[] = [
     mode: "dark",
     swatches: ["#141510", "#22241d", "#a6e22e"],
     rootVariables: {
-      "--kodex-focus-ring": "#a6e22e",
+      "--kodex-focus-ring": "#8a8d7e",
       "--kodex-border-control": "#8a8d7e",
       "--kodex-text-on-user-bubble": "#fcfff6",
       "--kodex-text-on-action": "#1c240f",
@@ -330,6 +332,7 @@ export const KODEX_COLOR_SCHEMES: KodexColorSchemeDefinition[] = [
     mantineGray: ["#f8f8f2", "#ebeadf", "#d7d5c6", "#c1bfad", "#9e9f8e", "#7e7f70", "#626355", "#4b4d42", "#34362f", "#1d1f1a"],
     mantineRed: ["#fff0f6", "#ffd8e5", "#ffbad0", "#ff9abb", "#ff7aa4", "#ff6188", "#e44d71", "#bf3d5b", "#932d46", "#681d31"],
   },
+  ...EXPANDED_KODEX_COLOR_SCHEMES,
 ];
 
 const COLOR_SCHEME_BY_ID = new Map(KODEX_COLOR_SCHEMES.map((scheme) => [scheme.id, scheme]));
@@ -358,17 +361,20 @@ export function buildKodexColorSchemeCss() {
 export function buildKodexColorSchemeBootstrapScript() {
   const modes = Object.fromEntries(KODEX_COLOR_SCHEMES.map((scheme) => [scheme.id, scheme.mode]));
   return `(() => {
-  const storageKey = ${JSON.stringify(KODEX_COLOR_SCHEME_STORAGE_KEY)};
-  const colorSchemeModes = ${JSON.stringify(modes)};
-  const root = document.documentElement;
+  const modes = ${JSON.stringify(modes)};
+  const defaults = ${JSON.stringify(DEFAULT_APPEARANCE_PREFERENCES)};
+  const parse = ${parseAppearancePreferences.toString()};
+  const resolve = ${resolveAppearanceScheme.toString()};
+  let stored = null;
+  let legacy = null;
+  let systemDark = false;
   try {
-    const storedColorScheme = window.localStorage.getItem(storageKey);
-    const colorScheme = colorSchemeModes[storedColorScheme] ? storedColorScheme : ${JSON.stringify(DEFAULT_KODEX_COLOR_SCHEME_ID)};
-    root.setAttribute("data-kodex-color-scheme", colorScheme);
-    root.setAttribute("data-mantine-color-scheme", colorSchemeModes[colorScheme]);
-  } catch {
-    root.setAttribute("data-kodex-color-scheme", ${JSON.stringify(DEFAULT_KODEX_COLOR_SCHEME_ID)});
-    root.setAttribute("data-mantine-color-scheme", ${JSON.stringify(getKodexColorSchemeDefinition(DEFAULT_KODEX_COLOR_SCHEME_ID).mode)});
-  }
+    stored = window.localStorage.getItem(${JSON.stringify(APPEARANCE_STORAGE_KEY)});
+    legacy = window.localStorage.getItem(${JSON.stringify(KODEX_COLOR_SCHEME_STORAGE_KEY)});
+  } catch {}
+  try { systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches; } catch {}
+  const id = resolve(parse(stored, legacy, modes, defaults), systemDark);
+  document.documentElement.setAttribute("data-kodex-color-scheme", id);
+  document.documentElement.setAttribute("data-mantine-color-scheme", modes[id]);
 })();`;
 }

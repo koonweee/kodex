@@ -281,6 +281,7 @@ export function createKodexMantineComponents(): MantineThemeOverride["components
         classNames: {
           root: "kodex-mantine-segmented-control-root",
           control: "kodex-mantine-segmented-control-control",
+          input: "kodex-mantine-segmented-control-input",
           indicator: "kodex-mantine-segmented-control-indicator",
           label: "kodex-mantine-segmented-control-label",
           innerLabel: "kodex-mantine-segmented-control-inner-label",

@@ -9,7 +9,15 @@ Kodex themes use one semantic color contract for app surfaces and Mantine contro
 - Feature CSS owns layout, density and feature-specific presentation. Use existing semantic roles for colors. Do not add raw palette indexes (`accent.3`, `theme.colors.gray[6]`), literal control colors, per-theme feature selectors, local readable-text alpha blends or local overrides of Mantine color variables.
 - Brand assets, syntax highlighting, terminal ANSI and diff colors have their own semantics. Keep those exceptions explicit and check their actual context; they are not a reason to bypass the contract for surrounding controls or body text. `text-on-accent` remains a deprecated external-brand/image fallback; use `text-on-action` and `text-on-user-bubble` for normal controls and chat content.
 
-The registry and its bootstrap generation remain the single source of theme values. A typed complete theme prevents missing roles and malformed palettes; it does not prove that the resulting color pairs are readable.
+The registry and its bootstrap generation remain the single source of theme values. The expanded catalog uses `theme/themePalettes.ts` foundations and `theme/paletteTheme.ts` to derive the complete contract; see [palette sources and adaptations](theme-palettes.md). A typed complete theme prevents missing roles and malformed palettes; it does not prove that the resulting color pairs are readable.
+
+## Appearance selection
+
+Appearance has a mode (`auto`, `light` or `dark`) plus independent light/dark theme IDs. Auto resolves the system media preference live; explicit modes ignore it. The card filter only controls which candidates are shown: choosing an inactive slot does not change mode. These are browser-local visual preferences, synchronized across tabs of the same origin, not account or gateway settings.
+
+`theme/appearancePreferences.ts` owns validation and resolution shared by the initial HTML bootstrap and React. `appearanceStorage.ts` owns storage/migration, and `useAppearancePreferences.ts` subscribes to system changes and preference updates. Preserve the same first-paint and live resolution rules when extending them. Existing `kodex-color-scheme` values migrate to an explicit mode; new profiles default to Auto with Paper Light and OLED Black. Never persist system-triggered theme changes as explicit user selections.
+
+Palette-preview cards intentionally render candidate semantic pairs independently of the active theme. Their selection/focus chrome still uses the active theme's shared control styles. Focus is a thin, desaturated shared `focus-ring` outline with the shared offset, and must remain visible against adjacent surfaces. Textareas keep focus on the actual textarea; do not add a special composer focus color or move its ring to unrelated controls.
 
 ## Safe role pairings
 
@@ -62,7 +70,7 @@ KODEX_THEME_AUDIT_DIR=../../artifacts/theme-audit npx playwright test tests/them
 python3 scripts/build-theme-contact-sheet.py ../../artifacts/theme-audit
 ```
 
-The contact-sheet builder needs Pillow in the chosen Python environment. Captures use the existing disposable Playwright Vite server on localhost:5174 and synthetic native-settings fixtures; they do not inspect or mutate the running gateway or user chats. Without `KODEX_THEME_AUDIT_DIR`, diagnostic capture tests skip; the contrast gate still runs. The builder rejects missing required captures. Give a new evidence run a separate output directory when preserving an earlier comparison.
+The contact-sheet builder needs Pillow in the chosen Python environment. Captures use the existing disposable Playwright Vite server on localhost:5174 and synthetic native-settings fixtures; they do not inspect or mutate the running gateway or user chats. Without `KODEX_THEME_AUDIT_DIR`, diagnostic capture tests skip; the contrast gate still runs. The builder rejects missing required captures. New runs write per-theme manifests; the gallery includes every captured theme and paginates PNG comparisons into groups of four. Give a new evidence run a separate output directory when preserving an earlier comparison.
 
 ## Measurement and review limits
 
@@ -90,3 +98,9 @@ Historical generated outputs are ignored local artifacts: [comparison gallery](.
 The combined frontend checkout passed all 1,003 unit/component tests, production build/typecheck and trim. The rendered gate passed all five tests (four themes plus live theme switching against fresh renders). Eight capture flows produced 56 screen/state captures covering the current queue UI, primitives, overlays, preferences and narrow/touch layouts. Independent review found no remaining material issues in this change. Theme labels and swatches now occupy separate columns with a minimum gap, checked in desktop and touch captures.
 
 The regenerated local [comparison gallery](../artifacts/theme-audit-after/index.html), [primitives sheet](../artifacts/theme-audit-after/primitives-contact-sheet.png), [overlays sheet](../artifacts/theme-audit-after/overlays-contact-sheet.png) and [states sheet](../artifacts/theme-audit-after/states-contact-sheet.png) preserve the post-fix evidence separately from the baseline. These ignored artifacts can be reproduced by changing the output directory in the commands above to `theme-audit-after`. Coverage limits listed above still apply; passing this matrix does not certify every product surface.
+
+## Catalog and Auto mode validation: 7 October 2026
+
+The catalog now contains 40 themes (14 light, 26 dark). Validation passed 1,019 unit/component tests, production build/typecheck and trim, plus 125 Chromium checks: 40 per-theme contrast checks, live theme recomputation, Auto/system/two-tab/reload behavior, three responsive picker layouts and 80 capture flows. Focus checks include buttons, text inputs, the composer textarea, switches and segmented controls. The card containment regression failed before intrinsic grid row sizing was added and now passes in all three responsive layouts.
+
+The ignored local [catalog gallery](../artifacts/theme-catalog/index.html) contains 560 screen/state captures, with comparison sheets paginated four themes at a time. Use `KODEX_THEME_AUDIT_DIR=../../artifacts/theme-catalog` with the capture command above, then build that directory. The workbench capture uses a taller viewport to include all primitives below the expanded theme chooser. Upstream palette provenance and adaptation details are in [theme palette sources](theme-palettes.md). Independent implementation reviews covered appearance state, first-paint behavior, storage failures, the picker, palette generation, shared focus styling and capture generation; the context-specific coverage limits above still apply.

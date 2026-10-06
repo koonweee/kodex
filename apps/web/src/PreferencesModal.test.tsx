@@ -59,9 +59,11 @@ function renderPreferences(initialSection: "appearance" | "execution" | "notific
     return (
       <PreferencesModal
         activeSection={section}
-        colorSchemeId="oled-black"
+        preferences={{ mode: "dark", lightThemeId: "paper-light", darkThemeId: "oled-black" }}
+        resolvedSchemeId="oled-black"
         onClose={vi.fn()}
-        onColorSchemeChange={vi.fn()}
+        onModeChange={vi.fn()}
+        onThemeChange={vi.fn()}
         onSectionChange={setSection}
         opened
       />

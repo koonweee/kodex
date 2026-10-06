@@ -147,6 +147,19 @@ async function checkWorkbench(page: Page, label: string) {
   const inputFocus = await sample(input);
   readable(inputFocus.focusRatio, `${label} keyboard input focus outer edge`, 3);
   readable(inputFocus.focusInnerRatio, `${label} keyboard input focus inner edge`, 3);
+  await page.getByRole("checkbox", { name: "Plain checkbox", exact: true }).focus();
+  await page.keyboard.press("Tab");
+  const switchInput = page.getByRole("switch", { name: "Plain switch", exact: true });
+  await expect(switchInput).toBeFocused();
+  const switchFocus = await sample(switchInput.locator("..").locator(".mantine-Switch-track"));
+  readable(switchFocus.focusRatio, `${label} keyboard switch focus outer edge`, 3);
+  const segment = page.getByRole("radio", { name: "Preview", exact: true });
+  await segment.focus();
+  await expect(segment).toBeFocused();
+  const segmentFocus = await sample(segment.locator("..").locator("label"));
+  readable(segmentFocus.focusRatio, `${label} keyboard segment focus outer edge`, 3);
+  readable(segmentFocus.focusInnerRatio, `${label} keyboard segment focus inner edge`, 3);
+
 }
 
 async function renderedPairs(page: Page) {

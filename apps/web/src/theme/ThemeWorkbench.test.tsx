@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { applyKodexColorScheme, createKodexMantineTheme, getKodexColorScheme, type KodexColorSchemeId } from "../theme";
+import { applyKodexColorScheme, createKodexMantineTheme, getKodexColorScheme, readStoredKodexColorScheme, type KodexColorSchemeId } from "../theme";
 import { ThemeWorkbench } from "./ThemeWorkbench";
 
 function renderWorkbench(initialSchemeId: KodexColorSchemeId = "oled-black") {
@@ -80,6 +80,6 @@ describe("ThemeWorkbench", () => {
       expect(document.documentElement).toHaveAttribute("data-kodex-color-scheme", "paper-light");
       expect(document.documentElement).toHaveAttribute("data-mantine-color-scheme", "light");
     });
-    expect(window.localStorage.getItem("kodex-color-scheme")).toBe("paper-light");
+    expect(readStoredKodexColorScheme()).toBe("paper-light");
   });
 });

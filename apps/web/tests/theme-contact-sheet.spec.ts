@@ -14,6 +14,7 @@ for (const scheme of KODEX_COLOR_SCHEMES) {
     test.setTimeout(90_000);
     const directory = path.resolve(output!, scheme.id);
     await mkdir(directory, { recursive: true });
+    await writeFile(path.join(directory, "theme.json"), JSON.stringify({ id: scheme.id, label: scheme.label, mode: scheme.mode }));
     await context.addInitScript(id => localStorage.setItem("kodex-color-scheme", id), scheme.id);
     const fixture = await nativeSettingsFixture(context);
     await context.route("**/v1/notifications/status", route => route.fulfill({ json: { configured: false, subscriptionsEnabled: false, vapidPublicKey: null } }));
@@ -36,7 +37,7 @@ for (const scheme of KODEX_COLOR_SCHEMES) {
       if (detail) await detail.screenshot({ path: path.join(directory, `${name}-detail.png`), animations: "disabled" });
     }
     try {
-      await page.setViewportSize({ width: 1440, height: 1450 });
+      await page.setViewportSize({ width: 1440, height: 1800 });
       await expect(page.getByRole("main", { name: "Theme workbench" })).toBeVisible();
       await expect(page.locator("html")).toHaveAttribute("data-kodex-color-scheme", scheme.id);
       await capture("01-primitives");

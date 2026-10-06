@@ -1,12 +1,12 @@
 import { createTheme, type MantineThemeOverride } from "@mantine/core";
 
+import { resolveAppearanceScheme } from "./theme/appearancePreferences";
+import { readStoredAppearancePreferences, systemPrefersDark, writeStoredAppearancePreferences } from "./theme/appearanceStorage";
 import { createKodexMantineComponents } from "./theme/components";
 import { kodexVariantColorResolver } from "./theme/mantineColors";
 import {
   DEFAULT_KODEX_COLOR_SCHEME_ID,
   getKodexColorSchemeDefinition,
-  isKodexColorSchemeId,
-  KODEX_COLOR_SCHEME_STORAGE_KEY,
   KODEX_COLOR_SCHEMES as KODEX_COLOR_SCHEME_DEFINITIONS,
   type KodexColorSchemeDefinition,
   type KodexColorSchemeId,
@@ -27,29 +27,19 @@ export function getKodexColorScheme(colorSchemeId: KodexColorSchemeId): KodexCol
   return COLOR_SCHEME_BY_ID.get(colorSchemeId) ?? COLOR_SCHEME_BY_ID.get(DEFAULT_KODEX_COLOR_SCHEME_ID)!;
 }
 
+/** Resolved device appearance; retained for standalone theme consumers. */
 export function readStoredKodexColorScheme(): KodexColorSchemeId {
-  if (typeof window === "undefined" || typeof window.localStorage?.getItem !== "function") {
-    return DEFAULT_KODEX_COLOR_SCHEME_ID;
-  }
-
-  try {
-    const storedValue = window.localStorage.getItem(KODEX_COLOR_SCHEME_STORAGE_KEY);
-    return storedValue && isKodexColorSchemeId(storedValue) ? storedValue : DEFAULT_KODEX_COLOR_SCHEME_ID;
-  } catch {
-    return DEFAULT_KODEX_COLOR_SCHEME_ID;
-  }
+  return resolveAppearanceScheme(readStoredAppearancePreferences(), systemPrefersDark());
 }
 
+/** Explicit theme selection for workbench/legacy callers. */
 export function writeStoredKodexColorScheme(colorSchemeId: KodexColorSchemeId) {
-  if (typeof window === "undefined" || typeof window.localStorage?.setItem !== "function") {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(KODEX_COLOR_SCHEME_STORAGE_KEY, colorSchemeId);
-  } catch {
-    // Ignore persistence failures and keep the in-memory preference.
-  }
+  const scheme = getKodexColorSchemeDefinition(colorSchemeId);
+  writeStoredAppearancePreferences({
+    ...readStoredAppearancePreferences(),
+    mode: scheme.mode,
+    [scheme.mode === "light" ? "lightThemeId" : "darkThemeId"]: scheme.id,
+  });
 }
 
 export function applyKodexColorScheme(

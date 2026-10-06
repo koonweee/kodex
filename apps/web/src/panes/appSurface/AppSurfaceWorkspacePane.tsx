@@ -1,7 +1,7 @@
 import { Alert, Loader } from "@mantine/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, Sparkles } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 
 import {
   callAppSurfaceBridge,
@@ -12,12 +12,13 @@ import {
 import { queryKeys } from "../../api/queryKeys";
 import { AppSurfacePane } from "../../appSurfaces/AppSurfacePane";
 import { errorMessageFrom } from "../../shared/values";
-import { readStoredKodexColorScheme } from "../../theme";
+import type { KodexColorSchemeId } from "../../theme";
+import { useAppearancePreferences } from "../../theme/useAppearancePreferences";
 import type { WorkspacePaneComponentProps } from "../../workspace/paneTypes";
 import { paneTargetRecord } from "../../workspace/paneTypes";
 
 type ThreadAppSurfacePaneProps = {
-  colorSchemeId: ReturnType<typeof readStoredKodexColorScheme>;
+  colorSchemeId: KodexColorSchemeId;
   emptyTitle?: string;
   targetSessionId?: string | null;
   threadId: string | null;
@@ -27,7 +28,7 @@ export function AppSurfaceWorkspacePane({ pane }: WorkspacePaneComponentProps) {
   const target = paneTargetRecord(pane);
   const threadId = typeof target.threadId === "string" ? target.threadId : null;
   const targetSessionId = typeof target.sessionId === "string" ? target.sessionId : null;
-  const [colorSchemeId] = useState(() => readStoredKodexColorScheme());
+  const { resolvedSchemeId: colorSchemeId } = useAppearancePreferences();
 
   return (
     <ThreadAppSurfacePane

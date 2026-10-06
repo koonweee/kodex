@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 import { createKodexQueryClient, queryClient } from "./api/queryClient";
+import { readStoredAppearancePreferences } from "./theme/appearanceStorage";
 import { mockGateway } from "./test/gatewayMock";
 import { createMemoryWorkspacePaneStore } from "./workspace/paneStore";
 import type { WorkspacePaneState } from "./workspace/paneTypes";
@@ -383,7 +384,7 @@ describe("App shell", () => {
     expect(screen.queryByText(/trusted network/i)).not.toBeInTheDocument();
   });
 
-  it("opens preferences from the sidebar settings menu and switches color schemes", async () => {
+  it("opens preferences and selects separate themes without changing Auto mode", async () => {
     mockGateway({
       "GET /v1/projects": { projects: [] },
       "GET /v1/approvals": { approvals: [] },
@@ -391,25 +392,29 @@ describe("App shell", () => {
     });
 
     renderApp();
-
     await waitFor(() => {
-      expect(document.documentElement).toHaveAttribute("data-kodex-color-scheme", "oled-black");
+      expect(document.documentElement).toHaveAttribute("data-kodex-color-scheme", "paper-light");
     });
-
     fireEvent.click(screen.getByRole("button", { name: /account settings/i }));
     await userEvent.click(await screen.findByRole("menuitem", { name: /preferences/i }));
 
     expect(await screen.findByRole("dialog", { name: /preferences/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /appearance/i })).toHaveAttribute("data-active", "true");
+    const mode = screen.getByRole("radiogroup", { name: "Appearance mode" });
+    expect(within(mode).getByRole("radio", { name: "Auto" })).toBeChecked();
+    await userEvent.click(within(screen.getByRole("radiogroup", { name: "Browse themes" })).getByRole("radio", { name: "Dark" }));
+    const darkThemes = screen.getByRole("radiogroup", { name: "Dark theme" });
+    await userEvent.click(within(darkThemes).getByRole("radio", { name: "Dracula" }));
+    expect(document.documentElement).toHaveAttribute("data-kodex-color-scheme", "paper-light");
+    expect(within(mode).getByRole("radio", { name: "Auto" })).toBeChecked();
+    expect(readStoredAppearancePreferences()).toEqual({ mode: "auto", lightThemeId: "paper-light", darkThemeId: "dracula" });
 
-    const colorSchemeGroup = screen.getByRole("radiogroup", { name: /color scheme/i });
-    await userEvent.click(within(colorSchemeGroup).getByRole("radio", { name: /dracula/i }));
-
+    await userEvent.click(within(mode).getByRole("radio", { name: "Dark" }));
     await waitFor(() => {
       expect(document.documentElement).toHaveAttribute("data-kodex-color-scheme", "dracula");
       expect(document.documentElement).toHaveAttribute("data-mantine-color-scheme", "dark");
     });
-    expect(window.localStorage.getItem("kodex-color-scheme")).toBe("dracula");
+    expect(readStoredAppearancePreferences().mode).toBe("dark");
   });
 
   it("hydrates a persisted light color scheme before opening preferences", async () => {
@@ -430,8 +435,9 @@ describe("App shell", () => {
     fireEvent.click(screen.getByRole("button", { name: /account settings/i }));
     await userEvent.click(await screen.findByRole("menuitem", { name: /preferences/i }));
 
-    const colorSchemeGroup = await screen.findByRole("radiogroup", { name: /color scheme/i });
-    expect(within(colorSchemeGroup).getByRole("radio", { name: /paper light/i })).toHaveAttribute("aria-checked", "true");
+    const colorSchemeGroup = await screen.findByRole("radiogroup", { name: "Light theme" });
+    expect(within(colorSchemeGroup).getByRole("radio", { name: "Paper Light" })).toHaveAttribute("aria-checked", "true");
+    expect(within(screen.getByRole("radiogroup", { name: "Appearance mode" })).getByRole("radio", { name: "Light" })).toBeChecked();
   });
 
   it("renders the theme workbench route without loading gateway state", async () => {
@@ -447,7 +453,8 @@ describe("App shell", () => {
     });
   });
 
-  it("moves the selected color scheme with arrow keys in preferences", async () => {
+  it("moves the selected theme with arrow keys within the browsed appearance", async () => {
+    window.localStorage.setItem("kodex-color-scheme", "oled-black");
     mockGateway({
       "GET /v1/projects": { projects: [] },
       "GET /v1/approvals": { approvals: [] },
@@ -459,14 +466,15 @@ describe("App shell", () => {
     fireEvent.click(screen.getByRole("button", { name: /account settings/i }));
     await userEvent.click(await screen.findByRole("menuitem", { name: /preferences/i }));
 
-    const colorSchemeGroup = await screen.findByRole("radiogroup", { name: /color scheme/i });
+    const colorSchemeGroup = await screen.findByRole("radiogroup", { name: "Dark theme" });
     const oledBlack = within(colorSchemeGroup).getByRole("radio", { name: /oled black/i });
     oledBlack.focus();
     expect(oledBlack).toHaveFocus();
 
     await userEvent.keyboard("{ArrowDown}");
-    expect(within(colorSchemeGroup).getByRole("radio", { name: /paper light/i })).toHaveAttribute("aria-checked", "true");
-    expect(document.documentElement).toHaveAttribute("data-kodex-color-scheme", "paper-light");
+    expect(within(colorSchemeGroup).getByRole("radio", { name: "Dracula" })).toHaveAttribute("aria-checked", "true");
+    expect(within(colorSchemeGroup).getByRole("radio", { name: "Dracula" })).toHaveFocus();
+    expect(document.documentElement).toHaveAttribute("data-kodex-color-scheme", "dracula");
 
     await userEvent.keyboard("{ArrowUp}");
     expect(within(colorSchemeGroup).getByRole("radio", { name: /oled black/i })).toHaveAttribute("aria-checked", "true");

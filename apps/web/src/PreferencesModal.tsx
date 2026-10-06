@@ -1,7 +1,6 @@
 import { Alert, Badge, Box, Button, Group, Loader, Modal, Stack, Text } from "@mantine/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, BellOff, Package, RefreshCw, Send } from "lucide-react";
-import { useRef, type KeyboardEvent as ReactKeyboardEvent, type MutableRefObject } from "react";
 
 import {
   getKodexControlPluginStatus,
@@ -12,6 +11,8 @@ import {
 import { queryKeys } from "./api/queryKeys";
 import { McpPreferencesPanel } from "./mcp/McpPreferencesPanel";
 import { ExecutionPreferencesPanel } from "./preferences/ExecutionPreferencesPanel";
+import { AppearancePreferencesPanel } from "./preferences/AppearancePreferencesPanel";
+import type { AppearanceMode, AppearancePreferences } from "./theme/appearancePreferences";
 import { requestKodexNotificationPermission } from "./notifications/browserNotifications";
 import {
   browserPushNotificationsSupported,
@@ -20,28 +21,31 @@ import {
   enableBrowserPushNotifications,
   loadBrowserPushNotificationState,
 } from "./notifications/pushSubscriptions";
-import { KODEX_COLOR_SCHEMES, type KodexColorSchemeId } from "./theme";
+import type { KodexColorSchemeId } from "./theme";
 
 export type PreferenceSection = "appearance" | "execution" | "notifications" | "plugins" | "mcp";
 
 export type PreferencesModalProps = {
   activeSection?: PreferenceSection;
-  colorSchemeId: KodexColorSchemeId;
+  preferences: AppearancePreferences;
+  resolvedSchemeId: KodexColorSchemeId;
   onClose: () => void;
-  onColorSchemeChange: (colorSchemeId: KodexColorSchemeId) => void;
+  onModeChange: (mode: AppearanceMode) => void;
+  onThemeChange: (id: KodexColorSchemeId) => void;
   onSectionChange: (section: PreferenceSection) => void;
   opened: boolean;
 };
 
 export function PreferencesModal({
   activeSection = "appearance",
-  colorSchemeId,
+  preferences,
+  resolvedSchemeId,
   onClose,
-  onColorSchemeChange,
+  onModeChange,
+  onThemeChange,
   onSectionChange,
   opened,
 }: PreferencesModalProps) {
-  const optionRefs = useRef<Partial<Record<KodexColorSchemeId, HTMLButtonElement | null>>>({});
   const queryClient = useQueryClient();
   const pluginStatusQuery = useQuery({
     enabled: opened && activeSection === "plugins",
@@ -99,34 +103,6 @@ export function PreferencesModal({
       await queryClient.invalidateQueries({ queryKey: ["notifications", "current-device"] });
     },
   });
-
-  function handleSchemeKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
-    let nextIndex = index;
-
-    switch (event.key) {
-      case "ArrowDown":
-      case "ArrowRight":
-        nextIndex = (index + 1) % KODEX_COLOR_SCHEMES.length;
-        break;
-      case "ArrowUp":
-      case "ArrowLeft":
-        nextIndex = (index - 1 + KODEX_COLOR_SCHEMES.length) % KODEX_COLOR_SCHEMES.length;
-        break;
-      case "Home":
-        nextIndex = 0;
-        break;
-      case "End":
-        nextIndex = KODEX_COLOR_SCHEMES.length - 1;
-        break;
-      default:
-        return;
-    }
-
-    event.preventDefault();
-    const nextScheme = KODEX_COLOR_SCHEMES[nextIndex];
-    onColorSchemeChange(nextScheme.id);
-    optionRefs.current[nextScheme.id]?.focus();
-  }
 
   return (
     <Modal
@@ -190,10 +166,10 @@ export function PreferencesModal({
 
         {activeSection === "appearance" ? (
           <AppearancePreferencesPanel
-            colorSchemeId={colorSchemeId}
-            handleSchemeKeyDown={handleSchemeKeyDown}
-            onColorSchemeChange={onColorSchemeChange}
-            optionRefs={optionRefs}
+            preferences={preferences}
+            resolvedSchemeId={resolvedSchemeId}
+            onModeChange={onModeChange}
+            onThemeChange={onThemeChange}
           />
         ) : activeSection === "execution" ? (
           <ExecutionPreferencesPanel />
@@ -394,65 +370,6 @@ function NotificationsPreferencesPanel({
             </Button>
           ) : null}
         </Group>
-      </Stack>
-    </Stack>
-  );
-}
-
-function AppearancePreferencesPanel({
-  colorSchemeId,
-  handleSchemeKeyDown,
-  onColorSchemeChange,
-  optionRefs,
-}: {
-  colorSchemeId: KodexColorSchemeId;
-  handleSchemeKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => void;
-  onColorSchemeChange: (colorSchemeId: KodexColorSchemeId) => void;
-  optionRefs: MutableRefObject<Partial<Record<KodexColorSchemeId, HTMLButtonElement | null>>>;
-}) {
-  return (
-    <Stack className="kodex-preferences-panel" gap={14}>
-      <Text className="kodex-preferences-panel-title" fw={650}>
-        Appearance
-      </Text>
-
-      <Stack className="kodex-preferences-setting" gap={8}>
-        <Box className="kodex-preferences-setting-header">
-          <Text fw={600} id="kodex-color-scheme-label" size="sm">
-            Color scheme
-          </Text>
-        </Box>
-
-        <Box aria-labelledby="kodex-color-scheme-label" className="kodex-scheme-list" role="radiogroup">
-          {KODEX_COLOR_SCHEMES.map((scheme, index) => (
-            <Button
-              aria-checked={scheme.id === colorSchemeId}
-              className="kodex-scheme-option"
-              data-active={scheme.id === colorSchemeId ? "true" : undefined}
-              key={scheme.id}
-              onClick={() => onColorSchemeChange(scheme.id)}
-              onKeyDown={(event) => handleSchemeKeyDown(event, index)}
-              ref={(node) => {
-                optionRefs.current[scheme.id] = node;
-              }}
-              role="radio"
-              tabIndex={scheme.id === colorSchemeId ? 0 : -1}
-              type="button"
-              variant={scheme.id === colorSchemeId ? "light" : "subtle"}
-            >
-              <Box className="kodex-scheme-copy">
-                <Text className="kodex-scheme-label" fw={600}>
-                  {scheme.label}
-                </Text>
-              </Box>
-              <Box aria-hidden="true" className="kodex-scheme-swatches">
-                {scheme.swatches.map((color) => (
-                  <span className="kodex-scheme-swatch" key={color} style={{ background: color }} />
-                ))}
-              </Box>
-            </Button>
-          ))}
-        </Box>
       </Stack>
     </Stack>
   );

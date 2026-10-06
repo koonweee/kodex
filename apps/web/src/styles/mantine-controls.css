@@ -129,3 +129,10 @@
 .kodex-mantine-alert-close {
   color: currentColor;
 }
+
+/* Hidden native inputs place their visible focus on the adjacent control. */
+.kodex-mantine-switch-input:focus-visible + .kodex-mantine-switch-track,
+.kodex-mantine-segmented-control-input:focus-visible + .kodex-mantine-segmented-control-label {
+  outline: var(--kodex-focus-outline);
+  outline-offset: var(--kodex-focus-offset);
+}

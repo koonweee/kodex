@@ -1,3 +1,5 @@
+@import "./appearance-preferences.css";
+
 .kodex-empty {
   display: grid;
   gap: 6px;
@@ -78,48 +80,6 @@
 
 .kodex-preferences-setting-header {
   padding-top: 1px;
-}
-
-.kodex-scheme-list {
-  display: grid;
-  gap: 6px;
-}
-
-.kodex-scheme-option {
-  width: 100%;
-  min-height: 44px;
-}
-
-.kodex-scheme-option .kodex-mantine-button-inner {
-  width: 100%;
-}
-
-.kodex-scheme-option .kodex-mantine-button-label {
-  display: flex;
-  width: 100%;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.kodex-scheme-label {
-  font-size: 13px;
-  line-height: 1.2;
-}
-
-.kodex-scheme-swatches {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 5px;
-}
-
-.kodex-scheme-swatch {
-  display: inline-block;
-  width: 16px;
-  height: 16px;
-  border: 1px solid color-mix(in srgb, var(--kodex-text-primary) 14%, transparent);
-  border-radius: var(--kodex-radius-round);
-  box-shadow: var(--kodex-shadow-swatch);
 }
 
 .kodex-plugin-row {
@@ -357,9 +317,23 @@
   }
 
   .kodex-preferences-sections {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
     padding: 10px;
     border-right: 0;
     border-bottom: 1px solid var(--kodex-border-subtle);
+  }
+
+  .kodex-preferences-section-button {
+    height: auto;
+    min-height: 36px;
+    padding: 8px;
+  }
+
+  .kodex-preferences-section-button .kodex-mantine-button-label {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .kodex-plugin-row {
@@ -392,5 +366,17 @@
     --kodex-mobile-safe-area-right: env(safe-area-inset-right);
     --kodex-mobile-safe-area-bottom: env(safe-area-inset-bottom);
     --kodex-mobile-safe-area-left: env(safe-area-inset-left);
+  }
+}
+
+@media (max-width: 380px) {
+  .kodex-preferences-sections {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (pointer: coarse), (any-pointer: coarse) {
+  .kodex-preferences-section-button {
+    min-height: 44px;
   }
 }

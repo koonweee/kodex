@@ -73,10 +73,10 @@ import {
   applyKodexColorScheme,
   createKodexMantineTheme,
   getKodexColorScheme,
-  readStoredKodexColorScheme,
-  writeStoredKodexColorScheme,
   type KodexColorSchemeId,
 } from "./theme";
+import { useAppearancePreferences } from "./theme/useAppearancePreferences";
+import type { AppearancePreferences } from "./theme/appearancePreferences";
 import {
   clearAvailableThreadTitles,
   markThreadTitlePending,
@@ -156,12 +156,11 @@ type AppProps = {
 };
 
 export function App({ queryClientInstance = queryClient, workspacePaneStore }: AppProps = {}) {
-  const [colorSchemeId, setColorSchemeId] = useState<KodexColorSchemeId>(() => readStoredKodexColorScheme());
+  const { preferences, resolvedSchemeId: colorSchemeId, setMode, setTheme, selectTheme } = useAppearancePreferences();
   const colorScheme = useMemo(() => getKodexColorScheme(colorSchemeId), [colorSchemeId]);
   const theme = useMemo(() => createKodexMantineTheme(colorScheme), [colorScheme]);
 
   useLayoutEffect(() => {
-    writeStoredKodexColorScheme(colorSchemeId);
     applyKodexColorScheme(document.documentElement, colorScheme);
   }, [colorScheme, colorSchemeId]);
 
@@ -176,12 +175,14 @@ export function App({ queryClientInstance = queryClient, workspacePaneStore }: A
         <CompatibilityNotice />
         {isThemeWorkbench ? (
           <Suspense fallback={null}>
-            <ThemeWorkbench colorSchemeId={colorSchemeId} onColorSchemeChange={setColorSchemeId} />
+            <ThemeWorkbench colorSchemeId={colorSchemeId} onColorSchemeChange={selectTheme} />
           </Suspense>
         ) : (
           <KodexShell
             colorSchemeId={colorSchemeId}
-            onColorSchemeChange={setColorSchemeId}
+            appearance={preferences}
+            onAppearanceModeChange={setMode}
+            onThemeChange={setTheme}
             workspacePaneStore={workspacePaneStore}
           />
         )}
@@ -192,11 +193,15 @@ export function App({ queryClientInstance = queryClient, workspacePaneStore }: A
 
 function KodexShell({
   colorSchemeId,
-  onColorSchemeChange,
+  appearance,
+  onAppearanceModeChange,
+  onThemeChange,
   workspacePaneStore,
 }: {
   colorSchemeId: KodexColorSchemeId;
-  onColorSchemeChange: (colorSchemeId: KodexColorSchemeId) => void;
+  appearance: AppearancePreferences;
+  onAppearanceModeChange: (mode: AppearancePreferences["mode"]) => void;
+  onThemeChange: (id: KodexColorSchemeId) => void;
   workspacePaneStore?: WorkspacePaneStoreAdapter;
 }) {
   const [initialRoute] = useState(() => currentKodexRoute());
@@ -1073,7 +1078,8 @@ function KodexShell({
         mainPane={selectedMainPane}
         mobilePanel={mobilePanel}
         preferencesProps={{
-          activeSection: preferencesSection, colorSchemeId, onClose: handleClosePreferences, onColorSchemeChange,
+          activeSection: preferencesSection, resolvedSchemeId: colorSchemeId, preferences: appearance,
+          onClose: handleClosePreferences, onModeChange: onAppearanceModeChange, onThemeChange,
           onSectionChange: setPreferencesSection, opened: preferencesOpen,
         }}
         projectPaneProps={{

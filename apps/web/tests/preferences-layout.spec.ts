@@ -26,6 +26,27 @@ for (const shape of [
             return label.scrollWidth <= label.clientWidth;
           }), `${name} is clipped`).toBe(true);
         }
+        await expect(dialog.getByRole("radiogroup", { name: "Appearance mode", exact: true })).toBeVisible();
+        const themes = dialog.getByRole("radiogroup", { name: /^(Light|Dark) theme$/ });
+        for (const card of await themes.getByRole("radio").all()) {
+          const contentFits = await card.evaluate((element) => {
+            const cardBounds = element.getBoundingClientRect();
+            const visibleContent = element.querySelectorAll(".kodex-scheme-preview, .kodex-scheme-label, .kodex-scheme-swatches");
+            return [...visibleContent].every((content) => {
+              const bounds = content.getBoundingClientRect();
+              return bounds.width > 0 && bounds.height > 0 && bounds.top >= cardBounds.top && bounds.bottom <= cardBounds.bottom && bounds.left >= cardBounds.left && bounds.right <= cardBounds.right;
+            });
+          });
+          expect(contentFits, `${await card.getAttribute("aria-label")} preview, name and swatches must fit within its card`).toBe(true);
+        }
+        const selected = themes.getByRole("radio", { checked: true });
+        await selected.focus();
+        await page.keyboard.press("End");
+        const last = themes.getByRole("radio").last();
+        await expect(last).toBeFocused();
+        await expect(last).toBeInViewport();
+        expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth), "Appearance must not overflow horizontally").toBe(true);
+        await page.screenshot({ path: test.info().outputPath("preferences-appearance.png") });
         await dialog.getByRole("button", { name: "Notifications", exact: true }).click();
         await page.screenshot({ path: test.info().outputPath("preferences-notifications.png") });
       } finally { await fixture.close(); }
