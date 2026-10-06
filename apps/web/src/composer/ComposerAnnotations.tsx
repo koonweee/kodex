@@ -1,6 +1,6 @@
 import { Box, Button, Group, Text, Textarea } from "@mantine/core";
 import { ChevronDown, MessageSquareQuote, X } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 import type { ComposerDraftState } from "./useComposerDraftState";
@@ -14,7 +14,18 @@ export function ComposerAnnotations({ draftState, disabled, collapseByDefault = 
   const [expanded, setExpanded] = useState(!collapseByDefault);
   const listId = useId();
   const listRef = useRef<HTMLDivElement>(null);
+  const commentRef = useRef<HTMLTextAreaElement>(null);
+  const focusId = draftState.annotationFocusId;
   const lastId = draftState.annotations.at(-1)?.id;
+  useLayoutEffect(() => {
+    if (!focusId || disabled) return;
+    if (!expanded) {
+      setExpanded(true);
+      return;
+    }
+    commentRef.current?.focus({ preventScroll: true });
+    if (document.activeElement === commentRef.current) draftState.clearAnnotationFocus();
+  }, [focusId, expanded, disabled, draftState.clearAnnotationFocus]);
   useEffect(() => {
     if (!collapseByDefault || !lastId) setExpanded(!collapseByDefault);
   }, [collapseByDefault, lastId]);
@@ -39,7 +50,7 @@ export function ComposerAnnotations({ draftState, disabled, collapseByDefault = 
                 onClick={() => draftState.removeAnnotation(annotation.id)}><X /></AdaptiveIconButton>
             </Group>
             <blockquote>{annotation.text}</blockquote>
-            <Textarea aria-label={`Annotation ${index + 1} comment`} placeholder="Add an optional comment…"
+            <Textarea ref={annotation.id === focusId ? commentRef : undefined} aria-label={`Annotation ${index + 1} comment`} placeholder="Add an optional comment…"
               autosize minRows={1} maxRows={4} value={annotation.comment} disabled={disabled}
               onFocus={onFocus} onChange={(event) => draftState.updateAnnotation(annotation.id, event.currentTarget.value)} />
           </Box>

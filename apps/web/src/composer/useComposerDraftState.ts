@@ -40,6 +40,7 @@ export function useComposerDraftState(
   const [composerText, setComposerText] = useState(initialDraft?.composerText ?? "");
   const [skillBindings, setSkillBindings] = useState<SkillMentionBinding[]>(initialDraft?.skillBindings ?? []);
   const [annotations, setAnnotations] = useState<DraftAnnotation[]>(initialDraft?.annotations ?? []);
+  const [annotationFocusId, setAnnotationFocusId] = useState<string | null>(null);
   const [skillToken, setSkillToken] = useState<SkillMentionToken | null>(null);
   const [activeSkillIndex, setActiveSkillIndex] = useState(0);
   const [slashToken, setSlashToken] = useState<ComposerTriggerToken<"/"> | null>(null);
@@ -191,12 +192,19 @@ export function useComposerDraftState(
     setComposerText("");
     setSkillBindings([]);
     setAnnotations([]);
+    setAnnotationFocusId(null);
     setSkillToken(null);
     setSlashToken(null);
   }
 
   function addAnnotation(text: string) {
-    changeAnnotations([...annotationsRef.current, { id: createClientRequestId(), text, comment: "" }]);
+    const id = createClientRequestId();
+    changeAnnotations([...annotationsRef.current, { id, text, comment: "" }]);
+    setAnnotationFocusId(id);
+  }
+
+  function clearAnnotationFocus() {
+    setAnnotationFocusId(null);
   }
 
   function updateAnnotation(id: string, comment: string) {
@@ -293,6 +301,7 @@ export function useComposerDraftState(
   }
 
   function restoreDraftForKey(key: string) {
+    setAnnotationFocusId(null);
     const storedDraft = draftsByKey.get(key);
     const nextText = storedDraft?.composerText ?? "";
     const nextBindings = storedDraft?.skillBindings ?? [];
@@ -321,6 +330,8 @@ export function useComposerDraftState(
   return {
     addAnnotation,
     annotations,
+    annotationFocusId,
+    clearAnnotationFocus,
     activeSlashIndex,
     activeSkillIndex,
     clampActiveSlashIndex,
