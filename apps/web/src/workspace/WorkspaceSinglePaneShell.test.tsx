@@ -15,6 +15,7 @@ vi.mock("./paneRegistry", async (importActual) => {
     WorkspacePaneRenderer: ({ isActive, pane }: { isActive: boolean; pane: WorkspacePane }) => (
       <section data-active={isActive ? "true" : "false"} data-testid={`single-pane-${pane.id}`}>
         {pane.title}
+        {pane.kind === "thread" && pane.target.mode === "draft" ? <input aria-label="Retained draft input" /> : null}
       </section>
     ),
   };
@@ -60,6 +61,23 @@ describe("WorkspaceSinglePaneShell", () => {
     fireEvent.click(screen.getByRole("button", { name: /show sidebar/i }));
     expect(onShowMobileSidebar).toHaveBeenCalledTimes(1);
     expect(within(screen.getByRole("toolbar", { name: "Pane actions" })).queryByRole("button", { name: /close pane/i })).not.toBeInTheDocument();
+  });
+
+  it("retains draft input while hidden and restores the same composer when focused", async () => {
+    const store = createMemoryWorkspacePaneStore(workspaceState([
+      draftThreadPane("draft", "Draft"), threadPane("existing", "thread-1", "Existing"),
+    ], "draft"));
+    renderShell(store);
+    const input = screen.getByRole("textbox", { name: "Retained draft input" });
+    fireEvent.change(input, { target: { value: "Unsent work" } });
+    fireEvent.click(screen.getByRole("button", { name: /switch workspace pane/i }));
+    fireEvent.click(within(await screen.findByRole("dialog", { name: /active panes/i })).getByRole("button", { name: "Existing" }));
+    expect(input).not.toBeVisible();
+    expect(input).toHaveValue("Unsent work");
+    fireEvent.click(screen.getByRole("button", { name: /switch workspace pane/i }));
+    fireEvent.click(within(await screen.findByRole("dialog", { name: /active panes/i })).getByRole("button", { name: "Draft" }));
+    expect(screen.getByRole("textbox", { name: "Retained draft input" })).toBe(input);
+    expect(input).toHaveValue("Unsent work");
   });
 
   it("closes the active pane from the pane manager and focuses the next pane", async () => {

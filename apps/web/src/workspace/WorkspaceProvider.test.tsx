@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ComponentProps } from "react";
+import { useLayoutEffect, type ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { deleteTerminalSession } from "../api/client";
@@ -55,6 +55,32 @@ describe("WorkspaceProvider pane commands", () => {
     fireEvent.click(screen.getByRole("button", { name: "New projectless chat" }));
     await waitFor(() => expect(store.getState().panes[0]?.target).toEqual({ mode: "draft" }));
     expect(store.getState().panes).toHaveLength(2);
+  });
+
+  it("keeps a protected draft in its original project and creates another draft", async () => {
+    const store = createMemoryWorkspacePaneStore(workspaceState([draftThreadPane("pane-draft", "project-1")], "pane-draft"));
+    renderProvider(store);
+    fireEvent.click(screen.getByRole("button", { name: "Protect draft" }));
+    fireEvent.click(screen.getByRole("button", { name: "New projectless chat" }));
+    await waitFor(() => expect(store.getState().panes).toHaveLength(2));
+    expect(store.getState().panes[0]).toMatchObject({ id: "pane-draft", target: { mode: "draft", projectId: "project-1" } });
+    expect(store.getState().activePaneId).not.toBe("pane-draft");
+  });
+
+  it.each(["Split thread", "Duplicate thread", "Split draft"])("preserves an empty draft for explicit %s", async (command) => {
+    const store = createMemoryWorkspacePaneStore(workspaceState([draftThreadPane("pane-draft")], "pane-draft"));
+    renderProvider(store);
+    fireEvent.click(screen.getByRole("button", { name: command }));
+    await waitFor(() => expect(store.getState().panes).toHaveLength(2));
+    expect(store.getState().panes[0]).toMatchObject({ kind: "thread", target: { mode: "draft" } });
+  });
+
+  it("does not discard panes added in the same batch as a thread open", async () => {
+    const store = createMemoryWorkspacePaneStore(workspaceState([draftThreadPane("pane-draft")], "pane-draft"));
+    renderProvider(store);
+    fireEvent.click(screen.getByRole("button", { name: "Open terminal and thread" }));
+    await waitFor(() => expect(store.getState().panes).toHaveLength(3));
+    expect(store.getState().panes.some((pane) => pane.kind === "terminal")).toBe(true);
   });
 
   it("focuses an existing thread pane unless duplicate is requested", async () => {
@@ -212,11 +238,20 @@ describe("WorkspaceProvider pane commands", () => {
     expect(store.getState().panes.filter((pane) => pane.kind === "appSurface")).toHaveLength(1);
   });
 
+  it("replaces the sole empty draft when opening an existing thread", async () => {
+    const store = createMemoryWorkspacePaneStore(workspaceState([draftThreadPane("pane-draft")], "pane-draft"));
+    renderProvider(store);
+    fireEvent.click(screen.getByRole("button", { name: "Open thread" }));
+    await waitFor(() => expect(store.getState().panes).toHaveLength(1));
+    expect(store.getState().panes[0]).toMatchObject({ id: "pane-draft", target: { mode: "existing", threadId: "thread-1" } });
+  });
+
   it("does not retarget an active draft thread pane when opening an existing thread", async () => {
     const store = createMemoryWorkspacePaneStore(workspaceState([
       draftThreadPane("pane-draft", "project-1"),
     ], "pane-draft"));
     renderProvider(store);
+    fireEvent.click(screen.getByRole("button", { name: "Protect draft" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Open thread" }));
 
@@ -366,11 +401,20 @@ function renderProvider(
 
 function CommandHarness() {
   const workspace = useWorkspace();
+  useLayoutEffect(() => {
+    for (const pane of workspace.workspace.panes) {
+      if (pane.kind === "thread" && pane.target.mode === "draft") workspace.setPaneDraftDisposable(pane.id, true);
+    }
+  }, [workspace.workspace.panes, workspace.setPaneDraftDisposable]);
   return (
     <>
       <span data-testid="canonical-pane-context">{workspace.paneThreadContextsById["pane-thread-1"]?.projectId ?? "none"}|{workspace.paneThreadContextsById["pane-thread-1"]?.cwd ?? "none"}</span>
       <button onClick={() => workspace.setPaneThreadContext("pane-thread-1", { id: "thread-1", projectId: "native-project", cwd: "/native-cwd" })}>Receive native pane context</button>
       <button onClick={() => workspace.closePane("pane-thread-1", null)}>Close native context pane</button>
+      <button onClick={() => { void workspace.openNewTerminalPane(); void workspace.openThreadPane("thread-1"); }}>Open terminal and thread</button>
+      <button onClick={() => void workspace.openThreadPane("thread-1", "Thread 1", { placement: { direction: "right" } })}>Split thread</button>
+      <button onClick={() => void workspace.openDraftThreadPane(null, { placement: { direction: "right" } })}>Split draft</button>
+      <button onClick={() => workspace.setPaneDraftDisposable("pane-draft", false)}>Protect draft</button>
       <button onClick={() => void workspace.openDraftThreadPane("project-1")}>New project chat</button>
       <button onClick={() => void workspace.openDraftThreadPane(null)}>New projectless chat</button>
       <span data-testid="pane-count">{workspace.workspace.panes.length}</span>

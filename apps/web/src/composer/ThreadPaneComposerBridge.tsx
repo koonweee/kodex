@@ -55,7 +55,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
   projects,
   skillsInvalidationGeneration,
 }: ThreadPaneComposerBridgeProps) {
-  const { publishThreadPaneTimelineAction, updatePane } = useWorkspace();
+  const { publishThreadPaneTimelineAction, setPaneDraftDisposable, updatePane } = useWorkspace();
   const target = paneTargetRecord(pane);
   const existingThreadId = target.mode === "existing" && typeof target.threadId === "string" ? target.threadId : null;
   const isDraftPane = existingThreadId === null;
@@ -115,6 +115,10 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
     },
     [composerCwd, draftComposerEdited, draftProjectId, hydrateComposerDefaults, isDraftPane, onCreateDraftThread],
   );
+
+  const handleDraftDisposableChange = useCallback((disposable: boolean) => {
+    if (isDraftPane) setPaneDraftDisposable(pane.id, disposable && createdDraftThreadRef.current === null);
+  }, [isDraftPane, pane.id, setPaneDraftDisposable]);
 
   const orchestration = useComposerOrchestration({
     activeSelectedTurnId: paneState.activeTurnId,
@@ -192,6 +196,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
       canCompose={canCompose}
       composerDraftKey={composerDraftKey}
       composerDraftStore={composerDraftStore}
+      onDraftDisposableChange={handleDraftDisposableChange}
       composerResetToken={0}
       composerSettings={paneComposerSettings}
       composerSettingsDisabled={!isDraftPane && threadSettings.pending}

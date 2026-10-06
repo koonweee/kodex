@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "@mantine/core";
 import type {
   ClipboardEvent as ReactClipboardEvent,
@@ -55,6 +55,7 @@ export type ComposerPanelProps = {
   queueDialogActive?: boolean;
   composerDraftKey?: string;
   composerDraftStore?: ComposerDraftStore;
+  onDraftDisposableChange?: (disposable: boolean) => void;
   composerCwd?: string | null;
   composerShellRef?: RefObject<HTMLDivElement | null>;
   contextUsage?: ContextUsage | null;
@@ -107,6 +108,7 @@ export function ComposerPanel({
   queueDialogActive = true,
   composerDraftKey,
   composerDraftStore,
+  onDraftDisposableChange,
   composerCwd,
   composerShellRef,
   contextUsage,
@@ -135,6 +137,11 @@ export function ComposerPanel({
   selectedThreadPresent,
 }: ComposerPanelProps) {
   const draftState = useComposerDraftState(composerResetToken, composerDraftKey, composerDraftStore);
+  const draftDisposable = draftState.composerText.length === 0 && draftState.annotations.length === 0 &&
+    pendingAttachments.length === 0 && !isComposerSubmitting && !isDraftComposerTransitioning;
+  useLayoutEffect(() => {
+    onDraftDisposableChange?.(draftDisposable);
+  }, [draftDisposable, onDraftDisposableChange]);
   const isNarrowComposer = useIsNarrowComposer();
   const inputCapabilities = useInputCapabilities();
   const isMobileComposer = isNarrowComposer && inputCapabilities.hasTouchInput;

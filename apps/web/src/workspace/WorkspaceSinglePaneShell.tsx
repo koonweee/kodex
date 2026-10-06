@@ -177,16 +177,20 @@ export function WorkspaceSinglePaneShell() {
           {activePaneActions}
         </div>
       </Group>
-      <div className="kodex-workspace-pane-host kodex-workspace-single-pane-host" data-pane-kind={activePane.kind}>
-        <WorkspacePaneRenderer key={activePane.id} pane={activePane} isActive />
-        {focusPulseToken ? (
-          <span
-            aria-hidden="true"
-            className="kodex-workspace-pane-focus-pulse"
-            key={focusPulseToken}
-          />
-        ) : null}
-      </div>
+      {workspace.panes.filter((pane) => pane.id === activePane.id || (pane.kind === "thread" && pane.target.mode === "draft")).map((pane) => (
+        <div
+          className="kodex-workspace-pane-host kodex-workspace-single-pane-host"
+          data-pane-kind={pane.kind}
+          hidden={pane.id !== activePane.id}
+          style={pane.id !== activePane.id ? { display: "none" } : undefined}
+          key={pane.id}
+        >
+          <WorkspacePaneRenderer pane={pane} isActive={pane.id === activePane.id} />
+          {pane.id === activePane.id && focusPulseToken ? (
+            <span aria-hidden="true" className="kodex-workspace-pane-focus-pulse" key={focusPulseToken} />
+          ) : null}
+        </div>
+      ))}
     </Stack>
   );
 }

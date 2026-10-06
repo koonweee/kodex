@@ -332,9 +332,13 @@ Work:
   hook/store that consumes workspace-stream events.
 - Keep same-thread duplicate panes sharing the resource event subscription and
   resource reducer state while retaining pane-local scroll/expanded-row state.
-- Keep composer drafts keyed by pane id for unsent draft state. New chat reuses
-  an existing draft pane across project selections, preserving text, attachments
-  and dock position. Only create a pane when no draft is open. This is per-tab
+- Keep composer drafts keyed by pane id for unsent draft state. Ordinary New chat
+  reuses an empty draft across project selections and preserves its dock position.
+  Drafts with text, annotations, attachments or an in-flight submission keep their
+  original project and content; create another draft when none is reusable.
+  Opening an existing chat replaces a sole empty draft in place. Explicit split
+  and duplicate actions create panes. Narrow layouts retain hidden draft composers
+  so attachments and submissions survive pane switches. This is per-tab
   presentation state; existing native chats are unchanged.
 - Materialize draft panes by calling existing thread create APIs, then update the
   local pane target to `{ mode: "existing", threadId }`.

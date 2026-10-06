@@ -30,6 +30,7 @@ import {
 } from "./panePlacement";
 import { paneTargetRecord, type WorkspaceModel, type WorkspacePane, type WorkspacePanePatch } from "./paneTypes";
 import { usePaneThreadContexts, type PaneThreadContext } from "./usePaneThreadContexts";
+import { useDraftPaneReuse } from "./useDraftPaneReuse";
 import { workspaceSubscribedThreadIds } from "./resourceSubscriptions";
 
 type WorkspaceLiveEventHandler = (event: EventEnvelope) => void;
@@ -122,6 +123,7 @@ type WorkspaceContextValue = {
   panePlacementHintsById: WorkspacePanePlacementHintsById;
   paneTabStatusById: Record<string, WorkspacePaneTabStatus>;
   paneThreadContextsById: Record<string, PaneThreadContext>;
+  setPaneDraftDisposable: (paneId: string, disposable: boolean) => void;
   setPaneThreadContext: (paneId: string, context: PaneThreadContext | null) => void;
   persistLayout: (dockviewLayout: unknown, activePaneId: string | null) => void;
   publishThreadPaneTimelineAction: (action: ThreadPaneTimelineAction) => void;
@@ -202,6 +204,7 @@ export function WorkspaceProvider({
   const [focusPulseByPaneId, setFocusPulseByPaneId] = useState<Record<string, number>>({});
   const [visiblePaneIds, setVisiblePaneIds] = useState<string[]>([]);
   const [workspace, setWorkspace] = useState<WorkspaceModel>(() => ensureWorkspaceHasActivePane(paneStore.load()));
+  const { isReusableDraft, setPaneDraftDisposable } = useDraftPaneReuse(workspace.panes);
   const [workspaceError, setWorkspaceError] = useState<Error | null>(null);
   const nextFocusPulseRef = useRef(0);
   const appSurfacePresentationHandlerRef = useRef<(event: EventEnvelope) => void>(() => undefined);
@@ -592,10 +595,6 @@ export function WorkspaceProvider({
       return;
     }
     const shouldActivate = options.activate !== false;
-    const current = workspaceRef.current;
-    if (!findExistingPane(current.panes)) {
-      recordPanePlacementHint(pane.id, intent, options);
-    }
     setWorkspace((current) => {
       const existing = findExistingPane(current.panes);
       if (existing) {
@@ -617,6 +616,12 @@ export function WorkspaceProvider({
         };
       }
 
+      const solePane = current.panes.length === 1 ? current.panes[0] : null;
+      if (intent === "thread" && !options.placement && solePane && isReusableDraft(solePane)) {
+        if (shouldActivate) pulsePane(solePane.id);
+        return { ...current, panes: [{ ...pane, id: solePane.id }] };
+      }
+      recordPanePlacementHint(pane.id, intent, options);
       return {
         ...current,
         activePaneId: shouldActivate || !hasPaneId(current, current.activePaneId) ? pane.id : current.activePaneId,
@@ -624,7 +629,7 @@ export function WorkspaceProvider({
         panes: [...current.panes, pane],
       };
     });
-  }, [appendPane, pulsePane, recordPanePlacementHint]);
+  }, [appendPane, isReusableDraft, pulsePane, recordPanePlacementHint]);
 
   const duplicatePane = useCallback((paneId: string) => {
     const sourcePane = workspaceRef.current.panes.find((candidate) => candidate.id === paneId);
@@ -664,7 +669,9 @@ export function WorkspaceProvider({
     async (projectId?: string | null, options: WorkspacePaneOpenOptions = {}) => {
       const pane = createDraftThreadPane(projectId);
       setWorkspace((current) => {
-        const existing = current.panes.find((candidate) => candidate.kind === "thread" && candidate.target.mode === "draft");
+        const existing = !options.duplicate && !options.placement
+          ? current.panes.find(isReusableDraft)
+          : undefined;
         if (!existing) {
           recordPanePlacementHint(pane.id, "draftThread", options);
           return {
@@ -682,7 +689,7 @@ export function WorkspaceProvider({
         };
       });
     },
-    [recordPanePlacementHint, pulsePane],
+    [recordPanePlacementHint, pulsePane, isReusableDraft],
   );
 
   const openAppSurfacePane = useCallback(
@@ -813,6 +820,7 @@ export function WorkspaceProvider({
       paneTabStatusById,
       paneThreadContextsById,
       setPaneThreadContext,
+      setPaneDraftDisposable,
       persistLayout,
       publishThreadPaneTimelineAction,
       renderThreadComposer: renderThreadComposer
@@ -866,6 +874,7 @@ export function WorkspaceProvider({
       paneTabStatusById,
       paneThreadContextsById,
       setPaneThreadContext,
+      setPaneDraftDisposable,
       persistLayout,
       publishThreadPaneTimelineAction,
       renderThreadComposer,
