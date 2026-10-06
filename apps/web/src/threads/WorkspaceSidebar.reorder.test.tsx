@@ -32,10 +32,10 @@ describe("WorkspaceSidebar project reorder", () => {
     expect(screen.getByRole("group", { name: "Pinned" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Pinned member" }));
     expect(onSelectPinnedThread).toHaveBeenCalledWith(member.id);
-    fireEvent.click(screen.getByRole("button", { name: "Collapse Pinned" }));
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Pinned section" }));
     expect(screen.queryByRole("button", { name: "Pinned member" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Projects" }));
-    expect(screen.getByRole("button", { name: "Expand Pinned" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Expand Pinned section" })).toBeInTheDocument();
   });
 
   it("requests a native relative move when a project is dragged before another project", () => {

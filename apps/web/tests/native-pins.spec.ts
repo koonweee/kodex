@@ -24,6 +24,7 @@ for (const shape of [
         const initialConnections = new Map(fixture.connections);
         for (const page of [first, second]) {
           const sidebar = await openSidebar(page);
+          await expect(sidebar.getByRole("group", { name: "Pinned", exact: true })).toHaveCount(0);
           await expect(sidebar.getByRole("button", { name: "Add section", exact: true })).toHaveCount(0);
           await sidebar.getByRole("button", { name: "Chats", exact: true }).click();
           await expect(sidebar.getByRole("button", { name: "Former section chat", exact: true })).toBeVisible();
@@ -42,6 +43,20 @@ for (const shape of [
           await sidebar.getByRole("button", { name: "Chats", exact: true }).click();
           await expectPinnedOrder(page, ["History chat", "Second chat"]);
         }
+        const pinned = (await openSidebar(first)).getByRole("group", { name: "Pinned", exact: true });
+        const collapse = pinned.getByRole("button", { name: "Collapse Pinned section", exact: true });
+        if (!shape.hasTouch) await collapse.hover();
+        await expect.poll(() => collapse.locator("svg").evaluate((icon) => getComputedStyle(icon).opacity)).toBe("1");
+        await first.screenshot({ path: test.info().outputPath("pinned-header-expanded.png") });
+        if (shape.hasTouch) await collapse.tap();
+        else await collapse.click();
+        const expand = pinned.getByRole("button", { name: "Expand Pinned section", exact: true });
+        await expect(expand).toHaveAttribute("aria-expanded", "false");
+        await expect(pinned.getByRole("button", { name: "History chat", exact: true })).toHaveCount(0);
+        await expectPinnedOrder(second, ["History chat", "Second chat"]);
+        if (shape.hasTouch) await expand.tap();
+        else await expand.click();
+        await expectPinnedOrder(first, ["History chat", "Second chat"]);
         expect(fixture.state.threads.find((entry) => entry.id === "history")).toMatchObject({ projectId: "alpha", cwd: executionCwd });
 
         // Attention and activity do not replace the native member order.
@@ -170,6 +185,10 @@ async function threadMenu(page: Page, title: string, touch: boolean) {
 
 async function expectPinnedOrder(page: Page, titles: string[]) {
   const group = (await openSidebar(page)).getByRole("group", { name: "Pinned", exact: true });
+  if (titles.length === 0) {
+    await expect(group).toHaveCount(0);
+    return;
+  }
   await expect(group).toBeVisible();
   await expect.poll(async () => (await group.locator(".kodex-thread-select-button").allTextContents()).map((title) => title.trim())).toEqual(titles);
 }

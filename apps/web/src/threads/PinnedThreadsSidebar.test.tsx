@@ -17,6 +17,18 @@ function mount(overrides: Partial<ComponentProps<typeof PinnedThreadsSidebar>> =
 }
 
 describe("Pinned native order", () => {
+  it.each([false, true])("hides an empty pinned section when collapsed is %s", (collapsed) => {
+    mount({ threads: [], collapsed });
+    expect(screen.queryByRole("group", { name: "Pinned" })).not.toBeInTheDocument();
+  });
+
+  it("keeps loading reachable when the native page has more pinned rows", async () => {
+    const onLoadMore = vi.fn();
+    mount({ threads: [], hasMore: true, onLoadMore });
+    await userEvent.click(screen.getByRole("button", { name: "Show more" }));
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
+  });
+
   it("retains native row order and sends relative move intents without changing local membership", async () => {
     const move = mount();
     const group = within(screen.getByRole("group", { name: "Pinned" }));
