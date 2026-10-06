@@ -40,6 +40,7 @@
 .kodex-queue-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
 .kodex-queue-handle { flex-shrink: 0; cursor: grab; touch-action: none; }
 .kodex-queue-handle:active { cursor: grabbing; }
+.kodex-queue-handle:focus { outline: none; }
 .kodex-queue-row[data-dragging] { background: var(--kodex-bg-selected); }
 .kodex-queue-row[data-drop-target="before"] { box-shadow: inset 0 2px var(--kodex-text-secondary); }
 .kodex-queue-row[data-drop-target="after"] { box-shadow: inset 0 -2px var(--kodex-text-secondary); }
