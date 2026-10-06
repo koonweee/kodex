@@ -309,7 +309,7 @@
   overflow: hidden;
   border: 1px solid var(--kodex-border-subtle);
   border-radius: var(--kodex-radius-sm);
-  background: var(--kodex-bg-subtle);
+  background: var(--kodex-bg-raised-muted);
   color: var(--kodex-text-secondary);
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / 8%);
 }

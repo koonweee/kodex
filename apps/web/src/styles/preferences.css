@@ -92,6 +92,11 @@
 
 .kodex-scheme-option .kodex-mantine-button-inner {
   width: 100%;
+}
+
+.kodex-scheme-option .kodex-mantine-button-label {
+  display: flex;
+  width: 100%;
   justify-content: space-between;
   gap: 12px;
 }
@@ -103,6 +108,7 @@
 
 .kodex-scheme-swatches {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 5px;
 }

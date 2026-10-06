@@ -1,6 +1,7 @@
-import { createTheme, type MantineColorsTuple, type MantineThemeOverride } from "@mantine/core";
+import { createTheme, type MantineThemeOverride } from "@mantine/core";
 
 import { createKodexMantineComponents } from "./theme/components";
+import { kodexVariantColorResolver } from "./theme/mantineColors";
 import {
   DEFAULT_KODEX_COLOR_SCHEME_ID,
   getKodexColorSchemeDefinition,
@@ -11,23 +12,12 @@ import {
   type KodexColorSchemeId,
 } from "./themeRegistry";
 
-type KodexColorSchemeBase = Omit<KodexColorSchemeDefinition, "mantineAccent" | "mantineGray" | "mantineRed">;
-
-export type KodexColorScheme = KodexColorSchemeBase & {
-  mantineAccent: MantineColorsTuple;
-  mantineGray: MantineColorsTuple;
-  mantineRed: MantineColorsTuple;
-};
+export type KodexColorScheme = KodexColorSchemeDefinition;
 
 const FONT_FAMILY =
   'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 
-export const KODEX_COLOR_SCHEMES: KodexColorScheme[] = KODEX_COLOR_SCHEME_DEFINITIONS.map((scheme) => ({
-  ...scheme,
-  mantineAccent: scheme.mantineAccent as unknown as MantineColorsTuple,
-  mantineGray: scheme.mantineGray as unknown as MantineColorsTuple,
-  mantineRed: scheme.mantineRed as unknown as MantineColorsTuple,
-}));
+export const KODEX_COLOR_SCHEMES: KodexColorScheme[] = KODEX_COLOR_SCHEME_DEFINITIONS;
 
 const COLOR_SCHEME_BY_ID = new Map(KODEX_COLOR_SCHEMES.map((scheme) => [scheme.id, scheme]));
 
@@ -79,6 +69,8 @@ export function initializeKodexColorScheme(root: HTMLElement = document.document
 export function createKodexMantineTheme(colorScheme: KodexColorScheme): MantineThemeOverride {
   return createTheme({
     primaryColor: "accent",
+    variantColorResolver: kodexVariantColorResolver,
+    focusClassName: "kodex-mantine-focus",
     colors: {
       accent: colorScheme.mantineAccent,
       gray: colorScheme.mantineGray,

@@ -293,7 +293,7 @@ export function ThemeWorkbench({
                 Alert defaults follow semantic Kodex surfaces.
               </Alert>
               <Group align="center" gap="sm">
-                <Loader size="sm" />
+                <Loader aria-label="Plain loader" size="sm" />
                 <Progress aria-label="Plain progress" value={68} w={180} />
               </Group>
               <Skeleton aria-label="Plain skeleton" h={18} w="70%" />
@@ -361,6 +361,13 @@ export function ThemeWorkbench({
               <Switch label="Unchecked switch" />
               <Text c="dimmed" size="sm">Mantine dimmed text on panel</Text>
               <Text style={{ color: "var(--kodex-text-muted)" }} size="sm">Kodex muted text on panel</Text>
+              <div className="kodex-user-message-bubble">
+                <span>User bubble body text</span>{"\n"}
+                <a href="#theme-bubble">User bubble documentation link</a>
+              </div>
+              <Box p="xs" style={{ background: "var(--kodex-bg-action)", color: "var(--kodex-text-on-action)" }}>
+                <Loader aria-label="Inherited loader" color="currentColor" size="sm" />
+              </Box>
               <Progress.Root size="xl">
                 <Progress.Section value={68}>
                   <Progress.Label>68% complete</Progress.Label>

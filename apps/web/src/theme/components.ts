@@ -28,6 +28,13 @@ import {
   Tooltip,
   type MantineThemeOverride,
 } from "@mantine/core";
+import { semanticColors } from "./mantineColors";
+
+const progressClassNames = {
+  root: "kodex-mantine-progress-root",
+  section: "kodex-mantine-progress-section",
+  label: "kodex-mantine-progress-label",
+};
 
 const inputClassNames = {
   root: "kodex-mantine-input-root",
@@ -223,6 +230,7 @@ export function createKodexMantineComponents(): MantineThemeOverride["components
     }),
     Button: Button.extend({
       defaultProps: {
+        variant: "filled",
         radius: "sm",
         classNames: {
           root: "kodex-mantine-button-root",
@@ -244,6 +252,8 @@ export function createKodexMantineComponents(): MantineThemeOverride["components
     }),
     Badge: Badge.extend({
       defaultProps: {
+        color: "gray",
+        variant: "light",
         radius: "sm",
         classNames: {
           root: "kodex-mantine-badge-root",
@@ -279,6 +289,8 @@ export function createKodexMantineComponents(): MantineThemeOverride["components
     }),
     Alert: Alert.extend({
       defaultProps: {
+        color: "blue",
+        variant: "light",
         radius: "md",
         classNames: {
           root: "kodex-mantine-alert-root",
@@ -330,6 +342,10 @@ export function createKodexMantineComponents(): MantineThemeOverride["components
       },
     }),
     Loader: Loader.extend({
+      vars: (_theme, props) => {
+        const colors = semanticColors(props.color);
+        return { root: colors ? { "--loader-color": colors.text } : {} };
+      },
       defaultProps: {
         color: "accent",
         type: "oval",
@@ -342,11 +358,12 @@ export function createKodexMantineComponents(): MantineThemeOverride["components
       defaultProps: {
         radius: "xl",
         size: "sm",
-        classNames: {
-          root: "kodex-mantine-progress-root",
-          section: "kodex-mantine-progress-section",
-          label: "kodex-mantine-progress-label",
-        },
+        classNames: progressClassNames,
+      },
+    }),
+    ProgressRoot: Progress.Root.extend({
+      defaultProps: {
+        classNames: progressClassNames,
       },
     }),
     Skeleton: Skeleton.extend({

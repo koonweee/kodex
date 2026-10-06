@@ -15,7 +15,7 @@
   border-radius: var(--kodex-radius-md);
   padding: 8px 10px;
   background: color-mix(in srgb, var(--kodex-bg-user-bubble) 88%, var(--kodex-bg-thread-surface));
-  color: var(--kodex-text-on-accent);
+  color: var(--kodex-text-on-user-bubble);
 }
 
 .kodex-user-annotation-quote summary {

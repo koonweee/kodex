@@ -1,3 +1,5 @@
+import type { KodexThemeTokens, KodexPalette } from "./theme/tokenContract";
+
 export type KodexColorSchemeId = "oled-black" | "paper-light" | "dracula" | "monokai";
 
 export type KodexColorSchemeDefinition = {
@@ -6,10 +8,10 @@ export type KodexColorSchemeDefinition = {
   description: string;
   mode: "dark" | "light";
   swatches: [string, string, string];
-  rootVariables: Record<string, string>;
-  mantineAccent: string[];
-  mantineGray: string[];
-  mantineRed: string[];
+  rootVariables: KodexThemeTokens;
+  mantineAccent: KodexPalette;
+  mantineGray: KodexPalette;
+  mantineRed: KodexPalette;
 };
 
 export const KODEX_COLOR_SCHEME_STORAGE_KEY = "kodex-color-scheme";
@@ -23,6 +25,12 @@ export const KODEX_COLOR_SCHEMES: KodexColorSchemeDefinition[] = [
     mode: "dark",
     swatches: ["#050505", "#111111", "#2fa987"],
     rootVariables: {
+      "--kodex-focus-ring": "#78d7c0",
+      "--kodex-border-control": "#818181",
+      "--kodex-text-on-user-bubble": "#f6fffc",
+      "--kodex-text-on-action": "#071a15",
+      "--kodex-bg-action-hover": "#69d1bb",
+      "--kodex-bg-action": "#2fa987",
       "--kodex-bg-app": "#050505",
       "--kodex-bg-shell": "#0a0a0a",
       "--kodex-bg-thread-surface": "#151515",
@@ -44,7 +52,7 @@ export const KODEX_COLOR_SCHEMES: KodexColorSchemeDefinition[] = [
       "--kodex-border-accent-soft": "rgb(47 169 135 / 42%)",
       "--kodex-text-primary": "#f3f3f3",
       "--kodex-text-secondary": "#d0d0d0",
-      "--kodex-text-muted": "#8d8d8d",
+      "--kodex-text-muted": "#a4a4a4",
       "--kodex-text-accent": "#78d7c0",
       "--kodex-text-accent-soft": "#c8f4ea",
       "--kodex-text-on-accent": "#f6fffc",
@@ -95,6 +103,12 @@ export const KODEX_COLOR_SCHEMES: KodexColorSchemeDefinition[] = [
     mode: "light",
     swatches: ["#f4f1e8", "#fcfaf4", "#0d8a74"],
     rootVariables: {
+      "--kodex-focus-ring": "#0a725f",
+      "--kodex-border-control": "#85786a",
+      "--kodex-text-on-user-bubble": "#f7fffc",
+      "--kodex-text-on-action": "#f7fffc",
+      "--kodex-bg-action-hover": "#08594b",
+      "--kodex-bg-action": "#0a725f",
       "--kodex-bg-app": "#ece6db",
       "--kodex-bg-shell": "#efe8dc",
       "--kodex-bg-thread-surface": "#fcfaf4",
@@ -109,18 +123,18 @@ export const KODEX_COLOR_SCHEMES: KodexColorSchemeDefinition[] = [
       "--kodex-bg-code": "#dfece6",
       "--kodex-bg-empty-icon": "#ece4d6",
       "--kodex-bg-mobile": "#ece4d5",
-      "--kodex-bg-user-bubble": "#0d8a74",
+      "--kodex-bg-user-bubble": "#0a725f",
       "--kodex-border-subtle": "#d8cfc2",
       "--kodex-border-strong": "#c8bcae",
       "--kodex-border-accent": "#0d8a74",
       "--kodex-border-accent-soft": "rgb(13 138 116 / 28%)",
       "--kodex-text-primary": "#2f271f",
       "--kodex-text-secondary": "#4b4036",
-      "--kodex-text-muted": "#7b6f62",
-      "--kodex-text-accent": "#0f7f6b",
-      "--kodex-text-accent-soft": "#0d8a74",
+      "--kodex-text-muted": "#6b5f52",
+      "--kodex-text-accent": "#0f6e5d",
+      "--kodex-text-accent-soft": "#0f6e5d",
       "--kodex-text-on-accent": "#f7fffc",
-      "--kodex-text-danger": "#b44938",
+      "--kodex-text-danger": "#91402f",
       "--kodex-accent": "#0d8a74",
       "--kodex-accent-strong": "#0f6e5d",
       "--kodex-accent-muted": "#5a7d74",
@@ -141,8 +155,8 @@ export const KODEX_COLOR_SCHEMES: KodexColorSchemeDefinition[] = [
       "--kodex-border-info": "rgb(27 111 159 / 28%)",
       "--kodex-border-success": "rgb(13 138 116 / 28%)",
       "--kodex-text-warning": "#7c5414",
-      "--kodex-text-info": "#1b6f9f",
-      "--kodex-text-success": "#0f7f6b",
+      "--kodex-text-info": "#155d85",
+      "--kodex-text-success": "#0f6e5d",
       "--kodex-shadow-strong": "0 16px 40px rgb(86 62 24 / 10%)",
       "--kodex-shadow-floating": "0 8px 20px rgb(86 62 24 / 12%)",
       "--kodex-overlay-strong": "rgb(47 39 31 / 16%)",
@@ -167,6 +181,12 @@ export const KODEX_COLOR_SCHEMES: KodexColorSchemeDefinition[] = [
     mode: "dark",
     swatches: ["#1c1f28", "#2a2d39", "#bd93f9"],
     rootVariables: {
+      "--kodex-focus-ring": "#bd93f9",
+      "--kodex-border-control": "#9096b2",
+      "--kodex-text-on-user-bubble": "#f8f8f2",
+      "--kodex-text-on-action": "#211b2c",
+      "--kodex-bg-action-hover": "#cfb1ff",
+      "--kodex-bg-action": "#bd93f9",
       "--kodex-bg-app": "#151720",
       "--kodex-bg-shell": "#1c1f28",
       "--kodex-bg-thread-surface": "#2a2d39",
@@ -188,7 +208,7 @@ export const KODEX_COLOR_SCHEMES: KodexColorSchemeDefinition[] = [
       "--kodex-border-accent-soft": "rgb(189 147 249 / 36%)",
       "--kodex-text-primary": "#f8f8f2",
       "--kodex-text-secondary": "#ddddef",
-      "--kodex-text-muted": "#a6abc5",
+      "--kodex-text-muted": "#b8bbd1",
       "--kodex-text-accent": "#8be9fd",
       "--kodex-text-accent-soft": "#cdb8ff",
       "--kodex-text-on-accent": "#f8f8f2",
@@ -239,6 +259,12 @@ export const KODEX_COLOR_SCHEMES: KodexColorSchemeDefinition[] = [
     mode: "dark",
     swatches: ["#141510", "#22241d", "#a6e22e"],
     rootVariables: {
+      "--kodex-focus-ring": "#a6e22e",
+      "--kodex-border-control": "#8a8d7e",
+      "--kodex-text-on-user-bubble": "#fcfff6",
+      "--kodex-text-on-action": "#1c240f",
+      "--kodex-bg-action-hover": "#c4f071",
+      "--kodex-bg-action": "#a6e22e",
       "--kodex-bg-app": "#0f100d",
       "--kodex-bg-shell": "#141510",
       "--kodex-bg-thread-surface": "#22241d",
@@ -253,14 +279,14 @@ export const KODEX_COLOR_SCHEMES: KodexColorSchemeDefinition[] = [
       "--kodex-bg-code": "#212517",
       "--kodex-bg-empty-icon": "#272923",
       "--kodex-bg-mobile": "#151610",
-      "--kodex-bg-user-bubble": "#66811e",
+      "--kodex-bg-user-bubble": "#5d751b",
       "--kodex-border-subtle": "#36382f",
       "--kodex-border-strong": "#474a3f",
       "--kodex-border-accent": "#a6e22e",
       "--kodex-border-accent-soft": "rgb(166 226 46 / 34%)",
       "--kodex-text-primary": "#f8f8f2",
       "--kodex-text-secondary": "#dfddd0",
-      "--kodex-text-muted": "#9e9f8e",
+      "--kodex-text-muted": "#b0b19f",
       "--kodex-text-accent": "#ffd866",
       "--kodex-text-accent-soft": "#d6ff7d",
       "--kodex-text-on-accent": "#fcfff6",

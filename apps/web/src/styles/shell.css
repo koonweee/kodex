@@ -319,7 +319,7 @@
 
 .kodex-timeline-skeleton-user-line {
   --kodex-skeleton-base: color-mix(in srgb, var(--kodex-text-muted) 36%, var(--kodex-bg-user-bubble));
-  --kodex-skeleton-shimmer: color-mix(in srgb, var(--kodex-text-on-accent) 34%, var(--kodex-bg-user-bubble));
+  --kodex-skeleton-shimmer: color-mix(in srgb, var(--kodex-text-on-user-bubble) 34%, var(--kodex-bg-user-bubble));
 }
 
 .kodex-timeline-skeleton-assistant-line {

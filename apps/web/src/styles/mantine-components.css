@@ -1,3 +1,6 @@
+@import "./mantine-theme.css";
+@import "./mantine-controls.css";
+
 .kodex-mantine-input-label {
   color: var(--kodex-text-secondary);
   font-weight: 650;
@@ -50,7 +53,7 @@
 }
 
 .kodex-mantine-input {
-  border-color: var(--kodex-border-subtle);
+  border-color: var(--kodex-border-control);
   background: var(--kodex-bg-raised-muted);
   color: var(--kodex-text-primary);
 }
@@ -61,11 +64,13 @@
 
 .kodex-mantine-input:focus,
 .kodex-mantine-input:focus-within {
-  border-color: var(--kodex-border-accent-soft);
+  border-color: var(--kodex-focus-ring);
+  outline: var(--kodex-focus-outline);
+  outline-offset: var(--kodex-focus-offset);
 }
 
 .kodex-mantine-input[data-error] {
-  border-color: var(--kodex-border-danger);
+  border-color: var(--kodex-text-danger);
   background: var(--kodex-bg-danger);
   color: var(--kodex-text-primary);
 }
@@ -139,7 +144,7 @@
 }
 
 .kodex-mantine-combobox-search {
-  border-color: var(--kodex-border-subtle);
+  border-color: var(--kodex-border-control);
   background: var(--kodex-bg-raised-muted);
   color: var(--kodex-text-primary);
 }
@@ -168,13 +173,13 @@
 }
 
 .kodex-mantine-selection-input {
-  border-color: var(--kodex-border-subtle);
+  border-color: var(--kodex-border-control);
   background: var(--kodex-bg-raised-muted);
 }
 
 .kodex-mantine-selection-input:checked {
   border-color: var(--kodex-border-accent);
-  background: var(--kodex-accent);
+  background: var(--kodex-bg-action);
 }
 
 .kodex-mantine-selection-input:disabled {
@@ -184,26 +189,26 @@
 }
 
 .kodex-mantine-selection-icon {
-  color: var(--kodex-text-on-accent);
+  color: var(--kodex-text-on-action);
 }
 
 .kodex-mantine-radio-input {
-  border-color: var(--kodex-border-subtle);
+  border-color: var(--kodex-border-control);
   background: var(--kodex-bg-raised-muted);
 }
 
 .kodex-mantine-radio-input:checked {
   border-color: var(--kodex-border-accent);
-  background: var(--kodex-accent);
+  background: var(--kodex-bg-action);
 }
 
 .kodex-mantine-switch-track {
-  border-color: var(--kodex-border-subtle);
+  border: 1px solid var(--kodex-border-control);
   background: var(--kodex-bg-raised-muted);
 }
 
 .kodex-mantine-switch-input:checked + .kodex-mantine-switch-track {
-  border-color: var(--kodex-border-accent-soft);
+  border-color: var(--kodex-border-control);
   background: var(--kodex-bg-selected-strong);
 }
 
@@ -213,7 +218,7 @@
 }
 
 .kodex-mantine-switch-input:checked + .kodex-mantine-switch-track .kodex-mantine-switch-thumb {
-  background: var(--kodex-accent);
+  background: var(--kodex-bg-action);
 }
 
 .kodex-mantine-menu-dropdown {
@@ -246,7 +251,7 @@
   border-radius: var(--kodex-radius-lg);
   padding: 8px 10px;
   background: transparent;
-  color: var(--kodex-text-secondary);
+  color: var(--menu-item-color, var(--kodex-text-secondary));
   font-size: 13px;
   text-align: left;
 }
@@ -275,8 +280,8 @@
 
 .kodex-mantine-menu-item[data-hovered],
 .kodex-mantine-menu-dropdown [data-menu-item][data-hovered] {
-  background: var(--kodex-bg-button-hover);
-  color: var(--kodex-text-primary);
+  background: var(--menu-item-hover, var(--kodex-bg-button-hover));
+  color: var(--menu-item-color, var(--kodex-text-primary));
 }
 
 .kodex-mantine-menu-item[data-active="true"],
@@ -370,144 +375,6 @@
   color: var(--kodex-text-secondary);
 }
 
-.kodex-mantine-button-inner,
-.kodex-mantine-button-label {
-  min-width: 0;
-}
-
-.kodex-mantine-button-label {
-  overflow-wrap: anywhere;
-}
-
-.kodex-mantine-button-section,
-.kodex-mantine-action-icon-root,
-.kodex-mantine-action-icon-icon {
-  color: currentColor;
-}
-
-.kodex-mantine-action-icon-root {
-  color: var(--kodex-text-secondary);
-}
-
-.kodex-mantine-button-root:is(:disabled, [data-disabled]),
-.kodex-mantine-action-icon-root:is(:disabled, [data-disabled]) {
-  border-color: var(--kodex-border-disabled);
-  background: var(--kodex-bg-disabled-raised);
-  color: var(--kodex-text-disabled);
-  opacity: 1;
-  cursor: default;
-  box-shadow: none;
-}
-
-.kodex-mantine-button-root[data-variant="subtle"]:is(:disabled, [data-disabled]),
-.kodex-mantine-action-icon-root[data-variant="subtle"]:is(:disabled, [data-disabled]) {
-  border-color: transparent;
-  background: var(--kodex-bg-disabled-subtle);
-}
-
-.kodex-mantine-badge-root {
-  border: 1px solid var(--kodex-tone-border, var(--kodex-border-subtle));
-  background: var(--kodex-tone-bg, var(--kodex-bg-raised-muted));
-  color: var(--kodex-tone-text, var(--kodex-text-secondary));
-  font-weight: 700;
-  letter-spacing: 0;
-}
-
-.kodex-mantine-badge-root[data-tone="accent"] {
-  --kodex-tone-bg: var(--kodex-bg-selected);
-  --kodex-tone-border: var(--kodex-border-accent-soft);
-  --kodex-tone-text: var(--kodex-text-accent-soft);
-}
-
-.kodex-mantine-badge-root[data-tone="success"] {
-  --kodex-tone-bg: var(--kodex-bg-success);
-  --kodex-tone-border: var(--kodex-border-success);
-  --kodex-tone-text: var(--kodex-text-success);
-}
-
-.kodex-mantine-badge-root[data-tone="warning"] {
-  --kodex-tone-bg: var(--kodex-bg-warning);
-  --kodex-tone-border: var(--kodex-border-warning);
-  --kodex-tone-text: var(--kodex-text-warning);
-}
-
-.kodex-mantine-badge-root[data-tone="danger"] {
-  --kodex-tone-bg: var(--kodex-bg-danger);
-  --kodex-tone-border: var(--kodex-border-danger);
-  --kodex-tone-text: var(--kodex-text-danger);
-}
-
-.kodex-mantine-badge-root[data-tone="info"] {
-  --kodex-tone-bg: var(--kodex-bg-info);
-  --kodex-tone-border: var(--kodex-border-info);
-  --kodex-tone-text: var(--kodex-text-info);
-}
-
-.kodex-mantine-badge-root[data-tone="neutral"] {
-  --kodex-tone-bg: var(--kodex-bg-raised-muted);
-  --kodex-tone-border: var(--kodex-border-subtle);
-  --kodex-tone-text: var(--kodex-text-secondary);
-}
-
-.kodex-mantine-badge-label {
-  min-width: 0;
-  text-overflow: ellipsis;
-}
-
-.kodex-mantine-tabs-list {
-  border-color: var(--kodex-border-subtle);
-}
-
-.kodex-mantine-tabs-tab {
-  color: var(--kodex-text-secondary);
-}
-
-.kodex-mantine-tabs-tab[data-active="true"] {
-  background: var(--kodex-bg-selected);
-  color: var(--kodex-text-primary);
-}
-
-.kodex-mantine-tabs-panel {
-  color: var(--kodex-text-primary);
-}
-
-.kodex-mantine-segmented-control-root {
-  background: var(--kodex-bg-raised-muted);
-}
-
-.kodex-mantine-segmented-control-indicator {
-  border: 1px solid var(--kodex-border-accent-soft);
-  background: var(--kodex-bg-selected);
-}
-
-.kodex-mantine-segmented-control-label {
-  color: var(--kodex-text-secondary);
-}
-
-.kodex-mantine-segmented-control-label[data-active] {
-  color: var(--kodex-text-primary);
-}
-
-.kodex-mantine-alert-root {
-  border: 1px solid var(--kodex-tone-border, var(--kodex-border-info));
-  background: var(--kodex-tone-bg, var(--kodex-bg-info));
-  color: var(--kodex-tone-text, var(--kodex-text-info));
-}
-
-.kodex-mantine-alert-root[data-variant="light"][data-color="red"],
-.kodex-mantine-alert-root[data-color="red"] {
-  --kodex-tone-bg: var(--kodex-bg-danger);
-  --kodex-tone-border: var(--kodex-border-danger);
-  --kodex-tone-text: var(--kodex-text-danger);
-}
-
-.kodex-mantine-alert-title,
-.kodex-mantine-alert-message,
-.kodex-mantine-alert-icon,
-.kodex-mantine-alert-close {
-  color: currentColor;
-}
-
 .kodex-mantine-table {
   --table-border-color: var(--kodex-border-subtle);
   color: var(--kodex-text-primary);
@@ -546,20 +413,17 @@
   background: var(--kodex-border-strong);
 }
 
-.kodex-mantine-loader-root {
-  color: var(--kodex-accent);
-}
-
 .kodex-mantine-progress-root {
   background: var(--kodex-bg-raised-muted);
 }
 
 .kodex-mantine-progress-section {
-  background: var(--kodex-accent);
+  background: var(--kodex-bg-action);
+  color: var(--kodex-text-on-action);
 }
 
 .kodex-mantine-progress-label {
-  color: var(--kodex-text-on-accent);
+  color: inherit;
   font-weight: 700;
 }
 
@@ -584,8 +448,8 @@
 
   .kodex-mantine-menu-item:hover,
   .kodex-mantine-menu-dropdown [data-menu-item]:hover {
-    background: var(--kodex-bg-button-hover);
-    color: var(--kodex-text-primary);
+    background: var(--menu-item-hover, var(--kodex-bg-button-hover));
+    color: var(--menu-item-color, var(--kodex-text-primary));
   }
 
   .kodex-mantine-menu-item[data-active="true"]:hover,
@@ -601,11 +465,6 @@
 
   .kodex-mantine-modal-close:hover,
   .kodex-mantine-drawer-close:hover {
-    background: var(--kodex-bg-button-hover);
-    color: var(--kodex-text-primary);
-  }
-
-  .kodex-mantine-action-icon-root:hover {
     background: var(--kodex-bg-button-hover);
     color: var(--kodex-text-primary);
   }

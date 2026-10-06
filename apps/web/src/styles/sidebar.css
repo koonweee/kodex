@@ -742,8 +742,8 @@
   height: 100%;
   place-items: center;
   border-radius: var(--kodex-radius-round);
-  background: var(--kodex-accent);
-  color: var(--kodex-text-on-accent);
+  background: var(--kodex-bg-action);
+  color: var(--kodex-text-on-action);
   font-size: 10px;
   font-weight: 750;
   line-height: 1;

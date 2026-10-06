@@ -476,7 +476,7 @@
 .kodex-workspace-pane-manager-active-icon {
   display: inline-flex;
   flex: 0 0 auto;
-  color: var(--kodex-accent);
+  color: var(--kodex-text-accent);
 }
 
 .kodex-workspace-pane-manager-close-button {

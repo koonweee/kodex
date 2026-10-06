@@ -14,7 +14,7 @@
   --kodex-radius-composer: 24px;
   --kodex-radius-shell: 28px;
   --kodex-radius-round: 999px;
-  --kodex-focus-outline: 2px solid var(--kodex-border-accent-soft);
+  --kodex-focus-outline: 2px solid var(--kodex-focus-ring);
   --kodex-focus-offset: 2px;
   --kodex-divider-subtle: color-mix(in srgb, var(--kodex-text-primary) 8%, transparent);
   --kodex-bg-disabled-subtle: color-mix(in srgb, var(--kodex-text-muted) 6%, transparent);

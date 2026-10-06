@@ -41,7 +41,7 @@ def sheet(root, rows, filename, width=600, height=460):
     canvas = Image.new("RGB", (width * 4 + 40, sum(row_heights) + 112), "#edf0f4")
     draw = ImageDraw.Draw(canvas)
     draw.text((20, 14), "KODEX / THEME CONTRAST AUDIT", font=font(27), fill="#182334")
-    draw.text((20, 50), "2026-10-06 · Chromium · current styles · synthetic app data · see index.html for full-resolution captures", font=font(16), fill="#42516a")
+    draw.text((20, 50), "Chromium · current checkout · synthetic app data · see index.html for full-resolution captures", font=font(16), fill="#42516a")
     for col, (_, label) in enumerate(SCHEMES):
         draw.text((26 + col * width, 82), label, font=font(23), fill="#182334")
     y = 112
@@ -90,8 +90,8 @@ def main():
     navigation = ' · '.join(f'<a href="#{key}">{html.escape(title)}</a>' for key, title in SCREENS)
     document = '''<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Kodex theme contrast audit</title>
 <style>body{margin:32px;background:#eef1f5;color:#182334;font:16px/1.5 system-ui}h1{margin-bottom:6px}h2{margin-top:44px}a{color:#164f9a}nav{max-width:1100px}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}figure{margin:0;background:white;border:1px solid #cad0d9;padding:8px;align-self:start}figcaption{font-weight:650;margin-bottom:8px}img{width:100%;height:auto}table{border-collapse:collapse;margin:24px 0;background:white}th,td{border:1px solid #c7cfdc;padding:10px;text-align:left}.fail{background:#ffe5e2;color:#8c1d16}.pass{background:#e0f1e8;color:#145333}@media(max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}body{margin:16px}}@media(max-width:500px){.grid{grid-template-columns:1fr}}</style>
-<h1>Kodex theme contrast audit</h1><p>Current styles • 6 October 2026 • four themes • 56 browser captures • synthetic app data.</p>
-<p>Click any image for the full-resolution screen. Comparisons retain the current styling defects. Background content behind modal scrims is intentionally dimmed.</p>
+<h1>Kodex theme contrast audit</h1><p>Current checkout • four themes • 56 browser captures • synthetic app data.</p>
+<p>Click any image for the full-resolution screen. Comparisons show the captured styling; use the measurements to check the rendered pairs. Background content behind modal scrims is intentionally dimmed.</p>
 <p><a href="contact-sheet.png">Overview sheet</a> · <a href="primitives-contact-sheet.png">Primitives sheet</a> · <a href="overlays-contact-sheet.png">Overlays sheet</a> · <a href="states-contact-sheet.png">States sheet</a></p>
 '''
     document += ''.join(table) + '<p>Computed sRGB foreground/background ratios; text target 4.5:1, filled action icon target 3:1. Flat surfaces only. Disabled controls, gradients, opacity chains and overlay-obscured controls are not classified here. Detailed JSON is diagnostic, not a conformance scan.</p><nav>' + navigation + '</nav>' + ''.join(cells) + '</html>'

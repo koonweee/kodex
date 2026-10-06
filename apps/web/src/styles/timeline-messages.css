@@ -85,7 +85,7 @@
   border-radius: var(--kodex-radius-xl);
   padding: 9px 12px;
   background: var(--kodex-bg-user-bubble);
-  color: var(--kodex-text-on-accent);
+  color: var(--kodex-text-on-user-bubble);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: normal;
@@ -106,6 +106,11 @@
   line-height: 1.35;
   vertical-align: baseline;
   overflow-wrap: anywhere;
+}
+
+.kodex-user-message-bubble a {
+  color: inherit;
+  text-decoration: underline;
 }
 
 .kodex-inline-skill-badge[data-has-accent="true"] {

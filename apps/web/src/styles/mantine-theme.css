@@ -1,0 +1,50 @@
+/* Semantic bridge outranks Mantine's generated :root / color-scheme defaults.
+   Both dark and light providers resolve through the active Kodex token registry. */
+:root[data-kodex-color-scheme][data-mantine-color-scheme] {
+  --mantine-color-body: var(--kodex-bg-app);
+  --mantine-color-text: var(--kodex-text-primary);
+  --mantine-color-bright: var(--kodex-text-primary);
+  --mantine-color-dimmed: var(--kodex-text-muted);
+  --mantine-color-placeholder: var(--kodex-text-muted);
+  --mantine-color-error: var(--kodex-text-danger);
+  --mantine-color-anchor: var(--kodex-text-accent);
+  --mantine-color-default: var(--kodex-bg-raised);
+  --mantine-color-default-hover: var(--kodex-bg-button-hover);
+  --mantine-color-default-color: var(--kodex-text-primary);
+  --mantine-color-default-border: var(--kodex-border-control);
+  --mantine-color-disabled: var(--kodex-bg-disabled-raised);
+  --mantine-color-disabled-color: var(--kodex-text-disabled);
+  --mantine-color-disabled-border: var(--kodex-border-disabled);
+  --mantine-primary-color-contrast: var(--kodex-text-on-action);
+  --mantine-color-accent-filled: var(--kodex-bg-action);
+  --mantine-color-accent-filled-hover: var(--kodex-bg-action-hover);
+  --mantine-color-accent-text: var(--kodex-text-accent);
+  --mantine-color-accent-light-color: var(--kodex-text-accent);
+  --mantine-color-accent-light: var(--kodex-bg-selected);
+  --mantine-color-accent-light-hover: var(--kodex-bg-selected-strong);
+  --mantine-color-accent-outline: var(--kodex-text-accent);
+  --mantine-color-accent-outline-hover: var(--kodex-bg-selected);
+  --mantine-color-gray-text: var(--kodex-text-secondary);
+  --mantine-color-red-text: var(--kodex-text-danger);
+  --mantine-color-yellow-text: var(--kodex-text-warning);
+  --mantine-color-orange-text: var(--kodex-text-warning);
+  --mantine-color-green-text: var(--kodex-text-success);
+  --mantine-color-blue-text: var(--kodex-text-info);
+}
+
+/* Menu.Item selects shade 6 directly for named colors, bypassing the resolver.
+   Keep that compatibility mapping local to menus; palette ramps remain intact. */
+.kodex-mantine-menu-dropdown {
+  --mantine-color-accent-6: var(--kodex-text-accent);
+  --mantine-color-gray-6: var(--kodex-text-secondary);
+  --mantine-color-red-6: var(--kodex-text-danger);
+  --mantine-color-yellow-6: var(--kodex-text-warning);
+  --mantine-color-orange-6: var(--kodex-text-warning);
+  --mantine-color-green-6: var(--kodex-text-success);
+  --mantine-color-blue-6: var(--kodex-text-info);
+}
+
+.kodex-mantine-focus:focus-visible {
+  outline: var(--kodex-focus-outline);
+  outline-offset: var(--kodex-focus-offset);
+}
