@@ -1,6 +1,6 @@
 import { MantineProvider } from "@mantine/core";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -74,6 +74,30 @@ function renderComposer(activeTurnId: string | null) {
 }
 
 describe("annotation submissions", () => {
+  it.each([null, "active-turn"])("submits from an annotation with Enter and preserves Shift+Enter and IME input (active %s)", async (activeTurnId) => {
+    const gateway = mockGateway({ "POST /v1/threads/thread-1/input": () => ({ payload: {} }) });
+    renderComposer(activeTurnId);
+    await userEvent.type(screen.getByRole("textbox", { name: "Message composer" }), "Review these.");
+    const comment = screen.getByRole("textbox", { name: "Annotation 1 comment" });
+    await userEvent.type(comment, "Which checks ran?");
+    await userEvent.keyboard("{Shift>}{Enter}{/Shift}Show commands.");
+    expect(comment).toHaveValue("Which checks ran?\nShow commands.");
+    fireEvent.keyDown(comment, { key: "Enter", isComposing: true });
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(0);
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1));
+    const body = await requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0]);
+    expect(body).toEqual({ input: [{ type: "text", text: [
+      "Review these.", "", "<response_annotations>", "<annotation1>",
+      'Assistant text: "Both trim checks passed."',
+      'User annotation: "Which checks ran?\\nShow commands."',
+      "</annotation1>", "<annotation2>", 'Assistant text: "Cache cleared."',
+      'User annotation: "Keep this?"', "</annotation2>", "</response_annotations>",
+    ].join("\n") }], clientUserMessageId: expect.any(String) });
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: "Annotation 1 comment" })).not.toBeInTheDocument());
+    expect(screen.getByRole("textbox", { name: "Message composer" })).toHaveValue("");
+  });
+
   it.each([
     { activeTurnId: null, endpoint: "input" },
     { activeTurnId: "active-turn", endpoint: "queued-inputs" },
@@ -94,7 +118,7 @@ describe("annotation submissions", () => {
     await userEvent.type(screen.getByRole("textbox", { name: "Annotation 1 comment" }), "Which checks ran?");
     const send = async () => {
       if (shortcut) {
-        await userEvent.click(screen.getByRole("textbox", { name: "Message composer" }));
+        await userEvent.click(screen.getByRole("textbox", { name: "Annotation 1 comment" }));
         await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
       } else if (endpoint === "queued-inputs") {
         await userEvent.click(screen.getByRole("button", { name: "Open attachment menu" }));

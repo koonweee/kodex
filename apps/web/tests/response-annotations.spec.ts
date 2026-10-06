@@ -46,7 +46,12 @@ for (const shape of [
         const comment = activePane(first).getByRole("textbox", { name: "Annotation 1 comment", exact: true });
         await expect(comment).toBeFocused();
         await comment.fill(firstComment);
+        await comment.press("Shift+Enter");
+        await expect(comment).toHaveValue(`${firstComment}\n`);
+        expect(fixture.requests.filter((request) => request.key === "POST /v1/threads/settings-chat/input")).toHaveLength(0);
+        await comment.press("Backspace");
         await expect(comment).toBeFocused();
+        await first.screenshot({ path: test.info().outputPath("annotation-comment-focused.png") });
         if (shape.hasTouch) {
           const originalComment = await comment.elementHandle();
           await first.setViewportSize({ width: shape.width, height: 420 });
@@ -83,7 +88,16 @@ for (const shape of [
         await expect(second.getByRole("button", { name: /^\d+ annotations?$/ })).toHaveCount(0);
         await expect(composer(second)).toHaveValue("");
 
-        await click(activePane(first).getByRole("button", { name: "Send message", exact: true }), shape.hasTouch);
+        await click(secondCommentInput, shape.hasTouch);
+        await secondCommentInput.evaluate((input: HTMLTextAreaElement) => input.setSelectionRange(input.value.length, input.value.length));
+        if (shape.hasTouch) {
+          // Annotation keyboard behavior follows the composer's touch policy.
+          await secondCommentInput.press("Enter");
+          await expect(secondCommentInput).toHaveValue(`${secondComment}\n`);
+          expect(fixture.requests.filter((request) => request.key === "POST /v1/threads/settings-chat/input")).toHaveLength(0);
+          await secondCommentInput.press("Backspace");
+        }
+        await secondCommentInput.press(shape.hasTouch ? "Meta+Enter" : "Enter");
         const inputKey = "POST /v1/threads/settings-chat/input";
         await expect.poll(() => fixture.requests.filter((request) => request.key === inputKey).length).toBe(1);
         const submittedText = [

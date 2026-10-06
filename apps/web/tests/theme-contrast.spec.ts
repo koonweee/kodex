@@ -145,8 +145,8 @@ async function checkWorkbench(page: Page, label: string) {
   const input = page.getByRole("textbox", { name: "Plain text input", exact: true });
   await expect(input).toBeFocused();
   const inputFocus = await sample(input);
-  readable(inputFocus.focusRatio, `${label} keyboard input focus outer edge`, 3);
-  readable(inputFocus.focusInnerRatio, `${label} keyboard input focus inner edge`, 3);
+  readable(inputFocus.borderRatio, `${label} focused input outer boundary`, 3);
+  readable(inputFocus.borderInnerRatio, `${label} focused input inner boundary`, 3);
   await page.getByRole("checkbox", { name: "Plain checkbox", exact: true }).focus();
   await page.keyboard.press("Tab");
   const switchInput = page.getByRole("switch", { name: "Plain switch", exact: true });

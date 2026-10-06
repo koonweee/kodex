@@ -82,6 +82,7 @@ export function InlineComposerPanel({
   onComposerDragLeave,
   onComposerDragOver,
   onComposerDrop,
+  onComposerKeyDown,
   onComposerPaste,
   onComposerSettingsChange,
   onExpandComposer,
@@ -192,7 +193,7 @@ export function InlineComposerPanel({
           />
         ) : null}
         <ComposerAnnotations draftState={draftState} disabled={isComposerControlsDisabled}
-          collapseByDefault={density === "mobile"} onFocus={onFocusComposer} />
+          collapseByDefault={density === "mobile"} onFocus={onFocusComposer} onKeyDown={onComposerKeyDown} />
         <Textarea
           ref={textareaRef}
           aria-label="Message composer"

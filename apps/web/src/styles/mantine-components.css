@@ -64,9 +64,15 @@
 
 .kodex-mantine-input:focus,
 .kodex-mantine-input:focus-within {
-  border-color: var(--kodex-focus-ring);
-  outline: var(--kodex-focus-outline);
-  outline-offset: var(--kodex-focus-offset);
+  border-color: var(--kodex-border-control);
+  outline: none;
+}
+
+/* Text entry keeps its normal boundary for both pointer and keyboard focus. */
+:is(textarea, input:not([type]), input[type="text"], input[type="search"],
+    input[type="email"], input[type="password"], input[type="url"],
+    input[type="tel"], input[type="number"]):focus {
+  outline: none;
 }
 
 .kodex-mantine-input[data-error] {

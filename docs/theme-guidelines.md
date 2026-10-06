@@ -17,7 +17,7 @@ Appearance has a mode (`auto`, `light` or `dark`) plus independent light/dark th
 
 `theme/appearancePreferences.ts` owns validation and resolution shared by the initial HTML bootstrap and React. `appearanceStorage.ts` owns storage/migration, and `useAppearancePreferences.ts` subscribes to system changes and preference updates. Preserve the same first-paint and live resolution rules when extending them. Existing `kodex-color-scheme` values migrate to an explicit mode; new profiles default to Auto with Paper Light and OLED Black. Never persist system-triggered theme changes as explicit user selections.
 
-Palette-preview cards intentionally render candidate semantic pairs independently of the active theme. Their selection/focus chrome still uses the active theme's shared control styles. Focus is a thin, desaturated shared `focus-ring` outline with the shared offset, and must remain visible against adjacent surfaces. Standard textareas keep focus on the actual textarea. The chat composer intentionally omits the textarea focus ring; its toolbar controls retain their shared focus indicators.
+Palette-preview cards intentionally render candidate semantic pairs independently of the active theme. Their selection/focus chrome still uses the active theme's shared control styles. Focus is a thin, desaturated shared `focus-ring` outline with the shared offset, and must remain visible against adjacent surfaces. Text inputs and textareas intentionally omit focus rings and keep their normal control boundaries while focused. Buttons, selection controls and composer toolbar controls retain their shared keyboard focus indicators.
 
 ## Safe role pairings
 
@@ -37,7 +37,7 @@ The names below omit the `--kodex-` CSS-variable prefix. Keep the foreground and
 | User message | `bg-user-bubble` + `text-on-user-bubble` | Bubble text has a separate foreground from actions. Check Markdown, links and nested annotations on their effective backgrounds. |
 | Semantic status | `bg-{tone}`, `border-{tone}`, `text-{tone}` | Tone is danger/warning/success/info. Keep the triplet together and convey meaning through text/icon as well. |
 | Essential control boundary | `border-control` | Check ≥3:1 against relevant adjacent surfaces when the boundary identifies the control or state. |
-| Keyboard focus | `focus-ring` | Check ≥3:1 against adjacent surfaces and visually inspect the visible ring; do not alias it to a translucent decorative border. |
+| Keyboard focus on non-text controls | `focus-ring` | Check ≥3:1 against adjacent surfaces and visually inspect the visible ring; do not alias it to a translucent decorative border. |
 | Decorative divider | `border-subtle` | Decorative separation only; do not substitute it for an essential boundary or focus indicator. |
 | Disabled control | Shared disabled styling | Only for unavailable controls. Ordinary metadata is readable supporting text. |
 

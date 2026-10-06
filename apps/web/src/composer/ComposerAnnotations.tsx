@@ -1,15 +1,16 @@
 import { Box, Button, Group, Text, Textarea } from "@mantine/core";
 import { ChevronDown, MessageSquareQuote, X } from "lucide-react";
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEventHandler } from "react";
 
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 import type { ComposerDraftState } from "./useComposerDraftState";
 
-export function ComposerAnnotations({ draftState, disabled, collapseByDefault = false, onFocus }: {
+export function ComposerAnnotations({ draftState, disabled, collapseByDefault = false, onFocus, onKeyDown }: {
   draftState: ComposerDraftState;
   disabled: boolean;
   collapseByDefault?: boolean;
   onFocus?: () => void;
+  onKeyDown?: KeyboardEventHandler<HTMLTextAreaElement>;
 }) {
   const [expanded, setExpanded] = useState(!collapseByDefault);
   const listId = useId();
@@ -52,7 +53,7 @@ export function ComposerAnnotations({ draftState, disabled, collapseByDefault = 
             <blockquote>{annotation.text}</blockquote>
             <Textarea ref={annotation.id === focusId ? commentRef : undefined} aria-label={`Annotation ${index + 1} comment`} placeholder="Add an optional comment…"
               autosize minRows={1} maxRows={4} value={annotation.comment} disabled={disabled}
-              onFocus={onFocus} onChange={(event) => draftState.updateAnnotation(annotation.id, event.currentTarget.value)} />
+              onFocus={onFocus} onKeyDown={disabled ? undefined : onKeyDown} onChange={(event) => draftState.updateAnnotation(annotation.id, event.currentTarget.value)} />
           </Box>
         ))}
       </Box>
