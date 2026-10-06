@@ -35,7 +35,7 @@ export function NativeQueuePanel({ threadId, onRestoreText, canRestoreText, isAc
     }
   }, [isActive]);
   const rows = query.data?.queuedInputs ?? [];
-  const transfers = query.data?.transfers ?? [];
+  const transfers = (query.data?.transfers ?? []).filter((transfer) => transfer.phase === "uncertain");
 
   async function mutate(action: () => Promise<unknown>, onSuccess?: () => void) {
     if (busy) return;
@@ -61,19 +61,17 @@ export function NativeQueuePanel({ threadId, onRestoreText, canRestoreText, isAc
       onRemove={(row) => void mutate(() => deleteQueuedInput(threadId, row.id))} /> : null}
     {transfers.length > 0 ? <Box role="region" aria-label="Queue transfers" className="kodex-native-queue">
       {transfers.map((transfer) => <Box key={transfer.id} role="group" aria-label="Queue transfer" className="kodex-native-queue-row">
-        <Text size="sm" fw={600}>{transfer.phase === "uncertain" ? "Delivery uncertain" : transfer.phase === "accepted" ? "Awaiting native receipt" : "Transferring queued message"}</Text>
+        <Text size="sm" fw={600}>Delivery uncertain</Text>
         <Text size="sm" style={{ overflowWrap: "anywhere" }}>{queueInputPreview(transfer.input)}</Text>
         {transfer.error ? <Text size="xs" c="red">{transfer.error}</Text> : null}
         <Group gap="xs" wrap="wrap">
           <Button size="compact-sm" disabled={busy} onClick={() => void mutate(() => reconcileQueueTransfer(transfer.id))}>Reconcile</Button>
           <Button size="compact-sm" variant="subtle" onClick={() => setInspecting(transfer)}>Saved input</Button>
-          {transfer.phase === "uncertain" ? <>
-            <Button size="compact-sm" variant="subtle" disabled={busy || !canRestoreText || restorableQueueText(transfer.input) === null} onClick={() => setRestoring(transfer)}>Restore to composer</Button>
-            <Button size="compact-sm" variant="subtle" color="red" disabled={busy} onClick={() => void mutate(() => dismissQueueTransfer(transfer.id))}>Dismiss</Button>
-          </> : null}
+          <Button size="compact-sm" variant="subtle" disabled={busy || !canRestoreText || restorableQueueText(transfer.input) === null} onClick={() => setRestoring(transfer)}>Restore to composer</Button>
+          <Button size="compact-sm" variant="subtle" color="red" disabled={busy} onClick={() => void mutate(() => dismissQueueTransfer(transfer.id))}>Dismiss</Button>
         </Group>
-        {transfer.phase === "uncertain" && restorableQueueText(transfer.input) === null ? <Text size="xs">This native input cannot be restored losslessly in the text composer. Open Saved input to copy the complete JSON.</Text> : null}
-        {transfer.phase === "uncertain" && !canRestoreText ? <Text size="xs">Clear the current draft and attachments before restoring saved text.</Text> : null}
+        {restorableQueueText(transfer.input) === null ? <Text size="xs">This native input cannot be restored losslessly in the text composer. Open Saved input to copy the complete JSON.</Text> : null}
+        {!canRestoreText ? <Text size="xs">Clear the current draft and attachments before restoring saved text.</Text> : null}
       </Box>)}
     </Box> : null}
     <Modal opened={isActive && editing !== null} title="Edit queued message" onClose={() => !busy && setEditing(null)}>

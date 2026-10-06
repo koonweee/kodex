@@ -5,7 +5,7 @@ import type { components } from "../src/api/generated/schema";
 
 import type { AppSurfaceSession, Automation, AutomationRun, Capabilities, EventEnvelope, MarkThreadSeenRequest, QueuedInput, QueueTransfer, ThreadRead, ThreadSettingsResponse, UnreadBadgeResponse, ThreadSettingsUpdateRequest, ThreadViewPatch, ThreadViewResponse } from "../src/api/client";
 
-export async function nativeSettingsFixture(context: BrowserContext) {
+export async function nativeSettingsFixture(context: BrowserContext, options: { queuedSteerClient?: string } = {}) {
   let goal: components["schemas"]["ThreadGoal"] | null = null;
   const settings: ThreadSettingsResponse = { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null };
   const detail: ThreadViewResponse = {
@@ -29,6 +29,7 @@ export async function nativeSettingsFixture(context: BrowserContext) {
   const transfers: QueueTransfer[] = [];
   const deliveredTransfers = new Set<string>();
   let nextQueueId = 0;
+  let nextTransferId = 0;
   const unexpected: string[] = [];
   const errors: string[] = [];
   const holds = new Map<string, string>();
@@ -70,6 +71,32 @@ export async function nativeSettingsFixture(context: BrowserContext) {
     Object.assign(detail.thread, tuple);
   }
   function settingsChanged(client?: string) { emit("thread.settings_updated", { threadId: detail.thread.id }, client); }
+  function publishQueuedTurn(turnId: string, client?: string) {
+    const revision = Math.max(seq, detail.timeline.viewRevision ?? 0) + 1;
+    detail.timeline = { ...detail.timeline, viewRevision: revision };
+    const patch: ThreadViewPatch = { ...detail.timeline, scope: "turn", threadId: detail.thread.id,
+      affectedTurnIds: [turnId], rows: detail.timeline.rows.filter((entry) => entry.turnId === turnId),
+      turns: detail.timeline.turns.filter((turn) => turn.id === turnId) };
+    emit("thread_view.patch", patch, client, revision);
+  }
+  function publishQueueTransfer(transfer: QueueTransfer, nativeItemId?: string, client?: string) {
+    const turnId = transfer.expectedTurnId;
+    const pendingItemId = `pending-user-${transfer.id}`;
+    const itemId = nativeItemId ?? pendingItemId;
+    const status = nativeItemId ? "completed" : "running";
+    const rawItem = { id: itemId, type: "userMessage", clientId: transfer.id, content: transfer.input };
+    const row: ThreadViewResponse["timeline"]["rows"][number] = {
+      id: `row-${itemId}`, kind: "user_message", turnId, status, displayOrder: detail.timeline.rows.length + 1,
+      item: { id: itemId, itemId, itemType: "userMessage", threadId: detail.thread.id, turnId, status,
+        displayOrder: detail.timeline.rows.length + 1, codexMethod: nativeItemId ? "item/completed" : "item/upsert",
+        payload: { source: "gatewayStream", turnId, itemId, item: rawItem,
+          itemSnapshot: { id: itemId, itemType: "userMessage", clientId: transfer.id, rawPayload: rawItem } } },
+      items: [], collapsedRows: [], fileChanges: [],
+    };
+    detail.timeline = { ...detail.timeline,
+      rows: [...detail.timeline.rows.filter((entry) => entry.item?.itemId !== pendingItemId && entry.item?.itemId !== itemId), row] };
+    publishQueuedTurn(turnId, client);
+  }
   async function respond(route: Route, body: unknown, status = 200, holdClient?: string) {
     const captured = structuredClone(body);
     const send = async () => {
@@ -208,10 +235,11 @@ export async function nativeSettingsFixture(context: BrowserContext) {
       }
       if (row?.canSteer && request.method() === "POST" && queuePath[2] === "/steer") {
         queuedInputs.splice(index, 1);
-        const transfer: QueueTransfer = { id: `transfer-${row.id}`, threadId: detail.thread.id, nativeQueueId: row.id, clientUserMessageId: row.clientUserMessageId, expectedTurnId: "turn-1", input: row.input, phase: "accepted", error: null, createdAt: "2026-10-05T00:00:00Z", updatedAt: "2026-10-05T00:00:00Z" };
+        const transfer: QueueTransfer = { id: `transfer-${++nextTransferId}`, threadId: detail.thread.id, nativeQueueId: row.id, clientUserMessageId: row.clientUserMessageId, expectedTurnId: "turn-1", input: row.input, phase: "accepted", error: null, createdAt: "2026-10-05T00:00:00Z", updatedAt: "2026-10-05T00:00:00Z" };
         transfers.push(transfer);
         emit("turn_queue.changed", { threadId: detail.thread.id });
         emit("turn_queue.transfer_changed", { threadId: detail.thread.id });
+        publishQueueTransfer(transfer, undefined, options.queuedSteerClient);
         return respond(route, { status: "transfer", transfer });
       }
     }
@@ -245,6 +273,24 @@ export async function nativeSettingsFixture(context: BrowserContext) {
     },
     goalChanged(client?: string) { emit("thread.goal_changed", { threadId: detail.thread.id }, client); },
     detail, badge, queuedInputs, transfers, deliveredTransfers, automations, automationRuns,
+    receiveQueuedTransfer(id: string, nativeItemId: string, client?: string) {
+      const index = transfers.findIndex((transfer) => transfer.id === id);
+      const transfer = transfers[index];
+      if (!transfer) throw new Error(`Unknown queued transfer ${id}`);
+      publishQueueTransfer(transfer, nativeItemId, client);
+      transfers.splice(index, 1);
+      deliveredTransfers.add(id);
+      emit("turn_queue.transfer_changed", { threadId: detail.thread.id }, client);
+    },
+    uncertainQueuedTransfer(id: string, client?: string) {
+      const transfer = transfers.find((entry) => entry.id === id);
+      if (!transfer) throw new Error(`Unknown queued transfer ${id}`);
+      transfer.phase = "uncertain";
+      transfer.error = "Native acknowledgement lost";
+      detail.timeline = { ...detail.timeline, rows: detail.timeline.rows.filter((row) => row.item?.itemId !== `pending-user-${id}`) };
+      publishQueuedTurn(transfer.expectedTurnId, client);
+      emit("turn_queue.transfer_changed", { threadId: detail.thread.id }, client);
+    },
     appSurfaceChanged(kind: "app_surface.session_upserted" | "app_surface.session_archived", session: AppSurfaceSession, client?: string) { emit(kind, session, client); },
     automationRunChanged(automationId: string, client?: string) { emit("automation.run_updated", { automationId }, client); },
     queueChanged(client?: string, transfer = false) { emit(transfer ? "turn_queue.transfer_changed" : "turn_queue.changed", { threadId: detail.thread.id }, client); },

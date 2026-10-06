@@ -15,6 +15,8 @@ use crate::{
 
 pub const TRANSFER_CHANGED_EVENT: &str = "turn_queue.transfer_changed";
 
+mod projection;
+
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "status", rename_all = "camelCase")]
 pub enum PromotionOutcome {
@@ -191,6 +193,7 @@ pub async fn promote(
         )
         .await;
     }
+    let submission_revision = state.store.latest_event_seq().await?;
     match client
         .turn_steer_native_input(
             thread_id.into(),
@@ -221,6 +224,9 @@ pub async fn promote(
             if let Some(outcome) = stopped {
                 return Ok(outcome);
             }
+            // Native accepted input uses the ordinary canonical user-message
+            // projection. Its recovery record remains until an exact receipt.
+            projection::record_accepted(state, &transfer, submission_revision).await;
             current_outcome(state, &transfer).await
         }
         Err(_) => {
@@ -372,12 +378,23 @@ pub async fn reconcile(state: &AppState, transfer_id: &str) -> ApiResult<Promoti
             )
             .await?
     {
+        projection::discard(state, &transfer).await?;
         broadcast_changed(state, &transfer.thread_id).await?;
+        // The receipt may have been missed by live ingestion. Read the current
+        // canonical view instead of projecting this bounded recovery page,
+        // which could already be obsolete after a concurrent native revert.
+        let event = crate::events_synthetic::thread_view_refresh_required_event(
+            state.store.latest_event_seq().await?,
+            transfer.thread_id.clone(),
+            "queue_transfer_reconciled",
+        )?;
+        let _ = state.events.send(event);
     }
     current_outcome(state, &transfer).await
 }
 
 pub async fn broadcast_changed(state: &AppState, thread_id: &str) -> ApiResult<()> {
+    projection::discard_uncertain(state, thread_id).await?;
     let event = state
         .store
         .append_event(crate::store::NewEvent {

@@ -160,6 +160,20 @@ async fn exercise(
         .context("accepted transfer input disappeared before native consumption")?;
     anyhow::ensure!(saved.phase == QueueTransferPhase::Accepted);
     assert_native_queue(session, &thread_id, std::slice::from_ref(&retained)).await?;
+    // The acknowledged steer is already visible through the canonical detail
+    // read while native consumption is held at the model-response boundary.
+    let pending_detail = api(
+        &session.app,
+        "GET",
+        &format!("/v1/threads/{thread_id}"),
+        None,
+    )
+    .await?;
+    assert_user_projection(
+        &pending_detail["timeline"],
+        &transfer.id,
+        &format!("pending-user-{}", transfer.id),
+    )?;
 
     release
         .send(())

@@ -52,6 +52,8 @@ fn receipt(client: &str) -> Value {
 #[tokio::test]
 async fn bounded_exact_native_receipt_settles_uncertainty_without_chat_activation() {
     let (state, native, transfer) = fixture().await;
+    let mut first = state.events.subscribe();
+    let mut second = state.events.subscribe();
     *native.next_response.lock().unwrap() =
         Some(json!({"data":[receipt(&transfer.id)],"nextCursor":"older","backwardsCursor":null}));
     assert!(
@@ -63,6 +65,17 @@ async fn bounded_exact_native_receipt_settles_uncertainty_without_chat_activatio
         .await
         .unwrap()
         .is_none());
+    for receiver in [&mut first, &mut second] {
+        let mut refill = false;
+        while let Ok(event) = receiver.try_recv() {
+            refill |=
+                event.kind == "thread_view.refresh_required" && event.payload["threadId"] == "chat";
+        }
+        assert!(
+            refill,
+            "confirmed history must refill both canonical transcripts"
+        );
+    }
     assert_eq!(
         *native.requests.lock().unwrap(),
         vec![(

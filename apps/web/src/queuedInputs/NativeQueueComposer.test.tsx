@@ -25,8 +25,10 @@ it("sends active-chat input through the native atomic command and queues only ex
   expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
   await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/queued-inputs")[0])).resolves.toEqual({ input: [{ type: "text", text: "Next-turn work" }], clientUserMessageId: expect.any(String) });
   await userEvent.click(within(queue).getByRole("button", { name: "Steer" }));
-  expect(await screen.findByText("Awaiting native receipt")).toBeInTheDocument();
-  expect(screen.queryByRole("region", { name: "Queued messages" })).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.queryByRole("region", { name: "Queued messages" })).not.toBeInTheDocument());
+  expect(screen.queryByRole("region", { name: "Queue transfers" })).not.toBeInTheDocument();
+  // A mutation acknowledgement alone supplies no transcript rows.
+  expect(screen.queryByText("Next-turn work", { exact: true })).not.toBeInTheDocument();
   expect(gateway.callsFor("POST", "/v1/threads/thread-1/queued-inputs/queue-1/steer")).toHaveLength(1);
   expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
 });

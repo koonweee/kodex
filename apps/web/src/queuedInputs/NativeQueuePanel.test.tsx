@@ -5,13 +5,15 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { createKodexQueryClient } from "../api/queryClient";
+import { queryKeys } from "../api/queryKeys";
+import type { QueueTransfer } from "../api/client";
 import { mockGateway, requestJson } from "../test/gatewayMock";
 import { NativeQueuePanel } from "./NativeQueuePanel";
 import { applyQueueEvent } from "./cache";
 
 afterEach(() => vi.restoreAllMocks());
 const row = (id: string, canSteer = false) => ({ id, threadId: "chat", clientUserMessageId: "reusable", input: [{ type: "text", text: id }], attachments: [], canSteer });
-const saved = (phase: "accepted" | "uncertain") => ({ id: "transfer", threadId: "chat", nativeQueueId: "b", clientUserMessageId: "reusable", expectedTurnId: "turn", input: [{ type: "text", text: "Saved correction" }], phase, error: phase === "uncertain" ? "Acknowledgement lost" : null, createdAt: "2026-10-05T00:00:00Z", updatedAt: "2026-10-05T00:00:00Z" });
+const saved = (phase: QueueTransfer["phase"]): QueueTransfer => ({ id: "transfer", threadId: "chat", nativeQueueId: "b", clientUserMessageId: "reusable", expectedTurnId: "turn", input: [{ type: "text", text: "Saved correction" }], phase, error: phase === "uncertain" ? "Acknowledgement lost" : null, createdAt: "2026-10-05T00:00:00Z", updatedAt: "2026-10-05T00:00:00Z" });
 function mount(onRestoreText = vi.fn()) {
   const client = createKodexQueryClient();
   render(<QueryClientProvider client={client}><MantineProvider env="test"><NativeQueuePanel threadId="chat" canRestoreText onRestoreText={onRestoreText} /></MantineProvider></QueryClientProvider>);
@@ -48,7 +50,16 @@ it("uses native order and eligibility, preserves unknown native input when editi
   await waitFor(() => expect(screen.getAllByRole("group", { name: "Queued message" })[0]).toHaveTextContent("a"));
 });
 
-it("keeps accepted transfers pending and restores uncertain text only after an explicit warning without resending", async () => {
+it.each<QueueTransfer["phase"]>(["deleting", "deleted", "steering", "accepted"])("keeps %s transfers in authoritative cache without showing recovery controls", async (phase) => {
+  const transfer = saved(phase);
+  mockGateway({ "GET /v1/threads/chat/queued-inputs": { queuedInputs: [], transfers: [transfer], nextCursor: null } });
+  const client = mount();
+  await waitFor(() => expect(client.getQueryData(queryKeys.queuedInputs("chat"))).toMatchObject({ transfers: [transfer] }));
+  expect(screen.queryByRole("region", { name: "Queue transfers" })).not.toBeInTheDocument();
+  expect(screen.queryByText("Saved correction")).not.toBeInTheDocument();
+});
+
+it("reveals uncertain delivery recovery and restores text only after an explicit warning without resending", async () => {
   let transfer = saved("accepted");
   const gateway = mockGateway({
     "GET /v1/threads/chat/queued-inputs": () => ({ queuedInputs: [], transfers: [transfer], nextCursor: null }),
@@ -56,7 +67,8 @@ it("keeps accepted transfers pending and restores uncertain text only after an e
   });
   const restore = vi.fn();
   const client = mount(restore);
-  expect(await screen.findByText("Awaiting native receipt")).toBeInTheDocument();
+  await waitFor(() => expect(client.getQueryData(queryKeys.queuedInputs("chat"))).toMatchObject({ transfers: [transfer] }));
+  expect(screen.queryByRole("region", { name: "Queue transfers" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Dismiss" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
   transfer = saved("uncertain");

@@ -23,6 +23,9 @@ use crate::{
 #[path = "preflight_tests.rs"]
 mod preflight_tests;
 
+#[path = "projection_tests.rs"]
+mod projection_tests;
+
 const THREAD: &str = "promotion-chat";
 const TURN: &str = "original-active-turn";
 const ROW: &str = "selected-native-row";

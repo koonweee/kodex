@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { nativeSettingsFixture } from "./native-settings.fixture";
+import { appendResponseAnnotations } from "../src/composer/annotations";
 
 for (const shape of [
   { name: "desktop", width: 1280, hasTouch: false, isMobile: false },
@@ -9,6 +10,63 @@ for (const shape of [
 ]) {
   test.describe(shape.name, () => {
     test.use({ viewport: { width: shape.width, height: 844 }, hasTouch: shape.hasTouch, isMobile: shape.isMobile });
+    test("queued Steer renders one canonical annotated message and reconnects replace its pending receipt", async ({ context }) => {
+      const fixture = await nativeSettingsFixture(context, { queuedSteerClient: "first" });
+      const text = appendResponseAnnotations("Queued correction", [{ id: "quote", text: "Keep the gateway authoritative.", comment: "Apply this constraint." }]);
+      fixture.detail.thread.status = "active";
+      fixture.detail.liveState = "streaming";
+      fixture.detail.timeline = { ...fixture.detail.timeline, activeTurnId: "turn-1", liveState: "streaming", turns: [{ id: "turn-1", status: "inProgress" }] };
+      fixture.queuedInputs.push({ id: "annotated-queue", threadId: "settings-chat", clientUserMessageId: "original-queued-client", input: [{ type: "text", text }], attachments: [], canSteer: true });
+      try {
+        const first = await fixture.page("first");
+        const second = await fixture.page("second");
+        for (const page of [first, second]) await expect(row(page, "Queued correction")).toBeVisible();
+        await expect.poll(() => fixture.connected("first") && fixture.connected("second")).toBe(true);
+        await composer(first).fill("Keep my unsent draft");
+        if (shape.hasTouch) await click(first.getByRole("button", { name: "Collapse composer", exact: true }), true);
+        await click(row(first, "Queued correction").getByRole("button", { name: "Steer", exact: true }), shape.hasTouch);
+        await expect(userMessages(first, "Queued correction")).toHaveCount(1);
+        await expect(userMessages(second, "Queued correction")).toHaveCount(0);
+        for (const page of [first, second]) {
+          await expect(queueRows(page)).toHaveCount(0);
+          await expect(page.getByRole("region", { name: "Queue transfers" })).toHaveCount(0);
+        }
+        await expect(composer(first)).toHaveValue("Keep my unsent draft");
+        const transfer = fixture.transfers[0];
+        const pendingItemId = `pending-user-${transfer.id}`;
+        expect(fixture.detail.timeline.rows.map((entry) => entry.item?.itemId)).toEqual([pendingItemId]);
+        const pendingConnections = fixture.connections.get("second") ?? 0;
+        fixture.disconnect("second");
+        await expect.poll(() => fixture.connections.get("second") ?? 0).toBeGreaterThan(pendingConnections);
+        await expect(userMessages(second, "Queued correction")).toHaveCount(1);
+        for (const page of [first, second]) {
+          const annotation = userMessages(page, "Queued correction").getByRole("group", { name: "Annotation 1", exact: true });
+          await expect(annotation.locator("blockquote")).toHaveText("Keep the gateway authoritative.");
+          await expect(annotation).toContainText("Apply this constraint.");
+          await expect(userMessages(page, "Queued correction")).not.toContainText("<response_annotations>");
+        }
+        // A receipt replaces the gateway row by native ID. The second tab misses
+        // that patch and recovers the same one-bubble view through reconnect.
+        fixture.receiveQueuedTransfer(transfer.id, "native-queued-receipt", "first");
+        await expect(userMessages(first, "Queued correction")).toHaveCount(1);
+        expect(fixture.detail.timeline.rows.map((entry) => entry.item?.itemId)).toEqual(["native-queued-receipt"]);
+        const receiptConnections = fixture.connections.get("second") ?? 0;
+        fixture.disconnect("second");
+        await expect.poll(() => fixture.connections.get("second") ?? 0).toBeGreaterThan(receiptConnections);
+        for (const page of [first, second]) {
+          await expect(userMessages(page, "Queued correction")).toHaveCount(1);
+          await expect(page.getByRole("region", { name: "Queue transfers" })).toHaveCount(0);
+        }
+        await expect(composer(first)).toHaveValue("Keep my unsent draft");
+        await second.reload();
+        await expect(userMessages(second, "Queued correction")).toHaveCount(1);
+        expect(fixture.requests.filter((request) => request.key === "POST /v1/threads/settings-chat/queued-inputs/annotated-queue/steer")).toHaveLength(1);
+        expect(fixture.requests.filter((request) => request.key === "POST /v1/threads/settings-chat/input")).toHaveLength(0);
+      } finally { await fixture.close(); }
+      expect(fixture.unexpected).toEqual([]);
+      expect(fixture.errors).toEqual([]);
+    });
+
     test("native queue order, explicit commands and uncertain transfers converge across tabs", async ({ context }) => {
       const fixture = await nativeSettingsFixture(context);
       const queuePath = "/v1/threads/settings-chat/queued-inputs";
@@ -78,7 +136,8 @@ for (const shape of [
         await click(row(first, "Second queued work").getByRole("button", { name: "Steer", exact: true }), shape.hasTouch);
         for (const page of [first, second]) {
           await expect(queueRows(page)).toHaveCount(0);
-          await expect(page.getByText("Awaiting native receipt", { exact: true })).toBeVisible();
+          await expect(userMessages(page, "Second queued work")).toHaveCount(1);
+          await expect(page.getByRole("region", { name: "Queue transfers" })).toHaveCount(0);
           await expect(page.getByRole("button", { name: "Dismiss", exact: true })).toHaveCount(0);
         }
         expect(calls("POST", `${queuePath}/queued-2/steer`)).toHaveLength(1);
@@ -87,15 +146,16 @@ for (const shape of [
         // Only one tab receives uncertainty; reopening the other real stream
         // refills native state without a page reload or an automatic resend.
         const transfer = fixture.transfers[0];
-        transfer.phase = "uncertain";
-        transfer.error = "Native acknowledgement lost";
-        fixture.queueChanged("first", true);
+        fixture.uncertainQueuedTransfer(transfer.id, "first");
         await expect(first.getByText("Delivery uncertain", { exact: true })).toBeVisible();
-        await expect(second.getByText("Awaiting native receipt", { exact: true })).toBeVisible();
+        await expect(userMessages(first, "Second queued work")).toHaveCount(0);
+        await expect(userMessages(second, "Second queued work")).toHaveCount(1);
+        await expect(second.getByRole("region", { name: "Queue transfers" })).toHaveCount(0);
         const beforeReconnect = fixture.connections.get("second") ?? 0;
         fixture.disconnect("second");
         await expect.poll(() => fixture.connections.get("second") ?? 0).toBeGreaterThan(beforeReconnect);
         await expect(second.getByText("Delivery uncertain", { exact: true })).toBeVisible();
+        await expect(userMessages(second, "Second queued work")).toHaveCount(0);
         for (const page of [first, second]) await expect(page.getByRole("button", { name: /^Retry|Resend$/ })).toHaveCount(0);
         await click(second.getByRole("button", { name: "Reconcile", exact: true }), shape.hasTouch);
         await expect.poll(() => calls("POST", `/v1/queue-transfers/${transfer.id}/reconcile`).length).toBe(1);
@@ -218,6 +278,7 @@ test.describe("desktop long queue", () => {
 function activePane(page: Page) { return page.locator('.kodex-thread-pane[data-workspace-pane-active="true"]'); }
 function composer(page: Page) { return activePane(page).getByLabel("Message composer", { exact: true }); }
 function queueRows(page: Page) { return activePane(page).getByRole("group", { name: "Queued message", exact: true }); }
+function userMessages(page: Page, text: string) { return activePane(page).locator(".kodex-user-message-bubble").filter({ hasText: text }); }
 function row(page: Page, text: string) { return queueRows(page).filter({ hasText: text }); }
 function reorderHandle(page: Page, text: string) { return row(page, text).getByRole("button", { name: "Reorder queued message", exact: true }); }
 

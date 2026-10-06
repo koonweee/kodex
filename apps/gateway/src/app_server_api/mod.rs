@@ -1266,12 +1266,6 @@ impl ThreadItemSnapshot {
     }
 }
 
-pub(crate) fn visible_text_from_user_input(input: &[UserInput]) -> Option<String> {
-    let content = serde_json::to_value(input).ok()?;
-    let content = content.as_array()?;
-    visible_text_from_user_content(content)
-}
-
 pub(crate) fn visible_text_from_thread_item(item: &Value) -> Option<String> {
     if item.get("type").and_then(Value::as_str) != Some("userMessage") {
         return None;

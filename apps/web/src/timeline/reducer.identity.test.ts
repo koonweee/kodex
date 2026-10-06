@@ -59,6 +59,26 @@ function pendingIds(state: TimelineState) {
 }
 
 describe("native client message identity", () => {
+  it.each<Projection>(["snapshot", "full_snapshot", "turn"])("replaces queued Steer canonical pending identity with its native receipt through %s", (projection) => {
+    const existingNative = userRow("existing-native", "original-queue-correlation");
+    const pending = userRow("pending-user-fresh-transfer", "fresh-transfer");
+    pending.status = "running";
+    pending.item = { ...pending.item!, status: "running" };
+    let first = project("turn", createTimelineState(), [existingNative, pending], 1);
+    let missedReceipt = first;
+    expect(first.items.map((item) => item.id).sort()).toEqual(["existing-native", "pending-user-fresh-transfer"]);
+    expect(first.items.every((item) => item.source === "app_server")).toBe(true);
+
+    const receipt = userRow("native-steered-receipt", "fresh-transfer");
+    first = project(projection, first, [existingNative, receipt], 2);
+    // Equal text cannot prove replacement: only the exact native receipt ID may
+    // remain, while the unrelated native message keeps its separate identity.
+    expect(first.items.map((item) => item.id).sort()).toEqual(["existing-native", "native-steered-receipt"]);
+    expect(first.items.find((item) => item.id === "native-steered-receipt")).toMatchObject({ clientId: "fresh-transfer", status: "completed", source: "app_server" });
+    missedReceipt = project("snapshot", missedReceipt, [existingNative, receipt], 3);
+    expect(missedReceipt.items.map((item) => item.id).sort()).toEqual(["existing-native", "native-steered-receipt"]);
+  });
+
   it.each<Projection>(["snapshot", "full_snapshot", "turn", "row_delta"])("matches only the exact native client ID through %s", (projection) => {
     const foreign = userRow("from-other-tab", "other-tab");
     let state = submit(submit(applyTimelineSnapshot(createTimelineState(), snapshot([foreign], 0)), "first"), "second");

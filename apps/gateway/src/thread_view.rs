@@ -16,13 +16,21 @@ use crate::{
     app_server_api::{
         canonical_timeline_item_id, compact_timeline_item_payload,
         thread_live_state_from_turn_status, thread_timeline_rows_from_items,
-        visible_text_from_thread_item, visible_text_from_user_input, PendingTimelineRequestSummary,
-        ThreadItemSnapshot, ThreadLiveState, ThreadTimelineSnapshot, ThreadTimelineSnapshotItem,
+        visible_text_from_thread_item, PendingTimelineRequestSummary, ThreadItemSnapshot,
+        ThreadLiveState, ThreadTimelineSnapshot, ThreadTimelineSnapshotItem,
         ThreadTimelineSnapshotTurn, ThreadTimelineWindowPage, ThreadTurnSnapshot,
-        TimelineFileAttachment, TimelineItemUpsertPayload, TimelineUpdateSource, UserInput,
+        TimelineFileAttachment, TimelineItemUpsertPayload, TimelineUpdateSource,
     },
     error::{ApiError, ApiResult},
     store::Approval,
+};
+
+mod pending_input;
+#[cfg(test)]
+use crate::app_server_api::UserInput;
+pub use pending_input::{discard_pending_user_input, record_pending_user_input};
+use pending_input::{
+    is_pending_user_item, remove_materialized_pending_match, user_message_identity,
 };
 
 // ThreadView is the gateway-owned live projection of upstream app-server thread
@@ -1147,62 +1155,6 @@ pub async fn record_thread_live_state(
     Ok(patch)
 }
 
-pub async fn record_pending_user_input(
-    sessions: &ThreadViewStore,
-    thread_id: &str,
-    turn_id: &str,
-    client_id: &str,
-    input: &[UserInput],
-    attachments: &[TimelineFileAttachment],
-    (submission_revision, updated_seq): (i64, impl Future<Output = ApiResult<i64>>),
-) -> ApiResult<Option<ThreadViewPatch>> {
-    if attachments.is_empty() && visible_text_from_user_input(input).is_none() {
-        return Ok(None);
-    }
-    let Ok(content) = serde_json::to_value(input) else {
-        return Ok(None);
-    };
-    let item_id = format!("pending-user-{client_id}");
-    let item = json!({
-        "id": item_id,
-        "type": "userMessage",
-        "clientId": client_id,
-        "content": content,
-        "fileAttachments": attachments,
-    });
-    let mut item_snapshot = ThreadItemSnapshot::from_payload(&item)?;
-    item_snapshot.raw_payload = item.clone();
-    let patch = sessions
-        .with_thread_view(thread_id, updated_seq, |view| {
-            // An accepted native write remains successful, but its late ACK
-            // must not recreate input removed by a subsequent native revert.
-            if submission_revision < view.history_reset_revision {
-                return None;
-            }
-            // Native events can materialize the input before its submission ACK.
-            // Check and insert under the same view lock so late ACKs cannot
-            // recreate a synthetic row after the native receipt.
-            if view.items.iter().any(|item| {
-                !is_pending_user_item(item)
-                    && item.turn_id == turn_id
-                    && user_message_client_id(item) == Some(client_id)
-            }) {
-                return None;
-            }
-            view.upsert_item(
-                thread_id,
-                turn_id,
-                item,
-                item_snapshot,
-                Some("running"),
-                Some(Utc::now().timestamp_millis()),
-            );
-            Some(view.turn_patch(turn_id))
-        })
-        .await?;
-    Ok(patch)
-}
-
 fn replace_or_push(
     items: &mut Vec<ThreadTimelineSnapshotItem>,
     key: String,
@@ -1216,42 +1168,6 @@ fn replace_or_push(
     } else {
         items.push(item);
     }
-}
-
-fn remove_materialized_pending_match(
-    items: &mut Vec<ThreadTimelineSnapshotItem>,
-    turn_id: &str,
-    item_snapshot: &ThreadItemSnapshot,
-    raw_item: &Value,
-) {
-    if !item_snapshot.item_type.eq_ignore_ascii_case("userMessage")
-        || item_snapshot.id.starts_with("pending-user-")
-    {
-        return;
-    }
-    let Some(client_id) = raw_item.get("clientId").and_then(Value::as_str) else {
-        return;
-    };
-    items.retain(|item| {
-        !is_pending_user_item(item)
-            || item.turn_id != turn_id
-            || user_message_client_id(item) != Some(client_id)
-    });
-}
-
-fn is_pending_user_item(item: &ThreadTimelineSnapshotItem) -> bool {
-    item.item_id.starts_with("pending-user-") && item.item_type.eq_ignore_ascii_case("userMessage")
-}
-
-fn user_message_identity(item: &ThreadTimelineSnapshotItem) -> Option<(String, String)> {
-    user_message_client_id(item).map(|client_id| (item.turn_id.clone(), client_id.to_string()))
-}
-
-fn user_message_client_id(item: &ThreadTimelineSnapshotItem) -> Option<&str> {
-    if !item.item_type.eq_ignore_ascii_case("userMessage") {
-        return None;
-    }
-    item.payload.item.client_id.as_deref()
 }
 
 fn snapshot_assistant_text_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {

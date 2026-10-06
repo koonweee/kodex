@@ -8,7 +8,7 @@ use tokio::sync::{Mutex, OwnedMutexGuard};
 use crate::{
     api::AppState,
     app_server_api::{
-        self, SortDirection, ThreadStatus, ThreadTurnItemsView, TimelineFileAttachment, UserInput,
+        self, SortDirection, ThreadStatus, ThreadTurnItemsView, TimelineFileAttachment,
     },
     error::{ApiError, ApiResult},
     events, thread_view,
@@ -91,7 +91,7 @@ pub async fn record_pending_user_projection(
     thread_id: &str,
     turn_id: &str,
     client_id: &str,
-    input: &[UserInput],
+    input: &[impl serde::Serialize],
     attachments: &[TimelineFileAttachment],
     submission_revision: i64,
 ) -> ApiResult<()> {
