@@ -249,3 +249,54 @@ async fn failed_transfer_marker_cannot_discard_the_settling_native_user_receipt(
     assert!(native.requests.lock().unwrap().is_empty());
     assert!(outcome.is_ok());
 }
+
+#[tokio::test]
+async fn first_row_context_lost_during_native_selection_leaves_queue_untouched() {
+    for change in ["reverted", "disconnected", "completed"] {
+        let (state, native) = fixture(true).await;
+        *native.rows.lock().unwrap() = vec![row(ROW), row(OTHER_ROW)];
+        let before = native.rows.lock().unwrap().clone();
+        let (listing, release) = native.hold("thread/queue/list");
+        let selecting_state = state.clone();
+        let selecting = tokio::spawn(async move {
+            crate::queue_transfer::promote_first(&selecting_state, THREAD).await
+        });
+        entered(listing).await;
+        lose_context(&state, change).await;
+        release.send(()).unwrap();
+        assert!(matches!(
+            finish(selecting).await,
+            Err(ApiError::Conflict(_))
+        ));
+        assert!(
+            native.writes().is_empty(),
+            "{change} must fence native selection"
+        );
+        assert_eq!(*native.rows.lock().unwrap(), before);
+        assert!(state
+            .store
+            .list_queue_transfers(None)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+}
+
+#[tokio::test]
+async fn first_row_native_input_denial_leaves_queue_untouched() {
+    let (state, native) = fixture(true).await;
+    *native.rows.lock().unwrap() = vec![row(ROW), row(OTHER_ROW)];
+    *native.capability.lock().unwrap() = Some(false);
+    assert!(matches!(
+        crate::queue_transfer::promote_first(&state, THREAD).await,
+        Err(ApiError::BadRequest(_))
+    ));
+    assert!(native.writes().is_empty());
+    assert_eq!(*native.rows.lock().unwrap(), vec![row(ROW), row(OTHER_ROW)]);
+    assert!(state
+        .store
+        .list_queue_transfers(None)
+        .await
+        .unwrap()
+        .is_empty());
+}

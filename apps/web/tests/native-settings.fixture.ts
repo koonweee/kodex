@@ -90,7 +90,7 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
       item: { id: itemId, itemId, itemType: "userMessage", threadId: detail.thread.id, turnId, status,
         displayOrder: detail.timeline.rows.length + 1, codexMethod: nativeItemId ? "item/completed" : "item/upsert",
         payload: { source: "gatewayStream", turnId, itemId, item: rawItem,
-          itemSnapshot: { id: itemId, itemType: "userMessage", clientId: transfer.id, rawPayload: rawItem } } },
+          itemSnapshot: { id: itemId, itemType: "userMessage", clientId: transfer.id } } },
       items: [], collapsedRows: [], fileChanges: [],
     };
     detail.timeline = { ...detail.timeline,
@@ -219,9 +219,10 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
       emit("turn_queue.changed", { threadId: detail.thread.id });
       return respond(route, { payload: { turn: { id: "manual-native-turn", status: "inProgress" } } });
     }
+    const steerFirst = key === "POST /v1/threads/settings-chat/queued-inputs/steer-first";
     const queuePath = url.pathname.match(/^\/v1\/threads\/settings-chat\/queued-inputs\/([^/]+)(\/steer)?$/);
     if (queuePath) {
-      const index = queuedInputs.findIndex((row) => row.id === queuePath[1]);
+      const index = steerFirst ? 0 : queuedInputs.findIndex((row) => row.id === queuePath[1]);
       const row = queuedInputs[index];
       if (row && request.method() === "PUT" && !queuePath[2]) {
         row.input = (body as { input: QueuedInput["input"] }).input;
@@ -233,7 +234,8 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
         emit("turn_queue.changed", { threadId: detail.thread.id });
         return respond(route, { id: queuePath[1], threadId: detail.thread.id, deleted: Boolean(row) });
       }
-      if (row?.canSteer && request.method() === "POST" && queuePath[2] === "/steer") {
+      if (steerFirst && !row?.canSteer) return respond(route, { code: "conflict", message: "The front queued message cannot be steered", retryable: false }, 409);
+      if (row?.canSteer && request.method() === "POST" && (queuePath[2] === "/steer" || steerFirst)) {
         queuedInputs.splice(index, 1);
         const transfer: QueueTransfer = { id: `transfer-${++nextTransferId}`, threadId: detail.thread.id, nativeQueueId: row.id, clientUserMessageId: row.clientUserMessageId, expectedTurnId: "turn-1", input: row.input, phase: "accepted", error: null, createdAt: "2026-10-05T00:00:00Z", updatedAt: "2026-10-05T00:00:00Z" };
         transfers.push(transfer);

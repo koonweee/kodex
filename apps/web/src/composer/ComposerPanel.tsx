@@ -24,6 +24,7 @@ import { filterSlashCommands, replaceSlashCommandToken, slashCommandItems } from
 import { filterSkillsForQuery } from "./skillMentions";
 import type { PendingAttachment } from "./types";
 import { NativeQueuePanel } from "../queuedInputs/NativeQueuePanel";
+import { useNativeQueue } from "../queuedInputs/useNativeQueue";
 import { useComposerDraftState, type ComposerDraftStore } from "./useComposerDraftState";
 import { useSkillCatalog } from "./useSkillCatalog";
 import { AssistantSelectionAction } from "../timeline/AssistantSelectionAction";
@@ -134,6 +135,7 @@ export function ComposerPanel({
   pendingAttachments,
   selectedThreadPresent,
 }: ComposerPanelProps) {
+  const nativeQueue = useNativeQueue(queueThreadId ?? null);
   const draftState = useComposerDraftState(composerResetToken, composerDraftKey, composerDraftStore);
   const draftDisposable = draftState.composerText.length === 0 && draftState.annotations.length === 0 &&
     pendingAttachments.length === 0 && !isComposerSubmitting && !isDraftComposerTransitioning;
@@ -262,6 +264,16 @@ export function ComposerPanel({
     });
   }
 
+  function handleComposerKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
+    const empty = !draftState.composerText.trim() && draftState.annotations.length === 0 && pendingAttachments.length === 0;
+    if (event.key === "Enter" && event.metaKey && !event.shiftKey && !event.nativeEvent.isComposing &&
+        empty && !isComposerControlsDisabled && queueDialogActive && nativeQueue.steerFirst()) {
+      event.preventDefault();
+      return;
+    }
+    onComposerKeyDown(event);
+  }
+
   function handleTextareaKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
     if (
       event.key === "Backspace" &&
@@ -332,7 +344,7 @@ export function ComposerPanel({
         return;
       }
     }
-    onComposerKeyDown(event);
+    handleComposerKeyDown(event);
   }
 
   const setComposerShellNode = useCallback((node: HTMLDivElement | null) => {
@@ -342,7 +354,7 @@ export function ComposerPanel({
     }
   }, [composerShellRef]);
 
-  const queuePanel = queueThreadId ? <NativeQueuePanel key={queueThreadId} threadId={queueThreadId} isActive={queueDialogActive}
+  const queuePanel = queueThreadId ? <NativeQueuePanel key={queueThreadId} threadId={queueThreadId} queue={nativeQueue} isActive={queueDialogActive}
     canRestoreText={!draftState.composerText && draftState.annotations.length === 0 && pendingAttachments.length === 0 && !isComposerBusy}
     onRestoreText={(text) => draftState.updateComposerText(text, null)} /> : null;
 
@@ -380,7 +392,7 @@ export function ComposerPanel({
     onComposerDragLeave,
     onComposerDragOver,
     onComposerDrop,
-    onComposerKeyDown,
+    onComposerKeyDown: handleComposerKeyDown,
     onComposerPaste,
     onComposerSettingsChange,
     onImageOpen,

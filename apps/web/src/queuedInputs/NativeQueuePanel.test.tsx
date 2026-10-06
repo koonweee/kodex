@@ -9,6 +9,7 @@ import { queryKeys } from "../api/queryKeys";
 import type { QueueTransfer } from "../api/client";
 import { mockGateway, requestJson } from "../test/gatewayMock";
 import { NativeQueuePanel } from "./NativeQueuePanel";
+import { useNativeQueue } from "./useNativeQueue";
 import { applyQueueEvent } from "./cache";
 
 afterEach(() => vi.restoreAllMocks());
@@ -16,7 +17,11 @@ const row = (id: string, canSteer = false) => ({ id, threadId: "chat", clientUse
 const saved = (phase: QueueTransfer["phase"]): QueueTransfer => ({ id: "transfer", threadId: "chat", nativeQueueId: "b", clientUserMessageId: "reusable", expectedTurnId: "turn", input: [{ type: "text", text: "Saved correction" }], phase, error: phase === "uncertain" ? "Acknowledgement lost" : null, createdAt: "2026-10-05T00:00:00Z", updatedAt: "2026-10-05T00:00:00Z" });
 function mount(onRestoreText = vi.fn()) {
   const client = createKodexQueryClient();
-  render(<QueryClientProvider client={client}><MantineProvider env="test"><NativeQueuePanel threadId="chat" canRestoreText onRestoreText={onRestoreText} /></MantineProvider></QueryClientProvider>);
+  function Panel() {
+    const queue = useNativeQueue("chat");
+    return <NativeQueuePanel threadId="chat" queue={queue} canRestoreText onRestoreText={onRestoreText} />;
+  }
+  render(<QueryClientProvider client={client}><MantineProvider env="test"><Panel /></MantineProvider></QueryClientProvider>);
   return client;
 }
 

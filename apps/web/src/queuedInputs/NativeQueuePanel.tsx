@@ -1,28 +1,24 @@
 import { Alert, Box, Button, Group, Modal, Stack, Text, Textarea } from "@mantine/core";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import {
-  deleteQueuedInput, dismissQueueTransfer, listQueuedInputs, reconcileQueueTransfer,
+  deleteQueuedInput, dismissQueueTransfer, reconcileQueueTransfer,
   reorderQueuedInputs, steerQueuedInput, updateQueuedInput,
   type QueuedInput, type QueueTransfer,
 } from "../api/client";
-import { queryKeys } from "../api/queryKeys";
 import { errorMessageFrom } from "../shared/values";
-import { refreshQueuedInputs } from "./cache";
+import type { NativeQueueController } from "./useNativeQueue";
 import { QueuedMessageList } from "./QueuedMessageList";
 import { editableQueueText, queueInputPreview, replaceQueueText, restorableQueueText } from "./input";
 
-export function NativeQueuePanel({ threadId, onRestoreText, canRestoreText, isActive = true }: {
+export function NativeQueuePanel({ threadId, queue, onRestoreText, canRestoreText, isActive = true }: {
   threadId: string;
+  queue: NativeQueueController;
   isActive?: boolean;
   onRestoreText: (text: string) => void;
   canRestoreText: boolean;
 }) {
-  const client = useQueryClient();
-  const query = useQuery({ queryKey: queryKeys.queuedInputs(threadId), queryFn: ({ signal }) => listQueuedInputs(threadId, signal) });
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { query, busy, error, reload, mutate } = queue;
   const [editing, setEditing] = useState<QueuedInput | null>(null);
   const [edits, setEdits] = useState(new Map<number, string>());
   const [restoring, setRestoring] = useState<QueueTransfer | null>(null);
@@ -37,22 +33,10 @@ export function NativeQueuePanel({ threadId, onRestoreText, canRestoreText, isAc
   const rows = query.data?.queuedInputs ?? [];
   const transfers = (query.data?.transfers ?? []).filter((transfer) => transfer.phase === "uncertain");
 
-  async function mutate(action: () => Promise<unknown>, onSuccess?: () => void) {
-    if (busy) return;
-    setBusy(true); setError(null);
-    try { await action(); onSuccess?.(); }
-    catch (failure) { setError(errorMessageFrom(failure)); }
-    finally {
-      // A failed/lost mutation reply is not proof that native state stayed put.
-      await refreshQueuedInputs(client, threadId);
-      setBusy(false);
-    }
-  }
-
   return <>
     {error || query.error ? <Alert color="red" title="Queue unavailable" mb="xs">
       {error ?? errorMessageFrom(query.error)}
-      <Button size="compact-sm" variant="subtle" onClick={() => { setError(null); void refreshQueuedInputs(client, threadId); }}>Reload queue</Button>
+      <Button size="compact-sm" variant="subtle" onClick={reload}>Reload queue</Button>
     </Alert> : null}
     {rows.length > 0 ? <QueuedMessageList rows={rows} busy={busy} partial={Boolean(query.data?.nextCursor)} isActive={isActive}
       onReorder={(ids) => void mutate(() => reorderQueuedInputs(threadId, ids))}

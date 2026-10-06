@@ -262,6 +262,7 @@ impl AppState {
         crate::queue::reconcile_queue_transfer,
         crate::queue::dismiss_queue_transfer,
         crate::queue::steer_queued_input,
+        crate::queue::steer_first_queued_input,
         crate::queue::delete_queued_input,
         crate::routes::file_preview::preview_thread_file,
         crate::routes::uploads::upload_images,

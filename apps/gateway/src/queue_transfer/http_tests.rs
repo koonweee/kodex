@@ -34,6 +34,7 @@ struct NativeQueue {
     steer_error: Mutex<bool>,
     history: Mutex<Vec<Value>>,
     update_gate: Mutex<Option<(oneshot::Sender<()>, oneshot::Receiver<()>)>>,
+    reorder_gate: Mutex<Option<(oneshot::Sender<()>, oneshot::Receiver<()>)>>,
 }
 
 #[async_trait]
@@ -113,10 +114,10 @@ impl AppServer for NativeQueue {
                 "unexpected native queue RPC {method}"
             ))),
         };
-        let gate = if method == "thread/queue/update" {
-            self.update_gate.lock().unwrap().take()
-        } else {
-            None
+        let gate = match method {
+            "thread/queue/update" => self.update_gate.lock().unwrap().take(),
+            "thread/queue/reorder" => self.reorder_gate.lock().unwrap().take(),
+            _ => None,
         };
         if let Some((started, release)) = gate {
             let _ = started.send(());
@@ -478,3 +479,6 @@ async fn native_http_queue_saved_admission_survives_refill_publication_failure()
 mod producers;
 #[path = "http_tests/recovery.rs"]
 mod recovery;
+
+#[path = "http_tests/steer_first.rs"]
+mod steer_first;

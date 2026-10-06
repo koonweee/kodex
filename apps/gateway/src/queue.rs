@@ -109,6 +109,10 @@ pub fn router() -> Router<AppState> {
             post(reorder_queued_inputs),
         )
         .route(
+            "/v1/threads/{thread_id}/queued-inputs/steer-first",
+            post(steer_first_queued_input),
+        )
+        .route(
             "/v1/threads/{thread_id}/queued-inputs/start",
             post(start_queued_input),
         )
@@ -268,6 +272,16 @@ pub async fn start_queued_input(
             }
         }
     }
+    broadcast_changed_best_effort(&state, &thread_id).await;
+    Ok(Json(result?))
+}
+
+#[utoipa::path(post, path = "/v1/threads/{threadId}/queued-inputs/steer-first", responses((status = 200, body = PromotionOutcome), (status = 409, description = "Queue is empty or its first message cannot be steered")))]
+pub async fn steer_first_queued_input(
+    State(state): State<AppState>,
+    Path(thread_id): Path<String>,
+) -> ApiResult<Json<PromotionOutcome>> {
+    let result = queue_transfer::promote_first(&state, &thread_id).await;
     broadcast_changed_best_effort(&state, &thread_id).await;
     Ok(Json(result?))
 }

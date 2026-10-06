@@ -67,6 +67,50 @@ for (const shape of [
       expect(fixture.errors).toEqual([]);
     });
 
+    test("empty composer Cmd+Enter steers the native front after another tab reorders", async ({ context }) => {
+      const fixture = await nativeSettingsFixture(context);
+      fixture.detail.thread.status = "active";
+      fixture.detail.liveState = "streaming";
+      fixture.detail.timeline = { ...fixture.detail.timeline, activeTurnId: "turn-1", liveState: "streaming", turns: [{ id: "turn-1", status: "inProgress" }] };
+      fixture.queuedInputs.push(...["First queued correction", "Second queued correction"].map((text, index) => ({
+        id: `shortcut-${index + 1}`, threadId: "settings-chat", input: [{ type: "text" as const, text }],
+        clientUserMessageId: `shortcut-client-${index + 1}`, attachments: [], canSteer: true,
+      })));
+      try {
+        const first = await fixture.page("first");
+        const second = await fixture.page("second");
+        for (const page of [first, second]) await expect(queueRows(page)).toContainText(["First queued correction", "Second queued correction"]);
+        await expect.poll(() => fixture.connected("first") && fixture.connected("second")).toBe(true);
+
+        // Keep this tab's cached order stale while the other tab mutates native order.
+        fixture.holdNext("first", "queue");
+        await reorderHandle(second, "Second queued correction").press("ArrowUp");
+        await expect.poll(() => fixture.isHeld("first", "queue")).toBe(true);
+        await expect(queueRows(second)).toContainText(["Second queued correction", "First queued correction"]);
+        await expect(queueRows(first)).toContainText(["First queued correction", "Second queued correction"]);
+        await expect(composer(first)).toHaveValue("");
+        await composer(first).press("Meta+Enter");
+        await expect.poll(() => fixture.transfers.length).toBe(1);
+        expect(fixture.transfers[0].nativeQueueId).toBe("shortcut-2");
+        if (shape.hasTouch) await click(first.getByRole("button", { name: "Collapse composer", exact: true }), true);
+        for (const page of [first, second]) {
+          await expect(queueRows(page)).toContainText(["First queued correction"]);
+          await expect(userMessages(page, "Second queued correction")).toHaveCount(1);
+          await expect(userMessages(page, "First queued correction")).toHaveCount(0);
+        }
+        await expect.poll(() => fixture.wasAborted("first", "queue")).toBe(true);
+        await fixture.release("first", "queue");
+        await expect(queueRows(first)).toContainText(["First queued correction"]);
+        await expect(composer(first)).toHaveValue("");
+        expect(fixture.requests.filter((request) => request.key === "POST /v1/threads/settings-chat/queued-inputs/steer-first")).toHaveLength(1);
+        expect(fixture.requests.filter((request) => request.key === "POST /v1/threads/settings-chat/input" || request.key === "POST /v1/threads/settings-chat/queued-inputs")).toHaveLength(0);
+        fixture.receiveQueuedTransfer(fixture.transfers[0].id, "native-shortcut-receipt");
+        for (const page of [first, second]) await expect(userMessages(page, "Second queued correction")).toHaveCount(1);
+      } finally { await fixture.close(); }
+      expect(fixture.unexpected).toEqual([]);
+      expect(fixture.errors).toEqual([]);
+    });
+
     test("native queue order, explicit commands and uncertain transfers converge across tabs", async ({ context }) => {
       const fixture = await nativeSettingsFixture(context);
       const queuePath = "/v1/threads/settings-chat/queued-inputs";
