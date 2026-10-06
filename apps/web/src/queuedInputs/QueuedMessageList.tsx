@@ -23,7 +23,7 @@ export function QueuedMessageList({ rows, busy, partial, isActive, onReorder, on
   const drag = useRef<Drag | null>(null);
   const scrollFrame = useRef<number | null>(null);
   const [preview, setPreview] = useState<{ id: string; target: number } | null>(null);
-  const [suppressedHandleId, setSuppressedHandleId] = useState<string | null>(null);
+  const [suppressedTooltipId, setSuppressedTooltipId] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const ids = rows.map((row) => row.id);
   const order = JSON.stringify(ids);
@@ -107,17 +107,16 @@ export function QueuedMessageList({ rows, busy, partial, isActive, onReorder, on
           data-drop-target={preview && preview.target === index && preview.id !== row.id
             ? (index < ids.indexOf(preview.id) ? "before" : "after") : undefined}
           className="kodex-queue-row">
-          {rows.length > 1 ? <AdaptiveIconButton density="compact" label="Reorder queued message" tooltip="Drag to reorder · ↑/↓ to move" className="kodex-queue-handle"
+          {rows.length > 1 ? <AdaptiveIconButton density="compact" label="Reorder queued message" variant="transparent" tooltip="Drag to reorder · ↑/↓ to move" className="kodex-queue-handle"
             disabled={disabled} aria-describedby={instructionsId}
-            data-hover-suppressed={suppressedHandleId === row.id || undefined}
-            tooltipProps={{ disabled: disabled || suppressedHandleId === row.id }}
+            tooltipProps={{ disabled: disabled || suppressedTooltipId === row.id }}
             onPointerEnter={(event) => {
-              if (event.pointerType === "mouse" && !drag.current && event.buttons === 0) setSuppressedHandleId(null);
+              if (event.pointerType === "mouse" && !drag.current && event.buttons === 0) setSuppressedTooltipId(null);
             }}
             onPointerDown={(event) => {
               if (disabled || event.button !== 0 || !event.isPrimary) return;
               // Pointer capture suppresses hover-exit events during the gesture.
-              setSuppressedHandleId(row.id);
+              setSuppressedTooltipId(row.id);
               event.preventDefault();
               event.currentTarget.focus({ preventScroll: true });
               event.currentTarget.setPointerCapture(event.pointerId);
