@@ -338,12 +338,19 @@ export function useComposerOrchestration({
     if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
       return;
     }
-    if (usesMobileComposerInput() && !event.metaKey) {
+    const mobileInput = usesMobileComposerInput();
+    if (mobileInput && !event.metaKey) {
       return;
     }
 
     event.preventDefault();
-    event.currentTarget.form?.requestSubmit();
+    const form = event.currentTarget.form;
+    if (event.metaKey && !mobileInput && selectedThreadId) {
+      const queueSubmitter = form?.querySelector<HTMLButtonElement>('button[data-submit-intent="queue"]');
+      if (queueSubmitter && !queueSubmitter.disabled) form?.requestSubmit(queueSubmitter);
+      return;
+    }
+    form?.requestSubmit();
   }
 
   function currentActiveSelectedTurnId() {

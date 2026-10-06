@@ -23,12 +23,25 @@ for (const shape of [
         // Ordinary Send remains atomic native input even while another turn runs.
         await submit(first, "First native input", "Send message", shape.hasTouch);
         await expect(activePane(second).getByRole("button", { name: "Stop turn", exact: true })).toBeVisible();
-        await submit(second, "Second native input", "Send message", shape.hasTouch);
+        if (shape.hasTouch) {
+          await submit(second, "Second native input", "Send message", true);
+        } else {
+          await composer(second).fill("Second native input");
+          await composer(second).press("Enter");
+        }
         await expect.poll(() => calls("POST", "/v1/threads/settings-chat/input").length).toBe(2);
         expect(calls("POST", queuePath)).toHaveLength(0);
-        await submit(first, "First queued work", "Queue message", shape.hasTouch);
+        if (shape.hasTouch) {
+          await submit(first, "First queued work", "Queue message", true);
+        } else {
+          await composer(first).fill("First queued work");
+          await composer(first).press("Meta+Enter");
+        }
         await submit(second, "Second queued work", "Queue message", shape.hasTouch);
-        for (const page of [first, second]) await expect(queueRows(page)).toHaveCount(2);
+        for (const page of [first, second]) {
+          await expect(queueRows(page)).toHaveCount(2);
+          await expect(queueRows(page).getByRole("button", { name: "Start", exact: true })).toHaveCount(0);
+        }
         expect(calls("POST", queuePath).map((request) => request.body)).toEqual([
           { input: [{ type: "text", text: "First queued work" }], clientUserMessageId: expect.any(String) },
           { input: [{ type: "text", text: "Second queued work" }], clientUserMessageId: expect.any(String) },
@@ -101,14 +114,13 @@ for (const shape of [
 
         fixture.publishTimeline({ ...fixture.detail.timeline, activeTurnId: null, liveState: "idle", turns: [{ id: "turn-1", status: "interrupted" }] });
         await expect(activePane(second).getByRole("button", { name: "Send message", exact: true })).toBeVisible();
-        await submit(second, "Explicitly started work", "Queue message", shape.hasTouch);
+        await submit(second, "Idle queued work", "Queue message", shape.hasTouch);
         for (const page of [first, second]) {
-          await expect(row(page, "Explicitly started work")).toBeVisible();
-          await expect(row(page, "Explicitly started work").getByRole("button", { name: "Steer", exact: true })).toHaveCount(0);
+          await expect(row(page, "Idle queued work")).toBeVisible();
+          await expect(row(page, "Idle queued work").getByRole("button", { name: "Steer", exact: true })).toHaveCount(0);
         }
-        await click(row(first, "Explicitly started work").getByRole("button", { name: "Start", exact: true }), shape.hasTouch);
-        for (const page of [first, second]) await expect(queueRows(page)).toHaveCount(0);
-        expect(calls("POST", `${queuePath}/start`).map((request) => request.body)).toEqual([{ queuedSubmissionId: "queued-3" }]);
+        for (const page of [first, second]) await expect(queueRows(page).getByRole("button", { name: "Start", exact: true })).toHaveCount(0);
+        expect(calls("POST", `${queuePath}/start`)).toHaveLength(0);
       } finally { await fixture.close(); }
       expect(fixture.unexpected).toEqual([]);
       expect(fixture.errors).toEqual([]);

@@ -486,12 +486,6 @@ export async function reorderQueuedInputs(threadId: string, queuedSubmissionIds:
   }));
 }
 
-export async function startQueuedInput(threadId: string, queuedSubmissionId: string) {
-  return unwrap(api.POST("/v1/threads/{threadId}/queued-inputs/start", {
-    params: { path: { threadId } }, body: { queuedSubmissionId },
-  }));
-}
-
 export async function steerQueuedInput(threadId: string, queueId: string): Promise<PromotionOutcome> {
   return unwrap(api.POST("/v1/threads/{threadId}/queued-inputs/{queueId}/steer", {
     params: { path: { threadId, queueId } },

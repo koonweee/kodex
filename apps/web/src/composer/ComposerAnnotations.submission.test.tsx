@@ -77,7 +77,8 @@ describe("annotation submissions", () => {
   it.each([
     { activeTurnId: null, endpoint: "input" },
     { activeTurnId: "active-turn", endpoint: "queued-inputs" },
-  ])("sends annotation-only input, removes entries, and restores after rejected $endpoint", async ({ activeTurnId, endpoint }) => {
+    { activeTurnId: "active-turn", endpoint: "queued-inputs", shortcut: true },
+  ])("sends annotation-only input, removes entries, and restores after rejected $endpoint", async ({ activeTurnId, endpoint, shortcut }) => {
     let attempts = 0;
     const gateway = mockGateway({
       [`POST /v1/threads/thread-1/${endpoint}`]: () => {
@@ -92,7 +93,10 @@ describe("annotation submissions", () => {
     await userEvent.click(screen.getByRole("button", { name: "Remove annotation 2" }));
     await userEvent.type(screen.getByRole("textbox", { name: "Annotation 1 comment" }), "Which checks ran?");
     const send = async () => {
-      if (endpoint === "queued-inputs") {
+      if (shortcut) {
+        await userEvent.click(screen.getByRole("textbox", { name: "Message composer" }));
+        await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
+      } else if (endpoint === "queued-inputs") {
         await userEvent.click(screen.getByRole("button", { name: "Open attachment menu" }));
         await userEvent.click(await screen.findByRole("menuitem", { name: "Queue message" }));
       } else await userEvent.click(screen.getByRole("button", { name: "Send message" }));

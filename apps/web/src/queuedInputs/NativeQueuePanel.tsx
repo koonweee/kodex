@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 import {
   deleteQueuedInput, dismissQueueTransfer, listQueuedInputs, reconcileQueueTransfer,
-  reorderQueuedInputs, startQueuedInput, steerQueuedInput, updateQueuedInput,
+  reorderQueuedInputs, steerQueuedInput, updateQueuedInput,
   type QueuedInput, type QueueTransfer,
 } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
@@ -66,7 +66,6 @@ export function NativeQueuePanel({ threadId, onRestoreText, canRestoreText, isAc
         <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{queueInputPreview(row.input)}</Text>
         {row.attachments.length > 0 ? <Text size="xs">{row.attachments.length} attached file(s)</Text> : null}
         <Group gap="xs" wrap="wrap">
-          <Button size="compact-sm" variant="subtle" disabled={busy} onClick={() => void mutate(() => startQueuedInput(threadId, row.id))}>Start</Button>
           {row.canSteer ? <Button size="compact-sm" disabled={busy} onClick={() => void mutate(() => steerQueuedInput(threadId, row.id))}>Steer</Button> : null}
           <Button size="compact-sm" variant="subtle" disabled={busy} onClick={() => { setEditing(row); setEdits(new Map()); }}>Edit</Button>
           <Button size="compact-sm" variant="subtle" disabled={busy || index === 0 || Boolean(query.data?.nextCursor)} onClick={() => move(index, -1)}>Move up</Button>
