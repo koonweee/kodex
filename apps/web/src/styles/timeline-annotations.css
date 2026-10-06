@@ -1,5 +1,7 @@
 .kodex-user-annotations {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 18px;
   padding: 4px 2px;
   white-space: normal;
@@ -13,19 +15,22 @@
 
 .kodex-user-annotation-quote {
   border-radius: var(--kodex-radius-md);
-  padding: 8px 10px;
+  margin: 0;
+  min-width: 0;
   background: color-mix(in srgb, var(--kodex-bg-user-bubble) 88%, var(--kodex-bg-thread-surface));
   color: var(--kodex-text-on-user-bubble);
 }
 
 .kodex-user-annotation-quote summary {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
-  min-height: 26px;
+  min-height: 36px;
+  padding: 8px 10px;
   list-style: none;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .kodex-user-annotation-quote summary::-webkit-details-marker {
@@ -34,22 +39,25 @@
 
 .kodex-user-annotation-quote summary span {
   flex: 1;
+  min-width: 0;
+  padding-left: 10px;
+  border-left: 2px solid color-mix(in srgb, currentColor 45%, transparent);
+  white-space: pre-wrap;
 }
 
 .kodex-user-annotation-quote summary svg {
   flex: none;
+  margin-top: calc((1lh - 14px) / 2);
 }
 
-.kodex-user-annotation-quote[open] .kodex-user-annotation-chevron {
+.kodex-user-annotation-quote details[open] .kodex-user-annotation-chevron {
   transform: rotate(180deg);
 }
 
-.kodex-user-annotation-quote blockquote {
-  margin: 8px 0 2px;
-  padding-left: 10px;
-  border-left: 2px solid color-mix(in srgb, currentColor 45%, transparent);
-  font-size: 13px;
-  white-space: pre-wrap;
+.kodex-user-annotation-quote details:not([open]) summary span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .kodex-user-annotation-comment {

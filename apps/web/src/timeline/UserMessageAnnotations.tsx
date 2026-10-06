@@ -1,4 +1,4 @@
-import { ChevronDown, Quote } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 
 import { InlineSkillMentionText } from "./InlineSkillMentionText";
 import type { TimelineItem } from "./reducer";
@@ -16,14 +16,14 @@ export function UserMessageAnnotations({ message, skillMentions }: {
     </div> : null}
     {message.annotations.map((annotation, index) => (
       <div className="kodex-user-annotation" role="group" aria-label={`Annotation ${index + 1}`} key={index}>
-        <details className="kodex-user-annotation-quote" open>
-          <summary aria-label={`Quoted from assistant, annotation ${index + 1}`}>
-            <Quote size={14} aria-hidden="true" />
-            <span>Quoted from assistant</span>
-            <ChevronDown size={14} className="kodex-user-annotation-chevron" aria-hidden="true" />
-          </summary>
-          <blockquote>{annotation.text}</blockquote>
-        </details>
+        <blockquote className="kodex-user-annotation-quote" aria-label={`Assistant quote, annotation ${index + 1}`}>
+          <details open>
+            <summary>
+              <span>{annotation.text}</span>
+              <ChevronDown size={14} className="kodex-user-annotation-chevron" aria-hidden="true" />
+            </summary>
+          </details>
+        </blockquote>
         {annotation.comment ? <div className="kodex-user-annotation-comment">{annotation.comment}</div> : null}
       </div>
     ))}

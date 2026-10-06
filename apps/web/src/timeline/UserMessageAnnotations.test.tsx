@@ -24,6 +24,7 @@ describe("sent response annotations", () => {
     for (const [index, annotation] of annotations.entries()) {
       const group = screen.getByRole("group", { name: `Annotation ${index + 1}` });
       expect(group.querySelector("blockquote")?.textContent).toBe(annotation.text);
+      expect(group.querySelector("summary")).toHaveAccessibleName(annotation.text);
       expect(within(group).getByText(annotation.comment)).toBeVisible();
       expect(group.querySelector("details")).toHaveAttribute("open");
     }

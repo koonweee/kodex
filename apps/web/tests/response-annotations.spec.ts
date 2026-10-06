@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
+import { appendResponseAnnotations } from "../src/composer/annotations";
 import type { ThreadTimelineRow } from "../src/api/client";
 import { nativeSettingsFixture } from "./native-settings.fixture";
 
@@ -133,6 +134,47 @@ for (const shape of [
       expect(fixture.errors).toEqual([]);
     });
 
+    test("sent quote disclosure keeps a single-line preview when collapsed", async ({ context }) => {
+      const fixture = await nativeSettingsFixture(context);
+      const quote = "Automatically pausing schedules when a task becomes completed would be a separate code behavior.\nKeep this complete quote available when expanded, including " + "unbroken".repeat(24);
+      const comment = "Do we need code behavior or will the agent do this?";
+      fixture.detail.timeline = { ...fixture.detail.timeline,
+        rows: [submittedRow(appendResponseAnnotations("", [{ id: "quote", text: quote, comment }]), "fixture")],
+        turns: [{ id: "turn-1", status: "completed" }],
+      };
+      try {
+        const page = await fixture.page("compact-quote");
+        const annotation = activePane(page).getByRole("group", { name: "Annotation 1", exact: true });
+        const block = annotation.locator("blockquote");
+        const toggle = annotation.locator("summary");
+        await expect(block).toHaveText(quote);
+        await expect(toggle).toHaveAccessibleName(quote);
+        await click(toggle, shape.hasTouch);
+        await expect(block).toBeVisible();
+        await expect(toggle).toHaveText(quote);
+        const preview = await toggle.locator("span").evaluate(element => {
+          const bounds = element.getBoundingClientRect();
+          return { height: bounds.height, lineHeight: parseFloat(getComputedStyle(element).lineHeight),
+            width: bounds.width, contentWidth: element.scrollWidth };
+        });
+        expect(preview.height).toBeCloseTo(preview.lineHeight, 0);
+        expect(preview.contentWidth).toBeGreaterThan(preview.width);
+        await expect(annotation.getByText(comment, { exact: true })).toBeVisible();
+        await page.screenshot({ path: test.info().outputPath("quote-collapsed.png") });
+        // Native summary keyboard activation also restores the full quote.
+        await toggle.focus();
+        await toggle.press("Enter");
+        const expandedHeight = await toggle.locator("span").evaluate(element => element.getBoundingClientRect().height);
+        expect(expandedHeight).toBeGreaterThan(preview.height * 2);
+        await expect(block).toHaveText(quote);
+        const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+        expect(horizontalOverflow).toBe(false);
+        await page.screenshot({ path: test.info().outputPath("quote-expanded.png") });
+      } finally { await fixture.close(); }
+      expect(fixture.unexpected).toEqual([]);
+      expect(fixture.errors).toEqual([]);
+    });
+
     test("quote-only annotations can be removed and queued without ordinary composer text", async ({ context }) => {
       const fixture = await nativeSettingsFixture(context);
       fixture.detail.timeline = { ...fixture.detail.timeline, rows: [assistantRow()], turns: [{ id: "turn-answer", status: "completed" }] };
@@ -182,10 +224,10 @@ async function expectSentAnnotations(page: Page, touch: boolean) {
   await expect(bubble.getByRole("group", { name: /^Annotation \d+$/ })).toHaveCount(2);
   const first = bubble.getByRole("group", { name: "Annotation 1", exact: true });
   const second = bubble.getByRole("group", { name: "Annotation 2", exact: true });
-  const firstToggle = first.getByLabel("Quoted from assistant, annotation 1", { exact: true });
-  const secondToggle = second.getByLabel("Quoted from assistant, annotation 2", { exact: true });
-  await expect(firstToggle).toHaveText("Quoted from assistant");
-  await expect(secondToggle).toHaveText("Quoted from assistant");
+  const firstToggle = first.locator("summary");
+  const secondToggle = second.locator("summary");
+  await expect(firstToggle).toHaveText(firstQuote);
+  await expect(secondToggle).toHaveText(secondQuote);
   await expect(first.locator("blockquote")).toHaveText(firstQuote);
   await expect(second.locator("blockquote")).toHaveText(secondQuote);
   await expect(first.locator("blockquote")).toBeVisible();
@@ -194,16 +236,21 @@ async function expectSentAnnotations(page: Page, touch: boolean) {
   await expect(second.getByText(secondComment, { exact: true })).toBeVisible();
 
   await click(firstToggle, touch);
-  await expect(first.locator("blockquote")).toBeHidden();
+  await expect(first.locator("details")).not.toHaveAttribute("open");
+  await expect(first.locator("blockquote")).toBeVisible();
   await expect(second.locator("blockquote")).toBeVisible();
   await expect(first.getByText(firstComment, { exact: true })).toBeVisible();
   await click(secondToggle, touch);
-  await expect(second.locator("blockquote")).toBeHidden();
+  await expect(second.locator("details")).not.toHaveAttribute("open");
+  await expect(second.locator("blockquote")).toBeVisible();
   await expect(second.getByText(secondComment, { exact: true })).toBeVisible();
   await click(firstToggle, touch);
+  await expect(first.locator("details")).toHaveAttribute("open", "");
   await expect(first.locator("blockquote")).toBeVisible();
-  await expect(second.locator("blockquote")).toBeHidden();
+  await expect(second.locator("details")).not.toHaveAttribute("open");
+  await expect(second.locator("blockquote")).toBeVisible();
   await click(secondToggle, touch);
+  await expect(second.locator("details")).toHaveAttribute("open", "");
   await expect(second.locator("blockquote")).toBeVisible();
 }
 async function expectReadableCopy(page: Page, touch: boolean) {
