@@ -20,6 +20,10 @@ for (const scheme of KODEX_COLOR_SCHEMES) {
     fixture.detail.thread.name = "Theme contrast audit";
     fixture.detail.timeline.rows = [message("user", "Review the contrast of selected controls, muted text, and code surfaces.", 1), message("assistant", "## Contrast review\n\nBody text should stay readable across every surface. **Emphasis**, *secondary detail*, and [a documentation link](https://example.com) belong to the same readable system.\n\n> Selection needs more than a faint tint.\n\nUse `text-primary` for content and semantic text tokens for status.\n\n```ts\nconst theme = { surface: 'panel', text: 'primary' };\n```\n\n| Primitive | Check |\n| --- | --- |\n| Input | Placeholder and focus |\n| Button | Label and filled background |\n\n- Normal list text\n- ~~Superseded note~~", 2)];
     fixture.detail.timeline.turns = [{ id: "audit-turn", status: "completed" }];
+    fixture.queuedInputs.push(...["Review the implementation", "Add regression coverage for the queue", "A longer queued follow-up that should truncate cleanly while keeping all of its actions available"].map((text, index) => ({
+      id: `audit-queue-${index}`, threadId: "settings-chat", clientUserMessageId: `audit-client-${index}`,
+      input: [{ type: "text", text }], attachments: [], canSteer: true,
+    })));
     const measurements: Record<string, unknown> = {};
     const page = await fixture.page("audit", "/__theme");
     async function capture(name: string, keepPointer = false) {

@@ -574,16 +574,3 @@
     font-size: 30px;
   }
 }
-
-.kodex-native-queue {
-  max-height: 280px;
-  overflow-y: auto;
-  margin-bottom: var(--mantine-spacing-xs);
-}
-.kodex-native-queue-row {
-  padding: var(--mantine-spacing-xs);
-  border-bottom: 1px solid var(--kodex-border-subtle);
-}
-@media (pointer: coarse) {
-  .kodex-native-queue button { min-height: 44px; }
-}

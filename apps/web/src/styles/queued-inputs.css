@@ -1,0 +1,72 @@
+.kodex-queued-messages {
+  position: relative;
+  min-width: 0;
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--kodex-radius-composer);
+  background: var(--kodex-bg-raised);
+  color: var(--kodex-text-primary);
+  box-shadow: var(--kodex-composer-shadow);
+}
+
+.kodex-queued-messages:has(+ form) {
+  margin-bottom: calc(-1 * var(--kodex-radius-composer));
+  padding-bottom: calc(6px + var(--kodex-radius-composer));
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.kodex-queue-list {
+  max-height: 240px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.kodex-queue-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 8px;
+}
+
+.kodex-queue-preview { flex: 1; min-width: 0; }
+.kodex-queue-text { font-size: 14px; white-space: nowrap; }
+.kodex-queue-attachments, .kodex-queue-notice { color: var(--kodex-text-secondary); }
+.kodex-queue-notice { padding: 4px 8px; }
+.kodex-queue-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.kodex-queue-handle { flex-shrink: 0; cursor: grab; touch-action: none; }
+.kodex-queue-handle:active { cursor: grabbing; }
+.kodex-queue-row[data-dragging] { background: var(--kodex-bg-selected); }
+.kodex-queue-row[data-drop-target="before"] { box-shadow: inset 0 2px var(--kodex-text-secondary); }
+.kodex-queue-row[data-drop-target="after"] { box-shadow: inset 0 -2px var(--kodex-text-secondary); }
+
+.kodex-queue-actions .kodex-queue-steer:not(:disabled) {
+  color: var(--kodex-text-secondary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kodex-queue-actions .kodex-queue-steer:not(:disabled):hover {
+    background: var(--kodex-bg-button-hover);
+    color: var(--kodex-text-primary);
+  }
+}
+
+.kodex-native-queue {
+  max-height: 280px;
+  overflow-y: auto;
+  margin-bottom: var(--mantine-spacing-xs);
+}
+.kodex-native-queue-row { padding: var(--mantine-spacing-xs); border-bottom: 1px solid var(--kodex-border-subtle); }
+
+@media (any-pointer: coarse) {
+  .kodex-queued-messages { padding-inline: 8px; }
+  .kodex-queue-row { gap: 2px; padding-inline: 0; }
+  .kodex-queue-actions { gap: 0; }
+  .kodex-queue-row button { min-width: 44px; min-height: 44px; }
+  .kodex-queue-steer { padding-inline: 6px; }
+  .kodex-native-queue button { min-height: 44px; }
+}

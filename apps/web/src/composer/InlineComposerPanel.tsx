@@ -148,8 +148,8 @@ export function InlineComposerPanel({
           <Box className="kodex-composer-hero">{draftHeroText}</Box>
         </Box>
       ) : null}
-      {expanded ? null : queuePanel}
       {goalControls && !goalControls.compact ? <GoalBar controls={goalControls} /> : null}
+      {expanded ? null : queuePanel}
       <Box
         component="form"
         id={formId}

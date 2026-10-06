@@ -10,6 +10,7 @@ import {
 import { queryKeys } from "../api/queryKeys";
 import { errorMessageFrom } from "../shared/values";
 import { refreshQueuedInputs } from "./cache";
+import { QueuedMessageList } from "./QueuedMessageList";
 import { editableQueueText, queueInputPreview, replaceQueueText, restorableQueueText } from "./input";
 
 export function NativeQueuePanel({ threadId, onRestoreText, canRestoreText, isActive = true }: {
@@ -48,32 +49,16 @@ export function NativeQueuePanel({ threadId, onRestoreText, canRestoreText, isAc
     }
   }
 
-  function move(index: number, offset: number) {
-    const ids = rows.map((row) => row.id);
-    [ids[index], ids[index + offset]] = [ids[index + offset], ids[index]];
-    void mutate(() => reorderQueuedInputs(threadId, ids));
-  }
-
   return <>
     {error || query.error ? <Alert color="red" title="Queue unavailable" mb="xs">
       {error ?? errorMessageFrom(query.error)}
       <Button size="compact-sm" variant="subtle" onClick={() => { setError(null); void refreshQueuedInputs(client, threadId); }}>Reload queue</Button>
     </Alert> : null}
-    {rows.length > 0 ? <Box role="region" aria-label="Queued messages" className="kodex-native-queue">
-      <Text size="xs" c="dimmed">Queued work uses the chat settings at execution time.</Text>
-      {query.data?.nextCursor ? <Text size="xs">The native queue returned a partial page. Reordering is unavailable until the complete queue can be shown.</Text> : null}
-      {rows.map((row, index) => <Box key={row.id} role="group" aria-label="Queued message" className="kodex-native-queue-row">
-        <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{queueInputPreview(row.input)}</Text>
-        {row.attachments.length > 0 ? <Text size="xs">{row.attachments.length} attached file(s)</Text> : null}
-        <Group gap="xs" wrap="wrap">
-          {row.canSteer ? <Button size="compact-sm" disabled={busy} onClick={() => void mutate(() => steerQueuedInput(threadId, row.id))}>Steer</Button> : null}
-          <Button size="compact-sm" variant="subtle" disabled={busy} onClick={() => { setEditing(row); setEdits(new Map()); }}>Edit</Button>
-          <Button size="compact-sm" variant="subtle" disabled={busy || index === 0 || Boolean(query.data?.nextCursor)} onClick={() => move(index, -1)}>Move up</Button>
-          <Button size="compact-sm" variant="subtle" disabled={busy || index === rows.length - 1 || Boolean(query.data?.nextCursor)} onClick={() => move(index, 1)}>Move down</Button>
-          <Button size="compact-sm" variant="subtle" color="red" disabled={busy} onClick={() => void mutate(() => deleteQueuedInput(threadId, row.id))}>Remove</Button>
-        </Group>
-      </Box>)}
-    </Box> : null}
+    {rows.length > 0 ? <QueuedMessageList rows={rows} busy={busy} partial={Boolean(query.data?.nextCursor)} isActive={isActive}
+      onReorder={(ids) => void mutate(() => reorderQueuedInputs(threadId, ids))}
+      onSteer={(row) => void mutate(() => steerQueuedInput(threadId, row.id))}
+      onEdit={(row) => { setEditing(row); setEdits(new Map()); }}
+      onRemove={(row) => void mutate(() => deleteQueuedInput(threadId, row.id))} /> : null}
     {transfers.length > 0 ? <Box role="region" aria-label="Queue transfers" className="kodex-native-queue">
       {transfers.map((transfer) => <Box key={transfer.id} role="group" aria-label="Queue transfer" className="kodex-native-queue-row">
         <Text size="sm" fw={600}>{transfer.phase === "uncertain" ? "Delivery uncertain" : transfer.phase === "accepted" ? "Awaiting native receipt" : "Transferring queued message"}</Text>
@@ -94,7 +79,6 @@ export function NativeQueuePanel({ threadId, onRestoreText, canRestoreText, isAc
     <Modal opened={isActive && editing !== null} title="Edit queued message" onClose={() => !busy && setEditing(null)}>
       {editing ? <Stack gap="sm">
         {editableQueueText(editing.input).map(({ index, text }, position) => <Textarea key={index} label={position === 0 ? "Queued message text" : `Queued message text ${position + 1}`} autosize minRows={3} value={edits.get(index) ?? text} onChange={(event) => setEdits(new Map(edits).set(index, event.currentTarget.value))} disabled={busy} />)}
-        <Text size="xs">Other native input stays attached. Editing text clears its old text annotations.</Text>
         {editableQueueText(editing.input).length === 0 ? <Text>No editable text in this native input.</Text> : <Button disabled={busy} onClick={() => void mutate(() => updateQueuedInput(threadId, editing.id, replaceQueueText(editing.input, edits)), () => setEditing(null))}>Save queued message</Button>}
       </Stack> : null}
     </Modal>

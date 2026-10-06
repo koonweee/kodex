@@ -60,7 +60,7 @@ for (const shape of [
           { input: [{ type: "text", text: "Edited queued work", nativeAnnotation: "preserve", text_elements: [] }, { type: "futureInput", opaque: { keep: true } }] },
         ]);
         await expect(row(first, "Edited queued work").getByRole("button", { name: "Steer", exact: true })).toBeVisible();
-        await click(row(second, "Second queued work").getByRole("button", { name: "Move up", exact: true }), shape.hasTouch);
+        await dragQueueRow(second, "Second queued work", "Edited queued work", shape.hasTouch);
         for (const page of [first, second]) await expect(queueRows(page).first()).toContainText("Second queued work");
         expect(calls("POST", `${queuePath}/reorder`).map((request) => request.body)).toEqual([{ queuedSubmissionIds: ["queued-2", "queued-1"] }]);
 
@@ -125,13 +125,134 @@ for (const shape of [
       expect(fixture.unexpected).toEqual([]);
       expect(fixture.errors).toEqual([]);
     });
+
+    test("queue handle cancels interrupted gestures and keyboard changes converge across tabs", async ({ context }) => {
+      const fixture = await nativeSettingsFixture(context);
+      const reorderRequests = () => fixture.requests.filter((request) => request.key === "POST /v1/threads/settings-chat/queued-inputs/reorder");
+      fixture.queuedInputs.push(...["First", "Second", "Third"].map((text, index) => ({
+        id: `drag-${index + 1}`, threadId: "settings-chat", input: [{ type: "text" as const, text }],
+        clientUserMessageId: `drag-client-${index + 1}`, attachments: [], canSteer: false,
+      })));
+      try {
+        const first = await fixture.page("first");
+        const second = await fixture.page("second");
+        for (const page of [first, second]) await expect(queueRows(page)).toHaveCount(3);
+        await expect.poll(() => fixture.connected("first") && fixture.connected("second")).toBe(true);
+
+        // A tap or cancelled drag never writes an order.
+        await click(reorderHandle(first, "Second"), shape.hasTouch);
+        expect(reorderRequests()).toHaveLength(0);
+        const cancelled = await startQueueDrag(first, "Third", "First", shape.hasTouch);
+        await cancelled.cancel();
+        for (const page of [first, second]) await expect(queueRows(page)).toHaveText(["First", "Second", "Third"]);
+        expect(reorderRequests()).toHaveLength(0);
+
+        // Keyboard users use the same native reorder command as drag users.
+        await reorderHandle(second, "Second").press("ArrowUp");
+        for (const page of [first, second]) await expect(queueRows(page)).toHaveText(["Second", "First", "Third"]);
+        await reorderHandle(first, "Second").press("ArrowDown");
+        for (const page of [first, second]) await expect(queueRows(page)).toHaveText(["First", "Second", "Third"]);
+        expect(reorderRequests().map((request) => request.body)).toEqual([
+          { queuedSubmissionIds: ["drag-2", "drag-1", "drag-3"] },
+          { queuedSubmissionIds: ["drag-1", "drag-2", "drag-3"] },
+        ]);
+
+        // Another tab removing a row invalidates the captured drag order.
+        const stale = await startQueueDrag(first, "Third", "First", shape.hasTouch);
+        await click(row(second, "Second").getByRole("button", { name: "Remove", exact: true }), shape.hasTouch);
+        for (const page of [first, second]) await expect(queueRows(page)).toHaveCount(2);
+        await stale.finish();
+        for (const page of [first, second]) await expect(queueRows(page)).toHaveText(["First", "Third"]);
+        expect(reorderRequests()).toHaveLength(2);
+      } finally { await fixture.close(); }
+      expect(fixture.unexpected).toEqual([]);
+      expect(fixture.errors).toEqual([]);
+    });
   });
 }
+
+test.describe("desktop long queue", () => {
+  test.use({ viewport: { width: 1280, height: 844 }, hasTouch: false, isMobile: false });
+  test("a stationary drag at the list edge keeps scrolling and cancellation stops without reordering", async ({ context }) => {
+    const fixture = await nativeSettingsFixture(context);
+    const texts = Array.from({ length: 20 }, (_, index) => `Queued task ${index + 1}`);
+    fixture.queuedInputs.push(...texts.map((text, index) => ({
+      id: `scroll-${index + 1}`, threadId: "settings-chat", input: [{ type: "text" as const, text }],
+      clientUserMessageId: `scroll-client-${index + 1}`, attachments: [], canSteer: false,
+    })));
+    try {
+      const page = await fixture.page("first");
+      await expect(queueRows(page)).toHaveCount(texts.length);
+      const list = activePane(page).locator(".kodex-queue-list");
+      const handle = queueRows(page).first().getByRole("button", { name: "Reorder queued message", exact: true });
+      await handle.scrollIntoViewIfNeeded();
+      const source = await handle.boundingBox();
+      const bounds = await list.boundingBox();
+      if (!source || !bounds) throw new Error("Edge scrolling requires a visible queue");
+      expect(await list.evaluate((element) => element.scrollHeight)).toBeGreaterThan(bounds.height * 2);
+      const x = source.x + source.width / 2;
+      await page.mouse.move(x, source.y + source.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(x, bounds.y + bounds.height - 8, { steps: 8 });
+
+      // No more pointer movement: holding at the edge must reveal another page.
+      const stationaryScroll = await list.evaluate((element) => element.scrollTop);
+      await expect.poll(() => list.evaluate((element) => element.scrollTop), { timeout: 5000 })
+        .toBeGreaterThan(stationaryScroll + bounds.height);
+      await page.keyboard.press("Escape");
+      await page.mouse.up();
+      const cancelledScroll = await list.evaluate((element) => element.scrollTop);
+      await page.evaluate(() => new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      }));
+      expect(await list.evaluate((element) => element.scrollTop)).toBe(cancelledScroll);
+      await expect(queueRows(page)).toHaveText(texts);
+      expect(fixture.requests.filter((request) => request.key === "POST /v1/threads/settings-chat/queued-inputs/reorder")).toHaveLength(0);
+    } finally { await fixture.close(); }
+    expect(fixture.unexpected).toEqual([]);
+    expect(fixture.errors).toEqual([]);
+  });
+});
 
 function activePane(page: Page) { return page.locator('.kodex-thread-pane[data-workspace-pane-active="true"]'); }
 function composer(page: Page) { return activePane(page).getByLabel("Message composer", { exact: true }); }
 function queueRows(page: Page) { return activePane(page).getByRole("group", { name: "Queued message", exact: true }); }
 function row(page: Page, text: string) { return queueRows(page).filter({ hasText: text }); }
+function reorderHandle(page: Page, text: string) { return row(page, text).getByRole("button", { name: "Reorder queued message", exact: true }); }
+
+async function startQueueDrag(page: Page, text: string, targetText: string, touch: boolean) {
+  const handle = reorderHandle(page, text);
+  await handle.scrollIntoViewIfNeeded();
+  const source = await handle.boundingBox();
+  const target = await row(page, targetText).boundingBox();
+  if (!source || !target) throw new Error("Queue drag requires visible rows");
+  const x = source.x + source.width / 2;
+  const startY = source.y + source.height / 2;
+  const endY = target.y + target.height / 2;
+  if (touch) {
+    const session = await page.context().newCDPSession(page);
+    const point = (y: number) => [{ x, y, id: 1, radiusX: 1, radiusY: 1, force: 1 }];
+    await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: point(startY) });
+    for (let step = 1; step <= 8; step++) {
+      await session.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: point(startY + (endY - startY) * step / 8) });
+    }
+    return {
+      finish: async () => { await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] }); await session.detach(); },
+      cancel: async () => { await session.send("Input.dispatchTouchEvent", { type: "touchCancel", touchPoints: [] }); await session.detach(); },
+    };
+  }
+  await page.mouse.move(x, startY);
+  await page.mouse.down();
+  await page.mouse.move(x, endY, { steps: 8 });
+  return {
+    finish: async () => { await page.mouse.up(); },
+    cancel: async () => { await page.keyboard.press("Escape"); await page.mouse.up(); },
+  };
+}
+async function dragQueueRow(page: Page, text: string, targetText: string, touch: boolean) {
+  const drag = await startQueueDrag(page, text, targetText, touch);
+  await drag.finish();
+}
 async function click(locator: Locator, touch: boolean) { if (touch) await locator.tap(); else await locator.click(); }
 async function submit(page: Page, text: string, label: string, touch: boolean) {
   if (touch) {
