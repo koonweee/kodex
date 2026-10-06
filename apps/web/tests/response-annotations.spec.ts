@@ -38,7 +38,17 @@ for (const shape of [
         expect(bubbleBounds!.y + bubbleBounds!.height).toBeLessThanOrEqual(selectionTop + 2);
         await first.screenshot({ path: test.info().outputPath("annotation-selection.png") });
         await click(add, shape.hasTouch);
-        await expect(activePane(first).getByRole("button", { name: "1 annotation", exact: true })).toBeVisible();
+        const annotationToggle = activePane(first).getByRole("button", { name: "1 annotation", exact: true });
+        await expect(annotationToggle).toBeVisible();
+        await expect(annotationToggle).toHaveAttribute("aria-expanded", String(!shape.hasTouch));
+        if (shape.hasTouch) {
+          await expect(activePane(first).getByRole("textbox", { name: "Annotation 1 comment", exact: true })).toBeHidden();
+          await addExcerpt(first, discardedQuote, shape.hasTouch);
+          const collapsedToggle = activePane(first).getByRole("button", { name: "2 annotations", exact: true });
+          await expect(collapsedToggle).toHaveAttribute("aria-expanded", "false");
+          await click(collapsedToggle, shape.hasTouch);
+          await click(activePane(first).getByRole("button", { name: "Remove annotation 2", exact: true }), shape.hasTouch);
+        }
         await expect(activePane(first).locator("blockquote")).toHaveText(firstQuote);
         await expect(second.getByRole("button", { name: /^\d+ annotations?$/ })).toHaveCount(0);
         const comment = activePane(first).getByRole("textbox", { name: "Annotation 1 comment", exact: true });
@@ -58,7 +68,7 @@ for (const shape of [
         }
 
         await addExcerpt(first, discardedQuote, shape.hasTouch);
-        await expect(activePane(first).getByRole("button", { name: "2 annotations", exact: true })).toBeVisible();
+        await expect(activePane(first).getByRole("button", { name: "2 annotations", exact: true })).toHaveAttribute("aria-expanded", "true");
         await click(activePane(first).getByRole("button", { name: "Remove annotation 2", exact: true }), shape.hasTouch);
         await expect(activePane(first).getByRole("textbox", { name: "Annotation 2 comment", exact: true })).toHaveCount(0);
         await expect(activePane(first).locator("blockquote")).toHaveText(firstQuote);
@@ -124,10 +134,12 @@ for (const shape of [
         await expect.poll(() => fixture.connected("first") && fixture.connected("second")).toBe(true);
         await addExcerpt(first, firstQuote, shape.hasTouch);
         await expect(activePane(first).getByRole("button", { name: "Send message", exact: true })).toBeEnabled();
+        if (shape.hasTouch) await click(activePane(first).getByRole("button", { name: "1 annotation", exact: true }), shape.hasTouch);
         await click(activePane(first).getByRole("button", { name: "Remove annotation 1", exact: true }), shape.hasTouch);
         await expect(activePane(first).getByRole("button", { name: /^\d+ annotations?$/ })).toHaveCount(0);
         await expect(activePane(first).getByRole("button", { name: "Send message", exact: true })).toBeDisabled();
         await addExcerpt(first, secondQuote, shape.hasTouch);
+        await expect(activePane(first).getByRole("button", { name: "1 annotation", exact: true })).toHaveAttribute("aria-expanded", String(!shape.hasTouch));
         await expect(composer(first)).toHaveValue("");
         await click(activePane(first).getByRole("button", { name: "Open attachment menu", exact: true }), shape.hasTouch);
         await click(first.getByRole("menuitem", { name: "Queue message", exact: true }), shape.hasTouch);

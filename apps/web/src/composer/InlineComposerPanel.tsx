@@ -202,7 +202,8 @@ export function InlineComposerPanel({
             onRemove={onRemovePendingAttachment}
           />
         ) : null}
-        <ComposerAnnotations draftState={draftState} disabled={isComposerControlsDisabled} onFocus={onFocusComposer} />
+        <ComposerAnnotations draftState={draftState} disabled={isComposerControlsDisabled}
+          collapseByDefault={density === "mobile"} onFocus={onFocusComposer} />
         <Textarea
           ref={textareaRef}
           aria-label="Message composer"

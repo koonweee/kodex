@@ -5,16 +5,19 @@ import { useEffect, useId, useRef, useState } from "react";
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 import type { ComposerDraftState } from "./useComposerDraftState";
 
-export function ComposerAnnotations({ draftState, disabled, onFocus }: {
+export function ComposerAnnotations({ draftState, disabled, collapseByDefault = false, onFocus }: {
   draftState: ComposerDraftState;
   disabled: boolean;
+  collapseByDefault?: boolean;
   onFocus?: () => void;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(!collapseByDefault);
   const listId = useId();
   const listRef = useRef<HTMLDivElement>(null);
   const lastId = draftState.annotations.at(-1)?.id;
-  useEffect(() => { setExpanded(true); }, [lastId]);
+  useEffect(() => {
+    if (!collapseByDefault || !lastId) setExpanded(!collapseByDefault);
+  }, [collapseByDefault, lastId]);
   useEffect(() => {
     if (expanded && listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [expanded, lastId]);
@@ -23,7 +26,7 @@ export function ComposerAnnotations({ draftState, disabled, onFocus }: {
     <Box className="kodex-composer-annotations">
       <Button type="button" variant="subtle" color="gray" size="compact-sm"
         aria-expanded={expanded} aria-controls={listId}
-        leftSection={<MessageSquareQuote size={16} />} rightSection={<ChevronDown size={14} />}
+        leftSection={<MessageSquareQuote size={16} />} rightSection={<ChevronDown size={14} className="kodex-composer-annotation-chevron" aria-hidden="true" />}
         onClick={() => setExpanded(!expanded)}>
         {draftState.annotations.length} {draftState.annotations.length === 1 ? "annotation" : "annotations"}
       </Button>

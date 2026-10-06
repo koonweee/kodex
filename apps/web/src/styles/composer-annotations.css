@@ -3,6 +3,10 @@
   padding: 4px 8px;
 }
 
+.kodex-composer-annotations > button[aria-expanded="true"] .kodex-composer-annotation-chevron {
+  transform: rotate(180deg);
+}
+
 .kodex-composer-annotation-list {
   max-height: min(32vh, 280px);
   overflow-y: auto;
