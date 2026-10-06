@@ -613,7 +613,7 @@ describe("ComposerPanel", () => {
     expect(screen.queryByLabelText(/context/i)).not.toBeInTheDocument();
   });
 
-  it("shows the selected thread git branch in the composer underflow", () => {
+  it("omits the bottom toolbar for existing threads", () => {
     const attachmentInputRef = { current: null } as RefObject<HTMLInputElement | null>;
 
     renderWithQueryProvider(
@@ -644,16 +644,14 @@ describe("ComposerPanel", () => {
           onStopTurn={vi.fn()}
           onSubmitTurn={noopSubmit}
           pendingAttachments={[]}
-          selectedGitBranch="feature/very-long-branch-name-that-should-truncate"
+          currentProjectName="Kodex"
           selectedThreadPresent
         />
       </MantineProvider>,
     );
 
-    expect(screen.getByLabelText("Composer context")).toBeInTheDocument();
-    const branch = screen.getByText("feature/very-long-branch-name-that-should-truncate");
-    expect(branch).toHaveAttribute("title", "feature/very-long-branch-name-that-should-truncate");
-    expect(document.querySelector(".kodex-composer-underbar-left svg")).toBeInTheDocument();
+    expect(screen.queryByRole("toolbar", { name: /composer context|draft thread toolbar/i })).not.toBeInTheDocument();
+    expect(screen.queryByText("Kodex")).not.toBeInTheDocument();
   });
 
   it("lets draft composers choose between chats and projects from the underbar", async () => {
@@ -703,48 +701,4 @@ describe("ComposerPanel", () => {
 
     expect(onProjectChange).toHaveBeenCalledWith("project-1");
   });
-
-  it.each([undefined, null, "", "   "])(
-    "omits the git branch underflow when the selected branch is unavailable",
-    (selectedGitBranch) => {
-      const attachmentInputRef = { current: null } as RefObject<HTMLInputElement | null>;
-
-      renderWithQueryProvider(
-        <MantineProvider>
-          <ComposerPanel
-            activeSelectedTurnId={null}
-            attachmentInputRef={attachmentInputRef}
-            canCompose
-            composerResetToken={0}
-            composerSettings={composerSettings}
-            composerSettingsError={null}
-            contextUsage={null}
-            isDraftThreadSelected={false}
-            isDraftComposerTransitioning={false}
-            isComposerDragActive={false}
-            isComposerSubmitting={false}
-            isSelectedTimelineReady
-            models={[]}
-            onAttachmentInputChange={vi.fn()}
-            onComposerDragLeave={vi.fn()}
-            onComposerDragOver={vi.fn()}
-            onComposerDrop={vi.fn()}
-            onComposerKeyDown={vi.fn()}
-            onComposerPaste={vi.fn()}
-            onComposerSettingsChange={vi.fn()}
-            onImageOpen={vi.fn()}
-            onRemovePendingAttachment={vi.fn()}
-            onStopTurn={vi.fn()}
-            onSubmitTurn={noopSubmit}
-            pendingAttachments={[]}
-            selectedGitBranch={selectedGitBranch}
-            selectedThreadPresent
-          />
-        </MantineProvider>,
-      );
-
-      expect(screen.queryByLabelText("Composer context")).not.toBeInTheDocument();
-      expect(document.querySelector(".kodex-composer-underbar")).not.toBeInTheDocument();
-    },
-  );
 });

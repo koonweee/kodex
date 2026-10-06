@@ -37,10 +37,9 @@ describe("Mobile composer panel", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders the shared inline composer with mobile density and the same underbar", async () => {
+  it("renders the shared inline composer with mobile density without an existing-thread underbar", async () => {
     renderComposerPanel({
       contextUsage: { contextTokens: 24_000, modelContextWindow: 120_000 },
-      selectedGitBranch: "main",
     });
 
     expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "mobile");
@@ -49,8 +48,7 @@ describe("Mobile composer panel", () => {
     expect(screen.getByRole("button", { name: /model: gpt-5\.5, high/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /expand composer/i })).not.toBeInTheDocument();
     expect(screen.getByRole("img", { name: /context/i })).toBeInTheDocument();
-    expect(screen.getByRole("toolbar", { name: /composer context/i })).toBeInTheDocument();
-    expect(screen.getByText("main")).toBeInTheDocument();
+    expect(screen.queryByRole("toolbar", { name: /composer context|draft thread toolbar/i })).not.toBeInTheDocument();
   });
 
   it("opens fullscreen composer when the touch mobile inline textarea is focused", async () => {

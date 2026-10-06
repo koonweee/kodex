@@ -214,7 +214,6 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
             }
           : undefined
       }
-      selectedGitBranch={thread?.gitInfo?.branch ?? null}
       isDraftThreadSelected={isDraftPane}
       isDraftComposerTransitioning={isDraftComposerTransitioning}
       isComposerDragActive={orchestration.isComposerDragActive}

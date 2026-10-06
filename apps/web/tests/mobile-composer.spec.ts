@@ -12,11 +12,14 @@ for (const shape of [
 
     test("composer keeps native focus and reachable actions while changing viewport", async ({ context }) => {
       const fixture = await nativeSettingsFixture(context);
+      fixture.detail.thread.gitInfo = { branch: "main", originUrl: null, sha: null };
       try {
         const page = await fixture.page("composer");
         const pane = page.locator('.kodex-thread-pane[data-workspace-pane-active="true"]');
         const textarea = pane.getByLabel("Message composer", { exact: true });
         await expect(textarea).toBeEnabled();
+        await expect(pane.getByRole("toolbar", { name: /composer context|draft thread toolbar/i })).toHaveCount(0);
+        await expect(pane.getByText("main", { exact: true })).toHaveCount(0);
         const originalTextarea = await textarea.elementHandle();
         if (shape.hasTouch) await textarea.tap();
         else await textarea.click();

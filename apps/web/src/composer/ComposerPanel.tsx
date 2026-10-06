@@ -65,7 +65,6 @@ export type ComposerPanelProps = {
     projects: ComposerProjectOption[];
     value: string | null;
   };
-  selectedGitBranch?: string | null;
   isDraftThreadSelected: boolean;
   isDraftComposerTransitioning: boolean;
   isComposerDragActive: boolean;
@@ -114,7 +113,6 @@ export function ComposerPanel({
   contextUsage,
   currentProjectName,
   draftProjectSelector,
-  selectedGitBranch,
   isDraftThreadSelected,
   isDraftComposerTransitioning,
   isComposerDragActive,
@@ -392,7 +390,6 @@ export function ComposerPanel({
       if (!goalCommand.handleSubmit(args[0], args[2])) onSubmitTurn(...args);
     },
     pendingAttachments,
-    selectedGitBranch,
     selectedThreadPresent,
     selectSkill,
     selectSlashCommand,

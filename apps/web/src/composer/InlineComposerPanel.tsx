@@ -1,5 +1,5 @@
 import { Box, Group, Menu, Textarea } from "@mantine/core";
-import { ChevronDown, Folder, GitGraph, MessageSquare } from "lucide-react";
+import { ChevronDown, Folder, MessageSquare } from "lucide-react";
 import { useId } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from "react";
 
@@ -92,7 +92,6 @@ export function InlineComposerPanel({
   onSubmitTurn,
   pendingAttachments,
   queuePanel,
-  selectedGitBranch,
   selectedThreadPresent,
   selectSkill,
   selectSlashCommand,
@@ -112,18 +111,7 @@ export function InlineComposerPanel({
   const draftProjectSelectorLabel = selectedDraftProject?.name ?? COMPOSER_TEXT.noProject;
   const draftProjectToolbarName =
     isDraftThreadSelected && !draftProjectSelector && currentProjectName ? currentProjectName : null;
-  const selectedGitBranchName = normalizeUnderbarText(selectedGitBranch);
-  const underbarItems = [
-    draftProjectToolbarName
-      ? { icon: "project" as const, label: draftProjectToolbarName, title: draftProjectToolbarName }
-      : null,
-    selectedGitBranchName
-      ? { icon: "branch" as const, label: selectedGitBranchName, title: selectedGitBranchName }
-      : null,
-  ].filter((item): item is { icon: "project" | "branch"; label: string; title: string } => item !== null);
-  const hasProjectSelector = draftProjectSelector !== undefined;
-  const hasUnderbar = hasProjectSelector || underbarItems.length > 0;
-  const underbarLabel = selectedGitBranchName ? "Composer context" : "Draft thread toolbar";
+  const hasUnderbar = isDraftThreadSelected && (draftProjectSelector !== undefined || Boolean(draftProjectToolbarName));
 
   return (
     <Box
@@ -263,7 +251,7 @@ export function InlineComposerPanel({
         )}
       </Box>
       {hasUnderbar && !expanded ? (
-        <Box className="kodex-composer-underbar" aria-label={underbarLabel} role="toolbar">
+        <Box className="kodex-composer-underbar" aria-label="Draft thread toolbar" role="toolbar">
           <Group className="kodex-composer-underbar-left" gap={10} wrap="nowrap">
             {draftProjectSelector ? (
               <Menu position="top-start" withinPortal>
@@ -298,22 +286,17 @@ export function InlineComposerPanel({
                 </Menu.Dropdown>
               </Menu>
             ) : null}
-            {underbarItems.map((item) => (
-              <Group key={`${item.icon}:${item.label}`} className="kodex-composer-underbar-item" gap={8} wrap="nowrap">
-                {item.icon === "project" ? <Folder size={15} /> : <GitGraph size={15} />}
-                <span title={item.title}>{item.label}</span>
+            {draftProjectToolbarName ? (
+              <Group className="kodex-composer-underbar-item" gap={8} wrap="nowrap">
+                <Folder size={15} />
+                <span title={draftProjectToolbarName}>{draftProjectToolbarName}</span>
               </Group>
-            ))}
+            ) : null}
           </Group>
         </Box>
       ) : null}
     </Box>
   );
-}
-
-function normalizeUnderbarText(value: string | null | undefined): string | null {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : null;
 }
 
 function greetingForDate(date: Date) {
