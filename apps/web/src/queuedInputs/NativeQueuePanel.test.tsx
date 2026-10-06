@@ -36,8 +36,12 @@ it("uses native order and eligibility, preserves unknown native input when editi
   await userEvent.click(screen.getByRole("button", { name: "Save queued message" }));
   await waitFor(() => expect(writes[0]).toEqual({ input: [{ type: "text", text: "Edited", nativeKey: "keep", text_elements: [] }, { type: "futureInput", opaque: [1, 2] }] }));
   expect(await screen.findByText("Edited")).toBeInTheDocument();
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Edit queued message" })).not.toBeInTheDocument());
   const handle = within(screen.getAllByRole("group", { name: "Queued message" })[1]).getByRole("button", { name: "Reorder queued message" });
+  // The refreshed text can appear before the save operation re-enables controls.
+  await waitFor(() => expect(handle).toBeEnabled());
   handle.focus();
+  expect(handle).toHaveFocus();
   await userEvent.keyboard("{ArrowUp}");
   await waitFor(() => expect(writes).toHaveLength(2));
   expect(writes[1]).toEqual({ queuedSubmissionIds: ["a", "b"] });
