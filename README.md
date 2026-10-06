@@ -131,6 +131,7 @@ For prerequisites, tests, schema generation, and production-style static serving
 
 - [Architecture](docs/architecture.md) — system shape, responsibilities, state ownership, and API boundaries.
 - [Development](docs/development.md) — setup, local workflows, validation, and generated contracts.
+- [Theme guidelines](docs/theme-guidelines.md) — contrast audit, semantic token rules, and reproducible theme contact sheets.
 - [Deployment](docs/deployment.md) — security assumptions, configuration, PWA updates, and Web Push.
 - [Kodex Control](docs/kodex-control.md) — install and develop the bundled plugin and MCP server.
 - [Plans](plans/index.md) — completed milestones, active work, and future extensions.

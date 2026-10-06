@@ -66,6 +66,7 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 - New frontend behavior should add or update the closest domain test. Avoid growing broad app-level MVP tests unless the behavior genuinely spans multiple domains.
 - When a feature needs app-server raw payload interpretation, isolate it in a named normalization helper and cover it with focused tests.
 - Use plain Mantine controls first for baseline form, menu, modal, drawer, button, badge, tab, segmented-control, and alert chrome. Add app-wide control defaults in `apps/web/src/theme/components.ts` and `apps/web/src/styles/mantine-components.css`; keep feature CSS for layout, density, and one-off behavior.
+- Follow [theme contrast guidelines](docs/theme-guidelines.md) when adding themes or styling surfaces. Validate foreground/background pairs and rendered control states using the opt-in theme contact sheet; do not assume a Mantine color prop or a passing panel token guarantees contrast on every surface.
 
 ## Frontend Responsive Styling
 

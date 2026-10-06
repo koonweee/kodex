@@ -347,6 +347,44 @@ export function ThemeWorkbench({
               />
             </Stack>
           </section>
+
+          <section className="kodex-theme-workbench-section" aria-label="Variant coverage">
+            <Stack gap="sm">
+              <Text fw={700}>Variant coverage</Text>
+              <Group gap="xs">
+                <Button variant="default">Default variant</Button>
+                <Button variant="outline">Outline</Button>
+                <Button variant="transparent">Transparent</Button>
+                <Button color="red" variant="filled">Filled danger</Button>
+              </Group>
+              <Checkbox label="Unchecked checkbox" />
+              <Switch label="Unchecked switch" />
+              <Text c="dimmed" size="sm">Mantine dimmed text on panel</Text>
+              <Text style={{ color: "var(--kodex-text-muted)" }} size="sm">Kodex muted text on panel</Text>
+              <Progress.Root size="xl">
+                <Progress.Section value={68}>
+                  <Progress.Label>68% complete</Progress.Label>
+                </Progress.Section>
+              </Progress.Root>
+            </Stack>
+          </section>
+
+          <section className="kodex-theme-workbench-section" aria-label="Semantic status coverage">
+            <Stack gap="xs">
+              <Text fw={700}>Semantic status coverage</Text>
+              <Group gap="xs">
+                {(["success", "warning", "info"] as const).map((tone) => (
+                  <Badge data-tone={tone} key={tone}>{tone} badge</Badge>
+                ))}
+                <Badge color="red">Red prop badge</Badge>
+              </Group>
+              {(["red", "yellow", "green", "blue"] as const).map((color) => (
+                <Alert color={color} key={color} title={`${color} status`}>
+                  Status with the {color} color prop.
+                </Alert>
+              ))}
+            </Stack>
+          </section>
         </div>
       </Stack>
     </Box>

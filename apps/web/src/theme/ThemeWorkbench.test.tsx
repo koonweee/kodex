@@ -40,7 +40,7 @@ describe("ThemeWorkbench", () => {
     expect(screen.getByText("Neutral badge")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /activity/i })).toBeInTheDocument();
     expect(screen.getByText("Preview")).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(screen.getByRole("alert", { name: "Workbench alert" })).toBeInTheDocument();
     expect(screen.getByText("Themed tooltip")).toBeInTheDocument();
     expect(screen.getByLabelText("Plain progress")).toBeInTheDocument();
     expect(screen.getByLabelText("Plain skeleton")).toBeInTheDocument();
