@@ -4,11 +4,12 @@ import { useEffect, useId, useRef, useState, type PointerEvent } from "react";
 
 import type { QueuedInput } from "../api/client";
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
+import { QueueDisclosure } from "./QueueDisclosure";
 import { queueInputPreview } from "./input";
 
 type Drag = { id: string; ids: string[]; pointerId: number; startY: number; y: number; target: number; moved: boolean };
 
-export function QueuedMessageList({ rows, busy, partial, isActive, onReorder, onSteer, onEdit, onRemove }: {
+type QueuedMessageListProps = {
   rows: QueuedInput[];
   busy: boolean;
   partial: boolean;
@@ -17,7 +18,15 @@ export function QueuedMessageList({ rows, busy, partial, isActive, onReorder, on
   onSteer: (row: QueuedInput) => void;
   onEdit: (row: QueuedInput) => void;
   onRemove: (row: QueuedInput) => void;
-}) {
+};
+
+export function QueuedMessageList(props: QueuedMessageListProps) {
+  return <QueueDisclosure key={props.rows[0]?.threadId} count={props.rows.length} partial={props.partial}>
+    <QueueRows {...props} />
+  </QueueDisclosure>;
+}
+
+function QueueRows({ rows, busy, partial, isActive, onReorder, onSteer, onEdit, onRemove }: QueuedMessageListProps) {
   const instructionsId = useId();
   const list = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
@@ -95,7 +104,7 @@ export function QueuedMessageList({ rows, busy, partial, isActive, onReorder, on
     move(current.id, current.target);
   }
 
-  return <Box role="region" aria-label="Queued messages" className="kodex-queued-messages">
+  return <>
     <VisuallyHidden id={instructionsId}>Drag to reorder, or use the up and down arrow keys. Escape cancels dragging.</VisuallyHidden>
     <VisuallyHidden role="status">{announcement}</VisuallyHidden>
     {partial ? <Text size="xs" className="kodex-queue-notice">Only part of the queue is shown. Reordering is unavailable.</Text> : null}
@@ -142,5 +151,5 @@ export function QueuedMessageList({ rows, busy, partial, isActive, onReorder, on
         </Box>;
       })}
     </div>
-  </Box>;
+  </>;
 }

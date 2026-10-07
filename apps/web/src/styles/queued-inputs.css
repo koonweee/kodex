@@ -59,3 +59,48 @@
   .kodex-queue-row button { min-width: 44px; min-height: 44px; }
   .kodex-native-queue button { min-height: 44px; }
 }
+
+.kodex-queue-collapse-zone {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 88px;
+  height: 24px;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.kodex-queue-collapse-zone .kodex-queue-collapse {
+  height: 20px;
+  min-height: 20px;
+  padding: 0 14px;
+  border-radius: var(--kodex-radius-xs);
+  background: var(--kodex-bg-raised-alt);
+  color: var(--kodex-text-secondary);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.kodex-queue-collapse-zone:hover .kodex-queue-collapse,
+.kodex-queue-collapse-zone:focus-within .kodex-queue-collapse {
+  opacity: 1;
+}
+
+.kodex-queued-messages .kodex-queue-summary {
+  width: 100%;
+  height: 28px;
+  font-weight: 400;
+  color: var(--kodex-text-secondary);
+}
+
+@media (hover: none), (any-pointer: coarse) {
+  .kodex-queue-collapse-zone { position: static; transform: none; margin: -6px auto 0; height: 44px; }
+  .kodex-queue-collapse-zone .kodex-queue-collapse { opacity: 1; height: 44px; min-width: 44px; }
+  .kodex-queued-messages .kodex-queue-summary { height: 44px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kodex-queue-collapse-zone .kodex-queue-collapse { transition: none; }
+}
