@@ -59,7 +59,7 @@
 .kodex-activity-group > summary,
 .kodex-activity-item > summary {
   display: inline-grid;
-  grid-template-columns: minmax(0, 1fr) 16px;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: 6px;
   width: fit-content;
@@ -72,20 +72,6 @@
 .kodex-activity-group > summary::-webkit-details-marker,
 .kodex-activity-item > summary::-webkit-details-marker {
   display: none;
-}
-
-.kodex-activity-caret {
-  width: 16px;
-  height: 16px;
-  color: var(--kodex-text-muted);
-  flex: 0 0 auto;
-  transform-origin: center;
-  transition: transform 120ms ease;
-}
-
-.kodex-activity-group[open] > summary .kodex-activity-caret,
-.kodex-activity-item[open] > summary .kodex-activity-caret {
-  transform: rotate(90deg);
 }
 
 .kodex-activity-item {

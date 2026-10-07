@@ -1,5 +1,5 @@
 import { Badge, Box, Button, Code, Group, Stack, Text } from "@mantine/core";
-import { ChevronRight, Terminal } from "lucide-react";
+import { Terminal } from "lucide-react";
 import { memo, useEffect, useMemo, useState } from "react";
 import type { SyntheticEvent } from "react";
 
@@ -58,7 +58,6 @@ function TimelineActivityGroupRendererImpl({
           <Terminal size={15} />
           <ActivityGroupSummary items={items} />
         </Group>
-        <ChevronRight size={16} className="kodex-activity-caret" aria-hidden="true" />
       </summary>
       <Stack gap={4}>
         {visibleItems.map((item) => (
@@ -278,7 +277,6 @@ const ActivityItemRenderer = memo(function ActivityItemRenderer({
               </Badge>
             ) : null}
           </Group>
-          <ChevronRight size={16} className="kodex-activity-caret" aria-hidden="true" />
         </summary>
         {isOpen ? (
           <>
@@ -299,7 +297,6 @@ const ActivityItemRenderer = memo(function ActivityItemRenderer({
             {activityItemSummary(item)}
           </Text>
         </Group>
-        <ChevronRight size={16} className="kodex-activity-caret" aria-hidden="true" />
       </summary>
       {isOpen ? (
         <>
