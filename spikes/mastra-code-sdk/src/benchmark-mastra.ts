@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
+import type { AgentExecutionOptions } from '@mastra/core/agent';
 import { activateProfile, resolveProfile } from './profile.js';
 import { createProjectRuntime, type NativeSession, type ProjectRuntime } from './runtime.js';
 
@@ -12,7 +13,13 @@ export type MastraBenchmarkStage = BenchmarkStage;
 export interface MastraBenchmarkOptions {
   onStage?: (stage: MastraBenchmarkStage) => void | Promise<void>;
 }
-type LoadedChat = { projectIndex: number; chatIndex: number; session: NativeSession };
+type StepFinish = NonNullable<AgentExecutionOptions['onStepFinish']>;
+type LoadedChat = {
+  projectIndex: number;
+  chatIndex: number;
+  session: NativeSession;
+  observeUsage?: (usage: Parameters<StepFinish>[0]['usage']) => void;
+};
 
 /** Mounted idle chats remain alive for the driver's RSS sampling before run(). */
 export async function createMastraBenchmarkRuntime(request: MastraBenchmarkRequest, options: MastraBenchmarkOptions = {}) {
@@ -50,11 +57,26 @@ export async function createMastraBenchmarkRuntime(request: MastraBenchmarkReque
       for (let chatIndex = 0; chatIndex < request.chatsPerProject; chatIndex++) {
         const session = await runtime.createSession({ resourceId: `benchmark-${id}-project-${projectIndex}-chat-${chatIndex}`, threadId: `benchmark-${id}-project-${projectIndex}-chat-${chatIndex}` });
         await session.thread.rename({ title: `Benchmark project ${projectIndex} chat ${chatIndex}` });
-        await session.state.set({ thinkingLevel: request.effort });
-        await session.model.saveForMode({ modeId: 'build', modelId: request.model });
+        await session.model.switch(request.model, { thinkingLevel: request.effort });
         if (session.state.get().projectPath !== path.resolve(projectPath) || runtime.projectPath !== path.resolve(projectPath)) throw new Error('Native benchmark session resolved a different project root');
         if (session.state.get().thinkingLevel !== request.effort || session.model.get() !== request.model) throw new Error('Native benchmark model or effort selection was not applied');
-        chats.push({ projectIndex, chatIndex, session });
+        const chat: LoadedChat = { projectIndex, chatIndex, session };
+        const machinery = session.machinery;
+        session.setMachinery({
+          ...machinery,
+          async buildStreamOptions(input) {
+            const streamOptions = await machinery.buildStreamOptions(input);
+            const onStepFinish = streamOptions.onStepFinish as StepFinish | undefined;
+            return {
+              ...streamOptions,
+              onStepFinish: async (event: Parameters<StepFinish>[0]) => {
+                chat.observeUsage?.(event.usage);
+                await onStepFinish?.call(streamOptions, event);
+              },
+            };
+          },
+        });
+        chats.push(chat);
       }
     }
     await options.onStage?.({ type: 'loaded', loadedChats: chats.length });
@@ -103,6 +125,13 @@ async function measureTurn(chat: LoadedChat, promptIndex: number, prompt: string
   let reasoningReported = true;
   let answer = '';
   const started = performance.now();
+  // Session omits usage_update when every count is missing. The native step
+  // callback still exposes that step, so partial totals cannot look complete.
+  chat.observeUsage = usage => {
+    mainUsageReported &&= usage.inputTokens !== undefined && usage.outputTokens !== undefined;
+    cachedReported &&= (usage.cachedInputTokens ?? 0) > 0;
+    reasoningReported &&= (usage.reasoningTokens ?? 0) > 0;
+  };
   const unsubscribe = session.subscribe(event => {
     if (event.type === 'message_update' && event.event.type === 'text-delta' && event.event.delta.length && firstTextMs === null) firstTextMs = performance.now() - started;
     if (event.type === 'tool_start') toolCalls++;
@@ -110,8 +139,6 @@ async function measureTurn(chat: LoadedChat, promptIndex: number, prompt: string
     if (event.type === 'usage_update') {
       usageSteps++;
       mainUsageReported &&= event.usage.promptTokens + event.usage.completionTokens > 0;
-      cachedReported &&= (event.usage.cachedInputTokens ?? 0) > 0;
-      reasoningReported &&= (event.usage.reasoningTokens ?? 0) > 0;
     }
     if (event.type === 'agent_end') completed = event.reason === 'complete';
   });
@@ -127,6 +154,7 @@ async function measureTurn(chat: LoadedChat, promptIndex: number, prompt: string
     totalMs = performance.now() - started;
     errors = true;
   } finally {
+    delete chat.observeUsage;
     unsubscribe();
   }
   const after = session.displayState.get().tokenUsage;
@@ -135,9 +163,8 @@ async function measureTurn(chat: LoadedChat, promptIndex: number, prompt: string
   // A missing model-step usage can become zero even when another step is measured.
   if (usageSteps === 0 || !mainUsageReported || inputTokens + outputTokens <= 0) errors = true;
   // Display counters accumulate all model steps for the thread, not just this turn.
-  // The SDK normalizes omitted optional usage to zero. Preserve unknown when
-  // any step has zero/missing coverage, including genuinely reported zeros that
-  // cannot be distinguished here; positive values on every step are measurable.
+  // Preserve unknown when any step has zero/missing optional coverage;
+  // positive values on every step are measurable.
   const optionalDelta = (key: 'cachedInputTokens' | 'reasoningTokens', reported: boolean) => usageSteps === 0 || !reported || after[key] === undefined ? null : after[key] - (before[key] ?? 0);
   return {
     projectIndex: chat.projectIndex, chatIndex: chat.chatIndex, promptIndex,

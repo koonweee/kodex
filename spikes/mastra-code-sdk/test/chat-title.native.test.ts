@@ -59,8 +59,7 @@ test('blocking native setup pins a nonempty placeholder before Send; manual rena
   let setupFinished = false;
   const unsubscribe = runtime.controller.onSessionCreated(async session => {
     if (session.identity.getResourceId() !== 'pinned-resource') return;
-    await session.state.set({ thinkingLevel: 'high' });
-    await session.model.switch({ modelId: 'fixture/alternate' });
+    await session.model.switch('fixture/alternate', { thinkingLevel: 'high' });
     await session.thread.rename({ title: 'New chat' });
     setupFinished = true;
   }, { blocking: true });
@@ -71,7 +70,7 @@ test('blocking native setup pins a nonempty placeholder before Send; manual rena
   assert.equal(beforeSend!.title, 'New chat');
   assert.equal(beforeSend!.metadata!.titlePinned, true);
   assert.equal(beforeSend!.metadata!.thinkingLevel, 'high');
-  assert.equal(beforeSend!.metadata!.modeModelId_build, 'fixture/alternate');
+  assert.equal(beforeSend!.metadata!.currentModelId, 'fixture/alternate');
   const requestStart = fixture.requests.length;
   await session.sendMessage({ content: 'PINNED_FIRST_USER' });
   await (await memoryOf(session)).settled();
@@ -89,7 +88,7 @@ test('blocking native setup pins a nonempty placeholder before Send; manual rena
   const renamed = await runtime.controller.queryThreadById({ threadId: 'pinned-thread' });
   assert.equal(renamed!.title, 'Manual native name');
   assert.equal(renamed!.metadata!.thinkingLevel, 'high');
-  assert.equal(renamed!.metadata!.modeModelId_build, 'fixture/alternate');
+  assert.equal(renamed!.metadata!.currentModelId, 'fixture/alternate');
   const reopened = await setupResult.reopen();
   const restored = await reopened.createSession({ resourceId: 'pinned-resource', threadId: 'pinned-thread' });
   const persisted = await reopened.controller.queryThreadById({ threadId: 'pinned-thread' });

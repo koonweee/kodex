@@ -14,7 +14,6 @@ export interface ProjectRuntimeOptions {
   profile: SpikeProfile;
   modes?: MastraCodeConfig['modes'];
   extraTools?: MastraCodeConfig['extraTools'];
-  inputProcessors?: MastraCodeConfig['inputProcessors'];
   subagents?: MastraCodeConfig['subagents'];
   disableMcp?: boolean;
   schedules?: NonNullable<ConstructorParameters<typeof Mastra>[0]>['schedules'];
@@ -57,7 +56,7 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
     },
     omScope: 'thread',
     initialState: { yolo: true, skipGlobalInstructions: true, homeDir: options.profile.homeDir },
-    inputProcessors: [affinity, createChatFastProcessor(), ...(options.inputProcessors ?? [])],
+    inputProcessors: [affinity, createChatFastProcessor()],
     disableEnvFile: true,
     disableGithubSignals: true,
     disableMcp: options.disableMcp ?? true,

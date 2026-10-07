@@ -154,3 +154,17 @@ Validation checkpoint: both native goal suites pass 24/24 as explicit characteri
 ### 2026-10-08 — bounded no-patch Stop experiment
 
 Characterization checkpoint committed as `d5a609c`. User is discussing alternatives; no patch or delayed Stop behavior is authorized. Thirty evaluation-aware Stop attempts pass at three observed public callback timings, preserving pending Clear with no extra main step. Source review shows a capture-before-pending-notification gap outside those cases; native step-finish is after evaluation, not its entry. The green experiment therefore does not justify shipping an observed-pending flag as a safe Stop admission rule. Tests explicitly document this limit. Logs `/tmp/kodex-goal-stop-boundary.log` and `/tmp/kodex-goal-stop-check.log`; no product/SDK changes. A broader deferred Stop policy or native Core repair remains a user decision.
+
+### 2026-10-08 — no Core patch
+
+Explicit user decision: no Core patch. Previous proposed patched-SDK path is withdrawn. Discuss no-patch alternatives before implementation; no Stop-delay policy, internal-hook dependency, custom goal orchestrator or goal deferral has been accepted.
+
+### 2026-10-08 — official upstream fix replaces all proposed goal workarounds
+
+A fresh npm/release check found Core1.75.0/CodeSDK1.11.0, released October7, with the exact stale-goal verdict fix (#26093). That check should have preceded proposing new ownership/Stop tradeoffs. Isolated official-package preservation experiment passed30/30; current worktree upgraded alongside Memory1.36.0/LibSQL1.25.1. No local Core patch. Independent source review confirms a native current-goal reread suppresses obsolete verdict/write/feedback/continuation; atomic CAS is not claimed.
+
+New actual-worktree public-API regression passes12/12 across done/continue × pause/clear/replace × running/stopped judge. Stop remains immediate; tests wait for the actual old producer before checking preserved state. Removed superseded host-coordination experiments and their runtime test seam. Native model API migration is underway; focused model/settings/title/queue/restart validation passed29/30 with one benchmark usage assertion being investigated. Logs `/tmp/kodex-mastra-release-goals.log`, `/tmp/kodex-mastra-goal-upgrade-regression.log`, `/tmp/kodex-mastra-model-upgrade-tests.log`. Full upgrade acceptance and goal frontend wiring remain. Production unchanged.
+
+Upgrade follow-up: fixed benchmark-only missing-usage detection through the supported native onStepFinish callback, composing the existing callback and preserving conservative optional usage. Final focused run passes 30/30 (`/tmp/kodex-mastra-model-upgrade-final-tests.log`); backend typecheck and independent reviews pass. Actual SDK browser suite passes 12/12 (`/tmp/kodex-mastra-upgrade-browser.log`), including selected-chat archive, two-tab convergence and restart across three layouts. Frontend build/trim pass and desktop screenshot reviewed. Full backend suite started serially in `/tmp/kodex-mastra-upgrade-full-backend.log`; no deployment.
+
+Official upgrade acceptance: full backend finished 138/139; only the benchmark report expected the old SDK version. Updated the expectation to 1.11.0 and its full file passed 6/6 (`/tmp/kodex-mastra-upgrade-benchmark-summary.log`), covering all 139 backend cases. The 12 native goal preservation cases pass without product coordination or Stop changes. Goal UI wiring and the overall port remain incomplete.

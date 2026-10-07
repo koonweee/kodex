@@ -108,7 +108,7 @@ export function createNativeChatSettings(profile: SpikeProfile, epoch: string) {
   async function readChat(session: NativeSession): Promise<ChatSettings> {
     const sdk = await native();
     const settings = sdk.loadSettings(profile.settingsPath);
-    const modelId = session.model.get() ?? session.mode.resolve().defaultModelId ?? '';
+    const modelId = session.model.get() || session.mode.resolve().defaultModelId || '';
     const override = session.state.get().thinkingLevel;
     const thinkingLevelOverride = isThinkingLevelSetting(override) ? override : null;
     return {
@@ -143,13 +143,17 @@ export function createNativeChatSettings(profile: SpikeProfile, epoch: string) {
       return withChat(session, async () => {
         const current = await readChat(session);
         await validate(runtime, patch, current.modelId, current.fast);
-        if (patch.modelId !== undefined) await session.model.switch({ modelId: patch.modelId });
-        if ('thinkingLevel' in patch) await session.state.set({ thinkingLevel: patch.thinkingLevel ?? undefined });
+        if (patch.modelId !== undefined) {
+          await session.model.switch(patch.modelId, patch.thinkingLevel != null ? { thinkingLevel: patch.thinkingLevel } : undefined);
+        }
+        if ('thinkingLevel' in patch && (patch.modelId === undefined || patch.thinkingLevel == null)) {
+          await session.state.set({ thinkingLevel: patch.thinkingLevel ?? undefined });
+        }
         if (patch.fast !== undefined) await session.thread.setSetting({ key: CHAT_FAST_SETTING, value: patch.fast });
         // Native setters can swallow persistence errors. Never report a saved
         // setting until the native row confirms the supplied sparse fields.
         const thread = await runtime.controller.queryThreadById({ threadId: session.thread.requireId() });
-        if (!thread || (patch.fast !== undefined && thread.metadata?.[CHAT_FAST_SETTING] !== patch.fast) || (patch.modelId !== undefined && thread.metadata?.[`modeModelId_${session.mode.get()}`] !== patch.modelId) || ('thinkingLevel' in patch && thread.metadata?.thinkingLevel !== (patch.thinkingLevel ?? undefined))) {
+        if (!thread || (patch.fast !== undefined && thread.metadata?.[CHAT_FAST_SETTING] !== patch.fast) || (patch.modelId !== undefined && thread.metadata?.currentModelId !== patch.modelId) || ('thinkingLevel' in patch && thread.metadata?.thinkingLevel !== (patch.thinkingLevel ?? undefined))) {
           throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Chat settings could not be saved.' });
         }
         if (patch.fast !== undefined) session.emit({ type: 'display_state_changed', displayState: session.displayState.get() });

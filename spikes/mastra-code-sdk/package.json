@@ -18,10 +18,10 @@
   },
   "dependencies": {
     "@libsql/client": "0.18.0",
-    "@mastra/code-sdk": "1.10.1",
-    "@mastra/core": "1.74.0",
-    "@mastra/libsql": "1.25.0",
-    "@mastra/memory": "1.35.0",
+    "@mastra/code-sdk": "1.11.0",
+    "@mastra/core": "1.75.0",
+    "@mastra/libsql": "1.25.1",
+    "@mastra/memory": "1.36.0",
     "@orpc/client": "1.15.4",
     "@orpc/server": "1.15.4",
     "ws": "8.22.0"

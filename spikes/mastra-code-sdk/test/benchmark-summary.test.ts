@@ -91,7 +91,7 @@ test('driver launches a fresh native worker, samples loaded/active memory and sa
   const output = join(root, 'reports');
   assert.equal(await runBenchmarkCli(['--harness', 'mastra', '--only', 'sequential', '--repetitions', '1', '--output', output]), 0);
   const report = JSON.parse(await readFile(join(output, 'report.json'), 'utf8'));
-  assert.equal(report.versions.packages['@mastra/code-sdk'], '1.10.1');
+  assert.equal(report.versions.packages['@mastra/code-sdk'], '1.11.0');
   assert.equal(report.versions.codex, null);
   assert.equal(report.runs.length, 1);
   const measured = report.runs[0] as BenchmarkRun;

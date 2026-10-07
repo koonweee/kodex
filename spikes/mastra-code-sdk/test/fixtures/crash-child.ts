@@ -18,8 +18,7 @@ if (mode === 'inspect') {
   await runtime.dispose();
 } else if (mode === 'queue') {
   await session.thread.rename({ title: 'Disposable crash fixture' });
-  await session.state.set({ thinkingLevel: 'low' });
-  await session.model.saveForMode({ modeId: 'build', modelId: 'fixture/chat' });
+  await session.model.switch('fixture/chat', { thinkingLevel: 'low' });
   await session.sendMessage({ content: 'COMPLETED_BEFORE_CRASH' });
   const completed = await session.thread.listActiveMessages();
   assert.ok(completed.some(message => message.role === 'assistant' && JSON.stringify(message).includes('fixture:COMPLETED_BEFORE_CRASH')), 'completed assistant output persisted before the crash');

@@ -71,7 +71,7 @@ test('native middle edit and reorder preserve row identities, prefix, complete s
   const before = queue.snapshot();
   const nativeA = before.rows[0]!.nativeSignalId;
   assert.equal(session.displayState.get().queuedFollowUps, 4);
-  await session.model.switch({ modelId: 'fixture/alternate' });
+  await session.model.switch('fixture/alternate');
   const edited = await queue.edit({ id: ids[1]!, input: text('NATIVE_B_CHANGED'), revision: before.revision });
   assert.equal(edited.outcome, 'applied');
   assert.equal(edited.snapshot.rows[0]!.nativeSignalId, nativeA);

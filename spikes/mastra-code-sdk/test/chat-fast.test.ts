@@ -74,7 +74,7 @@ test('two clients share native Fast metadata, preserve queue-captured pricing an
     const row = await runtime!.controller.queryThreadById({ threadId: chat.id });
     assert.equal(row!.metadata!.kodexFast, true);
     assert.equal(row!.metadata!.projectPath, join(root, 'project'));
-    assert.equal(row!.metadata!.modeModelId_build, model.id);
+    assert.equal(row!.metadata!.currentModelId, model.id);
     assert.equal(row!.title, 'Fast fixture');
 
     await first.send({ chatId: chat.id, text: 'CONCURRENT_FAST_ACTIVE' });

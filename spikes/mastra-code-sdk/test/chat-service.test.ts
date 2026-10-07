@@ -220,7 +220,7 @@ test('idle Queue acknowledges its native run without waiting and failures remain
   hold.release();
   const idleCompleted = await until(watch, snapshot => !snapshot.display.isRunning && JSON.stringify(snapshot.messages).includes('IDLE_QUEUE'));
   assert.ok(hasUserInput(idleCompleted, 'IDLE_QUEUE'), 'idle Queue persists the exact native human input');
-  await native.model.saveForMode({ modeId: 'build', modelId: 'failure/bad' });
+  await native.model.switch('failure/bad');
   await service.send({ chatId: chat.id, text: 'FAIL_RESPONSE' });
   const failed = await until(watch, snapshot => !snapshot.display.isRunning && snapshot.error !== null);
   const reconnect = await service.openChat({ chatId: chat.id });

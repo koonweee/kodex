@@ -83,7 +83,7 @@ test('two clients apply sparse native settings, observe coherent snapshots and u
   assert.equal(current.modelId, chosen.id); assert.equal(current.thinkingLevelOverride, 'high');
   assert.equal(current.epoch, shared.epoch); assert.ok(current.revision >= shared.revision);
   const row = await runtimes[0]!.controller.queryThreadById({ threadId: chat.id });
-  assert.equal(row!.metadata!.modeModelId_build, chosen.id); assert.equal(row!.metadata!.thinkingLevel, 'high');
+  assert.equal(row!.metadata!.currentModelId, chosen.id); assert.equal(row!.metadata!.thinkingLevel, 'high');
   await first.send({ chatId: chat.id, text: 'CHANGED_NATIVE_SETTINGS' });
   const request = await fixture.waitForRequest(request => lastUserText(request).includes('CHANGED_NATIVE_SETTINGS'));
   assert.equal(request.model, 'second');
@@ -101,7 +101,7 @@ test('native settings persist and null clears thinking override across a service
   await service.dispose(); service = makeService();
   assert.equal((await service.getChatSettings({ chatId: chat.id })).modelId, chosen.id);
   assert.equal((await service.getChatSettings({ chatId: chat.id })).thinkingLevelOverride, 'xhigh');
-  await service.updateChatSettings({ chatId: chat.id, patch: { thinkingLevel: null } });
+  await service.updateChatSettings({ chatId: chat.id, patch: { modelId: chosen.id, thinkingLevel: null } });
   await service.dispose(); service = makeService();
   const reopened = await service.getChatSettings({ chatId: chat.id });
   assert.equal(reopened.modelId, chosen.id); assert.equal(reopened.thinkingLevelOverride, null); assert.equal(reopened.thinkingLevel, 'medium');

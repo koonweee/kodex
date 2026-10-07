@@ -119,6 +119,8 @@ A native schedule's trigger outcome acknowledges delivery/wake; it does not prov
 
 Native fixtures verify explicit chat identities/history survive global, project and environment resource overrides, including reopening two chats in one database. MCP fixtures verify namespaced global/project precedence, external file edits, existing-session tool refresh after native reload, and durable project disable state. Each affected project manager needs its own reload. See the [configuration audit](../../plans/mastra-config-isolation.md) for scope and the app-server comparison. The MCP fixture explicitly exits after assertions/awaited teardown; it does not prove natural process exit. Default MCP/plugins/hooks remain disabled pending product wiring or execution validation.
 
+Current release pins are Code SDK **1.11.0**, Core **1.75.0**, Memory **1.36.0** and LibSQL **1.25.1**. Native model selection now persists one current model per thread. Core's released goal fix discards obsolete judge results after pause, clear or replacement, including when chat Stop leaves the judge finishing in the background. Native regression tests cover those paths; no local Core patch or product dependency on private completion hooks is used. Goal frontend wiring remains part of the active port.
+
 ## Limits before a production migration
 
 - This is a compatibility proof, not a gateway or harness abstraction layer. The opt-in UI chat backend is under implementation; there is no production cutover, schema migration, or deployment command here.
