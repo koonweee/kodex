@@ -23,7 +23,7 @@ export function lastUserText(request: FixtureRequest): string {
 export async function startModelFixture(reply: (request: FixtureRequest, index: number) => FixtureReply | Promise<FixtureReply> = request => ({ text: `fixture:${lastUserText(request)}` })) {
   const requests: FixtureRequest[] = [];
   const waiters: Array<{ predicate: (request: FixtureRequest) => boolean; resolve: (request: FixtureRequest) => void }> = [];
-  const holds: Array<{ marker: string; started: () => void; gate: Promise<void>; release: () => void }> = [];
+  const holds: Array<{ marker: string; model?: string; started: () => void; gate: Promise<void>; release: () => void }> = [];
   const server = http.createServer(async (request, response) => {
     if (request.url?.endsWith('/models')) {
       response.setHeader('content-type', 'application/json');
@@ -36,7 +36,7 @@ export async function startModelFixture(reply: (request: FixtureRequest, index: 
       const input = JSON.parse(raw) as FixtureRequest;
       requests.push(input);
       for (let i = waiters.length - 1; i >= 0; i--) if (waiters[i]!.predicate(input)) waiters.splice(i, 1)[0]!.resolve(input);
-      const holdIndex = holds.findIndex(hold => lastUserText(input).includes(hold.marker));
+      const holdIndex = holds.findIndex(hold => (hold.model === undefined || hold.model === input.model) && lastUserText(input).includes(hold.marker));
       const hold = holdIndex === -1 ? undefined : holds.splice(holdIndex, 1)[0];
       const result = await reply(input, requests.length - 1);
       const toolCalls = result.toolCalls?.map((call, i) => ({ index: i, id: call.id ?? `fixture-tool-${requests.length}-${i}`, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.arguments) } }));
@@ -70,12 +70,12 @@ export async function startModelFixture(reply: (request: FixtureRequest, index: 
   return {
     url: `http://127.0.0.1:${address.port}/v1`,
     requests,
-    holdNext(marker: string) {
+    holdNext(marker: string, model?: string) {
       let started!: () => void;
       let release!: () => void;
       const reached = new Promise<void>(resolve => { started = resolve; });
       const gate = new Promise<void>(resolve => { release = resolve; });
-      holds.push({ marker, started, gate, release });
+      holds.push({ marker, model, started, gate, release });
       return { reached, release };
     },
     waitForRequest(predicate: (request: FixtureRequest) => boolean): Promise<FixtureRequest> {

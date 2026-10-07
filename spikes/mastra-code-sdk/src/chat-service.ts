@@ -10,11 +10,12 @@ import { captureChatFastRequestContext } from './chat-fast.js';
 import { createChatQueue, type ChatQueueInput, type ChatQueueSnapshot, type ChatQueueResult } from './chat-queue.js';
 import { abortNativeChat } from './chat-archive.js';
 import { createChatLifecycle } from './chat-lifecycle.js';
+import { createChatGoals, type NativeGoal, type GoalPatch } from './chat-goals.js';
 import { createNativeChatSettings, type ChatSettings, type ChatSettingsPatch } from './chat-settings.js';
 import { createSessionProjection, type SessionSnapshot } from './transport.js';
 
 export interface CatalogSnapshot { epoch: string; revision: number; projects: ProductProject[]; chats: Chat[]; pinnedChatIds: string[]; archivedChatIds: string[] }
-export interface ChatSnapshot extends SessionSnapshot { chat: Chat; error: string | null; settings: ChatSettings; queue: ChatQueueSnapshot }
+export interface ChatSnapshot extends SessionSnapshot { chat: Chat; error: string | null; settings: ChatSettings; queue: ChatQueueSnapshot; goal: NativeGoal | null }
 export interface QueuedSelection { chatId: string; epoch: string; revision: number; id: string }
 export interface QueuedEdit extends QueuedSelection { input: ChatQueueInput }
 export interface QueuedOrder { chatId: string; epoch: string; revision: number; ids: string[] }
@@ -43,6 +44,7 @@ export function createChatService(options: ChatServiceOptions) {
   const handles = new Map<string, Promise<Handle>>();
   const lifetime = new AbortController();
   const lifecycle = createChatLifecycle();
+  const goals = createChatGoals();
   const catalog = new EventPublisher<{ changed: number }>({ maxBufferedEvents: 1 });
   const epoch = randomUUID();
   const settings = createNativeChatSettings(options.profile, epoch);
@@ -124,7 +126,9 @@ export function createChatService(options: ChatServiceOptions) {
       if (current.revision !== handle.revision) continue;
       const chat = await projects.describe(handle.binding.id, thread);
       if (current.revision !== handle.revision) continue;
-      return { ...current, chat, error: handle.error, settings: publicSettings, queue: handle.queue.snapshot() };
+      const goal = await goals.read(handle.session);
+      if (current.revision !== handle.revision) continue;
+      return { ...current, chat, error: handle.error, settings: publicSettings, queue: handle.queue.snapshot(), goal };
     }
   }
   async function catalogSnapshot(signal?: AbortSignal): Promise<CatalogSnapshot> {
@@ -196,6 +200,18 @@ export function createChatService(options: ChatServiceOptions) {
       catch { throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Chat name could not be changed.' }); }
       invalidateCatalog();
       handle.session.emit({ type: 'display_state_changed', displayState: handle.session.displayState.get() });
+      return accepted();
+    },
+    async updateGoal({ chatId, patch }: { chatId: string; patch: GoalPatch }) {
+      const handle = await handleFor(chatId);
+      try { await goals.update(handle.session, patch); }
+      finally { handle.session.emit({ type: 'display_state_changed', displayState: handle.session.displayState.get() }); }
+      return accepted();
+    },
+    async clearGoal({ chatId }: { chatId: string }) {
+      const handle = await handleFor(chatId);
+      try { await goals.clear(handle.session); }
+      finally { handle.session.emit({ type: 'display_state_changed', displayState: handle.session.displayState.get() }); }
       return accepted();
     },
     async getChatSettings({ chatId }: { chatId: string }) {
@@ -333,6 +349,7 @@ export function createChatService(options: ChatServiceOptions) {
     return (input: T, ...args: Args) => lifecycle.admit(input.chatId, () => method(input, ...args));
   }
   return { ...service,
+    updateGoal: guarded(service.updateGoal), clearGoal: guarded(service.clearGoal),
     openChat: guarded(service.openChat), getChatSettings: guarded(service.getChatSettings),
     updateChatSettings: guarded(service.updateChatSettings), renameChat: guarded(service.renameChat),
     setChatPinned: guarded(service.setChatPinned), setChatNotifications: guarded(service.setChatNotifications),

@@ -12,6 +12,7 @@ import { useNativeCatalogSnapshot } from './NativeCatalogContext';
 import { DEFAULT_COMPOSER_SETTINGS } from '../composer/settings';
 import { useNativeComposerSettings } from './useNativeComposerSettings';
 import { useMastraQueue } from './useMastraQueue';
+import { useMastraGoal } from './useMastraGoal';
 
 export function NativeComposer({ pane, snapshot, ready, isActive, draftStore, onError, onQueueReload }: { pane: WorkspacePane; snapshot: ChatSnapshot | null; ready: boolean; isActive: boolean; draftStore: ComposerDraftStore; onError: (error: unknown) => void; onQueueReload?: () => void }) {
   const catalog = useNativeCatalogSnapshot();
@@ -30,6 +31,7 @@ export function NativeComposer({ pane, snapshot, ready, isActive, draftStore, on
     modelsEnabled: Boolean(chatId) || Boolean(catalog) && validDraftProject,
     modelScope: chatId ? undefined : JSON.stringify([catalog?.epoch, project?.roots ?? null]),
   });
+  const goal = useMastraGoal(chatId, snapshot, ready, onQueueReload);
   const queue = useMastraQueue(chatId, snapshot?.queue ?? null, onError, onQueueReload);
   const submitNative = async (action: () => Promise<unknown>) => {
     try { return await action(); } catch (failure) {
@@ -78,6 +80,6 @@ export function NativeComposer({ pane, snapshot, ready, isActive, draftStore, on
       onComposerKeyDown={orchestration.handleComposerKeyDown} onComposerPaste={orchestration.handleComposerPaste}
       onComposerSettingsChange={settings.change} onImageOpen={onImageOpen} onRemovePendingAttachment={orchestration.removePendingAttachment}
       onStopTurn={orchestration.handleStopTurn} onSubmitTurn={orchestration.handleSubmitTurn} pendingAttachments={orchestration.pendingAttachments}
-      goalThreadId={chatId} queueThreadId={chatId} queueController={queue} queueDialogActive={isActive} selectedThreadPresent={Boolean(chatId)} />
+      goalThreadId={chatId} goalController={goal} queueThreadId={chatId} queueController={queue} queueDialogActive={isActive} selectedThreadPresent={Boolean(chatId)} />
   </>;
 }

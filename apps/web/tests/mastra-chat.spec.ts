@@ -349,3 +349,56 @@ test('archive stops queued work and closes the selected chat across tabs and res
     await rm(root, { recursive: true, force: true });
   }
 });
+
+
+test('native goals share pause, replacement, resume and clear across tabs and restart', async ({ context, page }) => {
+  const root = await mkdtemp(join(tmpdir(), 'kodex-mastra-goals-browser-'));
+  let backend: ChildProcessWithoutNullStreams | undefined;
+  const errors: string[] = [], legacyGoals: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  context.on('page', tab => tab.on('pageerror', error => errors.push(error.message)));
+  context.on('request', request => { if (/\/v1\/threads\/[^/]+\/goal/.test(new URL(request.url()).pathname)) legacyGoals.push(request.url()); });
+  const manage = (tab: Page, status: string) => tab.getByRole('button', { name: `Manage goal: ${status}`, exact: true });
+  const dialog = (tab: Page) => tab.getByRole('dialog', { name: 'Goal', exact: true });
+  try {
+    backend = await startBackend(root);
+    await page.goto('/');
+    await send(page, 'GOAL_CHAT');
+    await expect(pane(page).getByText('fixture:GOAL_CHAT', { exact: true })).toBeVisible();
+    const second = await context.newPage(); await second.goto(page.url());
+    await expect(pane(second).getByText('fixture:GOAL_CHAT', { exact: true })).toBeVisible();
+    await send(page, 'HOLD_STOP');
+    await expect(pane(page).getByText('started:HOLD_STOP', { exact: true })).toBeVisible();
+    await send(page, '/goal BROWSER_GOAL_ORIGINAL');
+    await expect(manage(second, 'Active')).toBeVisible();
+    await manage(second, 'Active').click();
+    await expect(dialog(second).getByLabel('Token budget', { exact: true })).toHaveCount(0);
+    await dialog(second).getByRole('button', { name: 'Pause goal', exact: true }).click();
+    await expect(manage(page, 'Paused')).toBeVisible();
+    await dialog(second).getByRole('button', { name: 'Close goal', exact: true }).click();
+    await pane(page).getByRole('button', { name: 'Stop turn', exact: true }).click();
+    await expect(pane(page).getByRole('button', { name: 'Stop turn', exact: true })).toHaveCount(0);
+    await manage(page, 'Paused').click();
+    await dialog(page).getByRole('textbox', { name: 'Objective', exact: true }).fill('BROWSER_GOAL_REPLACEMENT');
+    await dialog(page).getByRole('button', { name: 'Save goal', exact: true }).click();
+    await manage(second, 'Paused').click();
+    await expect(dialog(second).getByRole('textbox', { name: 'Objective', exact: true })).toHaveValue('BROWSER_GOAL_REPLACEMENT');
+    await expect(dialog(second)).toContainText('0 evaluations');
+    await dialog(second).getByRole('button', { name: 'Close goal', exact: true }).click();
+    await stopBackend(backend, true); backend = await startBackend(root);
+    await second.reload();
+    await expect(manage(second, 'Paused')).toBeVisible();
+    await manage(second, 'Paused').click();
+    await expect(dialog(second).getByRole('textbox', { name: 'Objective', exact: true })).toHaveValue('BROWSER_GOAL_REPLACEMENT');
+    await dialog(second).getByRole('button', { name: 'Resume goal', exact: true }).click();
+    await expect(manage(page, 'Complete')).toBeVisible();
+    await expect(dialog(second)).toContainText('1 evaluation');
+    await second.screenshot({ path: test.info().outputPath('mastra-native-goal.png'), fullPage: true });
+    await dialog(second).getByRole('button', { name: 'Clear goal', exact: true }).click();
+    for (const tab of [page, second]) await expect(tab.getByRole('button', { name: /^Manage goal:/ })).toHaveCount(0);
+    expect(legacyGoals).toEqual([]); expect(errors).toEqual([]);
+  } finally {
+    if (backend) await stopBackend(backend);
+    await rm(root, { recursive: true, force: true });
+  }
+});

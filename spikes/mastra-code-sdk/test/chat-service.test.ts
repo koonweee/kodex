@@ -299,6 +299,8 @@ test('archive retires native work, fences competing admissions and tells two RPC
     service.send({ chatId: chat.id, text: 'ARCHIVE_SERVICE_REJECTED' }),
     service.queue({ chatId: chat.id, text: 'ARCHIVE_SERVICE_REJECTED_QUEUE' }),
     service.renameChat({ chatId: chat.id, title: 'Stale rename' }),
+    service.updateGoal({ chatId: chat.id, patch: { objective: 'Stale goal' } }),
+    service.clearGoal({ chatId: chat.id }),
     service.updateChatSettings({ chatId: chat.id, patch: { fast: true } }),
     service.openChat({ chatId: chat.id }),
   ];

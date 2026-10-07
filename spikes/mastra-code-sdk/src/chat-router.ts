@@ -1,4 +1,5 @@
 import { eventIterator, os, type as schemaType } from '@orpc/server';
+import type { GoalPatch } from './chat-goals.js';
 import type { ProjectPatch } from './product-registry.js';
 import type { AccountSnapshot } from './account-service.js';
 import type { CatalogSnapshot, ChatService, ChatSnapshot, QueuedSelection, QueuedEdit, QueuedOrder } from './chat-service.js';
@@ -39,6 +40,7 @@ const projectPatch = (value: unknown) => object(value) && only(value, ['name', '
 const projectUpdateInput = inputSchema<{ projectId: string; patch: ProjectPatch }>(value => object(value) && only(value, ['projectId', 'patch']) && string(value.projectId) && projectPatch(value.patch));
 const projectMoveInput = inputSchema<{ projectId: string; beforeId: string | null }>(value => object(value) && only(value, ['projectId', 'beforeId']) && string(value.projectId) && (value.beforeId === null || string(value.beforeId)));
 const chatSettingsInput = inputSchema<{ chatId: string; patch: ChatSettingsPatch }>(value => object(value) && only(value, ['chatId', 'patch']) && string(value.chatId) && validSettingsPatch(value.patch));
+const goalInput = inputSchema<{ chatId: string; patch: GoalPatch }>(value => object(value) && only(value, ['chatId', 'patch']) && string(value.chatId) && object(value.patch) && only(value.patch, ['objective', 'status']) && Object.keys(value.patch).length > 0 && (!('objective' in value.patch) || string(value.patch.objective, 100_000)) && (!('status' in value.patch) || value.patch.status === 'active' || value.patch.status === 'paused'));
 const defaultsInput = inputSchema<{ version: string; patch: ChatSettingsPatch }>(value => object(value) && only(value, ['version', 'patch']) && string(value.version) && validSettingsPatch(value.patch, false));
 
 export function createChatRouter(service: ChatService) {
@@ -59,6 +61,8 @@ export function createChatRouter(service: ChatService) {
     setChatNotifications: os.input(notificationsInput).handler(({ input }) => service.setChatNotifications(input)),
     archiveChat: os.input(chatInput).handler(({ input }) => service.archiveChat(input)),
     renameChat: os.input(renameInput).handler(({ input }) => service.renameChat(input)),
+    updateGoal: os.input(goalInput).handler(({ input }) => service.updateGoal(input)),
+    clearGoal: os.input(chatInput).handler(({ input }) => service.clearGoal(input)),
     getChatSettings: os.input(chatInput).handler(({ input }) => service.getChatSettings(input)),
     updateChatSettings: os.input(chatSettingsInput).handler(({ input }) => service.updateChatSettings(input)),
     getDraftDefaults: os.handler(() => service.getDraftDefaults()),

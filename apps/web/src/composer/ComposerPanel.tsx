@@ -32,6 +32,7 @@ import { useSkillCatalog } from "./useSkillCatalog";
 import { AssistantSelectionAction } from "../timeline/AssistantSelectionAction";
 import { useThreadGoal } from "../goals/useThreadGoal";
 import { GoalModal } from "../goals/GoalModal";
+import type { GoalController } from "../goals/controller";
 import type { GoalControls } from "../goals/GoalControls";
 import { useGoalCommand } from "../goals/useGoalCommand";
 
@@ -55,6 +56,7 @@ export type ComposerPanelProps = {
   composerSettingsError: string | null;
   composerResetToken: number;
   goalThreadId?: string | null;
+  goalController?: GoalController;
   queueThreadId?: string | null;
   queueDialogActive?: boolean;
   queueController?: QueueController;
@@ -109,6 +111,7 @@ export function ComposerPanel({
   composerSettingsError,
   composerResetToken,
   goalThreadId = null,
+  goalController,
   queueThreadId,
   queueController,
   queueDialogActive = true,
@@ -151,7 +154,8 @@ export function ComposerPanel({
   const isNarrowComposer = useIsNarrowComposer();
   const inputCapabilities = useInputCapabilities();
   const isMobileComposer = isNarrowComposer && inputCapabilities.hasTouchInput;
-  const threadGoal = useThreadGoal(goalThreadId);
+  const legacyGoal = useThreadGoal(goalController ? null : goalThreadId);
+  const threadGoal = goalController ?? legacyGoal;
   const currentGoalThreadId = useRef(goalThreadId);
   currentGoalThreadId.current = goalThreadId;
   const [goalEditorThreadId, setGoalEditorThreadId] = useState<string | null>(null);
@@ -439,7 +443,7 @@ export function ComposerPanel({
   )}
     {goalThreadId && goalEditorThreadId === goalThreadId ? (
       <GoalModal key={goalThreadId} goal={threadGoal.goal} pending={threadGoal.pending} error={threadGoal.error}
-        ready={threadGoal.ready} onReload={threadGoal.reload} onClose={() => setGoalEditorThreadId((current) => current === goalThreadId ? null : current)}
+        supportsTokenBudget={goalController?.supportsTokenBudget} ready={threadGoal.ready} onReload={threadGoal.reload} onClose={() => setGoalEditorThreadId((current) => current === goalThreadId ? null : current)}
         onUpdate={threadGoal.update} onClear={threadGoal.clear} />
     ) : null}
   </>;

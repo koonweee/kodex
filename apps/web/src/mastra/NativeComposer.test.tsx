@@ -2,7 +2,7 @@ import { nativeQueueFixture, nativeSettingsFixture } from './testBuilders';
 import { MantineProvider } from '@mantine/core';
 import { ORPCError } from '@orpc/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 import { defaultDisplayState } from '../../../../spikes/mastra-code-sdk/node_modules/@mastra/core/dist/agent-controller/index.js';
@@ -12,7 +12,7 @@ import { NativeCatalogProvider } from './NativeCatalogContext';
 import type { WorkspacePane } from '../workspace/paneTypes';
 import { baseRoutes, mockGateway } from '../test/mvpAppHarness';
 
-const rpc = vi.hoisted(() => ({ listModels: vi.fn(), watchDraftDefaults: vi.fn(), updateChatSettings: vi.fn(), createChat: vi.fn(), send: vi.fn(), queue: vi.fn(), stop: vi.fn() }));
+const rpc = vi.hoisted(() => ({ listModels: vi.fn(), watchDraftDefaults: vi.fn(), updateChatSettings: vi.fn(), updateGoal: vi.fn(), clearGoal: vi.fn(), createChat: vi.fn(), send: vi.fn(), queue: vi.fn(), stop: vi.fn() }));
 const workspace = vi.hoisted(() => ({ updatePane: vi.fn().mockResolvedValue(undefined), setPaneDraftDisposable: vi.fn(), onImageOpen: vi.fn() }));
 vi.mock('./client', () => ({ mastraClient: rpc }));
 vi.mock('../workspace/WorkspaceProvider', () => ({ useWorkspace: () => workspace }));
@@ -20,7 +20,7 @@ const onError = vi.fn();
 const levels = ['off', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 const models = [{ id: 'openai-codex/gpt-5.4', provider: 'openai-codex', modelName: 'gpt-5.4', hasApiKey: true, useCount: 0, thinkingLevels: [...levels] }, { id: 'openai-codex/gpt-5.5', provider: 'openai-codex', modelName: 'gpt-5.5', hasApiKey: true, useCount: 0, thinkingLevels: [...levels] }];
 function snapshot(modelId = models[0].id, thinkingLevel: 'high' | 'medium' | 'max' = 'medium'): ChatSnapshot {
-  return { epoch: 'epoch', revision: 1, chat: { pinned: false, notificationsEnabled: true, id: 'chat', projectId: 'project', cwd: '/project', title: 'Chat', name: 'Chat' }, error: null, messages: [], display: defaultDisplayState(), queue: nativeQueueFixture(), settings: nativeSettingsFixture(modelId, thinkingLevel) };
+  return { epoch: 'epoch', revision: 1, goal: null, chat: { pinned: false, notificationsEnabled: true, id: 'chat', projectId: 'project', cwd: '/project', title: 'Chat', name: 'Chat' }, error: null, messages: [], display: defaultDisplayState(), queue: nativeQueueFixture(), settings: nativeSettingsFixture(modelId, thinkingLevel) };
 }
 function defaultsStream() {
   let consumer: ((value: IteratorResult<unknown>) => void) | undefined;
@@ -290,4 +290,73 @@ it('updates draft execution eligibility from shared catalog roots without disrup
   await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
   await waitFor(() => expect(rpc.createChat).toHaveBeenCalledWith({ projectId: 'project' }));
   expect(rpc.send).toHaveBeenCalledWith({ chatId: 'created', queueIfPending: true, text: 'Preserved draft' });
+});
+
+
+it('routes /goal through native RPC without sending model input or legacy goal HTTP', async () => {
+  setup();
+  rpc.updateGoal.mockResolvedValue({ accepted: true });
+  const fetch = vi.spyOn(globalThis, 'fetch');
+  renderComposer({ id: 'pane', kind: 'thread', target: { mode: 'existing', threadId: 'chat' } }, snapshot());
+  const input = screen.getByRole('textbox', { name: 'Message composer' });
+  fireEvent.change(input, { target: { value: '/goal Finish the native work' } });
+  fireEvent.submit(input.closest('form')!);
+  await waitFor(() => expect(rpc.updateGoal).toHaveBeenCalledWith({ chatId: 'chat', patch: { objective: 'Finish the native work', status: 'active' } }));
+  await waitFor(() => expect(input).toHaveValue(''));
+  expect(rpc.send).not.toHaveBeenCalled();
+  expect(fetch.mock.calls.some(([url]) => String(url).includes('/goal'))).toBe(false);
+});
+
+it('uses canonical goal refills for peer edits and keeps drafts for explicit conflict review', async () => {
+  setup();
+  rpc.updateGoal.mockResolvedValue({ accepted: true });
+  const initial = { ...snapshot(), goal: { id: 'goal-1', objective: 'Initial objective', status: 'paused' as const, evaluationsUsed: 3, timeUsedSeconds: 90, pausedReason: null } };
+  const view = renderComposer({ id: 'pane', kind: 'thread', target: { mode: 'existing', threadId: 'chat' } }, initial);
+  expect(await screen.findByRole('region', { name: 'Chat goal' })).toHaveTextContent('Paused · 3 evaluations · 1m 30s');
+  await userEvent.click(screen.getByRole('button', { name: 'Manage goal: Paused' }));
+  expect(screen.queryByRole('spinbutton', { name: 'Token budget' })).not.toBeInTheDocument();
+  fireEvent.change(screen.getByRole('textbox', { name: 'Objective' }), { target: { value: 'My replacement' } });
+  view.rerenderSnapshot({ ...initial, revision: 2, goal: { ...initial.goal, id: 'peer-goal', objective: 'Peer replacement', status: 'active', evaluationsUsed: 0 } });
+  expect(screen.getByRole('textbox', { name: 'Objective' })).toHaveValue('My replacement');
+  await userEvent.click(screen.getByRole('button', { name: 'Save goal' }));
+  expect(rpc.updateGoal).not.toHaveBeenCalled();
+  expect(screen.getByRole('alert')).toHaveTextContent('Peer replacement');
+  await userEvent.click(screen.getByRole('button', { name: 'Keep my edits' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Save goal' }));
+  await waitFor(() => expect(rpc.updateGoal).toHaveBeenCalledWith({ chatId: 'chat', patch: { objective: 'My replacement' } }));
+  expect(screen.getByRole('region', { name: 'Chat goal' })).toHaveTextContent('Peer replacement');
+});
+
+it('never replaces a newer canonical goal with a late goal mutation acknowledgment', async () => {
+  setup();
+  let acknowledge!: (value: unknown) => void;
+  rpc.updateGoal.mockReturnValue(new Promise(resolve => { acknowledge = resolve; }));
+  const initial = { ...snapshot(), goal: { id: 'goal-1', objective: 'Initial objective', status: 'active' as const, evaluationsUsed: 1, timeUsedSeconds: 3, pausedReason: null } };
+  const view = renderComposer({ id: 'pane', kind: 'thread', target: { mode: 'existing', threadId: 'chat' } }, initial);
+  await userEvent.click(await screen.findByRole('button', { name: 'Pause goal' }));
+  expect(rpc.updateGoal).toHaveBeenCalledWith({ chatId: 'chat', patch: { status: 'paused' } });
+  expect(screen.getByRole('button', { name: 'Pause goal' })).toBeDisabled();
+  view.rerenderSnapshot({ ...initial, revision: 3, goal: { ...initial.goal, id: 'peer-goal', objective: 'Newest peer goal', status: 'done', evaluationsUsed: 2 } });
+  await act(async () => acknowledge({ accepted: true, goal: { ...initial.goal, status: 'paused' } }));
+  expect(screen.getByRole('region', { name: 'Chat goal' })).toHaveTextContent('Newest peer goal');
+  expect(screen.getByRole('region', { name: 'Chat goal' })).toHaveTextContent('Complete · 2 evaluations');
+  expect(screen.queryByRole('button', { name: 'Resume goal' })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Delete goal' }));
+  await waitFor(() => expect(rpc.clearGoal).toHaveBeenCalledWith({ chatId: 'chat' }));
+});
+
+
+it('preserves rejected native goal drafts and allows explicit retry', async () => {
+  setup();
+  rpc.updateGoal.mockRejectedValueOnce(new Error('Native goal storage unavailable')).mockResolvedValueOnce({ accepted: true });
+  renderComposer({ id: 'pane', kind: 'thread', target: { mode: 'existing', threadId: 'chat' } }, snapshot());
+  const input = screen.getByRole('textbox', { name: 'Message composer' });
+  fireEvent.change(input, { target: { value: '/goal Keep my objective' } });
+  fireEvent.submit(input.closest('form')!);
+  expect(await screen.findByRole('alert')).toHaveTextContent('Native goal storage unavailable');
+  expect(input).toHaveValue('/goal Keep my objective');
+  fireEvent.submit(input.closest('form')!);
+  await waitFor(() => expect(rpc.updateGoal).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(input).toHaveValue(''));
+  expect(rpc.send).not.toHaveBeenCalled();
 });

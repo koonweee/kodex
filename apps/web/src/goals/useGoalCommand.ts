@@ -4,7 +4,7 @@ import type { FormEvent } from "react";
 import type { ComposerDraftControls } from "../composer/ComposerPanel";
 import { slashCommandFromSubmittedText } from "../composer/slashCommands";
 import { errorMessageFrom } from "../shared/values";
-import type { useThreadGoal } from "./useThreadGoal";
+import type { GoalController } from "./controller";
 
 /** Handles goal commands before ordinary Send/Queue can create model input. */
 export function useGoalCommand({
@@ -14,7 +14,7 @@ export function useGoalCommand({
   draftText: string;
   hasExtraInput: boolean;
   canSubmit: boolean;
-  updateGoal: ReturnType<typeof useThreadGoal>["update"];
+  updateGoal: GoalController["update"];
   onOpen: () => void;
 }) {
   const currentThreadId = useRef(threadId);

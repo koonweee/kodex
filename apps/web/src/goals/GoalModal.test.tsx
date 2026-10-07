@@ -21,6 +21,22 @@ function view(options: React.ComponentProps<typeof GoalModal>) {
 }
 
 describe("GoalModal", () => {
+  it("shows the canonical native pause reason and removes it when the goal resumes", async () => {
+    const nativeGoal = { id: "native-goal", objective: "Finish the native work", status: "paused" as const,
+      evaluationsUsed: 1, timeUsedSeconds: 30, pausedReason: "Judge provider credentials unavailable" };
+    const options = props({ goal: nativeGoal, supportsTokenBudget: false });
+    const rendered = render(view(options));
+    expect(screen.getByRole("alert")).toHaveTextContent(nativeGoal.pausedReason);
+    await userEvent.click(screen.getByRole("button", { name: "Resume goal" }));
+    expect(options.onUpdate).toHaveBeenCalledWith({ status: "active" });
+    // Acceptance alone does not clear a reason supplied by canonical native state.
+    expect(screen.getByRole("alert")).toHaveTextContent(nativeGoal.pausedReason);
+    rendered.rerender(view({ ...options, goal: { ...nativeGoal, status: "active", pausedReason: null } }));
+    expect(screen.queryByText(nativeGoal.pausedReason)).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pause goal" })).toBeInTheDocument();
+  });
+
   it("saves only the edited objective while a native update changes status and usage", async () => {
     const options = props();
     const rendered = render(view(options));

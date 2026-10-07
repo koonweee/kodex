@@ -2,47 +2,50 @@ import { Alert, Button, Group, Modal, NumberInput, Stack, Text, Textarea } from 
 import { Pause, Play, Trash2 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 
-import type { ThreadGoal, ThreadGoalUpdateRequest } from "../api/client";
+import type { ThreadGoalUpdateRequest } from "../api/client";
+import type { GoalView } from "./controller";
 import { errorMessageFrom } from "../shared/values";
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
-import { goalStatusLabel, goalUsageLabel } from "./goalPresentation";
+import { goalIsComplete, goalStatusLabel, goalTokenBudget, goalUsageLabel } from "./goalPresentation";
 import "./goals.css";
 
 type GoalModalProps = {
-  goal: ThreadGoal | null;
+  goal: GoalView | null;
   pending: boolean;
   error: string | null;
   ready?: boolean;
+  supportsTokenBudget?: boolean;
   onReload?: () => void;
   onClose: () => void;
   onUpdate: (request: ThreadGoalUpdateRequest) => Promise<unknown>;
   onClear: () => Promise<unknown>;
 };
 
-export function GoalModal({ goal, pending, error, ready = true, onReload, onClose, onUpdate, onClear }: GoalModalProps) {
+export function GoalModal({ goal, pending, error, ready = true, supportsTokenBudget = true, onReload, onClose, onUpdate, onClear }: GoalModalProps) {
   // The editor retains its opened baseline; native refills never replace an unsaved draft.
   const [initialized, setInitialized] = useState(ready);
   const [baseline, setBaseline] = useState(goal);
   const [objective, setObjective] = useState(goal?.objective ?? "");
-  const [tokenBudget, setTokenBudget] = useState<number | string>(goal?.tokenBudget ?? "");
+  const [tokenBudget, setTokenBudget] = useState<number | string>(goalTokenBudget(goal) ?? "");
   const [localError, setLocalError] = useState<string | null>(null);
   const [reviewRequested, setReviewRequested] = useState(false);
   useEffect(() => {
     if (initialized || !ready) return;
     setBaseline(goal);
     setObjective(goal?.objective ?? "");
-    setTokenBudget(goal?.tokenBudget ?? "");
+    setTokenBudget(goalTokenBudget(goal) ?? "");
     setInitialized(true);
   }, [goal, initialized, ready]);
   const cleared = baseline !== null && goal === null;
+  const pausedReason = goal?.status === "paused" && "pausedReason" in goal ? goal.pausedReason?.trim() : null;
   const validBudget = tokenBudget === "" || (typeof tokenBudget === "number" && Number.isSafeInteger(tokenBudget) && tokenBudget > 0);
   const nextObjective = objective.trim();
   const nextBudget = tokenBudget === "" ? null : Number(tokenBudget);
   const changedObjective = nextObjective !== (baseline?.objective ?? "");
-  const changedBudget = nextBudget !== (baseline?.tokenBudget ?? null);
+  const changedBudget = supportsTokenBudget && nextBudget !== goalTokenBudget(baseline);
   const latestChanges: ("objective" | "tokenBudget")[] = [];
   if (changedObjective && goal?.objective !== baseline?.objective && goal?.objective !== nextObjective) latestChanges.push("objective");
-  if (changedBudget && (goal?.tokenBudget ?? null) !== (baseline?.tokenBudget ?? null) && (goal?.tokenBudget ?? null) !== nextBudget) latestChanges.push("tokenBudget");
+  if (changedBudget && goalTokenBudget(goal) !== goalTokenBudget(baseline) && goalTokenBudget(goal) !== nextBudget) latestChanges.push("tokenBudget");
   if (!baseline && goal && !latestChanges.includes("objective")) latestChanges.push("objective");
   const conflicts = reviewRequested ? latestChanges : [];
 
@@ -84,17 +87,18 @@ export function GoalModal({ goal, pending, error, ready = true, onReload, onClos
               <Text size="xs" c="dimmed">{goalUsageLabel(goal)}</Text>
             </Group>
           ) : null}
+          {pausedReason ? <Alert color="orange" title="Goal paused">{pausedReason}</Alert> : null}
           <Textarea label="Objective" autosize minRows={3} maxRows={8} required value={objective}
             disabled={pending || !ready || cleared} onChange={(event) => setObjective(event.currentTarget.value)} />
-          <NumberInput label="Token budget" role="spinbutton" aria-valuemin={1} aria-valuemax={Number.MAX_SAFE_INTEGER}
+          {supportsTokenBudget ? <NumberInput label="Token budget" role="spinbutton" aria-valuemin={1} aria-valuemax={Number.MAX_SAFE_INTEGER}
             aria-valuenow={typeof tokenBudget === "number" ? tokenBudget : undefined} value={tokenBudget} onChange={setTokenBudget}
-            min={1} max={Number.MAX_SAFE_INTEGER} allowDecimal={false} allowNegative={false} hideControls disabled={pending || !ready || cleared} />
+            min={1} max={Number.MAX_SAFE_INTEGER} allowDecimal={false} allowNegative={false} hideControls disabled={pending || !ready || cleared} /> : null}
           {cleared ? <Alert color="red">This goal was cleared.</Alert> : null}
           {conflicts.length > 0 && !cleared ? (
             <Alert color="orange" title="Goal changed">
-              {conflicts.map((conflict) => <Text key={conflict} size="sm">{conflict === "objective" ? `Objective: ${goal?.objective}` : `Token budget: ${goal?.tokenBudget?.toLocaleString() ?? "None"}`}</Text>)}
+              {conflicts.map((conflict) => <Text key={conflict} size="sm">{conflict === "objective" ? `Objective: ${goal?.objective}` : `Token budget: ${goalTokenBudget(goal)?.toLocaleString() ?? "None"}`}</Text>)}
               <Button size="compact-sm" variant="subtle" onClick={() => { if (objective.trim() === (baseline?.objective ?? "")) setObjective(goal?.objective ?? "");
-                if ((tokenBudget === "" ? null : Number(tokenBudget)) === (baseline?.tokenBudget ?? null)) setTokenBudget(goal?.tokenBudget ?? "");
+                if ((tokenBudget === "" ? null : Number(tokenBudget)) === goalTokenBudget(baseline)) setTokenBudget(goalTokenBudget(goal) ?? "");
                 setBaseline(goal); setReviewRequested(false); }}>
                 Keep my edits
               </Button>
@@ -107,7 +111,7 @@ export function GoalModal({ goal, pending, error, ready = true, onReload, onClos
                 <>
                   <AdaptiveIconButton label="Clear goal" color="red" disabled={pending || !ready}
                     onClick={() => void run(onClear, true)}><Trash2 /></AdaptiveIconButton>
-                  {goal.status !== "complete" ? <Button variant="subtle" disabled={pending || !ready}
+                  {!goalIsComplete(goal) ? <Button variant="subtle" disabled={pending || !ready}
                     leftSection={goal.status === "active" ? <Pause size={16} /> : <Play size={16} />}
                     onClick={() => void run(() => onUpdate({ status: goal.status === "active" ? "paused" : "active" }))}>
                     {goal.status === "active" ? "Pause goal" : "Resume goal"}

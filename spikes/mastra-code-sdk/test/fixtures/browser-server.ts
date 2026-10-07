@@ -21,6 +21,7 @@ await writeFile(join(directoryHome, 'marker.txt'), 'BROWSER_TOOL_MARKER');
 await mkdir(join(directoryHome, 'added-project'), { recursive: true });
 await mkdir(join(directoryHome, 'changed-root'), { recursive: true });
 const model = await startModelFixture(request => {
+  if (request.model === 'judge') return { text: JSON.stringify({ decision: 'done', reason: 'Browser goal complete' }) };
   if (!request.stream) return { text: 'Browser test chat' };
   const user = lastUserText(request);
   if (user.includes('READ_MARKER') && request.messages.at(-1)?.role !== 'tool') {
@@ -31,12 +32,13 @@ const model = await startModelFixture(request => {
   if (user.includes('READ_MARKER') && !JSON.stringify(request.messages.at(-1)).includes('BROWSER_TOOL_MARKER')) throw new Error('Native tool did not return the marker contents');
   return { text: `fixture:${user}` };
 });
-model.holdNext('HOLD_STOP');
-model.holdNext('HOLD_RESTART');
+// Judge prompts include transcript text; only hold the main chat request.
+model.holdNext('HOLD_STOP', 'chat');
+model.holdNext('HOLD_RESTART', 'chat');
 await writeFile(profile.settingsPath, JSON.stringify({
   lsp: false,
-  models: { observerModelOverride: 'fixture/chat', reflectorModelOverride: 'fixture/chat', goalJudgeModel: 'fixture/chat' },
-  customProviders: [{ name: 'fixture', url: model.url, apiKey: 'fixture', models: ['chat'] }],
+  models: { observerModelOverride: 'fixture/chat', reflectorModelOverride: 'fixture/chat', goalJudgeModel: 'fixture/judge' },
+  customProviders: [{ name: 'fixture', url: model.url, apiKey: 'fixture', models: ['chat', 'judge'] }],
   observability: { enabled: false },
 }));
 const service = createChatService({

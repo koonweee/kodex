@@ -1,13 +1,13 @@
 import { Box, Text } from "@mantine/core";
 import { AlertCircle, Pause, Pencil, Play, Target, Trash2 } from "lucide-react";
 
-import type { ThreadGoal } from "../api/client";
+import type { GoalView } from "./controller";
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
-import { goalStatusLabel, goalUsageLabel } from "./goalPresentation";
+import { goalIsComplete, goalStatusLabel, goalUsageLabel } from "./goalPresentation";
 import "./goals.css";
 
 export type GoalControls = {
-  goal: ThreadGoal | null;
+  goal: GoalView | null;
   ready: boolean;
   pending: boolean;
   compact: boolean;
@@ -30,7 +30,7 @@ export function GoalBar({ controls }: { controls: GoalControls }) {
       </Box>
       <AdaptiveIconButton label="Delete goal" disabled={pending || !controls.ready} onClick={controls.onDelete}><Trash2 /></AdaptiveIconButton>
       <AdaptiveIconButton label={`Manage goal: ${goalStatusLabel(goal)}`} onClick={onOpen} tooltip="Edit goal"><Pencil /></AdaptiveIconButton>
-      {goal.status !== "complete" ? <AdaptiveIconButton label={goal.status === "active" ? "Pause goal" : "Resume goal"} disabled={pending || !controls.ready} onClick={onToggleStatus}>
+      {!goalIsComplete(goal) ? <AdaptiveIconButton label={goal.status === "active" ? "Pause goal" : "Resume goal"} disabled={pending || !controls.ready} onClick={onToggleStatus}>
         {goal.status === "active" ? <Pause /> : <Play />}
       </AdaptiveIconButton> : null}
     </Box>
