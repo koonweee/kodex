@@ -114,8 +114,8 @@
 }
 
 .kodex-workspace-dock .dv-tab {
-  flex: 1 1 240px;
-  max-width: 240px;
+  flex: 1 1 168px;
+  max-width: 168px;
   min-width: 120px;
 }
 
@@ -140,6 +140,15 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Fade only title ink; padding keeps fitting names outside the fade region.
+   Status indicators and close controls remain fully opaque. */
+.kodex-workspace-dock .dv-tabs-container .dv-default-tab-content:not(.kodex-workspace-tab-content),
+.kodex-workspace-dock .dv-tabs-container .kodex-workspace-tab-title {
+  padding-right: 16px;
+  text-overflow: clip;
+  mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
 }
 
 .kodex-workspace-pane-title-adornment {

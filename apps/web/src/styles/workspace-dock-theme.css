@@ -6,7 +6,7 @@
   --dv-active-sash-color: color-mix(in srgb, var(--kodex-border-strong) 30%, transparent);
   --dv-active-sash-transition-delay: 120ms;
   --dv-active-sash-transition-duration: 120ms;
-  --dv-activegroup-hiddenpanel-tab-background-color: color-mix(in srgb, var(--kodex-pane-bg) 72%, var(--kodex-bg-shell));
+  --dv-activegroup-hiddenpanel-tab-background-color: transparent;
   --dv-activegroup-hiddenpanel-tab-color: var(--kodex-text-secondary);
   --dv-activegroup-visiblepanel-tab-background-color: var(--kodex-pane-bg);
   --dv-activegroup-visiblepanel-tab-color: var(--kodex-text-primary);
@@ -21,7 +21,7 @@
   --dv-floating-box-shadow: var(--kodex-shadow-floating);
   --dv-group-view-background-color: var(--kodex-pane-bg);
   --dv-icon-hover-background-color: var(--kodex-bg-button-hover);
-  --dv-inactivegroup-hiddenpanel-tab-background-color: color-mix(in srgb, var(--kodex-pane-bg) 64%, var(--kodex-bg-shell));
+  --dv-inactivegroup-hiddenpanel-tab-background-color: transparent;
   --dv-inactivegroup-hiddenpanel-tab-color: var(--kodex-text-muted);
   --dv-inactivegroup-visiblepanel-tab-background-color: var(--kodex-pane-bg);
   --dv-inactivegroup-visiblepanel-tab-color: var(--kodex-text-secondary);
@@ -31,14 +31,14 @@
   --dv-sash-color: transparent;
   --dv-separator-border: transparent;
   --dv-spacing-padding: 4px;
-  --dv-tab-border-radius: var(--kodex-radius-xs);
+  --dv-tab-border-radius: var(--kodex-radius-md);
   --dv-tab-close-icon-size: 14px;
   --dv-tab-divider-color: var(--kodex-border-subtle);
   --dv-tab-font-size: 0.75rem;
-  --dv-tab-margin: 2px 2px 0;
+  --dv-tab-margin: 4px 3px;
   --dv-tabs-and-actions-container-background-color: color-mix(in srgb, var(--kodex-pane-bg) 82%, var(--kodex-bg-shell));
   --dv-tabs-and-actions-container-font-size: 0.75rem;
-  --dv-tabs-and-actions-container-height: 32px;
+  --dv-tabs-and-actions-container-height: 40px;
   --dv-scrollbar-background-color: var(--kodex-scrollbar-thumb);
   --dv-tabs-container-scrollbar-color: var(--kodex-scrollbar-thumb);
   --dv-transition-duration: 120ms;
@@ -49,6 +49,10 @@
    Keep the wider resize hit areas transparent instead of painting extra borders. */
 .kodex-workspace-dock .dv-dockview {
   background-color: color-mix(in srgb, var(--kodex-border-subtle) 75%, var(--kodex-pane-bg));
+}
+
+.kodex-workspace-dock .dv-tabs-container > .dv-tab {
+  border-radius: var(--dv-tab-border-radius);
 }
 
 .kodex-workspace-dock .dv-tabs-container > .dv-tab.dv-active-tab {

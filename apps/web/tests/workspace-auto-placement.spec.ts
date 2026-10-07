@@ -261,10 +261,11 @@ test.describe("automatic pane placement", () => {
       await expect(tabs(page)).toHaveCount(2);
       expect(await bounds(groups(page))).toEqual(before);
       const twoTabWidth = (await bounds(page.locator(".dv-tabs-container > .dv-tab").first())).width;
-      await newDraft(page, "Third tab shares available width");
-      const threeTabWidth = (await bounds(page.locator(".dv-tabs-container > .dv-tab").first())).width;
-      expect(threeTabWidth).toBeLessThan(twoTabWidth);
-      expect(threeTabWidth).toBeGreaterThanOrEqual(120);
+      await newDraft(page, "Third tab");
+      await newDraft(page, "Fourth tab shares available width");
+      const fourTabWidth = (await bounds(page.locator(".dv-tabs-container > .dv-tab").first())).width;
+      expect(fourTabWidth).toBeLessThan(twoTabWidth);
+      expect(fourTabWidth).toBeGreaterThanOrEqual(120);
       await expect(page.getByRole("button", { name: "More tabs", exact: true })).toHaveCount(0);
       for (let index = 0; index < 4; index++) await newDraft(page, `Overflow tab ${index}`);
       expect((await bounds(page.locator(".dv-tabs-container > .dv-tab").first())).width).toBeGreaterThanOrEqual(120);
