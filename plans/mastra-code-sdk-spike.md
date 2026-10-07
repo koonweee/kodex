@@ -1,6 +1,6 @@
 # Mastra Code SDK compatibility spike
 
-Status: Active
+Status: Complete — compatibility spike only; production migration gates remain open.
 
 ## Purpose and boundary
 
@@ -43,7 +43,25 @@ Source audit found the interactive queue is process-local even with durable wrap
 
 ## Results
 
-Pending implementation and validation. See the spike README for runnable commands as they land.
+Compatibility implementation is in `spikes/mastra-code-sdk`; see its README for commands. Final validation: **16/16 tests pass**, `npm run check` passes (including unused-local/parameter checks), and independent review has no remaining findings blocking the spike scope. The final full suite completed in approximately 20 seconds with no `CLIENT_CLOSED` warnings. Earlier immediate teardown of unnamed live threads did reproduce those warnings; the production limitation below is not cleared by the final suite.
+
+Two real authenticated model requests succeeded in separate processes using the same dedicated saved login. The final smoke reported 19,658 input tokens and 11 output tokens with the stock coding instructions/tools; this is a useful prompt-overhead observation, not an active-workload benchmark. No existing gateway, UI or installed service was changed or deployed.
+
+Observed results on 2026-10-07:
+
+- A real ChatGPT request succeeded through native OAuth with `openai/gpt-6.1-sol`. The account's native model catalog identified supported models after `gpt-5.4` and `gpt-5.3-codex` were rejected. A fresh process reused native credential storage without copying Codex credentials.
+- Real SDK tests exercise concurrent project controllers, same-project Sessions, workspace file tools, independent settings/history, native goals continuing then completing, and persisted goal/history reads after recreation.
+- Use native `Session.followUp()` for Queue. `Session.queueMessage()` inherits the current run's abort signal in this version; native `followUp()` already isolates it. A process crash loses waiting input while completed history/settings survive; reopening does not start a model request.
+- Two actual oRPC HTTP/SSE consumers observe the same Session. Disconnect preserves execution; reconnect and slow consumers re-read native state. Cancellation and coalesced-text overlap regression tests use the real native Session event bus. These are transport checks, not browser UI validation.
+- Native persistent schedules deliver into an active run, wake an unloaded idle chat, and fire from the calendar after runtime recreation. A small native `schedules.prepare` hook supplies Session context; no Kodex scheduler or queue store is required. Trigger outcome is an acknowledgment, not assistant completion.
+
+The spike is not a production migration approval. Remaining integration gates:
+
+1. Native `agent_end`/`sendMessage()` completion can precede trailing title/snapshot writes. `Mastra.shutdown()` closes SQLite without joining all standard-agent writes. Immediate teardown produced `CLIENT_CLOSED` warnings; there is no sleep, SDK patch or false drain guarantee in the spike. Resolve safe production shutdown/retirement before replacing the gateway.
+2. `homeDir` does not cover all SDK global config discovery. MCP config and legacy database resource/scope lookup can use the real home. The experiment defaults MCP off, disables arbitrary hooks/plugins, uses a dedicated config-directory name and explicitly selects the native default thread memory scope. General plugin/MCP/profile isolation is not proven.
+3. The snapshot revision covers observed native Session events, not database commit order. Unnotified late persistence is outside the fencing proof. A production transcript protocol needs a supported persistence-completion/read contract, pagination and load testing.
+
+Subagent UI, custom widgets, MCP Apps, attachment flows, long-context observational memory, notification delivery and retained Kodex integrations remain outside this spike. Idle RSS figures above are preliminary; no production active-load benchmark has been completed.
 
 ## References
 
