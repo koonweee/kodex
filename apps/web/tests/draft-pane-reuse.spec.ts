@@ -20,6 +20,43 @@ for (const { width, hasTouch } of [{ width: 1280, hasTouch: false }, { width: 39
       return fixture;
     }
 
+    test("keeps an existing composer inset when a neighboring draft becomes active", async ({ context }) => {
+      test.skip(width < 900, "Neighboring panes are simultaneously visible in the desktop workspace");
+      const fixture = await fixtureWithProjects(context);
+      try {
+        const page = await fixture.page("draft-layout", "/threads/settings-chat");
+        const existing = page.locator(".kodex-thread-pane-existing");
+        const composer = existing.locator(".kodex-composer-shell");
+        await expect(composer).toBeVisible();
+        const bottomInset = () => composer.evaluate(el => {
+          const pane = el.closest(".kodex-workspace-pane-host")!;
+          return Math.min(pane.getBoundingClientRect().bottom, window.innerHeight) - el.getBoundingClientRect().bottom;
+        });
+        await expect(composer).toHaveAttribute("data-entry-ready", "true");
+        const initialInset = await bottomInset();
+        expect(initialInset).toBeGreaterThan(0);
+        await page.getByRole("navigation", { name: "Workspace", exact: true }).getByRole("button", { name: "Projects", exact: true }).click();
+        await page.getByRole("button", { name: "Create thread in Alpha", exact: true }).click();
+        const draft = page.locator('.kodex-thread-pane-empty[data-workspace-pane-active="true"]');
+        await expect(draft).toBeVisible();
+        await expect.poll(bottomInset).toBeCloseTo(initialInset, 0);
+        await expect(existing.getByRole("button", { name: "Send message", exact: true })).toBeInViewport();
+        const draftComposer = draft.locator(".kodex-composer-shell");
+        const draftBounds = await draftComposer.boundingBox();
+        const paneBounds = await draft.boundingBox();
+        expect(draftBounds!.y).toBeGreaterThan(paneBounds!.y);
+        expect(draftBounds!.y + draftBounds!.height).toBeLessThan(paneBounds!.y + paneBounds!.height);
+        await page.screenshot({ path: test.info().outputPath("neighboring-draft-composers.png"), animations: "disabled" });
+        await page.setViewportSize({ width, height: 650 });
+        await expect.poll(bottomInset).toBeCloseTo(initialInset, 0);
+        await page.getByTestId("dockview-dv-default-tab").filter({ hasText: "Native settings chat" }).click();
+        await expect(existing).toHaveAttribute("data-workspace-pane-active", "true");
+        await expect.poll(bottomInset).toBeCloseTo(initialInset, 0);
+      } finally { await fixture.close(); }
+      expect(fixture.errors).toEqual([]);
+      expect(fixture.unexpected).toEqual([]);
+    });
+
     test("reuses an empty draft across projects, then replaces it with an existing chat", async ({ context }) => {
       const fixture = await fixtureWithProjects(context);
       try {

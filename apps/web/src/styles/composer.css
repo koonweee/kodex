@@ -1,5 +1,5 @@
 .kodex-composer-shell {
-  --kodex-composer-shadow: 0 2px 6px -2px rgb(0 0 0 / 12%);
+  --kodex-composer-shadow: 0 3px 8px -2px rgb(0 0 0 / 14%);
 
   position: relative;
   display: grid;
@@ -9,11 +9,6 @@
 
 .kodex-composer-shell[data-entry-ready="false"] {
   pointer-events: none;
-}
-
-.kodex-main-stack[data-draft-thread="true"] .kodex-composer-shell {
-  margin-top: auto;
-  margin-bottom: auto;
 }
 
 .kodex-composer-hero-stage {
