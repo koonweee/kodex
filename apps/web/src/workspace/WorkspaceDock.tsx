@@ -15,6 +15,7 @@ import {
 import { X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type HTMLAttributes, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 
+import { focusWorkspaceDockPanel } from "./focusWorkspaceDockPanel";
 import type { WorkspaceModel, WorkspacePane } from "./paneTypes";
 import type { WorkspacePaneOpenOptions, WorkspacePanePlacementDirection, WorkspacePanePlacementHintsById } from "./panePlacement";
 import { paneTitle } from "./paneTypes";
@@ -540,7 +541,7 @@ export function syncWorkspaceIntoDockview(
       addWorkspacePanels(api, workspace, panePlacementHintsById, consumedPlacementHintIds);
     }
     if (workspace.activePaneId) {
-      api.getPanel(workspace.activePaneId)?.focus();
+      focusWorkspaceDockPanel(api.getPanel(workspace.activePaneId));
     }
   } catch {
     api.clear();
@@ -619,7 +620,7 @@ function reconcileWorkspacePanelsInPlace(
   }
 
   if (workspace.activePaneId) {
-    api.getPanel(workspace.activePaneId)?.focus();
+    focusWorkspaceDockPanel(api.getPanel(workspace.activePaneId));
   }
   return layoutChanged;
 }

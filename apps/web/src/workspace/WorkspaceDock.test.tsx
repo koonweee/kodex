@@ -352,6 +352,43 @@ describe("WorkspaceDock sync", () => {
     );
   });
 
+  it("activates a visible split pane without reopening its content", () => {
+    const api = fakeDockviewApi(["pane-a", "pane-b"]);
+    const target = api.getPanel("pane-b")!;
+    const targetGroup = target.group;
+    target.api.isVisible = true;
+    api.groups.push(targetGroup);
+
+    syncWorkspaceIntoDockview(api as unknown as DockviewApi, workspaceModel([
+      pane("pane-a", "thread", { mode: "existing", threadId: "thread-1" }),
+      pane("pane-b", "thread", { mode: "existing", threadId: "thread-2" }),
+    ], "pane-b"), { current: false });
+
+    expect(targetGroup.api.setActive).toHaveBeenCalledOnce();
+    expect(target.focus).not.toHaveBeenCalled();
+    expect(api.activePanel?.id).toBe("pane-b");
+  });
+
+  it.each([
+    [false, false],
+    [false, true],
+    [true, false],
+  ])("uses panel focus when visible=%s and group-active=%s", (visible, groupActive) => {
+    const api = fakeDockviewApi(["pane-a", "pane-b"]);
+    const target = api.getPanel("pane-b")!;
+    target.api.isVisible = visible;
+    target.group.activePanel = groupActive ? target : api.getPanel("pane-a")!;
+
+    syncWorkspaceIntoDockview(api as unknown as DockviewApi, workspaceModel([
+      pane("pane-a", "thread", { mode: "existing", threadId: "thread-1" }),
+      pane("pane-b", "thread", { mode: "existing", threadId: "thread-2" }),
+    ], "pane-b"), { current: false });
+
+    expect(target.focus).toHaveBeenCalledOnce();
+    expect(target.group.api.setActive).not.toHaveBeenCalled();
+    expect(api.activePanel?.id).toBe("pane-b");
+  });
+
   it("reports one visible panel per Dockview group", () => {
     expect(
       visibleDockviewPanelIds({
@@ -367,6 +404,8 @@ describe("WorkspaceDock sync", () => {
 });
 
 type FakeDockviewPanel = {
+  api: { isVisible: boolean };
+  group: FakeDockviewGroup;
   focus: ReturnType<typeof vi.fn>;
   id: string;
   params: unknown;
@@ -376,6 +415,7 @@ type FakeDockviewPanel = {
 };
 
 type FakeDockviewGroup = {
+  api: { setActive: ReturnType<typeof vi.fn> };
   activePanel: FakeDockviewPanel | null;
 };
 
@@ -449,7 +489,7 @@ function fakeDockviewApi(panelIds: string[]) {
         activePanel = panel;
       });
       panels.push(panel);
-      groups[0] = { activePanel: panel };
+      groups[0] = panel.group;
       return panel;
     }),
     clear: vi.fn(() => {
@@ -482,13 +522,19 @@ function fakeDockviewApi(panelIds: string[]) {
   }
   activePanel = panels[0] ?? null;
   if (activePanel) {
-    groups.push({ activePanel });
+    groups.push(activePanel.group);
   }
   return api;
 }
 
 function fakePanel(id: string, params: unknown, title: string, onFocus: () => void): FakeDockviewPanel {
+  const group: FakeDockviewGroup = {
+    activePanel: null,
+    api: { setActive: vi.fn(onFocus) },
+  };
   const panel: FakeDockviewPanel = {
+    api: { isVisible: true },
+    group,
     id,
     params,
     title,
@@ -500,6 +546,7 @@ function fakePanel(id: string, params: unknown, title: string, onFocus: () => vo
       panel.params = update.params ?? panel.params;
     }),
   };
+  group.activePanel = panel;
   return panel;
 }
 
