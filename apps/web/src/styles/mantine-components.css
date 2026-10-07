@@ -127,7 +127,7 @@
 }
 
 .kodex-mantine-combobox-option {
-  border-radius: var(--kodex-radius-lg);
+  border-radius: var(--kodex-radius-md);
   color: var(--kodex-text-secondary);
 }
 
@@ -254,7 +254,7 @@
   width: 100%;
   border: 1px solid transparent;
   border-color: transparent;
-  border-radius: var(--kodex-radius-lg);
+  border-radius: var(--kodex-radius-md);
   padding: 8px 10px;
   background: transparent;
   color: var(--menu-item-color, var(--kodex-text-secondary));

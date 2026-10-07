@@ -61,7 +61,7 @@
     min-width: 0 !important;
     max-width: none !important;
     max-height: min(420px, calc(100dvh - 24px - env(safe-area-inset-bottom)));
-    border-radius: 18px;
+    border-radius: var(--kodex-radius-menu);
     padding: 8px;
   }
 

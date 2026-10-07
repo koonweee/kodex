@@ -251,7 +251,7 @@
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--kodex-border-subtle);
-  border-radius: 18px;
+  border-radius: var(--kodex-radius-menu);
   padding: 8px 6px;
   background: var(--kodex-bg-raised);
   box-shadow: var(--kodex-shadow-strong);
@@ -278,7 +278,7 @@
   box-sizing: border-box;
   overflow: hidden;
   border: 0;
-  border-radius: var(--kodex-radius-sm);
+  border-radius: var(--kodex-radius-md);
   padding: 8px 9px;
   background: transparent;
   color: var(--kodex-text-primary);

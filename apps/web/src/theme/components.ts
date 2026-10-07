@@ -5,6 +5,7 @@ import {
   Badge,
   Button,
   Checkbox,
+  CloseButton,
   Combobox,
   Drawer,
   Loader,
@@ -135,14 +136,14 @@ export function createKodexMantineComponents(): MantineThemeOverride["components
     }),
     Checkbox: Checkbox.extend({
       defaultProps: {
-        radius: "sm",
+        radius: "xs",
         size: "sm",
         classNames: selectionControlClassNames,
       },
     }),
     Switch: Switch.extend({
       defaultProps: {
-        radius: "xl",
+        radius: "var(--kodex-radius-round)",
         size: "sm",
         classNames: {
           ...inlineInputClassNames,
@@ -185,7 +186,7 @@ export function createKodexMantineComponents(): MantineThemeOverride["components
     }),
     Popover: Popover.extend({
       defaultProps: {
-        radius: "md",
+        radius: "var(--kodex-radius-menu)",
         shadow: "md",
         classNames: {
           dropdown: "kodex-mantine-popover-dropdown",
@@ -196,7 +197,7 @@ export function createKodexMantineComponents(): MantineThemeOverride["components
     }),
     Tooltip: Tooltip.extend({
       defaultProps: {
-        radius: "sm",
+        radius: "md",
         withArrow: true,
         classNames: {
           tooltip: "kodex-mantine-tooltip",
@@ -206,6 +207,7 @@ export function createKodexMantineComponents(): MantineThemeOverride["components
     }),
     Modal: Modal.extend({
       defaultProps: {
+        radius: "xl",
         classNames: {
           overlay: "kodex-mantine-modal-overlay",
           content: "kodex-mantine-modal-content",
@@ -228,10 +230,13 @@ export function createKodexMantineComponents(): MantineThemeOverride["components
         },
       },
     }),
+    CloseButton: CloseButton.extend({
+      defaultProps: { radius: "md" },
+    }),
     Button: Button.extend({
       defaultProps: {
         variant: "filled",
-        radius: "sm",
+        radius: "md",
         classNames: {
           root: "kodex-mantine-button-root",
           inner: "kodex-mantine-button-inner",
@@ -242,7 +247,7 @@ export function createKodexMantineComponents(): MantineThemeOverride["components
     }),
     ActionIcon: ActionIcon.extend({
       defaultProps: {
-        radius: "sm",
+        radius: "md",
         variant: "subtle",
         classNames: {
           root: "kodex-mantine-action-icon-root",
@@ -357,7 +362,7 @@ export function createKodexMantineComponents(): MantineThemeOverride["components
     }),
     Progress: Progress.extend({
       defaultProps: {
-        radius: "xl",
+        radius: "var(--kodex-radius-round)",
         size: "sm",
         classNames: progressClassNames,
       },

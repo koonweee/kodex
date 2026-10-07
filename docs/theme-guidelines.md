@@ -11,6 +11,12 @@ Kodex themes use one semantic color contract for app surfaces and Mantine contro
 
 The registry and its bootstrap generation remain the single source of theme values. The expanded catalog uses `theme/themePalettes.ts` foundations and `theme/paletteTheme.ts` to derive the complete contract; see [palette sources and adaptations](theme-palettes.md). A typed complete theme prevents missing roles and malformed palettes; it does not prove that the resulting color pairs are readable.
 
+## Corner shapes
+
+`styles/ui.css` owns the shared corner scale: 6/10/12/16/20px for xs through xl. Mantine's radius scale maps directly to those variables in `theme.ts`. Standard buttons, icon actions, tooltips, inputs and selectable menu rows use 12px corners; dense custom rows use 10px. Menus and popovers use 18px outer corners, with 20px dialogs and the existing 24px composer/28px shell hierarchy. Hover, selected, disabled and keyboard-focus states retain the same component shape.
+
+Use the explicit round token for circles and capsules, including touch-size icon actions, switches and progress bars. Small checkboxes use 6px corners so they remain distinct from radio controls. Preserve square edges on full-screen mobile surfaces and joined composer seams. Feature CSS should consume the shared scale instead of adding literal corner sizes.
+
 ## Appearance selection
 
 Appearance has a mode (`auto`, `light` or `dark`) plus independent light/dark theme IDs. Auto resolves the system media preference live; explicit modes ignore it. The card filter only controls which candidates are shown: choosing an inactive slot does not change mode. These are browser-local visual preferences, synchronized across tabs of the same origin, not account or gateway settings.
@@ -125,3 +131,7 @@ The ignored local [catalog gallery](../artifacts/theme-catalog/index.html) conta
 ## Disabled transparent controls validation: 7 October 2026
 
 Disabled transparent controls passed rendered surface, border, inherited icon, hover and live-theme checks across all 40 themes, with the [focused contact sheet](../artifacts/disabled-controls/contact-sheet.png) visually reviewed. The combined UI batch passed 1,044 unit/component tests, production build/typecheck, trim and 73 browser checks covering quotes, neighboring composers, queue handles, scrollbars and theme recomputation. Three checks intentionally skip unsupported narrow neighboring-pane geometry or opt-in terminal captures. Quote disclosure checks include default collapse, fitting text without a toggle, keyboard expansion, width and typography changes, and existing two-tab submission convergence. Independent review found no remaining material issues.
+
+## Shared rounding validation: 7 October 2026
+
+The styling-only snapshot passed 1,048 unit/component tests, production build/typecheck, trim, all 41 rendered contrast/live-theme checks and 80 diagnostic browser capture flows across the 40-theme catalog. The [rounding gallery](../artifacts/rounding-audit/index.html) contains 560 captures, including hover, keyboard focus, menus, tooltips, popovers, dialogs, chat and narrow fine-pointer/touch preferences. Light/dark button galleries and representative contact sheets were visually reviewed; independent code and screenshot review found no material issues. Existing context-specific and physical-device coverage limits above still apply.

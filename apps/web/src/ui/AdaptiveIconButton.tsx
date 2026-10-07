@@ -38,7 +38,7 @@ export function AdaptiveIconButton({
       className={["kodex-adaptive-icon-button", className].filter(Boolean).join(" ")}
       color={color}
       data-density={density}
-      radius={shape === "round" ? "xl" : undefined}
+      radius={shape === "round" ? "var(--kodex-radius-round)" : undefined}
       size={32}
       type={type}
       variant={variant}

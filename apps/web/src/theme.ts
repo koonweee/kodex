@@ -67,7 +67,14 @@ export function createKodexMantineTheme(colorScheme: KodexColorScheme): MantineT
       red: colorScheme.mantineRed,
     },
     fontFamily: FONT_FAMILY,
-    defaultRadius: "sm",
+    defaultRadius: "md",
+    radius: {
+      xs: "var(--kodex-radius-xs)",
+      sm: "var(--kodex-radius-sm)",
+      md: "var(--kodex-radius-md)",
+      lg: "var(--kodex-radius-lg)",
+      xl: "var(--kodex-radius-xl)",
+    },
     cursorType: "pointer",
     activeClassName: "",
     headings: {

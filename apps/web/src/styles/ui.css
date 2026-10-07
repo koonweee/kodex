@@ -5,11 +5,11 @@
   --kodex-bg-raised: var(--kodex-bg-composer);
   --kodex-bg-raised-muted: var(--kodex-bg-composer-muted);
   --kodex-bg-raised-alt: var(--kodex-bg-composer-alt);
-  --kodex-radius-xs: 4px;
-  --kodex-radius-sm: 6px;
-  --kodex-radius-md: 8px;
-  --kodex-radius-lg: 10px;
-  --kodex-radius-xl: 16px;
+  --kodex-radius-xs: 6px;
+  --kodex-radius-sm: 10px;
+  --kodex-radius-md: 12px;
+  --kodex-radius-lg: 16px;
+  --kodex-radius-xl: 20px;
   --kodex-radius-menu: 18px;
   --kodex-radius-composer: 24px;
   --kodex-radius-shell: 28px;
@@ -33,7 +33,7 @@
 .kodex-ui-button {
   appearance: none;
   border: 1px solid transparent;
-  border-radius: var(--kodex-radius-sm);
+  border-radius: var(--kodex-radius-md);
   background: transparent;
   color: var(--kodex-text-secondary);
   font: inherit;
@@ -58,7 +58,7 @@
 .kodex-ui-icon-button {
   display: grid;
   place-items: center;
-  border-radius: var(--kodex-radius-sm);
+  border-radius: var(--kodex-radius-md);
   color: var(--kodex-text-muted);
 }
 

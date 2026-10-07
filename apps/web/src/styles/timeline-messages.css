@@ -324,7 +324,7 @@
 
 .kodex-markdown-preview-source {
   border: 1px solid var(--kodex-border-subtle);
-  border-radius: 8px;
+  border-radius: var(--kodex-radius-md);
   background: var(--kodex-bg-code);
   flex: 1 1 auto;
   font-family: var(--mantine-font-family-monospace);
