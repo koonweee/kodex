@@ -85,7 +85,8 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
         ...input,
         tags: { ...input.tags, projectPath },
       });
-      sessions.set(session.identity.getId(), { resourceId: session.identity.getResourceId(), scope: input.scope, session });
+      const resourceId = session.identity.getResourceId();
+      sessions.set(JSON.stringify([resourceId, input.scope ?? null]), { resourceId, scope: input.scope, session });
       return session;
     },
     // Native shutdown closes storage but does not join detached title/snapshot writes.

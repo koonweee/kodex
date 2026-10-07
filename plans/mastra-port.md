@@ -27,7 +27,7 @@ See the [decision handoff](mastra-code-sdk-handoff.md) for the complete accepted
 | Baseline and cache diagnosis | Complete | [Benchmark](mastra-code-sdk-benchmark.md) and [cache investigation](mastra-cache-investigation.md); cache affinity cause reproduced. |
 | 1. Supported ChatGPT affinity | Complete | Use public per-request/session hooks, no global fetch patch; fixture coverage for isolation/tool steps/retry/resume and native live validation; rerun original paired workload. |
 | 2. Configuration ownership against app-server baseline | Complete — bounded checks | Verify separate credentials/state and predictable configuration ownership. Test material identity/discovery effects and MCP read/edit/reload consistency before enabling; plugin concurrency remains unverified. Zero real-home reads is not an exit condition. |
-| 3. First real chat slice | Pending | Kodex UI → TypeScript/oRPC → Code SDK create/open/stream/Send/Queue/Stop/history; two clients converge across reconnect/restart. Repo remains runnable alongside old production. |
+| 3. First real chat slice | Active | Kodex UI → TypeScript/oRPC → Code SDK create/open/stream/Send/Queue/Stop/history; two clients converge across reconnect/restart. Repo remains runnable alongside old production. |
 | 4. Retained product workflows | Pending | Milestone-sized work for goals, automations, projects/pins/read state, terminal, Control tools, file/app panes and PWA. Detail only when preceding milestones inform the design. |
 | 5. Production cutover | Not authorized | Separate deployment scope after retained workflow acceptance, operational checks and user authorization. |
 
@@ -37,7 +37,7 @@ Completed [built-runtime memory evaluation](mastra-memory-evaluation.md): 48 pai
 
 Milestone 2 is complete under the [baseline-scoped configuration audit](mastra-config-isolation.md). Global/project/environment resource overrides change native default metadata but do not mix explicit chat identities, persisted history or resumed model input. Namespaced MCP reads, external file edits, native reload and persisted project disable state behave predictably. Global changes require reload on each affected project manager; eventual Kodex routing must coordinate that and browser refills.
 
-Next: the first real Kodex UI → oRPC → Code SDK chat slice. No SDK patch or move to Core is justified by these checks. Keep native explicit resource/thread identities and the accepted CLI/file MCP setup; the current app-server's versioned browser config writer is not implemented by the Mastra manager. Product MCP wiring remains pending and disabled by default; plugins/hooks remain unverified. Instruction bookkeeping and zero ambient reads are not blockers. The MCP fixture requires explicit subprocess exit after successful assertions/awaited teardown, so natural shutdown/hot retirement is not proven.
+Active: the first real Kodex UI → oRPC → Code SDK chat slice. Retain the existing shell, docking, composer and timeline; replace their backend orchestration with native oRPC hooks. Keep unfinished controls visible with ordinary errors against the new backend, without app-server fallback. Use separate development ports and leave production untouched. No SDK patch or move to Core is justified by these checks. Keep native explicit resource/thread identities and the accepted CLI/file MCP setup; the current app-server's versioned browser config writer is not implemented by the Mastra manager. Product MCP wiring remains pending and disabled by default; plugins/hooks remain unverified. Instruction bookkeeping and zero ambient reads are not blockers. The MCP fixture requires explicit subprocess exit after successful assertions/awaited teardown, so natural shutdown/hot retirement is not proven.
 
 Milestone 1 uses the public `inputProcessors → processInputStep → modelSettings.headers` seam. The stateless processor uses persisted native thread IDs and native request-scoped credential selection for ChatGPT OAuth. No provider replacement, auth fork, global fetch interception or body cache key is used in runtime integration.
 
@@ -75,3 +75,9 @@ Mastra follow-up sentinel requests reached 98.6% cached input; file tasks reache
 ## Validation ledger
 
 Latest completed chunk: 43/43 tests, TypeScript check, build and independent source/results review pass. Memory evaluation: 48 paired cases / 60 correct live turns, plus 12 ordinary stage probes and 2 separately labeled GC diagnostics. Earlier configuration ownership checks pass without runtime patches. No deployment or production UI migration. Long-context behavior, plugin execution/concurrency, HTTP MCP/OAuth and natural process retirement remain unproven.
+
+### First chat slice — implementation started
+
+- Active goal: create/open, persisted history, streamed text/tools, Send/Queue/Stop, and two-tab/reconnect/restart convergence through the existing Kodex UI. No deployment.
+- Fixed runtime disposal tracking to use native resource/scope registry identity rather than the shared default session ID. Regression reproduced the overwritten cleanup entries; all three distinct native sessions now settle and leave the registry. Targeted test and independent review pass. Native detached-write shutdown limitations are unchanged.
+- Native chat service and frontend orchestration are being implemented. Full snapshots remain a bounded spike choice; paging/deltas and retained product workflows are later milestones.
