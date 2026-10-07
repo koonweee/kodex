@@ -1,5 +1,6 @@
 import { Tooltip } from "@mantine/core";
 import { DockviewDefaultTab, type IDockviewPanelHeaderProps } from "dockview";
+import { useSynchronizedAnimation } from "../ui/useSynchronizedAnimation";
 import type { WorkspacePane } from "./paneTypes";
 import { useWorkspace } from "./WorkspaceProvider";
 import { ThreadStatusIndicator, threadIndicatorState } from "../threads/ThreadStatusIndicator";
@@ -15,9 +16,10 @@ export function WorkspaceDefaultTab(props: IDockviewPanelHeaderProps<DockviewPan
   const indicatorState = thread ? threadIndicatorState(thread)
     : pane.kind === "thread" && pane.target.mode === "existing" && paneContext?.id === pane.target.threadId
       ? paneContext.indicatorState : null;
+  const animationRef = useSynchronizedAnimation<HTMLSpanElement>(indicatorState);
   const syncing = paneHeaderAdornmentsById[props.api.id];
   const headerAdornment = indicatorState === "running"
-    ? <span className="kodex-workspace-tab-running" aria-label="Thread in progress" role="status">
+    ? <span ref={animationRef} className="kodex-workspace-tab-running" aria-label="Thread in progress" role="status">
         <svg aria-hidden="true" focusable="false"><rect x="1" y="1" pathLength="100" /></svg>
       </span>
     : indicatorState ? <ThreadStatusIndicator state={indicatorState} />
