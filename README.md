@@ -97,6 +97,8 @@ Project creation uses a directory browser rooted at the gateway user's home. Sel
 
 The sidebar contains Pinned, Projects, and standalone Chats. Pinning and pinned order use native app-server state and preserve a chat’s project and working directory. Kodex does not expose chat reassignment between projects, custom sections or section management. Chats with pre-existing native custom-section membership remain visible in their normal project/chat lists.
 
+On hover-capable desktop layouts, hovering over the collapsed sidebar’s expand icon briefly opens a temporary overlay without resizing the panes. It closes after the pointer and keyboard focus leave; sidebar menus remain usable. Click the expand icon or **Keep workspace sidebar open** to pin it open. Touch and narrow layouts retain their tap navigation, and the short preview animation respects reduced-motion preferences.
+
 Unavailable thread panes offer **Browse threads** and an **X** to close that pane. Closing the last pane opens a fresh draft.
 
 The subagent viewer lists native persisted descendants, including unloaded children, with native cursor pagination. Discovery runs independently of the parent timeline. The viewer remains read-only. Opening a child separately disables input when native capability explicitly denies it; unknown capability stays unknown and native dispatch decides eligibility.

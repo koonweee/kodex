@@ -1,11 +1,12 @@
+import { SidebarPeek } from "./SidebarPeek";
 import { SidebarSnapshotError, type SidebarSnapshotStatus } from "./SidebarSnapshotError";
 import { ThreadList } from "./ThreadSidebarRows";
+import { CollapsedSidebarRail, recentSidebarThreads, type RecentSidebarThread } from "./CollapsedSidebarRail";
 import { PinnedThreadsSidebar } from "./PinnedThreadsSidebar";
 import type { PinnedThreadActions } from "./PinnedOrderMenuItems";
 import {
   AppShell,
   Box,
-  Menu,
   Stack,
   Text,
 } from "@mantine/core";
@@ -65,16 +66,12 @@ import {
 const SIDEBAR_TEXT = {
   chats: "Chats",
   collapseSidebar: "Collapse workspace sidebar",
-  expandSidebarHandle: "Expand workspace sidebar",
   newChat: "New chat",
   newProject: "Add project",
   newThread: "New thread",
   noProjectsText: "Create a project to begin.",
   noProjectsTitle: "No projects",
-  openTerminal: "Open terminal",
   projects: "Projects",
-  recentThreads: "Recent threads",
-  recents: "Recents",
   search: "Search",
   showThread: "Show thread",
   workspaceLabel: "Workspace",
@@ -203,11 +200,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const [searchQuery, setSearchQuery] = useState("");
   const [sidebarScrollState, setSidebarScrollState] = useState({ bottom: false, stickyProjectHeader: false, top: false });
   const isNarrowSidebar = useMediaQuery(NARROW_WORKSPACE_QUERY, false);
-  const useTouchDensity = useInputCapabilities().hasTouchInput;
+  const { hasTouchInput: useTouchDensity, hasFineHover } = useInputCapabilities();
   const projectGroupRefs = useRef<Map<string, HTMLElement>>(new Map());
   const pendingProjectAnimationRects = useRef<Map<string, DOMRect> | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const sidebarScrollRef = useRef<HTMLDivElement>(null);
+  const [sidebarScrollElement, setSidebarScrollElement] = useState<HTMLDivElement | null>(null);
   const displayedProjects = useMemo(
     () => projectsFromPreviewOrder(projects, previewProjectIds),
     [previewProjectIds, projects],
@@ -232,14 +229,14 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   );
 
   useEffect(() => {
-    if (!searchActive || sidebarCollapsed) {
+    if (!searchActive) {
       return;
     }
     searchInputRef.current?.focus();
   }, [searchActive, sidebarCollapsed]);
 
   const updateSidebarScrollEdges = useCallback(() => {
-    const element = sidebarScrollRef.current;
+    const element = sidebarScrollElement;
     if (!element) {
       setSidebarScrollState((current) =>
         current.bottom || current.stickyProjectHeader || current.top
@@ -263,11 +260,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
         ? current
         : next,
     );
-  }, []);
+  }, [sidebarScrollElement]);
 
   useEffect(() => {
-    const element = sidebarScrollRef.current;
-    if (!element || sidebarCollapsed) {
+    const element = sidebarScrollElement;
+    if (!element) {
       setSidebarScrollState((current) =>
         current.bottom || current.stickyProjectHeader || current.top
           ? { bottom: false, stickyProjectHeader: false, top: false }
@@ -284,7 +281,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
       element.removeEventListener("scroll", updateSidebarScrollEdges);
       resizeObserver?.disconnect();
     };
-  }, [sidebarCollapsed, updateSidebarScrollEdges]);
+  }, [sidebarScrollElement, updateSidebarScrollEdges]);
 
   useLayoutEffect(() => {
     updateSidebarScrollEdges();
@@ -431,9 +428,17 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
       data-sidebar-scope={sidebarScope}
       style={{ width: sidebarWidth }}
     >
-      <Stack gap={isNarrowSidebar ? 8 : "lg"} h="100%">
-        {!sidebarCollapsed ? (
-          <>
+      <SidebarPeek collapsed={sidebarCollapsed} enabled={hasFineHover && !isNarrowSidebar}
+        rail={(handlers) => <CollapsedSidebarRail
+          onExpand={onSidebarExpandClick}
+          onExpandPointerEnter={handlers.onPointerEnter}
+          onExpandPointerLeave={handlers.onPointerLeave}
+          onOpenTerminal={onOpenTerminal}
+          onRecentThreadSelect={handleRecentThreadSelect}
+          onSearch={handleCollapsedSearchClick}
+          recentThreads={recentThreads}
+        />}>
+        <Stack gap={isNarrowSidebar ? 8 : "lg"} h="100%">
             <Box className="kodex-sidebar-header">
               <SidebarAccountMenu
                 account={account}
@@ -446,11 +451,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
               />
               <SidebarIconButton
                 className="kodex-sidebar-header-action"
-                label={isNarrowSidebar ? SIDEBAR_TEXT.showThread : SIDEBAR_TEXT.collapseSidebar}
-                onClick={isNarrowSidebar ? onShowThread : onSidebarCollapseClick}
+                label={isNarrowSidebar ? SIDEBAR_TEXT.showThread : sidebarCollapsed ? "Keep workspace sidebar open" : SIDEBAR_TEXT.collapseSidebar}
+                onClick={isNarrowSidebar ? onShowThread : sidebarCollapsed ? onSidebarExpandClick : onSidebarCollapseClick}
                 tooltipProps={{ position: isNarrowSidebar ? "bottom" : "right" }}
               >
-                <PanelLeftClose size={16} />
+                {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
               </SidebarIconButton>
             </Box>
             <Box className="kodex-sidebar-actions" aria-label="Sidebar actions">
@@ -496,7 +501,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                 data-chats-state={dataState.chatThreads}
                 data-pinned-state={dataState.pinnedThreads}
                 data-projects-state={dataState.projects}
-                ref={sidebarScrollRef}
+                ref={setSidebarScrollElement}
               >
                 <PinnedThreadsSidebar
                   threads={pinnedThreads} collapsed={pinnedCollapsed}
@@ -696,17 +701,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
               ) : null}
               </Box>
             </Box>
-          </>
-        ) : (
-          <CollapsedSidebarRail
-            onExpand={onSidebarExpandClick}
-            onOpenTerminal={onOpenTerminal}
-            onRecentThreadSelect={handleRecentThreadSelect}
-            onSearch={handleCollapsedSearchClick}
-            recentThreads={recentThreads}
-          />
-        )}
-      </Stack>
+        </Stack>
+      </SidebarPeek>
     </AppShell.Navbar>
   );
 });
@@ -741,120 +737,6 @@ function SearchActionRow({
   ) : (
     <SidebarTextActionRow icon={<Search aria-hidden="true" />} label={SIDEBAR_TEXT.search} onClick={onActivate} />
   );
-}
-
-function CollapsedSidebarRail({
-  onExpand,
-  onOpenTerminal,
-  onRecentThreadSelect,
-  onSearch,
-  recentThreads,
-}: {
-  onExpand: () => void;
-  onOpenTerminal?: () => void;
-  onRecentThreadSelect: (thread: RecentSidebarThread) => void;
-  onSearch: () => void;
-  recentThreads: RecentSidebarThread[];
-}) {
-  return (
-    <Box className="kodex-sidebar-collapsed-rail">
-      <Box className="kodex-sidebar-collapsed-header">
-        <SidebarIconButton
-          className="kodex-sidebar-collapsed-button"
-          label={SIDEBAR_TEXT.expandSidebarHandle}
-          onClick={onExpand}
-        >
-          <PanelLeftOpen />
-        </SidebarIconButton>
-      </Box>
-      <Box className="kodex-sidebar-collapsed-actions" aria-label="Collapsed sidebar actions">
-        <SidebarIconButton className="kodex-sidebar-collapsed-button" label={SIDEBAR_TEXT.search} onClick={onSearch}>
-          <Search />
-        </SidebarIconButton>
-        {onOpenTerminal ? (
-          <SidebarIconButton
-            className="kodex-sidebar-collapsed-button"
-            label={SIDEBAR_TEXT.openTerminal}
-            onClick={onOpenTerminal}
-          >
-            <SquareTerminal />
-          </SidebarIconButton>
-        ) : null}
-        <Menu position="right-start" withinPortal>
-          <Menu.Target>
-            <SidebarIconButton
-              className="kodex-sidebar-collapsed-button"
-              label={SIDEBAR_TEXT.recentThreads}
-              tooltip={false}
-            >
-              <MessageSquare size={16} />
-            </SidebarIconButton>
-          </Menu.Target>
-          <Menu.Dropdown aria-label={SIDEBAR_TEXT.recentThreads} className="kodex-sidebar-recents-dropdown">
-            <Menu.Label>{SIDEBAR_TEXT.recents}</Menu.Label>
-            {recentThreads.length > 0 ? (
-              recentThreads.map((recent) => (
-                <Menu.Item key={recent.thread.id} onClick={() => onRecentThreadSelect(recent)}>
-                  {threadDisplayTitle(recent.thread)}
-                </Menu.Item>
-              ))
-            ) : (
-              <Menu.Item disabled>No recent threads</Menu.Item>
-            )}
-          </Menu.Dropdown>
-        </Menu>
-      </Box>
-    </Box>
-  );
-}
-
-type RecentSidebarThread = {
-  location: { kind: "chat" } | { kind: "pinned" } | { kind: "project"; projectId: string };
-  thread: ThreadSummary;
-};
-
-function recentSidebarThreads({
-  chatThreads,
-  pinnedThreads,
-  projects,
-  threadsByProjectId,
-}: {
-  chatThreads: ThreadSummary[];
-  pinnedThreads: ThreadSummary[];
-  projects: Project[];
-  threadsByProjectId: ThreadsByProjectId;
-}): RecentSidebarThread[] {
-  const byThreadId = new Map<string, RecentSidebarThread>();
-  for (const [projectId, threads] of Object.entries(threadsByProjectId)) {
-    for (const thread of threads) {
-      byThreadId.set(thread.id, { location: { kind: "project", projectId }, thread });
-    }
-  }
-  for (const thread of chatThreads) {
-    if (!byThreadId.has(thread.id)) {
-      byThreadId.set(thread.id, { location: { kind: "chat" }, thread });
-    }
-  }
-  const projectIds = new Set(projects.map((project) => project.id));
-  for (const thread of pinnedThreads) {
-    if (byThreadId.has(thread.id)) {
-      continue;
-    }
-    const projectId = thread.projectId && projectIds.has(thread.projectId) ? thread.projectId : null;
-    byThreadId.set(thread.id, {
-      location: projectId ? { kind: "project", projectId } : { kind: "pinned" },
-      thread,
-    });
-  }
-  return [...byThreadId.values()]
-    .sort(
-      (left, right) =>
-        right.thread.updatedAt - left.thread.updatedAt ||
-        right.thread.createdAt - left.thread.createdAt ||
-        threadDisplayTitle(left.thread).localeCompare(threadDisplayTitle(right.thread)) ||
-        left.thread.id.localeCompare(right.thread.id),
-    )
-    .slice(0, 10);
 }
 
 function projectsFromPreviewOrder(projects: Project[], previewProjectIds: string[] | null): Project[] {
