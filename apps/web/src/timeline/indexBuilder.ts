@@ -169,4 +169,3 @@ export function compactStoredTimelineEvent(event: EventEnvelope): EventEnvelope 
     payload: {},
   };
 }
-
