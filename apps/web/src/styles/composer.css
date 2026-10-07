@@ -228,6 +228,11 @@
   resize: none;
 }
 
+/* Deliberately quieter composer hint; entered text keeps its normal contrast. */
+.kodex-composer-textarea textarea::placeholder {
+  opacity: 0.5;
+}
+
 .kodex-composer-textarea textarea:focus,
 .kodex-composer-textarea textarea:focus-within {
   outline: none;

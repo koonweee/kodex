@@ -96,6 +96,8 @@ The contact-sheet builder needs Pillow in the chosen Python environment. Capture
 
 ## Measurement and review limits
 
+The message composer hint is an explicit visual exception: its placeholder uses the existing muted token at 50% opacity. The field retains its accessible name and entered text keeps its normal contrast. Other placeholders follow the readable-text rules below.
+
 Normal readable text, including placeholders and helper text, needs ≥4.5:1. Aim above the threshold for small or light-weight text. Large text may use ≥3:1 under the WCAG size/weight definition. Essential icons, control boundaries and state/focus indicators need ≥3:1 against applicable adjacent colors. Disabled controls and decorative separators have different applicability; identify them explicitly. Disabled transparent buttons and icon actions retain a transparent surface and border, including hover, with their icons inheriting the disabled foreground. Evaluate unrounded ratios and composite alpha before calculating contrast.
 
 The rendered gate protects the pairs and states it explicitly exercises. Contact-sheet measurements resolve computed sRGB colors and composite transparent backgrounds through DOM ancestors. Modal samples exclude the dimmed app below. Gradients, opacity chains, overlapping siblings, clipped content, pseudo-elements, SVG strokes and native control glyphs require visual review; a diagnostic border sample is not proof of every adjacent edge. These checks do not constitute complete WCAG conformance certification.
