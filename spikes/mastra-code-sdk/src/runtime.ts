@@ -54,7 +54,7 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
       isRemote: false,
     },
     omScope: 'thread',
-    initialState: { yolo: true, skipGlobalInstructions: true },
+    initialState: { yolo: true, skipGlobalInstructions: true, homeDir: options.profile.homeDir },
     inputProcessors: [affinity],
     disableEnvFile: true,
     disableGithubSignals: true,

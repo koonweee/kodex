@@ -22,14 +22,18 @@ See the [decision handoff](mastra-code-sdk-handoff.md) for the complete accepted
 | Compatibility and ownership proof | Complete | Native concurrency/history/queue/goals/schedules/oRPC proofs and narrow shutdown characterization. |
 | Baseline and cache diagnosis | Complete | [Benchmark](mastra-code-sdk-benchmark.md) and [cache investigation](mastra-cache-investigation.md); cache affinity cause reproduced. |
 | 1. Supported ChatGPT affinity | Complete | Use public per-request/session hooks, no global fetch patch; fixture coverage for isolation/tool steps/retry/resume and native live validation; rerun original paired workload. |
-| 2. Dedicated configuration isolation | Pending | Verify actual SDK discovery paths and supported options; enable plugins/MCP only after isolation and concurrency are proven. No HOME swapping/custom discovery system. |
+| 2. Dedicated configuration isolation | Active — upstream gaps | Verify actual SDK discovery paths and supported options; enable plugins/MCP only after isolation and concurrency are proven. No HOME swapping/custom discovery system. |
 | 3. First real chat slice | Pending | Kodex UI → TypeScript/oRPC → Code SDK create/open/stream/Send/Queue/Stop/history; two clients converge across reconnect/restart. Repo remains runnable alongside old production. |
 | 4. Retained product workflows | Pending | Milestone-sized work for goals, automations, projects/pins/read state, terminal, Control tools, file/app panes and PWA. Detail only when preceding milestones inform the design. |
 | 5. Production cutover | Not authorized | Separate deployment scope after retained workflow acceptance, operational checks and user authorization. |
 
 ## Current work
 
-Next: milestone 2, dedicated configuration isolation. The [source audit](mastra-config-isolation.md) is complete. Set the supported `initialState.homeDir` and test actual skill discovery; `config.homeDir` alone does not cover it. Keep MCP/plugins/hooks disabled while unresolved discovery and concurrency gaps remain. Do not swap HOME or build a custom discovery engine.
+Milestone 2: [config audit](mastra-config-isolation.md) verified. The supported `initialState.homeDir` fix now confines native skills discovery to the dedicated profile and the current project. Auth/settings/storage already use the dedicated profile. MCP/plugins/hooks remain disabled.
+
+Complete no-real-home-read isolation still needs upstream support: MCP and project resource metadata ignore `homeDir`; the built-in instruction-path deduplication helper ignores global skip/config-directory options. The latter reads text only to derive paths, with no demonstrated global prompt injection. Avoid HOME mutation, loader forks and a process-global resource-ID workaround. Native plugin/hook paths support the dedicated home, but execution/concurrency remains unproven.
+
+Next: prepare narrowly scoped upstream fixes or track these gaps while proceeding to the first chat slice with optional integrations disabled. Full isolation is not marked complete.
 
 Milestone 1 uses the public `inputProcessors → processInputStep → modelSettings.headers` seam. The stateless processor uses persisted native thread IDs and native request-scoped credential selection for ChatGPT OAuth. No provider replacement, auth fork, global fetch interception or body cache key is used in runtime integration.
 
@@ -54,6 +58,8 @@ Mastra follow-up sentinel requests reached 98.6% cached input; file tasks reache
 - 2026-10-07: user authorized implementation sequence and requested this running document. Confirmed main remains on `main`; implementation worktree clean before this chunk.
 - 2026-10-07: supported affinity implemented and independently reviewed. Unit and actual-runtime fixture coverage includes concurrent chats, native file tools, HTTP retry and persisted reopen; full paired live workload passed. Config discovery audit recorded separately.
 
+- 2026-10-07: configuration check found and fixed native skill discovery using public state `homeDir`; independent source and implementation review clear. Remaining MCP/resource/instruction-path reads documented. No live calls, production changes or user credential reads.
+
 ## Validation ledger
 
-Latest completed chunk: 37/37 spike tests, TypeScript check, independent implementation/results review and 12 paired benchmark cases / 28 live turns passed. No production UI migration is implemented. Long-context behavior, arbitrary plugin concurrency and complete discovery isolation remain unproven. Update this ledger as each milestone progresses.
+Latest completed chunk: 38/38 spike tests, TypeScript check and independent configuration/source/implementation review pass. The skill discovery test failed before the fix and passes after it. Previous affinity milestone: 12 paired benchmark cases / 28 live turns passed; no live benchmark was repeated for this configuration change. No production UI migration is implemented. Long-context behavior, arbitrary plugin concurrency and complete discovery isolation remain unproven. Update this ledger as each milestone progresses.
