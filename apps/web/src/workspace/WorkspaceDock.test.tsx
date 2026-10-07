@@ -311,14 +311,14 @@ describe("WorkspaceDock sync", () => {
 
       expect(suppressEventsRef.current).toBe(false);
       expect(onReconciledLayout).toHaveBeenCalledWith(
-        {
+        expect.objectContaining({
           activePanelId: "pane-c",
           panels: {
             "pane-a": {},
             "pane-b": {},
             "pane-c": {},
           },
-        },
+        }),
         "pane-c",
       );
       expect(onPanePlacementHintsConsumed).toHaveBeenCalledWith(["pane-c"]);
@@ -415,7 +415,8 @@ type FakeDockviewPanel = {
 };
 
 type FakeDockviewGroup = {
-  api: { setActive: ReturnType<typeof vi.fn> };
+  id: string;
+  api: { setActive: ReturnType<typeof vi.fn>; width: number; height: number; isVisible: boolean; location: { type: "grid" } };
   activePanel: FakeDockviewPanel | null;
 };
 
@@ -510,6 +511,7 @@ function fakeDockviewApi(panelIds: string[]) {
       }
     }),
     toJSON: vi.fn(() => ({
+      grid: { orientation: "HORIZONTAL", root: { type: "branch", data: panels.map(panel => ({ type: "leaf", data: { id: panel.id } })) } },
       activePanelId: activePanel?.id ?? null,
       panels: Object.fromEntries(panels.map((panel) => [panel.id, {}])),
     })),
@@ -529,8 +531,9 @@ function fakeDockviewApi(panelIds: string[]) {
 
 function fakePanel(id: string, params: unknown, title: string, onFocus: () => void): FakeDockviewPanel {
   const group: FakeDockviewGroup = {
+    id,
     activePanel: null,
-    api: { setActive: vi.fn(onFocus) },
+    api: { setActive: vi.fn(onFocus), width: 1200, height: 900, isVisible: true, location: { type: "grid" } },
   };
   const panel: FakeDockviewPanel = {
     api: { isVisible: true },

@@ -337,7 +337,16 @@ Work:
   Drafts with text, annotations, attachments or an in-flight submission keep their
   original project and content; create another draft when none is reusable.
   Opening an existing chat replaces a sole empty draft in place. Explicit split
-  and duplicate actions create panes. Narrow layouts retain hidden draft composers
+  and duplicate actions create panes. Automatic desktop placement splits the source
+  group right when both halves fit a 480px width and 320px height target, then
+  below when height permits. If needed it chooses another roomy docked group,
+  otherwise opens a tab. Targets include the splitter gap; explicit split/tab
+  directions, terminal-below placement and restored layouts are preserved. This
+  only places new panes; it does not retile existing panes on resize. Because
+  Dockview redistributes siblings, placement checks the resulting sibling average
+  and avoids same-axis splits alongside nested branches; perpendicular splits
+  remain local to the chosen group.
+  Narrow layouts retain hidden draft composers
   so attachments and submissions survive pane switches. This is per-tab
   presentation state; existing native chats are unchanged.
 - Materialize draft panes by calling existing thread create APIs, then update the

@@ -4,7 +4,7 @@ type WorkspacePaneSplitDirection = "above" | "below" | "left" | "right";
 export type WorkspacePanePlacementDirection = WorkspacePaneSplitDirection | "within";
 
 export type WorkspacePanePlacementHint = {
-  direction: WorkspacePanePlacementDirection;
+  direction: WorkspacePanePlacementDirection | "auto";
   referencePaneId: string;
 };
 
@@ -41,8 +41,8 @@ export function resolvePanePlacementHint(
   };
 }
 
-function defaultDirectionForIntent(intent: WorkspacePanePlacementIntent): WorkspacePaneSplitDirection {
-  return intent === "terminal" ? "below" : "right";
+function defaultDirectionForIntent(intent: WorkspacePanePlacementIntent): WorkspacePaneSplitDirection | "auto" {
+  return intent === "terminal" ? "below" : "auto";
 }
 
 function validPaneId(workspace: WorkspaceModel, paneId: string | null | undefined): string | null {

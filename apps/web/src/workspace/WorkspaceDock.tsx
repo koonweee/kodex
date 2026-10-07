@@ -15,9 +15,10 @@ import {
 import { X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type HTMLAttributes, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 
+import { panelPlacementOptions } from "./autoPanelPlacement";
 import { focusWorkspaceDockPanel } from "./focusWorkspaceDockPanel";
 import type { WorkspaceModel, WorkspacePane } from "./paneTypes";
-import type { WorkspacePaneOpenOptions, WorkspacePanePlacementDirection, WorkspacePanePlacementHintsById } from "./panePlacement";
+import type { WorkspacePaneOpenOptions, WorkspacePanePlacementHintsById } from "./panePlacement";
 import { paneTitle } from "./paneTypes";
 import { WorkspacePaneRenderer } from "./paneRegistry";
 import { useWorkspace } from "./WorkspaceProvider";
@@ -614,7 +615,7 @@ function reconcileWorkspacePanelsInPlace(
       component: "workspacePane",
       title: paneTitle(pane),
       params: { pane, activePaneId: workspace.activePaneId ?? null },
-      ...panelPlacementOptions(api, pane, firstPane, panePlacementHintsById, consumedPlacementHintIds),
+      ...panelPlacementOptions(api, pane, firstPane, panePlacementHintsById, consumedPlacementHintIds, kodexDockviewTheme.gap),
     });
     layoutChanged = true;
   }
@@ -639,36 +640,10 @@ function addWorkspacePanels(
       title: paneTitle(pane),
       params: { pane, activePaneId: workspace.activePaneId ?? null },
       ...(index > 0
-        ? panelPlacementOptions(api, pane, firstPane ?? null, panePlacementHintsById, consumedPlacementHintIds)
+        ? panelPlacementOptions(api, pane, firstPane ?? null, panePlacementHintsById, consumedPlacementHintIds, kodexDockviewTheme.gap)
         : {}),
     });
   }
-}
-
-function panelPlacementOptions(
-  api: DockviewApi,
-  pane: WorkspacePane,
-  fallbackReferencePane: WorkspacePane | null,
-  panePlacementHintsById: WorkspacePanePlacementHintsById,
-  consumedPlacementHintIds: Set<string>,
-): { floating: false; position: { direction: WorkspacePanePlacementDirection; referencePanel: string } } | Record<string, never> {
-  const hint = panePlacementHintsById[pane.id];
-  if (hint) {
-    consumedPlacementHintIds.add(pane.id);
-    if (api.getPanel(hint.referencePaneId)) {
-      return {
-        floating: false,
-        position: { referencePanel: hint.referencePaneId, direction: hint.direction },
-      };
-    }
-  }
-  if (fallbackReferencePane && api.getPanel(fallbackReferencePane.id)) {
-    return {
-      floating: false,
-      position: { referencePanel: fallbackReferencePane.id, direction: "right" },
-    };
-  }
-  return {};
 }
 
 function stableJsonKey(value: unknown): string {
