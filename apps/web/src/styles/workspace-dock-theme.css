@@ -36,7 +36,7 @@
   --dv-tab-divider-color: var(--kodex-border-subtle);
   --dv-tab-font-size: 0.75rem;
   --dv-tab-margin: 4px 3px;
-  --dv-tabs-and-actions-container-background-color: color-mix(in srgb, var(--kodex-pane-bg) 82%, var(--kodex-bg-shell));
+  --dv-tabs-and-actions-container-background-color: var(--kodex-pane-bg);
   --dv-tabs-and-actions-container-font-size: 0.75rem;
   --dv-tabs-and-actions-container-height: 40px;
   --dv-scrollbar-background-color: var(--kodex-scrollbar-thumb);
