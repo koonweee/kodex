@@ -2,21 +2,23 @@ import { Box, Text, VisuallyHidden } from "@mantine/core";
 import { CornerDownRight, GripVertical, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useId, useRef, useState, type PointerEvent } from "react";
 
-import type { QueuedInput } from "../api/client";
+import type { QueueRowView } from "./controller";
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 import { queueInputPreview } from "./input";
 
 type Drag = { id: string; ids: string[]; pointerId: number; startY: number; y: number; target: number; moved: boolean };
 
-export function QueuedMessageList({ rows, busy, partial, isActive, onReorder, onSteer, onEdit, onRemove }: {
-  rows: QueuedInput[];
+export function QueuedMessageList({ rows, busy, partial, isActive, reorderDisabled = false, version, onReorder, onSteer, onEdit, onRemove }: {
+  rows: QueueRowView[];
   busy: boolean;
   partial: boolean;
   isActive: boolean;
+  reorderDisabled?: boolean;
+  version?: string;
   onReorder: (ids: string[]) => void;
-  onSteer: (row: QueuedInput) => void;
-  onEdit: (row: QueuedInput) => void;
-  onRemove: (row: QueuedInput) => void;
+  onSteer: (row: QueueRowView) => void;
+  onEdit: (row: QueueRowView) => void;
+  onRemove: (row: QueueRowView) => void;
 }) {
   const instructionsId = useId();
   const list = useRef<HTMLDivElement>(null);
@@ -27,7 +29,7 @@ export function QueuedMessageList({ rows, busy, partial, isActive, onReorder, on
   const [announcement, setAnnouncement] = useState("");
   const ids = rows.map((row) => row.id);
   const order = JSON.stringify(ids);
-  const disabled = busy || partial || rows.length < 2 || !isActive;
+  const disabled = busy || partial || reorderDisabled || rows.length < 2 || !isActive;
 
   function cancel() {
     drag.current = null;
@@ -37,7 +39,7 @@ export function QueuedMessageList({ rows, busy, partial, isActive, onReorder, on
   }
 
   // A gesture is local UI state; it must never reorder a superseded native list.
-  useEffect(() => { cancel(); }, [order, disabled]);
+  useEffect(() => { cancel(); }, [order, disabled, version]);
   useEffect(() => () => {
     if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current);
   }, []);
@@ -131,13 +133,13 @@ export function QueuedMessageList({ rows, busy, partial, isActive, onReorder, on
             }}><GripVertical /></AdaptiveIconButton> : null}
           <div className="kodex-queue-preview" title={text}>
             <Text truncate className="kodex-queue-text">{text}</Text>
-            {row.attachments.length > 0 ? <Text size="xs" className="kodex-queue-attachments">{row.attachments.length} attached file(s)</Text> : null}
+            {row.attachmentCount > 0 ? <Text size="xs" className="kodex-queue-attachments">{row.attachmentCount} attached file(s)</Text> : null}
           </div>
           <div className="kodex-queue-actions">
-            {row.canSteer ? <AdaptiveIconButton density="compact" label="Steer" disabled={busy}
+            {row.canSteer ? <AdaptiveIconButton density="compact" label="Steer" disabled={busy || row.disabled}
               onClick={() => onSteer(row)}><CornerDownRight /></AdaptiveIconButton> : null}
-            <AdaptiveIconButton density="compact" label="Remove" disabled={busy} onClick={() => onRemove(row)}><Trash2 /></AdaptiveIconButton>
-            <AdaptiveIconButton density="compact" label="Edit" disabled={busy} onClick={() => onEdit(row)}><Pencil /></AdaptiveIconButton>
+            <AdaptiveIconButton density="compact" label="Remove" disabled={busy || row.disabled} onClick={() => onRemove(row)}><Trash2 /></AdaptiveIconButton>
+            <AdaptiveIconButton density="compact" label="Edit" disabled={busy || row.disabled || row.editDisabled} onClick={() => onEdit(row)}><Pencil /></AdaptiveIconButton>
           </div>
         </Box>;
       })}

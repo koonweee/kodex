@@ -94,9 +94,29 @@ test('existing Kodex UI shares native streaming, queue/stop, tool history and re
       await expect(pane(tab).getByRole('button', { name: 'Stop turn', exact: true })).toBeVisible();
     }
     await send(second, 'AFTER_STOP', true);
-    for (const tab of [page, second]) await expect(pane(tab).getByText('1 queued follow-up', { exact: true })).toBeVisible();
+    for (const tab of [page, second]) await expect(pane(tab).getByRole('region', { name: 'Queued messages', exact: true }).getByRole('group', { name: 'Queued message', exact: true })).toHaveCount(1);
+    await send(second, 'REMOVE_ME', true);
+    const queueRows = (tab: Page) => pane(tab).getByRole('region', { name: 'Queued messages', exact: true }).getByRole('group', { name: 'Queued message', exact: true });
+    for (const tab of [page, second]) await expect(queueRows(tab)).toHaveCount(2);
+    await queueRows(page).filter({ hasText: 'REMOVE_ME' }).getByRole('button', { name: 'Reorder queued message' }).press('ArrowUp');
+    for (const tab of [page, second]) await expect(queueRows(tab).first()).toContainText('REMOVE_ME');
+    await queueRows(second).filter({ hasText: 'REMOVE_ME' }).getByRole('button', { name: 'Remove', exact: true }).click();
+    for (const tab of [page, second]) await expect(queueRows(tab)).toHaveCount(1);
+    // Both editors capture the displayed native queue version. The stale tab
+    // must preserve its draft and cannot overwrite the other tab's accepted edit.
+    for (const tab of [page, second]) await queueRows(tab).getByRole('button', { name: 'Edit', exact: true }).click();
+    await second.getByLabel('Queued message text', { exact: true }).fill('AFTER_STOP_EDITED');
+    await second.getByRole('button', { name: 'Save queued message', exact: true }).click();
+    await expect(second.getByRole('dialog', { name: 'Edit queued message' })).toHaveCount(0);
+    await expect(queueRows(page)).toContainText('AFTER_STOP_EDITED');
+    await page.getByLabel('Queued message text', { exact: true }).fill('STALE_EDIT');
+    await page.getByRole('button', { name: 'Save queued message', exact: true }).click();
+    await expect(page.getByText(/The queue changed\. Review the current queue before trying again\./)).toBeVisible();
+    await expect(page.getByLabel('Queued message text', { exact: true })).toHaveValue('STALE_EDIT');
+    await page.getByRole('dialog', { name: 'Edit queued message' }).getByRole('button', { name: 'Close', exact: true }).click();
+    await pane(page).getByRole('button', { name: 'Reload queue', exact: true }).click();
     await pane(page).getByRole('button', { name: 'Stop turn', exact: true }).click();
-    for (const tab of [page, second]) await expect(pane(tab).getByText('fixture:AFTER_STOP', { exact: true })).toBeVisible();
+    for (const tab of [page, second]) await expect(pane(tab).getByText('fixture:AFTER_STOP_EDITED', { exact: true })).toBeVisible();
     await send(page, 'READ_MARKER');
     for (const tab of [page, second]) await expect(pane(tab).getByText('fixture:READ_MARKER', { exact: true })).toBeVisible();
     await expect(pane(page).getByText('view', { exact: true })).toBeVisible();
@@ -105,7 +125,7 @@ test('existing Kodex UI shares native streaming, queue/stop, tool history and re
     await send(page, 'HOLD_RESTART');
     await expect(pane(second).getByText('started:HOLD_RESTART', { exact: true })).toBeVisible();
     await send(second, 'DROP_ON_RESTART', true);
-    for (const tab of [page, second]) await expect(pane(tab).getByText('1 queued follow-up', { exact: true })).toBeVisible();
+    for (const tab of [page, second]) await expect(pane(tab).getByRole('region', { name: 'Queued messages', exact: true }).getByRole('group', { name: 'Queued message', exact: true })).toHaveCount(1);
     await stopBackend(backend, true);
     backend = await startBackend(root);
     for (const tab of [page, second]) {

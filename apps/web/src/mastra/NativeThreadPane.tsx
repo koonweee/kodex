@@ -14,7 +14,7 @@ export function NativeThreadPane({ pane, draftStore, onError }: { pane: Workspac
   const { workspace, errorMessage, setPaneThreadContext, setPaneHeaderActions, updatePane, duplicatePane, onImageOpen, onMarkdownOpen, threadActions, showDebugEvents } = useWorkspace();
   const target = paneTargetRecord(pane);
   const chatId = target.mode === 'existing' && typeof target.threadId === 'string' ? target.threadId : null;
-  const { snapshot, error } = useNativeChat(chatId);
+  const { snapshot, error, retry } = useNativeChat(chatId);
   const isActive = workspace.activePaneId === pane.id;
   const timeline = useMemo(() => snapshot ? timelinePresentation(snapshot) : null, [snapshot]);
   const [scrollParent, setScrollParent] = useState<HTMLDivElement | null>(null);
@@ -52,6 +52,6 @@ export function NativeThreadPane({ pane, draftStore, onError }: { pane: Workspac
     <Box className="kodex-thread-content"><div className="kodex-thread-scroll-frame"><div className="kodex-thread-pane-scroll kodex-timeline-scroll" ref={setScrollParent}>
       {chatId && !timeline ? <Loader aria-label="Loading chat" /> : timeline ? <TimelineView approvals={[]} imagePreviewUrlsByPath={{}} onApprovalDecision={() => {}} onImageOpen={onImageOpen} onMarkdownOpen={onMarkdownOpen} onReady={() => {}} scrollParentElement={scrollParent} showDebug={showDebugEvents} threadId={chatId ?? undefined} timeline={timeline} /> : null}
     </div></div></Box>
-    <NativeComposer pane={pane} snapshot={snapshot} ready={!chatId || Boolean(snapshot)} isActive={isActive} draftStore={draftStore} onError={onError} />
+    <NativeComposer pane={pane} snapshot={snapshot} ready={!chatId || Boolean(snapshot)} isActive={isActive} draftStore={draftStore} onError={onError} onQueueReload={retry} />
   </section>;
 }

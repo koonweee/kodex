@@ -1,4 +1,4 @@
-import { nativeSettingsFixture } from './testBuilders';
+import { nativeQueueFixture, nativeSettingsFixture } from './testBuilders';
 import { defaultDisplayState } from '../../../../spikes/mastra-code-sdk/node_modules/@mastra/core/dist/agent-controller/index.js';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -18,7 +18,7 @@ function stream() {
   };
 }
 function snapshot(epoch: string, revision: number, title: string): ChatSnapshot {
-  return { epoch, revision, chat: { id: 'chat', projectId: 'project', cwd: '/project', title }, error: null, settings: nativeSettingsFixture(),
+  return { epoch, revision, chat: { id: 'chat', projectId: 'project', cwd: '/project', title }, error: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(),
     display: defaultDisplayState(), messages: [] };
 }
 afterEach(() => { rpc.watchChat.mockReset(); });

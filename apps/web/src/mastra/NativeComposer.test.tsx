@@ -1,5 +1,6 @@
-import { nativeSettingsFixture } from './testBuilders';
+import { nativeQueueFixture, nativeSettingsFixture } from './testBuilders';
 import { MantineProvider } from '@mantine/core';
+import { ORPCError } from '@orpc/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -19,7 +20,7 @@ const onError = vi.fn();
 const levels = ['off', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 const models = [{ id: 'openai-codex/gpt-5.4', provider: 'openai-codex', modelName: 'gpt-5.4', hasApiKey: true, useCount: 0, thinkingLevels: [...levels] }, { id: 'openai-codex/gpt-5.5', provider: 'openai-codex', modelName: 'gpt-5.5', hasApiKey: true, useCount: 0, thinkingLevels: [...levels] }];
 function snapshot(modelId = models[0].id, thinkingLevel: 'high' | 'medium' | 'max' = 'medium'): ChatSnapshot {
-  return { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: 'project', cwd: '/project', title: 'Chat' }, error: null, messages: [], display: defaultDisplayState(), settings: nativeSettingsFixture(modelId, thinkingLevel) };
+  return { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: 'project', cwd: '/project', title: 'Chat' }, error: null, messages: [], display: defaultDisplayState(), queue: nativeQueueFixture(), settings: nativeSettingsFixture(modelId, thinkingLevel) };
 }
 function defaultsStream() {
   let consumer: ((value: IteratorResult<unknown>) => void) | undefined;
@@ -61,7 +62,7 @@ it('uses native controls and sparse edits while a late acknowledgment cannot ove
   expect(await screen.findByRole('button', { name: 'Model: gpt-5.5, max' })).toBeInTheDocument();
   await userEvent.type(screen.getByLabelText('Message composer'), 'Existing text');
   await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
-  await waitFor(() => expect(rpc.send).toHaveBeenCalledWith({ chatId: 'chat', text: 'Existing text' }));
+  await waitFor(() => expect(rpc.send).toHaveBeenCalledWith({ chatId: 'chat', queueIfPending: true, text: 'Existing text' }));
   expect(rpc.createChat).not.toHaveBeenCalled();
 });
 it('keeps explicit draft choices local through defaults updates and passes them only at creation', async () => {
@@ -79,7 +80,7 @@ it('keeps explicit draft choices local through defaults updates and passes them 
   expect(rpc.updateChatSettings).not.toHaveBeenCalled();
   await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
   await waitFor(() => expect(rpc.createChat).toHaveBeenCalledWith({ projectId: 'project', settings: { modelId: models[1].id, thinkingLevel: 'max', fast: false } }));
-  expect(rpc.send).toHaveBeenCalledWith({ chatId: 'created', text: 'Draft text' });
+  expect(rpc.send).toHaveBeenCalledWith({ chatId: 'created', queueIfPending: true, text: 'Draft text' });
 });
 it('updates Fast sparsely and waits for canonical settings before displaying it', async () => {
   setup();
@@ -180,7 +181,7 @@ it('retains draft Fast across model, reasoning and defaults changes and sends it
   await userEvent.type(screen.getByLabelText('Message composer'), 'Use draft Fast');
   await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
   await waitFor(() => expect(rpc.createChat).toHaveBeenCalledWith({ projectId: 'project', settings: { modelId: models[1].id, thinkingLevel: 'max', fast: true } }));
-  expect(rpc.send).toHaveBeenCalledWith({ chatId: 'created', text: 'Use draft Fast' });
+  expect(rpc.send).toHaveBeenCalledWith({ chatId: 'created', queueIfPending: true, text: 'Use draft Fast' });
 });
 
 it('shows a native Fast rejection without changing canonical settings or replaying defaults with Send', async () => {
@@ -199,6 +200,48 @@ it('shows a native Fast rejection without changing canonical settings or replayi
   expect(screen.getByRole('button', { name: 'Model: claude-sonnet-4-5, medium' })).toBeEnabled();
   await userEvent.type(screen.getByLabelText('Message composer'), 'Use normal responses');
   await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
-  await waitFor(() => expect(rpc.send).toHaveBeenCalledWith({ chatId: 'chat', text: 'Use normal responses' }));
+  await waitFor(() => expect(rpc.send).toHaveBeenCalledWith({ chatId: 'chat', queueIfPending: true, text: 'Use normal responses' }));
   expect(rpc.createChat).not.toHaveBeenCalled();
+});
+
+it('clears accepted uncertain Queue input without restoring a duplicate draft and exposes canonical recovery', async () => {
+  setup();
+  const current = snapshot(); const initial = { ...current, display: { ...current.display, isRunning: true } };
+  const saved = { ...nativeQueueFixture(), revision: 1, rows: [{ id: 'saved', nativeSignalId: 'signal', status: 'uncertain' as const, input: { text: 'Saved native input' } }] };
+  rpc.queue.mockResolvedValue({ accepted: false, outcome: 'uncertain', rowId: 'saved', snapshot: saved });
+  const view = renderComposer({ id: 'pane', kind: 'thread', target: { mode: 'existing', threadId: 'chat' } }, initial);
+  await userEvent.type(screen.getByLabelText('Message composer'), 'Saved native input');
+  await userEvent.keyboard('{Meta>}{Enter}{/Meta}');
+  await waitFor(() => expect(rpc.queue).toHaveBeenCalledWith({ chatId: 'chat', text: 'Saved native input' }));
+  await waitFor(() => expect(screen.getByLabelText('Message composer')).toHaveValue(''));
+  expect(onError).not.toHaveBeenCalled();
+  expect(screen.queryByText('Delivery uncertain')).not.toBeInTheDocument();
+  view.rerenderSnapshot({ ...initial, revision: 2, queue: saved });
+  expect(await screen.findByText('Delivery uncertain')).toBeInTheDocument();
+  expect(screen.getByLabelText('Message composer')).toHaveValue('');
+  expect(rpc.send).not.toHaveBeenCalled();
+});
+it('restores the existing composer draft after a lost Queue reply with an explicit delivery warning and no resend', async () => {
+  setup();
+  rpc.queue.mockRejectedValue(new Error('Connection lost'));
+  const current = snapshot(); const initial = { ...current, display: { ...current.display, isRunning: true } };
+  renderComposer({ id: 'pane', kind: 'thread', target: { mode: 'existing', threadId: 'chat' } }, initial);
+  await userEvent.type(screen.getByLabelText('Message composer'), 'Keep this input');
+  await userEvent.keyboard('{Meta>}{Enter}{/Meta}');
+  await waitFor(() => expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('Delivery could not be confirmed') })));
+  expect(screen.getByLabelText('Message composer')).toHaveValue('Keep this input');
+  expect(rpc.queue).toHaveBeenCalledTimes(1);
+  expect(rpc.send).not.toHaveBeenCalled();
+});
+
+it.each(['CONFLICT', 'BAD_REQUEST', 'NOT_FOUND'] as const)('preserves authoritative native %s rejection and the draft without claiming unknown delivery', async code => {
+  setup();
+  const failure = new ORPCError(code, { message: 'Resolve the pending native tool request first.' });
+  rpc.send.mockRejectedValue(failure);
+  renderComposer({ id: 'pane', kind: 'thread', target: { mode: 'existing', threadId: 'chat' } }, snapshot());
+  await userEvent.type(screen.getByLabelText('Message composer'), 'Rejected input');
+  await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  await waitFor(() => expect(onError).toHaveBeenCalledWith(failure));
+  expect(screen.getByLabelText('Message composer')).toHaveValue('Rejected input');
+  expect(rpc.send).toHaveBeenCalledTimes(1);
 });

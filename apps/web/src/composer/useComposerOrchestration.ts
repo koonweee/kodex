@@ -204,7 +204,7 @@ export function useComposerOrchestration({
             if (commands) await commands.queue(selectedThreadId, payload.input, payload.attachments);
             else await createQueuedInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId);
           } finally {
-            void refreshQueuedInputs(queryClient, selectedThreadId);
+            if (!commands) void refreshQueuedInputs(queryClient, selectedThreadId);
           }
           clearPendingAttachments();
           setIsComposerSubmitting(false);

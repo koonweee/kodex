@@ -137,7 +137,10 @@ test('two RPC clients share native chats, Send acceptance, Queue, Stop and recon
   abortA.abort();
   await a.return?.().catch(() => undefined);
   assert.equal((await second.openChat({ chatId: chat.id })).display.isRunning, true, 'closing one observer leaves native work running');
-  assert.deepEqual(await second.queue({ chatId: chat.id, text: 'PEER_QUEUE' }), { accepted: true });
+  const queuedPeer = await second.queue({ chatId: chat.id, text: 'PEER_QUEUE' });
+  assert.equal(queuedPeer.accepted, true);
+  assert.equal(queuedPeer.outcome, 'applied');
+  assert.equal(queuedPeer.snapshot.rows[0]?.input.text, 'PEER_QUEUE');
   await until(b, snapshot => snapshot.display.queuedFollowUps === 1);
   assert.deepEqual(await second.stop({ chatId: chat.id }), { accepted: true });
   hold.release();

@@ -1,4 +1,5 @@
-import { Alert, Text } from '@mantine/core';
+import { Alert } from '@mantine/core';
+import { ORPCError } from '@orpc/client';
 import { useEffect, useRef } from 'react';
 import { ComposerPanel } from '../composer/ComposerPanel';
 import { useComposerOrchestration } from '../composer/useComposerOrchestration';
@@ -10,8 +11,9 @@ import { mastraClient, type ChatSnapshot } from './client';
 import { useNativeHost } from './NativeHostBoundary';
 import { DEFAULT_COMPOSER_SETTINGS } from '../composer/settings';
 import { useNativeComposerSettings } from './useNativeComposerSettings';
+import { useMastraQueue } from './useMastraQueue';
 
-export function NativeComposer({ pane, snapshot, ready, isActive, draftStore, onError }: { pane: WorkspacePane; snapshot: ChatSnapshot | null; ready: boolean; isActive: boolean; draftStore: ComposerDraftStore; onError: (error: unknown) => void }) {
+export function NativeComposer({ pane, snapshot, ready, isActive, draftStore, onError, onQueueReload }: { pane: WorkspacePane; snapshot: ChatSnapshot | null; ready: boolean; isActive: boolean; draftStore: ComposerDraftStore; onError: (error: unknown) => void; onQueueReload?: () => void }) {
   const { projects } = useNativeHost();
   const { updatePane, setPaneDraftDisposable, onImageOpen } = useWorkspace();
   const target = paneTargetRecord(pane);
@@ -22,6 +24,13 @@ export function NativeComposer({ pane, snapshot, ready, isActive, draftStore, on
   const createdProject = useRef(projectId);
   useEffect(() => { if (createdProject.current !== projectId) { created.current = null; createdProject.current = projectId; } }, [projectId]);
   const settings = useNativeComposerSettings({ chatId, projectId, snapshot, onError });
+  const queue = useMastraQueue(chatId, snapshot?.queue ?? null, onError, onQueueReload);
+  const submitNative = async (action: () => Promise<unknown>) => {
+    try { return await action(); } catch (failure) {
+      if (failure instanceof ORPCError && ['BAD_REQUEST', 'CONFLICT', 'NOT_FOUND', 'UNAUTHORIZED', 'FORBIDDEN', 'UNPROCESSABLE_CONTENT', 'TOO_MANY_REQUESTS', 'PRECONDITION_FAILED'].includes(failure.code)) throw failure;
+      throw new Error("Delivery could not be confirmed; check the conversation/queue before sending again.", { cause: failure });
+    }
+  };
   const orchestration = useComposerOrchestration({
     activeSelectedTurnId: null, isRunning: snapshot?.display.isRunning ?? false,
     canCompose: Boolean(projectId) && (!chatId || ready), composerSettings: settings.settings ?? DEFAULT_COMPOSER_SETTINGS,
@@ -37,18 +46,17 @@ export function NativeComposer({ pane, snapshot, ready, isActive, draftStore, on
     commands: {
       send: async (id, input, attachments) => {
         if (attachments.length || input.some(value => value.type !== 'text')) return submitThreadInput(id, input, attachments);
-        return mastraClient.send({ chatId: id, text: input.flatMap(value => value.type === 'text' ? [value.text] : []).join('\n') });
+        return submitNative(() => mastraClient.send({ chatId: id, queueIfPending: true, text: input.flatMap(value => value.type === 'text' ? [value.text] : []).join('\n') }));
       },
       queue: async (id, input, attachments) => {
         if (attachments.length || input.some(value => value.type !== 'text')) return createQueuedInput(id, input, attachments);
-        return mastraClient.queue({ chatId: id, text: input.flatMap(value => value.type === 'text' ? [value.text] : []).join('\n') });
+        return submitNative(() => mastraClient.queue({ chatId: id, text: input.flatMap(value => value.type === 'text' ? [value.text] : []).join('\n') }));
       },
       stop: id => mastraClient.stop({ chatId: id }),
     },
   });
   return <>
     {settings.error ? <Alert color="red" title="Chat settings error" mx="md" mt="xs">{settings.error}</Alert> : null}
-    {snapshot?.display.queuedFollowUps ? <Text size="sm" mx="md" role="status">{snapshot.display.queuedFollowUps} queued follow-up{snapshot.display.queuedFollowUps === 1 ? '' : 's'}</Text> : null}
     <ComposerPanel activeSelectedTurnId={null} isRunning={snapshot?.display.isRunning ?? false}
       attachmentInputRef={orchestration.attachmentInputRef} canCompose={Boolean(projectId) && (!chatId || ready)}
       composerSettings={settings.settings} composerSettingsDisabled={settings.pending} composerSettingsError={settings.error} composerResetToken={0}
@@ -63,6 +71,6 @@ export function NativeComposer({ pane, snapshot, ready, isActive, draftStore, on
       onComposerKeyDown={orchestration.handleComposerKeyDown} onComposerPaste={orchestration.handleComposerPaste}
       onComposerSettingsChange={settings.change} onImageOpen={onImageOpen} onRemovePendingAttachment={orchestration.removePendingAttachment}
       onStopTurn={orchestration.handleStopTurn} onSubmitTurn={orchestration.handleSubmitTurn} pendingAttachments={orchestration.pendingAttachments}
-      goalThreadId={chatId} queueThreadId={chatId} queueDialogActive={isActive} selectedThreadPresent={Boolean(chatId)} />
+      goalThreadId={chatId} queueThreadId={chatId} queueController={queue} queueDialogActive={isActive} selectedThreadPresent={Boolean(chatId)} />
   </>;
 }

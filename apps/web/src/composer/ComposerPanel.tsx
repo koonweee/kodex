@@ -25,6 +25,7 @@ import { filterSlashCommands, replaceSlashCommandToken, slashCommandItems } from
 import { filterSkillsForQuery } from "./skillMentions";
 import type { PendingAttachment } from "./types";
 import { NativeQueuePanel } from "../queuedInputs/NativeQueuePanel";
+import type { QueueController } from "../queuedInputs/controller";
 import { useNativeQueue } from "../queuedInputs/useNativeQueue";
 import { useComposerDraftState, type ComposerDraftStore } from "./useComposerDraftState";
 import { useSkillCatalog } from "./useSkillCatalog";
@@ -56,6 +57,7 @@ export type ComposerPanelProps = {
   goalThreadId?: string | null;
   queueThreadId?: string | null;
   queueDialogActive?: boolean;
+  queueController?: QueueController;
   composerDraftKey?: string;
   composerDraftStore?: ComposerDraftStore;
   onDraftDisposableChange?: (disposable: boolean) => void;
@@ -108,6 +110,7 @@ export function ComposerPanel({
   composerResetToken,
   goalThreadId = null,
   queueThreadId,
+  queueController,
   queueDialogActive = true,
   composerDraftKey,
   composerDraftStore,
@@ -138,7 +141,7 @@ export function ComposerPanel({
   pendingAttachments,
   selectedThreadPresent,
 }: ComposerPanelProps) {
-  const nativeQueue = useNativeQueue(queueThreadId ?? null);
+  const nativeQueue = useNativeQueue(queueController ? null : queueThreadId ?? null);
   const draftState = useComposerDraftState(composerResetToken, composerDraftKey, composerDraftStore);
   const draftDisposable = draftState.composerText.length === 0 && draftState.annotations.length === 0 &&
     pendingAttachments.length === 0 && !isComposerSubmitting && !isDraftComposerTransitioning;
@@ -276,7 +279,7 @@ export function ComposerPanel({
   function handleComposerKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
     const empty = !draftState.composerText.trim() && draftState.annotations.length === 0 && pendingAttachments.length === 0;
     if (event.key === "Enter" && event.metaKey && !event.shiftKey && !event.nativeEvent.isComposing &&
-        empty && !isComposerControlsDisabled && queueDialogActive && nativeQueue.steerFirst()) {
+        empty && !isComposerControlsDisabled && queueDialogActive && (queueController ?? nativeQueue).steerFirst()) {
       event.preventDefault();
       return;
     }
@@ -363,14 +366,14 @@ export function ComposerPanel({
     }
   }, [composerShellRef]);
 
-  const queuePanel = queueThreadId ? <NativeQueuePanel key={queueThreadId} threadId={queueThreadId} queue={nativeQueue} isActive={queueDialogActive}
+  const queuePanel = queueThreadId ? <NativeQueuePanel key={queueThreadId} threadId={queueThreadId} queue={nativeQueue} controller={queueController} isActive={queueDialogActive}
     canRestoreText={!draftState.composerText && draftState.annotations.length === 0 && pendingAttachments.length === 0 && !isComposerBusy}
     onRestoreText={(text) => draftState.updateComposerText(text, null)} /> : null;
 
   const representationProps = {
     goalControls,
     queuePanel,
-    queueOnSubmit: Boolean(nativeQueue.query.data?.queuedInputs.length),
+    queueOnSubmit: queueController ? queueController.hasPendingInput ?? queueController.rows.some(row => !row.disabled) : Boolean(nativeQueue.query.data?.queuedInputs.length),
     activeSelectedTurnId,
     attachmentInputRef,
     canCompose,

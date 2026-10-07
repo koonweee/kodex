@@ -5,6 +5,7 @@ import { createProjectRuntime, type NativeSession, type ProjectRuntime } from '.
 import { assertProfileActive, type SpikeProfile } from './profile.js';
 import { createAccountService } from './account-service.js';
 import { captureChatFastRequestContext } from './chat-fast.js';
+import { createChatQueue, type ChatQueueInput, type ChatQueueSnapshot, type ChatQueueResult } from './chat-queue.js';
 import { createNativeChatSettings, type ChatSettings, type ChatSettingsPatch } from './chat-settings.js';
 import { createSessionProjection, type SessionSnapshot } from './transport.js';
 
@@ -12,7 +13,10 @@ type NativeThread = NonNullable<Awaited<ReturnType<ProjectRuntime['controller'][
 export interface ChatProject { id: string; name: string; path: string; runtimeRoot: string }
 export interface Chat { id: string; projectId: string; title: string; cwd: string }
 export interface CatalogSnapshot { epoch: string; revision: number; chats: Chat[] }
-export interface ChatSnapshot extends SessionSnapshot { chat: Chat; error: string | null; settings: ChatSettings }
+export interface ChatSnapshot extends SessionSnapshot { chat: Chat; error: string | null; settings: ChatSettings; queue: ChatQueueSnapshot }
+export interface QueuedSelection { chatId: string; epoch: string; revision: number; id: string }
+export interface QueuedEdit extends QueuedSelection { input: ChatQueueInput }
+export interface QueuedOrder { chatId: string; epoch: string; revision: number; ids: string[] }
 export interface ChatServiceOptions {
   profile: SpikeProfile;
   instanceId: string;
@@ -24,6 +28,7 @@ interface Handle {
   runtime: ProjectRuntime;
   session: NativeSession;
   projection: ReturnType<typeof createSessionProjection>;
+  queue: ReturnType<typeof createChatQueue>;
   revision: number;
   error: string | null;
   unsubscribe: () => void;
@@ -101,8 +106,14 @@ export function createChatService(options: ChatServiceOptions) {
   }
   function bind(project: ChatProject, runtime: ProjectRuntime, session: NativeSession): Handle {
     assertActive();
+    // Bind the native count before projection listeners start: raw extension
+    // queue submissions must also participate in existing-chat Send routing.
+    session.ensureFollowUpBinding(session.machinery.getAgent(), session.identity.getResourceId(), session.thread.requireId());
     const projection = createSessionProjection(session);
-    const handle: Handle = { project, runtime, session, projection, revision: 0, error: null, unsubscribe: () => {} };
+    const queue = createChatQueue(session, { epoch, onChanged: () => {
+      session.emit({ type: 'display_state_changed', displayState: session.displayState.get() });
+    } });
+    const handle: Handle = { project, runtime, session, projection, queue, revision: 0, error: null, unsubscribe: () => {} };
     handle.unsubscribe = session.subscribe(event => {
       handle.revision++;
       if (event.type === 'agent_start') handle.error = null;
@@ -142,7 +153,7 @@ export function createChatService(options: ChatServiceOptions) {
       if (!thread || !ownsThread(handle.project, thread)) throw missing();
       const publicSettings = await settings.readChat(handle.session);
       if (current.revision !== handle.revision) continue;
-      return { ...current, chat: describe(handle.project, thread), error: handle.error, settings: publicSettings };
+      return { ...current, chat: describe(handle.project, thread), error: handle.error, settings: publicSettings, queue: handle.queue.snapshot() };
     }
   }
   async function catalogSnapshot(signal?: AbortSignal): Promise<CatalogSnapshot> {
@@ -158,7 +169,9 @@ export function createChatService(options: ChatServiceOptions) {
   }
   async function sendNative(handle: Handle, text: string) {
     try {
-      const submission = handle.session.sendSignal({ content: text, requestContext: await captureChatFastRequestContext(handle.session) }, { requireDelivery: true });
+      const requestContext = await captureChatFastRequestContext(handle.session);
+      assertActive();
+      const submission = handle.session.sendSignal({ content: text, requestContext }, { requireDelivery: true });
       const decision = await submission.accepted;
       if (decision.action === 'blocked') throw new ORPCError('CONFLICT', { message: 'This chat is waiting for a tool response.' });
       if (decision.action !== 'wake' && decision.action !== 'deliver') throw new Error('Native input was not admitted to a run.');
@@ -167,6 +180,24 @@ export function createChatService(options: ChatServiceOptions) {
       if (error instanceof ORPCError) throw error;
       throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Chat input could not be accepted.' });
     }
+  }
+
+  async function enqueueNative(handle: Handle, text: string) {
+    assertActive();
+    try {
+      const submitted = await handle.queue.enqueue({ text });
+      return { accepted: submitted.outcome === 'applied', ...submitted };
+    } catch {
+      throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Chat input could not be queued.' });
+    }
+  }
+  async function queueCommand(selection: { chatId: string; epoch: string; revision: number }, apply: (queue: Handle['queue']) => Promise<ChatQueueResult>) {
+    const handle = await handleFor(selection.chatId);
+    assertActive();
+    const current = handle.queue.snapshot();
+    if (selection.epoch !== current.epoch) return { outcome: 'conflict' as const, snapshot: current };
+    try { return await apply(handle.queue); }
+    catch { throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Queued input could not be changed.' }); }
   }
 
   const defaultsRuntime = async () => {
@@ -252,18 +283,23 @@ export function createChatService(options: ChatServiceOptions) {
         }
       } finally { await changes.return(); }
     },
-    async send({ chatId, text }: { chatId: string; text: string }) {
-      return sendNative(await handleFor(chatId), text);
+    async send({ chatId, text, queueIfPending = false }: { chatId: string; text: string; queueIfPending?: boolean }) {
+      const handle = await handleFor(chatId);
+      // Read authoritative native pending work, including input submitted by
+      // native extensions. A concurrent drain can still let Send interject into
+      // the new active run; the browser never chooses start/steer routing.
+      if (queueIfPending && handle.session.displayState.get().queuedFollowUps > 0) return enqueueNative(handle, text);
+      return sendNative(handle, text);
     },
     async queue({ chatId, text }: { chatId: string; text: string }) {
-      const handle = await handleFor(chatId);
-      // Native followUp sends immediately while idle but awaits that whole run.
-      // Use the same native idle Send primitive for a prompt RPC acknowledgment.
-      if (!handle.session.run.isRunning()) return sendNative(handle, text);
-      try { await handle.session.followUp({ content: text, requestContext: await captureChatFastRequestContext(handle.session) }); }
-      catch { throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Chat input could not be queued.' }); }
-      return accepted();
+      return enqueueNative(await handleFor(chatId), text);
     },
+    async editQueued(selection: QueuedEdit) { return queueCommand(selection, queue => queue.edit(selection)); },
+    async removeQueued(selection: QueuedSelection) { return queueCommand(selection, queue => queue.remove(selection)); },
+    async reorderQueued(selection: QueuedOrder) { return queueCommand(selection, queue => queue.reorder(selection)); },
+    async steerQueued(selection: QueuedSelection) { return queueCommand(selection, queue => queue.steer(selection)); },
+    async reconcileQueued(selection: QueuedSelection) { return queueCommand(selection, queue => queue.reconcile(selection)); },
+    async dismissQueued(selection: QueuedSelection) { return queueCommand(selection, queue => queue.dismiss(selection)); },
     async stop({ chatId }: { chatId: string }) {
       const handle = await handleFor(chatId);
       handle.session.abort();
@@ -277,6 +313,7 @@ export function createChatService(options: ChatServiceOptions) {
         if (accountService) await accountService.then(service => service.dispose(), () => {});
         const loadedHandles = await Promise.allSettled(handles.values());
         for (const result of loadedHandles) if (result.status === 'fulfilled') {
+          result.value.queue.dispose();
           result.value.unsubscribe();
           result.value.projection.dispose();
         }

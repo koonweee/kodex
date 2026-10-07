@@ -17,11 +17,11 @@ export function useNativeQueue(threadId: string | null) {
   const [failure, setFailure] = useState<{ threadId: string; message: string } | null>(null);
 
   async function mutate(action: () => Promise<unknown>, onSuccess?: () => void) {
-    if (inFlight.current || threadId === null) return;
+    if (inFlight.current || threadId === null) return false;
     inFlight.current = true;
     setBusy(true); setFailure(null);
-    try { await action(); onSuccess?.(); }
-    catch (error) { setFailure({ threadId, message: errorMessageFrom(error) }); }
+    try { await action(); onSuccess?.(); return true; }
+    catch (error) { setFailure({ threadId, message: errorMessageFrom(error) }); return false; }
     finally {
       // A failed/lost reply does not prove native state stayed put.
       try { await refreshQueuedInputs(client, threadId); }
