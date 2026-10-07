@@ -190,3 +190,5 @@ Selected-chat archive is validated with public native pending-signal clear/abort
 ### 2026-10-08 — goal frontend checkpoint validated
 
 Full backend 152/152, frontend 1,198/1,198, actual-SDK browser suite 15/15, and strengthened goal restart flow 3/3 pass. The latter reloads the peer after restart before checking paused replacement persistence, then proves resume/completion/clear across clients. Final build/trim/typecheck and goal admission during archive pass; independent reviews clear. Existing controls show native evaluations/time and pause reasons, with no token budget or Core patch. Selected-chat archive checkpoint is `45db225`. Goals are ready to commit; overall port remains active, with history paging/tool/subagent work next. No production deployment.
+
+Goal controls committed as `6783492`; worktree was clean after the commit. Independent next-slice audit found a public read-only native history API and identified offset/timestamp tie pitfalls. Recorded the candidate inclusive loaded-range approach in the parity plan; implementation and SDK proof remain next. This does not claim history/subagent parity.
