@@ -156,7 +156,7 @@ pub struct AppState {
     pub thread_views: ThreadViewStore,
     pub thread_input_locks: crate::turn_lifecycle::ThreadInputLocks,
     pub(crate) self_control_spawn_locks: crate::turn_lifecycle::ThreadInputLocks,
-    pub queue_admissions: crate::queue_admission::QueueAdmissionWitnesses,
+    pub queue_steer_guards: crate::queue_steer_guard::QueueSteerGuards,
     pub terminals: crate::terminal::TerminalManager,
 }
 
@@ -183,7 +183,7 @@ impl AppState {
             thread_views: ThreadViewStore::default(),
             thread_input_locks: crate::turn_lifecycle::ThreadInputLocks::default(),
             self_control_spawn_locks: crate::turn_lifecycle::ThreadInputLocks::default(),
-            queue_admissions: crate::queue_admission::QueueAdmissionWitnesses::default(),
+            queue_steer_guards: crate::queue_steer_guard::QueueSteerGuards::default(),
             terminals,
         }
     }

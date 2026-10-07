@@ -20,7 +20,11 @@ for (const scheme of KODEX_COLOR_SCHEMES) {
     await context.route("**/v1/notifications/status", route => route.fulfill({ json: { configured: false, subscriptionsEnabled: false, vapidPublicKey: null } }));
     fixture.detail.thread.name = "Theme contrast audit";
     fixture.detail.timeline.rows = [message("user", "Review the contrast of selected controls, muted text, and code surfaces.", 1), message("assistant", "## Contrast review\n\nBody text should stay readable across every surface. **Emphasis**, *secondary detail*, and [a documentation link](https://example.com) belong to the same readable system.\n\n> Selection needs more than a faint tint.\n\nUse `text-primary` for content and semantic text tokens for status.\n\n```ts\nconst theme = { surface: 'panel', text: 'primary' };\n```\n\n| Primitive | Check |\n| --- | --- |\n| Input | Placeholder and focus |\n| Button | Label and filled background |\n\n- Normal list text\n- ~~Superseded note~~", 2)];
-    fixture.detail.timeline.turns = [{ id: "audit-turn", status: "completed" }];
+    fixture.detail.thread.status = "active";
+    fixture.detail.liveState = "streaming";
+    fixture.detail.timeline.activeTurnId = "audit-turn";
+    fixture.detail.timeline.liveState = "streaming";
+    fixture.detail.timeline.turns = [{ id: "audit-turn", status: "inProgress" }];
     fixture.queuedInputs.push(...["Review the implementation", "Add regression coverage for the queue", "A longer queued follow-up that should truncate cleanly while keeping all of its actions available"].map((text, index) => ({
       id: `audit-queue-${index}`, threadId: "settings-chat", clientUserMessageId: `audit-client-${index}`,
       input: [{ type: "text", text }], attachments: [], canSteer: true,
@@ -31,7 +35,7 @@ for (const scheme of KODEX_COLOR_SCHEMES) {
       if (!keepPointer) await page.mouse.move(0, 0);
       await page.evaluate(() => document.fonts.ready);
       await page.screenshot({ path: path.join(directory, `${name}.png`), animations: "disabled" });
-      measurements[name] = await page.evaluate(measureTheme);
+      measurements[name] = await page.evaluate(measureTheme as () => ReturnType<typeof measureTheme>);
       const detail = name.includes("preferences") || name === "10-notifications" || name === "06-modal" || name === "07-drawer"
         ? page.getByRole("dialog") : name === "02-menu" ? page.getByRole("menu") : null;
       if (detail) await detail.screenshot({ path: path.join(directory, `${name}-detail.png`), animations: "disabled" });
@@ -117,7 +121,7 @@ test.describe("touch", () => {
         await page.getByRole("menuitem", { name: "Preferences", exact: true }).click();
         await expect(page.getByRole("dialog", { name: "Preferences" })).toBeVisible();
         await page.screenshot({ path: path.join(directory, "14-preferences-touch.png"), animations: "disabled" });
-        await writeFile(path.join(directory, "touch-measurements.json"), JSON.stringify(await page.evaluate(measureTheme), null, 2));
+        await writeFile(path.join(directory, "touch-measurements.json"), JSON.stringify(await page.evaluate(measureTheme as () => ReturnType<typeof measureTheme>), null, 2));
         expect(fixture.unexpected).toEqual([]);
         expect(fixture.errors).toEqual([]);
       } finally { await fixture.close(); }

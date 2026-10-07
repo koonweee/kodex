@@ -260,3 +260,63 @@ async fn native_http_competing_edit_finishes_before_promotion_reads_its_lossless
         1
     );
 }
+
+#[tokio::test]
+async fn native_http_older_queue_eligibility_and_current_turn_handoff_converge_for_both_clients() {
+    let (state, native) = state().await;
+    let other = state.clone();
+    let selected = create(&state).await;
+    let retained = create(&state).await;
+    let cursor = state.store.latest_event_seq().await.unwrap();
+    let mut first_stream = stream(&state, cursor).await;
+    let mut second_stream = stream(&other, cursor).await;
+    for (idle, turn, method) in [
+        (true, TURN, "turn/completed"),
+        (false, "next-active-turn", "turn/started"),
+    ] {
+        *native.idle.lock().unwrap() = idle;
+        *native.current_turn.lock().unwrap() = Some(turn.into());
+        ingest_inbound(InboundMessage::Notification {method:method.into(), params:json!({"threadId":THREAD,"turn":{"id":turn,"status":if idle {"completed"} else {"inProgress"},"items":[]}})}, &state).await.unwrap();
+        marker(&mut first_stream, "turn_queue.changed").await;
+        marker(&mut second_stream, "turn_queue.changed").await;
+        for client in [&state, &other] {
+            let (status, listed) = request(client, "GET", BASE, Value::Null).await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(listed["queuedInputs"].as_array().unwrap().len(), 2);
+            assert!(listed["queuedInputs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|row| row["canSteer"] == !idle));
+        }
+    }
+    let path = format!("{BASE}/{}/steer", selected["id"].as_str().unwrap());
+    let (status, accepted) = request(&state, "POST", &path, Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+    assert_eq!(accepted["transfer"]["expectedTurnId"], "next-active-turn");
+    marker(&mut first_stream, "turn_queue.transfer_changed").await;
+    marker(&mut second_stream, "turn_queue.transfer_changed").await;
+    let before = native.requests.lock().unwrap().clone();
+    let (_, repeated) = request(&other, "POST", &path, Value::Null).await;
+    assert_eq!(repeated, accepted);
+    assert_eq!(*native.requests.lock().unwrap(), before);
+    let (_, listed) = request(&other, "GET", BASE, Value::Null).await;
+    assert_eq!(listed["queuedInputs"].as_array().unwrap().len(), 1);
+    assert_eq!(listed["queuedInputs"][0]["id"], retained["id"]);
+    assert_eq!(listed["queuedInputs"][0]["canSteer"], true);
+    let calls = native.requests.lock().unwrap();
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|(method, _)| method == "turn/steer")
+            .count(),
+        1
+    );
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|(method, _)| method == "thread/queue/delete")
+            .count(),
+        1
+    );
+}

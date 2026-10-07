@@ -28,7 +28,7 @@ async fn lose_context(state: &AppState, change: &str) {
 #[tokio::test]
 async fn context_lost_during_queue_list_cannot_reenter_native_deletion() {
     for change in ["reverted", "disconnected", "completed"] {
-        let (state, native) = fixture(true).await;
+        let (state, native) = fixture().await;
         let (listing, release) = native.hold("thread/queue/list");
         let task = spawn(&state, ROW);
         entered(listing).await;
@@ -56,34 +56,20 @@ async fn context_lost_during_queue_list_cannot_reenter_native_deletion() {
 }
 
 #[tokio::test]
-async fn stale_pre_add_native_head_cannot_create_a_new_promotion_witness() {
+async fn stale_request_time_native_head_cannot_authorize_deletion() {
     for change in ["reverted", "disconnected", "completed"] {
-        let (state, native) = fixture(false).await;
+        let (state, native) = fixture().await;
         let (reading, release) = native.hold("thread/turns/list");
-        let producer_state = state.clone();
-        let task = tokio::spawn(async move {
-            enqueue(&producer_state, THREAD, input(), QUEUED_CLIENT.into()).await
-        });
+        let task = spawn(&state, ROW);
         entered(reading).await;
         lose_context(&state, change).await;
         release.send(()).unwrap();
-        let _outcome = timeout(Duration::from_secs(2), task)
-            .await
-            .unwrap()
-            .unwrap();
-        // Ordinary native admission is still allowed. It cannot gain a fresh
-        // promotion right from the old head captured before context loss.
-        let before = native.rows.lock().unwrap().clone();
-        let _promotion = promote(&state, THREAD, ADDED_ROW).await;
-        let writes = native.writes();
+        assert!(matches!(finish(task).await, Err(ApiError::Conflict(_))));
         assert!(
-            writes.len() <= 1,
-            "{change} must not admit then promote from a stale head: {writes:?}"
+            native.writes().is_empty(),
+            "{change} must fence a stale head"
         );
-        assert!(writes
-            .iter()
-            .all(|(method, _)| method == "thread/queue/add"));
-        assert_eq!(*native.rows.lock().unwrap(), before);
+        assert_eq!(*native.rows.lock().unwrap(), vec![row(OTHER_ROW), row(ROW)]);
         assert!(state
             .store
             .list_queue_transfers(None)
@@ -114,7 +100,7 @@ async fn ingest(state: &AppState, message: InboundMessage) -> ApiResult<()> {
 
 #[tokio::test]
 async fn failed_transfer_marker_cannot_skip_disconnect_approval_and_completion_cleanup() {
-    let (state, native) = fixture(false).await;
+    let (state, native) = fixture().await;
     let transfer = create_unresolved(&state).await;
     state.thread_views.observe_completion(THREAD, TURN).await;
     ingest(&state, InboundMessage::ServerRequest {
@@ -169,7 +155,7 @@ async fn failed_transfer_marker_cannot_skip_disconnect_approval_and_completion_c
 
 #[tokio::test]
 async fn failed_transfer_marker_cannot_skip_native_history_reset() {
-    let (state, native) = fixture(false).await;
+    let (state, native) = fixture().await;
     let transfer = create_unresolved(&state).await;
     receipt(
         &state,
@@ -215,7 +201,7 @@ async fn failed_transfer_marker_cannot_skip_native_history_reset() {
 
 #[tokio::test]
 async fn failed_transfer_marker_cannot_discard_the_settling_native_user_receipt() {
-    let (state, native) = fixture(false).await;
+    let (state, native) = fixture().await;
     let transfer = create_unresolved(&state).await;
     reject_transfer_markers(&state).await;
     let outcome = ingest(&state, InboundMessage::Notification {
@@ -253,7 +239,7 @@ async fn failed_transfer_marker_cannot_discard_the_settling_native_user_receipt(
 #[tokio::test]
 async fn first_row_context_lost_during_native_selection_leaves_queue_untouched() {
     for change in ["reverted", "disconnected", "completed"] {
-        let (state, native) = fixture(true).await;
+        let (state, native) = fixture().await;
         *native.rows.lock().unwrap() = vec![row(ROW), row(OTHER_ROW)];
         let before = native.rows.lock().unwrap().clone();
         let (listing, release) = native.hold("thread/queue/list");
@@ -284,7 +270,7 @@ async fn first_row_context_lost_during_native_selection_leaves_queue_untouched()
 
 #[tokio::test]
 async fn first_row_native_input_denial_leaves_queue_untouched() {
-    let (state, native) = fixture(true).await;
+    let (state, native) = fixture().await;
     *native.rows.lock().unwrap() = vec![row(ROW), row(OTHER_ROW)];
     *native.capability.lock().unwrap() = Some(false);
     assert!(matches!(

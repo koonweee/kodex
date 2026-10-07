@@ -27,7 +27,7 @@ pub enum PromotionOutcome {
     Transfer { transfer: QueueTransfer },
 }
 
-/// Shared native admission for composer, Control and automation producers.
+/// Shared native queue submission for composer, Control and automation producers.
 /// Producer bookkeeping must be persisted by its owner before calling this;
 /// an ambiguous native add is never retried here. Nothing resumes an idle chat.
 pub async fn enqueue(
@@ -41,7 +41,7 @@ pub async fn enqueue(
 }
 
 /// Caller must hold the shared thread input lock. Used only by Control's
-/// explicit target activation so admission cannot race another Kodex writer.
+/// explicit target activation so submission cannot race another Kodex writer.
 pub(crate) async fn enqueue_locked(
     state: &AppState,
     thread_id: &str,
@@ -50,11 +50,6 @@ pub(crate) async fn enqueue_locked(
 ) -> ApiResult<app_server_api::NativeQueuedSubmission> {
     let client = app_server_api::client(&state.app_server);
     client.check_direct_input_capability(thread_id).await?;
-    let probe = state.queue_admissions.begin_probe(thread_id);
-    let original = active_turn(&client, thread_id).await?;
-    let ticket = state
-        .queue_admissions
-        .capture_after_probe(probe, original.as_deref());
     let row = match client.queue_add(thread_id.into(), input, client_id).await {
         Ok(row) => row,
         Err(error @ ApiError::BadRequest(_)) => return Err(error),
@@ -62,10 +57,26 @@ pub(crate) async fn enqueue_locked(
             "Native queue admission was not confirmed. Delivery may have occurred; inspect the queue before explicitly submitting again. No automatic retry was made.".into()
         )),
     };
-    if let Some(ticket) = ticket {
-        state.queue_admissions.record(ticket, &row.id);
-    }
     Ok(row)
+}
+
+/// Presentation hint from native state; the mutation performs its own fenced
+/// preflight. A failed read must not turn an acknowledged queue write into an
+/// apparent submission failure or hide the durable queue itself.
+pub(crate) async fn can_steer(state: &AppState, thread_id: &str) -> bool {
+    let client = app_server_api::client(&state.app_server);
+    if client
+        .check_direct_input_capability(thread_id)
+        .await
+        .is_err()
+    {
+        return false;
+    }
+    active_turn(&client, thread_id)
+        .await
+        .ok()
+        .flatten()
+        .is_some()
 }
 
 pub(crate) async fn active_turn(
@@ -159,7 +170,7 @@ async fn current_outcome(
 }
 
 /// Explicit bounded recovery read. Only a unique exact fresh-operation receipt
-/// in its original native turn can settle; no cursor walk, chat activation,
+/// in its intended native turn can settle; no cursor walk, chat activation,
 /// queue deletion or replay is permitted by an absent or truncated page.
 pub async fn reconcile(state: &AppState, transfer_id: &str) -> ApiResult<PromotionOutcome> {
     let transfer = state

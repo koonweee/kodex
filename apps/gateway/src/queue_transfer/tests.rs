@@ -141,7 +141,23 @@ impl AppServer for PromotionNative {
                 "nextCursor":null,"backwardsCursor":null,
             })),
             "thread/queue/list" => {
-                Ok(json!({"data":self.rows.lock().unwrap().clone(),"nextCursor":null}))
+                let rows = self.rows.lock().unwrap();
+                let offset = params["cursor"]
+                    .as_str()
+                    .and_then(|cursor| cursor.strip_prefix("opaque-page-"))
+                    .and_then(|offset| offset.parse::<usize>().ok())
+                    .unwrap_or(0);
+                let limit = params["limit"].as_u64().unwrap_or(100) as usize;
+                let data = rows
+                    .iter()
+                    .skip(offset)
+                    .take(limit)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let next = offset + data.len();
+                Ok(
+                    json!({"data":data,"nextCursor":if next < rows.len() {Some(format!("opaque-page-{next}"))} else {None}}),
+                )
             }
             "thread/queue/add" => {
                 let row = json!({
@@ -172,7 +188,7 @@ impl AppServer for PromotionNative {
             }
             "turn/steer" => match self.steer_error.lock().unwrap().clone() {
                 Some(message) => Err(ApiError::BadGateway(message)),
-                None => Ok(json!({"turnId":TURN})),
+                None => Ok(json!({"turnId":params["expectedTurnId"]})),
             },
             _ => Err(ApiError::BadGateway(format!(
                 "unexpected promotion RPC: {method}"
@@ -202,22 +218,14 @@ fn row(id: &str) -> Value {
     json!({"id":id,"clientUserMessageId":QUEUED_CLIENT,"input":input()})
 }
 
-async fn fixture(witness: bool) -> (AppState, Arc<PromotionNative>) {
+async fn fixture() -> (AppState, Arc<PromotionNative>) {
     let native = Arc::new(PromotionNative::new());
     let state = AppState::new(
         Config::default(),
         Store::in_memory().await.unwrap(),
         native.clone(),
     );
-    if witness {
-        remember(&state, ROW);
-    }
     (state, native)
-}
-
-fn remember(state: &AppState, row_id: &str) {
-    let before_add = state.queue_admissions.capture(THREAD, Some(TURN)).unwrap();
-    assert!(state.queue_admissions.record(before_add, row_id));
 }
 
 async fn entered(started: oneshot::Receiver<()>) {
@@ -296,45 +304,19 @@ async fn assert_retry_does_not_write(state: &AppState, native: &PromotionNative)
 }
 
 #[tokio::test]
-async fn enqueue_binds_only_the_native_ack_to_its_pre_add_active_turn() {
-    let (state, native) = fixture(false).await;
-    let (adding, release) = native.hold("thread/queue/add");
-    let producer_state = state.clone();
-    let task = tokio::spawn(async move {
-        enqueue(&producer_state, THREAD, input(), QUEUED_CLIENT.into()).await
-    });
-    entered(adding).await;
-    assert!(state
-        .queue_admissions
-        .claim(THREAD, ADDED_ROW, Some(TURN))
-        .is_none());
-    *native.active_turn.lock().unwrap() = Some("later-active-turn".into());
-    release.send(()).unwrap();
-    let row = timeout(Duration::from_secs(2), task)
+async fn ordinary_enqueue_preserves_input_without_capturing_an_active_turn() {
+    let (state, native) = fixture().await;
+    let added = enqueue(&state, THREAD, input(), QUEUED_CLIENT.into())
         .await
-        .unwrap()
-        .unwrap()
         .unwrap();
-    assert_eq!(row.id, ADDED_ROW);
-    assert_eq!(row.input, input());
-    assert_eq!(row.client_user_message_id, QUEUED_CLIENT);
-    assert!(state
-        .queue_admissions
-        .claim(THREAD, ADDED_ROW, Some("later-active-turn"))
-        .is_none());
-    assert_eq!(
-        state.queue_admissions.claim(THREAD, ADDED_ROW, Some(TURN)),
-        Some(TURN.into())
-    );
-    assert_eq!(
-        native.writes(),
-        vec![(
-            "thread/queue/add".into(),
-            json!({
-                "threadId":THREAD,"input":input(),"clientUserMessageId":QUEUED_CLIENT,
-            })
-        )]
-    );
+    assert_eq!(added.id, ADDED_ROW);
+    assert_eq!(added.input, input());
+    assert_eq!(added.client_user_message_id, QUEUED_CLIENT);
+    let calls = native.requests.lock().unwrap().clone();
+    assert!(calls
+        .iter()
+        .all(|(method, _)| matches!(method.as_str(), "thread/read" | "thread/queue/add")));
+    assert_eq!(native.writes().len(), 1);
     assert!(state
         .store
         .list_queue_transfers(None)
@@ -344,91 +326,50 @@ async fn enqueue_binds_only_the_native_ack_to_its_pre_add_active_turn() {
 }
 
 #[tokio::test]
-async fn lost_context_or_add_ack_cannot_reconstruct_promotion_rights_from_a_native_row() {
-    for interruption in ["completed", "reverted", "disconnected", "lost"] {
-        let (state, native) = fixture(false).await;
-        *native.add_lost.lock().unwrap() = interruption == "lost";
-        let (adding, release) = native.hold("thread/queue/add");
-        let producer_state = state.clone();
-        let task = tokio::spawn(async move {
-            enqueue(&producer_state, THREAD, input(), QUEUED_CLIENT.into()).await
-        });
-        entered(adding).await;
-        match interruption {
-            "completed" => {
-                timeout(Duration::from_secs(2), ingest_inbound(InboundMessage::Notification {
-                    method:"turn/completed".into(),
-                    params:json!({"threadId":THREAD,"turn":{"id":TURN,"status":"completed","items":[]}}),
-                }, &state)).await.unwrap().unwrap();
-            }
-            "reverted" | "disconnected" => invalidate(&state, interruption == "disconnected").await,
-            _ => {}
-        }
-        release.send(()).unwrap();
-        let result = timeout(Duration::from_secs(2), task)
-            .await
-            .unwrap()
-            .unwrap();
-        if interruption == "lost" {
-            assert!(result.is_err());
-        } else {
-            assert_eq!(result.unwrap().id, ADDED_ROW);
-        }
-        assert!(state
-            .queue_admissions
-            .claim(THREAD, ADDED_ROW, Some(TURN))
-            .is_none());
-        assert!(matches!(
-            promote(&state, THREAD, ADDED_ROW).await,
-            Err(ApiError::Conflict(_))
-        ));
-        assert_eq!(
-            native.writes(),
-            vec![(
-                "thread/queue/add".into(),
-                json!({
-                    "threadId":THREAD,"input":input(),"clientUserMessageId":QUEUED_CLIENT,
-                })
-            )]
-        );
-        assert_eq!(
-            *native.rows.lock().unwrap(),
-            vec![row(OTHER_ROW), row(ROW), row(ADDED_ROW)]
-        );
-        assert!(state
-            .store
-            .list_queue_transfers(None)
-            .await
-            .unwrap()
-            .is_empty());
-    }
-}
-
-#[tokio::test]
-async fn missing_live_admission_witness_leaves_native_row_untouched() {
-    let (state, native) = fixture(false).await;
-    assert!(matches!(
-        promote(&state, THREAD, ROW).await,
-        Err(ApiError::Conflict(_))
-    ));
-    assert!(native.writes().is_empty());
-    assert_eq!(*native.rows.lock().unwrap(), vec![row(OTHER_ROW), row(ROW)]);
-    assert!(state
-        .store
-        .list_queue_transfers(None)
+async fn lost_queue_add_ack_never_retries_but_explicit_steer_can_use_the_retained_native_row() {
+    let (state, native) = fixture().await;
+    *native.add_lost.lock().unwrap() = true;
+    assert!(enqueue(&state, THREAD, input(), QUEUED_CLIENT.into())
         .await
-        .unwrap()
-        .is_empty());
+        .is_err());
+    assert_eq!(native.writes().len(), 1);
+    assert_eq!(native.rows.lock().unwrap().last().unwrap()["id"], ADDED_ROW);
+    *native.active_turn.lock().unwrap() = Some("later-active-turn".into());
+    let accepted = transfer(promote(&state, THREAD, ADDED_ROW).await.unwrap());
+    assert_eq!(accepted.expected_turn_id, "later-active-turn");
+    assert_eq!(accepted.phase, QueueTransferPhase::Accepted);
+    assert_eq!(native.writes().len(), 3);
 }
 
 #[tokio::test]
-async fn cold_replaced_or_prohibited_native_context_cannot_delete_a_queued_row() {
-    for (active, capability) in [
-        (None, Some(true)),
-        (Some("different-turn"), Some(true)),
-        (Some(TURN), Some(false)),
-    ] {
-        let (state, native) = fixture(true).await;
+async fn native_row_without_enqueue_context_steers_current_turn() {
+    let (state, native) = fixture().await;
+    *native.active_turn.lock().unwrap() = Some("second-queued-turn".into());
+    let accepted = transfer(promote(&state, THREAD, ROW).await.unwrap());
+    assert_eq!(accepted.phase, QueueTransferPhase::Accepted);
+    assert_eq!(accepted.expected_turn_id, "second-queued-turn");
+    assert_eq!(accepted.input, input());
+    assert_eq!(*native.rows.lock().unwrap(), vec![row(OTHER_ROW)]);
+    assert_eq!(native.writes().len(), 2);
+    assert_eq!(native.writes()[1].1["expectedTurnId"], "second-queued-turn");
+}
+
+#[tokio::test]
+async fn older_queued_row_steers_after_original_turn_ends_and_runtime_recovers() {
+    let (state, native) = fixture().await;
+    invalidate(&state, true).await;
+    *native.active_turn.lock().unwrap() = Some("new-active-turn".into());
+    let accepted = transfer(promote(&state, THREAD, ROW).await.unwrap());
+    assert_eq!(accepted.expected_turn_id, "new-active-turn");
+    assert_eq!(accepted.phase, QueueTransferPhase::Accepted);
+    assert_eq!(native.writes()[1].1["expectedTurnId"], "new-active-turn");
+    assert_retry_does_not_write(&state, &native).await;
+}
+
+#[tokio::test]
+async fn idle_or_prohibited_native_context_cannot_delete_a_queued_row() {
+    for (active, capability) in [(None, Some(true)), (Some(TURN), Some(false))] {
+        let (state, native) = fixture().await;
         *native.active_turn.lock().unwrap() = active.map(str::to_string);
         *native.capability.lock().unwrap() = capability;
         let error = promote(&state, THREAD, ROW)
@@ -451,8 +392,8 @@ async fn cold_replaced_or_prohibited_native_context_cannot_delete_a_queued_row()
 }
 
 #[tokio::test]
-async fn lossless_input_and_original_turn_are_durable_before_each_native_write() {
-    let (state, native) = fixture(true).await;
+async fn lossless_input_and_request_time_turn_are_durable_before_each_native_write() {
+    let (state, native) = fixture().await;
     let (deleting, delete_ack) = native.hold("thread/queue/delete");
     let (steering, steer_ack) = native.hold("turn/steer");
     let task = spawn(&state, ROW);
@@ -521,7 +462,7 @@ async fn lossless_input_and_original_turn_are_durable_before_each_native_write()
 #[tokio::test]
 async fn false_or_lost_delete_ack_preserves_uncertainty_without_steer_or_requeue() {
     for reply in [DeleteReply::Absent, DeleteReply::Lost] {
-        let (state, native) = fixture(true).await;
+        let (state, native) = fixture().await;
         *native.delete_reply.lock().unwrap() = reply;
         let outcome = transfer(promote(&state, THREAD, ROW).await.unwrap());
         assert_eq!(outcome.phase, QueueTransferPhase::Uncertain);
@@ -540,7 +481,7 @@ async fn false_or_lost_delete_ack_preserves_uncertainty_without_steer_or_requeue
 #[tokio::test]
 async fn lost_steer_or_expected_turn_rejection_never_retargets_or_resubmits() {
     for error in ["steer acknowledgement lost", "app-server error -32600: expected active turn id `original-active-turn` but found `different-turn`"] {
-        let (state, native) = fixture(true).await;
+        let (state, native) = fixture().await;
         *native.steer_error.lock().unwrap() = Some(error.into());
         let outcome = transfer(promote(&state, THREAD, ROW).await.unwrap());
         assert_eq!(outcome.phase, QueueTransferPhase::Uncertain);
@@ -553,7 +494,7 @@ async fn lost_steer_or_expected_turn_rejection_never_retargets_or_resubmits() {
 
 #[tokio::test]
 async fn concurrent_promotions_share_one_transfer_and_one_native_attempt() {
-    let (state, native) = fixture(true).await;
+    let (state, native) = fixture().await;
     let (deleting, release) = native.hold("thread/queue/delete");
     let first = spawn(&state, ROW);
     entered(deleting).await;
@@ -569,7 +510,7 @@ async fn concurrent_promotions_share_one_transfer_and_one_native_attempt() {
 #[tokio::test]
 async fn native_receipt_before_steer_ack_settles_without_late_success_or_error_resurrection() {
     for error in [None, Some("steer acknowledgement lost")] {
-        let (state, native) = fixture(true).await;
+        let (state, native) = fixture().await;
         *native.steer_error.lock().unwrap() = error.map(str::to_string);
         let (steering, release) = native.hold("turn/steer");
         let task = spawn(&state, ROW);
@@ -599,10 +540,9 @@ async fn native_receipt_before_steer_ack_settles_without_late_success_or_error_r
 
 #[tokio::test]
 async fn repeated_original_queue_client_or_prior_receipt_cannot_settle_a_new_transfer() {
-    let (state, native) = fixture(true).await;
+    let (state, native) = fixture().await;
     let first = transfer(promote(&state, THREAD, ROW).await.unwrap());
     receipt(&state, THREAD, TURN, &first.id, "item/completed").await;
-    remember(&state, OTHER_ROW);
     let second = transfer(promote(&state, THREAD, OTHER_ROW).await.unwrap());
     assert_ne!(first.id, second.id);
     assert_eq!(first.client_user_message_id, second.client_user_message_id);
@@ -633,7 +573,7 @@ async fn repeated_original_queue_client_or_prior_receipt_cannot_settle_a_new_tra
 #[tokio::test]
 async fn reset_or_disconnect_during_held_delete_cannot_begin_a_late_steer() {
     for disconnected in [false, true] {
-        let (state, native) = fixture(true).await;
+        let (state, native) = fixture().await;
         let (deleting, release) = native.hold("thread/queue/delete");
         let task = spawn(&state, ROW);
         entered(deleting).await;
@@ -652,7 +592,7 @@ async fn reset_or_disconnect_during_held_delete_cannot_begin_a_late_steer() {
 #[tokio::test]
 async fn reset_or_disconnect_during_held_steer_cannot_be_reclassified_by_late_ack() {
     for disconnected in [false, true] {
-        let (state, native) = fixture(true).await;
+        let (state, native) = fixture().await;
         let (steering, release) = native.hold("turn/steer");
         let task = spawn(&state, ROW);
         entered(steering).await;
@@ -670,7 +610,7 @@ async fn reset_or_disconnect_during_held_steer_cannot_be_reclassified_by_late_ac
 
 #[tokio::test]
 async fn stale_completion_cannot_retire_a_transfer_for_the_current_turn() {
-    let (state, native) = fixture(true).await;
+    let (state, native) = fixture().await;
     let accepted = transfer(promote(&state, THREAD, ROW).await.unwrap());
     let requests = native.requests.lock().unwrap().clone();
     for (turn, expected_phase) in [
@@ -704,7 +644,7 @@ async fn stale_completion_cannot_retire_a_transfer_for_the_current_turn() {
 #[tokio::test]
 async fn native_status_loss_preserves_transfer_content_without_any_submission() {
     for status in ["idle", "notLoaded", "systemError"] {
-        let (state, native) = fixture(true).await;
+        let (state, native) = fixture().await;
         let accepted = transfer(promote(&state, THREAD, ROW).await.unwrap());
         let requests = native.requests.lock().unwrap().clone();
         for (native_status, expected_phase) in [
@@ -739,7 +679,7 @@ async fn native_status_loss_preserves_transfer_content_without_any_submission() 
 
 #[tokio::test]
 async fn failed_durable_transfer_creation_cannot_delete_native_input() {
-    let (state, native) = fixture(true).await;
+    let (state, native) = fixture().await;
     sqlx::query("CREATE TRIGGER reject_transfer BEFORE INSERT ON queue_transfers BEGIN SELECT RAISE(FAIL,'fixture denies durable transfer'); END")
         .execute(state.store.pool()).await.unwrap();
     assert!(promote(&state, THREAD, ROW).await.is_err());
@@ -750,7 +690,7 @@ async fn failed_durable_transfer_creation_cannot_delete_native_input() {
 #[tokio::test]
 async fn failed_persisted_deleted_or_steering_boundary_cannot_steer_or_retry() {
     for phase in ["deleted", "steering"] {
-        let (state, native) = fixture(true).await;
+        let (state, native) = fixture().await;
         let (deleting, release) = native.hold("thread/queue/delete");
         let task = spawn(&state, ROW);
         entered(deleting).await;
@@ -766,4 +706,27 @@ async fn failed_persisted_deleted_or_steering_boundary_cannot_steer_or_retry() {
             .unwrap();
         assert_retry_does_not_write(&state, &native).await;
     }
+}
+
+#[tokio::test]
+async fn any_native_waiting_row_can_steer_even_beyond_the_first_queue_page() {
+    let (state, native) = fixture().await;
+    let mut rows = (0..120)
+        .map(|index| row(&format!("earlier-{index}")))
+        .collect::<Vec<_>>();
+    rows.push(row(ROW));
+    *native.rows.lock().unwrap() = rows;
+    let accepted = transfer(promote(&state, THREAD, ROW).await.unwrap());
+    assert_eq!(accepted.phase, QueueTransferPhase::Accepted);
+    assert_eq!(accepted.native_queue_id, ROW);
+    assert_eq!(native.rows.lock().unwrap().len(), 120);
+    let calls = native.requests.lock().unwrap();
+    let pages = calls
+        .iter()
+        .filter(|(method, _)| method == "thread/queue/list")
+        .collect::<Vec<_>>();
+    assert_eq!(pages.len(), 2);
+    assert_eq!(pages[1].1["cursor"], "opaque-page-100");
+    drop(calls);
+    assert_eq!(native.writes().len(), 2);
 }

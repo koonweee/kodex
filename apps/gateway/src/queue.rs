@@ -28,7 +28,7 @@ pub struct QueuedInput {
     pub client_user_message_id: String,
     pub input: Vec<Value>,
     pub attachments: Vec<TimelineFileAttachment>,
-    /// Ephemeral hint. The command revalidates continuous original-turn context.
+    /// Current native active-turn hint. The command captures and revalidates its target at request time.
     pub can_steer: bool,
 }
 
@@ -149,13 +149,21 @@ pub async fn list_queued_inputs(
     let page = app_server_api::client(&state.app_server)
         .queue_list(thread_id.clone(), query.cursor, Some(limit))
         .await?;
+    let can_steer = queue_transfer::can_steer(&state, &thread_id).await;
+    let transfers = state.store.list_queue_transfers(Some(&thread_id)).await?;
     Ok(Json(QueuedInputListResponse {
         queued_inputs: page
             .data
             .into_iter()
-            .map(|row| project_row(&state, &thread_id, row))
+            .map(|row| {
+                let eligible = can_steer
+                    && !transfers
+                        .iter()
+                        .any(|transfer| transfer.native_queue_id == row.id);
+                project_row(&thread_id, row, eligible)
+            })
             .collect(),
-        transfers: state.store.list_queue_transfers(Some(&thread_id)).await?,
+        transfers,
         next_cursor: page.next_cursor,
     }))
 }
@@ -176,10 +184,14 @@ pub async fn create_queued_input(
             .unwrap_or_else(|| Uuid::new_v4().to_string()),
     )
     .await?;
-    // Native notification may arrive before the add ACK binds its witness.
+    // Publish a fresh native queue read after the acknowledged submission.
     broadcast_changed_best_effort(&state, &thread_id).await;
     Ok(Json(QueuedInputResponse {
-        queued_input: project_row(&state, &thread_id, row),
+        queued_input: project_row(
+            &thread_id,
+            row,
+            queue_transfer::can_steer(&state, &thread_id).await,
+        ),
     }))
 }
 
@@ -199,7 +211,11 @@ pub async fn update_queued_input(
         .await?;
     broadcast_changed_best_effort(&state, &thread_id).await;
     Ok(Json(QueuedInputResponse {
-        queued_input: project_row(&state, &thread_id, row),
+        queued_input: project_row(
+            &thread_id,
+            row,
+            queue_transfer::can_steer(&state, &thread_id).await,
+        ),
     }))
 }
 
@@ -212,9 +228,7 @@ pub async fn delete_queued_input(
     let client = app_server_api::client(&state.app_server);
     client.check_direct_input_capability(&thread_id).await?;
     ensure_not_transferring(&state, &thread_id, &queue_id).await?;
-    // Ambiguous deletion must not leave a reusable promotion right.
     crate::automations::observe_queue_handoff_pending(&state, &thread_id, &queue_id).await?;
-    state.queue_admissions.forget(&thread_id, &queue_id);
     let result = client
         .queue_delete(thread_id.clone(), queue_id.clone())
         .await;
@@ -259,7 +273,6 @@ pub async fn start_queued_input(
     let id = request.queued_submission_id;
     ensure_not_transferring(&state, &thread_id, &id).await?;
     crate::automations::observe_queue_handoff_pending(&state, &thread_id, &id).await?;
-    state.queue_admissions.forget(&thread_id, &id);
     let result = client
         .queue_start(thread_id.clone(), Some(id.clone()))
         .await;
@@ -328,12 +341,12 @@ pub async fn dismiss_queue_transfer(
 }
 
 pub(crate) fn project_row(
-    state: &AppState,
     thread_id: &str,
     row: NativeQueuedSubmission,
+    can_steer: bool,
 ) -> QueuedInput {
     QueuedInput {
-        can_steer: state.queue_admissions.can_promote(thread_id, &row.id),
+        can_steer,
         attachments: app_server_api::file_attachments_from_user_content(&row.input),
         id: row.id,
         thread_id: thread_id.into(),

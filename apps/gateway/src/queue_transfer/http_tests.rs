@@ -32,6 +32,8 @@ struct NativeQueue {
     rows: Mutex<Vec<Value>>,
     next_cursor: Mutex<Option<String>>,
     steer_error: Mutex<bool>,
+    idle: Mutex<bool>,
+    current_turn: Mutex<Option<String>>,
     history: Mutex<Vec<Value>>,
     update_gate: Mutex<Option<(oneshot::Sender<()>, oneshot::Receiver<()>)>>,
     reorder_gate: Mutex<Option<(oneshot::Sender<()>, oneshot::Receiver<()>)>>,
@@ -55,9 +57,17 @@ impl AppServer for NativeQueue {
                 "id":THREAD,"cwd":"/fixture","createdAt":1,"updatedAt":1,
                 "status":{"type":"active","activeFlags":[]},"canAcceptDirectInput":true,
             }})),
-            "thread/turns/list" => Ok(
-                json!({"data":[{"id":TURN,"status":"inProgress","items":[]}],"nextCursor":null,"backwardsCursor":null}),
-            ),
+            "thread/turns/list" => {
+                let turn = self
+                    .current_turn
+                    .lock()
+                    .unwrap()
+                    .clone()
+                    .unwrap_or_else(|| TURN.into());
+                Ok(
+                    json!({"data":if *self.idle.lock().unwrap() {vec![]} else {vec![json!({"id":turn,"status":"inProgress","items":[]})]},"nextCursor":null,"backwardsCursor":null}),
+                )
+            }
             "thread/queue/list" => Ok(
                 json!({"data":self.rows.lock().unwrap().clone(),"nextCursor":*self.next_cursor.lock().unwrap()}),
             ),
@@ -106,7 +116,7 @@ impl AppServer for NativeQueue {
             "turn/steer" if *self.steer_error.lock().unwrap() => Err(ApiError::BadGateway(
                 "native steer acknowledgement lost".into(),
             )),
-            "turn/steer" => Ok(json!({"turnId":TURN})),
+            "turn/steer" => Ok(json!({"turnId":params["expectedTurnId"]})),
             "thread/items/list" => Ok(
                 json!({"data":self.history.lock().unwrap().clone(),"nextCursor":null,"backwardsCursor":null}),
             ),
@@ -192,7 +202,7 @@ async fn create(state: &AppState) -> Value {
 }
 
 #[tokio::test]
-async fn native_http_queue_list_preserves_native_rows_cursor_and_unknown_promotion_rights() {
+async fn native_http_queue_list_preserves_native_rows_cursor_and_current_steer_eligibility() {
     let (state, native) = state().await;
     *native.rows.lock().unwrap() = vec![row("native-a"), row("native-b")];
     *native.next_cursor.lock().unwrap() = Some("opaque-next".into());
@@ -210,18 +220,23 @@ async fn native_http_queue_list_preserves_native_rows_cursor_and_unknown_promoti
     for row in body["queuedInputs"].as_array().unwrap() {
         assert_eq!(row["threadId"], THREAD);
         assert_eq!(row["input"], input());
-        assert_eq!(row["canSteer"], false);
+        assert_eq!(row["canSteer"], true);
         assert!(row.get("status").is_none() && row.get("options").is_none());
     }
     assert_eq!(body["transfers"], json!([]));
     assert_eq!(body["nextCursor"], "opaque-next");
+    let calls = native.requests.lock().unwrap();
     assert_eq!(
-        *native.requests.lock().unwrap(),
-        vec![(
+        calls[0],
+        (
             "thread/queue/list".into(),
             json!({"threadId":THREAD,"cursor":"opaque-input","limit":100})
-        )]
+        )
     );
+    assert!(calls.iter().all(|(method, _)| matches!(
+        method.as_str(),
+        "thread/queue/list" | "thread/read" | "thread/turns/list"
+    )));
 }
 
 #[tokio::test]

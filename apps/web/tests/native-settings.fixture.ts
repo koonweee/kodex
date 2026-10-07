@@ -70,6 +70,9 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
     const { threadId: _threadId, updatedAt: _updatedAt, ...tuple } = read;
     Object.assign(detail.thread, tuple);
   }
+  function canSteerQueuedInput(id: string) {
+    return Boolean(detail.timeline.activeTurnId) && !transfers.some((transfer) => transfer.nativeQueueId === id);
+  }
   function settingsChanged(client?: string) { emit("thread.settings_updated", { threadId: detail.thread.id }, client); }
   function publishQueuedTurn(turnId: string, client?: string) {
     const revision = Math.max(seq, detail.timeline.viewRevision ?? 0) + 1;
@@ -140,7 +143,7 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
     if (key in fixed) return respond(route, fixed[key]);
     const runsPath = url.pathname.match(/^\/v1\/automations\/([^/]+)\/runs$/);
     if (request.method() === "GET" && runsPath && automationRuns.has(runsPath[1])) return respond(route, { runs: automationRuns.get(runsPath[1]) }, 200, `runs:${client}`);
-    if (key === "GET /v1/threads/settings-chat/queued-inputs") return respond(route, { queuedInputs, transfers, nextCursor: null }, 200, `queue:${client}`);
+    if (key === "GET /v1/threads/settings-chat/queued-inputs") return respond(route, { queuedInputs: queuedInputs.map((row) => ({ ...row, canSteer: canSteerQueuedInput(row.id) })), transfers, nextCursor: null }, 200, `queue:${client}`);
     if (key === "GET /v1/threads/unread-badge") return respond(route, badge, 200, `badge:${client}`);
     if (key === "POST /v1/threads/settings-chat/seen") {
       const expected = body as MarkThreadSeenRequest;
@@ -193,11 +196,12 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
         activeTurnId: "turn-1", liveState: "streaming", pendingApprovalRequests: [], pendingUserInputRequests: [],
       };
       emit("thread_view.patch", patch, undefined, revision);
+      emit("turn_queue.changed", { threadId: detail.thread.id });
       return respond(route, { payload: {turn: {id:"turn-1",status:"inProgress"}} });
     }
     if (key === "POST /v1/threads/settings-chat/queued-inputs") {
       const submitted = body as { input: QueuedInput["input"]; clientUserMessageId: string };
-      const queued: QueuedInput = { id: `queued-${++nextQueueId}`, threadId: detail.thread.id, input: submitted.input, clientUserMessageId: submitted.clientUserMessageId, attachments: [], canSteer: detail.thread.status === "active" };
+      const queued: QueuedInput = { id: `queued-${++nextQueueId}`, threadId: detail.thread.id, input: submitted.input, clientUserMessageId: submitted.clientUserMessageId, attachments: [], canSteer: Boolean(detail.timeline.activeTurnId) };
       queuedInputs.push(queued);
       emit("turn_queue.changed", { threadId: detail.thread.id });
       return respond(route, { queuedInput: queued });
@@ -234,10 +238,11 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
         emit("turn_queue.changed", { threadId: detail.thread.id });
         return respond(route, { id: queuePath[1], threadId: detail.thread.id, deleted: Boolean(row) });
       }
-      if (steerFirst && !row?.canSteer) return respond(route, { code: "conflict", message: "The front queued message cannot be steered", retryable: false }, 409);
-      if (row?.canSteer && request.method() === "POST" && (queuePath[2] === "/steer" || steerFirst)) {
+      if (request.method() === "POST" && (queuePath[2] === "/steer" || steerFirst)) {
+        const expectedTurnId = detail.timeline.activeTurnId;
+        if (!row || !expectedTurnId || !canSteerQueuedInput(row.id)) return respond(route, { code: "conflict", message: "The queued message cannot be steered", retryable: false }, 409);
         queuedInputs.splice(index, 1);
-        const transfer: QueueTransfer = { id: `transfer-${++nextTransferId}`, threadId: detail.thread.id, nativeQueueId: row.id, clientUserMessageId: row.clientUserMessageId, expectedTurnId: "turn-1", input: row.input, phase: "accepted", error: null, createdAt: "2026-10-05T00:00:00Z", updatedAt: "2026-10-05T00:00:00Z" };
+        const transfer: QueueTransfer = { id: `transfer-${++nextTransferId}`, threadId: detail.thread.id, nativeQueueId: row.id, clientUserMessageId: row.clientUserMessageId, expectedTurnId, input: row.input, phase: "accepted", error: null, createdAt: "2026-10-05T00:00:00Z", updatedAt: "2026-10-05T00:00:00Z" };
         transfers.push(transfer);
         emit("turn_queue.changed", { threadId: detail.thread.id });
         emit("turn_queue.transfer_changed", { threadId: detail.thread.id });
@@ -308,6 +313,7 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
       detail.thread.status = timeline.liveState === "streaming" ? "active" : "idle";
       const patch: ThreadViewPatch = { ...detail.timeline, scope: "full_snapshot", threadId: detail.thread.id, affectedTurnIds: timeline.turns.map((turn) => turn.id) };
       emit("thread_view.patch", patch, client, revision);
+      emit("turn_queue.changed", { threadId: detail.thread.id }, client);
     },
     publishCanonicalEvent(event: Pick<EventEnvelope, "seq" | "payload"> & { kind: "thread_view.patch" | "thread_view.item_delta" }, client: string) {
       emit(event.kind, event.payload, client, event.seq);

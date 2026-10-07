@@ -355,8 +355,9 @@ async fn native_subagent_unknown_input_capability_does_not_infer_denial_from_rol
     let input = json!([{"type":"text","text":"Native dispatch will decide"}]);
     native.queued_responses.lock().unwrap().extend([
         json!({"thread":child("child","root","notLoaded",Value::Null)}),
-        json!({"data":[],"nextCursor":null,"backwardsCursor":null}),
         json!({"queuedSubmission":{"id":"native-row","clientUserMessageId":"native-client","input":input}}),
+        json!({"thread":child("child","root","notLoaded",Value::Null)}),
+        json!({"data":[],"nextCursor":null,"backwardsCursor":null}),
     ]);
     let response = build_router(state.clone())
         .oneshot(
@@ -380,10 +381,19 @@ async fn native_subagent_unknown_input_capability_does_not_infer_denial_from_rol
             .iter()
             .map(|(method, _)| method.as_str())
             .collect::<Vec<_>>(),
-        vec!["thread/read", "thread/turns/list", "thread/queue/add"]
+        vec![
+            "thread/read",
+            "thread/queue/add",
+            "thread/read",
+            "thread/turns/list"
+        ]
     );
     assert_eq!(
-        calls[2].1,
+        calls
+            .iter()
+            .find(|(method, _)| method == "thread/queue/add")
+            .unwrap()
+            .1,
         json!({"threadId":"child","input":input,"clientUserMessageId":"native-client"})
     );
 }

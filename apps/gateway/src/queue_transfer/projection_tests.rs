@@ -2,7 +2,7 @@ use super::*;
 
 #[tokio::test]
 async fn accepted_steer_projects_native_input_and_receipt_replaces_the_pending_row() {
-    let (state, native) = fixture(true).await;
+    let (state, native) = fixture().await;
     let mut events = state.events.subscribe();
     let accepted = transfer(promote(&state, THREAD, ROW).await.unwrap());
     let pending = state.thread_views.patch_for_thread(THREAD).await;
@@ -48,7 +48,7 @@ async fn accepted_steer_projects_native_input_and_receipt_replaces_the_pending_r
 
 #[tokio::test]
 async fn uncertain_delivery_removes_only_the_pending_projection() {
-    let (state, _) = fixture(true).await;
+    let (state, _) = fixture().await;
     let accepted = transfer(promote(&state, THREAD, ROW).await.unwrap());
     assert_eq!(
         state
@@ -85,7 +85,7 @@ async fn uncertain_delivery_removes_only_the_pending_projection() {
 
 #[tokio::test]
 async fn acknowledged_native_file_input_keeps_its_normal_attachment_presentation() {
-    let (state, native) = fixture(true).await;
+    let (state, native) = fixture().await;
     native
         .rows
         .lock()
@@ -109,7 +109,7 @@ async fn acknowledged_native_file_input_keeps_its_normal_attachment_presentation
 
 #[tokio::test]
 async fn uncertainty_during_pending_commit_cannot_leave_a_late_temporary_row() {
-    let (state, native) = fixture(true).await;
+    let (state, native) = fixture().await;
     sqlx::query("CREATE TRIGGER invalidate_at_pending_commit AFTER INSERT ON events WHEN NEW.kind = 'timeline.pending_user_input' BEGIN UPDATE queue_transfers SET phase = 'uncertain', error = 'Continuity lost during projection'; END")
         .execute(state.store.pool()).await.unwrap();
     let outcome = transfer(promote(&state, THREAD, ROW).await.unwrap());
@@ -131,7 +131,7 @@ async fn uncertainty_during_pending_commit_cannot_leave_a_late_temporary_row() {
 #[tokio::test]
 async fn settled_transfer_cannot_leave_a_late_pending_projection() {
     for uncertain in [false, true] {
-        let (state, _) = fixture(true).await;
+        let (state, _) = fixture().await;
         let accepted = transfer(promote(&state, THREAD, ROW).await.unwrap());
         if uncertain {
             state
@@ -169,7 +169,7 @@ async fn settled_transfer_cannot_leave_a_late_pending_projection() {
 
 #[tokio::test]
 async fn receipt_before_steer_ack_never_adds_a_duplicate_pending_message() {
-    let (state, native) = fixture(true).await;
+    let (state, native) = fixture().await;
     let (started, release) = native.hold("turn/steer");
     let task = spawn(&state, ROW);
     entered(started).await;
@@ -190,7 +190,7 @@ async fn receipt_before_steer_ack_never_adds_a_duplicate_pending_message() {
 
 #[tokio::test]
 async fn revert_during_steer_does_not_publish_removed_input_after_a_late_ack() {
-    let (state, native) = fixture(true).await;
+    let (state, native) = fixture().await;
     let (started, release) = native.hold("turn/steer");
     let task = spawn(&state, ROW);
     entered(started).await;

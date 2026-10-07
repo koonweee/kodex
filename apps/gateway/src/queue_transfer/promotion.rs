@@ -9,81 +9,111 @@ use crate::{
     store::QueueTransferPhase,
 };
 
-/// One explicit operation, guarded by the pre-add original active turn. Never
-/// infer non-delivery from queue deletion or native history absence.
+/// One explicit handoff targets the native turn active during this request.
+/// Queue age and enqueue-time runtime context do not determine eligibility.
 pub async fn promote(
     state: &AppState,
     thread_id: &str,
     native_queue_id: &str,
 ) -> ApiResult<PromotionOutcome> {
     let _guard = state.thread_input_locks.lock(thread_id).await;
-    promote_locked(state, thread_id, native_queue_id, None).await
-}
-
-/// Select the native front row under the same exclusion as every Kodex queue
-/// mutation. Never search ahead for a row with an eligible admission witness.
-pub async fn promote_first(state: &AppState, thread_id: &str) -> ApiResult<PromotionOutcome> {
-    let _guard = state.thread_input_locks.lock(thread_id).await;
-    let page = app_server_api::client(&state.app_server)
-        .queue_list(thread_id.into(), None, Some(1))
-        .await?;
-    let row = page
-        .data
-        .into_iter()
-        .next()
-        .ok_or_else(|| ApiError::Conflict("Native queue is empty".into()))?;
-    let id = row.id.clone();
-    promote_locked(state, thread_id, &id, Some(row)).await
-}
-
-/// Caller holds the thread input lock from selection through native handoff.
-async fn promote_locked(
-    state: &AppState,
-    thread_id: &str,
-    native_queue_id: &str,
-    selected_row: Option<app_server_api::NativeQueuedSubmission>,
-) -> ApiResult<PromotionOutcome> {
     if let Some(transfer) = state
         .store
         .get_queue_transfer_for_row(thread_id, native_queue_id)
         .await?
     {
-        // Response recovery only: a second tab or lost browser reply may read
-        // the same transfer, but cannot repeat any native mutation.
+        // Repeated requests recover the outcome without repeating native calls.
         return Ok(PromotionOutcome::Transfer { transfer });
     }
+    promote_locked(state, thread_id, Some(native_queue_id)).await
+}
+
+/// Select the current native front row under the shared Kodex input lock.
+/// An unresolved handoff at the front never permits skipping to a later row.
+pub async fn promote_first(state: &AppState, thread_id: &str) -> ApiResult<PromotionOutcome> {
+    let _guard = state.thread_input_locks.lock(thread_id).await;
+    promote_locked(state, thread_id, None).await
+}
+
+async fn promote_locked(
+    state: &AppState,
+    thread_id: &str,
+    native_queue_id: Option<&str>,
+) -> ApiResult<PromotionOutcome> {
+    // Register before any native preflight read so observed lifecycle changes
+    // cannot authorize deletion using a late response from an earlier runtime.
+    let probe = state.queue_steer_guards.begin_probe(thread_id);
     let client = app_server_api::client(&state.app_server);
     client.check_direct_input_capability(thread_id).await?;
     let current = active_turn(&client, thread_id).await?;
-    let claim = state.queue_admissions.claim_token(thread_id, native_queue_id, current.as_deref())
-        .ok_or_else(|| ApiError::Conflict(
-            "Queued message has no continuous original-turn context; leave it queued or send a new live correction".into()
-        ))?;
-    let original = claim.original_turn_id().to_owned();
-    let row = match selected_row {
-        Some(row) => row,
-        None => client
-            .queue_list(thread_id.into(), None, Some(100))
-            .await?
+    let claim = state
+        .queue_steer_guards
+        .capture_after_probe(probe, current.as_deref())
+        .ok_or_else(|| {
+            ApiError::Conflict(
+                "No continuous active turn is available to steer; native queue was left untouched"
+                    .into(),
+            )
+        })?;
+    let target = claim.turn_id().to_owned();
+    let mut cursor = None;
+    let mut seen_cursors = std::collections::HashSet::new();
+    let row = loop {
+        let page = client
+            .queue_list(
+                thread_id.into(),
+                cursor,
+                Some(if native_queue_id.is_some() { 100 } else { 1 }),
+            )
+            .await?;
+        if !state.queue_steer_guards.is_current(&claim) {
+            return Err(ApiError::Conflict(
+                "Active turn continuity was lost; native queue was left untouched".into(),
+            ));
+        }
+        if let Some(row) = page
             .data
             .into_iter()
-            .find(|row| row.id == native_queue_id)
-            .ok_or_else(|| {
-                ApiError::Conflict("Native queued message is no longer available".into())
-            })?,
+            .find(|row| native_queue_id.is_none_or(|id| row.id == id))
+        {
+            break row;
+        }
+        match page.next_cursor {
+            Some(next) if native_queue_id.is_some() => {
+                if !seen_cursors.insert(next.clone()) {
+                    return Err(ApiError::BadGateway(
+                        "Native queue repeated its page cursor".into(),
+                    ));
+                }
+                cursor = Some(next);
+            }
+            _ => {
+                return Err(ApiError::Conflict(
+                    "Native queued message is no longer available".into(),
+                ))
+            }
+        }
     };
-    if !state.queue_admissions.is_current(&claim) {
+    if let Some(transfer) = state
+        .store
+        .get_queue_transfer_for_row(thread_id, &row.id)
+        .await?
+    {
+        return Ok(PromotionOutcome::Transfer { transfer });
+    }
+    if !state.queue_steer_guards.is_current(&claim) {
         return Err(ApiError::Conflict(
-            "Original turn continuity was lost; native queue was left untouched".into(),
+            "Active turn continuity was lost; native queue was left untouched".into(),
         ));
     }
+    let native_queue_id = row.id.as_str();
     let transfer = state
         .store
         .create_queue_transfer(
             thread_id,
             &row.id,
             &row.client_user_message_id,
-            &original,
+            &target,
             row.input,
         )
         .await?;
@@ -101,12 +131,12 @@ async fn promote_locked(
         .await;
     }
 
-    if !state.queue_admissions.is_current(&claim) {
+    if !state.queue_steer_guards.is_current(&claim) {
         return uncertain(
             state,
             &transfer,
             QueueTransferPhase::Deleting,
-            "Original turn continuity was lost before deletion; native queue was left untouched",
+            "Active turn continuity was lost before deletion; native queue was left untouched",
         )
         .await;
     }
@@ -160,12 +190,12 @@ async fn promote_locked(
     // Reset/EOF ingestion never waits for this command lock. The phase CAS
     // above fences events observed before the native call; expectedTurnId is
     // the final native guard against a turn ending immediately afterwards.
-    if !state.queue_admissions.is_current(&claim) {
+    if !state.queue_steer_guards.is_current(&claim) {
         return uncertain(
             state,
             &transfer,
             QueueTransferPhase::Steering,
-            "Original turn continuity was lost after deletion; delivery is uncertain",
+            "Active turn continuity was lost after deletion; delivery is uncertain",
         )
         .await;
     }
@@ -173,14 +203,14 @@ async fn promote_locked(
     match client
         .turn_steer_native_input(
             thread_id.into(),
-            original,
+            target,
             transfer.input.clone(),
             transfer.id.clone(),
         )
         .await
     {
         Ok(_) => {
-            if !state.queue_admissions.is_current(&claim) {
+            if !state.queue_steer_guards.is_current(&claim) {
                 return uncertain(
                     state,
                     &transfer,

@@ -111,35 +111,56 @@ async fn native_http_steer_first_empty_queue_conflicts_without_native_mutations(
 }
 
 #[tokio::test]
-async fn native_http_steer_first_never_bypasses_an_unsteerable_native_front_row() {
+async fn native_http_steer_first_uses_the_native_front_even_without_enqueue_context() {
     let (state, native) = state().await;
-    let eligible = create(&state).await;
+    let later = create(&state).await;
     native
         .rows
         .lock()
         .unwrap()
-        .insert(0, row("native-without-context"));
-    let before = native.rows.lock().unwrap().clone();
+        .insert(0, row("native-from-previous-turn"));
     native.requests.lock().unwrap().clear();
     let (status, body) = steer_first(&state).await;
-    assert_eq!(status, StatusCode::CONFLICT, "{body}");
-    assert_eq!(*native.rows.lock().unwrap(), before);
-    assert!(native
-        .requests
-        .lock()
-        .unwrap()
-        .iter()
-        .all(|(method, _)| matches!(
-            method.as_str(),
-            "thread/read" | "thread/turns/list" | "thread/queue/list"
-        )));
-    assert!(state
-        .queue_admissions
-        .can_promote(THREAD, eligible["id"].as_str().unwrap()));
-    assert!(state
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["transfer"]["nativeQueueId"],
+        "native-from-previous-turn"
+    );
+    assert_eq!(body["transfer"]["phase"], "accepted");
+    let (_, listed) = request(&state, "GET", BASE, Value::Null).await;
+    assert_eq!(listed["queuedInputs"].as_array().unwrap().len(), 1);
+    assert_eq!(listed["queuedInputs"][0]["id"], later["id"]);
+    assert_eq!(listed["queuedInputs"][0]["canSteer"], true);
+}
+
+#[tokio::test]
+async fn native_http_steer_first_returns_unresolved_front_without_skipping_or_writing() {
+    let (state, native) = state().await;
+    let front = create(&state).await;
+    let later = create(&state).await;
+    let saved = state
         .store
-        .list_queue_transfers(None)
+        .create_queue_transfer(
+            THREAD,
+            front["id"].as_str().unwrap(),
+            "reused-client",
+            TURN,
+            vec![],
+        )
         .await
-        .unwrap()
-        .is_empty());
+        .unwrap();
+    let before = native.rows.lock().unwrap().clone();
+    let (status, body) = steer_first(&state).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["transfer"]["id"], saved.id);
+    assert_eq!(*native.rows.lock().unwrap(), before);
+    let (_, listed) = request(&state, "GET", BASE, Value::Null).await;
+    assert_eq!(listed["queuedInputs"][0]["canSteer"], false);
+    assert_eq!(listed["queuedInputs"][1]["id"], later["id"]);
+    assert_eq!(listed["queuedInputs"][1]["canSteer"], true);
+    let calls = native.requests.lock().unwrap();
+    assert!(calls.iter().all(|(method, _)| matches!(
+        method.as_str(),
+        "thread/queue/add" | "thread/queue/list" | "thread/read" | "thread/turns/list"
+    )));
 }

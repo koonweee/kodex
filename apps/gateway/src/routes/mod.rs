@@ -1923,10 +1923,11 @@ mod tests {
                 mark_thread_session_active(&state, "thread-1", "user-active-turn").await;
                 let mut active = thread_summary("thread-1");
                 active["status"] = json!({"type":"active","activeFlags":[]});
-                app_server.queued_responses.lock().unwrap().extend([
-                    json!({"thread":active}), json!({"thread":active}),
-                    json!({"data":[{"id":"user-active-turn","status":"inProgress","items":[]}],"nextCursor":null,"backwardsCursor":null}),
-                ]);
+                app_server
+                    .queued_responses
+                    .lock()
+                    .unwrap()
+                    .extend([json!({"thread":active}), json!({"thread":active})]);
             }
             let response = app.clone().oneshot(Request::post("/v1/self-control/threads/thread-1/input")
                 .header("content-type", "application/json").body(Body::from(json!({
@@ -2045,12 +2046,13 @@ mod tests {
             vec![
                 "thread/read",
                 "thread/read",
-                "thread/turns/list",
-                "thread/queue/add"
+                "thread/queue/add",
+                "thread/read",
+                "thread/turns/list"
             ]
         );
         assert_eq!(
-            calls[2].1,
+            calls[4].1,
             json!({"threadId":"thread-1","cursor":null,"sortDirection":"desc","itemsView":"notLoaded","limit":1})
         );
         assert!(calls
@@ -2090,8 +2092,9 @@ mod tests {
                 "thread/read",
                 "thread/resume",
                 "thread/read",
-                "thread/turns/list",
-                "thread/queue/add"
+                "thread/queue/add",
+                "thread/read",
+                "thread/turns/list"
             ]
         );
         assert_eq!(
@@ -6719,13 +6722,12 @@ mod tests {
             vec![
                 "thread/read",
                 "thread/read",
-                "thread/turns/list",
                 "thread/queue/add",
                 "thread/turns/list",
                 "thread/queue/start",
             ]
         );
-        let add = &calls[3].1;
+        let add = &calls[2].1;
         assert_eq!(
             add,
             &json!({
@@ -6734,7 +6736,7 @@ mod tests {
             })
         );
         assert_eq!(
-            calls[5].1,
+            calls[4].1,
             json!({"threadId":"thread-1","queuedSubmissionId":run.native_queue_id})
         );
         let event = recv_event_kind(&mut receiver, automations::AUTOMATION_RUN_UPDATED_EVENT).await;

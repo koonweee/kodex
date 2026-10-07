@@ -2870,7 +2870,7 @@ export interface components {
         QueueTransferPhase: "deleting" | "deleted" | "steering" | "accepted" | "uncertain";
         QueuedInput: {
             attachments: components["schemas"]["TimelineFileAttachment"][];
-            /** @description Ephemeral hint. The command revalidates continuous original-turn context. */
+            /** @description Current native active-turn hint. The command captures and revalidates its target at request time. */
             canSteer: boolean;
             clientUserMessageId: string;
             id: string;

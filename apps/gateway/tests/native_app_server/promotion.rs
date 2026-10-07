@@ -302,3 +302,210 @@ fn assert_user_projection(
     anyhow::ensure!(promoted[0]["payload"]["item"]["content"] == json!(queued_input()));
     Ok(())
 }
+
+#[tokio::test]
+#[ignore = "requires explicit pinned real Codex executable and loopback access"]
+async fn real_native_older_nonfront_queue_row_steers_into_the_current_turn() -> anyhow::Result<()> {
+    let mut fixture = Fixture::new().await?;
+    let mut session = NativeSession::start(&fixture).await?;
+    let result = timeout(
+        Duration::from_secs(60),
+        exercise_cross_turn(&mut fixture, &mut session),
+    )
+    .await;
+    session.shutdown().await?;
+    result??;
+    anyhow::ensure!(!fixture.config.codex.home.join("auth.json").exists());
+    Ok(())
+}
+
+async fn exercise_cross_turn(
+    fixture: &mut Fixture,
+    session: &mut NativeSession,
+) -> anyhow::Result<()> {
+    let project = api(
+        &session.app,
+        "POST",
+        "/v1/projects",
+        Some(json!({
+            "name":"Native cross-turn promotion proof", "roots":[{"path":fixture.workspace}],
+            "idempotencyKey":"native-cross-turn-promotion-proof",
+        })),
+    )
+    .await?;
+    let created = api(
+        &session.app,
+        "POST",
+        "/v1/threads",
+        Some(json!({"projectId":project["id"]})),
+    )
+    .await?;
+    let thread_id = created["thread"]["id"]
+        .as_str()
+        .context("native thread ID missing")?
+        .to_owned();
+    let (initial_response, release_initial) = ModelResponse::gated_message("Initial turn finished");
+    let (queued_response, release_queued) =
+        ModelResponse::gated_message("Consume the older queued correction next");
+    fixture.enqueue([initial_response, queued_response, ModelResponse::Hold]);
+    let started = api(
+        &session.app,
+        "POST",
+        &format!("/v1/threads/{thread_id}/input"),
+        Some(json!({
+            "input":[{"type":"text","text":"Hold initial turn while three inputs are queued"}],
+            "clientUserMessageId":INITIAL_CLIENT,
+        })),
+    )
+    .await?;
+    let original_turn = started["payload"]["turn"]["id"]
+        .as_str()
+        .context("original turn missing")?
+        .to_owned();
+    user_receipt(session, &thread_id, &original_turn, INITIAL_CLIENT).await?;
+    fixture.next_model_request().await?;
+
+    let first = queue_transfer::enqueue(
+        &session.state,
+        &thread_id,
+        vec![json!({"type":"text","text":"Start the next native queued turn","text_elements":[]})],
+        "cross-turn-first-client".into(),
+    )
+    .await?;
+    let retained = queue_transfer::enqueue(
+        &session.state, &thread_id,
+        vec![json!({"type":"text","text":"Leave this queued middle row untouched","text_elements":[]})],
+        "cross-turn-retained-client".into(),
+    ).await?;
+    let selected = queue_transfer::enqueue(
+        &session.state,
+        &thread_id,
+        queued_input(),
+        ORIGINAL_CLIENT.into(),
+    )
+    .await?;
+    assert_native_queue(
+        session,
+        &thread_id,
+        &[first.clone(), retained.clone(), selected.clone()],
+    )
+    .await?;
+
+    release_initial
+        .send(())
+        .map_err(|_| anyhow::anyhow!("initial model response disconnected"))?;
+    anyhow::ensure!(session.completed_turn(&thread_id, "completed").await?["id"] == original_turn);
+    let next = session
+        .notification("turn/started", "threadId", &thread_id)
+        .await?;
+    let current_turn = next["turn"]["id"]
+        .as_str()
+        .context("queued native turn missing")?
+        .to_owned();
+    anyhow::ensure!(current_turn != original_turn);
+    let first_receipt = user_receipt(
+        session,
+        &thread_id,
+        &current_turn,
+        &first.client_user_message_id,
+    )
+    .await?;
+    anyhow::ensure!(first_receipt["content"] == json!(first.input));
+    fixture.next_model_request().await?;
+    // Both rows predate this turn. Select the non-front row while retaining the
+    // first waiting row; row provenance cannot gate current native admission.
+    assert_native_queue(session, &thread_id, &[retained.clone(), selected.clone()]).await?;
+    let outcome = queue_transfer::promote(&session.state, &thread_id, &selected.id).await?;
+    let PromotionOutcome::Transfer { transfer } = outcome else {
+        anyhow::bail!("older non-front row should steer into the current active turn");
+    };
+    anyhow::ensure!(transfer.phase == QueueTransferPhase::Accepted);
+    anyhow::ensure!(
+        transfer.expected_turn_id == current_turn && transfer.expected_turn_id != original_turn
+    );
+    anyhow::ensure!(transfer.native_queue_id == selected.id);
+    anyhow::ensure!(transfer.client_user_message_id == ORIGINAL_CLIENT);
+    anyhow::ensure!(transfer.id != ORIGINAL_CLIENT && transfer.input == queued_input());
+    anyhow::ensure!(
+        session
+            .state
+            .store
+            .get_queue_transfer(&transfer.id)
+            .await?
+            .context("accepted cross-turn transfer missing")?
+            .phase
+            == QueueTransferPhase::Accepted
+    );
+    assert_native_queue(session, &thread_id, std::slice::from_ref(&retained)).await?;
+
+    release_queued
+        .send(())
+        .map_err(|_| anyhow::anyhow!("queued model response disconnected"))?;
+    let followup = fixture.next_model_request().await?;
+    let consumed = followup["input"]
+        .as_array()
+        .context("followup model input missing")?
+        .iter()
+        .filter(|item| item["role"] == "user" && item["content"].to_string().contains(QUEUED_TEXT))
+        .count();
+    anyhow::ensure!(
+        consumed == 1,
+        "older queued correction must be consumed exactly once, got {consumed}"
+    );
+    let receipt = user_receipt(session, &thread_id, &current_turn, &transfer.id).await?;
+    anyhow::ensure!(receipt["content"] == json!(queued_input()));
+    let native_item_id = receipt["id"]
+        .as_str()
+        .context("cross-turn native receipt ID missing")?;
+    anyhow::ensure!(session
+        .state
+        .store
+        .get_queue_transfer(&transfer.id)
+        .await?
+        .is_none());
+    // Read the already-ingested canonical view without a GET repairing it.
+    let view = session.canonical_view(&thread_id).await?;
+    let users = view["rows"]
+        .as_array()
+        .context("canonical rows missing")?
+        .iter()
+        .filter_map(|row| row.get("item"))
+        .filter(|item| item["itemType"] == "userMessage")
+        .collect::<Vec<_>>();
+    anyhow::ensure!(
+        users.len() == 3,
+        "expected initial, first queued and promoted input: {users:?}"
+    );
+    for client_id in [
+        INITIAL_CLIENT,
+        first.client_user_message_id.as_str(),
+        transfer.id.as_str(),
+    ] {
+        anyhow::ensure!(
+            users
+                .iter()
+                .filter(|item| item["payload"]["item"]["clientId"] == client_id)
+                .count()
+                == 1
+        );
+    }
+    let promoted = users
+        .iter()
+        .find(|item| item["payload"]["item"]["clientId"] == transfer.id)
+        .context("promoted canonical receipt missing")?;
+    anyhow::ensure!(promoted["itemId"] == native_item_id && promoted["turnId"] == current_turn);
+    anyhow::ensure!(promoted["payload"]["item"]["content"] == json!(queued_input()));
+    assert_native_queue(session, &thread_id, std::slice::from_ref(&retained)).await?;
+
+    let stopped = api(
+        &session.app,
+        "POST",
+        &format!("/v1/threads/{thread_id}/interrupt-current"),
+        None,
+    )
+    .await?;
+    anyhow::ensure!(stopped["interruptedTurnId"] == current_turn);
+    anyhow::ensure!(session.completed_turn(&thread_id, "interrupted").await?["id"] == current_turn);
+    assert_native_queue(session, &thread_id, std::slice::from_ref(&retained)).await?;
+    Ok(())
+}

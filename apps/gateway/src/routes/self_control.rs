@@ -796,7 +796,11 @@ pub async fn send_self_control_thread_input(
     let row =
         crate::queue_transfer::enqueue_locked(&state, &thread_id, request.input, client_id).await?;
     queue::broadcast_changed_best_effort(&state, &thread_id).await;
-    let queued_input = queue::project_row(&state, &thread_id, row);
+    let queued_input = queue::project_row(
+        &thread_id,
+        row,
+        crate::queue_transfer::can_steer(&state, &thread_id).await,
+    );
     // An accepted native write must not become a retryable error solely because
     // its audit/refill publication fails.
     if let Err(error) = audit_self_control(&state, None, Some(&thread_id), "self_control.thread_input", json!({"source":request.source.to_value(), "action":"queued", "queuedInputId":queued_input.id})).await {

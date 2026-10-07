@@ -193,7 +193,7 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
     match message {
         InboundMessage::Disconnected => {
             state.app_surface_imports.disconnect().await;
-            state.queue_admissions.invalidate_all();
+            state.queue_steer_guards.invalidate_all();
             if let Err(error) = crate::queue_transfer::recover(state).await {
                 tracing::warn!(%error, "failed to publish queue transfer continuity loss");
             }
@@ -220,7 +220,7 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
                 return crate::approvals::resolve_native(state, &params).await;
             }
             state
-                .queue_admissions
+                .queue_steer_guards
                 .observe_notification(&method, &params);
             if let Err(error) =
                 crate::queue_transfer::observe_notification(state, &method, &params).await

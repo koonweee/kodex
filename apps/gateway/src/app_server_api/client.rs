@@ -430,7 +430,7 @@ impl CodexClient {
     }
 
     /// Queue promotion preserves the native input envelope and must never
-    /// replace its original turn guard after rejection or an ambiguous reply.
+    /// replace its captured target turn after rejection or an ambiguous reply.
     pub async fn turn_steer_native_input(
         &self,
         thread_id: String,

@@ -10,6 +10,65 @@ for (const shape of [
 ]) {
   test.describe(shape.name, () => {
     test.use({ viewport: { width: shape.width, height: 844 }, hasTouch: shape.hasTouch, isMobile: shape.isMobile });
+    test("older queued input steers the current native turn and stale tabs converge without resending", async ({ context }) => {
+      const fixture = await nativeSettingsFixture(context, { queuedSteerClient: "first" });
+      const queuePath = "/v1/threads/settings-chat/queued-inputs";
+      fixture.detail.thread.status = "active";
+      fixture.detail.liveState = "streaming";
+      fixture.detail.timeline = { ...fixture.detail.timeline, activeTurnId: "turn-1", liveState: "streaming", turns: [{ id: "turn-1", status: "inProgress" }] };
+      fixture.queuedInputs.push({ id: "older-queue", threadId: "settings-chat", clientUserMessageId: "older-client", input: [{ type: "text", text: "Correction queued during the first turn" }], attachments: [], canSteer: true });
+      try {
+        const first = await fixture.page("first");
+        const second = await fixture.page("second");
+        for (const page of [first, second]) await expect(queueRows(page).getByRole("button", { name: "Steer", exact: true })).toBeVisible();
+        await expect.poll(() => fixture.connected("first") && fixture.connected("second")).toBe(true);
+
+        fixture.publishTimeline({ ...fixture.detail.timeline, activeTurnId: null, liveState: "idle", turns: [{ id: "turn-1", status: "completed" }] });
+        for (const page of [first, second]) {
+          await expect(queueRows(page)).toHaveCount(1);
+          await expect(queueRows(page).getByRole("button", { name: "Steer", exact: true })).toHaveCount(0);
+        }
+        fixture.publishTimeline({ ...fixture.detail.timeline, activeTurnId: "turn-2", liveState: "streaming", turns: [{ id: "turn-1", status: "completed" }, { id: "turn-2", status: "inProgress" }] });
+        for (const page of [first, second]) await expect(queueRows(page).getByRole("button", { name: "Steer", exact: true })).toBeEnabled();
+        await first.screenshot({ path: test.info().outputPath("older-queue-steer.png") });
+
+        // The acting tab retains a captured queue read and misses the next turn.
+        // The gateway selects the request-time turn, independent of that tab.
+        fixture.holdNext("first", "queue");
+        fixture.queueChanged("first");
+        await expect.poll(() => fixture.isHeld("first", "queue")).toBe(true);
+        fixture.publishTimeline({ ...fixture.detail.timeline, activeTurnId: "turn-3", liveState: "streaming", turns: [{ id: "turn-1", status: "completed" }, { id: "turn-2", status: "completed" }, { id: "turn-3", status: "inProgress" }] }, "second");
+        await click(queueRows(first).getByRole("button", { name: "Steer", exact: true }), shape.hasTouch);
+        await expect.poll(() => fixture.transfers.length).toBe(1);
+        expect(fixture.transfers[0]).toMatchObject({ nativeQueueId: "older-queue", expectedTurnId: "turn-3", clientUserMessageId: "older-client" });
+        for (const page of [first, second]) await expect(queueRows(page)).toHaveCount(0);
+        await expect.poll(() => fixture.wasAborted("first", "queue")).toBe(true);
+        await fixture.release("first", "queue");
+        await expect(queueRows(first)).toHaveCount(0);
+        await expect(userMessages(first, "Correction queued during the first turn")).toHaveCount(1);
+        await expect(userMessages(second, "Correction queued during the first turn")).toHaveCount(0);
+
+        // A pending receipt and an empty queue must not trigger a second action.
+        await composer(first).press("Meta+Enter");
+        await composer(first).press("Meta+Enter");
+        const connections = fixture.connections.get("second") ?? 0;
+        fixture.receiveQueuedTransfer(fixture.transfers[0].id, "native-older-receipt", "first");
+        fixture.disconnect("second");
+        await expect.poll(() => fixture.connections.get("second") ?? 0).toBeGreaterThan(connections);
+        for (const page of [first, second]) {
+          await expect(queueRows(page)).toHaveCount(0);
+          await expect(userMessages(page, "Correction queued during the first turn")).toHaveCount(1);
+          await expect(page.getByRole("region", { name: "Queue transfers" })).toHaveCount(0);
+        }
+        expect(fixture.detail.timeline.rows).toHaveLength(1);
+        expect(fixture.detail.timeline.rows[0]).toMatchObject({ turnId: "turn-3", item: { itemId: "native-older-receipt" } });
+        expect(fixture.requests.filter((request) => request.key === `POST ${queuePath}/older-queue/steer`).map((request) => request.body)).toEqual([null]);
+        expect(fixture.requests.filter((request) => ["POST /v1/threads/settings-chat/input", `POST ${queuePath}`, `POST ${queuePath}/steer-first`].includes(request.key))).toHaveLength(0);
+      } finally { await fixture.close(); }
+      expect(fixture.unexpected).toEqual([]);
+      expect(fixture.errors).toEqual([]);
+    });
+
     test("queued Steer renders one canonical annotated message and reconnects replace its pending receipt", async ({ context }) => {
       const fixture = await nativeSettingsFixture(context, { queuedSteerClient: "first" });
       const text = appendResponseAnnotations("Queued correction", [{ id: "quote", text: "Keep the gateway authoritative.", comment: "Apply this constraint." }]);
