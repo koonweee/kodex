@@ -1,6 +1,5 @@
 .kodex-command-count {
   display: inline-grid;
-  min-inline-size: 3ch;
   overflow: hidden;
   vertical-align: bottom;
   text-align: center;
