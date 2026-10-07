@@ -47,3 +47,21 @@ test("short split panes use compact rows while neighboring tall panes retain nor
   expect(fixture.errors).toEqual([]);
   expect(fixture.unexpected).toEqual([]);
 });
+
+test("mobile inline composer keeps two starting rows in tall and short panes", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, baseURL: "http://127.0.0.1:5174" });
+  const fixture = await nativeSettingsFixture(context);
+  try {
+    const page = await fixture.page("mobile-height", "/");
+    const input = page.getByRole("textbox", { name: "Message composer", exact: true });
+    const rows = () => input.evaluate(el => el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight));
+    await expect.poll(rows).toBeCloseTo(2, 0);
+    await page.setViewportSize({ width: 390, height: 500 });
+    await expect.poll(rows).toBeCloseTo(2, 0);
+  } finally {
+    await fixture.close();
+    await context.close();
+  }
+  expect(fixture.errors).toEqual([]);
+  expect(fixture.unexpected).toEqual([]);
+});

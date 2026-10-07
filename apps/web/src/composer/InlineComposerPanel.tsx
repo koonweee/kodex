@@ -203,7 +203,7 @@ export function InlineComposerPanel({
           aria-label="Message composer"
           className={`kodex-composer-textarea${expanded ? " kodex-mobile-composer-textarea" : ""}`}
           placeholder={canCompose ? COMPOSER_TEXT.placeholder : COMPOSER_TEXT.disabledPlaceholder}
-          minRows={expanded ? 3 : compactComposer ? 2 : 4}
+          minRows={expanded ? 3 : density === "mobile" || compactComposer ? 2 : 4}
           maxRows={expanded ? 16 : compactComposer ? 5 : 10}
           autosize
           value={draftState.composerText}
