@@ -25,7 +25,7 @@ function TimelineWorkRowRendererImpl({
   if (row.state === "running") {
     return (
       <Box className="kodex-work-row" data-state="running">
-        <Text size="sm" c="dimmed">
+        <Text size="xs" c="dimmed">
           {label}
         </Text>
         <WorkHeaderDivider />
@@ -42,7 +42,7 @@ function TimelineWorkRowRendererImpl({
   if (row.collapsedRows.length === 0) {
     return (
       <Box className="kodex-work-row" data-state={row.state}>
-        {failure || <Text size="sm" c="dimmed">{label}</Text>}
+        {failure || <Text size="xs" c="dimmed">{label}</Text>}
         <WorkHeaderDivider />
       </Box>
     );
@@ -59,7 +59,7 @@ function TimelineWorkRowRendererImpl({
       >
         <summary>
           <Box className="kodex-work-summary-content">
-            <Text size="sm" c="dimmed">
+            <Text size="xs" c="dimmed">
               {label}
             </Text>
             <ChevronRight size={16} className="kodex-work-caret" aria-hidden="true" />
