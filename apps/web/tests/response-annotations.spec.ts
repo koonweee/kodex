@@ -110,7 +110,7 @@ for (const shape of [
           "</annotation2>", "</response_annotations>",
         ].join("\n");
         const submitted = fixture.requests.find((request) => request.key === inputKey)!.body as { input: unknown; clientUserMessageId: string };
-        expect(submitted).toEqual({ input: [{ type: "text", text: submittedText }], clientUserMessageId: expect.any(String) });
+        expect(submitted).toEqual({ input: [{ type: "text", text: submittedText }], clientUserMessageId: expect.any(String), queueIfPending: true });
         await expect(activePane(first).getByRole("button", { name: /^\d+ annotations?$/ })).toHaveCount(0);
         await expect(composer(first)).toHaveValue("");
 
@@ -241,8 +241,15 @@ for (const shape of [
         const queuedText = ["<response_annotations>", "<annotation1>", `Assistant text: ${JSON.stringify(secondQuote)}`, "</annotation1>", "</response_annotations>"].join("\n");
         expect(fixture.requests.find((request) => request.key === queueKey)!.body).toEqual({ input: [{ type: "text", text: queuedText }], clientUserMessageId: expect.any(String) });
         for (const page of [first, second]) {
-          await expect(activePane(page).getByRole("group", { name: "Queued message", exact: true })).toContainText(secondQuote);
+          const queued = activePane(page).getByRole("group", { name: "Queued message", exact: true });
+          await expect(queued).toContainText("Quoted message");
           await expect(page.getByRole("button", { name: /^\d+ annotations?$/ })).toHaveCount(0);
+          await click(queued.getByRole("button", { name: "Edit", exact: true }), shape.hasTouch);
+          const editor = page.getByRole("dialog", { name: "Edit queued message", exact: true });
+          await expect(editor.locator("blockquote")).toHaveText(secondQuote);
+          await expect(editor.getByRole("textbox", { name: "Queued message text", exact: true })).toHaveValue("");
+          await page.keyboard.press("Escape");
+          await expect(editor).toBeHidden();
         }
         expect(fixture.requests.filter((request) => request.key === "POST /v1/threads/settings-chat/input")).toHaveLength(0);
         await first.screenshot({ path: test.info().outputPath("annotation-queued.png") });

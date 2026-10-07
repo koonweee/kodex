@@ -169,7 +169,7 @@ describe("MVP composer input flows", () => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
     });
     expect(within(timelineElement(container)).getByText("Ship it")).toBeInTheDocument();
-    expect(within(timelineElement(container)).getByText("Sending")).toBeInTheDocument();
+    expect(within(timelineElement(container)).queryByText("Sending")).not.toBeInTheDocument();
     const sendingButton = screen.getByRole("button", { name: /sending message/i });
     expect(sendingButton).toBeDisabled();
     expect(sendingButton).toHaveAttribute("data-action-state", "submitting");
@@ -182,7 +182,7 @@ describe("MVP composer input flows", () => {
       expect(screen.queryByRole("button", { name: /sending message/i })).not.toBeInTheDocument();
     });
     expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
-    expect(within(timelineElement(container)).queryByText("Ship it")).not.toBeInTheDocument();
+    expect(within(timelineElement(container)).getByText("Ship it")).toBeInTheDocument();
     expect(within(timelineElement(container)).queryByText("Sending")).not.toBeInTheDocument();
 
     let selectedThreadStream: FakeEventSource | undefined;
@@ -193,8 +193,9 @@ describe("MVP composer input flows", () => {
       expect(selectedThreadStream).toBeDefined();
       expect(selectedThreadStream?.onmessage).toBeTypeOf("function");
     });
+    const submittedInput = await requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0]);
     act(() => {
-      selectedThreadStream?.emitNamed("thread_view.patch", projectionPatchEvent({
+      const receipt = projectionPatchEvent({
         id: "projection-sent-user",
         seq: 3,
         threadId: thread.id,
@@ -204,7 +205,10 @@ describe("MVP composer input flows", () => {
         text: "Ship it",
         displayOrder: 3,
         status: "running",
-      }));
+      });
+      Object.assign(receipt.payload.items[0].payload.item, { clientId: submittedInput.clientUserMessageId });
+      Object.assign(receipt.payload.items[0].payload.itemSnapshot, { clientId: submittedInput.clientUserMessageId });
+      selectedThreadStream?.emitNamed("thread_view.patch", receipt);
     });
     await waitFor(() => expect(within(timelineElement(container)).getAllByText("Ship it")).toHaveLength(1));
     await waitFor(() => {
@@ -312,6 +316,7 @@ describe("MVP composer input flows", () => {
     expect(gateway.callsFor("POST", "/v1/threads/thread-1/compact")).toHaveLength(0);
     await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toEqual({
       clientUserMessageId: expect.any(String),
+      queueIfPending: true,
       input: [{ type: "text", text: "Please run /compact later" }],
     });
   });
@@ -579,22 +584,22 @@ describe("MVP composer input flows", () => {
     const firstThreadButton = await within(workspaceNavigation()).findByRole("button", { name: /^implement frontend$/i });
     const firstThreadRow = firstThreadButton.closest(".kodex-thread-list-button");
     expect(firstThreadRow).toBeInTheDocument();
+    await screen.findByRole("heading", { name: /^implement frontend$/i });
+    const firstPane = threadPaneByHeading(/^implement frontend$/i);
     await userEvent.type(composerInThreadPane(/^implement frontend$/i), "sleep 5s, then send hello");
     await userEvent.click(sendButtonInThreadPane(/^implement frontend$/i));
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
-      expect(firstThreadRow?.querySelector(".kodex-thread-progress-indicator")).toBeInTheDocument();
+      expect(within(firstPane).getByRole("button", { name: /sending message/i })).toBeDisabled();
     });
 
     await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /^second thread$/i }));
     await waitFor(() => {
       expect(within(activeThreadPane()).getByText(/second thread snapshot/i)).toBeInTheDocument();
     });
-    const currentFirstThreadRow = within(workspaceNavigation())
-      .getByRole("button", { name: /^implement frontend$/i })
-      .closest(".kodex-thread-list-button");
-    expect(currentFirstThreadRow?.querySelector(".kodex-thread-progress-indicator")).toBeInTheDocument();
+    expect(firstPane).toBeInTheDocument();
+    expect(within(firstPane).getByRole("button", { name: /sending message/i, hidden: true })).toBeDisabled();
 
     firstThreadTurns = [
       snapshotTurn("turn-3", [
@@ -690,10 +695,10 @@ describe("MVP composer input flows", () => {
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(2);
-      expect(screen.queryByText("Sending")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /sending message/i })).not.toBeInTheDocument();
     });
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
-    expect(within(timelineElement(container)).queryByText("Retry text")).not.toBeInTheDocument();
+    expect(within(timelineElement(container)).getAllByText("Retry text")).toHaveLength(1);
     expect(within(timelineElement(container)).queryByText("Failed")).not.toBeInTheDocument();
   });
 
@@ -790,6 +795,7 @@ describe("MVP composer input flows", () => {
     });
     await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toEqual({
       clientUserMessageId: expect.any(String),
+      queueIfPending: true,
       input: [
         { type: "text", text: "Inspect this" },
         { type: "localImage", path: "/tmp/diagram.png" },
@@ -835,6 +841,7 @@ describe("MVP composer input flows", () => {
     expect(gateway.callsFor("POST", "/v1/uploads/images")).toHaveLength(0);
     await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toEqual({
       clientUserMessageId: expect.any(String),
+      queueIfPending: true,
       input: [{ type: "text", text: "Review this" }],
       attachments: [fileAttachment],
     });
@@ -1157,6 +1164,7 @@ describe("MVP composer input flows", () => {
     });
     await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[1])).resolves.toEqual({
       clientUserMessageId: expect.any(String),
+      queueIfPending: true,
       input: [
         { type: "text", text: "Inspect this" },
         { type: "localImage", path: "/tmp/diagram.png" },
