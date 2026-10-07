@@ -10,11 +10,12 @@ import type {
 } from "react";
 
 import {
+  type ComposerModelChoice,
   type ComposerSettings,
   type ComposerSettingsChange,
   type ContextUsage,
 } from "../ComposerFooterControls";
-import type { ModelSummary, TextElement, TimelineSkillMention, UserInput } from "../api/client";
+import type { TextElement, TimelineSkillMention, UserInput } from "../api/client";
 import type { ImageLightboxImage } from "../images/types";
 import { useInputCapabilities } from "../shared/inputCapabilities";
 import { NARROW_WORKSPACE_QUERY } from "../shared/layoutBreakpoints";
@@ -73,7 +74,7 @@ export type ComposerPanelProps = {
   isComposerSubmitting: boolean;
   isSelectedTimelineReady: boolean;
   skillsInvalidationGeneration?: number;
-  models: ModelSummary[];
+  models: ComposerModelChoice[];
   onAttachmentInputChange: (event: ReactChangeEvent<HTMLInputElement>) => void;
   onComposerDragLeave: (event: ReactDragEvent<HTMLElement>) => void;
   onComposerDragOver: (event: ReactDragEvent<HTMLElement>) => void;

@@ -4,8 +4,7 @@ import { memo } from "react";
 import type { RefObject } from "react";
 
 import { ComposerFooterControls } from "../ComposerFooterControls";
-import type { ComposerSettings, ComposerSettingsChange, ContextUsage } from "../ComposerFooterControls";
-import type { ModelSummary } from "../api/client";
+import type { ComposerModelChoice, ComposerSettings, ComposerSettingsChange, ContextUsage } from "../ComposerFooterControls";
 import { GoalButton, type GoalControls } from "../goals/GoalControls";
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 import { useTouchQueueHold } from "./useTouchQueueHold";
@@ -29,7 +28,7 @@ type ComposerToolbarProps = {
   canSubmitComposer: boolean;
   contextUsage?: ContextUsage | null;
   disabled: boolean;
-  models: ModelSummary[];
+  models: ComposerModelChoice[];
   onExpandComposer?: () => void;
   onSettingsChange: (settings: ComposerSettingsChange) => void;
   onStopTurn: () => void;

@@ -3,7 +3,7 @@ import { mastraClient, type CatalogSnapshot, type ChatSnapshot } from './client'
 import { acceptsSnapshot } from './presentation';
 import { errorMessageFrom } from '../shared/values';
 
-function useSnapshots<T extends { epoch: string; revision: number }>(key: string | null, watch: (signal: AbortSignal) => Promise<AsyncIterable<T>>) {
+export function useNativeSnapshots<T extends { epoch: string; revision: number }>(key: string | null, watch: (signal: AbortSignal) => Promise<AsyncIterable<T>>) {
   const [state, setState] = useState<{ key: string | null; snapshot: T | null; error: string | null }>({ key: null, snapshot: null, error: null });
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -45,9 +45,9 @@ function useSnapshots<T extends { epoch: string; revision: number }>(key: string
 }
 export function useNativeCatalog() {
   const watch = useCallback((signal: AbortSignal) => mastraClient.watchCatalog(undefined, { signal }), []);
-  return useSnapshots<CatalogSnapshot>('catalog', watch);
+  return useNativeSnapshots<CatalogSnapshot>('catalog', watch);
 }
 export function useNativeChat(chatId: string | null) {
   const watch = useCallback((signal: AbortSignal) => mastraClient.watchChat({ chatId: chatId! }, { signal }), [chatId]);
-  return useSnapshots<ChatSnapshot>(chatId, watch);
+  return useNativeSnapshots<ChatSnapshot>(chatId, watch);
 }

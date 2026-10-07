@@ -52,12 +52,21 @@ test('existing Kodex UI shares native streaming, queue/stop, tool history and re
     backend = await startBackend(root);
     await page.goto('/');
     if (test.info().project.name === 'chromium') await page.getByRole('button', { name: 'Create thread in project', exact: true }).click();
+    await pane(page).getByRole('button', { name: /^Model:/ }).click();
+    await page.getByRole('menuitem', { name: 'Reasoning', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Low', exact: true }).click();
+    await expect(pane(page).getByRole('button', { name: /^Model:.*low$/ })).toBeVisible();
     await send(page, 'BROWSER_HELLO');
     await expect(pane(page).getByText('fixture:BROWSER_HELLO', { exact: true })).toBeVisible();
     await expect(pane(page).locator('.kodex-user-message-bubble').filter({ hasText: 'BROWSER_HELLO' })).toHaveCount(1);
     const second = await context.newPage();
     await second.goto(page.url());
     await expect(pane(second).getByText('fixture:BROWSER_HELLO', { exact: true })).toBeVisible();
+    for (const tab of [page, second]) await expect(pane(tab).getByRole('button', { name: /^Model:.*low$/ })).toBeVisible();
+    await pane(second).getByRole('button', { name: /^Model:/ }).click();
+    await second.getByRole('menuitem', { name: 'Reasoning', exact: true }).click();
+    await second.getByRole('menuitem', { name: 'High', exact: true }).click();
+    for (const tab of [page, second]) await expect(pane(tab).getByRole('button', { name: /^Model:.*high$/ })).toBeVisible();
     await send(page, 'HOLD_STOP');
     for (const tab of [page, second]) {
       await expect(pane(tab).getByText('started:HOLD_STOP', { exact: true })).toBeVisible();
@@ -80,6 +89,7 @@ test('existing Kodex UI shares native streaming, queue/stop, tool history and re
     backend = await startBackend(root);
     for (const tab of [page, second]) {
       await expect(pane(tab).getByRole('button', { name: 'Stop turn', exact: true })).toHaveCount(0);
+      await expect(pane(tab).getByRole('button', { name: /^Model:.*high$/ })).toBeVisible();
       await expect(pane(tab).getByText('fixture:READ_MARKER', { exact: true })).toBeVisible();
       await expect(pane(tab).locator('.kodex-user-message-bubble').filter({ hasText: 'READ_MARKER' })).toHaveCount(1);
       await expect(pane(tab).getByText('fixture:DROP_ON_RESTART', { exact: true })).toHaveCount(0);

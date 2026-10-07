@@ -1,10 +1,11 @@
+import { nativeSettingsFixture } from './testBuilders';
 import { describe, expect, it } from 'vitest';
 import { defaultDisplayState } from '../../../../spikes/mastra-code-sdk/node_modules/@mastra/core/dist/agent-controller/index.js';
 import { acceptsSnapshot, timelinePresentation } from './presentation';
 import type { ChatSnapshot } from './client';
 
 function snapshot(): ChatSnapshot {
-  return { epoch: 'session-a', revision: 1, chat: { id: 'chat', projectId: 'project', title: 'Chat', cwd: '/project' }, error: null,
+  return { epoch: 'session-a', revision: 1, chat: { id: 'chat', projectId: 'project', title: 'Chat', cwd: '/project' }, error: null, settings: nativeSettingsFixture(),
     display: defaultDisplayState(), messages: [
       { id: 'user', role: 'user', createdAt: new Date(0), content: { format: 2, parts: [{ type: 'text', text: 'Hello' }] } },
       { id: 'assistant', role: 'assistant', createdAt: new Date(1), content: { format: 2, parts: [{ type: 'text', text: 'Old' }] } },

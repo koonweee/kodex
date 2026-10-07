@@ -363,14 +363,9 @@ function renderComposerPanel(props: Partial<ComponentProps<typeof ComposerPanel>
               id: "gpt-5.5",
               model: "gpt-5.5",
               displayName: "GPT-5.5",
-              description: "Coding model",
               defaultReasoningEffort: "high",
-              hidden: false,
-              inputModalities: ["text"],
               isDefault: true,
-              rawPayload: {},
               supportedReasoningEfforts: [{ reasoningEffort: "high", description: "Deep reasoning" }],
-              upgrade: null,
             },
           ]}
           onAttachmentInputChange={vi.fn()}

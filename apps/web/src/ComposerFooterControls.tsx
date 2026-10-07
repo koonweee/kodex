@@ -3,9 +3,18 @@ import { AlertCircle, ArrowLeft, Check, ChevronRight, Gauge, X } from "lucide-re
 import type { CSSProperties } from "react";
 import { useLayoutEffect, useRef, useState } from "react";
 
-import type { ModelSummary } from "./api/client";
 import { AdaptiveIconButton } from "./ui/AdaptiveIconButton";
 import { CheckboxMenuItem } from "./ui/CheckboxMenuItem";
+
+/** Presentation fields consumed by the existing picker, independent of wire DTOs. */
+export type ComposerModelChoice = {
+  id: string;
+  model: string;
+  displayName?: string;
+  isDefault?: boolean;
+  defaultReasoningEffort?: string;
+  supportedReasoningEfforts?: { reasoningEffort: string; description?: string }[];
+};
 
 export type ComposerSettings = {
   model?: string;
@@ -23,7 +32,7 @@ export type ContextUsage = {
 type ComposerFooterControlsProps = {
   contextUsage?: ContextUsage | null;
   disabled?: boolean;
-  models: ModelSummary[];
+  models: ComposerModelChoice[];
   showContextUsage?: boolean;
   settingsError?: string | null;
   settings: ComposerSettings | null;
@@ -275,7 +284,7 @@ function ContextUsageIndicator({ usage }: { usage?: ContextUsage | null }) {
   );
 }
 
-function modelFullLabel(model: ModelSummary | null) {
+function modelFullLabel(model: ComposerModelChoice | null) {
   return model?.model || model?.displayName || model?.id || "Model";
 }
 

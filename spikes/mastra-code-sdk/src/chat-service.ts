@@ -3,13 +3,14 @@ import { resolve } from 'node:path';
 import { EventPublisher, ORPCError } from '@orpc/server';
 import { createProjectRuntime, type NativeSession, type ProjectRuntime } from './runtime.js';
 import type { SpikeProfile } from './profile.js';
+import { createNativeChatSettings, type ChatSettings, type ChatSettingsPatch } from './chat-settings.js';
 import { createSessionProjection, type SessionSnapshot } from './transport.js';
 
 type NativeThread = NonNullable<Awaited<ReturnType<ProjectRuntime['controller']['queryThreadById']>>>;
 export interface ChatProject { id: string; name: string; path: string; runtimeRoot: string }
 export interface Chat { id: string; projectId: string; title: string; cwd: string }
 export interface CatalogSnapshot { epoch: string; revision: number; chats: Chat[] }
-export interface ChatSnapshot extends SessionSnapshot { chat: Chat; error: string | null }
+export interface ChatSnapshot extends SessionSnapshot { chat: Chat; error: string | null; settings: ChatSettings }
 export interface ChatServiceOptions {
   profile: SpikeProfile;
   instanceId: string;
@@ -41,6 +42,7 @@ export function createChatService(options: ChatServiceOptions) {
   const lifetime = new AbortController();
   const catalog = new EventPublisher<{ changed: number }>({ maxBufferedEvents: 1 });
   const epoch = randomUUID();
+  const settings = createNativeChatSettings(options.profile, epoch);
   let catalogRevision = 0;
   let disposed = false;
   let disposal: Promise<void> | undefined;
@@ -125,7 +127,9 @@ export function createChatService(options: ChatServiceOptions) {
       lifetime.signal.throwIfAborted();
       if (current.revision !== handle.revision) continue;
       if (!thread || !ownsThread(handle.project, thread)) throw missing();
-      return { ...current, chat: describe(handle.project, thread), error: handle.error };
+      const publicSettings = await settings.readChat(handle.session);
+      if (current.revision !== handle.revision) continue;
+      return { ...current, chat: describe(handle.project, thread), error: handle.error, settings: publicSettings };
     }
   }
   async function catalogSnapshot(signal?: AbortSignal): Promise<CatalogSnapshot> {
@@ -152,13 +156,47 @@ export function createChatService(options: ChatServiceOptions) {
     }
   }
 
+  const defaultsRuntime = async () => {
+    const project = projects[0];
+    if (!project) throw missing();
+    return runtimeFor(project);
+  };
+
   return {
+    async listModels({ projectId }: { projectId: string }) {
+      const project = projectById.get(projectId);
+      if (!project) throw missing();
+      return settings.listModels(await runtimeFor(project));
+    },
+    async getChatSettings({ chatId }: { chatId: string }) {
+      const current = await snapshot(await handleFor(chatId));
+      return { epoch: current.epoch, revision: current.revision, ...current.settings };
+    },
+    async updateChatSettings({ chatId, patch }: { chatId: string; patch: ChatSettingsPatch }) {
+      const handle = await handleFor(chatId);
+      await settings.updateChat(handle.runtime, handle.session, patch);
+      const current = await snapshot(handle);
+      return { epoch: current.epoch, revision: current.revision, ...current.settings };
+    },
+    async getDraftDefaults() { return settings.getDefaults(await defaultsRuntime()); },
+    async updateDraftDefaults({ version, patch }: { version: string; patch: ChatSettingsPatch }) {
+      const current = await settings.updateDefaults(await defaultsRuntime(), version, patch);
+      for (const pending of handles.values()) {
+        const handle = await pending;
+        handle.session.emit({ type: 'display_state_changed', displayState: handle.session.displayState.get() });
+      }
+      return current;
+    },
+    async *watchDraftDefaults(signal?: AbortSignal) {
+      const combined = AbortSignal.any([lifetime.signal, ...(signal ? [signal] : [])]);
+      yield* settings.watchDefaults(await defaultsRuntime(), combined);
+    },
     async info() {
       assertActive();
       return { instanceId: options.instanceId, projects: projects.map(({ id, name, path }) => ({ id, name, path })) };
     },
     async listChats() { return catalogSnapshot(); },
-    async createChat({ projectId }: { projectId: string }) {
+    async createChat({ projectId, settings: draft }: { projectId: string; settings?: ChatSettingsPatch }) {
       assertActive();
       const project = projectById.get(projectId);
       if (!project) throw missing();
@@ -166,7 +204,10 @@ export function createChatService(options: ChatServiceOptions) {
       const resourceId = randomUUID();
       const handle = await cacheHandle(chatId, async () => {
         const runtime = await runtimeFor(project);
+        const defaults = await settings.getDefaults(runtime);
+        await settings.validate(runtime, draft ?? {}, defaults.modelId);
         const session = await runtime.createSession({ resourceId, threadId: chatId });
+        await settings.updateChat(runtime, session, { modelId: defaults.modelId, ...draft });
         return bind(project, runtime, session);
       });
       const created = await snapshot(handle);

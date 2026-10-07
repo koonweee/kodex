@@ -1,3 +1,4 @@
+import { nativeSettingsFixture } from './testBuilders';
 import { MantineProvider } from '@mantine/core';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
@@ -29,7 +30,7 @@ function Harness({ children }: { children?: ReactNode }) {
 afterEach(() => { vi.clearAllMocks(); });
 it('registers one workspace action menu, keeps it stable while streaming, and unregisters on removal', async () => {
   native.useWorkspace.mockImplementation(() => useContext(context));
-  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: 'project', cwd: '/project', title: 'Chat title' }, display: defaultDisplayState(), messages: [], error: null };
+  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: 'project', cwd: '/project', title: 'Chat title' }, display: defaultDisplayState(), messages: [], error: null, settings: nativeSettingsFixture() };
   const view = render(<Harness />);
   const header = screen.getByLabelText('Workspace header');
   expect(within(header).getByRole('button', { name: 'Thread actions' })).toBeInTheDocument();
@@ -49,7 +50,7 @@ it('registers one workspace action menu, keeps it stable while streaming, and un
 });
 it('opens rename from the workspace header with the current title and preserves the command', async () => {
   native.useWorkspace.mockImplementation(() => useContext(context));
-  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: 'project', cwd: '/project', title: 'Native title' }, display: defaultDisplayState(), messages: [], error: null };
+  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: 'project', cwd: '/project', title: 'Native title' }, display: defaultDisplayState(), messages: [], error: null, settings: nativeSettingsFixture() };
   native.rename.mockResolvedValue({});
   render(<Harness />);
   fireEvent.click(screen.getByRole('button', { name: 'Thread actions' }));
