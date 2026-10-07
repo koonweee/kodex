@@ -35,6 +35,8 @@ import {
 import { Bell, Check, Menu as MenuIcon, PanelRightOpen, Settings, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
+
 import {
   applyKodexColorScheme,
   DEFAULT_KODEX_COLOR_SCHEME_ID,
@@ -279,6 +281,15 @@ export function ThemeWorkbench({
                 <ActionIcon aria-label="Disabled action" disabled>
                   <Settings size={17} />
                 </ActionIcon>
+              </Group>
+              <Group gap="xs" aria-label="Disabled transparent controls">
+                <Button disabled variant="transparent">Disabled transparent button</Button>
+                <AdaptiveIconButton label="Transparent adaptive action" variant="transparent">
+                  <Settings />
+                </AdaptiveIconButton>
+                <AdaptiveIconButton label="Disabled transparent adaptive action" variant="transparent" disabled>
+                  <Settings />
+                </AdaptiveIconButton>
               </Group>
               <Group gap="xs">
                 <Badge>Neutral badge</Badge>

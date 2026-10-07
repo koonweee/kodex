@@ -507,6 +507,11 @@
     background: var(--kodex-bg-disabled-subtle);
   }
 
+  .kodex-mantine-button-root[data-variant="transparent"]:is(:disabled, [data-disabled]):hover,
+  .kodex-mantine-action-icon-root[data-variant="transparent"]:is(:disabled, [data-disabled]):hover {
+    background: transparent;
+  }
+
   .kodex-mantine-tabs-tab:hover {
     background: var(--kodex-bg-button-hover);
     color: var(--kodex-text-primary);

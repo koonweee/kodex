@@ -28,6 +28,17 @@
   background: var(--kodex-bg-disabled-subtle);
 }
 
+/* Transparent actions remain unboxed when unavailable. */
+.kodex-mantine-button-root[data-variant="transparent"]:is(:disabled, [data-disabled]),
+.kodex-mantine-action-icon-root[data-variant="transparent"]:is(:disabled, [data-disabled]) {
+  border-color: transparent;
+  background: transparent;
+}
+
+.kodex-mantine-action-icon-root[data-variant="transparent"]:is(:disabled, [data-disabled]) .kodex-adaptive-icon {
+  color: inherit;
+}
+
 .kodex-mantine-badge-root {
   border: var(--badge-bd);
   background: var(--badge-bg);

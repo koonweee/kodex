@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import path from "node:path";
 
 import { KODEX_COLOR_SCHEMES } from "../src/themeRegistry";
 import { nativeSettingsFixture } from "./native-settings.fixture";
@@ -54,6 +55,22 @@ async function checkWorkbench(page: Page, label: string) {
     await button.hover();
     await settle(page);
     readable((await sample(button.locator("svg"))).ratio, `${label} ${name} hover icon`, 3);
+  }
+  for (const name of ["Disabled transparent button", "Disabled transparent adaptive action"]) {
+    const button = page.getByRole("button", { name, exact: true });
+    await expect(button).toBeDisabled();
+    await page.mouse.move(0, 0);
+    const resting = await sample(button);
+    expect(resting.surfaceRatio, `${label} ${name} keeps its parent surface`).toBe(1);
+    expect(resting.borderRatio, `${label} ${name} has no painted border`).toBeNull();
+    if (name.includes("adaptive")) {
+      expect((await sample(button.locator("svg"))).foreground).toBe(resting.foreground);
+      expect(resting.foreground).not.toBe((await sample(page.getByRole("button", { name: "Transparent adaptive action", exact: true }).locator("svg"))).foreground);
+    }
+    await button.hover();
+    await settle(page);
+    const hovered = await sample(button);
+    expect([hovered.foreground, hovered.background, hovered.borderRatio]).toEqual([resting.foreground, resting.background, resting.borderRatio]);
   }
   for (const name of ["Plain loader", "Inherited loader"]) {
     const loader = await sample(page.getByLabel(name, { exact: true }));
@@ -180,6 +197,7 @@ async function renderedPairs(page: Page) {
   const specimens = [
     page.getByRole("button", { name: "Filled", exact: true }).getByText("Filled", { exact: true }),
     page.getByRole("button", { name: "Filled action", exact: true }).locator("svg"),
+    page.getByRole("button", { name: "Disabled transparent adaptive action", exact: true }).locator("svg"),
     page.getByText("Mantine dimmed text on panel", { exact: true }),
     page.getByRole("textbox", { name: "Plain text input", exact: true }),
     ...["red", "yellow", "green", "blue"].map(color => page.getByText(`${color} status`, { exact: true })),
@@ -204,6 +222,11 @@ for (const scheme of KODEX_COLOR_SCHEMES) {
       await page.setViewportSize({ width: 1440, height: 1450 });
       await expect(page.getByRole("main", { name: "Theme workbench" })).toBeVisible();
       await checkWorkbench(page, scheme.label);
+      if (process.env.KODEX_DISABLED_AUDIT_DIR) {
+        await page.getByLabel("Disabled transparent controls", { exact: true }).screenshot({
+          path: path.join(process.env.KODEX_DISABLED_AUDIT_DIR, `${scheme.id}.png`), animations: "disabled",
+        });
+      }
       expect(fixture.unexpected).toEqual([]);
       expect(fixture.errors).toEqual([]);
     } finally { await fixture.close(); }

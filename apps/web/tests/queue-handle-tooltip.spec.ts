@@ -135,3 +135,40 @@ for (const shape of [
     });
   });
 }
+
+// Desktop keeps neighboring panes visible while the draft receives focus.
+test("inactive-pane queue handles stay unboxed and regain reorder on focus", async ({ context }) => {
+  const fixture = await nativeSettingsFixture(context);
+  fixture.queuedInputs.push(...["First", "Second"].map((text, index) => ({
+    id: `inactive-${index}`, threadId: "settings-chat", input: [{ type: "text" as const, text }],
+    clientUserMessageId: `inactive-client-${index}`, attachments: [], canSteer: false,
+  })));
+  try {
+    const page = await fixture.page("inactive-handles", "/threads/settings-chat");
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const pane = page.locator(".kodex-thread-pane-existing");
+    const handle = pane.getByRole("button", { name: "Reorder queued message", exact: true }).first();
+    await expect(handle).toBeEnabled();
+    const paint = () => handle.evaluate(element => {
+      const css = getComputedStyle(element);
+      return { background: css.backgroundColor, border: css.borderTopColor, color: getComputedStyle(element.querySelector("svg")!).color };
+    });
+    const enabled = await paint();
+    await page.getByRole("navigation", { name: "Workspace", exact: true }).getByRole("button", { name: "Chats", exact: true }).click();
+    await page.getByRole("button", { name: "New chat", exact: true }).click();
+    await expect(page.locator('.kodex-thread-pane-empty[data-workspace-pane-active="true"]')).toBeVisible();
+    await expect(handle).toBeDisabled();
+    await expect.poll(async () => (await paint()).background).toBe(enabled.background);
+    await expect.poll(async () => (await paint()).border).toBe(enabled.border);
+    await expect.poll(async () => (await paint()).color).not.toBe(enabled.color);
+    await handle.hover();
+    await expect.poll(async () => (await paint()).background).toBe(enabled.background);
+    await page.screenshot({ path: test.info().outputPath("inactive-queue-handles.png"), animations: "disabled" });
+    await pane.getByRole("textbox", { name: "Message composer", exact: true }).click();
+    await expect(handle).toBeEnabled();
+    await expect.poll(paint).toEqual(enabled);
+    expect(fixture.requests.filter(request => request.key.endsWith("/reorder"))).toEqual([]);
+    expect(fixture.unexpected).toEqual([]);
+    expect(fixture.errors).toEqual([]);
+  } finally { await fixture.close(); }
+});
