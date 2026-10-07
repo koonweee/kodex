@@ -126,6 +126,27 @@ describe("native client message identity", () => {
     expect(state.viewRevision).toBe(5);
   });
 
+  it("keeps an acknowledged optimistic message until its canonical replacement arrives", () => {
+    const previous = userRow("previous-native", "previous", "Earlier message");
+    let state = submit(project("snapshot", createTimelineState(), [previous], 1), "request");
+    const keysBeforeAck = state.rows.map(row => row.key);
+    state = markOptimisticUserMessageSent(state, "request");
+    expect(state.rows.map(row => row.key)).toEqual(keysBeforeAck);
+    expect(state.items.find(item => item.clientId === "request")).toMatchObject({ confirmationState: "sent", text: "Identical message" });
+    state = project("turn", state, [previous], 2);
+    expect(state.items.map(item => item.text)).toEqual(["Earlier message", "Identical message"]);
+    const receipt = userRow("native-receipt", "request");
+    receipt.displayOrder = 2;
+    state = project("turn", state, [previous, receipt], 3);
+    expect(state.items.map(item => item.id)).toEqual(["previous-native", "native-receipt"]);
+    expect(pendingIds(state)).toEqual([]);
+  });
+
+  it("lets an authoritative full snapshot discard acknowledged input absent from native history", () => {
+    const state = markOptimisticUserMessageSent(submit(createTimelineState(), "reverted"), "reverted");
+    expect(project("full_snapshot", state, [], 2).items).toEqual([]);
+  });
+
   it("preserves canonical rows when the matching HTTP acknowledgement or failure arrives later", () => {
     const state = project("full_snapshot", submit(createTimelineState(), "request"), [userRow("optimistic-user-request", "request")], 1);
     expect(markOptimisticUserMessageSent(state, "request").items.map((item) => item.source)).toEqual(["app_server"]);

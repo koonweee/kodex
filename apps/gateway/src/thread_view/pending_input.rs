@@ -87,20 +87,24 @@ pub(super) fn remove_materialized_pending_match(
     turn_id: &str,
     item_snapshot: &ThreadItemSnapshot,
     raw_item: &Value,
-) {
+) -> Option<i64> {
     if !item_snapshot.item_type.eq_ignore_ascii_case("userMessage")
         || item_snapshot.id.starts_with("pending-user-")
     {
-        return;
+        return None;
     }
-    let Some(client_id) = raw_item.get("clientId").and_then(Value::as_str) else {
-        return;
+    let client_id = raw_item.get("clientId").and_then(Value::as_str)?;
+    let matches = |item: &ThreadTimelineSnapshotItem| {
+        is_pending_user_item(item)
+            && item.turn_id == turn_id
+            && user_message_client_id(item) == Some(client_id)
     };
-    items.retain(|item| {
-        !is_pending_user_item(item)
-            || item.turn_id != turn_id
-            || user_message_client_id(item) != Some(client_id)
-    });
+    let display_order = items
+        .iter()
+        .find(|item| matches(item))
+        .map(|item| item.display_order);
+    items.retain(|item| !matches(item));
+    display_order
 }
 
 pub(super) fn is_pending_user_item(item: &ThreadTimelineSnapshotItem) -> bool {

@@ -239,3 +239,61 @@ async fn pending_identity_is_scoped_to_its_turn_and_repeated_ack_does_not_duplic
         vec!["native-prior-turn", "pending-user-client-reused"]
     );
 }
+
+#[tokio::test]
+async fn native_receipt_keeps_pending_position_until_a_native_snapshot_supplies_order() {
+    let sessions = ThreadViewStore::default();
+    pending(&sessions, "client-first", 1).await;
+    let assistant = json!({ "id": "native-assistant", "type": "agentMessage", "text": "Working" });
+    echo(&sessions, assistant.clone(), 2).await;
+    pending(&sessions, "client-second", 3).await;
+    echo(
+        &sessions,
+        user_item("native-first", Some("client-first")),
+        4,
+    )
+    .await;
+
+    let patch = patch_for_thread(&sessions, THREAD).await.unwrap();
+    assert_eq!(
+        patch.items.iter().map(|item| item.item_id.as_str()).collect::<Vec<_>>(),
+        vec!["native-first", "native-assistant", "pending-user-client-second"],
+        "a receipt replaces its correlated provisional position instead of appending after newer work",
+    );
+    let visible_ids = patch
+        .rows
+        .as_ref()
+        .unwrap()
+        .iter()
+        .filter_map(|row| row.item.as_ref().map(|item| item.item_id.as_str()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        visible_ids,
+        vec![
+            "native-first",
+            "native-assistant",
+            "pending-user-client-second"
+        ]
+    );
+
+    // Only the current native item page decides committed ordering. The live
+    // provisional anchor is not a durable order or an item-identity alias.
+    let timeline = active_snapshot(
+        &sessions,
+        vec![
+            user_item("native-second", Some("client-second")),
+            assistant,
+            user_item("native-first", Some("client-first")),
+        ],
+        5,
+    )
+    .await;
+    assert_eq!(
+        timeline
+            .items
+            .iter()
+            .map(|item| item.item_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["native-second", "native-assistant", "native-first"],
+    );
+}

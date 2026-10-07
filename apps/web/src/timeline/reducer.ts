@@ -201,7 +201,14 @@ export function addOptimisticUserMessage(
 }
 
 export function markOptimisticUserMessageSent(state: TimelineState, clientRequestId: string): TimelineState {
-  return removeOptimisticUserMessage(state, clientRequestId);
+  const rows = state.rows.map((row): TimelineRow =>
+    row.type === "item" && row.item.source === "optimistic" && row.item.clientId === clientRequestId
+      ? { ...row, item: { ...row.item, confirmationState: "sent" } }
+      : row,
+  );
+  // HTTP acceptance can arrive before the corresponding canonical SSE batch.
+  // Keep the row until replacement; a full native snapshot still governs absence.
+  return rows.some((row, index) => row !== state.rows[index]) ? rebuildTimelineRows(state, rows) : state;
 }
 
 export function removeOptimisticUserMessage(state: TimelineState, clientRequestId: string): TimelineState {
