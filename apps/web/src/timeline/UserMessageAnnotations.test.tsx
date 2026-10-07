@@ -24,13 +24,22 @@ describe("sent response annotations", () => {
     for (const [index, annotation] of annotations.entries()) {
       const group = screen.getByRole("group", { name: `Annotation ${index + 1}` });
       expect(group.querySelector("blockquote")?.textContent).toBe(annotation.text);
-      expect(group.querySelector("summary")).toHaveAccessibleName(annotation.text);
       expect(within(group).getByText(annotation.comment)).toBeVisible();
-      expect(group.querySelector("details")).toHaveAttribute("open");
     }
     expect(container.textContent).not.toContain("<response_annotations>");
     expect(container.querySelector("tags")).toBeNull();
     expect(screen.getAllByRole("button", { name: "Copy message" })).toHaveLength(1);
+  });
+
+  it("starts multiline quotes collapsed while fitting quotes have no disclosure", () => {
+    renderMessage(appendResponseAnnotations("", annotations));
+    const multiline = screen.getByRole("group", { name: "Annotation 1" });
+    expect(multiline.querySelector("summary")).toHaveAccessibleName(annotations[0].text);
+    expect(multiline.querySelector("details")).not.toHaveAttribute("open");
+    const short = screen.getByRole("group", { name: "Annotation 2" });
+    expect(short.querySelector("blockquote")).toHaveTextContent(annotations[1].text);
+    expect(short.querySelector("summary")).toBeNull();
+    expect(short.querySelector("details")).toBeNull();
   });
 
   it("renders quote-only annotations without an empty main message or comment", () => {

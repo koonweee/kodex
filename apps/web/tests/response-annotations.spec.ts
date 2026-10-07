@@ -121,13 +121,13 @@ for (const shape of [
           turns: [{ id: "turn-answer", status: "completed" }, { id: "turn-1", status: "inProgress" }],
         });
         for (const page of [first, second]) {
-          await expectSentAnnotations(page, shape.hasTouch);
+          await expectSentAnnotations(page);
           await expect(page.getByRole("button", { name: /^\d+ annotations?$/ })).toHaveCount(0);
         }
         await expectReadableCopy(first, shape.hasTouch);
         await second.screenshot({ path: test.info().outputPath("annotation-canonical-history.png") });
         await second.reload();
-        await expectSentAnnotations(second, shape.hasTouch);
+        await expectSentAnnotations(second);
         await expect(second.getByRole("button", { name: /^\d+ annotations?$/ })).toHaveCount(0);
       } finally { await fixture.close(); }
       expect(fixture.unexpected).toEqual([]);
@@ -149,7 +149,7 @@ for (const shape of [
         const toggle = annotation.locator("summary");
         await expect(block).toHaveText(quote);
         await expect(toggle).toHaveAccessibleName(quote);
-        await click(toggle, shape.hasTouch);
+        await expect(annotation.locator("details")).not.toHaveAttribute("open");
         await expect(block).toBeVisible();
         await expect(toggle).toHaveText(quote);
         const preview = await toggle.locator("span").evaluate(element => {
@@ -170,6 +170,49 @@ for (const shape of [
         const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
         expect(horizontalOverflow).toBe(false);
         await page.screenshot({ path: test.info().outputPath("quote-expanded.png") });
+      } finally { await fixture.close(); }
+      expect(fixture.unexpected).toEqual([]);
+      expect(fixture.errors).toEqual([]);
+    });
+
+    test("fitting quotes gain a collapsed disclosure only while their pane is too narrow", async ({ context }) => {
+      const fixture = await nativeSettingsFixture(context);
+      fixture.detail.timeline = { ...fixture.detail.timeline,
+        rows: [submittedRow(appendResponseAnnotations("", [{ id: "quote", text: firstQuote, comment: "A reminder." }]), "fixture")],
+        turns: [{ id: "turn-1", status: "completed" }],
+      };
+      try {
+        const page = await fixture.page("quote-resize");
+        const annotation = activePane(page).getByRole("group", { name: "Annotation 1", exact: true });
+        const block = annotation.locator("blockquote");
+        await expect(block).toHaveText(firstQuote);
+        await expect(annotation.locator("summary")).toHaveCount(0);
+        await expect(block.locator("svg")).toHaveCount(0);
+        await block.evaluate(element => { element.style.width = "100px"; });
+        const toggle = annotation.locator("summary");
+        await expect(toggle).toHaveAccessibleName(firstQuote);
+        await expect(annotation.locator("details")).not.toHaveAttribute("open");
+        await click(toggle, shape.hasTouch);
+        await expect(annotation.locator("details")).toHaveAttribute("open", "");
+        const expanded = await toggle.locator("span").evaluate(element => ({
+          height: element.getBoundingClientRect().height, lineHeight: parseFloat(getComputedStyle(element).lineHeight),
+        }));
+        expect(expanded.height).toBeGreaterThan(expanded.lineHeight);
+        await block.evaluate(element => { element.style.removeProperty("width"); });
+        await expect(toggle).toHaveCount(0);
+        await expect(block.locator("svg")).toHaveCount(0);
+        await expect(block).toHaveText(firstQuote);
+        await expect(annotation.getByText("A reminder.", { exact: true })).toBeVisible();
+        await block.evaluate(element => { element.style.width = "100px"; });
+        await expect(toggle).toBeVisible();
+        await expect(annotation.locator("details")).not.toHaveAttribute("open");
+        await block.evaluate(element => { element.style.width = "260px"; });
+        await expect(toggle).toHaveCount(0);
+        const largerText = await page.addStyleTag({ content: ".kodex-user-annotation-quote-body { font-size: 32px !important; }" });
+        await expect(toggle).toBeVisible();
+        await expect(annotation.locator("details")).not.toHaveAttribute("open");
+        await largerText.evaluate(element => element.remove());
+        await expect(toggle).toHaveCount(0);
       } finally { await fixture.close(); }
       expect(fixture.unexpected).toEqual([]);
       expect(fixture.errors).toEqual([]);
@@ -214,7 +257,7 @@ function activePane(page: Page) { return page.locator('.kodex-thread-pane[data-w
 function answer(page: Page) { return activePane(page).locator(".kodex-assistant-markdown"); }
 function composer(page: Page) { return activePane(page).getByLabel("Message composer", { exact: true }); }
 async function click(locator: Locator, touch: boolean) { if (touch) await locator.tap(); else await locator.click(); }
-async function expectSentAnnotations(page: Page, touch: boolean) {
+async function expectSentAnnotations(page: Page) {
   const bubble = activePane(page).locator(".kodex-user-message-bubble").filter({ hasText: "Review these." });
   await expect(bubble).toHaveCount(1);
   await expect(bubble.getByText("Review these.", { exact: true })).toBeVisible();
@@ -224,34 +267,14 @@ async function expectSentAnnotations(page: Page, touch: boolean) {
   await expect(bubble.getByRole("group", { name: /^Annotation \d+$/ })).toHaveCount(2);
   const first = bubble.getByRole("group", { name: "Annotation 1", exact: true });
   const second = bubble.getByRole("group", { name: "Annotation 2", exact: true });
-  const firstToggle = first.locator("summary");
-  const secondToggle = second.locator("summary");
-  await expect(firstToggle).toHaveText(firstQuote);
-  await expect(secondToggle).toHaveText(secondQuote);
   await expect(first.locator("blockquote")).toHaveText(firstQuote);
   await expect(second.locator("blockquote")).toHaveText(secondQuote);
   await expect(first.locator("blockquote")).toBeVisible();
   await expect(second.locator("blockquote")).toBeVisible();
   await expect(first.getByText(firstComment, { exact: true })).toBeVisible();
   await expect(second.getByText(secondComment, { exact: true })).toBeVisible();
-
-  await click(firstToggle, touch);
-  await expect(first.locator("details")).not.toHaveAttribute("open");
-  await expect(first.locator("blockquote")).toBeVisible();
-  await expect(second.locator("blockquote")).toBeVisible();
-  await expect(first.getByText(firstComment, { exact: true })).toBeVisible();
-  await click(secondToggle, touch);
-  await expect(second.locator("details")).not.toHaveAttribute("open");
-  await expect(second.locator("blockquote")).toBeVisible();
-  await expect(second.getByText(secondComment, { exact: true })).toBeVisible();
-  await click(firstToggle, touch);
-  await expect(first.locator("details")).toHaveAttribute("open", "");
-  await expect(first.locator("blockquote")).toBeVisible();
-  await expect(second.locator("details")).not.toHaveAttribute("open");
-  await expect(second.locator("blockquote")).toBeVisible();
-  await click(secondToggle, touch);
-  await expect(second.locator("details")).toHaveAttribute("open", "");
-  await expect(second.locator("blockquote")).toBeVisible();
+  await expect(first.locator("summary")).toHaveCount(0);
+  await expect(second.locator("summary")).toHaveCount(0);
 }
 async function expectReadableCopy(page: Page, touch: boolean) {
   // Observe the clipboard API payload without replacing the user's clipboard.

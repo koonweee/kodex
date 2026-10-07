@@ -21,28 +21,33 @@
   color: var(--kodex-text-on-user-bubble);
 }
 
-.kodex-user-annotation-quote summary {
+.kodex-user-annotation-quote-body {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   min-height: 36px;
   padding: 8px 10px;
   list-style: none;
-  cursor: pointer;
   font-size: 13px;
   line-height: 1.5;
+}
+
+.kodex-user-annotation-quote summary {
+  cursor: pointer;
 }
 
 .kodex-user-annotation-quote summary::-webkit-details-marker {
   display: none;
 }
 
-.kodex-user-annotation-quote summary span {
+.kodex-user-annotation-quote-body span {
   flex: 1;
   min-width: 0;
   padding-left: 10px;
   border-left: 2px solid color-mix(in srgb, currentColor 45%, transparent);
-  white-space: pre-wrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .kodex-user-annotation-quote summary svg {
@@ -54,10 +59,9 @@
   transform: rotate(180deg);
 }
 
-.kodex-user-annotation-quote details:not([open]) summary span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.kodex-user-annotation-quote details[open] summary span {
+  overflow: visible;
+  white-space: pre-wrap;
 }
 
 .kodex-user-annotation-comment {
