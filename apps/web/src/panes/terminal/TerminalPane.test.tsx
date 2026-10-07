@@ -2,10 +2,13 @@ import { MantineProvider } from "@mantine/core";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { useInputCapabilities } from "../../shared/inputCapabilities";
 import type { TerminalSessionInfo } from "../../api/client";
 import { useGatewayTerminalSession } from "../../terminal/useGatewayTerminalSession";
 import type { WorkspacePane } from "../../workspace/paneTypes";
 import { TerminalPane } from "./TerminalPane";
+
+vi.mock("../../shared/inputCapabilities", () => ({ useInputCapabilities: vi.fn() }));
 
 const workspaceMocks = vi.hoisted(() => ({
   openNewTerminalPane: vi.fn(),
@@ -47,6 +50,7 @@ const session: TerminalSessionInfo = {
 
 describe("TerminalPane", () => {
   beforeEach(() => {
+    vi.mocked(useInputCapabilities).mockReturnValue({ hasTouchInput: false, hasCoarsePointer: false, hasFineHover: true });
     workspaceMocks.openNewTerminalPane.mockReset();
     workspaceMocks.openNewTerminalPane.mockResolvedValue(undefined);
     workspaceMocks.openTerminalPane.mockReset();
@@ -64,6 +68,19 @@ describe("TerminalPane", () => {
       session,
       stopSession: vi.fn(),
     });
+  });
+
+  it("hides accessory keys on non-touch devices", () => {
+    renderTerminalPane(workspacePane({ terminalId: "terminal-1" }));
+    expect(screen.queryByRole("button", { name: "Esc" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Paste" })).not.toBeInTheDocument();
+  });
+
+  it("keeps accessory keys working on touch-capable devices", () => {
+    vi.mocked(useInputCapabilities).mockReturnValue({ hasTouchInput: true, hasCoarsePointer: false, hasFineHover: true });
+    renderTerminalPane(workspacePane({ terminalId: "terminal-1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ctrl-C" }));
+    expect(screen.getByTestId("xterm-terminal")).toHaveAttribute("data-input-signal", "\x03");
   });
 
   it("creates an independent terminal session and persists its id into the pane target", async () => {
