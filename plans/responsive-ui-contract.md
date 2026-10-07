@@ -2,7 +2,7 @@
 
 ## Status
 
-Complete. Implemented, validated and deployed frontend/backend on 2026-10-08. Created 2026-10-08.
+Initial contract complete and deployed frontend/backend on 2026-10-08. Idle compact composer follow-up active. Created 2026-10-08.
 
 ## Objective
 
@@ -200,3 +200,20 @@ Run relevant domain tests, `cd apps/web && npm run build`, and `./tools/trim-fro
 ## Deployment Verification
 
 Full macOS service update from implementation commit `a43072d` completed successfully. Operation `94b21d09d04f413a8fb117084ab562af` reports `succeeded`; selected release is `20261008-012419-7e5c6a05`. Live `/readyz` reports ready, the native runtime matches schema `0.160.0`, and the served frontend index matches the installed release byte for byte. Local/VPN deployment assumptions are unchanged.
+
+## Follow-up: idle compact composer
+
+Active. The user authorized implementation and frontend-only deployment on 2026-10-08.
+
+- All compact panes qualify; only existing conversations collapse. New-conversation greetings and project controls retain their current presentation.
+- When empty and inactive, the composer keeps its four corner radii and becomes one footer-height row. The same single-line textarea occupies the space between attachment and context/settings controls. All footer actions, including Stop, remain available.
+- Compact panes replace the model/effort text with a brain icon, retaining the complete accessible label and tooltip. Regular panes retain the text.
+- Editable focus restores normal inline height. Actual touch in a narrow workspace opens the existing fullscreen composer; mouse, keyboard, programmatic focus, and compact touch panes in wide workspaces remain inline.
+- Text (including whitespace), attachments, annotations, skill bindings, drag/drop, pending entry/settings, settings errors, and submission prevent idle collapse. Focus moving through the composer and its portalled menus preserves an active editing session.
+- Preserve textarea identity, selection, IME and drafts across every transition. This is per-pane presentation; native submission, queue and settings ownership remain unchanged.
+
+Exit: focused behavior tests, bundled-Chromium layout/input/menu/resize checks, build/typecheck, trim and independent review pass; deploy a committed frontend snapshot without restarting the gateway, and verify the served bundle. This follow-up supersedes the two-row minimum only for eligible idle existing conversations.
+
+Validation also exposed a native Dockview resize ordering defect: restoring hidden splits before the wider container geometry arrived changed their proportions, and a queued layout save could serialize maximized narrow geometry. The follow-up applies current container dimensions before leaving native maximize, cancels pending saves on narrow entry, and fences delayed saves by current mode. Real Dockview core regressions cover both paths. No custom split ledger or renderer replacement was added.
+
+Composer menus restore their existing trigger synchronously before reporting closed, so focus gaps during portalled menu navigation cannot prematurely end editing. Native settings-save disabling remains intact. Touch opening focuses the existing editable field within the gesture and prevents pointer defaults from disturbing focus during relayout; already-expanded taps retain ordinary cursor/selection behavior.

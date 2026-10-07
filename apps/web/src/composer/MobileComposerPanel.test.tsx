@@ -62,6 +62,68 @@ describe("Mobile composer panel", () => {
     expect(screen.queryByRole("toolbar", { name: /composer context|draft thread toolbar/i })).not.toBeInTheDocument();
   });
 
+  it("collapses an empty existing composer only after editing focus leaves, without replacing its input", async () => {
+    setMobileViewport(true, { touch: false });
+    renderComposerPanel();
+    const input = screen.getByLabelText(/message composer/i);
+    const form = input.closest("form")!;
+    expect(form).toHaveAttribute("data-idle-compact", "true");
+    await userEvent.click(input);
+    expect(form).toHaveAttribute("data-idle-compact", "false");
+    await userEvent.type(input, "Keep draft");
+    await userEvent.click(document.body);
+    expect(form).toHaveAttribute("data-idle-compact", "false");
+    await userEvent.clear(input);
+    expect(form).toHaveAttribute("data-idle-compact", "false");
+    await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.5, high/i }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Reasoning" }));
+    expect(form).toHaveAttribute("data-idle-compact", "false");
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(document.body);
+    await waitFor(() => expect(form).toHaveAttribute("data-idle-compact", "true"));
+    expect(screen.getByLabelText(/message composer/i)).toBe(input);
+  });
+
+  it("keeps footer interactions compact until the editable field is activated, including Stop", async () => {
+    const onStopTurn = vi.fn();
+    renderComposerPanel({ activeSelectedTurnId: "running", onStopTurn });
+    const form = screen.getByLabelText(/message composer/i).closest("form")!;
+    expect(form).toHaveAttribute("data-idle-compact", "true");
+    await userEvent.click(screen.getByRole("button", { name: /open attachment menu/i }));
+    expect(await screen.findByRole("menuitem", { name: /add attachment/i })).toBeInTheDocument();
+    expect(form).toHaveAttribute("data-idle-compact", "true");
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(screen.getByRole("button", { name: /stop turn/i }));
+    expect(onStopTurn).toHaveBeenCalledOnce();
+    expect(form).toHaveAttribute("data-idle-compact", "true");
+  });
+
+  it.each([
+    { name: "pending settings", props: { composerSettingsDisabled: true } },
+    { name: "settings errors", props: { composerSettingsError: "Could not load settings" } },
+    { name: "new conversations", props: { isDraftThreadSelected: true, selectedThreadPresent: false } },
+    { name: "attachments", props: { pendingAttachments: [{ id: "file", file: new File(["draft"], "draft.txt"), kind: "file" as const, status: "pending" as const }] } },
+    { name: "whitespace drafts", props: { composerDraftStore: new Map([["__default__", { composerText: " \n", skillBindings: [] }]]) } },
+    { name: "annotations", props: { composerDraftStore: new Map([["__default__", { composerText: "", skillBindings: [], annotations: [{ id: "note", text: "Selection", comment: "Explain" }] }]]) } },
+  ])("keeps $name at the normal composer height", ({ props }) => {
+    renderComposerPanel(props);
+    expect(screen.getByLabelText(/message composer/i).closest("form")).toHaveAttribute("data-idle-compact", "false");
+  });
+
+  it("uses normal height in a regular pane and preserves an active empty input across width changes", async () => {
+    paneLayout.compact = false;
+    const view = renderComposerPanel();
+    const input = screen.getByLabelText(/message composer/i);
+    const form = input.closest("form")!;
+    expect(form).toHaveAttribute("data-idle-compact", "false");
+    await userEvent.click(input);
+    paneLayout.compact = true;
+    view.refreshLayout();
+    expect(form).toHaveAttribute("data-idle-compact", "false");
+    expect(screen.getByLabelText(/message composer/i)).toBe(input);
+    expect(input).toHaveFocus();
+  });
+
   it("opens fullscreen composer when its editable field receives touch", async () => {
     renderComposerPanel();
 

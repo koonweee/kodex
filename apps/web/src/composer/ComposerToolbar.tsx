@@ -1,6 +1,6 @@
 import { Group, Loader, Menu } from "@mantine/core";
 import { ArrowUp, ListPlus, Paperclip, Plus, Square, Target } from "lucide-react";
-import { memo } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 
 import { ComposerFooterControls } from "../ComposerFooterControls";
@@ -30,6 +30,7 @@ type ComposerToolbarProps = {
   disabled: boolean;
   models: ModelSummary[];
   onSettingsChange: (settings: ComposerSettingsChange) => void;
+  onMenuOpenChange?: (opened: boolean) => void;
   onStopTurn: () => void;
   selectedThreadPresent: boolean;
   queueOnSubmit?: boolean;
@@ -50,6 +51,7 @@ export const ComposerToolbar = memo(function ComposerToolbar({
   disabled,
   models,
   onSettingsChange,
+  onMenuOpenChange,
   onStopTurn,
   selectedThreadPresent,
   queueOnSubmit = false,
@@ -60,6 +62,18 @@ export const ComposerToolbar = memo(function ComposerToolbar({
   isSubmitting,
   showContextUsage = true,
 }: ComposerToolbarProps) {
+  const attachmentTargetRef = useRef<HTMLSpanElement>(null);
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  useEffect(() => {
+    onMenuOpenChange?.(attachmentMenuOpen || modelMenuOpen);
+  }, [attachmentMenuOpen, modelMenuOpen, onMenuOpenChange]);
+  function changeAttachmentMenuOpen(opened: boolean) {
+    if (!opened && attachmentMenuOpen) {
+      attachmentTargetRef.current?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+    }
+    setAttachmentMenuOpen(opened);
+  }
   const queueHold = useTouchQueueHold({
     enabled: selectedThreadPresent && canSubmitComposer && !disabled && !isSubmitting && !shouldShowStopAction,
     onQueue: () => {
@@ -77,17 +91,19 @@ export const ComposerToolbar = memo(function ComposerToolbar({
   return (
     <Group className="kodex-composer-toolbar" justify="space-between" wrap="wrap">
       <Group className="kodex-composer-toolbar-left" gap={6} wrap="nowrap">
-        <Menu position="top-start" withinPortal>
-          <Menu.Target>
-            <AdaptiveIconButton
-              className="kodex-composer-secondary-action"
-              disabled={disabled}
-              label={COMPOSER_TOOLBAR_TEXT.openAttachments}
-              tooltip={false}
-            >
-              <Plus />
-            </AdaptiveIconButton>
-          </Menu.Target>
+        <Menu position="top-start" withinPortal returnFocus={false} opened={attachmentMenuOpen} onChange={changeAttachmentMenuOpen}>
+          <span ref={attachmentTargetRef} className="kodex-composer-attachment-target">
+            <Menu.Target>
+              <AdaptiveIconButton
+                className="kodex-composer-secondary-action"
+                disabled={disabled}
+                label={COMPOSER_TOOLBAR_TEXT.openAttachments}
+                tooltip={false}
+              >
+                <Plus />
+              </AdaptiveIconButton>
+            </Menu.Target>
+          </span>
           <Menu.Dropdown aria-label={COMPOSER_TOOLBAR_TEXT.attachments}>
             <Menu.Item
               disabled={disabled}
@@ -117,6 +133,7 @@ export const ComposerToolbar = memo(function ComposerToolbar({
           </Menu.Dropdown>
         </Menu>
         <ComposerFooterControls
+          onMenuOpenChange={setModelMenuOpen}
           contextUsage={contextUsage}
           disabled={disabled || settingsDisabled}
           models={models}

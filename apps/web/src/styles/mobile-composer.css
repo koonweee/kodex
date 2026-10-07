@@ -1,3 +1,7 @@
+.kodex-composer-attachment-target {
+  display: flex;
+}
+
 .kodex-composer-shell[data-inline-density="compact"] .kodex-composer {
   border-radius: var(--kodex-radius-composer);
   padding: 10px 10px 8px;
@@ -18,9 +22,53 @@
   min-width: 0;
 }
 
-.kodex-composer-shell[data-inline-density="compact"] .kodex-composer-control,
-.kodex-mobile-composer-expanded .kodex-composer-control {
-  max-width: 132px;
+/* Flatten only layout wrappers; the textarea and controls stay mounted. */
+.kodex-composer[data-idle-compact="true"] {
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  grid-template-rows: auto;
+  align-items: center;
+  column-gap: 4px;
+}
+
+.kodex-composer[data-idle-compact="true"] .kodex-composer-toolbar,
+.kodex-composer[data-idle-compact="true"] .kodex-composer-toolbar-left {
+  display: contents;
+}
+
+.kodex-composer[data-idle-compact="true"] .kodex-composer-footer-left:empty {
+  display: none;
+}
+
+.kodex-composer[data-idle-compact="true"] .kodex-composer-footer-right {
+  gap: 4px;
+}
+
+.kodex-composer[data-idle-compact="true"] .kodex-composer-attachment-target {
+  grid-area: 1 / 1;
+}
+
+.kodex-composer[data-idle-compact="true"] .kodex-composer-textarea {
+  grid-area: 1 / 2;
+  min-width: 0;
+}
+
+.kodex-composer[data-idle-compact="true"] .kodex-composer-textarea textarea {
+  min-height: 32px;
+  max-height: 32px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.kodex-composer[data-idle-compact="true"] .kodex-composer-footer-controls {
+  grid-area: 1 / 3;
+}
+
+.kodex-composer[data-idle-compact="true"] .kodex-composer-toolbar-left > .kodex-adaptive-icon-button:not(.kodex-composer-secondary-action) {
+  grid-area: 1 / 4;
+}
+
+.kodex-composer[data-idle-compact="true"] .kodex-composer-action {
+  grid-area: 1 / 5;
 }
 
 /* Editable size and safe areas follow touch capability, independently of density. */
@@ -28,6 +76,11 @@
   .kodex-composer-textarea textarea {
     min-height: 44px;
     font-size: 16px;
+  }
+
+  .kodex-composer[data-idle-compact="true"] .kodex-composer-textarea textarea {
+    min-height: 44px;
+    max-height: 44px;
   }
 
   .kodex-thread-pane-existing > .kodex-composer-shell:not(.kodex-mobile-composer-expanded) {

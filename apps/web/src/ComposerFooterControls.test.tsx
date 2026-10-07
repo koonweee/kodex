@@ -1,11 +1,15 @@
 import { MantineProvider } from "@mantine/core";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ComposerFooterControls, type ComposerSettings } from "./ComposerFooterControls";
 import type { ModelSummary } from "./api/client";
+
+const paneLayout = vi.hoisted(() => ({ compact: false, short: false }));
+vi.mock("./shared/PaneLayout", () => ({ usePaneLayout: () => paneLayout }));
+beforeEach(() => { paneLayout.compact = false; });
 
 const model: ModelSummary = {
   id: "gpt-5.4",
@@ -36,6 +40,88 @@ const settings: ComposerSettings = {
 };
 
 describe("ComposerFooterControls", () => {
+  it("reports menu opening and closing after selection and keyboard dismissal", async () => {
+    const focusAtClose: (Element | null)[] = [];
+    const onMenuOpenChange = vi.fn((opened: boolean) => {
+      if (!opened) focusAtClose.push(document.activeElement);
+    });
+    renderWithProvider(<ComposerFooterControls models={[reasoningModel]} settings={settings} onSettingsChange={vi.fn()} onMenuOpenChange={onMenuOpenChange} />);
+    const trigger = screen.getByRole("button", { name: "Model: gpt-5.4, medium" });
+    await userEvent.click(trigger);
+    expect(onMenuOpenChange).toHaveBeenLastCalledWith(true);
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Reasoning", hidden: true }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "High", hidden: true }));
+    expect(onMenuOpenChange).toHaveBeenLastCalledWith(false);
+    expect(focusAtClose.at(-1)).toBe(trigger);
+    expect(trigger).toHaveFocus();
+    await userEvent.click(trigger);
+    expect(onMenuOpenChange).toHaveBeenLastCalledWith(true);
+    await userEvent.keyboard("{Escape}");
+    expect(onMenuOpenChange).toHaveBeenLastCalledWith(false);
+    expect(focusAtClose.at(-1)).toBe(trigger);
+    expect(trigger).toHaveFocus();
+  });
+
+
+  it.each([false, true])("exposes the menu relationship on the trigger in compact=%s panes", async (compact) => {
+    paneLayout.compact = compact;
+    renderWithProvider(<ComposerFooterControls models={[reasoningModel]} settings={settings} onSettingsChange={vi.fn()} />);
+    const trigger = screen.getByRole("button", { name: "Model: gpt-5.4, medium" });
+    expect(trigger).toHaveAttribute("aria-haspopup", "menu");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    const menu = await screen.findByRole("menu", { hidden: true });
+    expect(trigger).toHaveAttribute("aria-controls", menu.id);
+    expect(document.getElementById(trigger.getAttribute("aria-controls")!)).toBe(menu);
+    await userEvent.keyboard("{Escape}");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("retains the focused model trigger as its pane switches between text and icon presentation", () => {
+    const controls = () => <ComposerFooterControls models={[reasoningModel]} settings={settings} onSettingsChange={vi.fn()} />;
+    const { rerender } = renderWithProvider(controls());
+    const trigger = screen.getByRole("button", { name: "Model: gpt-5.4, medium" });
+    trigger.focus();
+    expect(trigger).toHaveTextContent("5.4 Medium");
+
+    paneLayout.compact = true;
+    rerender(<MantineProvider>{controls()}</MantineProvider>);
+    expect(screen.getByRole("button", { name: "Model: gpt-5.4, medium" })).toBe(trigger);
+    expect(trigger).toHaveFocus();
+    expect(trigger).toHaveTextContent(/^$/);
+
+    paneLayout.compact = false;
+    rerender(<MantineProvider>{controls()}</MantineProvider>);
+    expect(screen.getByRole("button", { name: "Model: gpt-5.4, medium" })).toBe(trigger);
+    expect(trigger).toHaveFocus();
+    expect(trigger).toHaveTextContent("5.4 Medium");
+  });
+
+  it("exposes the complete compact picker selection in its tooltip and menu without disrupting submenu focus on resize", async () => {
+    paneLayout.compact = true;
+    const fullModel = { ...reasoningModel, id: "native-model-with-a-long-name", model: "native-model-with-a-long-name" };
+    const controls = () => <ComposerFooterControls models={[fullModel]} settings={{ model: fullModel.id, effort: "medium", fast: false }} onSettingsChange={vi.fn()} />;
+    const { rerender } = renderWithProvider(controls());
+    const trigger = screen.getByRole("button", { name: `Model: ${fullModel.model}, medium` });
+    await userEvent.hover(trigger);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(`Model: ${fullModel.model}, medium`);
+    await userEvent.unhover(trigger);
+    await userEvent.click(trigger);
+    expect(await screen.findByRole("menuitem", { name: "Model", hidden: true })).toHaveTextContent(fullModel.model);
+    const reasoning = screen.getByRole("menuitem", { name: "Reasoning", hidden: true });
+    expect(reasoning).toHaveTextContent("Medium");
+    reasoning.focus();
+    await userEvent.keyboard("{ArrowRight}");
+    const medium = screen.getByRole("menuitem", { name: "Medium", hidden: true });
+    expect(medium).toHaveFocus();
+
+    paneLayout.compact = false;
+    rerender(<MantineProvider>{controls()}</MantineProvider>);
+    expect(medium).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
   it.each([
     { label: "Fast", role: "menuitemcheckbox", submenu: null, expected: { fast: true, serviceTier: "fast" } },
     { label: "High", role: "menuitem", submenu: "Reasoning", expected: { effort: "high" } },

@@ -165,6 +165,12 @@ export function ExpandedComposerPanel({
         onComposerSettingsChange={onComposerSettingsChange}
         onEditablePointerDown={(event) => {
           if (!isComposerDisabled && shouldExpandComposerOnTouch(narrowWorkspace, event.pointerType)) {
+            if (!isExpanded) {
+              // Focus within the touch gesture; prevent native pointer defaults
+              // from disturbing focus while fullscreen geometry moves the field.
+              event.preventDefault();
+              event.currentTarget.focus({ preventScroll: true });
+            }
             setIsExpanded(true);
           }
         }}

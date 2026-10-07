@@ -1,6 +1,6 @@
 import { Box, Group, Menu, Textarea } from "@mantine/core";
 import { ChevronDown, Folder, MessageSquare } from "lucide-react";
-import { useId } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject, PointerEventHandler } from "react";
 
 import type { SkillMetadata } from "../api/client";
@@ -105,6 +105,22 @@ export function InlineComposerPanel({
   textareaRef,
 }: InlineComposerPanelProps) {
   const formId = useId();
+  const [editingActive, setEditingActive] = useState(false);
+  const [composerFocused, setComposerFocused] = useState(false);
+  const [toolbarMenuOpen, setToolbarMenuOpen] = useState(false);
+  const focusRevision = useRef(0);
+  useEffect(() => () => { focusRevision.current += 1; }, []);
+  useEffect(() => {
+    if (composerFocused || toolbarMenuOpen) return;
+    // Let focus and menu state settle before ending the editing session.
+    const frame = requestAnimationFrame(() => setEditingActive(false));
+    return () => cancelAnimationFrame(frame);
+  }, [composerFocused, toolbarMenuOpen]);
+  const idleCompact = density === "compact" && selectedThreadPresent && !isDraftThreadSelected &&
+    !isDraftComposerTransitioning && !expanded && !editingActive &&
+    draftState.composerText.length === 0 && draftState.annotations.length === 0 &&
+    draftState.skillBindings.length === 0 && pendingAttachments.length === 0 &&
+    !skillPopupOpen && !slashPopupOpen && !isComposerDragActive && !isComposerBusy && !isEntryPending && !composerSettingsError && !composerSettingsDisabled;
   const draftHeroText = greetingForDate(new Date());
   const shouldShowDraftHero = !expanded && (isDraftThreadSelected || isDraftComposerTransitioning);
   const selectedDraftProject =
@@ -143,6 +159,21 @@ export function InlineComposerPanel({
         component="form"
         id={formId}
         className={`kodex-composer${expanded ? " kodex-mobile-composer-expanded-body" : ""}`}
+        data-idle-compact={idleCompact ? "true" : "false"}
+        onFocusCapture={(event) => {
+          focusRevision.current += 1;
+          // Footer controls alone do not move under a pointer opening their menu.
+          setComposerFocused(true);
+          if ((event.target as HTMLElement) === textareaRef.current) setEditingActive(true);
+        }}
+        onBlurCapture={() => {
+          const revision = ++focusRevision.current;
+          // React focus events include portalled menus. Wait for the next focus
+          // before ending editing, rather than using DOM containment across portals.
+          queueMicrotask(() => {
+            if (focusRevision.current === revision) setComposerFocused(false);
+          });
+        }}
         data-skill-command-open={expanded && (skillPopupOpen || slashPopupOpen) ? "true" : undefined}
         onSubmit={(event) =>
           onSubmitTurn(
@@ -199,8 +230,8 @@ export function InlineComposerPanel({
           aria-label="Message composer"
           className={`kodex-composer-textarea${expanded ? " kodex-mobile-composer-textarea" : ""}`}
           placeholder={canCompose ? COMPOSER_TEXT.placeholder : COMPOSER_TEXT.disabledPlaceholder}
-          minRows={expanded ? 3 : 2}
-          maxRows={expanded ? 16 : 5}
+          minRows={expanded ? 3 : idleCompact ? 1 : 2}
+          maxRows={expanded ? 16 : idleCompact ? 1 : 5}
           autosize
           value={draftState.composerText}
           onChange={(event) => {
@@ -227,6 +258,7 @@ export function InlineComposerPanel({
         ) : null}
         {expanded && (skillPopupOpen || slashPopupOpen) ? null : (
           <ComposerToolbar
+            onMenuOpenChange={setToolbarMenuOpen}
             queueOnSubmit={queueOnSubmit}
             goalControls={goalControls}
             formId={formId}
