@@ -493,8 +493,20 @@ fn rows_for_turn_with_work_row(
     rows: Vec<ThreadTimelineWorkDetailRow>,
     mut work_row: ThreadTimelineRow,
 ) -> Vec<ThreadTimelineRow> {
+    if work_row.status == "failed" {
+        // Failure is the turn's outcome, after any partial response or tool output.
+        work_row.display_order = rows
+            .last()
+            .map_or(0, |row| row.display_order.saturating_add(1));
+        let mut result = rows
+            .into_iter()
+            .map(ThreadTimelineRow::from)
+            .collect::<Vec<_>>();
+        result.push(work_row);
+        return result;
+    }
     let Some(first_work_index) = rows.iter().position(row_contains_work_precursor) else {
-        if matches!(work_row.status.as_str(), "failed" | "interrupted") {
+        if work_row.status == "interrupted" {
             work_row.display_order = rows
                 .first()
                 .map_or(0, |row| row.display_order.saturating_sub(1));

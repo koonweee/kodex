@@ -124,3 +124,77 @@ async fn live_native_failure_survives_stale_reads_and_fresh_history_reload() {
         .unwrap();
     assert_failure(&reloaded, "failed");
 }
+
+#[tokio::test]
+async fn failed_turn_notice_follows_output_in_live_and_reloaded_views() {
+    for include_user in [false, true] {
+        let mut active = turn("inProgress", Some(1), include_user);
+        active.raw_payload = json!({"error": null});
+        for payload in [
+            json!({"id": "commentary", "type": "agentMessage", "phase": "commentary", "text": "Checking now."}),
+            json!({"id": "command", "type": "commandExecution", "command": "pwd", "status": "completed", "output": "/tmp"}),
+            json!({"id": "partial-answer", "type": "agentMessage", "phase": "final_answer", "text": "Partial response."}),
+        ] {
+            active
+                .items
+                .push(ThreadItemSnapshot::from_payload(&payload).unwrap());
+        }
+        let sessions = ThreadViewStore::default();
+        build_thread_timeline(&sessions, "thread", &[active.clone()], 1)
+            .await
+            .unwrap();
+        let mut failed = active.clone();
+        failed.status = "failed".into();
+        failed.completed_at = Some(10);
+        failed.raw_payload = json!({"error": {"message": "Model at capacity."}});
+        let (_, patch) = record_turn_status(&sessions, "thread", &failed, ready(Ok(2)))
+            .await
+            .unwrap();
+        // A connected client gets the canonical patch; a second client can miss
+        // it and attach from native history. Both must place the failure last.
+        let live_rows = serde_json::to_value(patch).unwrap()["rows"].clone();
+        let mut next = turn("completed", Some(11), true);
+        next.id = "next-turn".into();
+        next.items[0] = ThreadItemSnapshot::from_payload(&json!({
+            "id": "next-user", "type": "userMessage",
+            "content": [{"type": "text", "text": "Try again."}]
+        }))
+        .unwrap();
+        let fresh =
+            build_thread_timeline(&ThreadViewStore::default(), "thread", &[failed, next], 3)
+                .await
+                .unwrap();
+        let reloaded = serde_json::to_value(fresh).unwrap();
+        for rows in [
+            live_rows.as_array().unwrap(),
+            reloaded["rows"].as_array().unwrap(),
+        ] {
+            let failed_rows = rows
+                .iter()
+                .filter(|row| row["turnId"] == "turn-failure")
+                .collect::<Vec<_>>();
+            let notice = failed_rows.last().unwrap();
+            assert_eq!(
+                notice["kind"], "work",
+                "failure belongs after all turn output"
+            );
+            assert_eq!(notice["work"]["errorMessage"], "Model at capacity.");
+            assert_eq!(
+                failed_rows[failed_rows.len() - 2]["item"]["itemId"],
+                "partial-answer"
+            );
+            assert!(
+                notice["displayOrder"].as_i64().unwrap()
+                    > failed_rows[failed_rows.len() - 2]["displayOrder"]
+                        .as_i64()
+                        .unwrap()
+            );
+        }
+        let rows = reloaded["rows"].as_array().unwrap();
+        let failure_index = rows
+            .iter()
+            .position(|row| row["kind"] == "work" && row["turnId"] == "turn-failure")
+            .unwrap();
+        assert_eq!(rows[failure_index + 1]["turnId"], "next-turn");
+    }
+}
