@@ -3,7 +3,7 @@ import type { WorkspacePanePlacementDirection, WorkspacePanePlacementHintsById }
 import type { WorkspacePane } from "./paneTypes";
 
 // Soft placement targets, not resize constraints. Capacity follows workspace size.
-const MIN_PANE_WIDTH = 360;
+const MIN_PANE_WIDTH = 300;
 const MIN_PANE_HEIGHT = 320;
 
 type Position = { direction: "right" } | { referencePanel: string; direction: WorkspacePanePlacementDirection };
@@ -79,4 +79,3 @@ export function panelPlacementOptions(
   }
   return {};
 }
-

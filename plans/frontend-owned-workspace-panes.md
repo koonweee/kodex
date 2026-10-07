@@ -344,7 +344,7 @@ Work:
   Opening an existing chat replaces a sole empty draft in place. Explicit split
   and duplicate actions create panes. Automatic desktop placement appends full
   columns at the far right, independent of focus. The fixed soft minimum width
-  is 360 CSS pixels; column capacity follows current workspace width, accounting
+  is 300 CSS pixels; column capacity follows current workspace width, accounting
   for dividers. Once another column will not fit, split unsplit columns below in
   right-to-left order, at most two rows, with a 320px minimum height per row.
   When full (or the next column cannot split), append tabs at bottom-right;

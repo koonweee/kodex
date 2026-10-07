@@ -27,7 +27,7 @@ function add(api: DockviewApi, id: string, source = "a") {
 }
 
 describe("predictable automatic pane placement", () => {
-  it("appends three mobile-width columns at the far right independently of focus", () => {
+  it("appends three columns at the far right independently of focus", () => {
     const api = dock();
     expect(add(api, "b")).toEqual({ direction: "right" });
     api.getPanel("a")!.api.setActive();
@@ -35,7 +35,7 @@ describe("predictable automatic pane placement", () => {
     const root = api.toJSON().grid.root;
     expect(Array.isArray(root.data) && root.data.map(node => !Array.isArray(node.data) && node.data.views[0])).toEqual(["a", "b", "c"]);
     for (const group of api.groups) {
-      expect(group.api.width).toBeGreaterThanOrEqual(360);
+      expect(group.api.width).toBeGreaterThanOrEqual(300);
       expect(group.api.width).toBeLessThan(480);
     }
   });
@@ -94,17 +94,17 @@ describe("predictable automatic pane placement", () => {
     expect(add(api, "d", "c")).toEqual({ referencePanel: "c", direction: "below" });
     expect(api.groups).toHaveLength(2);
   });
-  it("includes divider space at the mobile-width boundary", () => {
-    expect(place(dock(725, 500))).toEqual({ referencePanel: "a", direction: "within" });
-    const api = dock(726, 500);
+  it("includes divider space at the 300px column boundary", () => {
+    expect(place(dock(605, 500))).toEqual({ referencePanel: "a", direction: "within" });
+    const api = dock(606, 500);
     expect(add(api, "b")).toEqual({ direction: "right" });
-    for (const group of api.groups) expect(group.api.width).toBeGreaterThanOrEqual(360);
+    for (const group of api.groups) expect(group.api.width).toBeGreaterThanOrEqual(300);
   });
   it("tabs at bottom-right instead of skipping a manually narrowed column", () => {
     const api = dock(850);
     add(api, "b");
     api.getPanel("a")!.api.setSize({ width: 550 });
-    expect(api.getPanel("b")!.group.api.width).toBeLessThan(360);
+    expect(api.getPanel("b")!.group.api.width).toBeLessThan(300);
     expect(add(api, "c")).toEqual({ referencePanel: "b", direction: "within" });
   });
   it("ignores floating groups and obsolete automatic source hints", () => {

@@ -113,7 +113,7 @@ test.describe("automatic pane placement", () => {
       await page.mouse.up();
       await expect.poll(async () => (await bounds(groups(page).nth(0))).width).toBeGreaterThanOrEqual(500);
       const before = await groupBounds(page);
-      expect(before[1].width).toBeLessThan(360);
+      expect(before[1].width).toBeLessThan(300);
       await tabs(page).first().click();
       await newDraft(page, "Use the narrow right tab");
       await expect(groups(page)).toHaveCount(2);
@@ -186,14 +186,31 @@ test.describe("automatic pane placement", () => {
     expect(fixture.unexpected).toEqual([]);
   });
 
+  test("adds two columns when both panes can be at least 300px wide", async ({ context }) => {
+    const fixture = await nativeSettingsFixture(context);
+    try {
+      const page = await fixture.page("two-narrow-columns", "/");
+      await page.setViewportSize({ width: 950, height: 900 });
+      await activeDraft(page).getByRole("textbox", { name: /message composer/i }).fill("Keep initial draft");
+      await newDraft(page, "Keep the second column");
+      await expect(groups(page)).toHaveCount(2);
+      const [left, right] = await groupBounds(page);
+      expect(right.x).toBeGreaterThan(left.x + left.width - 2);
+      expect(left.width).toBeGreaterThanOrEqual(299);
+      expect(right.width).toBeGreaterThanOrEqual(299);
+    } finally { await fixture.close(); }
+    expect(fixture.errors).toEqual([]);
+    expect(fixture.unexpected).toEqual([]);
+  });
+
   test("stacks once when the workspace is too narrow for two columns", async ({ context }) => {
     const fixture = await nativeSettingsFixture(context);
     try {
       const page = await fixture.page("narrow-tiles", "/");
-      await page.setViewportSize({ width: 950, height: 900 });
+      await page.setViewportSize({ width: 910, height: 900 });
       await activeDraft(page).getByRole("textbox", { name: /message composer/i }).fill("Keep initial draft");
       const initial = await bounds(groups(page));
-      expect(initial.width).toBeLessThan(720);
+      expect(initial.width).toBeLessThan(606);
       await newDraft(page, "Keep the stacked draft");
       await expect(groups(page)).toHaveCount(2);
       const top = await bounds(groups(page).nth(0));
@@ -221,7 +238,7 @@ test.describe("automatic pane placement", () => {
     const fixture = await nativeSettingsFixture(context);
     try {
       const page = await fixture.page("short-workspace", "/");
-      await page.setViewportSize({ width: 950, height: 600 });
+      await page.setViewportSize({ width: 910, height: 600 });
       await activeDraft(page).getByRole("textbox", { name: /message composer/i }).fill("Keep initial draft");
       const before = await bounds(groups(page));
       await newDraft(page, "A full-height tab");
