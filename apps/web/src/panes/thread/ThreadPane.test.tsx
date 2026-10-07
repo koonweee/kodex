@@ -293,8 +293,12 @@ it("keeps direct-input capability owned by canonical detail when older sidebar a
   expect(signals[0].aborted).toBe(false);
   await act(async () => releaseInitial(detail));
   expect(await screen.findByText("Native input: false")).toBeInTheDocument();
-  view.rerender(tree({ ...seed, name: "List rename" }));
+  view.rerender(tree({ ...seed, name: "List rename", preview: "Native persisted preview" }));
+  expect(await screen.findByRole("heading", { name: "List rename" })).toBeVisible();
+  expect(store.getState().panes[0].title).toBe("List rename");
   expect(screen.getByText("Native input: false")).toBeInTheDocument();
+  act(() => source.emit({ id: "persisted-summary", seq: 2, kind: "thread.summary_changed", threadId: "child", payload: { threadId: "child" }, receivedAt: "2026-10-07T00:00:00Z" }));
+  expect(signals).toHaveLength(1);
 
   detail = { ...detail, thread: { ...detail.thread, canAcceptDirectInput: true } };
   act(() => source.emit({ id: "native-change", seq: 2, kind: "thread.subagents_changed", payload: { changedThreadId: "child" }, receivedAt: "2026-10-04T00:00:00Z" }));
@@ -302,6 +306,40 @@ it("keeps direct-input capability owned by canonical detail when older sidebar a
   expect(gateway.callsFor("POST", "/v1/threads/child/attach")).toHaveLength(2);
   act(() => source.emit({ id: "old-metadata", seq: 3, threadId: "child", kind: "timeline.thread_metadata", payload: { thread: { ...seed, canAcceptDirectInput: false } }, receivedAt: "2026-10-04T00:00:00Z" }));
   expect(screen.getByText("Native input: true")).toBeInTheDocument();
+});
+
+it("fences a pre-input attach when a persisted native summary marker arrives", async () => {
+  vi.stubGlobal("EventSource", UnopenedEventSource);
+  const native: ThreadViewResponse = {
+    thread: { id: "fresh", name: null, preview: "Persisted first prompt", projectId: null, cwd: "/native", status: "active",
+      notificationsEnabled: true, pinned: false, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0,
+      readStateKnown: false, unreadCompletedAgentTurn: false, createdAt: 1, updatedAt: 2, parentThreadId: null, canAcceptDirectInput: true },
+    liveState: "streaming", timeline: { liveState: "streaming", activeTurnId: "turn", pendingApprovalRequests: [], pendingUserInputRequests: [], rows: [], turns: [{ id: "turn", status: "inProgress" }], viewRevision: 2 },
+  };
+  const stale = { ...native, thread: { ...native.thread, preview: null } };
+  let releaseOld!: (reply: ThreadViewResponse) => void;
+  const old = new Promise<ThreadViewResponse>((resolve) => { releaseOld = resolve; });
+  const signals: AbortSignal[] = [];
+  mockGateway({
+    "POST /v1/threads/fresh/attach": (request: Request) => { signals.push(request.signal); return signals.length === 1 ? old : native; },
+    "GET /v1/threads/fresh/app-surface": { session: null },
+  });
+  const store = createMemoryWorkspacePaneStore({ schemaVersion: 1, activePaneId: "fresh-pane", dockviewLayout: null,
+    panes: [{ id: "fresh-pane", kind: "thread", title: "New thread", target: { mode: "existing", threadId: "fresh" } }] });
+  const seed: ThreadSummary = { ...stale.thread, rawPayload: {} };
+  const query = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const tree = (thread: ThreadSummary) => <QueryClientProvider client={query}><MantineProvider><WorkspaceProvider
+    paneStore={store} threadSummariesById={{ fresh: thread }}><ActiveThreadPane /></WorkspaceProvider></MantineProvider></QueryClientProvider>;
+  const view = render(tree(seed));
+  await waitFor(() => expect(signals).toHaveLength(1));
+  view.rerender(tree({ ...native.thread, rawPayload: {} }));
+  expect(await screen.findByRole("heading", { name: "Persisted first prompt" })).toBeVisible();
+  act(() => UnopenedEventSource.instances.at(-1)!.emit({ id: "persisted-user", seq: 2, kind: "thread.summary_changed", threadId: "fresh", payload: { threadId: "fresh" }, receivedAt: "2026-10-07T00:00:00Z" }));
+  await waitFor(() => expect(signals[0].aborted).toBe(true));
+  await waitFor(() => expect(signals).toHaveLength(2));
+  await act(async () => releaseOld(stale));
+  expect(screen.getByRole("heading", { name: "Persisted first prompt" })).toBeVisible();
+  expect(store.getState().panes[0].title).toBe("Persisted first prompt");
 });
 
 it.each([false, true])("closes an unavailable pane and keeps a usable workspace (another pane: %s)", async (hasOtherPane) => {

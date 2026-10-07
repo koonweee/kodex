@@ -16,6 +16,7 @@ export async function nativeProjectsFixture(context: BrowserContext) {
     projects: [project("alpha", "Alpha", 0), project("beta", "Beta", 1)],
     threads: [thread("history", "History chat"), thread("unlisted", "Unlisted history")],
     pinnedThreadIds: [] as string[],
+    hiddenThreadIds: new Set(["unlisted"]),
   };
   const clients = new Map<Page, string>();
   const streams = new Map<ServerResponse, string>();
@@ -67,7 +68,7 @@ export async function nativeProjectsFixture(context: BrowserContext) {
     }
   }
   function snapshot() {
-    const visibleThreads = state.threads.filter((entry) => entry.id !== "unlisted");
+    const visibleThreads = state.threads.filter((entry) => !state.hiddenThreadIds.has(entry.id));
     return {
       projects: state.projects,
       projectThreads: Object.fromEntries(state.projects.map((entry) => [entry.id, { threads: visibleThreads.filter((member) => member.projectId === entry.id) }])),
@@ -253,6 +254,11 @@ function thread(id: string, name: string): ThreadSummary {
 }
 
 function detail(thread: ThreadSummary): ThreadViewResponse {
+  if (thread.status === "active") return { thread, liveState: "streaming", timeline: {
+    viewRevision: 1, liveState: "streaming", activeTurnId: "first-turn", pendingApprovalRequests: [], pendingUserInputRequests: [],
+    turns: [{ id: "first-turn", status: "inProgress" }], rows: [],
+  } };
+
   const payload = { id: "answer", type: "agentMessage", text: preservedHistory, phase: "final_answer" };
   const item: ThreadTimelineSnapshotItem = {
     id: `${thread.id}-history`, threadId: thread.id, turnId: "turn-1", itemId: "answer", itemType: "agentMessage", status: "completed",

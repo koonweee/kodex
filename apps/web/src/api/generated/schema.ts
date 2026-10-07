@@ -3462,6 +3462,10 @@ export interface components {
             /** Format: int64 */
             updatedAt: number;
         };
+        /** @description A native metadata refill signal, not a title or sidebar membership projection. */
+        ThreadSummaryChanged: {
+            threadId: string;
+        };
         ThreadTimelineFileChangeEntry: {
             action: string;
             /** Format: int64 */

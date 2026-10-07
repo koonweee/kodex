@@ -4,6 +4,16 @@ import type { EventEnvelope, ThreadSummary } from "../api/client";
 import { sidebarLiveCacheRoute } from "./liveCacheRouting";
 
 describe("thread live cache routing", () => {
+  it("refills authoritative inventory for a native summary marker even when the thread is not cached", () => {
+    expect(sidebarLiveCacheRoute(event({ kind: "thread.summary_changed", payload: { threadId: "new-native-chat" } }), null))
+      .toEqual({ kind: "refillSidebar", threadId: "new-native-chat" });
+    expect(sidebarLiveCacheRoute(event({ kind: "thread.summary_changed", threadId: "native-chat" }), { scope: "chat", thread: threadSummary("native-chat") }))
+      .toEqual({ kind: "refillSidebar", threadId: "native-chat" });
+  });
+  it("refills native names and cancels old inventory reads even for an uncached chat", () => {
+    expect(sidebarLiveCacheRoute(event({ kind: "timeline.thread_metadata", codexMethod: "thread/name/updated", threadId: "renamed" }), null))
+      .toEqual({ kind: "refillSidebar", threadId: "renamed" });
+  });
   it("ignores patches for threads that are not in sidebar caches", () => {
     expect(sidebarLiveCacheRoute(event({ kind: "thread_view.patch", threadId: "thread-1" }), null)).toEqual({
       kind: "ignore",

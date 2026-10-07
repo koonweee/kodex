@@ -199,6 +199,28 @@ impl NativeSession {
         Ok(self.server.request("thread/loaded/list", json!({})).await?)
     }
 
+    pub(super) async fn native_thread_read(&self, thread_id: &str) -> anyhow::Result<Value> {
+        Ok(self
+            .server
+            .request(
+                "thread/read",
+                json!({"threadId": thread_id, "includeTurns": false}),
+            )
+            .await?)
+    }
+
+    pub(super) async fn native_thread_list(&self) -> anyhow::Result<Value> {
+        Ok(self
+            .server
+            .request(
+                "thread/list",
+                json!({
+                    "limit": 100, "modelProviders": [], "useStateDbOnly": true,
+                }),
+            )
+            .await?)
+    }
+
     pub(super) async fn canonical_view(&self, thread_id: &str) -> anyhow::Result<Value> {
         // Read the live projection without a history request repairing it first.
         Ok(serde_json::to_value(

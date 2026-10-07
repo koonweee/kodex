@@ -26,6 +26,7 @@ use crate::{
     skills,
     store::EventEnvelope,
     subagents::THREAD_SUBAGENTS_CHANGED_EVENT,
+    thread_summary::THREAD_SUMMARY_CHANGED_EVENT,
     thread_view::{
         THREAD_VIEW_ITEM_DELTA_EVENT_KIND, THREAD_VIEW_PATCH_EVENT_KIND,
         THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND,
@@ -47,6 +48,7 @@ pub(crate) const WORKSPACE_GLOBAL_THREAD_EVENT_KINDS: &[&str] = &[
     THREAD_READ_UPDATED_EVENT,
     THREAD_UPSERTED_EVENT,
     THREAD_SUBAGENTS_CHANGED_EVENT,
+    THREAD_SUMMARY_CHANGED_EVENT,
     automations::AUTOMATION_UPSERT_EVENT,
     automations::AUTOMATION_DELETE_EVENT,
     automations::AUTOMATION_RUN_UPDATED_EVENT,
@@ -106,6 +108,7 @@ pub(crate) fn is_operational_replay_event(event: &EventEnvelope) -> bool {
             | THREAD_READ_UPDATED_EVENT
             | THREAD_UPSERTED_EVENT
             | THREAD_SUBAGENTS_CHANGED_EVENT
+            | THREAD_SUMMARY_CHANGED_EVENT
             | APP_SURFACE_UPSERTED_EVENT
             | APP_SURFACE_PRESENTATION_REQUESTED_EVENT
             | APP_SURFACE_ARCHIVED_EVENT

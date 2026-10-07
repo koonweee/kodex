@@ -83,7 +83,7 @@ function routeSharedLiveEvent(event: EventEnvelope, handlers: LiveEventRouteHand
   if (notificationsUpdate) {
     handlers.applyThreadNotificationsState(notificationsUpdate.threadId, notificationsUpdate.notificationsEnabled);
   }
-  if (event.kind === "thread_view.patch" || event.kind === "timeline.thread_metadata") {
+  if (event.kind === "thread_view.patch" || event.kind === "timeline.thread_metadata" || event.kind === "thread.summary_changed" || event.codexMethod === "thread/name/updated") {
     handlers.refreshSidebarThreadsForLiveEvent(event);
   }
 }

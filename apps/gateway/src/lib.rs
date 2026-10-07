@@ -26,6 +26,7 @@ pub mod store;
 pub mod subagents;
 pub mod terminal;
 pub mod thread_presence;
+pub mod thread_summary;
 pub mod thread_view;
 pub mod thread_view_patch;
 mod thread_view_projection;

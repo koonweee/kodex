@@ -139,6 +139,7 @@ use crate::{
         CreateTerminalSession, TerminalSessionInfo, TerminalSessionListResponse,
         TerminalSessionResponse, TerminalSessionStatus,
     },
+    thread_summary::ThreadSummaryChanged,
     thread_view::{ThreadViewPatch, ThreadViewStore},
 };
 
@@ -439,6 +440,7 @@ impl AppState {
         ThreadSubagentListResponse,
         ThreadSubagentListQuery,
         ThreadSubagentsChanged,
+        ThreadSummaryChanged,
         ThreadRead,
         crate::read_state::UnreadBadgeResponse,
         AppSurfaceProvider,

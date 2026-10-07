@@ -58,6 +58,24 @@ describe("thread query cache helpers", () => {
     expect(client.getQueryData<ThreadSummary[]>(queryKeys.pinnedThreads)?.[1]).toMatchObject({ name: "New title", projectId: "project-1", pinned: assigned.pinned });
     expect(client.getQueryData(queryKeys.chatThreads)).toBeUndefined();
   });
+  it("takes refreshed native preview and name while preserving only the selected route's newer read tuple", () => {
+    const client = createKodexQueryClient();
+    const route = thread("fresh", { name: "New thread", preview: null, projectId: "project-1", readRevision: 8, readStateKnown: true, latestCompletedTurnId: "new-head" });
+    const native = thread("fresh", { name: "Explicit native name", preview: "Persisted first input", projectId: "project-1", readRevision: 2, latestCompletedTurnId: "old-head" });
+    mergeProjectThreadSnapshot(client, "project-1", [native], route, route.id);
+    expect(client.getQueryData<ThreadSummary[]>(queryKeys.projectThreads("project-1"))?.[0])
+      .toMatchObject({ name: "Explicit native name", preview: "Persisted first input", readRevision: 8, latestCompletedTurnId: "new-head" });
+  });
+  it("preserves an acknowledged native rename received during a same-timestamp sidebar read, then accepts a later native clear", () => {
+    const client = createKodexQueryClient();
+    const before = thread("renamed", { name: null, preview: "Persisted prompt", projectId: "project-1", updatedAt: 7 });
+    const renamed = { ...before, name: "Explicit native name" };
+    upsertProjectThread(client, "project-1", renamed);
+    mergeProjectThreadSnapshot(client, "project-1", [before], renamed, renamed.id, [before]);
+    expect(client.getQueryData<ThreadSummary[]>(queryKeys.projectThreads("project-1"))?.[0].name).toBe("Explicit native name");
+    mergeProjectThreadSnapshot(client, "project-1", [before], renamed, renamed.id, [renamed]);
+    expect(client.getQueryData<ThreadSummary[]>(queryKeys.projectThreads("project-1"))?.[0].name).toBeNull();
+  });
   it("removes a selected route thread absent from the authoritative project membership", () => {
     const queryClient = createKodexQueryClient();
     const routeThread = thread("thread-route", { name: "Fresh route title" });
