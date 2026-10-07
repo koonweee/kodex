@@ -58,3 +58,50 @@
 .kodex-workspace-dock .dv-tabs-container > .dv-tab.dv-active-tab {
   box-shadow: 0 1px 3px color-mix(in srgb, var(--kodex-text-primary) 10%, transparent);
 }
+
+/* One small motion-path highlight follows the native tab's rounded rectangle.
+   It occupies no layout space and never intercepts tab/close/drag gestures. */
+.kodex-workspace-dock .kodex-workspace-tab:has(.kodex-workspace-tab-running) {
+  position: static;
+}
+
+.kodex-workspace-tab-running {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.kodex-workspace-dock .dv-tabs-container .kodex-workspace-tab-running::after {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 50%;
+  width: 14px;
+  height: 3px;
+  border-radius: var(--kodex-radius-round);
+  background: radial-gradient(ellipse, color-mix(in srgb, var(--kodex-accent) 65%, transparent), transparent 75%);
+  pointer-events: none;
+}
+
+@supports (offset-path: inset(1px round 12px)) {
+  .kodex-workspace-dock .dv-tabs-container .kodex-workspace-tab-running::after {
+    top: 0;
+    left: 0;
+    offset-path: inset(1px round calc(var(--dv-tab-border-radius) - 1px));
+    offset-distance: 0%;
+    /* Keep the tiny moving highlight on its own layer instead of repainting. */
+    will-change: transform;
+    animation: kodex-tab-perimeter-pulse 3.6s linear infinite;
+  }
+}
+
+@keyframes kodex-tab-perimeter-pulse {
+  to { offset-distance: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kodex-workspace-dock .dv-tabs-container .kodex-workspace-tab-running::after {
+    animation: none;
+    will-change: auto;
+  }
+}

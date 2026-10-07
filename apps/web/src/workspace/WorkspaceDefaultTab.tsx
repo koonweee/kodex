@@ -25,8 +25,9 @@ export function WorkspaceDefaultTab(props: IDockviewPanelHeaderProps<DockviewPan
     : pane.kind === "thread" && pane.target.mode === "existing" && paneContext?.id === pane.target.threadId
       ? paneContext.indicatorState : null;
   const syncing = paneHeaderAdornmentsById[props.api.id];
-  const headerAdornment = indicatorState
-    ? <ThreadStatusIndicator state={indicatorState} />
+  const headerAdornment = indicatorState === "running"
+    ? <span className="kodex-workspace-tab-running" aria-label="Thread in progress" role="status" />
+    : indicatorState ? <ThreadStatusIndicator state={indicatorState} />
     : syncing ? <span aria-label="Pane syncing" role="status" title="Pane syncing">{syncing}</span> : null;
   const terminalStatus = pane.kind === "terminal" ? paneTabStatusById[props.api.id] : undefined;
   const tabClassName = [
@@ -44,6 +45,7 @@ export function WorkspaceDefaultTab(props: IDockviewPanelHeaderProps<DockviewPan
     <WorkspaceTabWithAdornment
       {...props}
       adornment={headerAdornment}
+      running={indicatorState === "running"}
       className={tabClassName}
     />
   );
@@ -51,9 +53,10 @@ export function WorkspaceDefaultTab(props: IDockviewPanelHeaderProps<DockviewPan
 
 function WorkspaceTabWithAdornment({
   adornment,
+  running,
   className,
   ...props
-}: IDockviewPanelHeaderProps<DockviewPaneParams> & { adornment: ReactNode; className: string }) {
+}: IDockviewPanelHeaderProps<DockviewPaneParams> & { adornment: ReactNode; running: boolean; className: string }) {
   const {
     api,
     closeActionOverride,
@@ -111,13 +114,14 @@ function WorkspaceTabWithAdornment({
       onPointerLeave={handlePointerLeave}
       onPointerUp={handlePointerUp}
     >
+      {running ? adornment : null}
       <span className="dv-default-tab-content kodex-workspace-tab-content">
         <span className="kodex-workspace-tab-title">{title}</span>
-        <span
+        {!running ? <span
           className="kodex-workspace-pane-title-adornment"
         >
           {adornment}
-        </span>
+        </span> : null}
       </span>
       {!hideClose ? (
         <div className="dv-default-tab-action" onClick={onClose} onPointerDown={onClosePointerDown}>
