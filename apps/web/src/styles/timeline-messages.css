@@ -372,6 +372,19 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
+  /* Keep toolbar space and keyboard access while revealing only the active message. */
+  .kodex-user-message-row .kodex-message-toolbar,
+  .kodex-assistant-message-stack .kodex-message-toolbar {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .kodex-user-message-row:is(:hover, :focus-within) .kodex-message-toolbar,
+  .kodex-assistant-message-stack:is(:hover, :focus-within) .kodex-message-toolbar {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
   .kodex-file-attachment-action:hover {
     border-color: var(--kodex-border-accent);
   }
