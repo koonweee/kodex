@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createGoalReminderSignal } from '@mastra/code-sdk/goal-signal';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -143,9 +143,16 @@ for (const stop of [false, true]) for (const decision of ['done', 'continue'] as
 }
 
 
-for (const replaceDuringJudge of [false, true]) {
-  test(`native goal reminder ${replaceDuringJudge ? 'starts replacement after an old judge' : 'starts an idle goal'}`, { timeout: 20_000 }, async t => {
-    const name = `reminder-${replaceDuringJudge}`;
+for (const [replaceDuringJudge, configuredJudge] of [[false, true], [true, true], [false, false]] as const) {
+  test(`native goal reminder ${!configuredJudge ? 'pauses when the mounted custom judge has no profile default' : replaceDuringJudge ? 'starts replacement after an old judge' : 'starts an idle goal'}`,  { timeout: 20_000 }, async t => {
+    const name = `reminder-${replaceDuringJudge}-${configuredJudge}`;
+    const originalSettings = await readFile(profile.settingsPath, 'utf8');
+    if (!configuredJudge) {
+      const settings = JSON.parse(originalSettings);
+      settings.models.goalJudgeModel = null;
+      await writeFile(profile.settingsPath, JSON.stringify(settings));
+      t.after(() => writeFile(profile.settingsPath, originalSettings));
+    }
     const projectPath = join(root, name);
     await mkdir(projectPath);
     const runtime = await createProjectRuntime({ profile, projectPath, runtimeRoot: join(root, `${name}-runtime`),
@@ -160,7 +167,7 @@ for (const replaceDuringJudge of [false, true]) {
     assert.ok(goal);
     const completed = deferred();
     const unsubscribe = session.subscribe(event => {
-      if (event.type === 'goal_evaluation' && !event.payload.pending && event.payload.status === 'done') completed.resolve();
+      if (event.type === 'goal_evaluation' && !event.payload.pending) completed.resolve();
     });
     const producers = new Set<Promise<void>>();
     const unregister = runtime.mastra.__unregisterInternalWorkflow.bind(runtime.mastra);
@@ -189,6 +196,14 @@ for (const replaceDuringJudge of [false, true]) {
     }), { requireDelivery: true }).accepted;
     const start = fixture.requests.length;
     await remind();
+    if (!configuredJudge) {
+      await completed.promise;
+      await Promise.all(producers);
+      const saved = await agent.getObjective({ threadId: name });
+      assert.equal(saved?.status, 'paused', 'bare custom judge fallback does not inherit the SDK gateway');
+      assert.ok(fixture.requests.slice(start).every(request => request.model !== 'judge'));
+      return;
+    }
     await gate.reached.promise;
     if (replaceDuringJudge) {
       const previousId = goal.id;
