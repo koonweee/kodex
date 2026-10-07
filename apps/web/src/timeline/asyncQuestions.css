@@ -22,3 +22,27 @@
   .kodex-async-question .mantine-Button-root { min-height: 44px; }
   .kodex-async-question textarea { font-size: 16px; }
 }
+
+.kodex-async-question-answered summary {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  cursor: pointer;
+  list-style: none;
+}
+.kodex-async-question-answered summary::-webkit-details-marker { display: none; }
+.kodex-async-question-answered[open] summary svg { transform: rotate(90deg); }
+.kodex-async-question-answered summary:focus-visible {
+  outline: 2px solid var(--kodex-focus-ring);
+  outline-offset: 4px;
+  border-radius: var(--mantine-radius-xs);
+}
+.kodex-async-question-answer {
+  margin: 0;
+  padding-left: var(--mantine-spacing-sm);
+  border-left: 3px solid var(--kodex-border-strong);
+  white-space: pre-wrap;
+}
+@media (pointer: coarse) {
+  .kodex-async-question-answered summary { min-height: 44px; }
+}

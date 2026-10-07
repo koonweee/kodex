@@ -597,7 +597,7 @@ function ExistingThreadPane({
                 <TimelineLoadingSkeleton />
               ) : (
                 <Suspense fallback={<TimelineLoadingSkeleton />}>
-                  <AsyncQuestionReplyProvider key={threadId} threadId={threadId} enabled={isReady && thread?.canAcceptDirectInput !== false}>
+                  <AsyncQuestionReplyProvider key={threadId} threadId={threadId} enabled={isReady && thread?.canAcceptDirectInput !== false} items={timeline.items}>
                     <TimelineView
                       approvals={threadApprovals}
                       imagePreviewUrlsByPath={imagePreviewUrlsByPath}
