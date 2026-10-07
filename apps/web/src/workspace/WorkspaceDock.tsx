@@ -51,7 +51,7 @@ export const kodexDockviewTheme = {
   ...themeAbyss,
   name: "kodex",
   className: `${themeAbyss.className} kodex-dockview-theme`,
-  gap: 6,
+  gap: 1,
   edgeGroupCollapsedSize: 34,
   dndOverlayMounting: "absolute",
   dndPanelOverlay: "group",

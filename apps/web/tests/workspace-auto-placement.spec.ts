@@ -28,6 +28,16 @@ async function groupBounds(page: Page) {
   }));
 }
 
+// Dockview can redistribute subpixel remainders when tabs are added or restored.
+function expectSameBounds(actual: Awaited<ReturnType<typeof groupBounds>>, expected: Awaited<ReturnType<typeof groupBounds>>) {
+  expect(actual).toHaveLength(expected.length);
+  actual.forEach((box, index) => {
+    for (const key of ["x", "y", "width", "height"] as const) {
+      expect(Math.abs(box[key] - expected[index][key])).toBeLessThan(1);
+    }
+  });
+}
+
 test.describe("automatic pane placement", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
@@ -48,8 +58,8 @@ test.describe("automatic pane placement", () => {
         expect(column.height).toBeGreaterThanOrEqual(639);
         expect(column.y).toBeCloseTo(columns[0].y, 0);
       }
-      expect(columns[1].x).toBeGreaterThan(columns[0].x + columns[0].width - 2);
-      expect(columns[2].x).toBeGreaterThan(columns[1].x + columns[1].width - 2);
+      expect(columns[1].x - (columns[0].x + columns[0].width)).toBeCloseTo(1, 1);
+      expect(columns[2].x - (columns[1].x + columns[1].width)).toBeCloseTo(1, 1);
       await page.screenshot({ path: test.info().outputPath("three-readable-columns.png"), animations: "disabled" });
 
       for (const [index, columnIndex] of [2, 1, 0].entries()) {
@@ -69,12 +79,17 @@ test.describe("automatic pane placement", () => {
       await expect(page.getByRole("textbox", { name: /message composer/i }).filter({ visible: true })).toHaveCount(6);
       await page.screenshot({ path: test.info().outputPath("six-readable-tiles.png"), animations: "disabled" });
       const tiledBounds = await groupBounds(page);
+      for (const column of columns) {
+        const rows = tiledBounds.filter((box) => Math.abs(box.x - column.x) < 1).sort((a, b) => a.y - b.y);
+        expect(rows).toHaveLength(2);
+        expect(rows[1].y - (rows[0].y + rows[0].height)).toBeCloseTo(1, 1);
+      }
       const bottomRight = tiledBounds.reduce((result, box) => box.x > result.x || (box.x === result.x && box.y > result.y) ? box : result);
       await tabs(page).first().click();
       await newDraft(page, "Keep bottom-right tab");
       await expect(groups(page)).toHaveCount(6);
       await expect(tabs(page)).toHaveCount(7);
-      expect(await groupBounds(page)).toEqual(tiledBounds);
+      expectSameBounds(await groupBounds(page), tiledBounds);
       const tabPane = await bounds(activeGroup(page));
       expect(tabPane.x).toBeCloseTo(bottomRight.x, 0);
       expect(tabPane.y).toBeCloseTo(bottomRight.y, 0);
@@ -89,7 +104,7 @@ test.describe("automatic pane placement", () => {
       await page.reload();
       await expect(groups(page)).toHaveCount(6);
       await expect(tabs(page)).toHaveCount(7);
-      expect(await groupBounds(page)).toEqual(tiledBounds);
+      expectSameBounds(await groupBounds(page), tiledBounds);
       await expect(groups(page).filter({ has: activeDraft(page) }).getByTestId("dockview-dv-default-tab")).toHaveCount(2);
     } finally { await fixture.close(); }
     expect(fixture.errors).toEqual([]);
@@ -175,7 +190,7 @@ test.describe("automatic pane placement", () => {
       await newDraft(page, "Tab without subdividing the tall row");
       await expect(groups(page)).toHaveCount(6);
       await expect(tabs(page)).toHaveCount(7);
-      expect(await groupBounds(page)).toEqual(full);
+      expectSameBounds(await groupBounds(page), full);
       await expect(activeGroup(page).getByTestId("dockview-dv-default-tab")).toHaveCount(2);
       const final = await bounds(activeGroup(page));
       expect(final.y).toBe(resizedLower.y);
