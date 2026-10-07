@@ -49,11 +49,11 @@
   box-sizing: border-box;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
+  gap: 4px;
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  padding: 8px 0;
+  padding: 4px 0;
 }
 
 .kodex-activity-group > summary,
@@ -65,7 +65,7 @@
   width: fit-content;
   max-width: 100%;
   cursor: pointer;
-  color: var(--kodex-text-secondary);
+  color: var(--kodex-text-muted);
   list-style: none;
 }
 
@@ -91,7 +91,7 @@
 .kodex-activity-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
+  gap: 4px;
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -234,4 +234,11 @@
 .kodex-collab-agent-markdown ol {
   margin-top: 0;
   margin-bottom: 0;
+}
+
+@media (any-pointer: coarse) {
+  .kodex-activity-group > summary,
+  .kodex-activity-item > summary {
+    min-height: 44px;
+  }
 }

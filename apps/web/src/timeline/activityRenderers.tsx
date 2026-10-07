@@ -60,7 +60,7 @@ function TimelineActivityGroupRendererImpl({
         </Group>
         <ChevronRight size={16} className="kodex-activity-caret" aria-hidden="true" />
       </summary>
-      <Stack gap={8} mt={8}>
+      <Stack gap={4}>
         {visibleItems.map((item) => (
           <ActivityItemRenderer
             imagePreviewUrlsByPath={imagePreviewUrlsByPath}
@@ -269,7 +269,7 @@ const ActivityItemRenderer = memo(function ActivityItemRenderer({
         <summary>
           <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
             <Terminal size={15} />
-            <Text size="sm" className="kodex-activity-title" title={commandSummary(item)}>
+            <Text size="xs" c="dimmed" className="kodex-activity-title" title={commandSummary(item)}>
               {commandSummary(item)}
             </Text>
             {status ? (
@@ -295,7 +295,7 @@ const ActivityItemRenderer = memo(function ActivityItemRenderer({
       <summary>
         <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
           <TimelineIcon kind={item.kind} />
-          <Text size="sm" className="kodex-activity-title" title={activityItemSummary(item)}>
+          <Text size="xs" c="dimmed" className="kodex-activity-title" title={activityItemSummary(item)}>
             {activityItemSummary(item)}
           </Text>
         </Group>
