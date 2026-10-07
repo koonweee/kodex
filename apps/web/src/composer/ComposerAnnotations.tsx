@@ -6,7 +6,7 @@ import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 import type { ComposerDraftState } from "./useComposerDraftState";
 
 export function ComposerAnnotations({ draftState, disabled, collapseByDefault = false, onFocus, onKeyDown }: {
-  draftState: ComposerDraftState;
+  draftState: Pick<ComposerDraftState, "annotations" | "annotationFocusId" | "clearAnnotationFocus" | "removeAnnotation" | "updateAnnotation">;
   disabled: boolean;
   collapseByDefault?: boolean;
   onFocus?: () => void;

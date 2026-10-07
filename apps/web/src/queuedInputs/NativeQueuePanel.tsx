@@ -6,10 +6,25 @@ import {
   reorderQueuedInputs, steerQueuedInput, updateQueuedInput,
   type QueuedInput, type QueueTransfer,
 } from "../api/client";
+import { appendResponseAnnotations, type DraftAnnotation } from "../composer/annotations";
+import { ComposerAnnotations } from "../composer/ComposerAnnotations";
 import { errorMessageFrom } from "../shared/values";
+import { parseResponseAnnotations } from "../timeline/responseAnnotations";
 import type { NativeQueueController } from "./useNativeQueue";
 import { QueuedMessageList } from "./QueuedMessageList";
 import { editableQueueText, queueInputPreview, replaceQueueText, restorableQueueText } from "./input";
+
+type QueuedTextEdit = { text: string; annotations: DraftAnnotation[]; original: string; dirty: boolean };
+
+function queuedTextEdit(original: string): QueuedTextEdit {
+  const parsed = parseResponseAnnotations(original);
+  return {
+    text: parsed?.text ?? original,
+    annotations: parsed?.annotations.map((annotation, index) => ({ ...annotation, id: String(index) })) ?? [],
+    original,
+    dirty: false,
+  };
+}
 
 export function NativeQueuePanel({ threadId, queue, onRestoreText, canRestoreText, isActive = true }: {
   threadId: string;
@@ -20,7 +35,7 @@ export function NativeQueuePanel({ threadId, queue, onRestoreText, canRestoreTex
 }) {
   const { query, busy, error, reload, mutate } = queue;
   const [editing, setEditing] = useState<QueuedInput | null>(null);
-  const [edits, setEdits] = useState(new Map<number, string>());
+  const [edits, setEdits] = useState(new Map<number, QueuedTextEdit>());
   const [restoring, setRestoring] = useState<QueueTransfer | null>(null);
   const [inspecting, setInspecting] = useState<QueueTransfer | null>(null);
   useEffect(() => {
@@ -33,6 +48,22 @@ export function NativeQueuePanel({ threadId, queue, onRestoreText, canRestoreTex
   const rows = query.data?.queuedInputs ?? [];
   const transfers = (query.data?.transfers ?? []).filter((transfer) => transfer.phase === "uncertain");
 
+  function updateEdit(index: number, change: (edit: QueuedTextEdit) => QueuedTextEdit) {
+    setEdits((current) => {
+      const edit = current.get(index);
+      if (!edit) return current;
+      return new Map(current).set(index, { ...change(edit), dirty: true });
+    });
+  }
+
+  function saveEditing() {
+    if (!editing) return;
+    const textEdits = new Map([...edits].map(([index, edit]) => [index,
+      edit.dirty ? appendResponseAnnotations(edit.text, edit.annotations) : edit.original,
+    ]));
+    void mutate(() => updateQueuedInput(threadId, editing.id, replaceQueueText(editing.input, textEdits)), () => setEditing(null));
+  }
+
   return <>
     {error || query.error ? <Alert color="red" title="Queue unavailable" mb="xs">
       {error ?? errorMessageFrom(query.error)}
@@ -41,7 +72,10 @@ export function NativeQueuePanel({ threadId, queue, onRestoreText, canRestoreTex
     {rows.length > 0 ? <QueuedMessageList rows={rows} busy={busy} partial={Boolean(query.data?.nextCursor)} isActive={isActive}
       onReorder={(ids) => void mutate(() => reorderQueuedInputs(threadId, ids))}
       onSteer={(row) => void mutate(() => steerQueuedInput(threadId, row.id))}
-      onEdit={(row) => { setEditing(row); setEdits(new Map()); }}
+      onEdit={(row) => {
+        setEditing(row);
+        setEdits(new Map(editableQueueText(row.input).map(({ index, text }) => [index, queuedTextEdit(text)])));
+      }}
       onRemove={(row) => void mutate(() => deleteQueuedInput(threadId, row.id))} /> : null}
     {transfers.length > 0 ? <Box role="region" aria-label="Queue transfers" className="kodex-native-queue">
       {transfers.map((transfer) => <Box key={transfer.id} role="group" aria-label="Queue transfer" className="kodex-native-queue-row">
@@ -60,8 +94,30 @@ export function NativeQueuePanel({ threadId, queue, onRestoreText, canRestoreTex
     </Box> : null}
     <Modal opened={isActive && editing !== null} title="Edit queued message" onClose={() => !busy && setEditing(null)}>
       {editing ? <Stack gap="sm">
-        {editableQueueText(editing.input).map(({ index, text }, position) => <Textarea key={index} label={position === 0 ? "Queued message text" : `Queued message text ${position + 1}`} autosize minRows={3} value={edits.get(index) ?? text} onChange={(event) => setEdits(new Map(edits).set(index, event.currentTarget.value))} disabled={busy} />)}
-        {editableQueueText(editing.input).length === 0 ? <Text>No editable text in this native input.</Text> : <Button disabled={busy} onClick={() => void mutate(() => updateQueuedInput(threadId, editing.id, replaceQueueText(editing.input, edits)), () => setEditing(null))}>Save queued message</Button>}
+        {editableQueueText(editing.input).map(({ index }, position) => {
+          const edit = edits.get(index);
+          if (!edit) return null;
+          return <Box key={index}>
+            <Textarea label={position === 0 ? "Queued message text" : `Queued message text ${position + 1}`}
+              autosize minRows={3} value={edit.text} disabled={busy}
+              onChange={(event) => {
+                const text = event.currentTarget.value;
+                updateEdit(index, (current) => ({ ...current, text }));
+              }} />
+            <ComposerAnnotations disabled={busy} draftState={{
+              annotations: edit.annotations,
+              annotationFocusId: null,
+              clearAnnotationFocus: () => undefined,
+              updateAnnotation: (id, comment) => updateEdit(index, (current) => ({ ...current,
+                annotations: current.annotations.map((annotation) => annotation.id === id ? { ...annotation, comment } : annotation),
+              })),
+              removeAnnotation: (id) => updateEdit(index, (current) => ({ ...current,
+                annotations: current.annotations.filter((annotation) => annotation.id !== id),
+              })),
+            }} />
+          </Box>;
+        })}
+        {editableQueueText(editing.input).length === 0 ? <Text>No editable text in this native input.</Text> : <Button disabled={busy} onClick={saveEditing}>Save queued message</Button>}
       </Stack> : null}
     </Modal>
     <Modal opened={isActive && restoring !== null} title="Restore saved input" onClose={() => setRestoring(null)}>

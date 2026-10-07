@@ -8,6 +8,7 @@ import { createKodexQueryClient } from "../api/queryClient";
 import { queryKeys } from "../api/queryKeys";
 import type { QueueTransfer } from "../api/client";
 import { mockGateway, requestJson } from "../test/gatewayMock";
+import { appendResponseAnnotations } from "../composer/annotations";
 import { NativeQueuePanel } from "./NativeQueuePanel";
 import { useNativeQueue } from "./useNativeQueue";
 import { applyQueueEvent } from "./cache";
@@ -67,6 +68,57 @@ it("uses native order and eligibility, preserves unknown native input when editi
   await waitFor(() => expect(writes).toHaveLength(2));
   expect(writes[1]).toEqual({ queuedSubmissionIds: ["a", "b"] });
   await waitFor(() => expect(screen.getAllByRole("group", { name: "Queued message" })[0]).toHaveTextContent("a"));
+});
+
+it("edits queued response annotations without exposing their serialized markup", async () => {
+  const original = appendResponseAnnotations("Review this", [{ id: "quote", text: "Selected answer", comment: "Old note" }]);
+  const queued = { ...row("annotated"), input: [{ type: "text", text: original, nativeKey: "keep" }, { type: "futureInput", opaque: [1, 2] }] };
+  const writes: unknown[] = [];
+  mockGateway({
+    "GET /v1/threads/chat/queued-inputs": { queuedInputs: [queued], transfers: [], nextCursor: null },
+    "PUT /v1/threads/chat/queued-inputs/annotated": async (request: Request) => {
+      const body = await requestJson(request);
+      writes.push(body);
+      return { queuedInput: { ...queued, input: body.input } };
+    },
+  });
+  mount();
+  const group = await screen.findByRole("group", { name: "Queued message" });
+  await userEvent.click(within(group).getByRole("button", { name: "Edit" }));
+  expect(screen.getByRole("textbox", { name: "Queued message text" })).toHaveValue("Review this");
+  expect(screen.getByText("Selected answer")).toBeInTheDocument();
+  await userEvent.clear(screen.getByRole("textbox", { name: "Annotation 1 comment" }));
+  await userEvent.type(screen.getByRole("textbox", { name: "Annotation 1 comment" }), "New note");
+  await userEvent.click(screen.getByRole("button", { name: "Save queued message" }));
+  await waitFor(() => expect(writes).toEqual([{ input: [
+    { type: "text", text: appendResponseAnnotations("Review this", [{ id: "quote", text: "Selected answer", comment: "New note" }]), nativeKey: "keep", text_elements: [] },
+    { type: "futureInput", opaque: [1, 2] },
+  ] }]));
+});
+
+it("removes a queued annotation while leaving the main text editable", async () => {
+  const original = appendResponseAnnotations("Keep the main text", [{ id: "quote", text: "Selected answer", comment: "Remove this" }]);
+  const queued = { ...row("annotated"), input: [{ type: "text", text: original }] };
+  const writes: unknown[] = [];
+  mockGateway({
+    "GET /v1/threads/chat/queued-inputs": { queuedInputs: [queued], transfers: [], nextCursor: null },
+    "PUT /v1/threads/chat/queued-inputs/annotated": async (request: Request) => {
+      const body = await requestJson(request);
+      writes.push(body);
+      return { queuedInput: { ...queued, input: body.input } };
+    },
+  });
+  mount();
+  await userEvent.click(within(await screen.findByRole("group", { name: "Queued message" })).getByRole("button", { name: "Edit" }));
+  await userEvent.click(screen.getByRole("button", { name: "Save queued message" }));
+  await waitFor(() => expect(writes[0]).toEqual({ input: queued.input }));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Edit queued message" })).not.toBeInTheDocument());
+  await userEvent.click(within(screen.getByRole("group", { name: "Queued message" })).getByRole("button", { name: "Edit" }));
+  await userEvent.click(screen.getByRole("button", { name: "Remove annotation 1" }));
+  expect(screen.queryByRole("textbox", { name: "Annotation 1 comment" })).not.toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "Queued message text" })).toHaveValue("Keep the main text");
+  await userEvent.click(screen.getByRole("button", { name: "Save queued message" }));
+  await waitFor(() => expect(writes[1]).toEqual({ input: [{ type: "text", text: "Keep the main text", text_elements: [] }] }));
 });
 
 it.each<QueueTransfer["phase"]>(["deleting", "deleted", "steering", "accepted"])("keeps %s transfers in authoritative cache without showing recovery controls", async (phase) => {

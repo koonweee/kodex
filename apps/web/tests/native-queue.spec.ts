@@ -383,6 +383,36 @@ test.describe("desktop long queue", () => {
   });
 });
 
+test("queued annotation edits appear in another tab's editor", async ({ context }) => {
+  const fixture = await nativeSettingsFixture(context);
+  const original = appendResponseAnnotations("Review sidebar", [{ id: "quote", text: "The sidebar has 12px padding.", comment: "Old note" }]);
+  fixture.queuedInputs.push({
+    id: "annotated-queue", threadId: "settings-chat", clientUserMessageId: "annotation-client",
+    input: [{ type: "text", text: original }, { type: "futureInput", opaque: { keep: true } }],
+    attachments: [], canSteer: false,
+  });
+  try {
+    const first = await fixture.page("first");
+    const second = await fixture.page("second");
+    for (const page of [first, second]) await expect(queueRows(page)).toHaveCount(1);
+    await row(first, "Review sidebar").getByRole("button", { name: "Edit" }).click();
+    const firstEditor = first.getByRole("dialog", { name: "Edit queued message" });
+    await expect(firstEditor).toBeVisible();
+    await expect(firstEditor.getByRole("textbox", { name: "Queued message text" })).toHaveValue("Review sidebar");
+    await first.screenshot({ path: test.info().outputPath("queued-annotation-editor.png"), animations: "disabled" });
+    await firstEditor.getByRole("textbox", { name: "Annotation 1 comment" }).fill("Use 10px");
+    await firstEditor.getByRole("button", { name: "Save queued message" }).click();
+    const saved = appendResponseAnnotations("Review sidebar", [{ id: "quote", text: "The sidebar has 12px padding.", comment: "Use 10px" }]);
+    await expect.poll(() => (fixture.queuedInputs[0].input[0] as { text: string }).text).toBe(saved);
+    await expect(row(second, "Review sidebar")).toContainText("Use 10px");
+    await row(second, "Review sidebar").getByRole("button", { name: "Edit" }).click();
+    await expect(second.getByRole("dialog", { name: "Edit queued message" }).getByRole("textbox", { name: "Annotation 1 comment" })).toHaveValue("Use 10px");
+    expect(fixture.queuedInputs[0].input[1]).toEqual({ type: "futureInput", opaque: { keep: true } });
+  } finally { await fixture.close(); }
+  expect(fixture.unexpected).toEqual([]);
+  expect(fixture.errors).toEqual([]);
+});
+
 function activePane(page: Page) { return page.locator('.kodex-thread-pane[data-workspace-pane-active="true"]'); }
 function composer(page: Page) { return activePane(page).getByLabel("Message composer", { exact: true }); }
 function queueRows(page: Page) { return activePane(page).getByRole("group", { name: "Queued message", exact: true }); }
