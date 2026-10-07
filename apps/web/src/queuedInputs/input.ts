@@ -1,3 +1,4 @@
+import { parseResponseAnnotations } from "../timeline/responseAnnotations";
 import { stripAttachmentEnvelope } from "../timeline/presentationShared";
 import { asRecord } from "../shared/values";
 
@@ -10,7 +11,12 @@ export function editableQueueText(input: unknown[]): Array<{ index: number; text
 }
 
 export function queueInputPreview(input: unknown[]): string {
-  const text = editableQueueText(input).map((item) => item.text).join("\n").trim();
+  const text = editableQueueText(input).map((item) => {
+    const parsed = parseResponseAnnotations(item.text.trim());
+    if (!parsed) return item.text;
+    return [parsed.text, ...parsed.annotations.map(annotation => annotation.comment)]
+      .map(part => part.trim()).filter(Boolean).join("\n") || "Quoted message";
+  }).join("\n").trim();
   return text || input.map((item) => {
     const type = asRecord(item).type;
     return typeof type === "string" ? type : "Native input";
