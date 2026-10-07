@@ -8,10 +8,12 @@ import { assertProfileActive, type SpikeProfile } from './profile.js';
 import { createAccountService } from './account-service.js';
 import { captureChatFastRequestContext } from './chat-fast.js';
 import { createChatQueue, type ChatQueueInput, type ChatQueueSnapshot, type ChatQueueResult } from './chat-queue.js';
+import { abortNativeChat } from './chat-archive.js';
+import { createChatLifecycle } from './chat-lifecycle.js';
 import { createNativeChatSettings, type ChatSettings, type ChatSettingsPatch } from './chat-settings.js';
 import { createSessionProjection, type SessionSnapshot } from './transport.js';
 
-export interface CatalogSnapshot { epoch: string; revision: number; projects: ProductProject[]; chats: Chat[]; pinnedChatIds: string[] }
+export interface CatalogSnapshot { epoch: string; revision: number; projects: ProductProject[]; chats: Chat[]; pinnedChatIds: string[]; archivedChatIds: string[] }
 export interface ChatSnapshot extends SessionSnapshot { chat: Chat; error: string | null; settings: ChatSettings; queue: ChatQueueSnapshot }
 export interface QueuedSelection { chatId: string; epoch: string; revision: number; id: string }
 export interface QueuedEdit extends QueuedSelection { input: ChatQueueInput }
@@ -29,6 +31,7 @@ interface Handle {
   revision: number;
   error: string | null;
   unsubscribe: () => void;
+  observers: AbortController;
 }
 const accepted = () => ({ accepted: true as const });
 const missing = () => new ORPCError('NOT_FOUND', { message: 'Chat or project not found.' });
@@ -39,6 +42,7 @@ const missing = () => new ORPCError('NOT_FOUND', { message: 'Chat or project not
 export function createChatService(options: ChatServiceOptions) {
   const handles = new Map<string, Promise<Handle>>();
   const lifetime = new AbortController();
+  const lifecycle = createChatLifecycle();
   const catalog = new EventPublisher<{ changed: number }>({ maxBufferedEvents: 1 });
   const epoch = randomUUID();
   const settings = createNativeChatSettings(options.profile, epoch);
@@ -76,7 +80,7 @@ export function createChatService(options: ChatServiceOptions) {
     const queue = createChatQueue(session, { epoch, onChanged: () => {
       session.emit({ type: 'display_state_changed', displayState: session.displayState.get() });
     } });
-    const handle: Handle = { binding, runtime, session, projection, queue, revision: 0, error: null, unsubscribe: () => {} };
+    const handle: Handle = { binding, runtime, session, projection, queue, revision: 0, error: null, unsubscribe: () => {}, observers: new AbortController() };
     handle.unsubscribe = session.subscribe(event => {
       handle.revision++;
       if (event.type === 'agent_start') handle.error = null;
@@ -167,7 +171,7 @@ export function createChatService(options: ChatServiceOptions) {
     catch { throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Queued input could not be changed.' }); }
   }
 
-  return {
+  const service = {
     async getAccount() { return (await accounts()).get(); },
     async logoutAccount() { return (await accounts()).logout(); },
     async getAccountUsage(signal?: AbortSignal) { return (await accounts()).getUsage(signal); },
@@ -227,25 +231,27 @@ export function createChatService(options: ChatServiceOptions) {
       const binding = await projects.executionBinding(projectId);
       const chatId = randomUUID();
       const resourceId = randomUUID();
-      const handle = await cacheHandle(`${binding.id}:${chatId}`, async () => {
-        const runtime = await projects.runtimeFor(binding);
-        const defaults = await settings.getDefaults(runtime);
-        await settings.validate(runtime, draft ?? {}, defaults.modelId);
-        const session = await runtime.createSession({ resourceId, threadId: chatId });
-        await settings.updateChat(runtime, session, { modelId: defaults.modelId, ...draft });
-        await pinUnnamedChat(session);
-        return bind(binding, runtime, session);
+      return lifecycle.admit(chatId, async () => {
+        const handle = await cacheHandle(`${binding.id}:${chatId}`, async () => {
+          const runtime = await projects.runtimeFor(binding);
+          const defaults = await settings.getDefaults(runtime);
+          await settings.validate(runtime, draft ?? {}, defaults.modelId);
+          const session = await runtime.createSession({ resourceId, threadId: chatId });
+          await settings.updateChat(runtime, session, { modelId: defaults.modelId, ...draft });
+          await pinUnnamedChat(session);
+          return bind(binding, runtime, session);
+        });
+        const created = await snapshot(handle);
+        invalidateCatalog();
+        return created.chat;
       });
-      const created = await snapshot(handle);
-      invalidateCatalog();
-      return created.chat;
     },
     async openChat({ chatId }: { chatId: string }, signal?: AbortSignal) {
       return snapshot(await handleFor(chatId), signal);
     },
     async *watchChat({ chatId }: { chatId: string }, signal?: AbortSignal): AsyncGenerator<ChatSnapshot, void> {
-      const combined = AbortSignal.any([lifetime.signal, ...(signal ? [signal] : [])]);
-      const handle = await handleFor(chatId);
+      const handle = await lifecycle.admit(chatId, () => handleFor(chatId));
+      const combined = AbortSignal.any([lifetime.signal, handle.observers.signal, ...(signal ? [signal] : [])]);
       for await (const current of handle.projection.watch(combined)) yield await snapshot(handle, combined, current);
     },
     async *watchCatalog(signal?: AbortSignal): AsyncGenerator<CatalogSnapshot, void> {
@@ -278,6 +284,28 @@ export function createChatService(options: ChatServiceOptions) {
     async steerQueued(selection: QueuedSelection) { return queueCommand(selection, queue => queue.steer(selection)); },
     async reconcileQueued(selection: QueuedSelection) { return queueCommand(selection, queue => queue.reconcile(selection)); },
     async dismissQueued(selection: QueuedSelection) { return queueCommand(selection, queue => queue.dismiss(selection)); },
+    async archiveChat({ chatId }: { chatId: string }) {
+      await lifecycle.retire(chatId, async () => {
+        const { binding, runtime, thread } = await projects.findThread(chatId, true);
+        const key = `${binding.id}:${chatId}`;
+        const handle = await handles.get(key);
+        handle?.observers.abort();
+        const session = handle?.session ?? await runtime.controller.getSessionByResource(thread.resourceId);
+        if (session) {
+          await abortNativeChat(session);
+          handle?.queue.dispose();
+        }
+        handle?.unsubscribe();
+        handle?.projection.dispose();
+        handles.delete(key);
+        // Native deletion can clear/drop its Session before rejecting. A retry
+        // must consult native registration, never a cleared cached Session.
+        if (session) await runtime.releaseSession({ resourceId: thread.resourceId });
+        await projects.archiveChat(binding.id, thread.id);
+        invalidateCatalog();
+      });
+      return accepted();
+    },
     async stop({ chatId }: { chatId: string }) {
       const handle = await handleFor(chatId);
       handle.session.abort();
@@ -299,6 +327,21 @@ export function createChatService(options: ChatServiceOptions) {
         await projects.dispose();
       })();
       return disposal;
+    },
+  };
+  function guarded<T extends { chatId: string }, Args extends unknown[], Result>(method: (input: T, ...args: Args) => Promise<Result>) {
+    return (input: T, ...args: Args) => lifecycle.admit(input.chatId, () => method(input, ...args));
+  }
+  return { ...service,
+    openChat: guarded(service.openChat), getChatSettings: guarded(service.getChatSettings),
+    updateChatSettings: guarded(service.updateChatSettings), renameChat: guarded(service.renameChat),
+    setChatPinned: guarded(service.setChatPinned), setChatNotifications: guarded(service.setChatNotifications),
+    send: guarded(service.send), queue: guarded(service.queue), stop: guarded(service.stop),
+    editQueued: guarded(service.editQueued), removeQueued: guarded(service.removeQueued),
+    reorderQueued: guarded(service.reorderQueued), steerQueued: guarded(service.steerQueued),
+    reconcileQueued: guarded(service.reconcileQueued), dismissQueued: guarded(service.dismissQueued),
+    async listModels(input: { chatId?: string; projectId?: string | null }) {
+      return input.chatId ? lifecycle.admit(input.chatId, () => service.listModels(input)) : service.listModels(input);
     },
   };
 }

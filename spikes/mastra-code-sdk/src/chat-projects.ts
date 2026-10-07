@@ -78,12 +78,14 @@ export function createChatProjects(options: ChatProjectOptions, assertActive: ()
       const byIdentity = new Map(metadata.entries.map(entry => [JSON.stringify([entry.bindingId, entry.threadId]), entry]));
       const bindings = await listBindings();
       const chats: Chat[] = [];
+      const archivedChatIds: string[] = [];
       const nativeIdentities = new Set<string>();
       for (const binding of bindings) {
         const runtime = await runtimeFor(binding);
         const threads = await runtime.controller.queryThreads({ metadata: { projectPath: binding.cwd } });
         for (const thread of threads) if (ownsThread(binding, thread)) {
           const identity = JSON.stringify([binding.id, thread.id]);
+          if (byIdentity.get(identity)?.archived) { archivedChatIds.push(thread.id); continue; }
           nativeIdentities.add(identity);
           chats.push(describeChat(binding, thread, await readChatTitle(runtime, thread), byIdentity.get(identity)));
         }
@@ -91,15 +93,21 @@ export function createChatProjects(options: ChatProjectOptions, assertActive: ()
       assertActive();
       if ((await registryCall(store => store.snapshot())).revision === snapshot.revision) {
         const pinnedChatIds = metadata.entries.filter(entry => entry.pinPosition !== null && nativeIdentities.has(JSON.stringify([entry.bindingId, entry.threadId]))).sort((left, right) => left.pinPosition! - right.pinPosition!).map(entry => entry.threadId);
-        return { projects: snapshot.projects, chats, pinnedChatIds };
+        return { projects: snapshot.projects, chats, pinnedChatIds, archivedChatIds };
       }
     }
   }
-  async function findThread(chatId: string) {
+  async function findThread(chatId: string, includeArchived = false) {
     for (const binding of await listBindings()) {
       const runtime = await runtimeFor(binding);
       const thread = await runtime.controller.queryThreadById({ threadId: chatId });
-      if (thread && ownsThread(binding, thread)) return { binding, runtime, thread };
+      if (thread && ownsThread(binding, thread)) {
+        if (!includeArchived) {
+          const metadata = await registryCall(store => store.chatMetadataSnapshot());
+          if (metadata.entries.some(row => row.bindingId === binding.id && row.threadId === thread.id && row.archived)) throw new ORPCError('CONFLICT', { message: 'This chat is archived.' });
+        }
+        return { binding, runtime, thread };
+      }
     }
     throw missing();
   }
@@ -108,6 +116,7 @@ export function createChatProjects(options: ChatProjectOptions, assertActive: ()
   }
   return {
     runtimeFor, executionBinding, currentBinding, inventory, findThread,
+    async archiveChat(bindingId: string, threadId: string) { await registryCall(store => store.archiveChat({ bindingId, threadId })); },
     async describe(bindingId: string, thread: NativeThread) {
       for (;;) {
         const metadata = await registryCall(store => store.chatMetadataSnapshot());

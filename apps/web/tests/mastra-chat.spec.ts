@@ -300,3 +300,52 @@ test('pins, order and notification preferences converge across tabs and backend 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('archive stops queued work and closes the selected chat across tabs and restart', async ({ context, page }) => {
+  const root = await mkdtemp(join(tmpdir(), 'kodex-mastra-archive-browser-'));
+  let backend: ChildProcessWithoutNullStreams | undefined;
+  const errors: string[] = [], legacy: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  context.on('page', tab => tab.on('pageerror', error => errors.push(error.message)));
+  context.on('request', request => { if (/^\/v1\/threads\/[^/]+\/archive$/.test(new URL(request.url()).pathname)) legacy.push(request.url()); });
+  try {
+    backend = await startBackend(root);
+    await page.goto('/'); await send(page, 'ARCHIVE_SAVED_HISTORY');
+    await expect(pane(page).getByText('fixture:ARCHIVE_SAVED_HISTORY', { exact: true })).toBeVisible();
+    const savedUrl = page.url();
+    const archivedId = await pane(page).getAttribute('data-thread-id');
+    expect(archivedId).toBeTruthy();
+    await openChatActions(page);
+    await page.getByRole('menuitem', { name: 'Pin thread', exact: true }).click();
+    const second = await context.newPage(); await second.goto(savedUrl);
+    await expect(pane(second).getByText('fixture:ARCHIVE_SAVED_HISTORY', { exact: true })).toBeVisible();
+    await send(page, 'HOLD_STOP');
+    await expect(pane(page).getByRole('button', { name: 'Stop turn', exact: true })).toBeVisible();
+    await send(second, 'ARCHIVE_WAITING_INPUT', true);
+    await openChatActions(page);
+    await page.getByRole('menuitem', { name: 'Archive thread', exact: true }).click();
+    for (const tab of [page, second]) {
+      await expect(tab.locator(`.kodex-thread-pane[data-thread-id="${archivedId}"]`)).toHaveCount(0);
+      await showSidebar(tab);
+      await expect(tab.getByRole('group', { name: 'Pinned', exact: true }).locator('.kodex-thread-list-button')).toHaveCount(0);
+      await expect(tab).not.toHaveURL(savedUrl);
+    }
+    await stopBackend(backend, true); backend = await startBackend(root);
+    await page.reload(); await second.goto(savedUrl);
+    for (const tab of [page, second]) {
+      await expect(tab.locator('.kodex-shell')).toBeVisible();
+      await expect(tab.locator(`.kodex-thread-pane[data-thread-id="${archivedId}"]`)).toHaveCount(0);
+      await expect(tab).not.toHaveURL(savedUrl);
+      await showSidebar(tab);
+      await expect(tab.getByText('ARCHIVE_SAVED_HISTORY', { exact: true })).toHaveCount(0);
+    }
+    const showThread = page.getByRole('button', { name: 'Show thread', exact: true });
+    if (await showThread.isVisible()) await showThread.click();
+    await send(page, 'AFTER_ARCHIVE_NEW_CHAT');
+    await expect(pane(page).getByText('fixture:AFTER_ARCHIVE_NEW_CHAT', { exact: true })).toBeVisible();
+    expect(legacy).toEqual([]); expect(errors).toEqual([]);
+  } finally {
+    if (backend) await stopBackend(backend);
+    await rm(root, { recursive: true, force: true });
+  }
+});

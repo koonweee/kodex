@@ -249,3 +249,115 @@ test('Send during an active native run is admitted without browser lifecycle rou
   assert.ok(hasUserInput(completed, 'ACTIVE_NATIVE_INPUT'), 'an admitted active-run interjection remains a native user-authored signal');
   await watch.return(undefined);
 });
+
+
+test('archive retires native work, fences competing admissions and tells two RPC clients without deleting dormant history', { timeout: 60_000 }, async t => {
+  const { makeService, runtimes } = await setup('archive');
+  const service = makeService();
+  const server = await serve(service);
+  const first = server.client(), second = server.client();
+  const catalogAbort = new AbortController(), watchAbort = new AbortController();
+  let reopened: ChatService | undefined;
+  let releasePreparation = () => {};
+  const hold = fixture.holdNext('ARCHIVE_SERVICE_HELD');
+  t.after(async () => { releasePreparation(); hold.release(); catalogAbort.abort(); watchAbort.abort(); await server.close(); await service.dispose(); await reopened?.dispose(); });
+  const chat = await first.createChat({ projectId: 'a' });
+  const peer = await second.createChat({ projectId: 'a' });
+  await first.renameChat({ chatId: chat.id, title: 'Retained archived title' });
+  const watcher = await second.watchChat({ chatId: chat.id }, { signal: watchAbort.signal });
+  await watcher.next();
+  await first.send({ chatId: chat.id, text: 'ARCHIVE_SERVICE_HISTORY' });
+  const completed = await until(watcher, snapshot => !snapshot.display.isRunning && JSON.stringify(snapshot.messages).includes('fixture:ARCHIVE_SERVICE_HISTORY'));
+  const native = await nativeSession(runtimes, chat.id);
+  const agent = native.machinery.getAgent();
+  const target = { threadId: chat.id, resourceId: native.identity.getResourceId() };
+  const memory = await agent.getMemory({ requestContext: await native.machinery.buildRequestContext() });
+  assert.ok(memory && 'settled' in memory && typeof memory.settled === 'function'); await memory.settled();
+  await first.send({ chatId: chat.id, text: 'ARCHIVE_SERVICE_HELD' }); await hold.reached;
+  await second.queue({ chatId: chat.id, text: 'ARCHIVE_SERVICE_TRACKED' });
+  const streamOptions = await native.machinery.buildStreamOptions({});
+  const raw = agent.queueMessage('ARCHIVE_SERVICE_RAW', { ...target, ifIdle: { behavior: 'wake', streamOptions } });
+  assert.equal((await raw.accepted).action, 'deliver');
+  await first.setChatPinned({ chatId: chat.id, pinned: true });
+  const catalog = await second.watchCatalog(undefined, { signal: catalogAbort.signal }); await catalog.next();
+
+  // Hold only request-context preparation: retirement must fence new work and
+  // wait for already-admitted input acceptance, never for model completion.
+  const buildContext = native.machinery.buildRequestContext.bind(native.machinery);
+  let release!: () => void, reached!: () => void;
+  const entered = new Promise<void>(resolve => { reached = resolve; });
+  const held = new Promise<void>(resolve => { release = resolve; });
+  releasePreparation = release;
+  const observation = t.mock.method(native.machinery, 'buildRequestContext', async (...args: Parameters<typeof native.machinery.buildRequestContext>) => {
+    reached(); await held; return buildContext(...args);
+  });
+  const admitted = service.send({ chatId: chat.id, text: 'ARCHIVE_SERVICE_ADMITTED' });
+  await entered;
+  const retirement = service.archiveChat({ chatId: chat.id });
+  void admitted.catch(() => {}); void retirement.catch(() => {});
+  const competitors = [
+    service.send({ chatId: chat.id, text: 'ARCHIVE_SERVICE_REJECTED' }),
+    service.queue({ chatId: chat.id, text: 'ARCHIVE_SERVICE_REJECTED_QUEUE' }),
+    service.renameChat({ chatId: chat.id, title: 'Stale rename' }),
+    service.updateChatSettings({ chatId: chat.id, patch: { fast: true } }),
+    service.openChat({ chatId: chat.id }),
+  ];
+  for (const result of await Promise.allSettled(competitors)) {
+    assert.equal(result.status, 'rejected');
+    if (result.status === 'rejected') assert.equal(result.reason.code, 'CONFLICT');
+  }
+  observation.mock.restore(); release();
+  assert.deepEqual(await admitted, { accepted: true });
+  assert.deepEqual(await retirement, { accepted: true });
+  assert.equal(native.run.isRunning(), false);
+  const runtime = (await Promise.all(runtimes.map(async runtime => (await runtime.controller.queryThreadById({ threadId: chat.id })) ? runtime : undefined))).find(Boolean)!;
+  assert.equal(await runtime.controller.getSessionByResource(target.resourceId), undefined);
+  let archivedCatalog;
+  for (;;) {
+    const next = await catalog.next(); assert.equal(next.done, false);
+    if (next.value!.archivedChatIds.includes(chat.id)) { archivedCatalog = next.value!; break; }
+  }
+  assert.ok(archivedCatalog.chats.some(row => row.id === peer.id));
+  assert.ok(!archivedCatalog.chats.some(row => row.id === chat.id));
+  assert.ok(!archivedCatalog.pinnedChatIds.includes(chat.id));
+  await assert.rejects(second.openChat({ chatId: chat.id }), { code: 'CONFLICT' });
+  await assert.rejects(second.watchChat({ chatId: chat.id }).then(iterator => iterator.next()), { code: 'CONFLICT' });
+  assert.deepEqual(await first.archiveChat({ chatId: chat.id }), { accepted: true }, 'repeated archive stays dormant');
+  const history = await runtime.controller.queryThreadMessages({ ...target, perPage: 40, orderBy: { field: 'createdAt', direction: 'ASC' } });
+  for (const row of completed.messages) assert.ok(history.messages.some(message => message.id === row.id));
+  assert.equal((await runtime.controller.queryThreadById({ threadId: chat.id }))!.title, 'Retained archived title');
+  const requestsBeforeRestart = fixture.requests.length;
+  catalogAbort.abort(); watchAbort.abort(); await server.close(); await service.dispose();
+  reopened = makeService();
+  const restored = await reopened.listChats();
+  assert.ok(restored.archivedChatIds.includes(chat.id));
+  assert.ok(restored.chats.some(row => row.id === peer.id));
+  await assert.rejects(reopened.openChat({ chatId: chat.id }), { code: 'CONFLICT' });
+  assert.equal(fixture.requests.length, requestsBeforeRestart, 'archived list/deep links do not wake canceled work');
+  assert.ok(fixture.requests.every(request => !JSON.stringify(request.messages).includes('ARCHIVE_SERVICE_TRACKED') && !JSON.stringify(request.messages).includes('ARCHIVE_SERVICE_RAW')));
+});
+
+test('archive retries native deletion failure without retaining a cleared Session or waking history', { timeout: 60_000 }, async t => {
+  const { makeService, runtimes } = await setup('archive-deletion-retry');
+  const service = makeService(); t.after(() => service.dispose());
+  const chat = await service.createChat({ projectId: 'a' });
+  const native = await nativeSession(runtimes, chat.id);
+  const resourceId = native.identity.getResourceId();
+  const runtime = (await Promise.all(runtimes.map(async runtime => (await runtime.controller.queryThreadById({ threadId: chat.id })) ? runtime : undefined))).find(Boolean)!;
+  const deleteSession = runtime.controller.deleteSession.bind(runtime.controller);
+  const failDeletion = t.mock.method(runtime.controller, 'deleteSession', async (...args: Parameters<typeof runtime.controller.deleteSession>) => {
+    await deleteSession(...args);
+    throw new Error('Fixture: native deletion lost its lock-release acknowledgment');
+  });
+  await assert.rejects(service.archiveChat({ chatId: chat.id }));
+  failDeletion.mock.restore();
+  assert.equal(native.thread.getId(), null);
+  assert.equal(await runtime.controller.getSessionByResource(resourceId), undefined);
+  assert.ok(!(await service.listChats()).archivedChatIds.includes(chat.id), 'failed deletion is not an archive success');
+  const requests = fixture.requests.length;
+  assert.deepEqual(await service.archiveChat({ chatId: chat.id }), { accepted: true });
+  assert.ok((await service.listChats()).archivedChatIds.includes(chat.id));
+  assert.equal(fixture.requests.length, requests);
+  // Disposal must not revisit the cleared Session in the runtime tracking map.
+  await service.dispose();
+});

@@ -8,6 +8,7 @@ import { ThreadActionsMenu } from '../panes/thread/ThreadActionsMenu';
 import { useWorkspace } from '../workspace/WorkspaceProvider';
 import { paneTargetRecord, type WorkspacePane } from '../workspace/paneTypes';
 import { useNativeChat } from './useNativeSnapshots';
+import { useNativeCatalogSnapshot } from './NativeCatalogContext';
 import { timelinePresentation } from './presentation';
 import { NativeComposer } from './NativeComposer';
 
@@ -15,7 +16,9 @@ export function NativeThreadPane({ pane, draftStore, onError }: { pane: Workspac
   const { workspace, errorMessage, setPaneThreadContext, setPaneHeaderActions, updatePane, duplicatePane, onImageOpen, onMarkdownOpen, threadActions, showDebugEvents } = useWorkspace();
   const target = paneTargetRecord(pane);
   const chatId = target.mode === 'existing' && typeof target.threadId === 'string' ? target.threadId : null;
-  const { snapshot, error, retry } = useNativeChat(chatId);
+  const catalog = useNativeCatalogSnapshot();
+  const archived = chatId !== null && Boolean(catalog?.archivedChatIds.includes(chatId));
+  const { snapshot, error, retry } = useNativeChat(archived ? null : chatId);
   const isActive = workspace.activePaneId === pane.id;
   const timeline = useMemo(() => snapshot ? timelinePresentation(snapshot) : null, [snapshot]);
   const [scrollParent, setScrollParent] = useState<HTMLDivElement | null>(null);

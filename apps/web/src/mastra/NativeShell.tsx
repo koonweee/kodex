@@ -1,7 +1,7 @@
 import { Alert, Group } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { archiveThread, createAutomation, deleteAutomation, listAutomations, pauseAutomation, resumeAutomation, updateAutomation } from '../api/client';
+import { createAutomation, deleteAutomation, listAutomations, pauseAutomation, resumeAutomation, updateAutomation } from '../api/client';
 import { KodexShellView, useNarrowThreadWorkspace } from '../shell/KodexShellView';
 import { currentKodexRoute, pushKodexRoute, replaceKodexRoute } from '../shell/browserRouting';
 import { useSidebarResize } from '../shell/useSidebarResize';
@@ -18,6 +18,7 @@ import { errorMessageFrom } from '../shared/values';
 import { useNativeHost } from './NativeHostBoundary';
 import { useNativeCatalog } from './useNativeSnapshots';
 import { chatListEntry } from './presentation';
+import { NativeArchiveReconciliation } from './NativeArchiveReconciliation';
 import { NativeThreadPane } from './NativeThreadPane';
 import { NativeAccountMenu } from './NativeAccountMenu';
 import { useNativeAccount } from './useNativeAccount';
@@ -87,6 +88,12 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
     setMobilePanel('chat');
   }, [mainPane]);
   const createDraft = useCallback((projectId?: string) => navigate({ threadId: null, projectId: projectId ?? null, view: 'thread', panel: null }), [navigate]);
+  useEffect(() => {
+    if (!route.threadId || !catalog.snapshot?.archivedChatIds.includes(route.threadId)) return;
+    setRouteThreadPaneId(null);
+    const next = { threadId: null, view: 'thread', panel: null } as const;
+    replaceKodexRoute(next); setRoute(next);
+  }, [route.threadId, catalog.snapshot?.archivedChatIds]);
   const nativeError = catalog.error ?? account.error;
   const unfinishedError = automations.error;
   const displayError = error ?? nativeError ?? (unfinishedError ? errorMessageFrom(unfinishedError) : null);
@@ -111,10 +118,11 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
       onMarkdownOpen={setMarkdownPreview}
       renderThreadPane={pane => <NativeThreadPane pane={pane} draftStore={drafts.current} onError={reportError} />}
       threadActions={{
-        onArchiveThread: id => perform(archiveThread(id)), onPinThread: metadata.pin, onUnpinThread: metadata.unpin,
+        onArchiveThread: id => perform(mastraClient.archiveChat({ chatId: id })), onPinThread: metadata.pin, onUnpinThread: metadata.unpin,
         onRenameThread: async (id, name) => { await mastraClient.renameChat({ chatId: id, title: name }); },
         onSetThreadNotificationsEnabled: metadata.setNotifications, pinPending: metadata.pinPending,
       }} showDebugEvents={showDebugEvents}>
+      {catalog.snapshot && catalog.snapshot.archivedChatIds.length > 0 ? <NativeArchiveReconciliation archivedChatIds={catalog.snapshot.archivedChatIds} /> : null}
       {mainPane !== 'thread' && displayError ? <Alert color="red" role="alert">{displayError}</Alert> : null}
       <KodexShellView isDraftThreadSelected={!route.threadId} isSidebarResizing={resize.isSidebarResizing}
         mainPane={mainPane} mobilePanel={mobilePanel} sidebarCollapsed={resize.sidebarCollapsed} useSingleThreadWorkspace={singlePane}
@@ -135,7 +143,7 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
           onSelectChatThread: selectThread, onSelectPinnedThread: selectThread, onSelectThread: (_projectId, id) => selectThread(id),
           onSelectProjectSettings: id => navigate({ threadId: null, projectId: id, view: 'project', panel: null }),
           onSelectAutomations: () => navigate({ threadId: null, view: 'automations', panel: null }),
-          onArchiveThread: id => perform(archiveThread(id)), onPinThread: metadata.pin, onUnpinThread: metadata.unpin,
+          onArchiveThread: id => perform(mastraClient.archiveChat({ chatId: id })), onPinThread: metadata.pin, onUnpinThread: metadata.unpin,
           onMoveProject: (id, beforeId) => perform(mastraClient.moveProjectBefore({ projectId: id, beforeId })), onLogout: account.logout,
           onOpenPreferences: () => setPreferencesOpen(true), onOpenTerminal: () => setMobilePanel('chat'), onShowThread: () => setMobilePanel('chat'),
           onShowDebugEventsChange: setShowDebugEvents, showDebugEvents, sidebarWidth: resize.sidebarWidth,

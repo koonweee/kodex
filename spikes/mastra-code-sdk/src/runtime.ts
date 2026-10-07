@@ -92,6 +92,16 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
       sessions.set(JSON.stringify([resourceId, input.scope ?? null]), { resourceId, scope: input.scope, session });
       return session;
     },
+    async releaseSession(input: { resourceId: string; scope?: string }): Promise<void> {
+      const key = JSON.stringify([input.resourceId, input.scope ?? null]);
+      const tracked = sessions.get(key);
+      try { await base.controller.deleteSession(input); }
+      finally {
+        // Native deletion drops registration even if lock release fails. Keep
+        // tracking only when that same Session still owns the native resource.
+        if (sessions.get(key) === tracked && await base.controller.getSessionByResource(input.resourceId, input.scope) !== tracked?.session) sessions.delete(key);
+      }
+    },
     // Native shutdown closes storage but does not join detached title/snapshot writes.
     // This spike exercises native teardown; safe production retirement remains unproven.
     dispose(): Promise<void> {

@@ -57,6 +57,7 @@ export function createChatRouter(service: ChatService) {
     moveProjectBefore: os.input(projectMoveInput).handler(({ input }) => service.moveProjectBefore(input)),
     setChatPinned: os.input(pinInput).handler(({ input }) => service.setChatPinned(input)),
     setChatNotifications: os.input(notificationsInput).handler(({ input }) => service.setChatNotifications(input)),
+    archiveChat: os.input(chatInput).handler(({ input }) => service.archiveChat(input)),
     renameChat: os.input(renameInput).handler(({ input }) => service.renameChat(input)),
     getChatSettings: os.input(chatInput).handler(({ input }) => service.getChatSettings(input)),
     updateChatSettings: os.input(chatSettingsInput).handler(({ input }) => service.updateChatSettings(input)),

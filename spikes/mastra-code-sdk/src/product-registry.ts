@@ -9,7 +9,7 @@ import type { SpikeProfile } from './profile.js';
 export interface ProductProject { id: string; name: string; roots: string[] }
 export interface RuntimeBinding { id: string; projectId: string | null; cwd: string; runtimeRoot: string }
 export interface ChatIdentity { bindingId: string; threadId: string }
-export interface ChatMetadata extends ChatIdentity { pinPosition: number | null; notificationsEnabled: boolean }
+export interface ChatMetadata extends ChatIdentity { pinPosition: number | null; notificationsEnabled: boolean; archived: boolean }
 export interface ChatMetadataSnapshot { revision: number; entries: ChatMetadata[] }
 export interface ProjectRegistrySnapshot { revision: number; projects: ProductProject[] }
 export interface ProjectSeed { id: string; name: string; path: string; runtimeRoot: string }
@@ -39,7 +39,7 @@ function binding(row: Row): RuntimeBinding {
 }
 
 function chatMetadata(row: Row): ChatMetadata {
-  return { bindingId: String(row.binding_id), threadId: String(row.thread_id), pinPosition: row.pin_position === null ? null : Number(row.pin_position), notificationsEnabled: Number(row.notifications_enabled) !== 0 };
+  return { bindingId: String(row.binding_id), threadId: String(row.thread_id), pinPosition: row.pin_position === null ? null : Number(row.pin_position), notificationsEnabled: Number(row.notifications_enabled) !== 0, archived: Number(row.archived) !== 0 };
 }
 const sameChat = (left: ChatIdentity, right: ChatIdentity) => left.bindingId === right.bindingId && left.threadId === right.threadId;
 
@@ -72,12 +72,14 @@ export async function openProductRegistry(profile: SpikeProfile, options: { stan
       await db.batch([
         `CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, roots_json TEXT NOT NULL, position INTEGER NOT NULL)`,
         `CREATE TABLE IF NOT EXISTS runtime_bindings (id TEXT PRIMARY KEY, project_id TEXT, cwd TEXT NOT NULL, runtime_root TEXT NOT NULL UNIQUE)`,
-        `CREATE TABLE IF NOT EXISTS chat_metadata (binding_id TEXT NOT NULL, thread_id TEXT NOT NULL, pin_position INTEGER, notifications_enabled INTEGER NOT NULL DEFAULT 1 CHECK (notifications_enabled IN (0, 1)), PRIMARY KEY (binding_id, thread_id))`,
+        `CREATE TABLE IF NOT EXISTS chat_metadata (binding_id TEXT NOT NULL, thread_id TEXT NOT NULL, pin_position INTEGER, notifications_enabled INTEGER NOT NULL DEFAULT 1 CHECK (notifications_enabled IN (0, 1)), archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)), PRIMARY KEY (binding_id, thread_id))`,
         `CREATE TABLE IF NOT EXISTS project_seeds (id TEXT PRIMARY KEY)`,
         `CREATE TABLE IF NOT EXISTS project_creates (create_key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, project_id TEXT NOT NULL)`,
         `CREATE TABLE IF NOT EXISTS registry_state (id INTEGER PRIMARY KEY CHECK (id = 1), revision INTEGER NOT NULL, standalone_binding_id TEXT)`,
         `INSERT OR IGNORE INTO registry_state (id, revision) VALUES (1, 0)`,
       ], 'write');
+      const columns = (await db.execute('PRAGMA table_info(chat_metadata)')).rows;
+      if (!columns.some(row => row.name === 'archived')) await db.execute('ALTER TABLE chat_metadata ADD COLUMN archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1))');
     });
   } catch (error) { db.close(); throw error; }
   let closing = false;
@@ -126,6 +128,16 @@ export async function openProductRegistry(profile: SpikeProfile, options: { stan
         const revision = Number((await tx.execute('SELECT revision FROM registry_state WHERE id = 1')).rows[0]!.revision);
         const entries = (await tx.execute('SELECT * FROM chat_metadata ORDER BY pin_position IS NULL, pin_position, binding_id, thread_id')).rows.map(chatMetadata);
         return { revision, entries };
+      });
+    },
+    async archiveChat(input: ChatIdentity): Promise<void> {
+      await transaction('write', async tx => {
+        const { bindingId, threadId } = await validChatIdentity(tx, input);
+        const current = (await tx.execute({ sql: 'SELECT archived FROM chat_metadata WHERE binding_id = ? AND thread_id = ?', args: [bindingId, threadId] })).rows[0];
+        if (current && Number(current.archived) !== 0) return;
+        await tx.execute({ sql: `INSERT INTO chat_metadata (binding_id, thread_id, archived) VALUES (?, ?, 1)
+          ON CONFLICT (binding_id, thread_id) DO UPDATE SET archived = 1`, args: [bindingId, threadId] });
+        await changed(tx);
       });
     },
     async setChatNotifications(input: ChatIdentity & { enabled: boolean }): Promise<void> {

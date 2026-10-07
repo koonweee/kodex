@@ -196,8 +196,25 @@ test('chat notification metadata stays independent from project ownership and sa
   const fresh = await first.executionBinding(recreated.id);
   await first.close(); const reopened = await open();
   assert.notEqual(old.id, fresh.id);
-  assert.deepEqual((await reopened.chatMetadataSnapshot()).entries, [{ ...identity, pinPosition: 0, notificationsEnabled: false }]);
+  assert.deepEqual((await reopened.chatMetadataSnapshot()).entries, [{ ...identity, pinPosition: 0, notificationsEnabled: false, archived: false }]);
   assert.equal((await reopened.listBindings()).find(row => row.id === old.id)!.projectId, null);
   await assert.rejects(reopened.setChatNotifications({ bindingId: 'missing-binding', threadId: 'native-chat', enabled: false }), hasCode('NOT_FOUND'));
   assert.equal((await reopened.chatMetadataSnapshot()).entries.length, 1);
+});
+
+
+test('archive metadata is durable and idempotent while preserving pin and notification preferences', async t => {
+  const { open } = await fixture(t); const first = await open(), second = await open();
+  const binding = await first.executionBinding(null);
+  const identity = { bindingId: binding.id, threadId: 'retained-native-history' };
+  await first.setChatPinned({ ...identity, pinned: true });
+  await first.setChatNotifications({ ...identity, enabled: false });
+  await first.archiveChat(identity);
+  const archived = await second.chatMetadataSnapshot();
+  assert.deepEqual(archived.entries, [{ ...identity, pinPosition: 0, notificationsEnabled: false, archived: true }]);
+  await second.archiveChat(identity);
+  assert.deepEqual(await first.chatMetadataSnapshot(), archived);
+  await first.close(); const reopened = await open();
+  assert.deepEqual(await reopened.chatMetadataSnapshot(), archived);
+  await assert.rejects(reopened.archiveChat({ ...identity, bindingId: 'missing-binding' }), hasCode('NOT_FOUND'));
 });

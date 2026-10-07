@@ -9,12 +9,14 @@ import { createMemoryWorkspacePaneStore } from '../workspace/paneStore';
 import { useWorkspace } from '../workspace/WorkspaceProvider';
 import type { WorkspaceSidebar } from '../threads/WorkspaceSidebar';
 
+const archive = vi.hoisted(() => ({ ids: [] as string[], command: vi.fn() }));
+vi.mock('./client', () => ({ mastraClient: { archiveChat: archive.command } }));
 vi.mock('./NativeHostBoundary', () => ({ useNativeHost: () => ({ instanceId: 'routing-fixture' }) }));
 vi.mock('./useNativeAccount', () => ({ useNativeAccount: () => ({ error: null, logout: () => undefined }) }));
 vi.mock('./NativeAccountMenu', () => ({ NativeAccountMenu: () => null }));
 vi.mock('./NativeThreadPane', () => ({ NativeThreadPane: () => null }));
 vi.mock('./useNativeSnapshots', () => ({ useNativeCatalog: () => ({
-  snapshot: { epoch: 'routing', revision: 1, projects: [{ id: 'project', name: 'Project', roots: ['/fixture'] }], pinnedChatIds: [],
+  snapshot: { epoch: 'routing', revision: 1, projects: [{ id: 'project', name: 'Project', roots: ['/fixture'] }], archivedChatIds: archive.ids, pinnedChatIds: [],
     chats: ['a', 'b'].map(id => ({ id, title: id.toUpperCase(), projectId: null, cwd: '/fixture', pinned: false, notificationsEnabled: true })) },
   error: null, retry: () => undefined,
 }) }));
@@ -28,8 +30,9 @@ vi.mock('../threads/WorkspaceSidebar', () => ({
 }));
 vi.mock('../workspace/WorkspaceShell', () => ({ WorkspaceShell: WorkspaceProbe }));
 function WorkspaceProbe() {
-  const { workspace, focusPane } = useWorkspace();
+  const { workspace, focusPane, threadActions, errorMessage } = useWorkspace();
   return <>
+    <button onClick={() => threadActions.onArchiveThread?.('a')}>Archive A</button><output aria-label="Workspace error">{errorMessage}</output>
     <output aria-label="Active workspace pane">{workspace.activePaneId}</output>
     <button onClick={() => focusPane('pane-a')}>Focus pane A</button>
     <button onClick={() => focusPane('pane-b')}>Focus pane B</button>
@@ -41,13 +44,14 @@ function shell(activePaneId: 'pane-a' | 'pane-b') {
     panes: ['a', 'b'].map(id => ({ id: `pane-${id}`, kind: 'thread', target: { mode: 'existing', threadId: id }, title: id.toUpperCase() })),
   });
   const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const view = render(<QueryClientProvider client={queries}><MantineProvider env="test">
+  const content = () => <QueryClientProvider client={queries}><MantineProvider env="test">
     <NativeShell workspacePaneStore={store} colorSchemeId="oled-black" appearance={DEFAULT_APPEARANCE_PREFERENCES}
       onAppearanceModeChange={() => undefined} onThemeChange={() => undefined} />
-  </MantineProvider></QueryClientProvider>);
-  return { view, store };
+  </MantineProvider></QueryClientProvider>;
+  const view = render(content());
+  return { view, store, refresh: () => view.rerender(content()) };
 }
-afterEach(() => { cleanup(); vi.restoreAllMocks(); window.history.replaceState(null, '', '/'); });
+afterEach(() => { archive.ids = []; archive.command.mockReset(); cleanup(); vi.restoreAllMocks(); window.history.replaceState(null, '', '/'); });
 
 it('settles a deep link against different restored focus without inserting that focus into browser history', async () => {
   window.history.replaceState(null, '', '/threads/a');
@@ -109,4 +113,28 @@ it('does not let restored hidden workspace focus replace an initial project rout
   expect(await screen.findByRole('heading', { name: 'Project settings' })).toBeInTheDocument();
   expect(window.location.pathname).toBe('/projects/project');
   expect(screen.queryByLabelText('Active workspace pane')).not.toBeInTheDocument();
+});
+
+it('removes inactive archived panes from persisted workspace even when no thread pane is mounted', async () => {
+  window.history.replaceState(null, '', '/projects/project');
+  const { store, refresh } = shell('pane-b');
+  expect(store.getState().panes).toHaveLength(2);
+  archive.ids = ['a']; refresh();
+  await waitFor(() => expect(store.getState().panes.map(pane => pane.id)).toEqual(['pane-b']));
+  expect(window.location.pathname).toBe('/projects/project');
+});
+
+it('keeps panes on rejected native archive and closes only after explicit archive state', async () => {
+  window.history.replaceState(null, '', '/threads/a');
+  const { store, refresh } = shell('pane-a');
+  archive.command.mockRejectedValueOnce(new Error('Native teardown failed')).mockResolvedValueOnce({ accepted: true });
+  fireEvent.click(screen.getByRole('button', { name: 'Archive A' }));
+  await waitFor(() => expect(screen.getByLabelText('Workspace error')).toHaveTextContent('Native teardown failed'));
+  expect(store.getState().panes).toHaveLength(2);
+  fireEvent.click(screen.getByRole('button', { name: 'Archive A' }));
+  await waitFor(() => expect(archive.command).toHaveBeenCalledTimes(2));
+  expect(store.getState().panes).toHaveLength(2);
+  archive.ids = ['a']; refresh();
+  await waitFor(() => expect(store.getState().panes.map(pane => pane.id)).toEqual(['pane-b']));
+  expect(window.location.pathname).toBe('/threads/b');
 });

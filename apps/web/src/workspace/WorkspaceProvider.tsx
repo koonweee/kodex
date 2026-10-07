@@ -98,6 +98,7 @@ type WorkspaceProviderProps = {
 };
 
 type WorkspaceContextValue = {
+  closeThreadPanes: (threadId: string) => void;
   approvals: Approval[];
   closePane: (paneId: string, dockviewLayout: unknown, options?: WorkspacePaneCloseOptions) => void;
   duplicatePane: (paneId: string) => void;
@@ -782,7 +783,7 @@ export function WorkspaceProvider({
   }, [openAppSurfacePane]);
 
   const archiveAwareThreadActions = useMemo<WorkspaceThreadActions>(
-    () => ({
+    () => liveTransport === "external" ? threadActions : ({
       ...threadActions,
       onArchiveThread: threadActions.onArchiveThread
         ? (threadId: string) => {
@@ -791,13 +792,14 @@ export function WorkspaceProvider({
           }
         : undefined,
     }),
-    [closeThreadPanes, threadActions],
+    [closeThreadPanes, liveTransport, threadActions],
   );
 
   const value = useMemo<WorkspaceContextValue>(
     () => ({
       approvals,
       closePane,
+      closeThreadPanes,
       duplicatePane,
       errorMessage,
       focusPane,
@@ -853,6 +855,7 @@ export function WorkspaceProvider({
     [
       approvals,
       closePane,
+      closeThreadPanes,
       duplicatePane,
       errorMessage,
       focusPane,

@@ -5,12 +5,13 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import { afterEach, expect, it, vi } from 'vitest';
 import { defaultDisplayState } from '../../../../spikes/mastra-code-sdk/node_modules/@mastra/core/dist/agent-controller/index.js';
 import type { ChatSnapshot } from './client';
+import { NativeCatalogProvider } from './NativeCatalogContext';
 import type { ComposerDraftStore } from '../composer/useComposerDraftState';
 import type { WorkspacePane } from '../workspace/paneTypes';
 import { NativeThreadPane } from './NativeThreadPane';
 
-const native = vi.hoisted(() => ({ snapshot: null as ChatSnapshot | null, useWorkspace: vi.fn(), rename: vi.fn(), legacyRename: vi.fn(), registrations: vi.fn(), duplicate: vi.fn() }));
-vi.mock('./useNativeSnapshots', () => ({ useNativeChat: () => ({ snapshot: native.snapshot, error: null }) }));
+const native = vi.hoisted(() => ({ snapshot: null as ChatSnapshot | null, useWorkspace: vi.fn(), rename: vi.fn(), legacyRename: vi.fn(), registrations: vi.fn(), duplicate: vi.fn(), close: vi.fn(), watched: vi.fn() }));
+vi.mock('./useNativeSnapshots', () => ({ useNativeChat: (id: string | null) => { native.watched(id); return { snapshot: id ? native.snapshot : null, error: null }; } }));
 vi.mock('../workspace/WorkspaceProvider', () => ({ useWorkspace: () => native.useWorkspace() }));
 vi.mock('../api/client', () => ({ renameThread: (...args: unknown[]) => native.legacyRename(...args) }));
 vi.mock('./NativeComposer', () => ({ NativeComposer: () => <div>Composer</div> }));
@@ -18,7 +19,7 @@ vi.mock('../timeline/TimelineView', () => ({ TimelineView: () => <div>Native tim
 const pane: WorkspacePane = { id: 'pane', kind: 'thread', title: 'Chat title', target: { mode: 'existing', threadId: 'chat' } };
 const context = createContext<Record<string, unknown>>({});
 const stableActions = { onRenameThread: native.rename, onArchiveThread: vi.fn(), onPinThread: vi.fn(), onUnpinThread: vi.fn(), onSetThreadNotificationsEnabled: vi.fn() };
-const stable = { errorMessage: null, setPaneThreadContext: vi.fn(), updatePane: vi.fn().mockResolvedValue(undefined), duplicatePane: native.duplicate, onShowMobileSidebar: vi.fn(), onImageOpen: vi.fn(), onMarkdownOpen: vi.fn(), threadActions: stableActions, showDebugEvents: false };
+const stable = { closePane: native.close, errorMessage: null, setPaneThreadContext: vi.fn(), updatePane: vi.fn().mockResolvedValue(undefined), duplicatePane: native.duplicate, onShowMobileSidebar: vi.fn(), onImageOpen: vi.fn(), onMarkdownOpen: vi.fn(), threadActions: stableActions, showDebugEvents: false };
 const onError = vi.fn();
 function Harness({ children }: { children?: ReactNode }) {
   const [header, setHeader] = useState<ReactNode>(null);
@@ -150,4 +151,18 @@ it('ignores a late rename failure after the pane changes chats', async () => {
   expect(screen.getByRole('textbox', { name: 'Thread name' })).toHaveValue('Other chat');
   expect(screen.queryByText('Obsolete rename error')).not.toBeInTheDocument();
   expect(onError).not.toHaveBeenCalled();
+});
+
+it('stops watching only after explicit authoritative archive state arrives', () => {
+  native.useWorkspace.mockImplementation(() => useContext(context));
+  native.snapshot = null;
+  const catalog = { epoch: 'epoch', revision: 1, projects: [], chats: [], pinnedChatIds: [], archivedChatIds: [] as string[] };
+  const view = render(<NativeCatalogProvider snapshot={catalog}><Harness /></NativeCatalogProvider>);
+  expect(native.watched).toHaveBeenLastCalledWith('chat');
+  expect(native.close).not.toHaveBeenCalled(); // Absence from inventory is not archive.
+  view.rerender(<NativeCatalogProvider snapshot={{ ...catalog, revision: 2, archivedChatIds: ['other'] }}><Harness /></NativeCatalogProvider>);
+  expect(native.close).not.toHaveBeenCalled();
+  view.rerender(<NativeCatalogProvider snapshot={{ ...catalog, revision: 3, archivedChatIds: ['chat'] }}><Harness /></NativeCatalogProvider>);
+  expect(native.watched).toHaveBeenLastCalledWith(null);
+  expect(native.close).not.toHaveBeenCalled(); // Workspace owner closes mounted and unmounted panes together.
 });

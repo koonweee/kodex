@@ -31,7 +31,7 @@ function renderComposer(pane: WorkspacePane, initial: ChatSnapshot | null) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const draftStore = new Map();
   let currentPane = pane;
-  let catalog: CatalogSnapshot = { epoch: 'epoch', revision: 1, pinnedChatIds: [], projects: [{ id: 'project', name: 'Project', roots: ['/project'] }, { id: 'other', name: 'Other', roots: ['/other'] }], chats: [] };
+  let catalog: CatalogSnapshot = { epoch: 'epoch', revision: 1, archivedChatIds: [], pinnedChatIds: [], projects: [{ id: 'project', name: 'Project', roots: ['/project'] }, { id: 'other', name: 'Other', roots: ['/other'] }], chats: [] };
   const element = (value: ChatSnapshot | null) => <QueryClientProvider client={client}><MantineProvider env="test"><NativeCatalogProvider snapshot={catalog}><NativeComposer pane={currentPane} snapshot={value} ready isActive draftStore={draftStore} onError={onError} /></NativeCatalogProvider></MantineProvider></QueryClientProvider>;
   const view = render(element(initial));
   return { ...view, rerenderCatalog(value: CatalogSnapshot, current: ChatSnapshot | null = null) { catalog = value; view.rerender(element(current)); }, rerenderSnapshot(value: ChatSnapshot) { view.rerender(element(value)); }, rerenderPane(value: WorkspacePane) { currentPane = value; view.rerender(element(null)); } };
@@ -279,13 +279,13 @@ it('updates draft execution eligibility from shared catalog roots without disrup
   await act(async () => stream.publish(defaults()));
   await userEvent.type(screen.getByLabelText('Message composer'), 'Preserved draft');
   expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled();
-  view.rerenderCatalog({ epoch: 'epoch', revision: 2, pinnedChatIds: [], projects: [{ id: 'project', name: 'Project', roots: [] }], chats: [] });
+  view.rerenderCatalog({ epoch: 'epoch', revision: 2, archivedChatIds: [], pinnedChatIds: [], projects: [{ id: 'project', name: 'Project', roots: [] }], chats: [] });
   expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
   expect(screen.getByText('Choose one root directory in project settings before starting a chat.')).toBeInTheDocument();
   expect(screen.getByLabelText('Message composer')).toHaveValue('Preserved draft');
-  view.rerenderCatalog({ epoch: 'epoch', revision: 3, pinnedChatIds: [], projects: [{ id: 'project', name: 'Project', roots: ['/first', '/second'] }], chats: [] });
+  view.rerenderCatalog({ epoch: 'epoch', revision: 3, archivedChatIds: [], pinnedChatIds: [], projects: [{ id: 'project', name: 'Project', roots: ['/first', '/second'] }], chats: [] });
   expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
-  view.rerenderCatalog({ epoch: 'epoch', revision: 4, pinnedChatIds: [], projects: [{ id: 'project', name: 'Project', roots: ['/changed-root'] }], chats: [] });
+  view.rerenderCatalog({ epoch: 'epoch', revision: 4, archivedChatIds: [], pinnedChatIds: [], projects: [{ id: 'project', name: 'Project', roots: ['/changed-root'] }], chats: [] });
   expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled();
   await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
   await waitFor(() => expect(rpc.createChat).toHaveBeenCalledWith({ projectId: 'project' }));

@@ -14,14 +14,14 @@ import type { KodexShellView } from '../shell/KodexShellView';
 import type { WorkspaceProvider } from '../workspace/WorkspaceProvider';
 import { listPinnedThreads, setThreadPinned, setThreadNotificationsEnabled } from '../api/client';
 
-const rpc = vi.hoisted(() => ({ watchCatalog: vi.fn(), setChatPinned: vi.fn(), setChatNotifications: vi.fn() }));
+const rpc = vi.hoisted(() => ({ watchCatalog: vi.fn(), setChatPinned: vi.fn(), setChatNotifications: vi.fn(), archiveChat: vi.fn() }));
 const actionsContext = createContext<NonNullable<ComponentProps<typeof WorkspaceProvider>['threadActions']>>({});
 vi.mock('./client', () => ({ mastraClient: rpc }));
 vi.mock('./NativeHostBoundary', () => ({ useNativeHost: () => ({ instanceId: 'instance' }) }));
 vi.mock('./useNativeAccount', () => ({ useNativeAccount: () => ({ error: null, logout: vi.fn() }) }));
 vi.mock('./NativeAccountMenu', () => ({ NativeAccountMenu: () => null }));
 vi.mock('./NativeThreadPane', () => ({ NativeThreadPane: () => null }));
-vi.mock('../workspace/WorkspaceProvider', () => ({ WorkspaceProvider: ({ children, threadActions, errorMessage }: { children: ReactNode; threadActions: ComponentProps<typeof WorkspaceProvider>['threadActions']; errorMessage: string | null }) =>
+vi.mock('../workspace/WorkspaceProvider', () => ({ useWorkspace: () => ({ workspace: { panes: [] }, closeThreadPanes: vi.fn() }), WorkspaceProvider: ({ children, threadActions, errorMessage }: { children: ReactNode; threadActions: ComponentProps<typeof WorkspaceProvider>['threadActions']; errorMessage: string | null }) =>
   <actionsContext.Provider value={threadActions ?? {}}>{errorMessage ? <div role="alert">{errorMessage}</div> : null}{children}</actionsContext.Provider>,
 }));
 vi.mock('../api/client', async importOriginal => ({ ...await importOriginal<typeof import('../api/client')>(), listPinnedThreads: vi.fn(), setThreadPinned: vi.fn(), setThreadNotificationsEnabled: vi.fn() }));
@@ -33,7 +33,7 @@ vi.mock('../shell/KodexShellView', () => ({ useNarrowThreadWorkspace: () => fals
         threads={sidebar.pinnedThreads} pinPending={sidebar.pinPending} onMovePinnedThread={sidebar.onMovePinnedThread}
         onPinThread={sidebar.onPinThread} onUnpinThread={sidebar.onUnpinThread} onSelectThread={vi.fn()} onArchiveThread={vi.fn()} onThreadActionHoverChange={vi.fn()} />
       <ThreadActionsMenu thread={catalog?.chats.find(chat => chat.id === 'a') ?? null} threadId="a" pinPending={actions.pinPending}
-        onDuplicatePane={vi.fn()} onRenameThread={vi.fn()} onPinThread={actions.onPinThread} onUnpinThread={actions.onUnpinThread} onSetThreadNotificationsEnabled={actions.onSetThreadNotificationsEnabled} />
+        onDuplicatePane={vi.fn()} onRenameThread={vi.fn()} onArchiveThread={actions.onArchiveThread} onPinThread={actions.onPinThread} onUnpinThread={actions.onUnpinThread} onSetThreadNotificationsEnabled={actions.onSetThreadNotificationsEnabled} />
     </>;
   },
 }));
@@ -43,7 +43,7 @@ function stream() {
     iterable: { [Symbol.asyncIterator]() { return { next: () => new Promise<IteratorResult<CatalogSnapshot>>(resolve => { next = resolve; }) }; } } };
 }
 function catalog(revision = 1, ids = ['b', 'c'], notificationsEnabled = true): CatalogSnapshot {
-  return { epoch: 'epoch', revision, projects: [], pinnedChatIds: ids, chats: ['a', 'b', 'c'].map(id => ({ id, title: id.toUpperCase(), name: id.toUpperCase(), projectId: null, cwd: '/retained', pinned: ids.includes(id), notificationsEnabled: id === 'a' ? notificationsEnabled : true })) };
+  return { epoch: 'epoch', revision, projects: [], archivedChatIds: [], pinnedChatIds: ids, chats: ['a', 'b', 'c'].map(id => ({ id, title: id.toUpperCase(), name: id.toUpperCase(), projectId: null, cwd: '/retained', pinned: ids.includes(id), notificationsEnabled: id === 'a' ? notificationsEnabled : true })) };
 }
 function shell() {
   return <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MantineProvider env="test"><NativeShell colorSchemeId="oled-black" appearance={DEFAULT_APPEARANCE_PREFERENCES} onAppearanceModeChange={vi.fn()} onThemeChange={vi.fn()} /></MantineProvider></QueryClientProvider>;
@@ -105,4 +105,18 @@ it('preserves canonical pin membership when a native command is rejected and dis
   expect(await screen.findByRole('alert')).toHaveTextContent('Chat no longer exists');
   expect(screen.getAllByRole('button', { name: 'Unpin thread' }).every(button => !button.hasAttribute('disabled'))).toBe(true);
   expect(rowTitles(within(document.body))).toEqual(['B', 'C']); expect(rpc.setChatPinned).toHaveBeenCalledOnce();
+});
+
+it('archives through the native command and lets canonical inventory remove the saved chat', async () => {
+  const source = stream(); rpc.watchCatalog.mockResolvedValue(source.iterable);
+  rpc.archiveChat.mockResolvedValue({ accepted: true });
+  render(shell()); await waitFor(() => expect(rpc.watchCatalog).toHaveBeenCalledOnce());
+  await act(async () => source.publish(catalog(1, ['a', 'b'])));
+  await userEvent.click(screen.getByRole('button', { name: 'Thread actions' }));
+  await userEvent.click(await screen.findByRole('menuitem', { name: 'Archive thread' }));
+  await waitFor(() => expect(rpc.archiveChat).toHaveBeenCalledWith({ chatId: 'a' }));
+  expect(rowTitles(within(document.body))).toEqual(['A', 'B']);
+  const updated = catalog(2, ['b']); updated.chats = updated.chats.filter(chat => chat.id !== 'a'); updated.archivedChatIds = ['a'];
+  await act(async () => source.publish(updated));
+  expect(rowTitles(within(document.body))).toEqual(['B']);
 });
