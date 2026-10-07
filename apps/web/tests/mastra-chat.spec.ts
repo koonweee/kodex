@@ -147,3 +147,72 @@ test('existing Kodex UI shares native streaming, queue/stop, tool history and re
     await rm(root, { recursive: true, force: true });
   }
 });
+
+async function showSidebar(page: Page) {
+  await expect(page.locator('.kodex-shell')).toBeVisible();
+  const button = page.getByRole('button', { name: 'Show sidebar', exact: true });
+  if (await button.isVisible()) await button.click();
+}
+
+test('project controls share canonical membership while retained chats survive deletion and restart', async ({ context, page }) => {
+  const root = await mkdtemp(join(tmpdir(), 'kodex-mastra-project-browser-'));
+  let backend: ChildProcessWithoutNullStreams | undefined;
+  const legacyProjects: string[] = [];
+  const browserErrors: string[] = [];
+  context.on('request', request => {
+    if (/^\/v1\/(projects|directories)(\/|$)/.test(new URL(request.url()).pathname)) legacyProjects.push(request.url());
+  });
+  page.on('pageerror', error => browserErrors.push(error.message));
+  context.on('page', tab => tab.on('pageerror', error => browserErrors.push(error.message)));
+  try {
+    backend = await startBackend(root);
+    await page.goto('/');
+    const second = await context.newPage();
+    await second.goto('/');
+    await showSidebar(page);
+    await showSidebar(second);
+    await page.getByRole('button', { name: 'Add project', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Add project', exact: true });
+    await dialog.getByRole('button', { name: 'added-project', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Use this directory', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Add project', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(second.getByRole('button', { name: 'Project settings for added-project', exact: true })).toBeVisible();
+    await send(page, 'PROJECT_CHAT');
+    await expect(pane(page).getByText('fixture:PROJECT_CHAT', { exact: true })).toBeVisible();
+    const chatUrl = page.url();
+    await second.getByRole('button', { name: 'Project settings for added-project', exact: true }).click();
+    const roots = second.getByRole('textbox', { name: 'Root directories', exact: true });
+    const originalRoot = await roots.inputValue();
+    await second.getByRole('textbox', { name: 'Project name', exact: true }).fill('Renamed project');
+    await second.getByRole('button', { name: 'Save project', exact: true }).click();
+    await expect(second.getByRole('heading', { name: 'Renamed project', exact: true })).toBeVisible();
+    await showSidebar(page);
+    await expect(page.getByRole('button', { name: 'Project settings for Renamed project', exact: true })).toBeVisible();
+    await roots.fill(originalRoot.replace(/added-project$/, 'changed-root'));
+    await second.getByRole('button', { name: 'Save project', exact: true }).click();
+    await expect(second.getByRole('button', { name: 'Save project', exact: true })).toBeDisabled();
+    await second.getByRole('button', { name: 'Delete project', exact: true }).click();
+    await second.getByRole('dialog', { name: 'Delete Renamed project?', exact: true }).getByRole('button', { name: 'Delete project', exact: true }).click();
+    for (const tab of [page, second]) {
+      await showSidebar(tab);
+      await expect(tab.getByRole('button', { name: 'Project settings for Renamed project', exact: true })).toHaveCount(0);
+    }
+    await second.goto(chatUrl);
+    await expect(pane(second).getByText('fixture:PROJECT_CHAT', { exact: true })).toBeVisible();
+    await send(second, 'DETACHED_CHAT');
+    await expect(pane(second).getByText('fixture:DETACHED_CHAT', { exact: true })).toBeVisible();
+    await stopBackend(backend, true);
+    backend = await startBackend(root);
+    await expect(pane(second).getByText('fixture:DETACHED_CHAT', { exact: true })).toBeVisible();
+    await send(second, 'DETACHED_AFTER_RESTART');
+    await expect(pane(second).getByText('fixture:DETACHED_AFTER_RESTART', { exact: true })).toBeVisible();
+    await showSidebar(second);
+    await expect(second.getByRole('button', { name: 'Project settings for Renamed project', exact: true })).toHaveCount(0);
+    expect(legacyProjects).toEqual([]);
+    expect(browserErrors).toEqual([]);
+  } finally {
+    if (backend) await stopBackend(backend);
+    await rm(root, { recursive: true, force: true });
+  }
+});

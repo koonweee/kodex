@@ -3,9 +3,8 @@ import { readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import type { SpikeProfile } from './profile.js';
 
-/** CLI-owned inventory only. Native controllers own every chat and its history. */
+/** CLI startup seeds only. The durable product registry owns current project metadata. */
 export async function loadServerConfig(profile: SpikeProfile, paths: string[]) {
-  if (!paths.length) throw new Error('At least one project directory is required.');
   const projects = await Promise.all(paths.map(async path => {
     const canonical = await realpath(path);
     if (!(await stat(canonical)).isDirectory()) throw new Error('Project path must be a directory.');

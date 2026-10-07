@@ -21,7 +21,7 @@ Tests use the published SDK for sessions, tools, memory, goals, scheduling and p
 
 Milestone 3 is complete within the bounded chat spike. The existing Kodex shell, docking, composer and timeline use native Mastra snapshots through typed oRPC when explicitly selected. This is a WIP backend: unported controls remain visible and return ordinary errors. No app-server fallback or deployment is performed.
 
-After dedicated-profile login, run the backend with one or more project directories:
+After dedicated-profile login, run the backend, optionally seeding project directories:
 
 ```sh
 npm run login -- login --mode device
@@ -36,7 +36,7 @@ The browser shares one oRPC WebSocket connection per tab for typed calls and liv
 
 `--profile`, `--port`, and `--model` configure the backend; `KODEX_MASTRA_PROFILE` and `KODEX_MASTRA_MODEL` supply defaults. The model defaults to the previously verified `openai/gpt-6.1-sol`. The native settings API seeds missing memory/judge model choices with that provider and sets the accepted effectively unlimited goal evaluation count; existing memory model selections are preserved. Use a model available to your account.
 
-Project paths are configured by CLI for this slice. Canonical directory paths select stable project stores within the dedicated profile; native thread rows supply chat inventory and history. Moving a project directory selects a fresh store. Native model/reasoning/Fast settings and account display now work. The existing queue editor supports shared edit/reorder/remove/steer and conservative recovery. Browser project creation, pins, attachments, and other retained workflows remain in progress. Existing native histories are reloaded after backend restart; pending follow-ups are volatile and may be dropped as agreed. Waiting input retains enqueue-time settings; an explicit edit captures current settings. Unknown delivery never triggers automatic resubmission.
+Projects are durable Kodex product metadata in `<profile>/data/kodex.db` (the configured profile app-data directory). CLI `--project` arguments seed projects once; browser creation selects a directory within the gateway home. Project root edits apply to future chats, while existing chats retain their native database and working directory. Deletion detaches chats into the standalone list without moving or deleting native history; unchanged CLI seeds do not resurrect deleted projects. Starting without `--project` supports standalone chats in the gateway home. Native model/reasoning/Fast settings and account display now work. The existing queue editor supports shared edit/reorder/remove/steer and conservative recovery. Browser project controls and two-tab/restart behavior are validated; pins, attachments, and other retained workflows remain in progress. Existing native histories are reloaded after backend restart; pending follow-ups are volatile and may be dropped as agreed. Waiting input retains enqueue-time settings; an explicit edit captures current settings. Unknown delivery never triggers automatic resubmission.
 
 The browser proof uses a disposable native SDK backend and local model fixture, with Playwright's bundled Chromium:
 
@@ -104,7 +104,7 @@ Historical diagnostic reports predate supported runtime affinity; current runtim
 | Concern | Owner / integration |
 | --- | --- |
 | Chat execution, tools, history, settings and goals | Native Code SDK / Session / SQLite |
-| Multiple projects | One native controller and Mastra instance per project in one Node process |
+| Projects and execution directories | Kodex SQLite project membership/order; one native controller and Mastra instance per retained immutable execution binding in one Node process |
 | Multiple chats | Distinct native Session/resource identity per chat; observers share it |
 | Queue and Stop | Native `Session.followUp()` and `Session.abort()` |
 | Scheduled prompts | Native `mastra.schedules`, with a small `prepare` hook supplying the target Session context |

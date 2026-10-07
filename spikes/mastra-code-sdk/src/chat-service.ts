@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { resolve } from 'node:path';
 import { EventPublisher, ORPCError } from '@orpc/server';
-import { createProjectRuntime, type NativeSession, type ProjectRuntime } from './runtime.js';
+import type { NativeSession, ProjectRuntime } from './runtime.js';
+import { createChatProjects, describeChat, ownsThread, type Chat, type ChatProjectOptions } from './chat-projects.js';
+import type { ProductProject, ProjectPatch, RuntimeBinding } from './product-registry.js';
 import { assertProfileActive, type SpikeProfile } from './profile.js';
 import { createAccountService } from './account-service.js';
 import { captureChatFastRequestContext } from './chat-fast.js';
@@ -9,22 +10,17 @@ import { createChatQueue, type ChatQueueInput, type ChatQueueSnapshot, type Chat
 import { createNativeChatSettings, type ChatSettings, type ChatSettingsPatch } from './chat-settings.js';
 import { createSessionProjection, type SessionSnapshot } from './transport.js';
 
-type NativeThread = NonNullable<Awaited<ReturnType<ProjectRuntime['controller']['queryThreadById']>>>;
-export interface ChatProject { id: string; name: string; path: string; runtimeRoot: string }
-export interface Chat { id: string; projectId: string; title: string; cwd: string }
-export interface CatalogSnapshot { epoch: string; revision: number; chats: Chat[] }
+export interface CatalogSnapshot { epoch: string; revision: number; projects: ProductProject[]; chats: Chat[] }
 export interface ChatSnapshot extends SessionSnapshot { chat: Chat; error: string | null; settings: ChatSettings; queue: ChatQueueSnapshot }
 export interface QueuedSelection { chatId: string; epoch: string; revision: number; id: string }
 export interface QueuedEdit extends QueuedSelection { input: ChatQueueInput }
 export interface QueuedOrder { chatId: string; epoch: string; revision: number; ids: string[] }
-export interface ChatServiceOptions {
+export interface ChatServiceOptions extends ChatProjectOptions {
   profile: SpikeProfile;
   instanceId: string;
-  projects: ChatProject[];
-  runtimeFactory?: typeof createProjectRuntime;
 }
 interface Handle {
-  project: ChatProject;
+  binding: RuntimeBinding;
   runtime: ProjectRuntime;
   session: NativeSession;
   projection: ReturnType<typeof createSessionProjection>;
@@ -40,11 +36,6 @@ const missing = () => new ORPCError('NOT_FOUND', { message: 'Chat or project not
  * runtime/session/projection per identity alive across browser connections.
  */
 export function createChatService(options: ChatServiceOptions) {
-  const projects = options.projects.map(project => ({ ...project, path: resolve(project.path), runtimeRoot: resolve(project.runtimeRoot) }));
-  const projectById = new Map(projects.map(project => [project.id, project]));
-  if (projectById.size !== projects.length) throw new Error('Project IDs must be unique.');
-  const runtimeFactory = options.runtimeFactory ?? createProjectRuntime;
-  const runtimes = new Map<string, Promise<ProjectRuntime>>();
   const handles = new Map<string, Promise<Handle>>();
   const lifetime = new AbortController();
   const catalog = new EventPublisher<{ changed: number }>({ maxBufferedEvents: 1 });
@@ -68,43 +59,14 @@ export function createChatService(options: ChatServiceOptions) {
     if (disposed) throw new ORPCError('SERVICE_UNAVAILABLE', { message: 'The chat service is shutting down.' });
   };
   const invalidateCatalog = () => { catalog.publish('changed', ++catalogRevision); };
-  const describe = (project: ChatProject, thread: NativeThread): Chat => ({
-    id: thread.id, projectId: project.id, title: thread.title?.trim() || 'New chat', cwd: project.path,
-  });
-  const ownsThread = (project: ChatProject, thread: NativeThread) => thread.metadata?.projectPath === project.path && thread.metadata?.forkedSubagent !== true;
-
-  async function runtimeFor(project: ChatProject) {
-    assertActive();
-    let pending = runtimes.get(project.id);
-    if (!pending) {
-      pending = runtimeFactory({ projectPath: project.path, runtimeRoot: project.runtimeRoot, profile: options.profile });
-      runtimes.set(project.id, pending);
-      pending.catch(() => { if (runtimes.get(project.id) === pending) runtimes.delete(project.id); });
-    }
-    const runtime = await pending;
-    assertActive();
-    return runtime;
+  const projects = createChatProjects(options, assertActive);
+  function invalidateProjects() {
+    invalidateCatalog();
+    for (const pending of handles.values()) void pending.then(handle => {
+      if (!disposed) handle.session.emit({ type: 'display_state_changed', displayState: handle.session.displayState.get() });
+    }, () => {});
   }
-  async function inventory() {
-    assertActive();
-    const chats: Chat[] = [];
-    for (const project of projects) {
-      const runtime = await runtimeFor(project);
-      const threads = await runtime.controller.queryThreads({ metadata: { projectPath: project.path } });
-      for (const thread of threads) if (ownsThread(project, thread)) chats.push(describe(project, thread));
-    }
-    assertActive();
-    return chats;
-  }
-  async function findThread(chatId: string) {
-    for (const project of projects) {
-      const runtime = await runtimeFor(project);
-      const thread = await runtime.controller.queryThreadById({ threadId: chatId });
-      if (thread && ownsThread(project, thread)) return { project, runtime, thread };
-    }
-    throw missing();
-  }
-  function bind(project: ChatProject, runtime: ProjectRuntime, session: NativeSession): Handle {
+  function bind(binding: RuntimeBinding, runtime: ProjectRuntime, session: NativeSession): Handle {
     assertActive();
     // Bind the native count before projection listeners start: raw extension
     // queue submissions must also participate in existing-chat Send routing.
@@ -113,7 +75,7 @@ export function createChatService(options: ChatServiceOptions) {
     const queue = createChatQueue(session, { epoch, onChanged: () => {
       session.emit({ type: 'display_state_changed', displayState: session.displayState.get() });
     } });
-    const handle: Handle = { project, runtime, session, projection, queue, revision: 0, error: null, unsubscribe: () => {} };
+    const handle: Handle = { binding, runtime, session, projection, queue, revision: 0, error: null, unsubscribe: () => {} };
     handle.unsubscribe = session.subscribe(event => {
       handle.revision++;
       if (event.type === 'agent_start') handle.error = null;
@@ -122,21 +84,23 @@ export function createChatService(options: ChatServiceOptions) {
     });
     return handle;
   }
-  function cacheHandle(chatId: string, create: () => Promise<Handle>) {
+  function cacheHandle(key: string, create: () => Promise<Handle>) {
     assertActive();
-    const cached = handles.get(chatId);
+    const cached = handles.get(key);
     if (cached) return cached;
     const pending = create();
-    handles.set(chatId, pending);
-    pending.catch(() => { if (handles.get(chatId) === pending) handles.delete(chatId); });
+    handles.set(key, pending);
+    pending.catch(() => { if (handles.get(key) === pending) handles.delete(key); });
     return pending;
   }
-  const handleFor = (chatId: string) => cacheHandle(chatId, async () => {
-    // Native createSession creates missing thread IDs, so read/validate first.
-    const { project, runtime, thread } = await findThread(chatId);
-    const session = await runtime.createSession({ resourceId: thread.resourceId, threadId: thread.id });
-    return bind(project, runtime, session);
-  });
+  async function handleFor(chatId: string) {
+    // Validate native inventory before createSession, which creates missing IDs.
+    const { binding, runtime, thread } = await projects.findThread(chatId);
+    return cacheHandle(`${binding.id}:${chatId}`, async () => {
+      const session = await runtime.createSession({ resourceId: thread.resourceId, threadId: thread.id });
+      return bind(binding, runtime, session);
+    });
+  }
 
   async function snapshot(handle: Handle, signal?: AbortSignal, initial?: SessionSnapshot): Promise<ChatSnapshot> {
     let supplied = initial;
@@ -150,10 +114,12 @@ export function createChatService(options: ChatServiceOptions) {
       signal?.throwIfAborted();
       lifetime.signal.throwIfAborted();
       if (current.revision !== handle.revision) continue;
-      if (!thread || !ownsThread(handle.project, thread)) throw missing();
+      if (!thread || !ownsThread(handle.binding, thread)) throw missing();
       const publicSettings = await settings.readChat(handle.session);
       if (current.revision !== handle.revision) continue;
-      return { ...current, chat: describe(handle.project, thread), error: handle.error, settings: publicSettings, queue: handle.queue.snapshot() };
+      const binding = await projects.currentBinding(handle.binding.id);
+      if (current.revision !== handle.revision) continue;
+      return { ...current, chat: describeChat(binding, thread), error: handle.error, settings: publicSettings, queue: handle.queue.snapshot() };
     }
   }
   async function catalogSnapshot(signal?: AbortSignal): Promise<CatalogSnapshot> {
@@ -161,10 +127,10 @@ export function createChatService(options: ChatServiceOptions) {
       signal?.throwIfAborted();
       lifetime.signal.throwIfAborted();
       const revision = catalogRevision;
-      const chats = await inventory();
+      const inventory = await projects.inventory();
       signal?.throwIfAborted();
       lifetime.signal.throwIfAborted();
-      if (revision === catalogRevision) return { epoch, revision, chats };
+      if (revision === catalogRevision) return { epoch, revision, ...inventory };
     }
   }
   async function sendNative(handle: Handle, text: string) {
@@ -200,22 +166,20 @@ export function createChatService(options: ChatServiceOptions) {
     catch { throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Queued input could not be changed.' }); }
   }
 
-  const defaultsRuntime = async () => {
-    const project = projects[0];
-    if (!project) throw missing();
-    return runtimeFor(project);
-  };
-
   return {
     async getAccount() { return (await accounts()).get(); },
     async logoutAccount() { return (await accounts()).logout(); },
     async getAccountUsage(signal?: AbortSignal) { return (await accounts()).getUsage(signal); },
     async *watchAccount(signal?: AbortSignal) { yield* (await accounts()).watch(signal); },
-    async listModels({ projectId }: { projectId: string }) {
-      const project = projectById.get(projectId);
-      if (!project) throw missing();
-      return settings.listModels(await runtimeFor(project));
+    async listModels(input: { chatId?: string; projectId?: string | null }) {
+      const runtime = input.chatId ? (await handleFor(input.chatId)).runtime : await projects.runtimeFor(await projects.executionBinding(input.projectId ?? null));
+      return settings.listModels(runtime);
     },
+    async listDirectories(input: { path?: string }) { assertActive(); return projects.listDirectories(input); },
+    async createProject(input: { createKey: string; path: string }) { const value = await projects.createProject(input); invalidateProjects(); return value; },
+    async updateProject(input: { projectId: string; patch: ProjectPatch }) { const value = await projects.updateProject(input); invalidateProjects(); return value; },
+    async deleteProject(input: { projectId: string }) { await projects.deleteProject(input); invalidateProjects(); return accepted(); },
+    async moveProjectBefore(input: { projectId: string; beforeId: string | null }) { await projects.moveProjectBefore(input); invalidateProjects(); return accepted(); },
     async getChatSettings({ chatId }: { chatId: string }) {
       const current = await snapshot(await handleFor(chatId));
       return { epoch: current.epoch, revision: current.revision, ...current.settings };
@@ -226,9 +190,9 @@ export function createChatService(options: ChatServiceOptions) {
       const current = await snapshot(handle);
       return { epoch: current.epoch, revision: current.revision, ...current.settings };
     },
-    async getDraftDefaults() { return settings.getDefaults(await defaultsRuntime()); },
+    async getDraftDefaults() { return settings.getDefaults(await projects.defaultsRuntime()); },
     async updateDraftDefaults({ version, patch }: { version: string; patch: ChatSettingsPatch }) {
-      const current = await settings.updateDefaults(await defaultsRuntime(), version, patch);
+      const current = await settings.updateDefaults(await projects.defaultsRuntime(), version, patch);
       for (const pending of handles.values()) {
         const handle = await pending;
         handle.session.emit({ type: 'display_state_changed', displayState: handle.session.displayState.get() });
@@ -237,26 +201,25 @@ export function createChatService(options: ChatServiceOptions) {
     },
     async *watchDraftDefaults(signal?: AbortSignal) {
       const combined = AbortSignal.any([lifetime.signal, ...(signal ? [signal] : [])]);
-      yield* settings.watchDefaults(await defaultsRuntime(), combined);
+      yield* settings.watchDefaults(await projects.defaultsRuntime(), combined);
     },
     async info() {
       assertActive();
-      return { instanceId: options.instanceId, projects: projects.map(({ id, name, path }) => ({ id, name, path })) };
+      return { instanceId: options.instanceId };
     },
     async listChats() { return catalogSnapshot(); },
-    async createChat({ projectId, settings: draft }: { projectId: string; settings?: ChatSettingsPatch }) {
+    async createChat({ projectId = null, settings: draft }: { projectId?: string | null; settings?: ChatSettingsPatch }) {
       assertActive();
-      const project = projectById.get(projectId);
-      if (!project) throw missing();
+      const binding = await projects.executionBinding(projectId);
       const chatId = randomUUID();
       const resourceId = randomUUID();
-      const handle = await cacheHandle(chatId, async () => {
-        const runtime = await runtimeFor(project);
+      const handle = await cacheHandle(`${binding.id}:${chatId}`, async () => {
+        const runtime = await projects.runtimeFor(binding);
         const defaults = await settings.getDefaults(runtime);
         await settings.validate(runtime, draft ?? {}, defaults.modelId);
         const session = await runtime.createSession({ resourceId, threadId: chatId });
         await settings.updateChat(runtime, session, { modelId: defaults.modelId, ...draft });
-        return bind(project, runtime, session);
+        return bind(binding, runtime, session);
       });
       const created = await snapshot(handle);
       invalidateCatalog();
@@ -317,14 +280,12 @@ export function createChatService(options: ChatServiceOptions) {
           result.value.unsubscribe();
           result.value.projection.dispose();
         }
-        const loadedRuntimes = await Promise.allSettled(runtimes.values());
-        const results = await Promise.allSettled(loadedRuntimes.filter((result): result is PromiseFulfilledResult<ProjectRuntime> => result.status === 'fulfilled').map(result => result.value.dispose()));
-        handles.clear(); runtimes.clear();
-        const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
-        if (failed) throw failed.reason;
+        handles.clear();
+        await projects.dispose();
       })();
       return disposal;
     },
   };
 }
 export type ChatService = ReturnType<typeof createChatService>;
+export type { Chat } from './chat-projects.js';

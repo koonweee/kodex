@@ -13,12 +13,11 @@ const { values } = parseArgs({ options: {
   port: { type: 'string', default: '8789' },
   model: { type: 'string', default: process.env.KODEX_MASTRA_MODEL ?? 'openai/gpt-6.1-sol' },
 } });
-if (!values.project?.length) throw new Error('Usage: npm run serve -- --project /absolute/project [--project /another/project] [--profile /dedicated/root] [--port 8789]');
 const port = Number(values.port);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Port must be between 1 and 65535.');
 const profile = activateProfile(resolveProfile(values.profile));
 requireChatGptAuth(profile);
-const config = await loadServerConfig(profile, values.project);
+const config = await loadServerConfig(profile, values.project ?? []);
 // Use the native settings API in the dedicated profile. Preserve existing model
 // choices; seed fresh memory/judge settings with the authenticated chat provider.
 const { loadSettings, saveSettings } = await import('@mastra/code-sdk/onboarding/settings');

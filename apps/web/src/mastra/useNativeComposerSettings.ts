@@ -8,13 +8,14 @@ import { useNativeSnapshots } from './useNativeSnapshots';
 type DraftDefaults = Awaited<ReturnType<ChatClient['getDraftDefaults']>>;
 type SettingsPatch = Parameters<ChatClient['updateChatSettings']>[0]['patch'];
 
-export function useNativeComposerSettings({ chatId, projectId, snapshot, onError }: {
-  chatId: string | null; projectId: string | null; snapshot: ChatSnapshot | null; onError: (error: unknown) => void;
+export function useNativeComposerSettings({ chatId, projectId, snapshot, onError, modelsEnabled = true, modelScope }: {
+  chatId: string | null; projectId: string | null; snapshot: ChatSnapshot | null; onError: (error: unknown) => void; modelsEnabled?: boolean; modelScope?: string;
 }) {
-  const models = useQuery({ queryKey: ['mastra', 'models', projectId], enabled: projectId !== null,
-    queryFn: () => mastraClient.listModels({ projectId: projectId! }), retry: false });
+  const selector = chatId ? { chatId } : { projectId };
+  const models = useQuery({ queryKey: ['mastra', 'models', selector, modelScope], enabled: modelsEnabled,
+    queryFn: () => mastraClient.listModels(selector), retry: false });
   const watchDefaults = useCallback((signal: AbortSignal) => mastraClient.watchDraftDefaults(undefined, { signal }), []);
-  const defaults = useNativeSnapshots<DraftDefaults>(!chatId && projectId ? 'draft-defaults' : null, watchDefaults);
+  const defaults = useNativeSnapshots<DraftDefaults>(!chatId ? 'draft-defaults' : null, watchDefaults);
   const [drafts, setDrafts] = useState<Map<string | null, SettingsPatch>>(() => new Map());
   const [operation, setOperation] = useState<{ key: string; pending: boolean; error: string | null } | null>(null);
   const key = chatId ?? `draft:${projectId}`;

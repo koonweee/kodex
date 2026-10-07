@@ -1,4 +1,5 @@
 import { eventIterator, os, type as schemaType } from '@orpc/server';
+import type { ProjectPatch } from './product-registry.js';
 import type { AccountSnapshot } from './account-service.js';
 import type { CatalogSnapshot, ChatService, ChatSnapshot, QueuedSelection, QueuedEdit, QueuedOrder } from './chat-service.js';
 import { validSettingsPatch, type ChatSettingsPatch, type DraftDefaults } from './chat-settings.js';
@@ -27,7 +28,13 @@ const queueVersion = (value: Record<string, unknown>) => string(value.chatId) &&
 const queuedInput = inputSchema<QueuedSelection>(value => object(value) && only(value, ['chatId', 'epoch', 'revision', 'id']) && queueVersion(value) && string(value.id));
 const queuedEdit = inputSchema<QueuedEdit>(value => object(value) && only(value, ['chatId', 'epoch', 'revision', 'id', 'input']) && queueVersion(value) && string(value.id) && object(value.input) && only(value.input, ['text']) && string(value.input.text, 100_000));
 const queuedOrder = inputSchema<QueuedOrder>(value => object(value) && only(value, ['chatId', 'epoch', 'revision', 'ids']) && queueVersion(value) && Array.isArray(value.ids) && value.ids.every(id => string(id)));
-const createInput = inputSchema<{ projectId: string; settings?: ChatSettingsPatch }>(value => object(value) && only(value, ['projectId', 'settings']) && string(value.projectId) && (!('settings' in value) || validSettingsPatch(value.settings)));
+const createInput = inputSchema<{ projectId?: string | null; settings?: ChatSettingsPatch }>(value => object(value) && only(value, ['projectId', 'settings']) && (!('projectId' in value) || value.projectId === null || string(value.projectId)) && (!('settings' in value) || validSettingsPatch(value.settings)));
+const modelsInput = inputSchema<{ chatId?: string; projectId?: string | null }>(value => object(value) && only(value, ['chatId', 'projectId']) && ('chatId' in value ? !('projectId' in value) && string(value.chatId) : !('projectId' in value) || value.projectId === null || string(value.projectId)));
+const directoryInput = inputSchema<{ path?: string }>(value => object(value) && only(value, ['path']) && (!('path' in value) || string(value.path, 4096)));
+const projectCreateInput = inputSchema<{ createKey: string; path: string }>(value => object(value) && only(value, ['createKey', 'path']) && string(value.createKey) && string(value.path, 4096));
+const projectPatch = (value: unknown) => object(value) && only(value, ['name', 'roots']) && (!('name' in value) || string(value.name)) && (!('roots' in value) || Array.isArray(value.roots) && value.roots.every(path => string(path, 4096)));
+const projectUpdateInput = inputSchema<{ projectId: string; patch: ProjectPatch }>(value => object(value) && only(value, ['projectId', 'patch']) && string(value.projectId) && projectPatch(value.patch));
+const projectMoveInput = inputSchema<{ projectId: string; beforeId: string | null }>(value => object(value) && only(value, ['projectId', 'beforeId']) && string(value.projectId) && (value.beforeId === null || string(value.beforeId)));
 const chatSettingsInput = inputSchema<{ chatId: string; patch: ChatSettingsPatch }>(value => object(value) && only(value, ['chatId', 'patch']) && string(value.chatId) && validSettingsPatch(value.patch));
 const defaultsInput = inputSchema<{ version: string; patch: ChatSettingsPatch }>(value => object(value) && only(value, ['version', 'patch']) && string(value.version) && validSettingsPatch(value.patch, false));
 
@@ -39,7 +46,12 @@ export function createChatRouter(service: ChatService) {
     getAccountUsage: os.handler(({ signal }) => service.getAccountUsage(signal)),
     watchAccount: os.output(eventIterator(schemaType<AccountSnapshot>())).handler(({ signal }) => service.watchAccount(signal)),
     listChats: os.handler(() => service.listChats()),
-    listModels: os.input(objectInput<{ projectId: string }>(['projectId'])).handler(({ input }) => service.listModels(input)),
+    listModels: os.input(modelsInput).handler(({ input }) => service.listModels(input)),
+    listDirectories: os.input(directoryInput).handler(({ input }) => service.listDirectories(input)),
+    createProject: os.input(projectCreateInput).handler(({ input }) => service.createProject(input)),
+    updateProject: os.input(projectUpdateInput).handler(({ input }) => service.updateProject(input)),
+    deleteProject: os.input(objectInput<{ projectId: string }>(['projectId'])).handler(({ input }) => service.deleteProject(input)),
+    moveProjectBefore: os.input(projectMoveInput).handler(({ input }) => service.moveProjectBefore(input)),
     getChatSettings: os.input(chatInput).handler(({ input }) => service.getChatSettings(input)),
     updateChatSettings: os.input(chatSettingsInput).handler(({ input }) => service.updateChatSettings(input)),
     getDraftDefaults: os.handler(() => service.getDraftDefaults()),

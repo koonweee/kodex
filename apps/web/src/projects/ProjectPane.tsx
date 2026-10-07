@@ -1,16 +1,19 @@
 import { Alert, Box, Button, Group, Title } from "@mantine/core";
 
 import type { ProjectListEntry as Project } from "../threads/viewTypes";
+import type { ProjectEditorActions } from "./controls";
 import { ProjectEditor } from "./ProjectEditor";
 
 export function ProjectPane({
   onShowMobileSidebar,
   project,
   onDeleted,
+  actions,
 }: {
   onShowMobileSidebar: () => void;
   project: Project | null;
   onDeleted: () => void;
+  actions?: ProjectEditorActions;
 }) {
   const title = project?.name ?? "Project";
 
@@ -28,7 +31,7 @@ export function ProjectPane({
       </Group>
       {project ? (
         <Box className="kodex-project-pane-scroll">
-          <ProjectEditor key={project.id} project={project} onDeleted={onDeleted} />
+          <ProjectEditor key={project.id} project={project} onDeleted={onDeleted} actions={actions} />
         </Box>
       ) : (
         <Alert color="gray" title="Project unavailable">

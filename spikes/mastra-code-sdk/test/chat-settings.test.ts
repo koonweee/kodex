@@ -9,6 +9,7 @@ import type { RouterClient } from '@orpc/server';
 import { activateProfile, resolveProfile, type SpikeProfile } from '../src/profile.js';
 import { createProjectRuntime, type ProjectRuntime } from '../src/runtime.js';
 import { createChatService, type ChatService, type ChatSnapshot } from '../src/chat-service.js';
+import { openProductRegistry } from '../src/product-registry.js';
 import { createChatRouter, type ChatRouter } from '../src/chat-router.js';
 import { serveRouter } from '../src/server.js';
 import { startModelFixture, lastUserText } from './fixtures/model-server.js';
@@ -33,7 +34,7 @@ async function setup(name: string) {
   await mkdir(path);
   const projects = [{ id: name, name, path, runtimeRoot: join(root, `${name}-runtime`) }];
   const runtimes: ProjectRuntime[] = [];
-  const makeService = () => createChatService({ profile, projects, instanceId: 'settings-fixture', runtimeFactory: async options => {
+  const makeService = () => createChatService({ profile, projects, instanceId: 'settings-fixture', registryFactory: () => openProductRegistry(resolveProfile(join(root, `${name}-product-profile`))), runtimeFactory: async options => {
     const runtime = await createProjectRuntime({ ...options, modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }] });
     runtimes.push(runtime);
     return runtime;

@@ -7,14 +7,14 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 import { defaultDisplayState } from '../../../../spikes/mastra-code-sdk/node_modules/@mastra/core/dist/agent-controller/index.js';
 import { NativeComposer } from './NativeComposer';
-import type { ChatSnapshot } from './client';
+import type { ChatSnapshot, CatalogSnapshot } from './client';
+import { NativeCatalogProvider } from './NativeCatalogContext';
 import type { WorkspacePane } from '../workspace/paneTypes';
 import { baseRoutes, mockGateway } from '../test/mvpAppHarness';
 
 const rpc = vi.hoisted(() => ({ listModels: vi.fn(), watchDraftDefaults: vi.fn(), updateChatSettings: vi.fn(), createChat: vi.fn(), send: vi.fn(), queue: vi.fn(), stop: vi.fn() }));
 const workspace = vi.hoisted(() => ({ updatePane: vi.fn().mockResolvedValue(undefined), setPaneDraftDisposable: vi.fn(), onImageOpen: vi.fn() }));
 vi.mock('./client', () => ({ mastraClient: rpc }));
-vi.mock('./NativeHostBoundary', () => ({ useNativeHost: () => ({ projects: [{ id: 'project', name: 'Project', path: '/project' }, { id: 'other', name: 'Other', path: '/other' }] }) }));
 vi.mock('../workspace/WorkspaceProvider', () => ({ useWorkspace: () => workspace }));
 const onError = vi.fn();
 const levels = ['off', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
@@ -31,9 +31,10 @@ function renderComposer(pane: WorkspacePane, initial: ChatSnapshot | null) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const draftStore = new Map();
   let currentPane = pane;
-  const element = (value: ChatSnapshot | null) => <QueryClientProvider client={client}><MantineProvider env="test"><NativeComposer pane={currentPane} snapshot={value} ready isActive draftStore={draftStore} onError={onError} /></MantineProvider></QueryClientProvider>;
+  let catalog: CatalogSnapshot = { epoch: 'epoch', revision: 1, projects: [{ id: 'project', name: 'Project', roots: ['/project'] }, { id: 'other', name: 'Other', roots: ['/other'] }], chats: [] };
+  const element = (value: ChatSnapshot | null) => <QueryClientProvider client={client}><MantineProvider env="test"><NativeCatalogProvider snapshot={catalog}><NativeComposer pane={currentPane} snapshot={value} ready isActive draftStore={draftStore} onError={onError} /></NativeCatalogProvider></MantineProvider></QueryClientProvider>;
   const view = render(element(initial));
-  return { ...view, rerenderSnapshot(value: ChatSnapshot) { view.rerender(element(value)); }, rerenderPane(value: WorkspacePane) { currentPane = value; view.rerender(element(null)); } };
+  return { ...view, rerenderCatalog(value: CatalogSnapshot, current: ChatSnapshot | null = null) { catalog = value; view.rerender(element(current)); }, rerenderSnapshot(value: ChatSnapshot) { view.rerender(element(value)); }, rerenderPane(value: WorkspacePane) { currentPane = value; view.rerender(element(null)); } };
 }
 async function pick(trigger: RegExp, submenu: 'Model' | 'Reasoning', item: string) {
   await userEvent.click(await screen.findByRole('button', { name: trigger }));
@@ -244,4 +245,49 @@ it.each(['CONFLICT', 'BAD_REQUEST', 'NOT_FOUND'] as const)('preserves authoritat
   await waitFor(() => expect(onError).toHaveBeenCalledWith(failure));
   expect(screen.getByLabelText('Message composer')).toHaveValue('Rejected input');
   expect(rpc.send).toHaveBeenCalledTimes(1);
+});
+
+it('starts a standalone draft without selecting the first project', async () => {
+  setup();
+  const stream = defaultsStream(); rpc.watchDraftDefaults.mockResolvedValue(stream.iterable);
+  renderComposer({ id: 'draft', kind: 'thread', target: { mode: 'draft', projectId: null } }, null);
+  await waitFor(() => expect(rpc.watchDraftDefaults).toHaveBeenCalled());
+  await act(async () => stream.publish(defaults()));
+  await userEvent.type(screen.getByLabelText('Message composer'), 'Standalone input');
+  await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  await waitFor(() => expect(rpc.createChat).toHaveBeenCalledWith({ projectId: null }));
+  expect(rpc.listModels).toHaveBeenCalledWith({ projectId: null });
+  expect(rpc.send).toHaveBeenCalledWith({ chatId: 'created', queueIfPending: true, text: 'Standalone input' });
+});
+it('keeps a detached existing chat usable through its own native binding', async () => {
+  setup();
+  const current = snapshot();
+  renderComposer({ id: 'pane', kind: 'thread', target: { mode: 'existing', threadId: 'chat' } }, { ...current, chat: { ...current.chat, projectId: null, cwd: '/retained-root' } });
+  await waitFor(() => expect(rpc.listModels).toHaveBeenCalledWith({ chatId: 'chat' }));
+  await userEvent.type(screen.getByLabelText('Message composer'), 'Detached input');
+  await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  await waitFor(() => expect(rpc.send).toHaveBeenCalledWith({ chatId: 'chat', queueIfPending: true, text: 'Detached input' }));
+  expect(rpc.createChat).not.toHaveBeenCalled();
+});
+
+it('updates draft execution eligibility from shared catalog roots without disrupting existing chat input', async () => {
+  setup();
+  const stream = defaultsStream(); rpc.watchDraftDefaults.mockResolvedValue(stream.iterable);
+  const pane: WorkspacePane = { id: 'draft', kind: 'thread', target: { mode: 'draft', projectId: 'project' } };
+  const view = renderComposer(pane, null);
+  await waitFor(() => expect(rpc.watchDraftDefaults).toHaveBeenCalled());
+  await act(async () => stream.publish(defaults()));
+  await userEvent.type(screen.getByLabelText('Message composer'), 'Preserved draft');
+  expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled();
+  view.rerenderCatalog({ epoch: 'epoch', revision: 2, projects: [{ id: 'project', name: 'Project', roots: [] }], chats: [] });
+  expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
+  expect(screen.getByText('Choose one root directory in project settings before starting a chat.')).toBeInTheDocument();
+  expect(screen.getByLabelText('Message composer')).toHaveValue('Preserved draft');
+  view.rerenderCatalog({ epoch: 'epoch', revision: 3, projects: [{ id: 'project', name: 'Project', roots: ['/first', '/second'] }], chats: [] });
+  expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
+  view.rerenderCatalog({ epoch: 'epoch', revision: 4, projects: [{ id: 'project', name: 'Project', roots: ['/changed-root'] }], chats: [] });
+  expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled();
+  await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  await waitFor(() => expect(rpc.createChat).toHaveBeenCalledWith({ projectId: 'project' }));
+  expect(rpc.send).toHaveBeenCalledWith({ chatId: 'created', queueIfPending: true, text: 'Preserved draft' });
 });

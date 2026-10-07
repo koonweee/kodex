@@ -1,4 +1,5 @@
 import { activateProfile, resolveProfile } from '../../src/profile.js';
+import { openProductRegistry } from '../../src/product-registry.js';
 import { createProjectRuntime } from '../../src/runtime.js';
 import { createChatService, type ChatSnapshot } from '../../src/chat-service.js';
 
@@ -6,7 +7,7 @@ const [mode, profileRoot, projectPath, runtimeRoot] = process.argv.slice(2);
 if (!['queue', 'inspect'].includes(mode!) || !profileRoot || !projectPath || !runtimeRoot) throw new Error('Invalid queue restart fixture arguments');
 const profile = activateProfile(resolveProfile(profileRoot));
 let runtime!: Awaited<ReturnType<typeof createProjectRuntime>>;
-const service = createChatService({ profile, instanceId: 'queue-restart-fixture', projects: [{ id: 'project', name: 'Crash fixture', path: projectPath, runtimeRoot }],
+const service = createChatService({ profile, instanceId: 'queue-restart-fixture', registryFactory: () => openProductRegistry(resolveProfile(`${runtimeRoot}-product-profile`)), projects: [{ id: 'project', name: 'Crash fixture', path: projectPath, runtimeRoot }],
   runtimeFactory: async options => { runtime = await createProjectRuntime({ ...options, modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }], subagents: [] }); return runtime; },
 });
 async function publish(report: object) { await new Promise<void>((resolve, reject) => process.send!(report, undefined, undefined, (error: Error | null) => error ? reject(error) : resolve())); }

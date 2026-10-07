@@ -17,6 +17,7 @@
     "serve:built": "node dist/serve.js"
   },
   "dependencies": {
+    "@libsql/client": "0.18.0",
     "@mastra/code-sdk": "1.10.1",
     "@mastra/core": "1.74.0",
     "@mastra/libsql": "1.25.0",

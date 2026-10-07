@@ -14,6 +14,7 @@ import type { AgentMessageInput, QueueAgentMessageOptions } from '@mastra/core/a
 import { activateProfile, resolveProfile, type SpikeProfile } from '../src/profile.js';
 import { createProjectRuntime, type ProjectRuntime } from '../src/runtime.js';
 import { createChatService, type ChatSnapshot } from '../src/chat-service.js';
+import { openProductRegistry } from '../src/product-registry.js';
 import { createChatRouter, type ChatRouter } from '../src/chat-router.js';
 import { serveRouter } from '../src/server.js';
 import { lastUserText, startModelFixture } from './fixtures/model-server.js';
@@ -33,7 +34,7 @@ after(async () => { await fixture?.close(); if (root) await rm(root, { recursive
 async function setup(name: string) {
   const path = join(root, name); await mkdir(path);
   let runtime!: ProjectRuntime;
-  const service = createChatService({ profile, instanceId: 'queue-fixture', projects: [{ id: 'project', name, path, runtimeRoot: join(root, `${name}-runtime`) }],
+  const service = createChatService({ profile, instanceId: 'queue-fixture', registryFactory: () => openProductRegistry(resolveProfile(join(root, `${name}-product-profile`))), projects: [{ id: 'project', name, path, runtimeRoot: join(root, `${name}-runtime`) }],
     runtimeFactory: async options => { runtime = await createProjectRuntime({ ...options, modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }], subagents: [] }); return runtime; },
   });
   const server = await serveRouter(createChatRouter(service), 0);

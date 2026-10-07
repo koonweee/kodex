@@ -41,7 +41,12 @@ test('two clients share native Fast metadata, preserve queue-captured pricing an
       customProviders: [{ name: 'fixture', url: fixture.url, apiKey: 'fixture-no-real-credential', models: ['chat'] }], lsp: false, observability: { enabled: false } }));
     const makeService = () => createChatService({ profile, instanceId: 'native-fast-fixture',
       projects: [{ id: 'project', name: 'Project', path: join(root, 'project'), runtimeRoot: join(root, 'runtime') }],
-      runtimeFactory: async options => { runtime = await createProjectRuntime({ ...options, modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }] }); return runtime; },
+      runtimeFactory: async options => {
+        const mounted = await createProjectRuntime({ ...options, modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }] });
+        // Global draft settings now mount a separate standalone runtime.
+        if (options.projectPath === join(root, 'project')) runtime = mounted;
+        return mounted;
+      },
     });
     service = makeService(); server = await serveRouter(createChatRouter(service), 0);
     const client = () => createORPCClient<RouterClient<ChatRouter>>(new RPCLink({ url: `${server!.url}/rpc` }));

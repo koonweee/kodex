@@ -17,6 +17,9 @@ test('server identity and project storage survive restart and project order chan
     const first = await loadServerConfig(profile, [firstPath, secondPath]);
     const restarted = await loadServerConfig(profile, [secondPath, firstPath]);
     assert.equal(restarted.instanceId, first.instanceId);
+    const standalone = await loadServerConfig(profile, []);
+    assert.equal(standalone.instanceId, first.instanceId);
+    assert.deepEqual(standalone.projects, [], 'CLI seed configuration permits a standalone-only service');
     assert.deepEqual(restarted.projects.toReversed(), first.projects);
     assert.notEqual(first.projects[0]?.runtimeRoot, first.projects[1]?.runtimeRoot);
     assert.equal(first.projects[0]?.path, await realpath(firstPath));

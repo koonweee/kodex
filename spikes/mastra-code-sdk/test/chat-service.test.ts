@@ -11,6 +11,7 @@ import type { RouterClient } from '@orpc/server';
 import { activateProfile, resolveProfile, type SpikeProfile } from '../src/profile.js';
 import { createProjectRuntime, type ProjectRuntime } from '../src/runtime.js';
 import { createChatService, type ChatService, type ChatSnapshot } from '../src/chat-service.js';
+import { openProductRegistry } from '../src/product-registry.js';
 import { createChatRouter, type ChatRouter } from '../src/chat-router.js';
 import { serveRouter } from '../src/server.js';
 import { lastUserText, startModelFixture } from './fixtures/model-server.js';
@@ -54,7 +55,7 @@ async function setup(name: string) {
     return { id, name: `Project ${id}`, path, runtimeRoot: join(root, `${name}-runtime-${id}`) };
   }));
   const runtimes: ProjectRuntime[] = [];
-  const makeService = () => createChatService({ profile, instanceId: 'fixture-instance', projects, runtimeFactory: async options => {
+  const makeService = () => createChatService({ profile, instanceId: 'fixture-instance', projects, registryFactory: () => openProductRegistry(resolveProfile(join(root, `${name}-product-profile`))), runtimeFactory: async options => {
     const runtime = await createProjectRuntime({ ...options, modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }] });
     runtimes.push(runtime);
     return runtime;
@@ -108,7 +109,7 @@ test('two RPC clients share native chats, Send acceptance, Queue, Stop and recon
   const abortB = new AbortController();
   const catalogAbort = new AbortController();
   t.after(async () => { abortA.abort(); abortB.abort(); catalogAbort.abort(); await server.close(); await service.dispose(); });
-  assert.deepEqual(await first.info(), { instanceId: 'fixture-instance', projects: projects.map(({ runtimeRoot: _, ...project }) => project) });
+  assert.deepEqual(await first.info(), { instanceId: 'fixture-instance' });
   assert.deepEqual((await first.listChats()).chats, []);
   const catalog = await second.watchCatalog(undefined, { signal: catalogAbort.signal });
   const initialCatalogResult = await catalog.next();

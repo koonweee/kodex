@@ -3,19 +3,22 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowUp, Folder, X } from "lucide-react";
 import { useState } from "react";
 
+import type { DirectoryLoader } from "./controls";
 import { listDirectories } from "../api/client";
 import { errorMessageFrom } from "../shared/values";
 
-export function DirectoryPicker({ value, onChange, disabled }: {
+export function DirectoryPicker({ value, onChange, disabled, loadDirectories = listDirectories, queryScope }: {
   value: string | null;
   onChange: (value: string | null) => void;
   disabled?: boolean;
+  loadDirectories?: DirectoryLoader;
+  queryScope?: string;
 }) {
   const [path, setPath] = useState<string>();
   const [previousPath, setPreviousPath] = useState<string>();
   const listing = useQuery({
-    queryKey: ["directories", path ?? "home"],
-    queryFn: ({ signal }) => listDirectories(path, signal),
+    queryKey: queryScope ? ["directories", queryScope, path ?? "home"] : ["directories", path ?? "home"],
+    queryFn: ({ signal }) => loadDirectories(path, signal),
     enabled: !value,
     retry: false,
     staleTime: 0,
