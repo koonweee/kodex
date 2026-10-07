@@ -423,7 +423,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   return (
     <AppShell.Navbar
       aria-label={SIDEBAR_TEXT.workspaceLabel}
-      p="sm"
+      p="xs"
       className="kodex-sidebar"
       data-density={useTouchDensity ? "touch" : "compact"}
       data-main-pane={selectedMainPane}
