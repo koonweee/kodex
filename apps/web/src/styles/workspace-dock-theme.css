@@ -105,3 +105,37 @@
     will-change: auto;
   }
 }
+
+/* Pointer selection uses the pill surface, not Dockview's rectangular focus box. */
+.kodex-workspace-dock .dv-tabs-container > .dv-tab::after {
+  content: none;
+}
+
+.kodex-workspace-dock .dv-tabs-container > .dv-tab:focus-visible {
+  outline: 2px solid var(--kodex-focus-ring);
+  outline-offset: -2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kodex-workspace-dock .dv-groupview > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-inactive-tab:hover {
+    background-color: var(--kodex-bg-button-hover);
+  }
+}
+
+/* Overlapping intrinsic tracks reserve the widest toolbar in this tab group.
+   Inactive actions contribute size but cannot be seen, focused or clicked. */
+.kodex-workspace-dock .kodex-workspace-group-actions {
+  display: grid;
+}
+
+.kodex-workspace-group-action-slot {
+  grid-area: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  visibility: hidden;
+}
+
+.kodex-workspace-group-action-slot[data-active] {
+  visibility: visible;
+}

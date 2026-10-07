@@ -1,5 +1,6 @@
+import { WorkspaceRightHeaderActions } from "./WorkspaceRightHeaderActions";
 import { WorkspaceDefaultTab } from "./WorkspaceDefaultTab";
-import { MantineProvider } from "@mantine/core";
+import { MantineProvider, Menu } from "@mantine/core";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useEffect } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -7,7 +8,6 @@ import type { DockviewApi } from "dockview";
 
 import {
   WorkspaceDock,
-  WorkspaceRightHeaderActions,
   WorkspaceTabOverflowActions,
   kodexDockviewTheme,
   syncWorkspaceIntoDockview,
@@ -109,6 +109,31 @@ describe("WorkspaceDock sync", () => {
     expect(screen.getByText("First thread")).toBeInTheDocument();
     expect(await screen.findByRole("status", { name: "Pane syncing" })).toBeInTheDocument();
     expect(screen.getByTestId("thread-sync-spinner")).toBeInTheDocument();
+  });
+
+  it("closes portaled pane actions when another tab becomes active", async () => {
+    function Actions({ active }: { active: string }) {
+      const { setPaneHeaderActions } = useWorkspace();
+      useEffect(() => {
+        for (const id of ["one", "two"]) setPaneHeaderActions(id,
+          <Menu withinPortal transitionProps={{ duration: 0 }}>
+            <Menu.Target><button type="button">Actions {id}</button></Menu.Target>
+            <Menu.Dropdown><Menu.Item>Rename {id}</Menu.Item></Menu.Dropdown>
+          </Menu>);
+      }, [setPaneHeaderActions]);
+      return <WorkspaceRightHeaderActions activePanel={{ id: active } as never} panels={[{ id: "one" }, { id: "two" }] as never}
+        api={{} as never} containerApi={{} as never} group={{} as never} headerPosition="top" isGroupActive />;
+    }
+    const store = createMemoryWorkspacePaneStore({ activePaneId: "one", dockviewLayout: null, schemaVersion: 1,
+      panes: [pane("one", "thread", { mode: "draft" }), pane("two", "thread", { mode: "draft" })] });
+    const renderActions = (active: string) => <MantineProvider><WorkspaceProvider paneStore={store}><Actions active={active} /></WorkspaceProvider></MantineProvider>;
+    const view = render(renderActions("one"));
+    fireEvent.click(screen.getByRole("button", { name: "Actions one" }));
+    expect(await screen.findByRole("menuitem", { name: "Rename one" })).toBeInTheDocument();
+    view.rerender(renderActions("two"));
+    await waitFor(() => expect(screen.queryByRole("menuitem", { name: "Rename one" })).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Actions two" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Actions one" })).not.toBeInTheDocument();
   });
 
   it("projects thread running and unread state into tabs, ahead of snapshot syncing", () => {
@@ -478,7 +503,7 @@ function PaneActionHarness({ activePaneId }: { activePaneId: string }) {
       group={{} as never}
       headerPosition="top"
       isGroupActive
-      panels={[]}
+      panels={[{ id: activePaneId } as never]}
     />
   );
 }

@@ -1,9 +1,9 @@
+import { SubagentPaneToggle } from "./threads/SubagentPaneToggle";
 import { CompatibilityNotice } from "./api/CompatibilityNotice";
 import { refreshUnreadBadge } from "./notifications/unreadBadge";
 import { usePinnedThreads } from "./threads/usePinnedThreads";
-import { Group, MantineProvider } from "@mantine/core";
+import { MantineProvider } from "@mantine/core";
 import { QueryClientProvider, isCancelledError, useMutation, useQueries, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { Bot } from "lucide-react";
 import {
   lazy,
   Suspense,
@@ -98,7 +98,6 @@ import { useThreadMetadata } from "./threads/useThreadMetadata";
 import { mergeThreadReadState, preserveNewerThreadReadState } from "./threads/readState";
 import { threadReadUpdateFromEvent } from "./threads/events";
 import { useThreadViewPresence } from "./threads/useThreadViewPresence";
-import { AdaptiveIconButton } from "./ui/AdaptiveIconButton";
 import { errorMessageFrom } from "./shared/values";
 import { KodexShellView, useNarrowThreadWorkspace } from "./shell/KodexShellView";
 import {
@@ -1020,16 +1019,11 @@ function KodexShell({
     NonNullable<ComponentProps<typeof WorkspaceProvider>["renderThreadPaneHeaderActions"]>
   >(
     (_pane, state) => (
-      <Group gap="xs" wrap="nowrap">
-        {state.isActive && state.thread.id === selectedThreadId && (subagents.open || subagents.subagents.length > 0 || subagents.error !== null) ? (
-          <AdaptiveIconButton
-            aria-pressed={subagents.open ? "true" : "false"}
-            label={subagents.open ? "Hide subagents" : "Show subagents"}
-            onClick={subagents.toggle}
-            variant={subagents.open ? "light" : "subtle"}
-          ><Bot /></AdaptiveIconButton>
-        ) : null}
-      </Group>
+      <SubagentPaneToggle
+        visible={state.isActive && state.thread.id === selectedThreadId && (subagents.open || subagents.subagents.length > 0 || subagents.error !== null)}
+        open={subagents.open}
+        onToggle={subagents.toggle}
+      />
     ),
     [selectedThreadId, subagents.error, subagents.open, subagents.subagents.length, subagents.toggle],
   );

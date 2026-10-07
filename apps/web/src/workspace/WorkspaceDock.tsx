@@ -1,3 +1,4 @@
+import { WorkspaceRightHeaderActions } from "./WorkspaceRightHeaderActions";
 import { WorkspaceDefaultTab } from "./WorkspaceDefaultTab";
 import { Menu } from "@mantine/core";
 import {
@@ -243,16 +244,6 @@ function projectIdForWorkspacePane(pane: WorkspacePane, threadProjectIdsById: Re
     return typeof pane.target.projectId === "string" && pane.target.projectId.length > 0 ? pane.target.projectId : null;
   }
   return threadProjectIdsById[pane.target.threadId] ?? null;
-}
-
-export function WorkspaceRightHeaderActions({ activePanel }: IDockviewHeaderActionsProps) {
-  const { paneHeaderActionsById } = useWorkspace();
-  const actions = activePanel?.id ? paneHeaderActionsById[activePanel.id] : null;
-  return (
-    <div aria-label="Pane actions" className="kodex-workspace-pane-actions" role="toolbar">
-      {actions}
-    </div>
-  );
 }
 
 export function WorkspaceTabOverflowActions({ activePanel, panels }: IDockviewHeaderActionsProps) {
