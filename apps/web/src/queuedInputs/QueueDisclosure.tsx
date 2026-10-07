@@ -15,9 +15,9 @@ export function QueueDisclosure({ count, partial, children }: { count: number; p
       <Button variant="subtle" color="gray" className={collapsed ? "kodex-queue-summary" : "kodex-queue-collapse"}
         aria-label={collapsed ? undefined : "Collapse queued messages"}
         aria-expanded={!collapsed} aria-controls={contentId}
-        rightSection={collapsed ? <ChevronDown size={16} /> : undefined}
+        rightSection={collapsed ? <ChevronUp size={16} /> : undefined}
         onClick={() => setChoice(!collapsed)}>
-        {collapsed ? `${count}${partial ? "+" : ""} queued messages` : <ChevronUp size={16} />}
+        {collapsed ? `${count}${partial ? "+" : ""} queued messages` : <ChevronDown size={16} />}
       </Button>
     </div> : null}
     <div id={contentId}>{collapsed ? null : children}</div>
