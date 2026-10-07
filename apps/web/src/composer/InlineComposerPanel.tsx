@@ -21,6 +21,7 @@ const COMPOSER_TEXT = {
   disabledPlaceholder: "Select a thread to start composing",
   dropImages: "Drop images to attach",
   placeholder: "type clever thing here",
+  compactPlaceholder: "build thing",
   projectSelector: "Project",
   noProject: "No project",
 };
@@ -230,7 +231,7 @@ export function InlineComposerPanel({
           ref={textareaRef}
           aria-label="Message composer"
           className={`kodex-composer-textarea${expanded ? " kodex-mobile-composer-textarea" : ""}`}
-          placeholder={canCompose ? COMPOSER_TEXT.placeholder : COMPOSER_TEXT.disabledPlaceholder}
+          placeholder={canCompose ? (idleCompact ? COMPOSER_TEXT.compactPlaceholder : COMPOSER_TEXT.placeholder) : COMPOSER_TEXT.disabledPlaceholder}
           minRows={expanded ? 3 : idleCompact ? 1 : 2}
           maxRows={expanded ? 16 : idleCompact ? 1 : 5}
           autosize
