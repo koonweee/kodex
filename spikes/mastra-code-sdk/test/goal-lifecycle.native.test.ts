@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createGoalReminderSignal } from '@mastra/code-sdk/goal-signal';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -138,5 +139,77 @@ for (const stop of [false, true]) for (const decision of ['done', 'continue'] as
     assert.equal(requests.filter(request => request.model === 'judge').length, 1);
     const history = await session.thread.listActiveMessages();
     assert.equal(history.some(message => JSON.stringify(message.content).includes('"goalEvaluation"')), false, 'stale goal feedback is not persisted into native history');
+  });
+}
+
+
+for (const replaceDuringJudge of [false, true]) {
+  test(`native goal reminder ${replaceDuringJudge ? 'starts replacement after an old judge' : 'starts an idle goal'}`, { timeout: 20_000 }, async t => {
+    const name = `reminder-${replaceDuringJudge}`;
+    const projectPath = join(root, name);
+    await mkdir(projectPath);
+    const runtime = await createProjectRuntime({ profile, projectPath, runtimeRoot: join(root, `${name}-runtime`),
+      disableMcp: true, subagents: [], modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }] });
+    const gate = { reached: deferred(), release: deferred(), decision: 'done' as const };
+    judgeGate = gate;
+    const session = await runtime.createSession({ threadId: name, resourceId: name });
+    await session.thread.rename({ title: name });
+    const agent = runtime.controller.getCurrentAgent(session);
+    const target = { threadId: name, resourceId: name, maxRuns: Number.MAX_SAFE_INTEGER, judgeModelId: 'fixture/judge' };
+    let goal = await agent.setObjective('Initial native goal', target);
+    assert.ok(goal);
+    const completed = deferred();
+    const unsubscribe = session.subscribe(event => {
+      if (event.type === 'goal_evaluation' && !event.payload.pending && event.payload.status === 'done') completed.resolve();
+    });
+    const producers = new Set<Promise<void>>();
+    const unregister = runtime.mastra.__unregisterInternalWorkflow.bind(runtime.mastra);
+    // Track actual native producer completion for fixture teardown only.
+    const finished = new Map<string, ReturnType<typeof deferred>>();
+    const register = runtime.mastra.__registerInternalWorkflow.bind(runtime.mastra);
+    t.mock.method(runtime.mastra, '__registerInternalWorkflow', (...args: Parameters<typeof register>) => {
+      const result = register(...args);
+      if (args[0].id === 'agentic-loop' && args[1]) { const done = deferred(); finished.set(args[1], done); producers.add(done.promise); }
+      return result;
+    });
+    t.mock.method(runtime.mastra, '__unregisterInternalWorkflow', (id: string, runId: string) => {
+      unregister(id, runId);
+      if (id === 'agentic-loop') finished.get(runId)?.resolve();
+    });
+    t.after(async () => {
+      agent.abortThreadStream({ threadId: name, resourceId: name, clearPendingSignals: true });
+      session.abort(); gate.release.resolve();
+      let joined = -1;
+      while (joined !== producers.size) { joined = producers.size; await Promise.all(producers); }
+      unsubscribe(); await runtime.dispose(); judgeGate = undefined;
+    });
+    const remind = () => session.sendSignal(createGoalReminderSignal({
+      id: goal!.id!, objective: goal!.objective, status: 'active', turnsUsed: 0,
+      maxTurns: Number.MAX_SAFE_INTEGER, judgeModelId: 'fixture/judge', startedAt: new Date(goal!.startedAt).toISOString(),
+    }), { requireDelivery: true }).accepted;
+    const start = fixture.requests.length;
+    await remind();
+    await gate.reached.promise;
+    if (replaceDuringJudge) {
+      const previousId = goal.id;
+      goal = await agent.setObjective('Replacement native goal', target);
+      assert.ok(goal); assert.notEqual(goal.id, previousId);
+      await remind();
+    }
+    gate.release.resolve();
+    await completed.promise;
+    await Promise.all(producers);
+    const saved = await agent.getObjective({ threadId: name });
+    assert.equal(saved?.id, goal.id);
+    assert.equal(saved?.status, 'done');
+    assert.equal(saved?.runsUsed, 1);
+    const requests = fixture.requests.slice(start);
+    assert.equal(requests.filter(request => request.model === 'chat').length, replaceDuringJudge ? 2 : 1);
+    const judges = requests.filter(request => request.model === 'judge');
+    assert.equal(judges.length, replaceDuringJudge ? 2 : 1);
+    if (replaceDuringJudge) {
+      assert.ok(JSON.stringify(requests.filter(request => request.model === 'chat')[1]).includes('Replacement native goal'));
+      assert.ok(JSON.stringify(judges[1]).includes('Replacement native goal'));
+    }
   });
 }
