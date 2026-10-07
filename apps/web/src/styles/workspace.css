@@ -114,9 +114,9 @@
 }
 
 .kodex-workspace-dock .dv-tab {
-  flex: 0 0 180px;
+  flex: 1 1 240px;
   max-width: 240px;
-  min-width: 180px;
+  min-width: 120px;
 }
 
 .kodex-workspace-dock .dv-default-tab-content {
@@ -661,11 +661,6 @@
 @media (max-width: 700px) {
   .kodex-workspace-dock .dv-tabs-and-actions-container .dv-right-actions-container {
     flex: 0 0 auto;
-  }
-
-  .kodex-workspace-dock .dv-tab {
-    flex-basis: min(220px, calc(100vw - 160px));
-    min-width: min(180px, calc(100vw - 160px));
   }
 
   .kodex-workspace-pane-actions {

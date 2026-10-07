@@ -409,7 +409,7 @@ export function WorkspaceTabOverflowActions({ activePanel, panels }: IDockviewHe
         return [];
       }
       const tabRect = tabElement.getBoundingClientRect();
-      return tabRect.left < containerRect.left || tabRect.right > containerRect.right ? [panel.id] : [];
+      return tabRect.right <= containerRect.left || tabRect.left >= containerRect.right ? [panel.id] : [];
     });
     setOverflowPanelIds((current) =>
       current.length === nextIds.length && current.every((id, index) => id === nextIds[index])

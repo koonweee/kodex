@@ -260,6 +260,17 @@ test.describe("automatic pane placement", () => {
       await expect(groups(page)).toHaveCount(1);
       await expect(tabs(page)).toHaveCount(2);
       expect(await bounds(groups(page))).toEqual(before);
+      const twoTabWidth = (await bounds(page.locator(".dv-tabs-container > .dv-tab").first())).width;
+      await newDraft(page, "Third tab shares available width");
+      const threeTabWidth = (await bounds(page.locator(".dv-tabs-container > .dv-tab").first())).width;
+      expect(threeTabWidth).toBeLessThan(twoTabWidth);
+      expect(threeTabWidth).toBeGreaterThanOrEqual(120);
+      await expect(page.getByRole("button", { name: "More tabs", exact: true })).toHaveCount(0);
+      for (let index = 0; index < 4; index++) await newDraft(page, `Overflow tab ${index}`);
+      expect((await bounds(page.locator(".dv-tabs-container > .dv-tab").first())).width).toBeGreaterThanOrEqual(120);
+      await page.getByRole("button", { name: "More tabs", exact: true }).click();
+      await expect(page.getByRole("menu")).toBeVisible();
+      await page.keyboard.press("Escape");
       await page.screenshot({ path: test.info().outputPath("short-workspace-tabs.png"), animations: "disabled" });
     } finally { await fixture.close(); }
     expect(fixture.errors).toEqual([]);

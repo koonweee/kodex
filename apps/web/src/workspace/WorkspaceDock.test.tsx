@@ -1,5 +1,5 @@
 import { MantineProvider } from "@mantine/core";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useEffect } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { DockviewApi } from "dockview";
@@ -141,19 +141,23 @@ describe("WorkspaceDock sync", () => {
     );
     const tabsContainer = document.querySelector<HTMLElement>(".dv-tabs-container");
     expect(tabsContainer).not.toBeNull();
-    vi.spyOn(tabsContainer as HTMLElement, "getBoundingClientRect").mockReturnValue(domRect(0, 360));
+    vi.spyOn(tabsContainer as HTMLElement, "getBoundingClientRect").mockReturnValue(domRect(90, 450));
     document.querySelectorAll<HTMLElement>(".dv-tab").forEach((tab, index) => {
       vi.spyOn(tab, "getBoundingClientRect").mockReturnValue(domRect(index * 180, index * 180 + 180));
     });
 
     fireEvent(window, new Event("resize"));
     const moreTabsButton = await screen.findByRole("button", { name: "More tabs" });
-    expect(moreTabsButton).toHaveTextContent("+4");
+    expect(moreTabsButton).toHaveTextContent("+3");
 
     fireEvent.click(moreTabsButton);
     fireEvent.click(await screen.findByRole("menuitem", { name: "Pane 6" }));
 
     expect(panels[5]?.focus).toHaveBeenCalledTimes(1);
+
+    vi.mocked(tabsContainer!.getBoundingClientRect).mockReturnValue(domRect(0, 990));
+    fireEvent(window, new Event("resize"));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "More tabs" })).not.toBeInTheDocument());
   });
 
   it("adds a new draft tab in the current project from a project thread tab context menu", () => {
