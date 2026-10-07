@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { useRef } from "react";
 import { VirtuosoMockContext } from "react-virtuoso";
-import { expect } from "vitest";
+import { afterEach, beforeEach, expect, vi } from "vitest";
 
 import { App as KodexApp } from "../App";
 import type { ThreadRead } from "../api/client";
@@ -11,6 +11,23 @@ import { createMemoryWorkspacePaneStore } from "../workspace/paneStore";
 import type { WorkspacePaneState } from "../workspace/paneTypes";
 import type { GatewayRouteMap } from "./gatewayMock";
 import { mockGateway, requestJson } from "./gatewayMock";
+
+// jsdom has no layout. Model the roomy desktop host for multi-pane app flows;
+// real browser tests cover measured splits and the smaller-workspace tab fallback.
+let dockSizeSpies: Array<{ mockRestore: () => void }> = [];
+beforeEach(() => {
+  const dimensions = { clientWidth: 1440, clientHeight: 900 };
+  for (const key of ["clientWidth", "clientHeight"] as const) {
+    const original = Object.getOwnPropertyDescriptor(Element.prototype, key)!.get!;
+    dockSizeSpies.push(vi.spyOn(HTMLElement.prototype, key, "get").mockImplementation(function (this: HTMLElement) {
+      return this.parentElement?.classList.contains("kodex-workspace-dock") ? dimensions[key] : original.call(this);
+    }));
+  }
+});
+afterEach(() => {
+  for (const spy of dockSizeSpies) spy.mockRestore();
+  dockSizeSpies = [];
+});
 
 function App() {
   const paneStoreRef = useRef<ReturnType<typeof createMemoryWorkspacePaneStore> | null>(null);
