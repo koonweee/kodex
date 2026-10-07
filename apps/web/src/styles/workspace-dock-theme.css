@@ -3,7 +3,7 @@
 .kodex-workspace-dock .dockview-theme-abyss,
 .kodex-workspace-dock .dockview-theme-dark,
 .kodex-workspace-dock .dockview-theme-light {
-  --dv-active-sash-color: color-mix(in srgb, var(--kodex-border-accent) 72%, transparent);
+  --dv-active-sash-color: color-mix(in srgb, var(--kodex-border-strong) 30%, transparent);
   --dv-active-sash-transition-delay: 120ms;
   --dv-active-sash-transition-duration: 120ms;
   --dv-activegroup-hiddenpanel-tab-background-color: color-mix(in srgb, var(--kodex-pane-bg) 72%, var(--kodex-bg-shell));
