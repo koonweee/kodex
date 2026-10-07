@@ -607,7 +607,12 @@ fn default_terminal_command() -> String {
     if cfg!(windows) {
         env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
     } else {
-        env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
+        env::var("SHELL")
+            .ok()
+            .filter(|shell| !shell.trim().is_empty())
+            // Background services may omit SHELL; portable-pty resolves the account's
+            // configured shell and falls back to /bin/sh if it is unavailable.
+            .unwrap_or_else(|| CommandBuilder::new_default_prog().get_shell())
     }
 }
 
@@ -634,6 +639,49 @@ fn resolve_terminal_cwd(cwd: Option<&str>, default_cwd: &Path) -> anyhow::Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn default_terminal_shell_resolves_service_environment_and_explicit_override() {
+        let mut account_builder = CommandBuilder::new_default_prog();
+        account_builder.env_remove("SHELL");
+        let account_shell = account_builder.get_shell();
+        for shell in [None, Some(""), Some("   "), Some("/fixture/custom-shell")] {
+            let expected = shell
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or(&account_shell);
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+            child
+                .args([
+                    "--exact",
+                    "terminal::tests::isolated_default_terminal_shell_child",
+                    "--ignored",
+                    "--nocapture",
+                ])
+                .env_remove("SHELL")
+                .env("KODEX_TERMINAL_EXPECTED_SHELL", expected);
+            if let Some(shell) = shell {
+                child.env("SHELL", shell);
+            }
+            let output = child.output().unwrap();
+            assert!(
+                output.status.success(),
+                "SHELL={shell:?}: {}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr),
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    #[ignore = "invoked by parent test with an isolated shell environment"]
+    fn isolated_default_terminal_shell_child() {
+        assert_eq!(
+            default_terminal_command(),
+            env::var("KODEX_TERMINAL_EXPECTED_SHELL").unwrap(),
+        );
+    }
 
     #[test]
     fn terminal_environment_sanitizes_platform_added_overrides() {

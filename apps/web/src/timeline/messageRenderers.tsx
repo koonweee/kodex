@@ -183,7 +183,14 @@ export const AssistantMessageMarkdown = memo(
           threadId={threadId}
         />
         {isFinalAssistantMessage(item) ? (
-          <MessageToolbar align="start" text={text} timestampMs={toolbarTimestampMs} />
+          <div
+            className="kodex-assistant-message-footer"
+            aria-hidden={item.status === "running" || undefined}
+            inert={item.status === "running" || undefined}
+            style={{ visibility: item.status === "running" ? "hidden" : undefined }}
+          >
+            <MessageToolbar align="start" text={text} timestampMs={toolbarTimestampMs} />
+          </div>
         ) : null}
       </Box>
     );
@@ -192,6 +199,7 @@ export const AssistantMessageMarkdown = memo(
     prev.item.id === next.item.id &&
     prev.item.kind === next.item.kind &&
     prev.item.messagePhase === next.item.messagePhase &&
+    prev.item.status === next.item.status &&
     prev.onImageOpen === next.onImageOpen &&
     prev.onMarkdownOpen === next.onMarkdownOpen &&
     prev.threadId === next.threadId &&

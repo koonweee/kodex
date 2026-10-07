@@ -3,6 +3,7 @@ import { Plus, RotateCw, Square } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { terminalWebSocketUrl } from "../../api/client";
+import { useInputCapabilities } from "../../shared/inputCapabilities";
 import { errorMessageFrom } from "../../shared/values";
 import {
   XtermTerminal,
@@ -33,6 +34,7 @@ const TERMINAL_ACCESSORY_KEYS: Array<{ data: string; label: string }> = [
 ];
 
 export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
+  const { hasTouchInput } = useInputCapabilities();
   const target = paneTargetRecord(pane);
   const { openNewTerminalPane, setPaneHeaderActions, setPaneTabStatus, updatePane } = useWorkspace();
   const targetTerminalId = typeof target.terminalId === "string" ? target.terminalId : null;
@@ -197,7 +199,7 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
           </Group>
         </Alert>
       ) : null}
-      <Group className="kodex-terminal-accessory-row" gap={4} wrap="nowrap">
+      {hasTouchInput ? <Group className="kodex-terminal-accessory-row" gap={4} wrap="nowrap">
         {TERMINAL_ACCESSORY_KEYS.map((key) => (
           <button className="kodex-terminal-accessory-key" key={key.label} onClick={() => sendAccessoryInput(key.data)} type="button">
             {key.label}
@@ -206,7 +208,7 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
         <button className="kodex-terminal-accessory-key" onClick={handlePaste} type="button">
           Paste
         </button>
-      </Group>
+      </Group> : null}
       <Box className="kodex-terminal-body">
         {isLoading && !session ? (
           <Group className="kodex-terminal-loading" gap="xs" justify="center">

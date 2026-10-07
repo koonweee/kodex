@@ -843,7 +843,7 @@ describe("MVP timeline flows", () => {
     render(<App />);
 
     expect(await screen.findByText(/working answer/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /stop turn/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /stop turn/i })).toBeInTheDocument();
     const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id]);
 
     act(() => {

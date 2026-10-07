@@ -55,9 +55,32 @@ pub struct TurnSteerRequest {
     pub input: Vec<UserInput>,
 }
 
-pub type ThreadInputRequest = TurnStartRequest;
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadInputRequest {
+    #[serde(flatten)]
+    pub submission: TurnStartRequest,
+    /// Composer policy: append to existing native queued work before start-or-steer.
+    #[serde(default)]
+    pub queue_if_pending: bool,
+}
 
-pub type ThreadInputResponse = RawAppServerResponse;
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadInputResponse {
+    pub payload: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disposition: Option<ThreadInputDisposition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub queued_input: Option<app_server_api::NativeQueuedSubmission>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum ThreadInputDisposition {
+    Submitted,
+    Queued,
+}
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -87,15 +110,73 @@ pub enum ThreadCompactDisposition {
     Started,
 }
 
-#[utoipa::path(post, path = "/v1/threads/{threadId}/input", request_body = TurnStartRequest, responses((status = 200, body = ThreadInputResponse)))]
+#[utoipa::path(post, path = "/v1/threads/{threadId}/input", request_body = ThreadInputRequest, responses((status = 200, body = ThreadInputResponse)))]
 pub async fn submit_thread_input(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
     Json(request): Json<ThreadInputRequest>,
 ) -> ApiResult<Json<ThreadInputResponse>> {
-    // turn/start atomically chooses native start or steering. Browser/gateway
-    // caches cannot decide that shared lifecycle boundary reliably.
-    start_turn(State(state), Path(thread_id), Json(request)).await
+    let ThreadInputRequest {
+        submission: request,
+        queue_if_pending,
+    } = request;
+    request.options.validate()?;
+    if !queue_if_pending {
+        let response = start_turn(State(state), Path(thread_id), Json(request))
+            .await?
+            .0;
+        return Ok(Json(ThreadInputResponse {
+            payload: response.payload,
+            disposition: None,
+            queued_input: None,
+        }));
+    }
+    let _submit_guard = state.thread_input_locks.lock(&thread_id).await;
+    let client = app_server_api::client(&state.app_server);
+    // Read one current native queue row, never a browser or gateway cache. If
+    // its last row has begun before this read, native turn/start may steer it.
+    let queue = client.queue_list(thread_id.clone(), None, Some(1)).await?;
+    if !queue.data.is_empty() {
+        if serde_json::to_value(&request.options)?
+            .as_object()
+            .is_some_and(|options| !options.is_empty())
+        {
+            return Err(ApiError::BadRequest(
+                "Queued input cannot carry execution overrides; update thread settings or use the explicit turn API".into(),
+            ));
+        }
+        let attachments =
+            app_server_api::validate_file_attachments_for_thread(&thread_id, request.attachments)?;
+        let input = app_server_api::append_file_attachment_envelope(request.input, &attachments)
+            .into_iter()
+            .map(serde_json::to_value)
+            .collect::<Result<Vec<_>, _>>()?;
+        let row = crate::queue_transfer::enqueue_locked(
+            &state,
+            &thread_id,
+            input,
+            request
+                .client_user_message_id
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+        )
+        .await?;
+        crate::queue::broadcast_changed_best_effort(&state, &thread_id).await;
+        return Ok(Json(ThreadInputResponse {
+            payload: serde_json::json!({"queuedSubmission": &row}),
+            disposition: Some(ThreadInputDisposition::Queued),
+            queued_input: Some(row),
+        }));
+    }
+    // Native turn/start still atomically chooses start or steering. Nothing
+    // retries an uncertain queue admission or falls back after a queue-read error.
+    let response = start_turn(State(state), Path(thread_id), Json(request))
+        .await?
+        .0;
+    Ok(Json(ThreadInputResponse {
+        payload: response.payload,
+        disposition: Some(ThreadInputDisposition::Submitted),
+        queued_input: None,
+    }))
 }
 
 #[utoipa::path(
@@ -273,3 +354,7 @@ pub async fn interrupt_current_turn(
         raw_payload: Some(response.payload),
     }))
 }
+
+#[cfg(test)]
+#[path = "turns_input_tests.rs"]
+mod input_tests;

@@ -1,0 +1,168 @@
+.kodex-workspace-dock,
+.kodex-workspace-dock .kodex-dockview-theme,
+.kodex-workspace-dock .dockview-theme-abyss,
+.kodex-workspace-dock .dockview-theme-dark,
+.kodex-workspace-dock .dockview-theme-light {
+  --dv-active-sash-color: color-mix(in srgb, var(--kodex-border-strong) 30%, transparent);
+  --dv-active-sash-transition-delay: 120ms;
+  --dv-active-sash-transition-duration: 120ms;
+  --dv-activegroup-hiddenpanel-tab-background-color: transparent;
+  --dv-activegroup-hiddenpanel-tab-color: var(--kodex-text-secondary);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--kodex-pane-bg);
+  --dv-activegroup-visiblepanel-tab-color: var(--kodex-text-primary);
+  --dv-border-radius: var(--kodex-radius-xs);
+  --dv-context-menu-background-color: var(--kodex-bg-raised);
+  --dv-context-menu-color: var(--kodex-text-primary);
+  --dv-drag-over-background-color: color-mix(in srgb, var(--kodex-accent) 12%, transparent);
+  --dv-drag-over-border: 1px solid var(--kodex-border-accent-soft);
+  --dv-drag-over-border-color: var(--kodex-border-accent-soft);
+  --dv-dropdown-border-radius: var(--kodex-radius-sm);
+  --dv-floating-border: 1px solid var(--kodex-border-subtle);
+  --dv-floating-box-shadow: var(--kodex-shadow-floating);
+  --dv-group-view-background-color: var(--kodex-pane-bg);
+  --dv-icon-hover-background-color: var(--kodex-bg-button-hover);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: transparent;
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--kodex-text-muted);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--kodex-pane-bg);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--kodex-text-secondary);
+  --dv-paneview-active-outline-color: var(--kodex-border-accent);
+  --dv-paneview-header-border-color: var(--kodex-border-subtle);
+  --dv-sash-border-radius: var(--kodex-radius-xs);
+  --dv-sash-color: transparent;
+  --dv-separator-border: transparent;
+  --dv-spacing-padding: 4px;
+  --dv-tab-border-radius: calc(var(--kodex-radius-md) - 2px);
+  --dv-tab-close-icon-size: 10px;
+  --dv-tab-divider-color: var(--kodex-border-subtle);
+  --dv-tab-font-size: 0.75rem;
+  --dv-tab-margin: 4px 3px;
+  --dv-tabs-and-actions-container-background-color: var(--kodex-pane-bg);
+  --dv-tabs-and-actions-container-font-size: 0.75rem;
+  --dv-tabs-and-actions-container-height: 40px;
+  --dv-scrollbar-background-color: var(--kodex-scrollbar-thumb);
+  --dv-tabs-container-scrollbar-color: var(--kodex-scrollbar-thumb);
+  --dv-transition-duration: 120ms;
+}
+
+
+/* The native 1px gaps expose one shared surface, including nested intersections.
+   Keep the wider resize hit areas transparent instead of painting extra borders. */
+.kodex-workspace-dock .dv-dockview {
+  background-color: color-mix(in srgb, var(--kodex-border-subtle) 75%, var(--kodex-pane-bg));
+}
+
+.kodex-workspace-dock .dv-tabs-container > .dv-tab {
+  border-radius: var(--dv-tab-border-radius);
+}
+
+.kodex-workspace-dock .dv-tabs-container > .dv-tab.dv-active-tab {
+  box-shadow: none;
+  outline: 1px solid var(--kodex-border-subtle);
+  outline-offset: -1px;
+}
+
+/* One small motion-path highlight follows the native tab's rounded rectangle.
+   It occupies no layout space and never intercepts tab/close/drag gestures. */
+.kodex-workspace-dock .kodex-workspace-tab:has(.kodex-workspace-tab-running) {
+  position: static;
+}
+
+.kodex-workspace-tab-running {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.kodex-workspace-dock .dv-tabs-container .kodex-workspace-tab-running::after {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 50%;
+  width: 24px;
+  height: 3px;
+  border-radius: var(--kodex-radius-round);
+  background: radial-gradient(ellipse, color-mix(in srgb, var(--kodex-accent) 65%, transparent), transparent 75%);
+  pointer-events: none;
+}
+
+@supports (offset-path: inset(1px round 12px)) {
+  .kodex-workspace-dock .dv-tabs-container .kodex-workspace-tab-running::after {
+    top: 0;
+    left: 0;
+    offset-path: inset(1px round calc(var(--dv-tab-border-radius) - 1px));
+    offset-distance: 0%;
+    /* Keep the tiny moving highlight on its own layer instead of repainting. */
+    will-change: transform;
+    animation: kodex-tab-perimeter-pulse 5s linear infinite;
+  }
+}
+
+@keyframes kodex-tab-perimeter-pulse {
+  to { offset-distance: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kodex-workspace-dock .dv-tabs-container .kodex-workspace-tab-running::after {
+    animation: none;
+    will-change: auto;
+  }
+}
+
+/* Pointer selection uses the pill surface, not Dockview's rectangular focus box. */
+.kodex-workspace-dock .dv-tabs-container > .dv-tab::after {
+  content: none;
+}
+
+.kodex-workspace-dock .dv-tabs-container > .dv-tab:focus-visible {
+  outline: 2px solid var(--kodex-focus-ring);
+  outline-offset: -2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kodex-workspace-dock .dv-groupview > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-inactive-tab:hover {
+    background-color: var(--kodex-bg-button-hover);
+  }
+}
+
+/* Overlapping intrinsic tracks reserve the widest toolbar in this tab group.
+   Inactive actions contribute size but cannot be seen, focused or clicked. */
+.kodex-workspace-dock .kodex-workspace-group-actions {
+  display: grid;
+}
+
+.kodex-workspace-group-action-slot {
+  grid-area: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  visibility: hidden;
+}
+
+.kodex-workspace-group-action-slot[data-active] {
+  visibility: visible;
+}
+
+/* Add 5px to the first tab's existing 3px margin. */
+.kodex-workspace-dock .dv-tabs-container:not(.dv-tabs-container-vertical) {
+  padding-left: 5px;
+}
+
+.kodex-workspace-dock .dv-tabs-container:not(.dv-tabs-container-vertical) > .dv-tab::before {
+  content: none;
+}
+
+.kodex-workspace-dock .dv-tabs-container:not(.dv-tabs-container-vertical) > .dv-tab.dv-inactive-tab + .dv-tab.dv-inactive-tab::before {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  top: 25%;
+  left: -3px;
+  width: 1px;
+  height: 50%;
+  background-color: var(--kodex-border-subtle);
+}
+
+.kodex-workspace-dock .dv-default-tab-action svg {
+  width: var(--dv-tab-close-icon-size);
+  height: var(--dv-tab-close-icon-size);
+}

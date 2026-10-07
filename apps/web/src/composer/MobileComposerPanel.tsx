@@ -23,6 +23,7 @@ const MOBILE_COMPOSER_TEXT = {
 type MobileComposerPanelProps = ComposerPanelProps & {
   goalControls?: GoalControls;
   queuePanel?: ReactNode;
+  queueOnSubmit?: boolean;
   canSubmitComposer: boolean;
   draftState: ComposerDraftState;
   filteredSkills: SkillMetadata[];

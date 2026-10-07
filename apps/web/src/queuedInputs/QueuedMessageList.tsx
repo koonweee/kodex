@@ -1,4 +1,4 @@
-import { Box, Button, Text, VisuallyHidden } from "@mantine/core";
+import { Box, Text, VisuallyHidden } from "@mantine/core";
 import { CornerDownRight, GripVertical, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useId, useRef, useState, type PointerEvent } from "react";
 
@@ -134,8 +134,8 @@ export function QueuedMessageList({ rows, busy, partial, isActive, onReorder, on
             {row.attachments.length > 0 ? <Text size="xs" className="kodex-queue-attachments">{row.attachments.length} attached file(s)</Text> : null}
           </div>
           <div className="kodex-queue-actions">
-            {row.canSteer ? <Button size="compact-sm" variant="subtle" className="kodex-queue-steer" leftSection={<CornerDownRight size={16} />} disabled={busy}
-              onClick={() => onSteer(row)}>Steer</Button> : null}
+            {row.canSteer ? <AdaptiveIconButton density="compact" label="Steer" disabled={busy}
+              onClick={() => onSteer(row)}><CornerDownRight /></AdaptiveIconButton> : null}
             <AdaptiveIconButton density="compact" label="Remove" disabled={busy} onClick={() => onRemove(row)}><Trash2 /></AdaptiveIconButton>
             <AdaptiveIconButton density="compact" label="Edit" disabled={busy} onClick={() => onEdit(row)}><Pencil /></AdaptiveIconButton>
           </div>

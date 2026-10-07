@@ -23,6 +23,7 @@ test.describe("real native gateway terminals", () => {
         const fixture = await nativeTerminalFixture(context);
         try {
           const first = await fixture.page();
+          await expect(first.getByRole("button", { name: "Esc", exact: true })).toHaveCount(shape.hasTouch ? 1 : 0);
           await command(first, "KODEX_PROOF_VALUE=retained; printf 'NATIVE-%s:%s:%s\\n' 'PID' \"$$\" \"$KODEX_PROOF_VALUE\"", shape.hasTouch);
           await expect.poll(() => fixture.output(first)).toMatch(/NATIVE-PID:\d+:retained/);
           const pid = /NATIVE-PID:(\d+):retained/.exec(fixture.output(first))![1];

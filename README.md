@@ -83,6 +83,8 @@ The new startup path defaults to `~/.kodex/native-v1/`: its gateway database, id
 
 Appearance preferences offer **Auto**, **Light** and **Dark** modes. Choose a separate light and dark theme using the filtered preview cards; Auto follows live system appearance changes. Choices are local to this browser profile and synchronize across its open tabs. Existing saved themes keep their explicit light/dark mode; new profiles default to Auto.
 
+In existing chats, Send and Enter append to the native queue when it already contains messages; otherwise they start or steer normally. On touch devices, hold Send for 450 ms to queue explicitly. Moving away cancels the hold. Queue remains available in the composer’s “+” menu and through ⌘Enter; Shift+Enter inserts a newline.
+
 Chat model and speed controls edit native settings for the next turn. Send and Queue use the effective native settings rather than repeating a browser snapshot. Changes appear after native application is confirmed; new-chat choices apply at creation. Full settings are readable after the first native turn starts. In Codex 0.160.0, speed returns to the configured default after an app-server restart.
 
 Existing chats expose native goals, including goals the model creates when asked. Desktop shows the objective above the composer; narrow layouts show an unfilled bullseye beside the model picker. Open either to edit the objective or optional token budget, inspect usage, pause/resume, or clear with the trash icon. Use **Set goal** in the composer’s “+” menu when none exists, `/goal <objective>` to set and activate a goal directly, or bare `/goal` to open management. Goal commands require an existing chat and plain text; attachments, annotations, skill mentions and Queue are rejected with the draft preserved. Native goal changes converge across tabs and reconnects. Starting or resuming a goal can start work; pausing or clearing it stops automatic continuation without interrupting an already running turn. Use Stop for the current turn. Goals have token budgets, not duration budgets.
@@ -96,6 +98,8 @@ Widget resource/catalog reads use one bounded runtime-local FIFO after canonical
 Project creation uses a directory browser rooted at the gateway user's home. Select one existing root; its folder name becomes the project name. The picker cannot navigate above home, including through symlinks. New project chats and project terminals use the sole project root automatically; projects with zero or multiple roots must be corrected before starting them. Existing chats retain their native working directory.
 
 The sidebar contains Pinned, Projects, and standalone Chats. Pinning and pinned order use native app-server state and preserve a chat’s project and working directory. Kodex does not expose chat reassignment between projects, custom sections or section management. Chats with pre-existing native custom-section membership remain visible in their normal project/chat lists.
+
+On hover-capable desktop layouts, hovering over the collapsed sidebar’s expand icon briefly opens a borderless temporary overlay beside the rail, blending into it with the same sidebar background without resizing the panes. It closes after the pointer and keyboard focus leave; sidebar menus remain usable. Click the expand icon on the rail to pin it open. Touch and narrow layouts retain their tap navigation, and the short preview animation respects reduced-motion preferences.
 
 Unavailable thread panes offer **Browse threads** and an **X** to close that pane. Closing the last pane opens a fresh draft.
 
@@ -117,9 +121,11 @@ Opening or reconnecting an editable chat rejoins native execution and reads its 
 
 Read state uses native completion IDs and an explicit acknowledgment of the completion shown in a visible chat pane. A stale acknowledgment cannot consume newer work. The badge counts eligible nonarchived chats across the native inventory, including chats outside the visible sidebar page. Unknown native history preserves the previous badge until a successful authoritative read; it never becomes a guessed zero. Reverting history while Kodex is offline can leave a chat conservatively unread until viewed again.
 
-Terminals belong to the gateway, independently of app-server. Closing a pane detaches its view; ordinary Open terminal reuses a running shell, while New terminal creates another. Stop terminal explicitly ends that shell for all attached views. Reconnect and browser reload preserve its gateway buffer and process; gateway exit ends it. Detached shells expire after five minutes. Shell launches default to the dedicated Kodex home, with the host permissions of the gateway.
+Terminals belong to the gateway, independently of app-server. Closing a pane detaches its view; ordinary Open terminal reuses a running shell, while New terminal creates another. Stop terminal explicitly ends that shell for all attached views. Reconnect and browser reload preserve its gateway buffer and process; gateway exit ends it. Detached shells expire after five minutes. Shell launches default to the dedicated Kodex home, with the host permissions of the gateway. On Unix, new terminals use a nonblank `SHELL`, otherwise the account’s configured shell (with `/bin/sh` as the final fallback). Browser terminals support clickable HTTP(S) links and bundle Nerd Font symbols, so prompt icons do not require a font installed on each viewing device.
 
 For prerequisites, tests, schema generation, and production-style static serving, see [Development](docs/development.md). For network binding, configuration and notifications, see [Deployment](docs/deployment.md).
+
+The real push-provider browser proof is manual-only; run it from your own terminal using the [development guide](docs/development.md). Routine browser validation uses bundled Chromium to avoid installed-Chrome App Management alerts attributed to the gateway on macOS.
 
 ## Repository map
 

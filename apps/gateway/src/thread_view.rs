@@ -571,12 +571,16 @@ impl ThreadView {
             .map(ToString::to_string)
             .unwrap_or_else(|| "running".to_string());
         let key = scoped_item_key(turn_id, &item_snapshot.id);
-        remove_materialized_pending_match(&mut self.items, turn_id, &item_snapshot, &item);
+        let pending_display_order =
+            remove_materialized_pending_match(&mut self.items, turn_id, &item_snapshot, &item);
         let display_order = self
             .items
             .iter()
             .find(|existing| scoped_item_key(&existing.turn_id, &existing.item_id) == key)
             .map(|existing| existing.display_order)
+            // The receipt replaces only this provisional position. Native item
+            // identity and later native snapshot order remain authoritative.
+            .or(pending_display_order)
             .unwrap_or_else(|| next_display_order(&self.items));
         let next_item = ThreadTimelineSnapshotItem {
             id: canonical_timeline_item_id(turn_id, &item_snapshot.id),

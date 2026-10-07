@@ -1,19 +1,18 @@
+import { WorkspaceRightHeaderActions } from "./WorkspaceRightHeaderActions";
+import { WorkspaceDefaultTab } from "./WorkspaceDefaultTab";
 import { Menu } from "@mantine/core";
 import {
-  DockviewDefaultTab,
   DockviewReact,
   themeAbyss,
   type DockviewApi,
   type IDockviewHeaderActionsProps,
-  type IDockviewPanelHeaderProps,
   type DockviewReadyEvent,
   type DockviewTheme,
   type BuiltInContextMenuItem,
   type ReactContextMenuItemConfig,
   type IDockviewPanelProps,
 } from "dockview";
-import { X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type HTMLAttributes, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { panelPlacementOptions } from "./autoPanelPlacement";
 import { focusWorkspaceDockPanel } from "./focusWorkspaceDockPanel";
@@ -27,14 +26,6 @@ import { hasDockviewPanels, layoutMatchesWorkspacePanes } from "./workspaceLayou
 type DockviewPaneParams = {
   activePaneId: string | null;
   pane: WorkspacePane;
-};
-
-type DockviewTabRuntimeProps = IDockviewPanelHeaderProps<DockviewPaneParams> & {
-  closeActionOverride?: () => void;
-  hideClose?: boolean;
-  onPointerDown?: (event: PointerEvent<HTMLDivElement>) => void;
-  onPointerLeave?: (event: PointerEvent<HTMLDivElement>) => void;
-  onPointerUp?: (event: PointerEvent<HTMLDivElement>) => void;
 };
 
 type WorkspaceDockProps = {
@@ -51,7 +42,7 @@ export const kodexDockviewTheme = {
   ...themeAbyss,
   name: "kodex",
   className: `${themeAbyss.className} kodex-dockview-theme`,
-  gap: 6,
+  gap: 1,
   edgeGroupCollapsedSize: 34,
   dndOverlayMounting: "absolute",
   dndPanelOverlay: "group",
@@ -255,141 +246,6 @@ function projectIdForWorkspacePane(pane: WorkspacePane, threadProjectIdsById: Re
   return threadProjectIdsById[pane.target.threadId] ?? null;
 }
 
-export function WorkspaceDefaultTab(props: IDockviewPanelHeaderProps<DockviewPaneParams>) {
-  const { paneHeaderAdornmentsById, paneTabStatusById } = useWorkspace();
-  const pane = props.params.pane;
-  const headerAdornment = paneHeaderAdornmentsById[props.api.id] ?? null;
-  const terminalStatus = pane.kind === "terminal" ? paneTabStatusById[props.api.id] : undefined;
-  const tabClassName = [
-    "kodex-workspace-tab",
-    pane.kind === "terminal" ? "kodex-workspace-terminal-tab" : null,
-    terminalStatus ? `kodex-workspace-terminal-tab-${terminalStatus}` : null,
-    headerAdornment ? "kodex-workspace-tab-with-adornment" : null,
-  ].filter(Boolean).join(" ");
-
-  if (!headerAdornment) {
-    return <DockviewDefaultTab {...props} className={tabClassName} />;
-  }
-
-  return (
-    <WorkspaceTabWithAdornment
-      {...props}
-      adornment={headerAdornment}
-      className={tabClassName}
-    />
-  );
-}
-
-function WorkspaceTabWithAdornment({
-  adornment,
-  className,
-  ...props
-}: IDockviewPanelHeaderProps<DockviewPaneParams> & { adornment: ReactNode; className: string }) {
-  const {
-    api,
-    closeActionOverride,
-    containerApi: _containerApi,
-    hideClose,
-    onPointerDown,
-    onPointerLeave,
-    onPointerUp,
-    params: _params,
-    tabLocation: _tabLocation,
-    ...rest
-  } = props as DockviewTabRuntimeProps;
-  const title = useDockviewPanelTitle(api);
-  const isMiddleMouseButton = useRef(false);
-  const restProps = rest as HTMLAttributes<HTMLDivElement>;
-  const mergedClassName = [restProps.className, className, "dv-default-tab"].filter(Boolean).join(" ");
-
-  const onClose = useCallback((event: MouseEvent<HTMLElement> | PointerEvent<HTMLElement>) => {
-    event.preventDefault();
-    if (closeActionOverride) {
-      closeActionOverride();
-      return;
-    }
-    api.close();
-  }, [api, closeActionOverride]);
-
-  const onClosePointerDown = useCallback((event: PointerEvent<HTMLElement>) => {
-    event.preventDefault();
-  }, []);
-
-  const handlePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    isMiddleMouseButton.current = event.button === 1;
-    onPointerDown?.(event);
-  }, [onPointerDown]);
-
-  const handlePointerUp = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    if (isMiddleMouseButton.current && event.button === 1 && !hideClose) {
-      isMiddleMouseButton.current = false;
-      onClose(event);
-    }
-    onPointerUp?.(event);
-  }, [hideClose, onClose, onPointerUp]);
-
-  const handlePointerLeave = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    isMiddleMouseButton.current = false;
-    onPointerLeave?.(event);
-  }, [onPointerLeave]);
-
-  return (
-    <div
-      {...restProps}
-      className={mergedClassName}
-      data-testid="dockview-dv-default-tab"
-      onPointerDown={handlePointerDown}
-      onPointerLeave={handlePointerLeave}
-      onPointerUp={handlePointerUp}
-    >
-      <span className="dv-default-tab-content kodex-workspace-tab-content">
-        <span className="kodex-workspace-tab-title">{title}</span>
-        <span
-          aria-label="Pane syncing"
-          className="kodex-workspace-pane-title-adornment"
-          role="status"
-          title="Pane syncing"
-        >
-          {adornment}
-        </span>
-      </span>
-      {!hideClose ? (
-        <div className="dv-default-tab-action" onClick={onClose} onPointerDown={onClosePointerDown}>
-          <span aria-hidden="true" className="dv-react-part kodex-workspace-tab-close-icon">
-            <X size={11} strokeWidth={2.2} />
-          </span>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function useDockviewPanelTitle(api: IDockviewPanelHeaderProps<DockviewPaneParams>["api"]) {
-  const [title, setTitle] = useState(api.title);
-  useEffect(() => {
-    const disposable = api.onDidTitleChange((event) => {
-      setTitle(event.title);
-    });
-    if (title !== api.title) {
-      setTitle(api.title);
-    }
-    return () => {
-      disposable.dispose();
-    };
-  }, [api, title]);
-  return title;
-}
-
-export function WorkspaceRightHeaderActions({ activePanel }: IDockviewHeaderActionsProps) {
-  const { paneHeaderActionsById } = useWorkspace();
-  const actions = activePanel?.id ? paneHeaderActionsById[activePanel.id] : null;
-  return (
-    <div aria-label="Pane actions" className="kodex-workspace-pane-actions" role="toolbar">
-      {actions}
-    </div>
-  );
-}
-
 export function WorkspaceTabOverflowActions({ activePanel, panels }: IDockviewHeaderActionsProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [overflowPanelIds, setOverflowPanelIds] = useState<string[]>([]);
@@ -409,7 +265,7 @@ export function WorkspaceTabOverflowActions({ activePanel, panels }: IDockviewHe
         return [];
       }
       const tabRect = tabElement.getBoundingClientRect();
-      return tabRect.left < containerRect.left || tabRect.right > containerRect.right ? [panel.id] : [];
+      return tabRect.right <= containerRect.left || tabRect.left >= containerRect.right ? [panel.id] : [];
     });
     setOverflowPanelIds((current) =>
       current.length === nextIds.length && current.every((id, index) => id === nextIds[index])
@@ -533,7 +389,9 @@ export function syncWorkspaceIntoDockview(
     api.clear();
     if (shouldHydrateSavedLayout) {
       api.fromJSON(workspace.dockviewLayout as unknown as Parameters<DockviewApi["fromJSON"]>[0], { reuseExistingPanels: false });
+      // Attached thread viewports preserve virtualized scroll state across tab switches.
       for (const pane of workspace.panes) {
+        api.getPanel(pane.id)?.api.setRenderer(pane.kind === "thread" ? "always" : "onlyWhenVisible");
         api.getPanel(pane.id)?.update({
           params: { pane, activePaneId: workspace.activePaneId ?? null },
         });
@@ -613,6 +471,7 @@ function reconcileWorkspacePanelsInPlace(
     api.addPanel<DockviewPaneParams>({
       id: pane.id,
       component: "workspacePane",
+      renderer: pane.kind === "thread" ? "always" : "onlyWhenVisible",
       title: paneTitle(pane),
       params: { pane, activePaneId: workspace.activePaneId ?? null },
       ...panelPlacementOptions(api, pane, firstPane, panePlacementHintsById, consumedPlacementHintIds, kodexDockviewTheme.gap),
@@ -637,6 +496,7 @@ function addWorkspacePanels(
     api.addPanel<DockviewPaneParams>({
       id: pane.id,
       component: "workspacePane",
+      renderer: pane.kind === "thread" ? "always" : "onlyWhenVisible",
       title: paneTitle(pane),
       params: { pane, activePaneId: workspace.activePaneId ?? null },
       ...(index > 0

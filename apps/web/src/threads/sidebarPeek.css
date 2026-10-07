@@ -1,0 +1,29 @@
+.kodex-sidebar:has(.kodex-sidebar-peek-boundary) {
+  overflow: visible;
+}
+
+.kodex-sidebar-peek-boundary {
+  height: 100%;
+}
+
+.kodex-sidebar-peek-panel {
+  position: absolute;
+  inset-block: 0;
+  left: 100%;
+  width: 292px;
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-xs) var(--mantine-spacing-xs) 0;
+  border-radius: 0 var(--kodex-radius-shell) var(--kodex-radius-shell) 0;
+  background: var(--kodex-bg-sidebar);
+  color: var(--kodex-text-primary);
+}
+
+.kodex-sidebar-peek-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: var(--kodex-shadow-floating);
+  opacity: 0.5;
+  clip-path: inset(0 -24px 0 50%);
+  pointer-events: none;
+}

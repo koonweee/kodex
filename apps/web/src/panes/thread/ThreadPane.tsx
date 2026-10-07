@@ -1,3 +1,4 @@
+import { threadIndicatorState } from "../../threads/ThreadStatusIndicator";
 import { AsyncQuestionReplyProvider } from "../../composer/AsyncQuestionReplyProvider";
 import { refreshUnreadBadge } from "../../notifications/unreadBadge";
 import { useThreadReadState } from "../../threads/useThreadReadState";
@@ -5,6 +6,7 @@ import { mergeThreadReadState, preserveNewerThreadReadState } from "../../thread
 import { threadReadUpdateFromEvent } from "../../threads/events";
 import { mergeThreadSummaryMetadata } from "../../threads/summaryMetadata";
 import { subagentsEventInvalidatesThread } from "../../threads/subagentsCache";
+import { useThreadPaneTitle } from "./useThreadPaneTitle";
 import { ThreadActionsMenu } from "./ThreadActionsMenu";
 import { Badge, Box, Button, Group, Loader, Modal, Skeleton, TextInput, Title } from "@mantine/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -141,8 +143,8 @@ function ExistingThreadPane({
   });
 
   useEffect(() => {
-    setPaneThreadContext(pane.id, thread ? { id: thread.id, projectId: thread.projectId, cwd: thread.cwd } : null);
-  }, [pane.id, setPaneThreadContext, thread?.id, thread?.projectId, thread?.cwd]);
+    setPaneThreadContext(pane.id, thread ? { id: thread.id, projectId: thread.projectId, cwd: thread.cwd, indicatorState: threadIndicatorState(thread) } : null);
+  }, [pane.id, setPaneThreadContext, thread?.id, thread?.projectId, thread?.cwd, thread?.status, thread?.unreadCompletedAgentTurn]);
 
   latestThreadIdRef.current = threadId;
   latestPaneThreadRef.current = thread;
@@ -168,7 +170,7 @@ function ExistingThreadPane({
     const controller = new AbortController();
     snapshotControllerRef.current = controller;
     setEntry((current) =>
-      current.threadId === threadId && current.phase === "streamingLive"
+      current.threadId === threadId && (current.phase === "streamingLive" || current.phase === "refreshingSnapshot")
         ? { phase: "refreshingSnapshot", threadId }
         : { phase: "loadingSnapshot", threadId },
     );
@@ -185,9 +187,6 @@ function ExistingThreadPane({
       const mergedThread = mergePaneThreadSummary(latestPaneThreadRef.current, nextThread);
       setThread((current) => mergePaneThreadSummary(current, nextThread));
       onThreadSnapshotLoaded(mergedThread);
-      void updatePane(pane.id, { title: threadDisplayTitle(mergedThread) }).catch((error: unknown) => {
-        console.error("Failed to update workspace thread pane title", error);
-      });
       setEntry({ phase: "streamingLive", threadId });
       setPaneErrorMessage(null);
     } catch (error) {
@@ -208,7 +207,7 @@ function ExistingThreadPane({
         void refreshSnapshot();
       }
     }
-  }, [onThreadSnapshotLoadFailed, onThreadSnapshotLoaded, pane.id, threadId, updatePane]);
+  }, [onThreadSnapshotLoadFailed, onThreadSnapshotLoaded, threadId]);
 
   useThreadReadState({
     thread,
@@ -287,6 +286,13 @@ function ExistingThreadPane({
       if (!isThreadEventForPane(event, threadId)) {
         return;
       }
+      if (event.kind === "thread.summary_changed" || event.codexMethod === "thread/name/updated") {
+        if (refreshInFlightRef.current && refreshInFlightThreadIdRef.current === threadId) {
+          cancelQueuedTimelineEvents();
+          void refreshSnapshot(true);
+        }
+        if (event.kind === "thread.summary_changed") return;
+      }
       if (event.kind === "thread_view.refresh_required") {
         cancelQueuedTimelineEvents();
         void refreshSnapshot(true);
@@ -320,9 +326,6 @@ function ExistingThreadPane({
           : null;
         if (metadataThread?.id === threadId) {
           setThread((current) => current ? mergeThreadSummaryMetadata(current, metadataThread) : current);
-          void updatePane(pane.id, { title: threadDisplayTitle(metadataThread) }).catch((error: unknown) => {
-            console.error("Failed to update workspace thread pane title", error);
-          });
         }
         if ("gitInfo" in payload) {
           setThread((current) =>
@@ -332,9 +335,6 @@ function ExistingThreadPane({
         const name = typeof payload.threadName === "string" ? payload.threadName : typeof payload.name === "string" ? payload.name : null;
         if (name) {
           setThread((current) => (current ? { ...current, name } : current));
-          void updatePane(pane.id, { title: name }).catch((error: unknown) => {
-            console.error("Failed to update workspace thread pane title", error);
-          });
         }
         return;
       }
@@ -346,7 +346,7 @@ function ExistingThreadPane({
       }
       enqueueTimelineEvent(event);
     });
-  }, [cancelQueuedTimelineEvents, enqueueTimelineEvent, pane.id, refreshSnapshot, subscribeLiveEvent, threadId, updatePane]);
+  }, [cancelQueuedTimelineEvents, enqueueTimelineEvent, refreshSnapshot, subscribeLiveEvent, threadId]);
 
   useEffect(() => {
     return subscribeThreadPaneTimelineAction((action) => {
@@ -409,7 +409,9 @@ function ExistingThreadPane({
   const isReady = entry.phase === "streamingLive" || entry.phase === "refreshingSnapshot";
   const isInitialSnapshotLoading = (entry.phase === "loadingSnapshot" || entry.phase === "refreshingSnapshot") && !thread;
   const isUnavailable = entry.phase === "error" && !thread;
-  const title = isUnavailable ? "Thread not found or unavailable" : paneTitle ?? (thread ? threadDisplayTitle(thread) : threadId);
+  const nativeTitle = thread ? threadDisplayTitle(thread) : null;
+  useThreadPaneTitle(pane.id, pane.title, nativeTitle, updatePane);
+  const title = isUnavailable ? "Thread not found or unavailable" : nativeTitle ?? paneTitle ?? threadId;
   const threadChromeState = thread ? { isActive, thread, threadId } : null;
   const paneAside = threadChromeState ? renderThreadPaneAside?.(pane, threadChromeState) : null;
   const appSurfaceSession = appSurfaceQuery.data ?? null;
@@ -527,9 +529,6 @@ function ExistingThreadPane({
     try {
       await threadActions.onRenameThread(thread.id, name);
       setThread((current) => (current ? { ...current, name } : current));
-      void updatePane(pane.id, { title: name }).catch((error: unknown) => {
-        console.error("Failed to update workspace thread pane title", error);
-      });
       setRenameModalOpen(false);
     } catch (error) {
       setRenameError(errorMessageFrom(error));
@@ -597,7 +596,7 @@ function ExistingThreadPane({
                 <TimelineLoadingSkeleton />
               ) : (
                 <Suspense fallback={<TimelineLoadingSkeleton />}>
-                  <AsyncQuestionReplyProvider key={threadId} threadId={threadId} enabled={isReady && thread?.canAcceptDirectInput !== false}>
+                  <AsyncQuestionReplyProvider key={threadId} threadId={threadId} enabled={isReady && thread?.canAcceptDirectInput !== false} items={timeline.items}>
                     <TimelineView
                       approvals={threadApprovals}
                       imagePreviewUrlsByPath={imagePreviewUrlsByPath}

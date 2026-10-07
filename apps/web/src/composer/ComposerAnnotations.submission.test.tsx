@@ -12,6 +12,10 @@ import { useComposerOrchestration } from "./useComposerOrchestration";
 function renderComposer(activeTurnId: string | null) {
   const onError = vi.fn();
   const onOptimisticUserMessageStarted = vi.fn();
+  const onOptimisticUserMessageRemoved = vi.fn();
+  const onOptimisticUserMessageSent = vi.fn();
+  const onThreadTurnStarted = vi.fn();
+  const onThreadTurnStartFailed = vi.fn();
   const settings = { model: "native-model", fast: false };
   const draftStore = new Map([["pane:one:thread:thread-1", {
         composerText: "",
@@ -32,9 +36,11 @@ function renderComposer(activeTurnId: string | null) {
       onCreateDraftThread: vi.fn(),
       onError,
       onOptimisticUserMessageStarted,
+      onOptimisticUserMessageRemoved,
+      onOptimisticUserMessageSent,
       onThreadMaterialized: vi.fn(),
-      onThreadTurnStartFailed: vi.fn(),
-      onThreadTurnStarted: vi.fn(),
+      onThreadTurnStartFailed,
+      onThreadTurnStarted,
       selectedProjectId: null,
       selectedThreadId: "thread-1",
     });
@@ -70,10 +76,32 @@ function renderComposer(activeTurnId: string | null) {
     />;
   }
   render(<QueryClientProvider client={createKodexQueryClient()}><MantineProvider env="test"><RetryComposer /></MantineProvider></QueryClientProvider>);
-  return { onError, onOptimisticUserMessageStarted };
+  return { onError, onOptimisticUserMessageStarted, onOptimisticUserMessageRemoved, onOptimisticUserMessageSent, onThreadTurnStarted, onThreadTurnStartFailed };
 }
 
 describe("annotation submissions", () => {
+  it("does not mark an existing active turn idle when composer submission fails", async () => {
+    mockGateway({ "POST /v1/threads/thread-1/input": () => new Response(JSON.stringify({ code: "conflict", message: "Queue unavailable", retryable: false }), { status: 409, headers: { "content-type": "application/json" } }) });
+    const callbacks = renderComposer("active-turn");
+    await userEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(callbacks.onError).toHaveBeenCalled());
+    expect(callbacks.onThreadTurnStarted).not.toHaveBeenCalled();
+    expect(callbacks.onThreadTurnStartFailed).not.toHaveBeenCalled();
+    expect(await screen.findByRole("textbox", { name: "Annotation 1 comment" })).toBeVisible();
+  });
+
+  it("removes the optimistic transcript row when normal Send is authoritatively queued", async () => {
+    mockGateway({ "POST /v1/threads/thread-1/input": { payload: {}, disposition: "queued" } });
+    const callbacks = renderComposer("active-turn");
+    await userEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(callbacks.onOptimisticUserMessageRemoved).toHaveBeenCalledOnce());
+    const submitted = callbacks.onOptimisticUserMessageStarted.mock.calls[0][0];
+    expect(callbacks.onOptimisticUserMessageRemoved).toHaveBeenCalledWith(submitted.clientRequestId);
+    expect(callbacks.onOptimisticUserMessageSent).not.toHaveBeenCalled();
+    expect(callbacks.onThreadTurnStarted).not.toHaveBeenCalled();
+    expect(screen.queryByRole("textbox", { name: "Annotation 1 comment" })).not.toBeInTheDocument();
+  });
+
   it.each([null, "active-turn"])("submits from an annotation with Enter and preserves Shift+Enter and IME input (active %s)", async (activeTurnId) => {
     const gateway = mockGateway({ "POST /v1/threads/thread-1/input": () => ({ payload: {} }) });
     renderComposer(activeTurnId);
@@ -87,7 +115,7 @@ describe("annotation submissions", () => {
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1));
     const body = await requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0]);
-    expect(body).toEqual({ input: [{ type: "text", text: [
+    expect(body).toEqual({ queueIfPending: true, input: [{ type: "text", text: [
       "Review these.", "", "<response_annotations>", "<annotation1>",
       'Assistant text: "Both trim checks passed."',
       'User annotation: "Which checks ran?\\nShow commands."',
@@ -132,7 +160,7 @@ describe("annotation submissions", () => {
     await waitFor(() => expect(gateway.callsFor("POST", `/v1/threads/thread-1/${endpoint}`)).toHaveLength(2));
     const bodies = await Promise.all(gateway.callsFor("POST", `/v1/threads/thread-1/${endpoint}`).map(requestJson));
     const text = '<response_annotations>\n<annotation1>\nAssistant text: "Both trim checks passed."\nUser annotation: "Which checks ran?"\n</annotation1>\n</response_annotations>';
-    for (const body of bodies) expect(body).toEqual({ input: [{ type: "text", text }], clientUserMessageId: expect.any(String) });
+    for (const body of bodies) expect(body).toEqual({ ...(endpoint === "input" ? { queueIfPending: true } : {}), input: [{ type: "text", text }], clientUserMessageId: expect.any(String) });
     expect(bodies[0].clientUserMessageId).not.toBe(bodies[1].clientUserMessageId);
     await waitFor(() => expect(screen.queryByRole("textbox", { name: "Annotation 1 comment" })).not.toBeInTheDocument());
     if (endpoint === "input") expect(onOptimisticUserMessageStarted).toHaveBeenCalledWith(expect.objectContaining({ text }));

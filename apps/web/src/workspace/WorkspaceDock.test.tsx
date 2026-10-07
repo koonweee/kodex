@@ -1,19 +1,20 @@
-import { MantineProvider } from "@mantine/core";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { WorkspaceRightHeaderActions } from "./WorkspaceRightHeaderActions";
+import { WorkspaceDefaultTab } from "./WorkspaceDefaultTab";
+import { MantineProvider, Menu } from "@mantine/core";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useEffect } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { DockviewApi } from "dockview";
 
 import {
   WorkspaceDock,
-  WorkspaceDefaultTab,
-  WorkspaceRightHeaderActions,
   WorkspaceTabOverflowActions,
   kodexDockviewTheme,
   syncWorkspaceIntoDockview,
   visibleDockviewPanelIds,
   workspaceTabContextMenuItems,
 } from "./WorkspaceDock";
+import type { ThreadSummary } from "../api/client";
 import { createMemoryWorkspacePaneStore } from "./paneStore";
 import type { WorkspaceModel, WorkspacePane } from "./paneTypes";
 import { WorkspaceProvider, useWorkspace } from "./WorkspaceProvider";
@@ -110,6 +111,70 @@ describe("WorkspaceDock sync", () => {
     expect(screen.getByTestId("thread-sync-spinner")).toBeInTheDocument();
   });
 
+  it("closes portaled pane actions when another tab becomes active", async () => {
+    function Actions({ active }: { active: string }) {
+      const { setPaneHeaderActions } = useWorkspace();
+      useEffect(() => {
+        for (const id of ["one", "two"]) setPaneHeaderActions(id,
+          <Menu withinPortal transitionProps={{ duration: 0 }}>
+            <Menu.Target><button type="button">Actions {id}</button></Menu.Target>
+            <Menu.Dropdown><Menu.Item>Rename {id}</Menu.Item></Menu.Dropdown>
+          </Menu>);
+      }, [setPaneHeaderActions]);
+      return <WorkspaceRightHeaderActions activePanel={{ id: active } as never} panels={[{ id: "one" }, { id: "two" }] as never}
+        api={{} as never} containerApi={{} as never} group={{} as never} headerPosition="top" isGroupActive />;
+    }
+    const store = createMemoryWorkspacePaneStore({ activePaneId: "one", dockviewLayout: null, schemaVersion: 1,
+      panes: [pane("one", "thread", { mode: "draft" }), pane("two", "thread", { mode: "draft" })] });
+    const renderActions = (active: string) => <MantineProvider><WorkspaceProvider paneStore={store}><Actions active={active} /></WorkspaceProvider></MantineProvider>;
+    const view = render(renderActions("one"));
+    fireEvent.click(screen.getByRole("button", { name: "Actions one" }));
+    expect(await screen.findByRole("menuitem", { name: "Rename one" })).toBeInTheDocument();
+    view.rerender(renderActions("two"));
+    await waitFor(() => expect(screen.queryByRole("menuitem", { name: "Rename one" })).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Actions two" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Actions one" })).not.toBeInTheDocument();
+  });
+
+  it("projects thread running and unread state into tabs, ahead of snapshot syncing", () => {
+    const workspacePane = pane("pane-thread", "thread", { mode: "existing", threadId: "thread-1" }, "First thread");
+    const renderTab = (status: string, unread: boolean) => (
+      <MantineProvider>
+        <WorkspaceProvider paneStore={createMemoryWorkspacePaneStore({ activePaneId: "pane-thread", dockviewLayout: null, panes: [workspacePane], schemaVersion: 1 })} threadSummariesById={{ "thread-1": {
+          id: "thread-1", status, unreadCompletedAgentTurn: unread,
+        } as ThreadSummary }}>
+          <PaneAdornmentHarness activePaneId="pane-thread" pane={workspacePane} />
+        </WorkspaceProvider>
+      </MantineProvider>
+    );
+    const view = render(renderTab("active", true));
+    expect(screen.getByRole("status", { name: "Thread in progress" })).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Pane syncing" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "Unread completed agent turn" })).not.toBeInTheDocument();
+    view.rerender(renderTab("idle", true));
+    expect(screen.getByRole("img", { name: "Unread completed agent turn" })).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Thread in progress" })).not.toBeInTheDocument();
+    view.rerender(renderTab("idle", false));
+    expect(screen.queryByRole("img", { name: "Unread completed agent turn" })).not.toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Pane syncing" })).toBeInTheDocument();
+  });
+
+  it("keeps indicators for unlisted inactive chats using the mounted pane projection", () => {
+    const workspacePane = pane("pane-thread", "thread", { mode: "existing", threadId: "unlisted" });
+    function MountedPane() {
+      const { setPaneThreadContext } = useWorkspace();
+      useEffect(() => {
+        setPaneThreadContext("pane-thread", { id: "unlisted", projectId: null, cwd: "/", indicatorState: "running" });
+      }, [setPaneThreadContext]);
+      return <PaneAdornmentHarness activePaneId="pane-thread" pane={workspacePane} />;
+    }
+    render(<MantineProvider><WorkspaceProvider paneStore={createMemoryWorkspacePaneStore({
+      activePaneId: "other", panes: [workspacePane, pane("other", "thread", { mode: "draft" })],
+      dockviewLayout: null, schemaVersion: 1,
+    })}><MountedPane /></WorkspaceProvider></MantineProvider>);
+    expect(screen.getByRole("status", { name: "Thread in progress" })).toBeInTheDocument();
+  });
+
   it("renders a dropdown for measured overflow tabs and focuses the chosen panel", async () => {
     const panels = Array.from({ length: 6 }, (_, index) => ({
       focus: vi.fn(),
@@ -141,19 +206,23 @@ describe("WorkspaceDock sync", () => {
     );
     const tabsContainer = document.querySelector<HTMLElement>(".dv-tabs-container");
     expect(tabsContainer).not.toBeNull();
-    vi.spyOn(tabsContainer as HTMLElement, "getBoundingClientRect").mockReturnValue(domRect(0, 360));
+    vi.spyOn(tabsContainer as HTMLElement, "getBoundingClientRect").mockReturnValue(domRect(90, 450));
     document.querySelectorAll<HTMLElement>(".dv-tab").forEach((tab, index) => {
       vi.spyOn(tab, "getBoundingClientRect").mockReturnValue(domRect(index * 180, index * 180 + 180));
     });
 
     fireEvent(window, new Event("resize"));
     const moreTabsButton = await screen.findByRole("button", { name: "More tabs" });
-    expect(moreTabsButton).toHaveTextContent("+4");
+    expect(moreTabsButton).toHaveTextContent("+3");
 
     fireEvent.click(moreTabsButton);
     fireEvent.click(await screen.findByRole("menuitem", { name: "Pane 6" }));
 
     expect(panels[5]?.focus).toHaveBeenCalledTimes(1);
+
+    vi.mocked(tabsContainer!.getBoundingClientRect).mockReturnValue(domRect(0, 990));
+    fireEvent(window, new Event("resize"));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "More tabs" })).not.toBeInTheDocument());
   });
 
   it("adds a new draft tab in the current project from a project thread tab context menu", () => {
@@ -434,7 +503,7 @@ function PaneActionHarness({ activePaneId }: { activePaneId: string }) {
       group={{} as never}
       headerPosition="top"
       isGroupActive
-      panels={[]}
+      panels={[{ id: activePaneId } as never]}
     />
   );
 }

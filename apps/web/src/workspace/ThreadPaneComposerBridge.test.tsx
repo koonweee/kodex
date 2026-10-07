@@ -159,7 +159,7 @@ describe("ThreadPaneComposerBridge", () => {
     expect(first.getByLabelText(/message composer/i)).toHaveValue("Keep my unsent text");
     await userEvent.click(first.getByRole("button", { name: "Send message" }));
     await waitFor(() => expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1));
-    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toEqual({ clientUserMessageId: expect.any(String), input: [{ text: "Keep my unsent text", type: "text" }] });
+    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toEqual({ queueIfPending: true, clientUserMessageId: expect.any(String), input: [{ text: "Keep my unsent text", type: "text" }] });
     expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")).toHaveLength(1);
     await userEvent.click(first.getByRole("button", { name: "Reload settings" }));
     await waitFor(() => expect(first.queryByRole("alert")).not.toBeInTheDocument());
@@ -183,7 +183,7 @@ describe("ThreadPaneComposerBridge", () => {
       await userEvent.click(first.getByRole("button", { name: "Send message" }));
     }
     await waitFor(() => expect(gateway.callsFor("POST", `/v1/threads/thread-1/${endpoint}`)).toHaveLength(1));
-    await expect(requestJson(gateway.callsFor("POST", `/v1/threads/thread-1/${endpoint}`)[0])).resolves.toEqual({ clientUserMessageId: expect.any(String), input: [{ text: "Use native execution settings", type: "text" }] });
+    await expect(requestJson(gateway.callsFor("POST", `/v1/threads/thread-1/${endpoint}`)[0])).resolves.toEqual({ ...(endpoint === "input" ? { queueIfPending: true } : {}), clientUserMessageId: expect.any(String), input: [{ text: "Use native execution settings", type: "text" }] });
     expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")).toHaveLength(0);
   });
 
@@ -236,6 +236,7 @@ describe("ThreadPaneComposerBridge", () => {
       await userEvent.click(pane.getByRole("button", { name: /send message/i }));
       await waitFor(() => expect(gateway.callsFor("POST", `/v1/threads/${id}/input`)).toHaveLength(1));
       await expect(requestJson(gateway.callsFor("POST", `/v1/threads/${id}/input`)[0])).resolves.toEqual({
+        queueIfPending: true,
         clientUserMessageId: expect.any(String),
         input: [{ text: "Use the current native settings", type: "text" }],
       });

@@ -373,7 +373,7 @@ describe("App shell", () => {
     expect(screen.getByRole("main", { name: /thread/i })).toBeInTheDocument();
     expect(screen.queryByRole("complementary", { name: /approvals/i })).not.toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toBeEnabled();
-    expect(screen.getByRole("button", { name: /project: no project/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /project: no project/i })).toBeInTheDocument();
 
     expect(screen.queryByRole("button", { name: /status/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /debug options/i })).not.toBeInTheDocument();

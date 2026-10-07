@@ -2,6 +2,7 @@ import { Alert, Badge, Box, Button, Group, Loader, Select, Stack, Text } from "@
 import { Bot } from "lucide-react";
 
 import type { Approval, ApprovalResponse, ThreadSubagentSummary } from "../api/client";
+import { AsyncQuestionAnswersProvider } from "../composer/AsyncQuestionReplyProvider";
 import type { MarkdownPreviewRequest } from "../files/types";
 import type { ImageLightboxImage } from "../images/types";
 import { TimelineView } from "../timeline/TimelineView";
@@ -108,7 +109,7 @@ export function SubagentThreadViewer({
               </Text>
             </Group>
           ) : (
-            <TimelineView
+            <AsyncQuestionAnswersProvider items={timeline.items}><TimelineView
               approvals={EMPTY_APPROVALS}
               imagePreviewUrlsByPath={imagePreviewUrlsByPath}
               onApprovalDecision={noopApprovalDecision}
@@ -119,7 +120,7 @@ export function SubagentThreadViewer({
               showDebug={showDebugEvents}
               threadId={selectedSubagent.id}
               timeline={timeline}
-            />
+            /></AsyncQuestionAnswersProvider>
           )}
         </Box>
         </>}

@@ -190,7 +190,7 @@ function mergeRouteSelectedThreadIntoList(
   ) {
     return threads;
   }
-  return threads.map((thread) => (thread.id === routeSelectedThread.id ? preserveNewerThreadReadState(thread, routeSelectedThread) : thread));
+  return threads.map((thread) => (thread.id === routeSelectedThread.id ? mergeThreadReadState(thread, routeSelectedThread) : thread));
 }
 
 function mergeNewerReadProjection(
@@ -200,6 +200,7 @@ function mergeNewerReadProjection(
 ): ThreadSummary {
   return {
     ...preserveNewerThreadReadState(currentThread, loadedThread),
+    name: beforeThread && beforeThread.name !== currentThread.name ? currentThread.name : loadedThread.name,
     notificationsEnabled: mergedThreadNotificationsEnabled(loadedThread, currentThread, beforeThread),
   };
 }

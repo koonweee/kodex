@@ -43,7 +43,8 @@ function workspaceNavigation() {
 }
 
 function threadPaneByHeading(name: RegExp) {
-  const headings = screen.getAllByRole("heading", { name });
+  // Docked panes keep their title for identification while the tab renders it.
+  const headings = screen.getAllByRole("heading", { name, hidden: true });
   const activePane = document.querySelector<HTMLElement>('.kodex-thread-pane[data-workspace-pane-active="true"]');
   const heading = headings.find((candidate) => activePane?.contains(candidate)) ?? headings.at(-1);
   const pane = heading?.closest(".kodex-thread-pane");
@@ -182,7 +183,8 @@ describe("MVP composer input flows", () => {
       expect(screen.queryByRole("button", { name: /sending message/i })).not.toBeInTheDocument();
     });
     expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
-    expect(within(timelineElement(container)).queryByText("Ship it")).not.toBeInTheDocument();
+    // The accepted optimistic row remains until the native user item reconciles it.
+    expect(within(timelineElement(container)).getAllByText("Ship it")).toHaveLength(1);
     expect(within(timelineElement(container)).queryByText("Sending")).not.toBeInTheDocument();
 
     let selectedThreadStream: FakeEventSource | undefined;
@@ -311,6 +313,7 @@ describe("MVP composer input flows", () => {
     });
     expect(gateway.callsFor("POST", "/v1/threads/thread-1/compact")).toHaveLength(0);
     await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toEqual({
+      queueIfPending: true,
       clientUserMessageId: expect.any(String),
       input: [{ type: "text", text: "Please run /compact later" }],
     });
@@ -579,13 +582,16 @@ describe("MVP composer input flows", () => {
     const firstThreadButton = await within(workspaceNavigation()).findByRole("button", { name: /^implement frontend$/i });
     const firstThreadRow = firstThreadButton.closest(".kodex-thread-list-button");
     expect(firstThreadRow).toBeInTheDocument();
+    await within(activeThreadPane()).findByRole("heading", { name: /^implement frontend$/i, hidden: true });
     await userEvent.type(composerInThreadPane(/^implement frontend$/i), "sleep 5s, then send hello");
     await userEvent.click(sendButtonInThreadPane(/^implement frontend$/i));
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
-      expect(firstThreadRow?.querySelector(".kodex-thread-progress-indicator")).toBeInTheDocument();
     });
+    expect(firstThreadRow?.querySelector(".kodex-thread-progress-indicator")).not.toBeInTheDocument();
+    act(() => resolveTurn({ payload: { turnId: "turn-3" } }));
+    await waitFor(() => expect(firstThreadRow?.querySelector(".kodex-thread-progress-indicator")).toBeInTheDocument());
 
     await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /^second thread$/i }));
     await waitFor(() => {
@@ -604,7 +610,6 @@ describe("MVP composer input flows", () => {
         snapshotItem("agent-3", "agentMessage", { text: "hello" }),
       ]),
     ];
-    act(() => resolveTurn({ payload: {} }));
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
     const globalStream = latestFakeEventSource((instance) => hasThreadId(instance, "thread-1") && !instance.closed);
     act(() => {
@@ -693,7 +698,7 @@ describe("MVP composer input flows", () => {
       expect(screen.queryByText("Sending")).not.toBeInTheDocument();
     });
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
-    expect(within(timelineElement(container)).queryByText("Retry text")).not.toBeInTheDocument();
+    expect(within(timelineElement(container)).getAllByText("Retry text")).toHaveLength(1);
     expect(within(timelineElement(container)).queryByText("Failed")).not.toBeInTheDocument();
   });
 
@@ -789,6 +794,7 @@ describe("MVP composer input flows", () => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
     });
     await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toEqual({
+      queueIfPending: true,
       clientUserMessageId: expect.any(String),
       input: [
         { type: "text", text: "Inspect this" },
@@ -834,6 +840,7 @@ describe("MVP composer input flows", () => {
     });
     expect(gateway.callsFor("POST", "/v1/uploads/images")).toHaveLength(0);
     await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toEqual({
+      queueIfPending: true,
       clientUserMessageId: expect.any(String),
       input: [{ type: "text", text: "Review this" }],
       attachments: [fileAttachment],
@@ -1156,6 +1163,7 @@ describe("MVP composer input flows", () => {
       expect(screen.queryByRole("button", { name: /remove diagram.png/i })).not.toBeInTheDocument();
     });
     await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[1])).resolves.toEqual({
+      queueIfPending: true,
       clientUserMessageId: expect.any(String),
       input: [
         { type: "text", text: "Inspect this" },

@@ -1,0 +1,60 @@
+.kodex-thread-unread-agent-turn-indicator {
+  position: relative;
+  display: block;
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: var(--kodex-radius-round);
+  background: var(--kodex-accent);
+}
+
+.kodex-thread-unread-agent-turn-indicator::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--kodex-unread-pulse-start);
+  pointer-events: none;
+  opacity: 0;
+  animation: kodex-unread-agent-turn-pulse 1.8s ease-out infinite;
+}
+
+.kodex-thread-progress-indicator {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--kodex-border-strong);
+  border-top-color: var(--kodex-accent);
+  border-radius: var(--kodex-radius-round);
+  animation: kodex-thread-progress-spin 800ms linear infinite;
+}
+
+@keyframes kodex-thread-progress-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes kodex-unread-agent-turn-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  70% {
+    transform: scale(2.5);
+    opacity: 0;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kodex-thread-progress-indicator,
+  .kodex-thread-unread-agent-turn-indicator::before {
+    animation: none;
+  }
+}

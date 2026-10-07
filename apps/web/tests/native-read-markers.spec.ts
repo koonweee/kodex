@@ -44,7 +44,8 @@ for (const shape of [
         expect(seen()).toHaveLength(1);
         await fixture.release("first", "seen", "turn-a");
         await openSidebar(first, shape.hasTouch);
-        await expect(first.getByRole("img", { name: /unread completed agent/i })).toBeVisible();
+        await expect(first.getByRole("navigation", { name: "Workspace", exact: true }).getByRole("img", { name: /unread completed agent/i })).toBeVisible();
+        if (shape.width > 700) await expect(first.locator(".dv-tab").getByRole("img", { name: /unread completed agent/i })).toBeVisible();
         expect(await badge(first)).toBe(27);
         expect(seen()).toHaveLength(1);
         expect(fixture.connections).toEqual(opens);
@@ -53,7 +54,8 @@ for (const shape of [
         await expect.poll(() => fixture.connections.get("second") ?? 0).toBeGreaterThan(opens.get("second") ?? 0);
         await expect.poll(() => badge(second)).toBe(27);
         await openSidebar(second, shape.hasTouch);
-        await expect(second.getByRole("img", { name: /unread completed agent/i })).toBeVisible();
+        await expect(second.getByRole("navigation", { name: "Workspace", exact: true }).getByRole("img", { name: /unread completed agent/i })).toBeVisible();
+        if (shape.width > 700) await expect(second.locator(".dv-tab").getByRole("img", { name: /unread completed agent/i })).toBeVisible();
         expect(seen()).toHaveLength(1);
 
         // Showing the canonical turn, rather than focusing a sidebar row or

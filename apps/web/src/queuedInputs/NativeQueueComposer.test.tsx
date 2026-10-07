@@ -6,7 +6,7 @@ import { App, activeThread, baseRoutes, mockGateway, requestJson, thread, second
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-it("sends active-chat input through the native atomic command and queues only explicit Queue intent", async () => {
+it("delegates ordinary Send queue policy to the gateway and preserves explicit Queue intent", async () => {
   const gateway = mockGateway(baseRoutes({ "GET /v1/threads": { threads: [activeThread] } }));
   render(<App />);
   await screen.findByText("Hello from Codex");
@@ -15,7 +15,7 @@ it("sends active-chat input through the native atomic command and queues only ex
   await userEvent.click(screen.getByRole("button", { name: "Send message" }));
   await waitFor(() => expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1));
   expect(gateway.callsFor("POST", "/v1/threads/thread-1/queued-inputs")).toHaveLength(0);
-  await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toEqual({ input: [{ type: "text", text: "Live correction" }], clientUserMessageId: expect.any(String) });
+  await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toEqual({ queueIfPending: true, input: [{ type: "text", text: "Live correction" }], clientUserMessageId: expect.any(String) });
   await userEvent.type(composer, "Next-turn work");
   await userEvent.click(screen.getByRole("button", { name: "Open attachment menu" }));
   await userEvent.click(await screen.findByRole("menuitem", { name: "Queue message" }));

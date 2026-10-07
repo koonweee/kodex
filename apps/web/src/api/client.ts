@@ -438,11 +438,12 @@ export async function submitThreadInput(
   input: UserInput[],
   attachments: TimelineFileAttachment[] = [],
   clientUserMessageId?: components["schemas"]["TurnStartRequest"]["clientUserMessageId"],
-): Promise<components["schemas"]["RawAppServerResponse"]> {
+  queueIfPending = false,
+): Promise<components["schemas"]["ThreadInputResponse"]> {
   return unwrap(
     api.POST("/v1/threads/{threadId}/input", {
       params: { path: { threadId } },
-      body: { input, ...(attachments.length > 0 ? { attachments } : {}), ...(clientUserMessageId !== undefined ? { clientUserMessageId } : {}) },
+      body: { input, ...(queueIfPending ? { queueIfPending: true } : {}), ...(attachments.length > 0 ? { attachments } : {}), ...(clientUserMessageId !== undefined ? { clientUserMessageId } : {}) },
     }),
   );
 }

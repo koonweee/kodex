@@ -100,3 +100,7 @@ Latest completed chunk: 51/51 backend tests, 1,076/1,076 frontend tests across 1
 Next: choose the next retained-product milestone against current app-server behavior. The initial chat slice is complete; goals/automations, project/pin/read metadata, terminal/Control/file surfaces and PWA remain pending. No production cutover is authorized.
 
 - 2026-10-07: Full frontend port authorized. Durable parity plan added; pinned initial main reference `00d22832cb43a2784826b1eb9a25689d4b1e5eba`. Preserve latest-main UI/workflows, distinguish unimplemented features from native limitations, and seek clarification only for decisions that materially require it. Initial merge next.
+
+- Initial parity merge: main frozen at `00d2283`; three frontend conflicts resolved. Build/trim and independent merge review pass; existing native browser flow remains green on desktop/narrow fine/touch. Detached baseline proved 18 pre-existing main test failures; contract/layout expectations being updated in the port branch. Workflow inventory and native capability distinctions recorded in the parity plan.
+
+- Frozen-main merge validated: 1,125 frontend tests across 154 files pass after reviewed baseline test corrections; build/trim and independent merge review pass. Native two-tab/tool/reload/restart browser acceptance passes all three viewport/input configurations. Native model/reasoning settings and queue mutation proofs are the next active slices.

@@ -93,17 +93,24 @@
 }
 
 .kodex-mobile-composer-textarea {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 0;
   min-width: 0;
   min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
+  overflow: hidden;
+}
+
+.kodex-mobile-composer-textarea .mantine-Textarea-wrapper {
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 .kodex-composer-shell[data-inline-density="mobile"] .kodex-mobile-composer-textarea textarea {
-  min-height: 44px;
-  max-height: none;
+  /* Constrain autosize without replacing the focused textarea. */
+  min-height: 100%;
+  overscroll-behavior: contain;
+  max-height: 100%;
   padding: 8px 2px;
   border: 0;
   background: transparent;
@@ -114,12 +121,8 @@
 }
 
 .kodex-mobile-composer-expanded-body[data-skill-command-open="true"] .kodex-mobile-composer-textarea {
-  flex: 0 1 auto;
+  flex: 0 1 clamp(88px, calc(var(--kodex-mobile-visual-viewport-height, 100dvh) * 0.24), 180px);
   order: -1;
-}
-
-.kodex-mobile-composer-expanded-body[data-skill-command-open="true"] .kodex-mobile-composer-textarea textarea {
-  max-height: clamp(88px, calc(var(--kodex-mobile-visual-viewport-height, 100dvh) * 0.24), 180px);
 }
 
 .kodex-mobile-composer-textarea textarea:disabled {

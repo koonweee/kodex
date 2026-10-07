@@ -9,6 +9,7 @@ import { queryKeys } from "../api/queryKeys";
 import { recordCacheInvalidation } from "../events/liveDiagnostics";
 import {
   applyThreadNotificationsState as applyThreadNotificationsStateToCache,
+  findCachedThread,
   replaceThreadEverywhere,
   updateThreadEverywhere,
 } from "./cache";
@@ -103,6 +104,17 @@ export function useSidebarThreadCaches({
     if (route.kind === "ignore") {
       return;
     }
+    if (route.kind === "refillSidebar") {
+      recordCacheInvalidation("sidebarThreads");
+      void refreshProjectState(queryClient).then(() => {
+        const snapshot = queryClient.getQueryState(queryKeys.sidebarThreads);
+        if (snapshot?.fetchStatus !== "idle" || snapshot.isInvalidated) return;
+        const selectedThreadId = selectedThreadIdRef.current;
+        const selected = selectedThreadId ? findCachedThread(queryClient, selectedThreadId) : null;
+        if (selected) replaceThread(selected);
+      });
+      return;
+    }
     if (route.location.scope === "project") {
       recordCacheInvalidation("projectThreads");
       void queryClient.invalidateQueries({ queryKey: queryKeys.projectThreads(route.location.projectId) });
@@ -112,7 +124,7 @@ export function useSidebarThreadCaches({
       recordCacheInvalidation("chatThreads");
       void queryClient.invalidateQueries({ queryKey: queryKeys.chatThreads });
     }
-  }, [findThreadSidebarLocation, queryClient]);
+  }, [findThreadSidebarLocation, queryClient, replaceThread, selectedThreadIdRef]);
 
   const applyThreadNotificationsState = useCallback((threadId: string, notificationsEnabled: boolean) => {
     setRouteSelectedThreadState(

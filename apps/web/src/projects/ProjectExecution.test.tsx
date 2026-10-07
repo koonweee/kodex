@@ -23,7 +23,7 @@ it.each([{ roots: [] }, { roots: [{ path: "/first" }, { path: "/second" }] }])("
   const error = await screen.findByText("Edit this project to choose one root directory before starting a chat.");
   const pane = error.closest<HTMLElement>(".kodex-thread-pane")!;
   expect(screen.queryByRole("textbox", { name: "Working directory" })).not.toBeInTheDocument();
-  expect(within(pane).getByRole("textbox", { name: /message composer/i })).toBeDisabled();
+  expect(await within(pane).findByRole("textbox", { name: /message composer/i })).toBeDisabled();
   expect(gateway.callsFor("GET", "/v1/composer-settings").every((request) => !new URL(request.url).searchParams.has("projectId"))).toBe(true);
   expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(0);
 });

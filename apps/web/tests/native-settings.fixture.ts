@@ -187,6 +187,14 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
       return respond(route, {}, 202);
     }
     if (key === "POST /v1/threads/settings-chat/input") {
+      if ((body as { queueIfPending?: boolean }).queueIfPending && queuedInputs.length) {
+        const submitted = body as { input: QueuedInput["input"]; clientUserMessageId: string; attachments?: QueuedInput["attachments"] };
+        const queued: QueuedInput = { id: `queued-${++nextQueueId}`, threadId: detail.thread.id, input: submitted.input, clientUserMessageId: submitted.clientUserMessageId, attachments: submitted.attachments ?? [], canSteer: Boolean(detail.timeline.activeTurnId) };
+        queuedInputs.push(queued);
+        emit("turn_queue.changed", { threadId: detail.thread.id });
+        return respond(route, { payload: {}, disposition: "queued", queuedInput: queued });
+      }
+
       detail.thread.status = "active";
       detail.liveState = "streaming";
       const revision = Math.max(seq, detail.timeline.viewRevision ?? 0) + 1;

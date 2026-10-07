@@ -1,3 +1,4 @@
+import { appendResponseAnnotations } from "../composer/annotations";
 import { expect, it } from "vitest";
 
 import { editableQueueText, queueInputPreview, replaceQueueText, restorableQueueText } from "./input";
@@ -35,4 +36,25 @@ it("keeps native attachment envelopes out of message editing and preserves their
   expect(queueInputPreview(input)).toBe("Review this file");
   expect(replaceQueueText(input, new Map([[0, "Compare this file"], [1, "accidental replacement"]])))
     .toEqual([{ type: "text", text: "Compare this file", text_elements: [] }, envelope]);
+});
+
+it("previews message and annotation comments without quotes or transport markup", () => {
+  const text = appendResponseAnnotations("Please revise", [
+    { id: "one", text: "Long assistant quote", comment: "Make this shorter" },
+    { id: "two", text: "Another quote", comment: "Keep <this> detail" },
+  ]);
+  const input = [{ type: "text", text }];
+  expect(queueInputPreview(input)).toBe("Please revise\nMake this shorter\nKeep <this> detail");
+  expect(editableQueueText(input)).toEqual([{ index: 0, text }]);
+  expect(input[0].text).toBe(text);
+});
+
+it("previews annotation-only input and labels uncommented quotes", () => {
+  expect(queueInputPreview([{ type: "text", text: appendResponseAnnotations("", [{ id: "one", text: "Quote", comment: "Do this" }]) }])).toBe("Do this");
+  expect(queueInputPreview([{ type: "text", text: appendResponseAnnotations("", [{ id: "one", text: "Quote", comment: "" }]) }])).toBe("Quoted message");
+});
+
+it("preserves literal or incomplete annotation markup in ordinary text", () => {
+  const text = "Explain <response_annotations> and how it works";
+  expect(queueInputPreview([{ type: "text", text }])).toBe(text);
 });

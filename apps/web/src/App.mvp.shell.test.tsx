@@ -1303,15 +1303,20 @@ describe("MVP shell flows", () => {
 
   it("converges selected and sidebar thread titles from another client's name event", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
-    mockGateway(baseRoutes());
+    let nativeThread = thread;
+    const gateway = mockGateway(baseRoutes({
+      "GET /v1/threads": () => ({ threads: [nativeThread], nextCursor: null, backwardsCursor: null, rawPayload: {} }),
+    }));
 
     render(<App />);
 
     const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
     expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => streamIncludesThread(instance, "thread-1"));
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => !instance.closed && streamIncludesThread(instance, "thread-1"));
     expect(selectedThreadStream).toBeDefined();
+    const listReadsBeforeRename = gateway.callsFor("GET", "/v1/sidebar/threads").length;
+    nativeThread = { ...thread, name: "Renamed in another tab" };
 
     act(() => {
       selectedThreadStream?.emit({
@@ -1329,7 +1334,9 @@ describe("MVP shell flows", () => {
     });
 
     expect(await screen.findByRole("heading", { name: /^renamed in another tab$/i })).toBeInTheDocument();
-    expect(within(kodexGroup).getByRole("button", { name: /^renamed in another tab$/i })).toBeInTheDocument();
+    expect(await within(kodexGroup).findByRole("button", { name: /^renamed in another tab$/i })).toBeInTheDocument();
+    await waitFor(() => expect(gateway.callsFor("GET", "/v1/sidebar/threads").length).toBeGreaterThan(listReadsBeforeRename));
+    expect(within(kodexGroup).queryByRole("button", { name: /^implement frontend$/i })).not.toBeInTheDocument();
   });
 
   it("archives a thread from the thread selector hover action", async () => {

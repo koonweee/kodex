@@ -33,4 +33,33 @@ Proceed autonomously on implementation, routine design choices, tests, fixes, re
 
 ## Progress
 
-- Scope and frozen reference recorded before implementation. Initial merge and workflow inventory next.
+- Frozen main merged and workflow inventory recorded. Initial integration validation passes; native settings/composer parity is active.
+
+## Workflow inventory against the frozen reference
+
+The reference UI path is App → KodexShellView → WorkspaceProvider → ThreadPane → ThreadPaneComposerBridge → Composer/TimelineView. Preserve these actual components; retire prototype NativeShell/NativeThreadPane/NativeComposer replacements as their domain wiring is ported. Keep inferred oRPC types, native snapshot lifecycle and named display mappings. Existing endpoint names below describe dependencies, not a new wire-contract specification.
+
+| Workflow | Current Mastra status | Remaining work / native ownership |
+| --- | --- | --- |
+| Bootstrap, deep links, docking, appearance | Basic native host/watch and shared shell work | Reuse main's exact header, tabs, sidebar peek, pane actions, loading and scroll behavior; preserve browser-local drafts/layout. |
+| Projects and directory picker | CLI roots only | Durable Kodex project registry, root/name/order, browse/create/update/delete and cross-tab updates; no fake native project API. |
+| Sidebar/chat metadata | Native inventory and basic titles | Native manual rename plus product archive/pin/order/notifications/membership metadata, standalone chats, paging, live activity and read state. |
+| Models, reasoning, settings and composer | Text Send/Queue/Stop working | Native model catalog/switch/thinking values, sparse settings coordinator, actual context usage, attachments/skills/compaction; prove Fast provider-option wire behavior before judging support. |
+| Auth and quota footer | Dedicated native CLI OAuth works | Native account labels/status available; no public SDK quota reader found. Investigate response-header availability and concrete preservation options before requesting a product decision. No sandbox and CLI login already accepted. |
+| History, tools and subagents | Basic messages/live tools/restart working | Native paging, real tool/file/diff/image/reasoning presentation, read-only observers, parent/child metadata and existing subagent UI. |
+| Approvals and questions | Not connected | Native live approval/suspension maps, claim APIs and persisted suspension recovery. Main's nonblocking async question cards are distinct from native suspended ask_user; assess a Mastra-executed Kodex tool with native reply signals. |
+| Editable queue | Native enqueue/count/Stop working | Native signal IDs and selective synchronous cancellation can support a volatile display projection and delivery retirement. No public list/edit/reorder/CAS API; test cancel/requeue handoff and failure behavior before deciding whether native ownership suffices. |
+| Goals | SDK proof only | Native objective/state/update/clear plus existing controls, concurrency and usage/status; unlimited evaluation already accepted. |
+| Automations | Native persistent scheduler proof only | Native schedules CRUD/pause/resume/run/history/timezone and tested Session-context wake hook behind actual automation UI. |
+| Uploads, file previews and skills | Native skill-discovery proof only | Durable upload references/native file parts, workspace preview validation, image/diff/Markdown views, native skill list/reload/invocation and attachment queue editing. |
+| MCP and Control | Namespaced native discovery/reload proof | Existing accepted CLI/file setup, actual host-state Control tools, MCP resource/HTTP/OAuth/isolation checks; browser sparse config coordination if retained. MCP Apps explicitly deferred. |
+| Integrated terminal | Not connected | Real host-owned PTY supervision and /terminals WebSocket transport; reuse main xterm, fonts, links, reconnect/resize/touch behavior. Agent shell tool is not a substitute. |
+| Read state, notifications and PWA | Not connected | Authoritative native completion identity + product seen/version/presence/preferences, cross-tab badges, actual push and exact-completion previews; migrate worker fetches too. Provider push proof remains manual. |
+
+Scope correction: main has no conversation fork/revert controls. Duplicate pane means local docking. Native cutoff-copy/delete does not prove observational-memory rewind, but that is not a blocker for a nonexistent UI workflow.
+
+## Initial merge validation
+
+- Three conflicts resolved in App imports, composer Send routing and extracted sidebar rail. Preserve main's queueIfPending behavior on its original path and native command injection on Mastra. New main rail/status components use shared presentation inputs, with explicit absent-timestamp sorting fallback.
+- Build/trim and independent merge review pass; native two-tab/restart browser acceptance remains green across all three viewport/input modes.
+- Full pinned-main baseline itself has 18 frontend failures (including stale queueIfPending assertions and changed layout/title fixtures). The merged snapshot also has 18 failures; repeated isolated comparisons show no demonstrated new merge failure. Updated eight stale test files to main's actual behavior while preserving delivery, loading and authoritative-refill assertions. Independent review of the test changes is clear. Full merged suite passes: 1,125 tests in 154 files. Main checkout remains untouched.

@@ -53,30 +53,33 @@ for (const shape of [
         await expect.poll(() => inputs().length).toBe(1);
         const chosen = inputs()[0].body as InputRequest;
         expect(chosen).toEqual({ input: [{ type: "text", text: options[0] }], clientUserMessageId: expect.any(String) });
-        fixture.publishTimeline({ ...fixture.detail.timeline, rows: [questionRow(), replyRow("chosen", options[0], chosen.clientUserMessageId!, 2)] });
-        for (const page of [first, second]) await expect(pane(page).locator(".kodex-user-message-bubble").filter({ hasText: options[0] })).toHaveCount(1);
-        await expect(card(first).getByRole("textbox", { name: "Reply to question 1", exact: true })).toHaveValue("My separate question draft");
+        fixture.publishTimeline({ ...fixture.detail.timeline, rows: [questionRow(), replyRow("chosen", options[0], chosen.clientUserMessageId!, 2)] }, "first");
+        await expect(card(first).getByRole("textbox")).toHaveCount(0);
+        await expect(card(first).getByRole("button")).toHaveCount(0);
+        await expect(card(first).locator("details")).not.toHaveAttribute("open", "");
+        await expect(card(second).getByRole("textbox")).toBeVisible();
         await expect(mainComposer(first)).toHaveValue("First tab main draft");
         await expect(mainComposer(second)).toHaveValue("Second tab main draft");
-
-        await card(first).getByRole("textbox", { name: "Reply to question 1", exact: true }).fill("logged in");
-        await card(first).getByRole("button", { name: "Send reply", exact: true }).click();
-        await expect.poll(() => inputs().length).toBe(2);
-        const typed = inputs()[1].body as InputRequest;
-        expect(typed).toEqual({ input: [{ type: "text", text: "logged in" }], clientUserMessageId: expect.any(String) });
-        expect(typed.clientUserMessageId).not.toBe(chosen.clientUserMessageId);
-        fixture.publishTimeline({ ...fixture.detail.timeline, rows: [questionRow(), replyRow("chosen", options[0], chosen.clientUserMessageId!, 2), replyRow("typed", "logged in", typed.clientUserMessageId!, 3)] }, "first");
-        await expect(card(first).getByRole("textbox", { name: "Reply to question 1", exact: true })).toHaveValue("");
-        await expect(pane(first).locator(".kodex-user-message-bubble").filter({ hasText: "logged in" })).toHaveCount(1);
-        await expect(pane(second).locator(".kodex-user-message-bubble").filter({ hasText: "logged in" })).toHaveCount(0);
         const connections = fixture.connections.get("second") ?? 0;
         fixture.disconnect("second");
         await expect.poll(() => fixture.connections.get("second") ?? 0).toBeGreaterThan(connections);
-        await expect(pane(second).locator(".kodex-user-message-bubble").filter({ hasText: "logged in" })).toHaveCount(1);
-        await expect(mainComposer(first)).toHaveValue("First tab main draft");
-        await expect(mainComposer(second)).toHaveValue("Second tab main draft");
+        for (const page of [first, second]) {
+          await expect(card(page).getByRole("textbox")).toHaveCount(0);
+          await expect(card(page).getByRole("button")).toHaveCount(0);
+          await card(page).getByText("Input requested", { exact: true }).click();
+          await expect(card(page).getByRole("blockquote")).toHaveText(options[0]);
+          await expect(card(page).getByText("logged in", { exact: true })).toBeVisible();
+          await expect(mainComposer(page)).toHaveValue(page === first ? "First tab main draft" : "Second tab main draft");
+          await page.screenshot({ path: test.info().outputPath(page === first ? "answered-first.png" : "answered-second.png") });
+        }
+        await first.reload();
+        await expect(card(first)).toBeVisible();
+        await expect(card(first).getByRole("textbox")).toHaveCount(0);
+        await expect(card(first).locator("details")).not.toHaveAttribute("open", "");
+        await card(first).getByText("Input requested", { exact: true }).click();
+        await expect(card(first).getByRole("blockquote")).toHaveText(options[0]);
         expect(fixture.pending).toEqual([]);
-        expect(inputs()).toHaveLength(2);
+        expect(inputs()).toHaveLength(1);
       } finally { await fixture.close(); }
       expect(fixture.unexpected).toEqual([]);
       expect(fixture.errors).toEqual([]);

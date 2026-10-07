@@ -219,8 +219,6 @@
 }
 
 .kodex-composer-textarea textarea {
-  min-height: 63px;
-  max-height: min(32vh, 260px);
   padding: 0 2px;
   border: 0;
   background: transparent;

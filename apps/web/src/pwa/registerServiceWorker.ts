@@ -18,7 +18,7 @@ type PwaRegistrationOptions = {
 };
 
 const listeners = new Set<PwaUpdateListener>();
-const UPDATE_CHECK_INTERVAL_MS = 5 * 60_000;
+const UPDATE_CHECK_INTERVAL_MS = 60_000;
 
 let loadRegisterSW: () => Promise<RegisterSW> = async () => {
   const pwaModule = await import("virtual:pwa-register");

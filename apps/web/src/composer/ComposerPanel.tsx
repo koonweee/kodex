@@ -167,6 +167,12 @@ export function ComposerPanel({
     compact: isNarrowComposer,
     onOpen: openGoalEditor,
     onReload: threadGoal.reload,
+    onDelete: () => {
+      if (!threadGoal.goal || threadGoal.pending || !threadGoal.ready) return;
+      void threadGoal.clear().catch(() => {
+        if (currentGoalThreadId.current === goalThreadId) setGoalEditorThreadId(goalThreadId);
+      });
+    },
     onToggleStatus: () => {
       if (!threadGoal.goal || threadGoal.pending || !threadGoal.ready) return;
       void threadGoal.update({ status: threadGoal.goal.status === "active" ? "paused" : "active" }).catch(() => {
@@ -363,6 +369,7 @@ export function ComposerPanel({
   const representationProps = {
     goalControls,
     queuePanel,
+    queueOnSubmit: Boolean(nativeQueue.query.data?.queuedInputs.length),
     activeSelectedTurnId,
     attachmentInputRef,
     canCompose,

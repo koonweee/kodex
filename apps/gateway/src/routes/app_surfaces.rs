@@ -16,7 +16,9 @@ use crate::{
     app_server_api::{McpServerToolCallRequest, UserInput},
     app_surfaces::{app_surface_csp, MCP_APP_MIME_TYPE},
     error::{ApiError, ApiResult},
-    routes::turns::{submit_thread_input, ThreadInputResponse, TurnStartRequest},
+    routes::turns::{
+        submit_thread_input, ThreadInputRequest, ThreadInputResponse, TurnStartRequest,
+    },
     store::{
         AppSurfaceCsp, AppSurfaceGrants, AppSurfacePermissions, AppSurfaceProvider,
         AppSurfaceResourceGrant, AppSurfaceSession, AppSurfaceSessionStatus, AppSurfaceToolGrant,
@@ -342,14 +344,17 @@ async fn bridge_message(
     let response = submit_thread_input(
         State(state.clone()),
         Path(session.thread_id.clone()),
-        Json(TurnStartRequest {
-            client_user_message_id: None,
-            input: vec![UserInput::Text {
-                text: message.clone(),
-                text_elements: Vec::new(),
-            }],
-            attachments: Vec::new(),
-            options: Default::default(),
+        Json(ThreadInputRequest {
+            queue_if_pending: false,
+            submission: TurnStartRequest {
+                client_user_message_id: None,
+                input: vec![UserInput::Text {
+                    text: message.clone(),
+                    text_elements: Vec::new(),
+                }],
+                attachments: Vec::new(),
+                options: Default::default(),
+            },
         }),
     )
     .await?

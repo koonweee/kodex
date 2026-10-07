@@ -2695,6 +2695,11 @@ export interface components {
             filePath: string;
             version: string;
         };
+        NativeQueuedSubmission: {
+            clientUserMessageId: string;
+            id: string;
+            input: unknown[];
+        };
         NotificationStatusResponse: {
             configured: boolean;
             subscriptionsEnabled: boolean;
@@ -3309,6 +3314,17 @@ export interface components {
         /** @enum {string} */
         ThreadGoalStatus: "active" | "paused" | "blocked" | "usageLimited" | "budgetLimited" | "complete";
         /** @enum {string} */
+        ThreadInputDisposition: "submitted" | "queued";
+        ThreadInputRequest: components["schemas"]["TurnStartRequest"] & {
+            /** @description Composer policy: append to existing native queued work before start-or-steer. */
+            queueIfPending?: boolean;
+        };
+        ThreadInputResponse: {
+            disposition?: null | components["schemas"]["ThreadInputDisposition"];
+            payload: unknown;
+            queuedInput?: null | components["schemas"]["NativeQueuedSubmission"];
+        };
+        /** @enum {string} */
         ThreadInterruptCurrentDisposition: "interrupted" | "idle";
         ThreadInterruptCurrentResponse: {
             disposition: components["schemas"]["ThreadInterruptCurrentDisposition"];
@@ -3445,6 +3461,10 @@ export interface components {
             unreadCompletedAgentTurn: boolean;
             /** Format: int64 */
             updatedAt: number;
+        };
+        /** @description A native metadata refill signal, not a title or sidebar membership projection. */
+        ThreadSummaryChanged: {
+            threadId: string;
         };
         ThreadTimelineFileChangeEntry: {
             action: string;
@@ -6403,7 +6423,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["TurnStartRequest"];
+                "application/json": components["schemas"]["ThreadInputRequest"];
             };
         };
         responses: {
@@ -6412,7 +6432,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RawAppServerResponse"];
+                    "application/json": components["schemas"]["ThreadInputResponse"];
                 };
             };
         };

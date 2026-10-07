@@ -320,6 +320,12 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
             for normalized in normalized.events {
                 send_normalized_live_event(state, normalized).await;
             }
+            if let Some(event) =
+                crate::thread_summary::native_change_event(state, &method, &params).await?
+            {
+                let _ = state.events.send(event);
+                emitted = true;
+            }
             // Canonical state is already published before optional widget work
             // enters the bounded importer. This path performs no native reads.
             if let Some(job) = pending_widget {

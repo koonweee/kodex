@@ -606,6 +606,19 @@ describe("timeline message renderers", () => {
     expect(container.querySelector(".lucide-check")).toBeInTheDocument();
   });
 
+  it("reveals the final answer footer only when streaming ends, even without a text change", () => {
+    const timestampMs = 1779000000000;
+    const message = item({ kind: "assistant_message", messagePhase: "final_answer", text: "Answer", status: "running" });
+    const content = (status: typeof message.status) => <MantineProvider>
+      <TimelineItemRenderer item={{ ...message, status }} toolbarTimestampMs={timestampMs} />
+    </MantineProvider>;
+    const view = render(content("running"));
+    expect(screen.queryByRole("button", { name: "Copy message" })).not.toBeInTheDocument();
+    view.rerender(content("completed"));
+    expect(screen.getByRole("button", { name: "Copy message" })).toBeVisible();
+    expect(screen.getByLabelText(/^Message timestamp/)).toBeVisible();
+  });
+
   it("renders the assistant timestamp after the copy button", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 4, 13, 12, 0, 0));

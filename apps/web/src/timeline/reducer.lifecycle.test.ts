@@ -307,6 +307,22 @@ describe("timeline reducer lifecycle", () => {
     expect(state.lastSeq).toBe(7);
   });
 
+  it("treats native summary markers as metadata invalidations without creating transcript rows or changing lifecycle", () => {
+    const before = applyLiveTimelineUpdate(createTimelineState(), event({
+      seq: 3, kind: "thread_view.patch", payload: projectionPatchWithLiveState({
+        viewRevision: 3, activeTurnId: "turn-1", liveState: "streaming", status: "running", text: "Still working",
+      }),
+    }));
+    const after = applyLiveTimelineUpdate(before, event({
+      seq: 4, kind: "thread.summary_changed", threadId: "thread-1", payload: { threadId: "thread-1" },
+    }));
+    expect(after.items).toEqual(before.items);
+    expect(after.turns).toEqual(before.turns);
+    expect(after.activeTurnId).toBe("turn-1");
+    expect(after.viewRevision).toBe(3);
+    expect(after.lastSeq).toBe(4);
+  });
+
   it("renders gateway warning and error events as diagnostics", () => {
     let state = createTimelineState();
     state = applyLiveTimelineUpdate(state, event({
