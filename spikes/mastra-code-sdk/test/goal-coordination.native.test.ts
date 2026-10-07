@@ -191,3 +191,84 @@ for (const stage of ['main-abort', 'judge-abort', 'after-completion'] as const) 
     t.diagnostic(JSON.stringify({ stage, operation, attempts, applied, iterationHooks, terminalHooks }));
   });
 }
+
+// A candidate no-patch policy: abort ordinary work, but wait when native events
+// say judging is in progress. These are observed delivery timings, not an
+// admission fence: goal capture precedes pending delivery. Native step-finish
+// is emitted AFTER goal evaluation, so it does not cover entry into evaluation.
+for (const trigger of ['step-finish', 'message-end-microtask', 'judge-pending'] as const) {
+  test(`evaluation-aware Stop at ${trigger}`, { timeout: 30_000 }, async t => {
+    const projectPath = join(root, `stop-boundary-${trigger}`); await mkdir(projectPath);
+    const runtime = await createProjectRuntime({ profile, projectPath, runtimeRoot: join(projectPath, 'runtime'), disableMcp: true, subagents: [],
+      modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }] });
+    const session = await runtime.createSession({ threadId: `stop-${trigger}`, resourceId: `stop-resource-${trigger}` });
+    const threadId = session.thread.requireId(), resourceId = session.identity.getResourceId();
+    await session.thread.rename({ title: 'Stop boundary fixture' });
+    const agent = session.machinery.getAgent();
+    const producers = new Map<string, ReturnType<typeof latch>>();
+    const completed = new Set<string>();
+    const unregister = runtime.mastra.__unregisterInternalWorkflow.bind(runtime.mastra);
+    t.mock.method(runtime.mastra, '__unregisterInternalWorkflow', (id: string, runId: string) => {
+      unregister(id, runId);
+      if (id === 'agentic-loop') { completed.add(runId); producers.get(runId)?.resolve(); }
+    });
+    const producerFinished = (runId: string) => {
+      if (completed.has(runId)) return Promise.resolve();
+      const waiting = producers.get(runId) ?? latch(); producers.set(runId, waiting); return waiting.promise;
+    };
+    let evaluating = false, stopRequested = false, pending = false, applied = 0;
+    let nativeRunId: string | undefined;
+    let terminal = latch();
+    let aborts = 0, deferredStops = 0, overwritten = 0;
+    const requestStop = () => {
+      if (stopRequested) return;
+      stopRequested = true; pending = true;
+      nativeRunId = agent.getActiveThreadRunId({ threadId, resourceId });
+      if (evaluating) deferredStops++;
+      else { aborts++; session.abort(); }
+    };
+    const apply = async () => { if (pending) { pending = false; await agent.clearObjective({ threadId }); applied++; } };
+    const machinery = session.machinery;
+    session.setMachinery({ ...machinery, buildStreamOptions: async input => {
+      const options = await machinery.buildStreamOptions(input);
+      const before = options.onStepFinish as ((...args: unknown[]) => unknown) | undefined;
+      return { ...options,
+        onStepFinish: async (...args: unknown[]) => { await before?.(...args); if (trigger === 'step-finish') requestStop(); },
+        onIterationComplete: async () => { await apply(); evaluating = false; if (stopRequested) return { continue: false }; },
+      };
+    } });
+    const assistantIds = new Set<string>();
+    const offEvents = session.subscribe(event => {
+      if (event.type === 'message_start' && event.message.role === 'assistant') assistantIds.add(event.message.id);
+      if (event.type === 'message_end' && assistantIds.has(event.id) && trigger === 'message-end-microtask') queueMicrotask(requestStop);
+      if (event.type === 'goal_evaluation' && event.payload.pending) {
+        evaluating = true;
+        if (trigger === 'judge-pending') requestStop();
+      }
+    });
+    const offTerminal = session.onBeforeAgentEnd(async () => { await apply(); terminal.resolve(); });
+    let run: Promise<unknown> | undefined;
+    t.after(async () => {
+      judge.release.resolve(); await run?.catch(() => {});
+      if (nativeRunId) await producerFinished(nativeRunId);
+      offEvents(); offTerminal(); await runtime.dispose();
+    });
+    const requestStart = fixture.requests.length;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      evaluating = false; stopRequested = false; pending = false; terminal = latch(); nativeRunId = undefined;
+      judge = { reached: latch(), release: latch(), decision: 'continue', calls: 0 }; judge.release.resolve();
+      await agent.setObjective('ORIGINAL_GOAL', { threadId, resourceId, maxRuns: Number.MAX_SAFE_INTEGER });
+      run = session.sendMessage({ content: 'Exercise Stop at the transition to judging' });
+      await run; await terminal.promise;
+      assert.ok(nativeRunId); await producerFinished(nativeRunId);
+      const saved = await agent.getObjective({ threadId });
+      if (saved) overwritten++;
+      assert.equal(pending, false);
+    }
+    assert.equal(applied, 10);
+    const mainCalls = fixture.requests.slice(requestStart).filter(request => request.model === 'chat').length;
+    t.diagnostic(JSON.stringify({ trigger, aborts, deferredStops, overwritten, mainCalls }));
+    assert.equal(overwritten, 0, 'the event-based policy must preserve Clear across every attempted Stop');
+    assert.equal(mainCalls, 10, 'Stop must not permit another old-goal model step');
+  });
+}
