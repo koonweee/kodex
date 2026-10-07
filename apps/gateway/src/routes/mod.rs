@@ -5869,6 +5869,11 @@ mod tests {
             .queued_responses
             .lock()
             .unwrap()
+            .push(json!({"goal":null}));
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
             .push(active_thread_read_response("thread-1", "fresh-turn"));
         app_server.queued_responses.lock().unwrap().push(
             json!({"data":[{"id":"fresh-turn", "status":"inProgress", "items":[]}],
@@ -5895,13 +5900,14 @@ mod tests {
         assert_eq!(body["disposition"], "interrupted");
         assert_eq!(body["interruptedTurnId"], "fresh-turn");
         let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests[0].0, "thread/read");
-        assert_eq!(requests[0].1["includeTurns"], false);
-        assert_eq!(requests[1].0, "thread/turns/list");
-        assert_eq!(requests[1].1["itemsView"], "notLoaded");
-        assert_eq!(requests[2].0, "turn/interrupt");
+        assert_eq!(requests[0].0, "thread/goal/get");
+        assert_eq!(requests[1].0, "thread/read");
+        assert_eq!(requests[1].1["includeTurns"], false);
+        assert_eq!(requests[2].0, "thread/turns/list");
+        assert_eq!(requests[2].1["itemsView"], "notLoaded");
+        assert_eq!(requests[3].0, "turn/interrupt");
         assert_eq!(
-            requests[2].1,
+            requests[3].1,
             json!({"threadId": "thread-1", "turnId": "fresh-turn"})
         );
     }
@@ -5909,6 +5915,11 @@ mod tests {
     #[tokio::test]
     async fn interrupt_current_turn_returns_idle_without_interrupting_stale_local_turn() {
         let (state, app_server) = test_state().await;
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(json!({"goal":null}));
         app_server
             .queued_responses
             .lock()
@@ -5930,8 +5941,9 @@ mod tests {
         assert_eq!(body["disposition"], "idle");
         assert_eq!(body["interruptedTurnId"], Value::Null);
         let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].0, "thread/goal/get");
+        assert_eq!(requests[1].0, "thread/read");
     }
 
     #[tokio::test]

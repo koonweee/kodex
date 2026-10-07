@@ -1127,6 +1127,7 @@ done
             "thread/list" => json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
             "thread/loaded/list" => json!({"data": [], "nextCursor": null}),
             "thread/queue/list" => json!({"data": [], "nextCursor": null}),
+            "thread/goal/get" => json!({"goal": null}),
             "thread/queue/start" => json!({"turn": {
                 "id":"native-queue-turn", "items":[], "itemsView":"notLoaded",
                 "status":"inProgress", "error":null, "startedAt":null,

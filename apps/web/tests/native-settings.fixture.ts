@@ -162,6 +162,24 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
       return respond(route, read, 200, `seen:${client}`);
     }
     if (key === "POST /v1/threads/settings-chat/attach") return respond(route, detail, 200, `snapshot:${client}`);
+    if (key === "POST /v1/threads/settings-chat/interrupt-current") {
+      if (goal?.status === "active") {
+        goal = { ...goal, status: "paused" };
+        emit("thread.goal_changed", { threadId: detail.thread.id });
+      }
+      const turnId = detail.timeline.activeTurnId;
+      if (!turnId) return respond(route, { disposition: "idle", interruptedTurnId: null, rawPayload: null } satisfies components["schemas"]["ThreadInterruptCurrentResponse"]);
+      const revision = Math.max(seq, detail.timeline.viewRevision ?? 0) + 1;
+      detail.timeline = { ...detail.timeline, activeTurnId: null, liveState: "idle", viewRevision: revision,
+        turns: detail.timeline.turns.map((turn) => turn.id === turnId ? { ...turn, status: "interrupted" } : turn) };
+      detail.liveState = "idle";
+      detail.thread.status = "idle";
+      const patch: ThreadViewPatch = { ...detail.timeline, scope: "full_snapshot", threadId: detail.thread.id,
+        affectedTurnIds: detail.timeline.turns.map((turn) => turn.id) };
+      emit("thread_view.patch", patch, undefined, revision);
+      emit("turn_queue.changed", { threadId: detail.thread.id });
+      return respond(route, { disposition: "interrupted", interruptedTurnId: turnId, rawPayload: {} } satisfies components["schemas"]["ThreadInterruptCurrentResponse"]);
+    }
     if (key === "GET /v1/threads/settings-chat/goal") return respond(route, { goal }, 200, `goal:${client}`);
     if (key === "PATCH /v1/threads/settings-chat/goal") {
       const update = body as components["schemas"]["ThreadGoalSetRequest"];

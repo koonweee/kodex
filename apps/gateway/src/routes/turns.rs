@@ -9,8 +9,8 @@ use utoipa::ToSchema;
 use crate::{
     api::AppState,
     app_server_api::{
-        self, CodexClient, RawAppServerResponse, ThreadStatus, TimelineFileAttachment,
-        TurnStartOptions, UserInput,
+        self, CodexClient, RawAppServerResponse, ThreadGoalSetRequest, ThreadGoalStatus,
+        ThreadStatus, TimelineFileAttachment, TurnStartOptions, UserInput,
     },
     error::{ApiError, ApiResult},
     turn_lifecycle,
@@ -332,22 +332,32 @@ pub async fn interrupt_turn(
     ))
 }
 
+/// Pause an active native goal and interrupt the current native turn.
 #[utoipa::path(post, path = "/v1/threads/{threadId}/interrupt-current", responses((status = 200, body = ThreadInterruptCurrentResponse)))]
 pub async fn interrupt_current_turn(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
 ) -> ApiResult<Json<ThreadInterruptCurrentResponse>> {
+    let client = app_server_api::client(&state.app_server);
+    // Pause first so native goal continuation cannot replace the turn selected for Stop.
+    // A goal failure must still allow us to interrupt, then surface the failed pause.
+    let pause_result = match pause_active_goal(&client, &thread_id).await {
+        Err(error) if goal_unavailable(&error, &thread_id) => Ok(()),
+        result => result,
+    };
     let Some(active_turn_id) = turn_lifecycle::refreshed_active_turn_id(&state, &thread_id).await?
     else {
+        pause_result?;
         return Ok(Json(ThreadInterruptCurrentResponse {
             disposition: ThreadInterruptCurrentDisposition::Idle,
             interrupted_turn_id: None,
             raw_payload: None,
         }));
     };
-    let response = app_server_api::client(&state.app_server)
+    let response = client
         .turn_interrupt(thread_id, active_turn_id.clone())
         .await?;
+    pause_result?;
     Ok(Json(ThreadInterruptCurrentResponse {
         disposition: ThreadInterruptCurrentDisposition::Interrupted,
         interrupted_turn_id: Some(active_turn_id),
@@ -355,6 +365,39 @@ pub async fn interrupt_current_turn(
     }))
 }
 
+async fn pause_active_goal(client: &CodexClient, thread_id: &str) -> ApiResult<()> {
+    let Some(goal) = client.thread_goal_get(thread_id.to_string()).await?.goal else {
+        return Ok(());
+    };
+    if goal.thread_id != thread_id {
+        return Err(ApiError::BadGateway(
+            "native Stop goal returned a different thread".into(),
+        ));
+    }
+    if matches!(goal.status, ThreadGoalStatus::Active) {
+        client
+            .thread_goal_set(
+                thread_id.to_string(),
+                ThreadGoalSetRequest {
+                    status: Some(Some(ThreadGoalStatus::Paused)),
+                    ..Default::default()
+                },
+            )
+            .await?;
+    }
+    Ok(())
+}
+
+fn goal_unavailable(error: &ApiError, thread_id: &str) -> bool {
+    matches!(error, ApiError::NativeRpc(error) if error.code == -32600
+        && (error.message == "goals feature is disabled"
+            || error.message == format!("ephemeral thread does not support goals: {thread_id}")))
+}
+
 #[cfg(test)]
 #[path = "turns_input_tests.rs"]
 mod input_tests;
+
+#[cfg(test)]
+#[path = "turns_stop_tests.rs"]
+mod stop_tests;

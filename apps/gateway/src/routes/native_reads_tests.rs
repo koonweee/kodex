@@ -52,7 +52,12 @@ async fn stale_projection(state: &AppState) {
     .unwrap();
 }
 
-async fn stop(state: AppState) -> axum::response::Response {
+async fn stop(state: AppState, native: &RecordingAppServer) -> axum::response::Response {
+    native
+        .queued_responses
+        .lock()
+        .unwrap()
+        .insert(0, json!({"goal":null}));
     build_router(state)
         .oneshot(
             Request::post("/v1/threads/thread-1/interrupt-current")
@@ -164,12 +169,13 @@ async fn stop_reads_native_active_header_without_replacing_transcript_projection
         headers(json!("inProgress")),
         json!({}),
     ]);
-    let response = stop(state.clone()).await;
+    let response = stop(state.clone(), &native).await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(body(response).await["interruptedTurnId"], "fresh-turn");
     assert_eq!(
         *native.requests.lock().unwrap(),
         vec![
+            ("thread/goal/get".into(), json!({"threadId":"thread-1"})),
             (
                 "thread/read".into(),
                 json!({"threadId":"thread-1", "includeTurns":false})
@@ -204,10 +210,10 @@ async fn stop_ignores_stale_cached_turn_when_native_metadata_is_idle_or_unloaded
             .lock()
             .unwrap()
             .push(summary(status));
-        let response = stop(state).await;
+        let response = stop(state, &native).await;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(body(response).await["disposition"], "idle");
-        assert_eq!(native.requests.lock().unwrap().len(), 1);
+        assert_eq!(native.requests.lock().unwrap().len(), 2);
     }
 }
 
@@ -219,10 +225,10 @@ async fn stop_handles_native_turn_completion_between_metadata_and_header_reads()
         .lock()
         .unwrap()
         .extend([summary("active"), headers(json!("completed"))]);
-    let response = stop(state).await;
+    let response = stop(state, &native).await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(body(response).await["disposition"], "idle");
-    assert_eq!(native.requests.lock().unwrap().len(), 2);
+    assert_eq!(native.requests.lock().unwrap().len(), 3);
 }
 
 #[tokio::test]
@@ -234,8 +240,8 @@ async fn stop_rejects_invalid_native_turn_header_status() {
             .lock()
             .unwrap()
             .extend([summary("active"), headers(status)]);
-        let response = stop(state).await;
+        let response = stop(state, &native).await;
         assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
-        assert_eq!(native.requests.lock().unwrap().len(), 2);
+        assert_eq!(native.requests.lock().unwrap().len(), 3);
     }
 }

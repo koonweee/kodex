@@ -1604,6 +1604,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Pause an active native goal and interrupt the current native turn. */
         post: operations["interrupt_current_turn"];
         delete?: never;
         options?: never;

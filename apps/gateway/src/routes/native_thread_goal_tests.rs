@@ -251,14 +251,19 @@ async fn native_goal_contract_is_typed_in_openapi_and_sparse_nullable_in_request
 }
 
 #[tokio::test]
-async fn native_goal_malformed_set_and_clear_responses_surface_gateway_errors() {
+async fn native_goal_malformed_responses_surface_gateway_errors() {
     let (state, native) = state().await;
     let app = build_router(state);
     for request in [
+        Request::get("/v1/threads/thread-1/goal"),
         Request::patch("/v1/threads/thread-1/goal"),
         Request::delete("/v1/threads/thread-1/goal"),
     ] {
-        native.queued_responses.lock().unwrap().push(json!({}));
+        native
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(json!({"goal":{}}));
         let response = app
             .clone()
             .oneshot(
