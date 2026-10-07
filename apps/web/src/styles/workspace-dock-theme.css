@@ -160,34 +160,55 @@
   height: var(--dv-tab-close-icon-size);
 }
 
-/* Native tab owns title, close and pointer handling; the wrapper adds a slot.
-   Shared grid tracks keep the indicator before the native close control. */
+/* Keep the native title full-width; indicators and close controls overlay it. */
 .kodex-workspace-tab {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
   height: 100%;
   width: 100%;
   min-width: 0;
 }
 
-.kodex-workspace-tab[data-inline-adornment]:not([data-unread]) {
-  grid-template-columns: minmax(0, 1fr) 20px auto;
+.kodex-workspace-dock .dv-tab {
+  --kodex-tab-overlay-bg: var(--kodex-pane-bg);
 }
 
-.kodex-workspace-dock .kodex-workspace-tab > .dv-default-tab {
-  display: grid;
-  grid-template-columns: subgrid;
-  grid-area: 1 / 1 / 2 / -1;
+.kodex-workspace-dock .kodex-workspace-tab > .dv-default-tab > .dv-default-tab-content {
+  margin-right: 0;
+  padding-right: 0;
+  width: 100%;
 }
 
-.kodex-workspace-tab > .dv-default-tab > .dv-default-tab-action {
-  grid-column: -2;
+.kodex-workspace-dock .kodex-workspace-tab .dv-default-tab-action,
+.kodex-workspace-tab > .kodex-workspace-pane-title-adornment {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  box-sizing: border-box;
+  background: var(--kodex-tab-overlay-bg);
+  border-radius: var(--kodex-radius-xs);
 }
 
 .kodex-workspace-tab > .kodex-workspace-pane-title-adornment {
-  grid-area: 1 / 2;
+  /* Match the native close control's inset within the outer tab. */
+  right: 8px;
   pointer-events: none;
+}
+
+.kodex-workspace-tab .dv-default-tab-action::before,
+.kodex-workspace-tab > .kodex-workspace-pane-title-adornment::before {
+  content: "";
+  position: absolute;
+  inset: 0 100% 0 -12px;
+  background: linear-gradient(to right, transparent, var(--kodex-tab-overlay-bg));
+  pointer-events: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kodex-workspace-dock .dv-tab.dv-inactive-tab:hover {
+    --kodex-tab-overlay-bg: var(--kodex-bg-button-hover);
+  }
 }
 
 /* On hover-capable devices the unread dot shares the native close slot. */
@@ -201,23 +222,34 @@
     visibility: visible;
   }
 
-  .kodex-workspace-dock .dv-tab:hover [data-unread] > .kodex-workspace-pane-title-adornment,
-  .kodex-workspace-dock .dv-tab:focus-visible [data-unread] > .kodex-workspace-pane-title-adornment {
+  .kodex-workspace-dock .dv-tab:hover [data-inline-adornment] > .kodex-workspace-pane-title-adornment,
+  .kodex-workspace-dock .dv-tab:focus-visible [data-inline-adornment] > .kodex-workspace-pane-title-adornment {
     opacity: 0;
-  }
-}
-
-@media (hover: none), (pointer: coarse), (any-pointer: coarse) {
-  .kodex-workspace-tab[data-unread] {
-    grid-template-columns: minmax(0, 1fr) 20px auto;
   }
 }
 
 @media (hover: none), (pointer: coarse), (any-pointer: coarse) {
   .kodex-workspace-dock .dv-tabs-container > .dv-tab .dv-default-tab .dv-default-tab-action {
     visibility: visible;
+    width: 28px;
+    height: 28px;
   }
-  .kodex-workspace-dock .dv-tabs-container > .dv-tab [data-unread] > .kodex-workspace-pane-title-adornment {
+  .kodex-workspace-dock .dv-tabs-container > .dv-tab [data-inline-adornment] > .kodex-workspace-pane-title-adornment {
     opacity: 1;
+    right: 36px;
   }
+}
+
+.kodex-workspace-dock .dv-tabs-container {
+  --kodex-tabs-fade-left: 0px;
+  --kodex-tabs-fade-right: 0px;
+  mask-image: linear-gradient(to right, transparent, #000 var(--kodex-tabs-fade-left), #000 calc(100% - var(--kodex-tabs-fade-right)), transparent);
+}
+
+.kodex-workspace-dock .dv-tabs-container[data-overflow-left] {
+  --kodex-tabs-fade-left: 20px;
+}
+
+.kodex-workspace-dock .dv-tabs-container[data-overflow-right] {
+  --kodex-tabs-fade-right: 20px;
 }

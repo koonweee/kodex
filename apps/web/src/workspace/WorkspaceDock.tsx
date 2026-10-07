@@ -1,18 +1,17 @@
 import { WorkspaceRightHeaderActions } from "./WorkspaceRightHeaderActions";
 import { WorkspaceDefaultTab } from "./WorkspaceDefaultTab";
-import { Menu } from "@mantine/core";
+import { WorkspaceTabOverflowActions } from "./WorkspaceTabOverflowActions";
 import {
   DockviewReact,
   themeAbyss,
   type DockviewApi,
-  type IDockviewHeaderActionsProps,
   type DockviewReadyEvent,
   type DockviewTheme,
   type BuiltInContextMenuItem,
   type ReactContextMenuItemConfig,
   type IDockviewPanelProps,
 } from "dockview";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { panelPlacementOptions } from "./autoPanelPlacement";
 import { focusWorkspaceDockPanel } from "./focusWorkspaceDockPanel";
@@ -244,85 +243,6 @@ function projectIdForWorkspacePane(pane: WorkspacePane, threadProjectIdsById: Re
     return typeof pane.target.projectId === "string" && pane.target.projectId.length > 0 ? pane.target.projectId : null;
   }
   return threadProjectIdsById[pane.target.threadId] ?? null;
-}
-
-export function WorkspaceTabOverflowActions({ activePanel, panels }: IDockviewHeaderActionsProps) {
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const [overflowPanelIds, setOverflowPanelIds] = useState<string[]>([]);
-  const measureOverflow = useCallback(() => {
-    const root = rootRef.current;
-    const header = root?.closest(".dv-tabs-and-actions-container");
-    const tabsContainer = header?.querySelector<HTMLElement>(".dv-tabs-container");
-    if (!tabsContainer) {
-      setOverflowPanelIds([]);
-      return;
-    }
-    const containerRect = tabsContainer.getBoundingClientRect();
-    const tabElements = Array.from(tabsContainer.querySelectorAll<HTMLElement>(":scope > .dv-tab"));
-    const nextIds = panels.flatMap((panel, index) => {
-      const tabElement = tabElements[index];
-      if (!tabElement) {
-        return [];
-      }
-      const tabRect = tabElement.getBoundingClientRect();
-      return tabRect.right <= containerRect.left || tabRect.left >= containerRect.right ? [panel.id] : [];
-    });
-    setOverflowPanelIds((current) =>
-      current.length === nextIds.length && current.every((id, index) => id === nextIds[index])
-        ? current
-        : nextIds,
-    );
-  }, [panels]);
-
-  useEffect(() => {
-    const root = rootRef.current;
-    const header = root?.closest(".dv-tabs-and-actions-container");
-    const tabsContainer = header?.querySelector<HTMLElement>(".dv-tabs-container");
-    const frame = window.requestAnimationFrame(measureOverflow);
-    if (!header || !tabsContainer || typeof ResizeObserver === "undefined") {
-      return () => window.cancelAnimationFrame(frame);
-    }
-    const observer = new ResizeObserver(measureOverflow);
-    observer.observe(tabsContainer);
-    observer.observe(header);
-    tabsContainer.addEventListener("scroll", measureOverflow, { passive: true });
-    window.addEventListener("resize", measureOverflow);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      observer.disconnect();
-      tabsContainer.removeEventListener("scroll", measureOverflow);
-      window.removeEventListener("resize", measureOverflow);
-    };
-  }, [measureOverflow]);
-
-  const overflowPanels = panels.filter((panel) => overflowPanelIds.includes(panel.id));
-  return (
-    <div className="kodex-workspace-tab-overflow" ref={rootRef}>
-      {overflowPanels.length > 0 ? (
-        <Menu position="bottom-start" withinPortal>
-          <Menu.Target>
-            <button aria-label="More tabs" className="kodex-workspace-tab-overflow-button" type="button">
-              +{overflowPanels.length}
-            </button>
-          </Menu.Target>
-          <Menu.Dropdown aria-label="More tabs" className="kodex-workspace-tab-overflow-menu">
-            {overflowPanels.map((panel) => (
-              <Menu.Item
-                aria-current={panel.id === activePanel?.id ? "page" : undefined}
-                className="kodex-workspace-tab-overflow-item"
-                key={panel.id}
-                onClick={() => {
-                  panel.focus();
-                }}
-              >
-                {panel.title ?? panel.id}
-              </Menu.Item>
-            ))}
-          </Menu.Dropdown>
-        </Menu>
-      ) : null}
-    </div>
-  );
 }
 
 export function visibleDockviewPanelIds(api: Pick<DockviewApi, "groups" | "activePanel">): string[] {

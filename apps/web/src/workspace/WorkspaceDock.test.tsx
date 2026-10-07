@@ -1,3 +1,4 @@
+import { WorkspaceTabOverflowActions } from "./WorkspaceTabOverflowActions";
 import { WorkspaceRightHeaderActions } from "./WorkspaceRightHeaderActions";
 import { WorkspaceDefaultTab } from "./WorkspaceDefaultTab";
 import { MantineProvider, Menu } from "@mantine/core";
@@ -8,7 +9,6 @@ import type { DockviewApi } from "dockview";
 
 import {
   WorkspaceDock,
-  WorkspaceTabOverflowActions,
   kodexDockviewTheme,
   syncWorkspaceIntoDockview,
   visibleDockviewPanelIds,

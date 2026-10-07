@@ -58,8 +58,38 @@ test("unread and close share a stable slot while native close remains actionable
     await expect(dot).toHaveCSS("opacity", "0");
     await expect(close).toBeVisible();
     expect(await tab.boundingBox()).toEqual(before);
+    const titleBounds = await tab.locator(".dv-default-tab-content").boundingBox();
+    const closeBounds = await close.boundingBox();
+    expect(titleBounds!.x + titleBounds!.width).toBeGreaterThan(closeBounds!.x + 8);
     await close.click();
     await expect(tab).toHaveCount(0);
+  } finally { await fixture.close(); }
+  expect(fixture.errors).toEqual([]);
+  expect(fixture.unexpected).toEqual([]);
+});
+
+
+test("tab strip fades track the clipped edges as it scrolls", async ({ context }) => {
+  const fixture = await nativeSettingsFixture(context);
+  try {
+    const page = await fixture.page("tab-fades");
+    const sidebar = page.getByRole("navigation", { name: "Workspace", exact: true });
+    await sidebar.getByRole("button", { name: "Chats", exact: true }).click();
+    for (let i = 0; i < 5; i++) {
+      await sidebar.getByRole("button", { name: "New chat", exact: true }).click();
+      await page.locator('.kodex-thread-pane-empty[data-workspace-pane-active="true"]').getByRole("textbox", { name: /message composer/i }).fill(`Keep tab ${i}`);
+    }
+    const strip = page.locator(".dv-tabs-container");
+    await expect(strip).toHaveCount(1);
+    await strip.evaluate(el => { el.scrollLeft = 0; });
+    await expect(strip).not.toHaveAttribute("data-overflow-left");
+    await expect(strip).toHaveAttribute("data-overflow-right");
+    await strip.evaluate(el => { el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2; });
+    await expect(strip).toHaveAttribute("data-overflow-left");
+    await expect(strip).toHaveAttribute("data-overflow-right");
+    await strip.evaluate(el => { el.scrollLeft = el.scrollWidth; });
+    await expect(strip).toHaveAttribute("data-overflow-left");
+    await expect(strip).not.toHaveAttribute("data-overflow-right");
   } finally { await fixture.close(); }
   expect(fixture.errors).toEqual([]);
   expect(fixture.unexpected).toEqual([]);
