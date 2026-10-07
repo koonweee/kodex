@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { activateProfile, resolveProfile } from '../src/profile.js';
-import { createFastProcessor } from '../src/chat-settings.js';
+import { createFastProcessor } from '../src/chat-fast.js';
 import { startResponsesFixture } from './fixtures/responses-server.js';
 
 test('supported native processor forwards Fast to the actual Responses wire without replaying other defaults', { timeout: 30_000 }, async () => {

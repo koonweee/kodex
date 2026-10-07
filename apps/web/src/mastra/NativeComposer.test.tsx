@@ -39,6 +39,8 @@ async function pick(trigger: RegExp, submenu: 'Model' | 'Reasoning', item: strin
   await userEvent.click(await screen.findByRole('menuitem', { name: submenu }));
   await userEvent.click(await screen.findByRole('menuitem', { name: item }));
   await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument());
+  const button = screen.getByRole('button', { name: /^Model:/ });
+  if (!button.hasAttribute('disabled')) await waitFor(() => expect(button).toHaveFocus());
 }
 function setup() {
   mockGateway(baseRoutes());
@@ -76,17 +78,23 @@ it('keeps explicit draft choices local through defaults updates and passes them 
   expect(screen.getByLabelText('Message composer')).toHaveValue('Draft text');
   expect(rpc.updateChatSettings).not.toHaveBeenCalled();
   await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
-  await waitFor(() => expect(rpc.createChat).toHaveBeenCalledWith({ projectId: 'project', settings: { modelId: models[1].id, thinkingLevel: 'max' } }));
+  await waitFor(() => expect(rpc.createChat).toHaveBeenCalledWith({ projectId: 'project', settings: { modelId: models[1].id, thinkingLevel: 'max', fast: false } }));
   expect(rpc.send).toHaveBeenCalledWith({ chatId: 'created', text: 'Draft text' });
 });
-it('keeps unsupported Fast visible and fails without changing the displayed settings', async () => {
+it('updates Fast sparsely and waits for canonical settings before displaying it', async () => {
   setup();
-  renderComposer({ id: 'pane', kind: 'thread', target: { mode: 'existing', threadId: 'chat' } }, snapshot());
+  let acknowledge!: (value: unknown) => void;
+  rpc.updateChatSettings.mockReturnValue(new Promise(resolve => { acknowledge = resolve; }));
+  const view = renderComposer({ id: 'pane', kind: 'thread', target: { mode: 'existing', threadId: 'chat' } }, snapshot());
   await userEvent.click(await screen.findByRole('button', { name: 'Model: gpt-5.4, medium' }));
   await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Fast' }));
-  expect(await screen.findByText('Fast responses are not supported by the current native settings service.')).toBeInTheDocument();
-  expect(onError).toHaveBeenCalled();
-  expect(rpc.updateChatSettings).not.toHaveBeenCalled();
+  await waitFor(() => expect(rpc.updateChatSettings).toHaveBeenCalledWith({ chatId: 'chat', patch: { fast: true } }));
+  expect(screen.queryByRole('img', { name: 'Fast responses enabled' })).not.toBeInTheDocument();
+  const canonical = snapshot();
+  view.rerenderSnapshot({ ...canonical, revision: 2, settings: { ...canonical.settings, fast: true } });
+  expect(await screen.findByRole('img', { name: 'Fast responses enabled' })).toBeInTheDocument();
+  view.rerenderSnapshot({ ...canonical, revision: 3 });
+  await act(async () => acknowledge({ fast: true }));
   expect(screen.queryByRole('img', { name: 'Fast responses enabled' })).not.toBeInTheDocument();
 });
 
@@ -101,7 +109,7 @@ it('clears an incompatible draft override according to the supplied model capabi
   expect(screen.getByRole('button', { name: 'Model: gpt-5.5' })).toBeInTheDocument();
   await userEvent.type(screen.getByLabelText('Message composer'), 'Use native default');
   await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
-  await waitFor(() => expect(rpc.createChat).toHaveBeenCalledWith({ projectId: 'project', settings: { modelId: models[1].id, thinkingLevel: null } }));
+  await waitFor(() => expect(rpc.createChat).toHaveBeenCalledWith({ projectId: 'project', settings: { modelId: models[1].id, thinkingLevel: null, fast: false } }));
 });
 
 it('scopes edited draft choices to the project and restores them when returning', async () => {
@@ -129,7 +137,7 @@ it('freezes the displayed model after an explicit draft effort change, matching 
   expect(screen.getByRole('button', { name: 'Model: gpt-5.4, high' })).toBeInTheDocument();
   await userEvent.type(screen.getByLabelText('Message composer'), 'Keep these choices');
   await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
-  await waitFor(() => expect(rpc.createChat).toHaveBeenCalledWith({ projectId: 'project', settings: { modelId: models[0].id, thinkingLevel: 'high' } }));
+  await waitFor(() => expect(rpc.createChat).toHaveBeenCalledWith({ projectId: 'project', settings: { modelId: models[0].id, thinkingLevel: 'high', fast: false } }));
 });
 
 it('submits only the changed existing-chat model and waits for canonical display', async () => {
@@ -151,4 +159,46 @@ it('offers only models whose native provider authentication is available', async
   await userEvent.click(await screen.findByRole('menuitem', { name: 'Model' }));
   expect(screen.getByRole('menuitem', { name: 'gpt-5.4' })).toBeInTheDocument();
   expect(screen.queryByRole('menuitem', { name: 'gpt-5.5' })).not.toBeInTheDocument();
+});
+
+
+it('retains draft Fast across model, reasoning and defaults changes and sends it only at creation', async () => {
+  setup();
+  const stream = defaultsStream(); rpc.watchDraftDefaults.mockResolvedValue(stream.iterable);
+  renderComposer({ id: 'draft', kind: 'thread', target: { mode: 'draft', projectId: 'project' } }, null);
+  await waitFor(() => expect(rpc.watchDraftDefaults).toHaveBeenCalled());
+  await act(async () => stream.publish(defaults()));
+  await userEvent.click(await screen.findByRole('button', { name: 'Model: gpt-5.4, medium' }));
+  await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Fast' }));
+  expect(await screen.findByRole('img', { name: 'Fast responses enabled' })).toBeInTheDocument();
+  await pick(/Model: gpt-5.4, medium/, 'Model', 'gpt-5.5');
+  await pick(/Model: gpt-5.5/, 'Reasoning', 'Max');
+  await act(async () => stream.publish({ ...defaults(models[0].id, 'low'), revision: 2 }));
+  expect(screen.getByRole('button', { name: 'Model: gpt-5.5, max' })).toBeInTheDocument();
+  expect(screen.getByRole('img', { name: 'Fast responses enabled' })).toBeInTheDocument();
+  expect(rpc.updateChatSettings).not.toHaveBeenCalled();
+  await userEvent.type(screen.getByLabelText('Message composer'), 'Use draft Fast');
+  await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  await waitFor(() => expect(rpc.createChat).toHaveBeenCalledWith({ projectId: 'project', settings: { modelId: models[1].id, thinkingLevel: 'max', fast: true } }));
+  expect(rpc.send).toHaveBeenCalledWith({ chatId: 'created', text: 'Use draft Fast' });
+});
+
+it('shows a native Fast rejection without changing canonical settings or replaying defaults with Send', async () => {
+  setup();
+  const otherModel = { ...models[0], id: 'anthropic/claude-sonnet-4-5', provider: 'anthropic', modelName: 'claude-sonnet-4-5' };
+  rpc.listModels.mockResolvedValue([otherModel]);
+  const failure = new Error('Fast responses are not supported by this native model. Turn Fast off before choosing another provider.');
+  rpc.updateChatSettings.mockRejectedValue(failure);
+  renderComposer({ id: 'pane', kind: 'thread', target: { mode: 'existing', threadId: 'chat' } }, snapshot(otherModel.id));
+  await userEvent.click(await screen.findByRole('button', { name: 'Model: claude-sonnet-4-5, medium' }));
+  await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Fast' }));
+  await waitFor(() => expect(rpc.updateChatSettings).toHaveBeenCalledWith({ chatId: 'chat', patch: { fast: true } }));
+  await waitFor(() => expect(screen.getByRole('alert', { name: 'Chat settings error' })).toHaveTextContent(failure.message));
+  expect(onError).toHaveBeenCalledWith(failure);
+  expect(screen.queryByRole('img', { name: 'Fast responses enabled' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Model: claude-sonnet-4-5, medium' })).toBeEnabled();
+  await userEvent.type(screen.getByLabelText('Message composer'), 'Use normal responses');
+  await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  await waitFor(() => expect(rpc.send).toHaveBeenCalledWith({ chatId: 'chat', text: 'Use normal responses' }));
+  expect(rpc.createChat).not.toHaveBeenCalled();
 });

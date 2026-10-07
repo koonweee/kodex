@@ -33,6 +33,7 @@ import {
   useState,
   type DragEvent as ReactDragEvent,
   type RefObject,
+  type ReactNode,
 } from "react";
 
 import type { AccountResponse, Approval } from "../api/client";
@@ -96,6 +97,7 @@ const DEFAULT_DATA_STATE: WorkspaceSidebarDataState = {
 
 export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   account,
+  accountMenu,
   approvals,
   chatThreads,
   chatThreadsHasMore = false,
@@ -143,6 +145,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   pinnedThreadsPaginationState?: SidebarPaginationState;
   onLoadMorePinnedThreads?: () => void;
   account: AccountResponse | null;
+  accountMenu?: ReactNode;
   approvals: Approval[];
   chatThreads: ThreadSummary[];
   chatThreadsHasMore?: boolean;
@@ -439,7 +442,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
         />}>
         <Stack gap={isNarrowSidebar ? 8 : "lg"} h="100%">
             <Box className="kodex-sidebar-header">
-              <SidebarAccountMenu
+              {accountMenu ?? <SidebarAccountMenu
                 account={account}
                 onLogout={onLogout}
                 onSelectAutomations={onSelectAutomations}
@@ -447,7 +450,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                 onShowDebugEventsChange={onShowDebugEventsChange}
                 showDebugEvents={showDebugEvents}
                 usageLimitLines={usageLimitLines}
-              />
+              />}
               {!sidebarCollapsed ? <SidebarIconButton
                 className="kodex-sidebar-header-action"
                 label={isNarrowSidebar ? SIDEBAR_TEXT.showThread : SIDEBAR_TEXT.collapseSidebar}

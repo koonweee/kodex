@@ -15,7 +15,7 @@ npm test
 npm run check
 ```
 
-Tests use the published SDK for sessions, tools, memory, goals, scheduling and persistence. Only the remote model is replaced by a local HTTP fixture. The oRPC test uses real localhost HTTP/SSE clients; the new browser acceptance test additionally exercises the retained Kodex renderer against native SDK state. Tests create disposable profiles and projects. The restart test terminates only its own disposable child process.
+Tests use the published SDK for sessions, tools, memory, goals, scheduling and persistence. Only the remote model is replaced by a local HTTP fixture. The oRPC tests use real localhost HTTP/SSE and multiplexed WebSocket clients; the new browser acceptance test additionally exercises the retained Kodex renderer against native SDK state. Tests create disposable profiles and projects. The restart test terminates only its own disposable child process.
 
 ## Existing Kodex UI spike
 
@@ -32,7 +32,7 @@ cd apps/web
 VITE_KODEX_BACKEND=mastra npm run dev -- --port 5174 --strictPort
 ```
 
-The backend binds `127.0.0.1:8789`; Vite sends both `/rpc` and unfinished `/v1` requests to that backend. The original frontend development target remains available without `VITE_KODEX_BACKEND=mastra`. Never point the Mastra frontend at the production gateway. No sandbox or gateway authentication is provided; localhost/trusted VPN only.
+The browser shares one oRPC WebSocket connection per tab for typed calls and live snapshots; HTTP RPC remains available to nonbrowser clients. Reconnect refills reads without replaying submitted commands. The backend binds `127.0.0.1:8789`; Vite sends both `/rpc` and unfinished `/v1` requests to that backend. The original frontend development target remains available without `VITE_KODEX_BACKEND=mastra`. Never point the Mastra frontend at the production gateway. No sandbox or gateway authentication is provided; localhost/trusted VPN only.
 
 `--profile`, `--port`, and `--model` configure the backend; `KODEX_MASTRA_PROFILE` and `KODEX_MASTRA_MODEL` supply defaults. The model defaults to the previously verified `openai/gpt-6.1-sol`. The native settings API seeds missing memory/judge model choices with that provider and sets the accepted effectively unlimited goal evaluation count; existing memory model selections are preserved. Use a model available to your account.
 

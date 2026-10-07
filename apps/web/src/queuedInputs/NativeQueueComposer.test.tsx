@@ -16,6 +16,8 @@ it("delegates ordinary Send queue policy to the gateway and preserves explicit Q
   await waitFor(() => expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1));
   expect(gateway.callsFor("POST", "/v1/threads/thread-1/queued-inputs")).toHaveLength(0);
   await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toEqual({ queueIfPending: true, input: [{ type: "text", text: "Live correction" }], clientUserMessageId: expect.any(String) });
+  // The request can be observed before its acknowledgment clears the draft.
+  await waitFor(() => expect(composer).toHaveValue(""));
   await userEvent.type(composer, "Next-turn work");
   await userEvent.click(screen.getByRole("button", { name: "Open attachment menu" }));
   await userEvent.click(await screen.findByRole("menuitem", { name: "Queue message" }));

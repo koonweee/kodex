@@ -1,7 +1,7 @@
 import { Alert, Group } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { archiveThread, createAutomation, deleteAutomation, getAccount, listAutomations, listPinnedThreads, logout, moveProject, pauseAutomation, renameThread, resumeAutomation, setThreadNotificationsEnabled, setThreadPinned, updateAutomation } from '../api/client';
+import { archiveThread, createAutomation, deleteAutomation, listAutomations, listPinnedThreads, moveProject, pauseAutomation, renameThread, resumeAutomation, setThreadNotificationsEnabled, setThreadPinned, updateAutomation } from '../api/client';
 import { KodexShellView, useNarrowThreadWorkspace } from '../shell/KodexShellView';
 import { currentKodexRoute, pushKodexRoute } from '../shell/browserRouting';
 import { useSidebarResize } from '../shell/useSidebarResize';
@@ -19,6 +19,8 @@ import { useNativeHost } from './NativeHostBoundary';
 import { useNativeCatalog } from './useNativeSnapshots';
 import { chatListEntry } from './presentation';
 import { NativeThreadPane } from './NativeThreadPane';
+import { NativeAccountMenu } from './NativeAccountMenu';
+import { useNativeAccount } from './useNativeAccount';
 
 const MarkdownPreviewPane = lazy(() => import('../files/MarkdownPreviewPane').then(module => ({ default: module.MarkdownPreviewPane })));
 const ImageLightbox = lazy(() => import('../images/ImageLightbox').then(module => ({ default: module.ImageLightbox })));
@@ -47,7 +49,7 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
   const mainPane = route.view ?? 'thread';
   const reportError = useCallback((failure: unknown) => setError(errorMessageFrom(failure)), []);
   const perform = useCallback((operation: Promise<unknown>) => { void operation.catch(reportError); }, [reportError]);
-  const account = useQuery({ queryKey: ['mastra-unfinished', 'account'], queryFn: ({ signal }) => getAccount(signal), retry: false });
+  const account = useNativeAccount();
   const pins = useQuery({ queryKey: ['mastra-unfinished', 'pins'], queryFn: ({ signal }) => listPinnedThreads({ signal }), retry: false });
   const automations = useQuery({ queryKey: ['mastra-unfinished', 'automations'], queryFn: () => listAutomations(), enabled: mainPane === 'automations', retry: false });
   const projects = useMemo(() => info.projects.map(project => ({ id: project.id, name: project.name, roots: [{ path: project.path }] })), [info]);
@@ -64,8 +66,8 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
   const navigate = useCallback((next: Parameters<typeof pushKodexRoute>[0]) => { pushKodexRoute(next); setRoute(next); setMobilePanel('chat'); }, []);
   const selectThread = useCallback((id: string) => navigate({ threadId: id, view: 'thread', panel: null }), [navigate]);
   const createDraft = useCallback((projectId?: string) => navigate({ threadId: null, projectId: projectId ?? null, view: 'thread', panel: null }), [navigate]);
-  const nativeError = catalog.error;
-  const unfinishedError = account.error ?? pins.error ?? automations.error;
+  const nativeError = catalog.error ?? account.error;
+  const unfinishedError = pins.error ?? automations.error;
   const displayError = error ?? nativeError ?? (unfinishedError ? errorMessageFrom(unfinishedError) : null);
   const chatDataState = catalog.error ? 'error' : catalog.snapshot ? 'loaded' : 'loading';
   return <>
@@ -88,7 +90,9 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
         automationsPaneProps={{ automations: automations.data ?? [], defaultThreadId: route.threadId, isLoading: automations.isLoading,
           onCreateAutomation: createAutomation, onDeleteAutomation: deleteAutomation, onPauseAutomation: pauseAutomation, onResumeAutomation: resumeAutomation, onUpdateAutomation: updateAutomation,
           onShowMobileSidebar: () => setMobilePanel('threads'), threadOptions: entries.map(chat => ({ value: chat.id, label: chat.name ?? 'New thread' })) }}
-        workspaceSidebarProps={{ account: account.data ?? null, approvals: [], chatThreads: standalone, projects, threadsByProjectId,
+        workspaceSidebarProps={{ account: null, accountMenu: <NativeAccountMenu state={account}
+          onSelectAutomations={() => navigate({ threadId: null, view: 'automations', panel: null })}
+          onOpenPreferences={() => setPreferencesOpen(true)} onShowDebugEventsChange={setShowDebugEvents} showDebugEvents={showDebugEvents} />, approvals: [], chatThreads: standalone, projects, threadsByProjectId,
           pinnedThreads: pins.data?.threads ?? [], pendingTitleThreadIds: emptyPendingTitles, hoveredThreadActionId,
           dataState: { projects: 'loaded', chatThreads: chatDataState, pinnedThreads: pins.isError ? 'error' : pins.data ? 'loaded' : 'loading', projectThreadsById: Object.fromEntries(projects.map(project => [project.id, chatDataState])) },
           sidebarSnapshotStatus: { failed: Boolean(catalog.error), retrying: !catalog.snapshot && !catalog.error, onRetry: catalog.retry },
@@ -98,7 +102,7 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
           onSelectProjectSettings: id => navigate({ threadId: null, projectId: id, view: 'project', panel: null }),
           onSelectAutomations: () => navigate({ threadId: null, view: 'automations', panel: null }),
           onArchiveThread: id => perform(archiveThread(id)), onPinThread: id => perform(setThreadPinned(id, true)), onUnpinThread: id => perform(setThreadPinned(id, false)),
-          onMoveProject: (id, beforeId) => perform(moveProject(id, beforeId)), onLogout: () => perform(logout()),
+          onMoveProject: (id, beforeId) => perform(moveProject(id, beforeId)), onLogout: account.logout,
           onOpenPreferences: () => setPreferencesOpen(true), onOpenTerminal: () => setMobilePanel('chat'), onShowThread: () => setMobilePanel('chat'),
           onShowDebugEventsChange: setShowDebugEvents, showDebugEvents, sidebarWidth: resize.sidebarWidth,
           onSidebarCollapseClick: resize.handleSidebarCollapseClick, onSidebarExpandClick: resize.handleSidebarExpandClick, onThreadActionHoverChange: setHoveredThreadActionId,

@@ -47,10 +47,28 @@ test('existing Kodex UI shares native streaming, queue/stop, tool history and re
   context.on('page', opened => opened.on('pageerror', error => browserErrors.push(error.message)));
   page.on('pageerror', error => browserErrors.push(error.message));
   const legacyStreams: string[] = [];
+  const unauthenticatedUsageReads: string[] = [];
+  const connections = new Map<Page, number>();
+  const observeSocket = (tab: Page) => tab.on('websocket', socket => {
+    if (new URL(socket.url()).pathname !== '/rpc') return;
+    connections.set(tab, (connections.get(tab) ?? 0) + 1);
+    socket.on('framesent', frame => {
+      if (String(frame.payload).includes('/getAccountUsage')) unauthenticatedUsageReads.push('websocket/getAccountUsage');
+    });
+  });
+  observeSocket(page);
+  context.on('page', observeSocket);
+  context.on('request', request => { const route = new URL(request.url()).pathname; if (route.startsWith('/v1/account') || route.endsWith('/rpc/getAccountUsage')) unauthenticatedUsageReads.push(route); });
   context.on('request', request => { if (new URL(request.url()).pathname === '/v1/events') legacyStreams.push(request.url()); });
   try {
     backend = await startBackend(root);
     await page.goto('/');
+    if (test.info().project.name !== 'chromium') await page.getByRole('button', { name: 'Show sidebar', exact: true }).click();
+    await page.getByRole('button', { name: 'Account settings', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Sign in with ChatGPT', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Sign in with ChatGPT', exact: true })).toBeVisible();
+    await page.getByRole('dialog', { name: 'Sign in with ChatGPT' }).getByRole('button', { name: 'Close', exact: true }).click();
+    if (test.info().project.name !== 'chromium') await page.getByRole('button', { name: 'Show thread', exact: true }).click();
     if (test.info().project.name === 'chromium') await page.getByRole('button', { name: 'Create thread in project', exact: true }).click();
     await pane(page).getByRole('button', { name: /^Model:/ }).click();
     await page.getByRole('menuitem', { name: 'Reasoning', exact: true }).click();
@@ -63,6 +81,9 @@ test('existing Kodex UI shares native streaming, queue/stop, tool history and re
     await second.goto(page.url());
     await expect(pane(second).getByText('fixture:BROWSER_HELLO', { exact: true })).toBeVisible();
     for (const tab of [page, second]) await expect(pane(tab).getByRole('button', { name: /^Model:.*low$/ })).toBeVisible();
+    // Catalog, account, chat and picker RPC share one connection per tab.
+    expect(connections.get(page)).toBe(1);
+    expect(connections.get(second)).toBe(1);
     await pane(second).getByRole('button', { name: /^Model:/ }).click();
     await second.getByRole('menuitem', { name: 'Reasoning', exact: true }).click();
     await second.getByRole('menuitem', { name: 'High', exact: true }).click();
@@ -99,6 +120,7 @@ test('existing Kodex UI shares native streaming, queue/stop, tool history and re
     for (const tab of [page, second]) await expect(pane(tab).getByText('fixture:DROP_ON_RESTART', { exact: true })).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath('mastra-existing-kodex-ui.png'), fullPage: true });
     expect(legacyStreams).toEqual([]);
+    expect(unauthenticatedUsageReads).toEqual([]);
     expect(browserErrors).toEqual([]);
   } finally {
     if (backend) await stopBackend(backend);

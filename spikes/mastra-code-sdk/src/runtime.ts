@@ -6,6 +6,7 @@ import type { Session } from '@mastra/core/agent-controller';
 import type { MastraCodeState } from '@mastra/code-sdk/schema';
 import { assertProfileActive, type SpikeProfile } from './profile.js';
 import { createChatGptAffinityProcessor } from './chatgpt-affinity.js';
+import { createChatFastProcessor } from './chat-fast.js';
 
 export interface ProjectRuntimeOptions {
   projectPath: string;
@@ -55,7 +56,7 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
     },
     omScope: 'thread',
     initialState: { yolo: true, skipGlobalInstructions: true, homeDir: options.profile.homeDir },
-    inputProcessors: [affinity],
+    inputProcessors: [affinity, createChatFastProcessor()],
     disableEnvFile: true,
     disableGithubSignals: true,
     disableMcp: options.disableMcp ?? true,

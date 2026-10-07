@@ -2,12 +2,13 @@ import { createHmac, randomBytes } from 'node:crypto';
 import { ORPCError, EventPublisher } from '@orpc/server';
 import { getAvailableThinkingLevelsForModel, isThinkingLevelSetting, type ThinkingLevelSetting } from '@mastra/code-sdk/thinking';
 import type { AvailableModel } from '@mastra/core/agent-controller';
-import type { InputProcessor, ProcessInputStepArgs } from '@mastra/core/processors';
 import { assertProfileActive, type SpikeProfile } from './profile.js';
 import type { NativeSession, ProjectRuntime } from './runtime.js';
+import { CHAT_FAST_SETTING } from './chat-fast.js';
 
-export interface ChatSettingsPatch { modelId?: string; thinkingLevel?: ThinkingLevelSetting | null }
+export interface ChatSettingsPatch { modelId?: string; thinkingLevel?: ThinkingLevelSetting | null; fast?: boolean }
 export interface ChatSettings {
+  fast: boolean;
   modelId: string;
   thinkingLevel: ThinkingLevelSetting;
   thinkingLevelOverride: ThinkingLevelSetting | null;
@@ -29,8 +30,9 @@ const badSettings = () => new ORPCError('BAD_REQUEST', { message: 'Invalid model
 export function validSettingsPatch(value: unknown, nullable = true): value is ChatSettingsPatch {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const patch = value as Record<string, unknown>;
-  if (Object.keys(patch).some(key => key !== 'modelId' && key !== 'thinkingLevel')) return false;
+  if (Object.keys(patch).some(key => key !== 'modelId' && key !== 'thinkingLevel' && key !== 'fast')) return false;
   if ('modelId' in patch && (typeof patch.modelId !== 'string' || !patch.modelId.trim() || patch.modelId.length > 256)) return false;
+  if ('fast' in patch && (!nullable || typeof patch.fast !== 'boolean')) return false;
   if ('thinkingLevel' in patch && !(nullable && patch.thinkingLevel === null) && !isThinkingLevelSetting(patch.thinkingLevel)) return false;
   return true;
 }
@@ -92,11 +94,16 @@ export function createNativeChatSettings(profile: SpikeProfile, epoch: string) {
       return { ...model, id, thinkingLevels: getAvailableThinkingLevelsForModel(thinkingModelId(sdk, id)) };
     });
   }
-  async function validate(runtime: ProjectRuntime, patch: ChatSettingsPatch, currentModel: string) {
+  async function validate(runtime: ProjectRuntime, patch: ChatSettingsPatch, currentModel: string, currentFast = false) {
     if (!validSettingsPatch(patch)) throw badSettings();
     if (patch.modelId !== undefined && !(await listModels(runtime)).some(model => model.id === patch.modelId && model.hasApiKey)) throw badSettings();
     const modelId = patch.modelId ?? currentModel;
-    if (patch.thinkingLevel != null && !getAvailableThinkingLevelsForModel(thinkingModelId(await native(), modelId)).includes(patch.thinkingLevel)) throw badSettings();
+    const sdk = await native();
+    const nativeId = thinkingModelId(sdk, modelId);
+    if ((patch.fast ?? currentFast) && (!nativeId.startsWith(sdk.OPENAI_PREFIX) || sdk.loadSettings(profile.settingsPath).customProviders?.some(provider => sdk.getCustomProviderId(provider.name) === 'openai'))) {
+      throw new ORPCError('BAD_REQUEST', { message: 'Fast responses are not supported by this native model. Turn Fast off before choosing another provider.' });
+    }
+    if (patch.thinkingLevel != null && !getAvailableThinkingLevelsForModel(nativeId).includes(patch.thinkingLevel)) throw badSettings();
   }
   async function readChat(session: NativeSession): Promise<ChatSettings> {
     const sdk = await native();
@@ -106,6 +113,7 @@ export function createNativeChatSettings(profile: SpikeProfile, epoch: string) {
     const thinkingLevelOverride = isThinkingLevelSetting(override) ? override : null;
     return {
       modelId, thinkingLevelOverride,
+      fast: (await session.thread.getSetting({ key: CHAT_FAST_SETTING })) === true,
       thinkingLevel: effectiveLevel(sdk, modelId, thinkingLevelOverride ?? sdk.resolveDefaultThinkingLevel(settings, session.mode.get()).level),
       thinkingLevels: getAvailableThinkingLevelsForModel(thinkingModelId(sdk, modelId)),
     };
@@ -134,15 +142,17 @@ export function createNativeChatSettings(profile: SpikeProfile, epoch: string) {
     async updateChat(runtime: ProjectRuntime, session: NativeSession, patch: ChatSettingsPatch) {
       return withChat(session, async () => {
         const current = await readChat(session);
-        await validate(runtime, patch, current.modelId);
+        await validate(runtime, patch, current.modelId, current.fast);
         if (patch.modelId !== undefined) await session.model.switch({ modelId: patch.modelId });
         if ('thinkingLevel' in patch) await session.state.set({ thinkingLevel: patch.thinkingLevel ?? undefined });
+        if (patch.fast !== undefined) await session.thread.setSetting({ key: CHAT_FAST_SETTING, value: patch.fast });
         // Native setters can swallow persistence errors. Never report a saved
         // setting until the native row confirms the supplied sparse fields.
         const thread = await runtime.controller.queryThreadById({ threadId: session.thread.requireId() });
-        if (!thread || (patch.modelId !== undefined && thread.metadata?.[`modeModelId_${session.mode.get()}`] !== patch.modelId) || ('thinkingLevel' in patch && thread.metadata?.thinkingLevel !== (patch.thinkingLevel ?? undefined))) {
+        if (!thread || (patch.fast !== undefined && thread.metadata?.[CHAT_FAST_SETTING] !== patch.fast) || (patch.modelId !== undefined && thread.metadata?.[`modeModelId_${session.mode.get()}`] !== patch.modelId) || ('thinkingLevel' in patch && thread.metadata?.thinkingLevel !== (patch.thinkingLevel ?? undefined))) {
           throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Chat settings could not be saved.' });
         }
+        if (patch.fast !== undefined) session.emit({ type: 'display_state_changed', displayState: session.displayState.get() });
       });
     },
     getDefaults: (runtime: ProjectRuntime) => globalGate(() => readDefaults(runtime)),
@@ -185,17 +195,4 @@ export function createNativeChatSettings(profile: SpikeProfile, epoch: string) {
       } finally { await changes.return(); }
     },
   };
-}
-
-/** Bounded wire proof seam only. The browser Fast setting is not exposed until
- * a native provider request proves this supported processor path.
- */
-export function createFastProcessor(enabled: (args: ProcessInputStepArgs) => boolean) {
-  return {
-    id: 'kodex-openai-fast',
-    processInputStep(args: ProcessInputStepArgs) {
-      if (!enabled(args) || args.model.provider !== 'openai.responses') return undefined;
-      return { providerOptions: { ...args.providerOptions, openai: { ...args.providerOptions?.openai, serviceTier: 'fast' } } };
-    },
-  } satisfies InputProcessor;
 }

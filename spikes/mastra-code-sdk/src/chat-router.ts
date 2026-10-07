@@ -1,4 +1,5 @@
 import { eventIterator, os, type as schemaType } from '@orpc/server';
+import type { AccountSnapshot } from './account-service.js';
 import type { CatalogSnapshot, ChatService, ChatSnapshot } from './chat-service.js';
 import { validSettingsPatch, type ChatSettingsPatch, type DraftDefaults } from './chat-settings.js';
 
@@ -28,6 +29,10 @@ const defaultsInput = inputSchema<{ version: string; patch: ChatSettingsPatch }>
 export function createChatRouter(service: ChatService) {
   return {
     info: os.handler(() => service.info()),
+    getAccount: os.handler(() => service.getAccount()),
+    logoutAccount: os.handler(() => service.logoutAccount()),
+    getAccountUsage: os.handler(({ signal }) => service.getAccountUsage(signal)),
+    watchAccount: os.output(eventIterator(schemaType<AccountSnapshot>())).handler(({ signal }) => service.watchAccount(signal)),
     listChats: os.handler(() => service.listChats()),
     listModels: os.input(objectInput<{ projectId: string }>(['projectId'])).handler(({ input }) => service.listModels(input)),
     getChatSettings: os.input(chatInput).handler(({ input }) => service.getChatSettings(input)),

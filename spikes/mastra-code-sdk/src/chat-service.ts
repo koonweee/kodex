@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { EventPublisher, ORPCError } from '@orpc/server';
 import { createProjectRuntime, type NativeSession, type ProjectRuntime } from './runtime.js';
-import type { SpikeProfile } from './profile.js';
+import { assertProfileActive, type SpikeProfile } from './profile.js';
+import { createAccountService } from './account-service.js';
+import { captureChatFastRequestContext } from './chat-fast.js';
 import { createNativeChatSettings, type ChatSettings, type ChatSettingsPatch } from './chat-settings.js';
 import { createSessionProjection, type SessionSnapshot } from './transport.js';
 
@@ -43,6 +45,17 @@ export function createChatService(options: ChatServiceOptions) {
   const catalog = new EventPublisher<{ changed: number }>({ maxBufferedEvents: 1 });
   const epoch = randomUUID();
   const settings = createNativeChatSettings(options.profile, epoch);
+  let accountService: Promise<ReturnType<typeof createAccountService>> | undefined;
+  async function accounts() {
+    assertActive();
+    if (!accountService) accountService = (async () => {
+      assertProfileActive(options.profile);
+      const { getGlobalAuthStorage } = await import('@mastra/code-sdk/agents/mastracode-gateway');
+      assertActive();
+      return createAccountService(getGlobalAuthStorage(), options.profile.authPath, epoch);
+    })().catch(error => { accountService = undefined; throw error; });
+    return accountService;
+  }
   let catalogRevision = 0;
   let disposed = false;
   let disposal: Promise<void> | undefined;
@@ -145,7 +158,7 @@ export function createChatService(options: ChatServiceOptions) {
   }
   async function sendNative(handle: Handle, text: string) {
     try {
-      const submission = handle.session.sendSignal({ content: text }, { requireDelivery: true });
+      const submission = handle.session.sendSignal({ content: text, requestContext: await captureChatFastRequestContext(handle.session) }, { requireDelivery: true });
       const decision = await submission.accepted;
       if (decision.action === 'blocked') throw new ORPCError('CONFLICT', { message: 'This chat is waiting for a tool response.' });
       if (decision.action !== 'wake' && decision.action !== 'deliver') throw new Error('Native input was not admitted to a run.');
@@ -163,6 +176,10 @@ export function createChatService(options: ChatServiceOptions) {
   };
 
   return {
+    async getAccount() { return (await accounts()).get(); },
+    async logoutAccount() { return (await accounts()).logout(); },
+    async getAccountUsage(signal?: AbortSignal) { return (await accounts()).getUsage(signal); },
+    async *watchAccount(signal?: AbortSignal) { yield* (await accounts()).watch(signal); },
     async listModels({ projectId }: { projectId: string }) {
       const project = projectById.get(projectId);
       if (!project) throw missing();
@@ -243,7 +260,7 @@ export function createChatService(options: ChatServiceOptions) {
       // Native followUp sends immediately while idle but awaits that whole run.
       // Use the same native idle Send primitive for a prompt RPC acknowledgment.
       if (!handle.session.run.isRunning()) return sendNative(handle, text);
-      try { await handle.session.followUp({ content: text }); }
+      try { await handle.session.followUp({ content: text, requestContext: await captureChatFastRequestContext(handle.session) }); }
       catch { throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Chat input could not be queued.' }); }
       return accepted();
     },
@@ -257,6 +274,7 @@ export function createChatService(options: ChatServiceOptions) {
       disposed = true;
       lifetime.abort();
       disposal = (async () => {
+        if (accountService) await accountService.then(service => service.dispose(), () => {});
         const loadedHandles = await Promise.allSettled(handles.values());
         for (const result of loadedHandles) if (result.status === 'fulfilled') {
           result.value.unsubscribe();

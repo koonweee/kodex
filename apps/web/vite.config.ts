@@ -83,7 +83,7 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 5173,
     proxy: {
-      "/rpc": { target: gatewayProxyTarget, configure: forwardRpcAbort },
+      "/rpc": { target: gatewayProxyTarget, ws: true, configure: forwardRpcAbort },
       "/v1": {
         target: gatewayProxyTarget,
         ws: true,

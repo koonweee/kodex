@@ -29,7 +29,8 @@ export function useNativeComposerSettings({ chatId, projectId, snapshot, onError
   const choices = useMemo<ComposerModelChoice[]>(() => (models.data ?? []).filter(model => model.hasApiKey).map(model => ({ id: model.id, model: model.modelName,
     supportedReasoningEfforts: (chatId && snapshot?.settings.modelId === model.id ? snapshot.settings.thinkingLevels : model.thinkingLevels).map(level => ({ reasoningEffort: level })),
   })), [models.data, chatId, snapshot?.settings.modelId, snapshot?.settings.thinkingLevels]);
-  const settings: ComposerSettings | null = nativeSettings && modelId ? { model: modelId, effort: thinkingLevel ?? undefined, fast: false } : null;
+  const fast = localDraft?.fast ?? (chatId ? snapshot?.settings.fast : false) ?? false;
+  const settings: ComposerSettings | null = nativeSettings && modelId ? { model: modelId, effort: thinkingLevel ?? undefined, fast } : null;
   const pending = operation?.key === key && operation.pending;
   const error = operation?.key === key && operation.error || (models.error ? errorMessageFrom(models.error) : null) || (!chatId ? defaults.error : null);
   function fail(failure: unknown) {
@@ -37,12 +38,10 @@ export function useNativeComposerSettings({ chatId, projectId, snapshot, onError
     onError(failure);
   }
   function change(change: ComposerSettingsChange) {
-    if ('fast' in change || 'serviceTier' in change) {
-      fail(new Error('Fast responses are not supported by the current native settings service.'));
-      return;
-    }
     if (!settings || pending) return;
     const patch: SettingsPatch = {};
+    if (change.fast !== undefined) patch.fast = change.fast;
+    else if ('serviceTier' in change) patch.fast = change.serviceTier === 'fast';
     if (change.model !== undefined) patch.modelId = change.model;
     if (change.effort !== undefined) {
       const supported = (models.data ?? []).find(model => model.id === (patch.modelId ?? modelId))?.thinkingLevels ?? [];
@@ -55,7 +54,7 @@ export function useNativeComposerSettings({ chatId, projectId, snapshot, onError
       const previous = localDraft && 'thinkingLevel' in localDraft ? localDraft.thinkingLevel : nativeSettings!.thinkingLevel;
       const supported = selected?.thinkingLevels ?? [];
       const level = 'thinkingLevel' in patch ? patch.thinkingLevel : previous != null && supported.includes(previous) ? previous : null;
-      setDrafts(current => new Map(current).set(projectId, { modelId: patch.modelId ?? modelId!, thinkingLevel: level }));
+      setDrafts(current => new Map(current).set(projectId, { modelId: patch.modelId ?? modelId!, thinkingLevel: level, fast: patch.fast ?? fast }));
       setOperation(null);
       return;
     }
