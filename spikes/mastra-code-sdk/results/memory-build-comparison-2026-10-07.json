@@ -1,0 +1,3275 @@
+{
+  "generatedAt": "2026-10-07",
+  "versions": {
+    "node": "v24.21.0",
+    "packages": {
+      "@mastra/code-sdk": "1.10.1",
+      "@mastra/core": "1.74.0",
+      "@mastra/memory": "1.35.0",
+      "@mastra/libsql": "1.25.0",
+      "tsx": "4.23.1"
+    },
+    "codex": "codex-cli 0.160.0",
+    "platform": "darwin",
+    "arch": "arm64"
+  },
+  "method": "Three fresh-process repetitions per mode/harness/scenario; raw reports under ignored artifacts/memory-build-2026-10-07. No forced GC in paired benchmark or 12 ordinary stage runs. Two GC diagnostics separate.",
+  "cases": 48,
+  "turns": 60,
+  "runs": [
+    {
+      "harness": "mastra",
+      "scenario": "concurrent-5",
+      "repetition": 1,
+      "loadedChats": 5,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "compiled-js",
+      "turns": 5,
+      "loaded-idle": {
+        "workerMainRssKiB": 354992.0,
+        "treeRssKiB": 354992.0,
+        "codexRssKiB": 0.0
+      },
+      "active": {
+        "workerMainRssKiB": 402480,
+        "treeRssKiB": 402480,
+        "codexRssKiB": 0
+      }
+    },
+    {
+      "harness": "codex",
+      "scenario": "concurrent-5",
+      "repetition": 1,
+      "loadedChats": 5,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "compiled-js",
+      "turns": 5,
+      "loaded-idle": {
+        "workerMainRssKiB": 43824.0,
+        "treeRssKiB": 250080.0,
+        "codexRssKiB": 206240.0
+      },
+      "active": {
+        "workerMainRssKiB": 44896,
+        "treeRssKiB": 317216,
+        "codexRssKiB": 273216
+      }
+    },
+    {
+      "harness": "codex",
+      "scenario": "concurrent-5",
+      "repetition": 2,
+      "loadedChats": 5,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "compiled-js",
+      "turns": 5,
+      "loaded-idle": {
+        "workerMainRssKiB": 39624.0,
+        "treeRssKiB": 237744.0,
+        "codexRssKiB": 198120.0
+      },
+      "active": {
+        "workerMainRssKiB": 42032,
+        "treeRssKiB": 307344,
+        "codexRssKiB": 265312
+      }
+    },
+    {
+      "harness": "mastra",
+      "scenario": "concurrent-5",
+      "repetition": 2,
+      "loadedChats": 5,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "compiled-js",
+      "turns": 5,
+      "loaded-idle": {
+        "workerMainRssKiB": 350576.0,
+        "treeRssKiB": 350576.0,
+        "codexRssKiB": 0.0
+      },
+      "active": {
+        "workerMainRssKiB": 401120,
+        "treeRssKiB": 401120,
+        "codexRssKiB": 0
+      }
+    },
+    {
+      "harness": "mastra",
+      "scenario": "concurrent-5",
+      "repetition": 3,
+      "loadedChats": 5,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "compiled-js",
+      "turns": 5,
+      "loaded-idle": {
+        "workerMainRssKiB": 349392.0,
+        "treeRssKiB": 349392.0,
+        "codexRssKiB": 0.0
+      },
+      "active": {
+        "workerMainRssKiB": 397264,
+        "treeRssKiB": 397264,
+        "codexRssKiB": 0
+      }
+    },
+    {
+      "harness": "codex",
+      "scenario": "concurrent-5",
+      "repetition": 3,
+      "loadedChats": 5,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "compiled-js",
+      "turns": 5,
+      "loaded-idle": {
+        "workerMainRssKiB": 48384.0,
+        "treeRssKiB": 301656.0,
+        "codexRssKiB": 253272.0
+      },
+      "active": {
+        "workerMainRssKiB": 49184,
+        "treeRssKiB": 343712,
+        "codexRssKiB": 295168
+      }
+    },
+    {
+      "harness": "mastra",
+      "scenario": "concurrent-5",
+      "repetition": 1,
+      "loadedChats": 5,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "tsx",
+      "turns": 5,
+      "loaded-idle": {
+        "workerMainRssKiB": 602208.0,
+        "treeRssKiB": 602208.0,
+        "codexRssKiB": 0.0
+      },
+      "active": {
+        "workerMainRssKiB": 631136,
+        "treeRssKiB": 631136,
+        "codexRssKiB": 0
+      }
+    },
+    {
+      "harness": "codex",
+      "scenario": "concurrent-5",
+      "repetition": 1,
+      "loadedChats": 5,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "tsx",
+      "turns": 5,
+      "loaded-idle": {
+        "workerMainRssKiB": 45184.0,
+        "treeRssKiB": 264840.0,
+        "codexRssKiB": 219656.0
+      },
+      "active": {
+        "workerMainRssKiB": 46416,
+        "treeRssKiB": 317904,
+        "codexRssKiB": 271904
+      }
+    },
+    {
+      "harness": "codex",
+      "scenario": "concurrent-5",
+      "repetition": 2,
+      "loadedChats": 5,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "tsx",
+      "turns": 5,
+      "loaded-idle": {
+        "workerMainRssKiB": 46944.0,
+        "treeRssKiB": 247240.0,
+        "codexRssKiB": 200296.0
+      },
+      "active": {
+        "workerMainRssKiB": 47952,
+        "treeRssKiB": 304944,
+        "codexRssKiB": 257568
+      }
+    },
+    {
+      "harness": "mastra",
+      "scenario": "concurrent-5",
+      "repetition": 2,
+      "loadedChats": 5,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "tsx",
+      "turns": 5,
+      "loaded-idle": {
+        "workerMainRssKiB": 511304.0,
+        "treeRssKiB": 511304.0,
+        "codexRssKiB": 0.0
+      },
+      "active": {
+        "workerMainRssKiB": 525712,
+        "treeRssKiB": 525712,
+        "codexRssKiB": 0
+      }
+    },
+    {
+      "harness": "mastra",
+      "scenario": "concurrent-5",
+      "repetition": 3,
+      "loadedChats": 5,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "tsx",
+      "turns": 5,
+      "loaded-idle": {
+        "workerMainRssKiB": 642576,
+        "treeRssKiB": 642576,
+        "codexRssKiB": 0
+      },
+      "active": {
+        "workerMainRssKiB": 678304,
+        "treeRssKiB": 678304,
+        "codexRssKiB": 0
+      }
+    },
+    {
+      "harness": "codex",
+      "scenario": "concurrent-5",
+      "repetition": 3,
+      "loadedChats": 5,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "tsx",
+      "turns": 5,
+      "loaded-idle": {
+        "workerMainRssKiB": 76880.0,
+        "treeRssKiB": 332664.0,
+        "codexRssKiB": 236712.0
+      },
+      "active": {
+        "workerMainRssKiB": 76960,
+        "treeRssKiB": 372528,
+        "codexRssKiB": 276464
+      }
+    },
+    {
+      "harness": "mastra",
+      "scenario": "memory-1",
+      "repetition": 1,
+      "loadedChats": 1,
+      "projectCount": 1,
+      "chatsPerProject": 1,
+      "failures": [],
+      "mode": "compiled-js",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 321152.0,
+        "treeRssKiB": 321152.0,
+        "codexRssKiB": 0.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "codex",
+      "scenario": "memory-1",
+      "repetition": 1,
+      "loadedChats": 1,
+      "projectCount": 1,
+      "chatsPerProject": 1,
+      "failures": [],
+      "mode": "compiled-js",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 48128.0,
+        "treeRssKiB": 225744.0,
+        "codexRssKiB": 177616.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "codex",
+      "scenario": "memory-1",
+      "repetition": 2,
+      "loadedChats": 1,
+      "projectCount": 1,
+      "chatsPerProject": 1,
+      "failures": [],
+      "mode": "compiled-js",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 48072.0,
+        "treeRssKiB": 227288.0,
+        "codexRssKiB": 179216.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "mastra",
+      "scenario": "memory-1",
+      "repetition": 2,
+      "loadedChats": 1,
+      "projectCount": 1,
+      "chatsPerProject": 1,
+      "failures": [],
+      "mode": "compiled-js",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 348112.0,
+        "treeRssKiB": 348112.0,
+        "codexRssKiB": 0.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "mastra",
+      "scenario": "memory-1",
+      "repetition": 3,
+      "loadedChats": 1,
+      "projectCount": 1,
+      "chatsPerProject": 1,
+      "failures": [],
+      "mode": "compiled-js",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 349456.0,
+        "treeRssKiB": 349456.0,
+        "codexRssKiB": 0.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "codex",
+      "scenario": "memory-1",
+      "repetition": 3,
+      "loadedChats": 1,
+      "projectCount": 1,
+      "chatsPerProject": 1,
+      "failures": [],
+      "mode": "compiled-js",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 48096,
+        "treeRssKiB": 212624,
+        "codexRssKiB": 164528
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "mastra",
+      "scenario": "memory-1",
+      "repetition": 1,
+      "loadedChats": 1,
+      "projectCount": 1,
+      "chatsPerProject": 1,
+      "failures": [],
+      "mode": "tsx",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 518904.0,
+        "treeRssKiB": 518904.0,
+        "codexRssKiB": 0.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "codex",
+      "scenario": "memory-1",
+      "repetition": 1,
+      "loadedChats": 1,
+      "projectCount": 1,
+      "chatsPerProject": 1,
+      "failures": [],
+      "mode": "tsx",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 52664.0,
+        "treeRssKiB": 205824.0,
+        "codexRssKiB": 153160.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "codex",
+      "scenario": "memory-1",
+      "repetition": 2,
+      "loadedChats": 1,
+      "projectCount": 1,
+      "chatsPerProject": 1,
+      "failures": [],
+      "mode": "tsx",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 50104.0,
+        "treeRssKiB": 200008.0,
+        "codexRssKiB": 149904.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "mastra",
+      "scenario": "memory-1",
+      "repetition": 2,
+      "loadedChats": 1,
+      "projectCount": 1,
+      "chatsPerProject": 1,
+      "failures": [],
+      "mode": "tsx",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 500664.0,
+        "treeRssKiB": 500664.0,
+        "codexRssKiB": 0.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "mastra",
+      "scenario": "memory-1",
+      "repetition": 3,
+      "loadedChats": 1,
+      "projectCount": 1,
+      "chatsPerProject": 1,
+      "failures": [],
+      "mode": "tsx",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 483920.0,
+        "treeRssKiB": 483920.0,
+        "codexRssKiB": 0.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "codex",
+      "scenario": "memory-1",
+      "repetition": 3,
+      "loadedChats": 1,
+      "projectCount": 1,
+      "chatsPerProject": 1,
+      "failures": [],
+      "mode": "tsx",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 60800.0,
+        "treeRssKiB": 240176.0,
+        "codexRssKiB": 179456.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "mastra",
+      "scenario": "memory-15",
+      "repetition": 1,
+      "loadedChats": 15,
+      "projectCount": 3,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "compiled-js",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 360784.0,
+        "treeRssKiB": 360784.0,
+        "codexRssKiB": 0.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "codex",
+      "scenario": "memory-15",
+      "repetition": 1,
+      "loadedChats": 15,
+      "projectCount": 3,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "compiled-js",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 49072.0,
+        "treeRssKiB": 409728.0,
+        "codexRssKiB": 360656.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "codex",
+      "scenario": "memory-15",
+      "repetition": 2,
+      "loadedChats": 15,
+      "projectCount": 3,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "compiled-js",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 42224.0,
+        "treeRssKiB": 339256.0,
+        "codexRssKiB": 297032.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "mastra",
+      "scenario": "memory-15",
+      "repetition": 2,
+      "loadedChats": 15,
+      "projectCount": 3,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "compiled-js",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 358016.0,
+        "treeRssKiB": 358016.0,
+        "codexRssKiB": 0.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "mastra",
+      "scenario": "memory-15",
+      "repetition": 3,
+      "loadedChats": 15,
+      "projectCount": 3,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "compiled-js",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 358896.0,
+        "treeRssKiB": 358896.0,
+        "codexRssKiB": 0.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "codex",
+      "scenario": "memory-15",
+      "repetition": 3,
+      "loadedChats": 15,
+      "projectCount": 3,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "compiled-js",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 49232.0,
+        "treeRssKiB": 417440.0,
+        "codexRssKiB": 368208.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "mastra",
+      "scenario": "memory-15",
+      "repetition": 1,
+      "loadedChats": 15,
+      "projectCount": 3,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "tsx",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 539040.0,
+        "treeRssKiB": 539040.0,
+        "codexRssKiB": 0.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "codex",
+      "scenario": "memory-15",
+      "repetition": 1,
+      "loadedChats": 15,
+      "projectCount": 3,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "tsx",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 60848.0,
+        "treeRssKiB": 438688.0,
+        "codexRssKiB": 377840.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "codex",
+      "scenario": "memory-15",
+      "repetition": 2,
+      "loadedChats": 15,
+      "projectCount": 3,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "tsx",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 57600,
+        "treeRssKiB": 388672,
+        "codexRssKiB": 331072
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "mastra",
+      "scenario": "memory-15",
+      "repetition": 2,
+      "loadedChats": 15,
+      "projectCount": 3,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "tsx",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 543192.0,
+        "treeRssKiB": 543192.0,
+        "codexRssKiB": 0.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "mastra",
+      "scenario": "memory-15",
+      "repetition": 3,
+      "loadedChats": 15,
+      "projectCount": 3,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "tsx",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 499624.0,
+        "treeRssKiB": 499624.0,
+        "codexRssKiB": 0.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "codex",
+      "scenario": "memory-15",
+      "repetition": 3,
+      "loadedChats": 15,
+      "projectCount": 3,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "tsx",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 59584.0,
+        "treeRssKiB": 367000.0,
+        "codexRssKiB": 307416.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "mastra",
+      "scenario": "memory-5",
+      "repetition": 1,
+      "loadedChats": 5,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "compiled-js",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 318344.0,
+        "treeRssKiB": 318344.0,
+        "codexRssKiB": 0.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "codex",
+      "scenario": "memory-5",
+      "repetition": 1,
+      "loadedChats": 5,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "compiled-js",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 41368.0,
+        "treeRssKiB": 223944.0,
+        "codexRssKiB": 182576.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "codex",
+      "scenario": "memory-5",
+      "repetition": 2,
+      "loadedChats": 5,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "compiled-js",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 48416.0,
+        "treeRssKiB": 300040.0,
+        "codexRssKiB": 251624.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "mastra",
+      "scenario": "memory-5",
+      "repetition": 2,
+      "loadedChats": 5,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "compiled-js",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 351776.0,
+        "treeRssKiB": 351776.0,
+        "codexRssKiB": 0.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "mastra",
+      "scenario": "memory-5",
+      "repetition": 3,
+      "loadedChats": 5,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "compiled-js",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 362192.0,
+        "treeRssKiB": 362192.0,
+        "codexRssKiB": 0.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "codex",
+      "scenario": "memory-5",
+      "repetition": 3,
+      "loadedChats": 5,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "compiled-js",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 48416,
+        "treeRssKiB": 290704,
+        "codexRssKiB": 242288
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "mastra",
+      "scenario": "memory-5",
+      "repetition": 1,
+      "loadedChats": 5,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "tsx",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 505320.0,
+        "treeRssKiB": 505320.0,
+        "codexRssKiB": 0.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "codex",
+      "scenario": "memory-5",
+      "repetition": 1,
+      "loadedChats": 5,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "tsx",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 60752.0,
+        "treeRssKiB": 292912.0,
+        "codexRssKiB": 232160.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "codex",
+      "scenario": "memory-5",
+      "repetition": 2,
+      "loadedChats": 5,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "tsx",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 47832.0,
+        "treeRssKiB": 281592.0,
+        "codexRssKiB": 233768.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "mastra",
+      "scenario": "memory-5",
+      "repetition": 2,
+      "loadedChats": 5,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "tsx",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 574056.0,
+        "treeRssKiB": 574056.0,
+        "codexRssKiB": 0.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "mastra",
+      "scenario": "memory-5",
+      "repetition": 3,
+      "loadedChats": 5,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "tsx",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 489792,
+        "treeRssKiB": 489792,
+        "codexRssKiB": 0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    },
+    {
+      "harness": "codex",
+      "scenario": "memory-5",
+      "repetition": 3,
+      "loadedChats": 5,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "failures": [],
+      "mode": "tsx",
+      "turns": 0,
+      "loaded-idle": {
+        "workerMainRssKiB": 60992.0,
+        "treeRssKiB": 306496.0,
+        "codexRssKiB": 245504.0
+      },
+      "active": {
+        "workerMainRssKiB": null,
+        "treeRssKiB": null,
+        "codexRssKiB": null
+      }
+    }
+  ],
+  "summary": [
+    {
+      "mode": "compiled-js",
+      "turnCount": 15,
+      "firstTextMs": {
+        "count": 15,
+        "median": 3255.052834,
+        "min": 2001.673625,
+        "max": 4715.773458
+      },
+      "totalMs": {
+        "count": 15,
+        "median": 3633.686125,
+        "min": 2413.6988749999996,
+        "max": 5117.1558749999995
+      },
+      "inputTokens": 295740,
+      "outputTokens": 165,
+      "reasoningTokens": 0,
+      "reasoningKnownTurns": 0,
+      "cache": {
+        "knownTurns": 15,
+        "unknownTurns": 0,
+        "knownInputTokens": 295740,
+        "cachedInputTokens": 99712,
+        "knownUncachedInputTokens": 196028,
+        "ratio": 0.3371610198147021
+      },
+      "harness": "mastra",
+      "scenario": "concurrent-5",
+      "runCount": 3,
+      "failureCount": 0,
+      "memorySampleCount": 50,
+      "startupMs": {
+        "count": 3,
+        "median": 690.817916,
+        "min": 662.354292,
+        "max": 1000.8715840000004
+      },
+      "runMs": {
+        "count": 3,
+        "median": 4629.443,
+        "min": 3653.394042,
+        "max": 5122.323458000003
+      },
+      "idleWorkerRssKiB": {
+        "count": 3,
+        "median": 350576,
+        "min": 349392,
+        "max": 354992
+      },
+      "idleTreeRssKiB": {
+        "count": 3,
+        "median": 350576,
+        "min": 349392,
+        "max": 354992
+      },
+      "idleCodexRssKiB": {
+        "count": 3,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "activePeakWorkerRssKiB": {
+        "count": 3,
+        "median": 401120,
+        "min": 397264,
+        "max": 402480
+      },
+      "activePeakTreeRssKiB": {
+        "count": 3,
+        "median": 401120,
+        "min": 397264,
+        "max": 402480
+      },
+      "activePeakCodexRssKiB": {
+        "count": 3,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "prompts": [
+        {
+          "promptIndex": 0,
+          "turnCount": 15,
+          "firstTextMs": {
+            "count": 15,
+            "median": 3255.052834,
+            "min": 2001.673625,
+            "max": 4715.773458
+          },
+          "totalMs": {
+            "count": 15,
+            "median": 3633.686125,
+            "min": 2413.6988749999996,
+            "max": 5117.1558749999995
+          },
+          "inputTokens": 295740,
+          "outputTokens": 165,
+          "reasoningTokens": 0,
+          "reasoningKnownTurns": 0,
+          "cache": {
+            "knownTurns": 15,
+            "unknownTurns": 0,
+            "knownInputTokens": 295740,
+            "cachedInputTokens": 99712,
+            "knownUncachedInputTokens": 196028,
+            "ratio": 0.3371610198147021
+          }
+        }
+      ]
+    },
+    {
+      "mode": "compiled-js",
+      "turnCount": 15,
+      "firstTextMs": {
+        "count": 15,
+        "median": 3233.332875,
+        "min": 2599.3300830000007,
+        "max": 4783.9316659999995
+      },
+      "totalMs": {
+        "count": 15,
+        "median": 3495.8067089999995,
+        "min": 2843.985375,
+        "max": 4939.231957999999
+      },
+      "inputTokens": 259985,
+      "outputTokens": 165,
+      "reasoningTokens": 0,
+      "reasoningKnownTurns": 15,
+      "cache": {
+        "knownTurns": 15,
+        "unknownTurns": 0,
+        "knownInputTokens": 259985,
+        "cachedInputTokens": 188416,
+        "knownUncachedInputTokens": 71569,
+        "ratio": 0.7247187337731023
+      },
+      "harness": "codex",
+      "scenario": "concurrent-5",
+      "runCount": 3,
+      "failureCount": 0,
+      "memorySampleCount": 63,
+      "startupMs": {
+        "count": 3,
+        "median": 3370.820999999999,
+        "min": 3094.0976250000003,
+        "max": 3506.0293749999983
+      },
+      "runMs": {
+        "count": 3,
+        "median": 3769.254083,
+        "min": 3693.8925,
+        "max": 4940.012875
+      },
+      "idleWorkerRssKiB": {
+        "count": 3,
+        "median": 43824,
+        "min": 39624,
+        "max": 48384
+      },
+      "idleTreeRssKiB": {
+        "count": 3,
+        "median": 250080,
+        "min": 237744,
+        "max": 301656
+      },
+      "idleCodexRssKiB": {
+        "count": 3,
+        "median": 206240,
+        "min": 198120,
+        "max": 253272
+      },
+      "activePeakWorkerRssKiB": {
+        "count": 3,
+        "median": 44896,
+        "min": 42032,
+        "max": 49184
+      },
+      "activePeakTreeRssKiB": {
+        "count": 3,
+        "median": 317216,
+        "min": 307344,
+        "max": 343712
+      },
+      "activePeakCodexRssKiB": {
+        "count": 3,
+        "median": 273216,
+        "min": 265312,
+        "max": 295168
+      },
+      "prompts": [
+        {
+          "promptIndex": 0,
+          "turnCount": 15,
+          "firstTextMs": {
+            "count": 15,
+            "median": 3233.332875,
+            "min": 2599.3300830000007,
+            "max": 4783.9316659999995
+          },
+          "totalMs": {
+            "count": 15,
+            "median": 3495.8067089999995,
+            "min": 2843.985375,
+            "max": 4939.231957999999
+          },
+          "inputTokens": 259985,
+          "outputTokens": 165,
+          "reasoningTokens": 0,
+          "reasoningKnownTurns": 15,
+          "cache": {
+            "knownTurns": 15,
+            "unknownTurns": 0,
+            "knownInputTokens": 259985,
+            "cachedInputTokens": 188416,
+            "knownUncachedInputTokens": 71569,
+            "ratio": 0.7247187337731023
+          }
+        }
+      ]
+    },
+    {
+      "mode": "tsx",
+      "turnCount": 15,
+      "firstTextMs": {
+        "count": 15,
+        "median": 3329.1251669999997,
+        "min": 2103.8855,
+        "max": 6154.481707999999
+      },
+      "totalMs": {
+        "count": 15,
+        "median": 3718.6742500000005,
+        "min": 2554.695209,
+        "max": 6662.353958
+      },
+      "inputTokens": 295830,
+      "outputTokens": 165,
+      "reasoningTokens": 0,
+      "reasoningKnownTurns": 0,
+      "cache": {
+        "knownTurns": 15,
+        "unknownTurns": 0,
+        "knownInputTokens": 295830,
+        "cachedInputTokens": 148864,
+        "knownUncachedInputTokens": 146966,
+        "ratio": 0.5032079234695602
+      },
+      "harness": "mastra",
+      "scenario": "concurrent-5",
+      "runCount": 3,
+      "failureCount": 0,
+      "memorySampleCount": 61,
+      "startupMs": {
+        "count": 3,
+        "median": 1803.5366669999999,
+        "min": 1462.562249999999,
+        "max": 1982.7930000000015
+      },
+      "runMs": {
+        "count": 3,
+        "median": 4713.294540999999,
+        "min": 4250.9198750000005,
+        "max": 6667.3637919999965
+      },
+      "idleWorkerRssKiB": {
+        "count": 3,
+        "median": 602208,
+        "min": 511304,
+        "max": 642576
+      },
+      "idleTreeRssKiB": {
+        "count": 3,
+        "median": 602208,
+        "min": 511304,
+        "max": 642576
+      },
+      "idleCodexRssKiB": {
+        "count": 3,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "activePeakWorkerRssKiB": {
+        "count": 3,
+        "median": 631136,
+        "min": 525712,
+        "max": 678304
+      },
+      "activePeakTreeRssKiB": {
+        "count": 3,
+        "median": 631136,
+        "min": 525712,
+        "max": 678304
+      },
+      "activePeakCodexRssKiB": {
+        "count": 3,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "prompts": [
+        {
+          "promptIndex": 0,
+          "turnCount": 15,
+          "firstTextMs": {
+            "count": 15,
+            "median": 3329.1251669999997,
+            "min": 2103.8855,
+            "max": 6154.481707999999
+          },
+          "totalMs": {
+            "count": 15,
+            "median": 3718.6742500000005,
+            "min": 2554.695209,
+            "max": 6662.353958
+          },
+          "inputTokens": 295830,
+          "outputTokens": 165,
+          "reasoningTokens": 0,
+          "reasoningKnownTurns": 0,
+          "cache": {
+            "knownTurns": 15,
+            "unknownTurns": 0,
+            "knownInputTokens": 295830,
+            "cachedInputTokens": 148864,
+            "knownUncachedInputTokens": 146966,
+            "ratio": 0.5032079234695602
+          }
+        }
+      ]
+    },
+    {
+      "mode": "tsx",
+      "turnCount": 15,
+      "firstTextMs": {
+        "count": 15,
+        "median": 2846.7447089999996,
+        "min": 2379.8789580000002,
+        "max": 4046.4822080000004
+      },
+      "totalMs": {
+        "count": 15,
+        "median": 3209.7784580000007,
+        "min": 2610.1781249999995,
+        "max": 4304.985541999999
+      },
+      "inputTokens": 260005,
+      "outputTokens": 165,
+      "reasoningTokens": 0,
+      "reasoningKnownTurns": 15,
+      "cache": {
+        "knownTurns": 15,
+        "unknownTurns": 0,
+        "knownInputTokens": 260005,
+        "cachedInputTokens": 200704,
+        "knownUncachedInputTokens": 59301,
+        "ratio": 0.7719236168535221
+      },
+      "harness": "codex",
+      "scenario": "concurrent-5",
+      "runCount": 3,
+      "failureCount": 0,
+      "memorySampleCount": 62,
+      "startupMs": {
+        "count": 3,
+        "median": 3085.9967909999996,
+        "min": 3024.0364579999987,
+        "max": 3513.1507090000014
+      },
+      "runMs": {
+        "count": 3,
+        "median": 3528.1346250000006,
+        "min": 3462.823583999998,
+        "max": 4305.740834
+      },
+      "idleWorkerRssKiB": {
+        "count": 3,
+        "median": 46944,
+        "min": 45184,
+        "max": 76880
+      },
+      "idleTreeRssKiB": {
+        "count": 3,
+        "median": 264840,
+        "min": 247240,
+        "max": 332664
+      },
+      "idleCodexRssKiB": {
+        "count": 3,
+        "median": 219656,
+        "min": 200296,
+        "max": 236712
+      },
+      "activePeakWorkerRssKiB": {
+        "count": 3,
+        "median": 47952,
+        "min": 46416,
+        "max": 76960
+      },
+      "activePeakTreeRssKiB": {
+        "count": 3,
+        "median": 317904,
+        "min": 304944,
+        "max": 372528
+      },
+      "activePeakCodexRssKiB": {
+        "count": 3,
+        "median": 271904,
+        "min": 257568,
+        "max": 276464
+      },
+      "prompts": [
+        {
+          "promptIndex": 0,
+          "turnCount": 15,
+          "firstTextMs": {
+            "count": 15,
+            "median": 2846.7447089999996,
+            "min": 2379.8789580000002,
+            "max": 4046.4822080000004
+          },
+          "totalMs": {
+            "count": 15,
+            "median": 3209.7784580000007,
+            "min": 2610.1781249999995,
+            "max": 4304.985541999999
+          },
+          "inputTokens": 260005,
+          "outputTokens": 165,
+          "reasoningTokens": 0,
+          "reasoningKnownTurns": 15,
+          "cache": {
+            "knownTurns": 15,
+            "unknownTurns": 0,
+            "knownInputTokens": 260005,
+            "cachedInputTokens": 200704,
+            "knownUncachedInputTokens": 59301,
+            "ratio": 0.7719236168535221
+          }
+        }
+      ]
+    },
+    {
+      "mode": "compiled-js",
+      "turnCount": 0,
+      "firstTextMs": null,
+      "totalMs": null,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "reasoningTokens": 0,
+      "reasoningKnownTurns": 0,
+      "cache": {
+        "knownTurns": 0,
+        "unknownTurns": 0,
+        "knownInputTokens": 0,
+        "cachedInputTokens": 0,
+        "knownUncachedInputTokens": 0,
+        "ratio": null
+      },
+      "harness": "mastra",
+      "scenario": "memory-1",
+      "runCount": 3,
+      "failureCount": 0,
+      "memorySampleCount": 19,
+      "startupMs": {
+        "count": 3,
+        "median": 809.8286670000007,
+        "min": 677.1483329999992,
+        "max": 1290.58575
+      },
+      "runMs": null,
+      "idleWorkerRssKiB": {
+        "count": 3,
+        "median": 348112,
+        "min": 321152,
+        "max": 349456
+      },
+      "idleTreeRssKiB": {
+        "count": 3,
+        "median": 348112,
+        "min": 321152,
+        "max": 349456
+      },
+      "idleCodexRssKiB": {
+        "count": 3,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "activePeakWorkerRssKiB": null,
+      "activePeakTreeRssKiB": null,
+      "activePeakCodexRssKiB": null,
+      "prompts": []
+    },
+    {
+      "mode": "compiled-js",
+      "turnCount": 0,
+      "firstTextMs": null,
+      "totalMs": null,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "reasoningTokens": 0,
+      "reasoningKnownTurns": 0,
+      "cache": {
+        "knownTurns": 0,
+        "unknownTurns": 0,
+        "knownInputTokens": 0,
+        "cachedInputTokens": 0,
+        "knownUncachedInputTokens": 0,
+        "ratio": null
+      },
+      "harness": "codex",
+      "scenario": "memory-1",
+      "runCount": 3,
+      "failureCount": 0,
+      "memorySampleCount": 19,
+      "startupMs": {
+        "count": 3,
+        "median": 893.2743330000003,
+        "min": 854.3377919999998,
+        "max": 939.0251659999994
+      },
+      "runMs": null,
+      "idleWorkerRssKiB": {
+        "count": 3,
+        "median": 48096,
+        "min": 48072,
+        "max": 48128
+      },
+      "idleTreeRssKiB": {
+        "count": 3,
+        "median": 225744,
+        "min": 212624,
+        "max": 227288
+      },
+      "idleCodexRssKiB": {
+        "count": 3,
+        "median": 177616,
+        "min": 164528,
+        "max": 179216
+      },
+      "activePeakWorkerRssKiB": null,
+      "activePeakTreeRssKiB": null,
+      "activePeakCodexRssKiB": null,
+      "prompts": []
+    },
+    {
+      "mode": "tsx",
+      "turnCount": 0,
+      "firstTextMs": null,
+      "totalMs": null,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "reasoningTokens": 0,
+      "reasoningKnownTurns": 0,
+      "cache": {
+        "knownTurns": 0,
+        "unknownTurns": 0,
+        "knownInputTokens": 0,
+        "cachedInputTokens": 0,
+        "knownUncachedInputTokens": 0,
+        "ratio": null
+      },
+      "harness": "mastra",
+      "scenario": "memory-1",
+      "runCount": 3,
+      "failureCount": 0,
+      "memorySampleCount": 26,
+      "startupMs": {
+        "count": 3,
+        "median": 2136.725542,
+        "min": 1770.640041999999,
+        "max": 2183.73675
+      },
+      "runMs": null,
+      "idleWorkerRssKiB": {
+        "count": 3,
+        "median": 500664,
+        "min": 483920,
+        "max": 518904
+      },
+      "idleTreeRssKiB": {
+        "count": 3,
+        "median": 500664,
+        "min": 483920,
+        "max": 518904
+      },
+      "idleCodexRssKiB": {
+        "count": 3,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "activePeakWorkerRssKiB": null,
+      "activePeakTreeRssKiB": null,
+      "activePeakCodexRssKiB": null,
+      "prompts": []
+    },
+    {
+      "mode": "tsx",
+      "turnCount": 0,
+      "firstTextMs": null,
+      "totalMs": null,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "reasoningTokens": 0,
+      "reasoningKnownTurns": 0,
+      "cache": {
+        "knownTurns": 0,
+        "unknownTurns": 0,
+        "knownInputTokens": 0,
+        "cachedInputTokens": 0,
+        "knownUncachedInputTokens": 0,
+        "ratio": null
+      },
+      "harness": "codex",
+      "scenario": "memory-1",
+      "runCount": 3,
+      "failureCount": 0,
+      "memorySampleCount": 24,
+      "startupMs": {
+        "count": 3,
+        "median": 1026.6115419999987,
+        "min": 972.7971249999973,
+        "max": 3258.7671659999996
+      },
+      "runMs": null,
+      "idleWorkerRssKiB": {
+        "count": 3,
+        "median": 52664,
+        "min": 50104,
+        "max": 60800
+      },
+      "idleTreeRssKiB": {
+        "count": 3,
+        "median": 205824,
+        "min": 200008,
+        "max": 240176
+      },
+      "idleCodexRssKiB": {
+        "count": 3,
+        "median": 153160,
+        "min": 149904,
+        "max": 179456
+      },
+      "activePeakWorkerRssKiB": null,
+      "activePeakTreeRssKiB": null,
+      "activePeakCodexRssKiB": null,
+      "prompts": []
+    },
+    {
+      "mode": "compiled-js",
+      "turnCount": 0,
+      "firstTextMs": null,
+      "totalMs": null,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "reasoningTokens": 0,
+      "reasoningKnownTurns": 0,
+      "cache": {
+        "knownTurns": 0,
+        "unknownTurns": 0,
+        "knownInputTokens": 0,
+        "cachedInputTokens": 0,
+        "knownUncachedInputTokens": 0,
+        "ratio": null
+      },
+      "harness": "mastra",
+      "scenario": "memory-15",
+      "runCount": 3,
+      "failureCount": 0,
+      "memorySampleCount": 20,
+      "startupMs": {
+        "count": 3,
+        "median": 1091.2841250000001,
+        "min": 854.5804590000007,
+        "max": 1123.3793750000004
+      },
+      "runMs": null,
+      "idleWorkerRssKiB": {
+        "count": 3,
+        "median": 358896,
+        "min": 358016,
+        "max": 360784
+      },
+      "idleTreeRssKiB": {
+        "count": 3,
+        "median": 358896,
+        "min": 358016,
+        "max": 360784
+      },
+      "idleCodexRssKiB": {
+        "count": 3,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "activePeakWorkerRssKiB": null,
+      "activePeakTreeRssKiB": null,
+      "activePeakCodexRssKiB": null,
+      "prompts": []
+    },
+    {
+      "mode": "compiled-js",
+      "turnCount": 0,
+      "firstTextMs": null,
+      "totalMs": null,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "reasoningTokens": 0,
+      "reasoningKnownTurns": 0,
+      "cache": {
+        "knownTurns": 0,
+        "unknownTurns": 0,
+        "knownInputTokens": 0,
+        "cachedInputTokens": 0,
+        "knownUncachedInputTokens": 0,
+        "ratio": null
+      },
+      "harness": "codex",
+      "scenario": "memory-15",
+      "runCount": 3,
+      "failureCount": 0,
+      "memorySampleCount": 65,
+      "startupMs": {
+        "count": 3,
+        "median": 8520.983250000001,
+        "min": 8280.263708,
+        "max": 8558.121292000002
+      },
+      "runMs": null,
+      "idleWorkerRssKiB": {
+        "count": 3,
+        "median": 49072,
+        "min": 42224,
+        "max": 49232
+      },
+      "idleTreeRssKiB": {
+        "count": 3,
+        "median": 409728,
+        "min": 339256,
+        "max": 417440
+      },
+      "idleCodexRssKiB": {
+        "count": 3,
+        "median": 360656,
+        "min": 297032,
+        "max": 368208
+      },
+      "activePeakWorkerRssKiB": null,
+      "activePeakTreeRssKiB": null,
+      "activePeakCodexRssKiB": null,
+      "prompts": []
+    },
+    {
+      "mode": "tsx",
+      "turnCount": 0,
+      "firstTextMs": null,
+      "totalMs": null,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "reasoningTokens": 0,
+      "reasoningKnownTurns": 0,
+      "cache": {
+        "knownTurns": 0,
+        "unknownTurns": 0,
+        "knownInputTokens": 0,
+        "cachedInputTokens": 0,
+        "knownUncachedInputTokens": 0,
+        "ratio": null
+      },
+      "harness": "mastra",
+      "scenario": "memory-15",
+      "runCount": 3,
+      "failureCount": 0,
+      "memorySampleCount": 24,
+      "startupMs": {
+        "count": 3,
+        "median": 1661.9713330000013,
+        "min": 1512.8193330000001,
+        "max": 1916.9510420000006
+      },
+      "runMs": null,
+      "idleWorkerRssKiB": {
+        "count": 3,
+        "median": 539040,
+        "min": 499624,
+        "max": 543192
+      },
+      "idleTreeRssKiB": {
+        "count": 3,
+        "median": 539040,
+        "min": 499624,
+        "max": 543192
+      },
+      "idleCodexRssKiB": {
+        "count": 3,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "activePeakWorkerRssKiB": null,
+      "activePeakTreeRssKiB": null,
+      "activePeakCodexRssKiB": null,
+      "prompts": []
+    },
+    {
+      "mode": "tsx",
+      "turnCount": 0,
+      "firstTextMs": null,
+      "totalMs": null,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "reasoningTokens": 0,
+      "reasoningKnownTurns": 0,
+      "cache": {
+        "knownTurns": 0,
+        "unknownTurns": 0,
+        "knownInputTokens": 0,
+        "cachedInputTokens": 0,
+        "knownUncachedInputTokens": 0,
+        "ratio": null
+      },
+      "harness": "codex",
+      "scenario": "memory-15",
+      "runCount": 3,
+      "failureCount": 0,
+      "memorySampleCount": 65,
+      "startupMs": {
+        "count": 3,
+        "median": 8432.166416999999,
+        "min": 8276.940375,
+        "max": 8835.735875000002
+      },
+      "runMs": null,
+      "idleWorkerRssKiB": {
+        "count": 3,
+        "median": 59584,
+        "min": 57600,
+        "max": 60848
+      },
+      "idleTreeRssKiB": {
+        "count": 3,
+        "median": 388672,
+        "min": 367000,
+        "max": 438688
+      },
+      "idleCodexRssKiB": {
+        "count": 3,
+        "median": 331072,
+        "min": 307416,
+        "max": 377840
+      },
+      "activePeakWorkerRssKiB": null,
+      "activePeakTreeRssKiB": null,
+      "activePeakCodexRssKiB": null,
+      "prompts": []
+    },
+    {
+      "mode": "compiled-js",
+      "turnCount": 0,
+      "firstTextMs": null,
+      "totalMs": null,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "reasoningTokens": 0,
+      "reasoningKnownTurns": 0,
+      "cache": {
+        "knownTurns": 0,
+        "unknownTurns": 0,
+        "knownInputTokens": 0,
+        "cachedInputTokens": 0,
+        "knownUncachedInputTokens": 0,
+        "ratio": null
+      },
+      "harness": "mastra",
+      "scenario": "memory-5",
+      "runCount": 3,
+      "failureCount": 0,
+      "memorySampleCount": 18,
+      "startupMs": {
+        "count": 3,
+        "median": 690.985833,
+        "min": 658.065958000001,
+        "max": 791.4805410000008
+      },
+      "runMs": null,
+      "idleWorkerRssKiB": {
+        "count": 3,
+        "median": 351776,
+        "min": 318344,
+        "max": 362192
+      },
+      "idleTreeRssKiB": {
+        "count": 3,
+        "median": 351776,
+        "min": 318344,
+        "max": 362192
+      },
+      "idleCodexRssKiB": {
+        "count": 3,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "activePeakWorkerRssKiB": null,
+      "activePeakTreeRssKiB": null,
+      "activePeakCodexRssKiB": null,
+      "prompts": []
+    },
+    {
+      "mode": "compiled-js",
+      "turnCount": 0,
+      "firstTextMs": null,
+      "totalMs": null,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "reasoningTokens": 0,
+      "reasoningKnownTurns": 0,
+      "cache": {
+        "knownTurns": 0,
+        "unknownTurns": 0,
+        "knownInputTokens": 0,
+        "cachedInputTokens": 0,
+        "knownUncachedInputTokens": 0,
+        "ratio": null
+      },
+      "harness": "codex",
+      "scenario": "memory-5",
+      "runCount": 3,
+      "failureCount": 0,
+      "memorySampleCount": 32,
+      "startupMs": {
+        "count": 3,
+        "median": 2998.4918749999997,
+        "min": 2935.2114999999994,
+        "max": 3103.902917
+      },
+      "runMs": null,
+      "idleWorkerRssKiB": {
+        "count": 3,
+        "median": 48416,
+        "min": 41368,
+        "max": 48416
+      },
+      "idleTreeRssKiB": {
+        "count": 3,
+        "median": 290704,
+        "min": 223944,
+        "max": 300040
+      },
+      "idleCodexRssKiB": {
+        "count": 3,
+        "median": 242288,
+        "min": 182576,
+        "max": 251624
+      },
+      "activePeakWorkerRssKiB": null,
+      "activePeakTreeRssKiB": null,
+      "activePeakCodexRssKiB": null,
+      "prompts": []
+    },
+    {
+      "mode": "tsx",
+      "turnCount": 0,
+      "firstTextMs": null,
+      "totalMs": null,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "reasoningTokens": 0,
+      "reasoningKnownTurns": 0,
+      "cache": {
+        "knownTurns": 0,
+        "unknownTurns": 0,
+        "knownInputTokens": 0,
+        "cachedInputTokens": 0,
+        "knownUncachedInputTokens": 0,
+        "ratio": null
+      },
+      "harness": "mastra",
+      "scenario": "memory-5",
+      "runCount": 3,
+      "failureCount": 0,
+      "memorySampleCount": 24,
+      "startupMs": {
+        "count": 3,
+        "median": 1599.639958,
+        "min": 1448.7102919999998,
+        "max": 1869.8310409999995
+      },
+      "runMs": null,
+      "idleWorkerRssKiB": {
+        "count": 3,
+        "median": 505320,
+        "min": 489792,
+        "max": 574056
+      },
+      "idleTreeRssKiB": {
+        "count": 3,
+        "median": 505320,
+        "min": 489792,
+        "max": 574056
+      },
+      "idleCodexRssKiB": {
+        "count": 3,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "activePeakWorkerRssKiB": null,
+      "activePeakTreeRssKiB": null,
+      "activePeakCodexRssKiB": null,
+      "prompts": []
+    },
+    {
+      "mode": "tsx",
+      "turnCount": 0,
+      "firstTextMs": null,
+      "totalMs": null,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "reasoningTokens": 0,
+      "reasoningKnownTurns": 0,
+      "cache": {
+        "knownTurns": 0,
+        "unknownTurns": 0,
+        "knownInputTokens": 0,
+        "cachedInputTokens": 0,
+        "knownUncachedInputTokens": 0,
+        "ratio": null
+      },
+      "harness": "codex",
+      "scenario": "memory-5",
+      "runCount": 3,
+      "failureCount": 0,
+      "memorySampleCount": 33,
+      "startupMs": {
+        "count": 3,
+        "median": 3052.1623750000035,
+        "min": 3007.6957500000003,
+        "max": 3402.89175
+      },
+      "runMs": null,
+      "idleWorkerRssKiB": {
+        "count": 3,
+        "median": 60752,
+        "min": 47832,
+        "max": 60992
+      },
+      "idleTreeRssKiB": {
+        "count": 3,
+        "median": 292912,
+        "min": 281592,
+        "max": 306496
+      },
+      "idleCodexRssKiB": {
+        "count": 3,
+        "median": 233768,
+        "min": 232160,
+        "max": 245504
+      },
+      "activePeakWorkerRssKiB": null,
+      "activePeakTreeRssKiB": null,
+      "activePeakCodexRssKiB": null,
+      "prompts": []
+    }
+  ],
+  "stageDiagnostics": [
+    {
+      "scenario": "single-project",
+      "launchMode": "plain-node",
+      "diagnosticGcEnabled": false,
+      "sampleCount": 5,
+      "sampleIntervalMs": 200,
+      "limitations": [
+        "Current-process memory only; RSS includes resident native allocations and mapped pages, not just the V8 heap.",
+        "Bounded idle samples are not a guarantee of quiescence; repeat fresh processes to assess variance.",
+        "Full SDK import is retained in the module cache and may differ from normal host import paths.",
+        "Chat sessions are empty: this measures mounting and loaded-session overhead, not active turns or retained conversation content."
+      ],
+      "run": "stages-single-project-compiled-js-1",
+      "stages": [
+        {
+          "name": "baseline",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 12994336,
+            "heapUsed": 4259656,
+            "heapTotal": 6111232,
+            "external": 1782737,
+            "arrayBuffers": 137503
+          }
+        },
+        {
+          "name": "full-sdk-imported",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 321259168,
+            "heapUsed": 116207896,
+            "heapTotal": 235257856,
+            "external": 22867249,
+            "arrayBuffers": 6872899
+          }
+        },
+        {
+          "name": "one-project-zero-chats",
+          "projects": 1,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 325240720,
+            "heapUsed": 151251992,
+            "heapTotal": 238469120,
+            "external": 22865170,
+            "arrayBuffers": 6870751
+          }
+        },
+        {
+          "name": "one-project-1-chats",
+          "projects": 1,
+          "chats": 1,
+          "beforeGcMedianBytes": {
+            "rss": 325797824,
+            "heapUsed": 152569896,
+            "heapTotal": 238993408,
+            "external": 22936637,
+            "arrayBuffers": 6876751
+          }
+        },
+        {
+          "name": "one-project-5-chats",
+          "projects": 1,
+          "chats": 5,
+          "beforeGcMedianBytes": {
+            "rss": 326207424,
+            "heapUsed": 155423176,
+            "heapTotal": 238993408,
+            "external": 22936637,
+            "arrayBuffers": 6876751
+          }
+        },
+        {
+          "name": "one-project-15-chats",
+          "projects": 1,
+          "chats": 15,
+          "beforeGcMedianBytes": {
+            "rss": 327387144,
+            "heapUsed": 94851400,
+            "heapTotal": 240041984,
+            "external": 22936637,
+            "arrayBuffers": 5874340
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "single-project",
+      "launchMode": "plain-node",
+      "diagnosticGcEnabled": false,
+      "sampleCount": 5,
+      "sampleIntervalMs": 200,
+      "limitations": [
+        "Current-process memory only; RSS includes resident native allocations and mapped pages, not just the V8 heap.",
+        "Bounded idle samples are not a guarantee of quiescence; repeat fresh processes to assess variance.",
+        "Full SDK import is retained in the module cache and may differ from normal host import paths.",
+        "Chat sessions are empty: this measures mounting and loaded-session overhead, not active turns or retained conversation content."
+      ],
+      "run": "stages-single-project-compiled-js-2",
+      "stages": [
+        {
+          "name": "baseline",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 12928752,
+            "heapUsed": 4259656,
+            "heapTotal": 6111232,
+            "external": 1782737,
+            "arrayBuffers": 137503
+          }
+        },
+        {
+          "name": "full-sdk-imported",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 321357808,
+            "heapUsed": 116524120,
+            "heapTotal": 235782144,
+            "external": 22867249,
+            "arrayBuffers": 6872899
+          }
+        },
+        {
+          "name": "one-project-zero-chats",
+          "projects": 1,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 325437592,
+            "heapUsed": 154717712,
+            "heapTotal": 238469120,
+            "external": 22865170,
+            "arrayBuffers": 6870751
+          }
+        },
+        {
+          "name": "one-project-1-chats",
+          "projects": 1,
+          "chats": 1,
+          "beforeGcMedianBytes": {
+            "rss": 326011080,
+            "heapUsed": 156041960,
+            "heapTotal": 238993408,
+            "external": 22936637,
+            "arrayBuffers": 6876751
+          }
+        },
+        {
+          "name": "one-project-5-chats",
+          "projects": 1,
+          "chats": 5,
+          "beforeGcMedianBytes": {
+            "rss": 326519056,
+            "heapUsed": 93878120,
+            "heapTotal": 238993408,
+            "external": 22936637,
+            "arrayBuffers": 5874340
+          }
+        },
+        {
+          "name": "one-project-15-chats",
+          "projects": 1,
+          "chats": 15,
+          "beforeGcMedianBytes": {
+            "rss": 326945040,
+            "heapUsed": 101062272,
+            "heapTotal": 239255552,
+            "external": 22936637,
+            "arrayBuffers": 5874340
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "single-project",
+      "launchMode": "plain-node",
+      "diagnosticGcEnabled": false,
+      "sampleCount": 5,
+      "sampleIntervalMs": 200,
+      "limitations": [
+        "Current-process memory only; RSS includes resident native allocations and mapped pages, not just the V8 heap.",
+        "Bounded idle samples are not a guarantee of quiescence; repeat fresh processes to assess variance.",
+        "Full SDK import is retained in the module cache and may differ from normal host import paths.",
+        "Chat sessions are empty: this measures mounting and loaded-session overhead, not active turns or retained conversation content."
+      ],
+      "run": "stages-single-project-compiled-js-3",
+      "stages": [
+        {
+          "name": "baseline",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 13223736,
+            "heapUsed": 4259656,
+            "heapTotal": 6111232,
+            "external": 1782737,
+            "arrayBuffers": 137503
+          }
+        },
+        {
+          "name": "full-sdk-imported",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 285427912,
+            "heapUsed": 107163864,
+            "heapTotal": 242401280,
+            "external": 22865101,
+            "arrayBuffers": 6870751
+          }
+        },
+        {
+          "name": "one-project-zero-chats",
+          "projects": 1,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 329500896,
+            "heapUsed": 132927480,
+            "heapTotal": 242925568,
+            "external": 22865170,
+            "arrayBuffers": 6870751
+          }
+        },
+        {
+          "name": "one-project-1-chats",
+          "projects": 1,
+          "chats": 1,
+          "beforeGcMedianBytes": {
+            "rss": 329746656,
+            "heapUsed": 134245240,
+            "heapTotal": 242925568,
+            "external": 22936637,
+            "arrayBuffers": 6876751
+          }
+        },
+        {
+          "name": "one-project-5-chats",
+          "projects": 1,
+          "chats": 5,
+          "beforeGcMedianBytes": {
+            "rss": 330123512,
+            "heapUsed": 137098136,
+            "heapTotal": 243187712,
+            "external": 22936637,
+            "arrayBuffers": 6876751
+          }
+        },
+        {
+          "name": "one-project-15-chats",
+          "projects": 1,
+          "chats": 15,
+          "beforeGcMedianBytes": {
+            "rss": 331008248,
+            "heapUsed": 144173096,
+            "heapTotal": 243449856,
+            "external": 22936637,
+            "arrayBuffers": 6876751
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "single-project",
+      "launchMode": "plain-node",
+      "diagnosticGcEnabled": true,
+      "sampleCount": 5,
+      "sampleIntervalMs": 200,
+      "limitations": [
+        "Current-process memory only; RSS includes resident native allocations and mapped pages, not just the V8 heap.",
+        "Bounded idle samples are not a guarantee of quiescence; repeat fresh processes to assess variance.",
+        "Full SDK import is retained in the module cache and may differ from normal host import paths.",
+        "Chat sessions are empty: this measures mounting and loaded-session overhead, not active turns or retained conversation content.",
+        "Explicit GC is diagnostic, not normal performance; later beforeGc stages also follow earlier forced collections."
+      ],
+      "run": "stages-single-project-compiled-js-gc",
+      "stages": [
+        {
+          "name": "baseline",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 13649696,
+            "heapUsed": 4245936,
+            "heapTotal": 6111232,
+            "external": 1782758,
+            "arrayBuffers": 137503
+          },
+          "afterGcMedianBytes": {
+            "rss": 14272576,
+            "heapUsed": 3932840,
+            "heapTotal": 6897664,
+            "external": 1782758,
+            "arrayBuffers": 137467
+          }
+        },
+        {
+          "name": "full-sdk-imported",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 332729528,
+            "heapUsed": 91732408,
+            "heapTotal": 247382016,
+            "external": 22932806,
+            "arrayBuffers": 5868340
+          },
+          "afterGcMedianBytes": {
+            "rss": 332958904,
+            "heapUsed": 91461160,
+            "heapTotal": 232701952,
+            "external": 21862711,
+            "arrayBuffers": 5868340
+          }
+        },
+        {
+          "name": "one-project-zero-chats",
+          "projects": 1,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 335400144,
+            "heapUsed": 100471816,
+            "heapTotal": 233226240,
+            "external": 21862780,
+            "arrayBuffers": 5868340
+          },
+          "afterGcMedianBytes": {
+            "rss": 335514832,
+            "heapUsed": 92735152,
+            "heapTotal": 233226240,
+            "external": 21862711,
+            "arrayBuffers": 5868340
+          }
+        },
+        {
+          "name": "one-project-1-chats",
+          "projects": 1,
+          "chats": 1,
+          "beforeGcMedianBytes": {
+            "rss": 324521168,
+            "heapUsed": 94098384,
+            "heapTotal": 233226240,
+            "external": 21934247,
+            "arrayBuffers": 5874340
+          },
+          "afterGcMedianBytes": {
+            "rss": 324521168,
+            "heapUsed": 93195792,
+            "heapTotal": 100319232,
+            "external": 21934247,
+            "arrayBuffers": 5874340
+          }
+        },
+        {
+          "name": "one-project-5-chats",
+          "projects": 1,
+          "chats": 5,
+          "beforeGcMedianBytes": {
+            "rss": 324717776,
+            "heapUsed": 93687824,
+            "heapTotal": 103464960,
+            "external": 21934247,
+            "arrayBuffers": 5874340
+          },
+          "afterGcMedianBytes": {
+            "rss": 324734160,
+            "heapUsed": 93534320,
+            "heapTotal": 100319232,
+            "external": 21934247,
+            "arrayBuffers": 5874340
+          }
+        },
+        {
+          "name": "one-project-15-chats",
+          "projects": 1,
+          "chats": 15,
+          "beforeGcMedianBytes": {
+            "rss": 325258448,
+            "heapUsed": 94633376,
+            "heapTotal": 103727104,
+            "external": 21934247,
+            "arrayBuffers": 5874340
+          },
+          "afterGcMedianBytes": {
+            "rss": 325258448,
+            "heapUsed": 94490184,
+            "heapTotal": 100843520,
+            "external": 21934247,
+            "arrayBuffers": 5874340
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "single-project",
+      "launchMode": "tsx",
+      "diagnosticGcEnabled": false,
+      "sampleCount": 5,
+      "sampleIntervalMs": 200,
+      "limitations": [
+        "Current-process memory only; RSS includes resident native allocations and mapped pages, not just the V8 heap.",
+        "Bounded idle samples are not a guarantee of quiescence; repeat fresh processes to assess variance.",
+        "Full SDK import is retained in the module cache and may differ from normal host import paths.",
+        "Chat sessions are empty: this measures mounting and loaded-session overhead, not active turns or retained conversation content."
+      ],
+      "run": "stages-single-project-tsx-1",
+      "stages": [
+        {
+          "name": "baseline",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 39703928,
+            "heapUsed": 9508304,
+            "heapTotal": 14499840,
+            "external": 3997358,
+            "arrayBuffers": 1388276
+          }
+        },
+        {
+          "name": "full-sdk-imported",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 623005872,
+            "heapUsed": 359621216,
+            "heapTotal": 467402752,
+            "external": 64653002,
+            "arrayBuffers": 7958043
+          }
+        },
+        {
+          "name": "one-project-zero-chats",
+          "projects": 1,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 643979360,
+            "heapUsed": 393960520,
+            "heapTotal": 484704256,
+            "external": 64650923,
+            "arrayBuffers": 7955895
+          }
+        },
+        {
+          "name": "one-project-1-chats",
+          "projects": 1,
+          "chats": 1,
+          "beforeGcMedianBytes": {
+            "rss": 644618384,
+            "heapUsed": 395274504,
+            "heapTotal": 484966400,
+            "external": 64722390,
+            "arrayBuffers": 7961895
+          }
+        },
+        {
+          "name": "one-project-5-chats",
+          "projects": 1,
+          "chats": 5,
+          "beforeGcMedianBytes": {
+            "rss": 644962448,
+            "heapUsed": 398128328,
+            "heapTotal": 484966400,
+            "external": 64722390,
+            "arrayBuffers": 7961895
+          }
+        },
+        {
+          "name": "one-project-15-chats",
+          "projects": 1,
+          "chats": 15,
+          "beforeGcMedianBytes": {
+            "rss": 646158600,
+            "heapUsed": 350154408,
+            "heapTotal": 486539264,
+            "external": 64722390,
+            "arrayBuffers": 7961895
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "single-project",
+      "launchMode": "tsx",
+      "diagnosticGcEnabled": false,
+      "sampleCount": 5,
+      "sampleIntervalMs": 200,
+      "limitations": [
+        "Current-process memory only; RSS includes resident native allocations and mapped pages, not just the V8 heap.",
+        "Bounded idle samples are not a guarantee of quiescence; repeat fresh processes to assess variance.",
+        "Full SDK import is retained in the module cache and may differ from normal host import paths.",
+        "Chat sessions are empty: this measures mounting and loaded-session overhead, not active turns or retained conversation content."
+      ],
+      "run": "stages-single-project-tsx-2",
+      "stages": [
+        {
+          "name": "baseline",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 23825432,
+            "heapUsed": 7999224,
+            "heapTotal": 12926976,
+            "external": 2916012,
+            "arrayBuffers": 306922
+          }
+        },
+        {
+          "name": "full-sdk-imported",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 619859664,
+            "heapUsed": 368711712,
+            "heapTotal": 475660288,
+            "external": 64430586,
+            "arrayBuffers": 7735619
+          }
+        },
+        {
+          "name": "one-project-zero-chats",
+          "projects": 1,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 621645952,
+            "heapUsed": 288373184,
+            "heapTotal": 460881920,
+            "external": 51001735,
+            "arrayBuffers": 5737540
+          }
+        },
+        {
+          "name": "one-project-1-chats",
+          "projects": 1,
+          "chats": 1,
+          "beforeGcMedianBytes": {
+            "rss": 621957248,
+            "heapUsed": 289691032,
+            "heapTotal": 460881920,
+            "external": 51073202,
+            "arrayBuffers": 5743540
+          }
+        },
+        {
+          "name": "one-project-5-chats",
+          "projects": 1,
+          "chats": 5,
+          "beforeGcMedianBytes": {
+            "rss": 622268544,
+            "heapUsed": 292544008,
+            "heapTotal": 461144064,
+            "external": 51073202,
+            "arrayBuffers": 5743540
+          }
+        },
+        {
+          "name": "one-project-15-chats",
+          "projects": 1,
+          "chats": 15,
+          "beforeGcMedianBytes": {
+            "rss": 623120536,
+            "heapUsed": 299627696,
+            "heapTotal": 461668352,
+            "external": 51073202,
+            "arrayBuffers": 5743540
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "single-project",
+      "launchMode": "tsx",
+      "diagnosticGcEnabled": false,
+      "sampleCount": 5,
+      "sampleIntervalMs": 200,
+      "limitations": [
+        "Current-process memory only; RSS includes resident native allocations and mapped pages, not just the V8 heap.",
+        "Bounded idle samples are not a guarantee of quiescence; repeat fresh processes to assess variance.",
+        "Full SDK import is retained in the module cache and may differ from normal host import paths.",
+        "Chat sessions are empty: this measures mounting and loaded-session overhead, not active turns or retained conversation content."
+      ],
+      "run": "stages-single-project-tsx-3",
+      "stages": [
+        {
+          "name": "baseline",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 23923664,
+            "heapUsed": 8006064,
+            "heapTotal": 12926976,
+            "external": 2916012,
+            "arrayBuffers": 306922
+          }
+        },
+        {
+          "name": "full-sdk-imported",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 589398808,
+            "heapUsed": 323909080,
+            "heapTotal": 430751744,
+            "external": 63473354,
+            "arrayBuffers": 6778387
+          }
+        },
+        {
+          "name": "one-project-zero-chats",
+          "projects": 1,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 591004440,
+            "heapUsed": 288148120,
+            "heapTotal": 442007552,
+            "external": 51001735,
+            "arrayBuffers": 5737540
+          }
+        },
+        {
+          "name": "one-project-1-chats",
+          "projects": 1,
+          "chats": 1,
+          "beforeGcMedianBytes": {
+            "rss": 591250200,
+            "heapUsed": 289466504,
+            "heapTotal": 442007552,
+            "external": 51073202,
+            "arrayBuffers": 5743540
+          }
+        },
+        {
+          "name": "one-project-5-chats",
+          "projects": 1,
+          "chats": 5,
+          "beforeGcMedianBytes": {
+            "rss": 591594264,
+            "heapUsed": 292317504,
+            "heapTotal": 442269696,
+            "external": 51073202,
+            "arrayBuffers": 5743540
+          }
+        },
+        {
+          "name": "one-project-15-chats",
+          "projects": 1,
+          "chats": 15,
+          "beforeGcMedianBytes": {
+            "rss": 592560944,
+            "heapUsed": 299398512,
+            "heapTotal": 442793984,
+            "external": 51073202,
+            "arrayBuffers": 5743540
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "single-project",
+      "launchMode": "tsx",
+      "diagnosticGcEnabled": true,
+      "sampleCount": 5,
+      "sampleIntervalMs": 200,
+      "limitations": [
+        "Current-process memory only; RSS includes resident native allocations and mapped pages, not just the V8 heap.",
+        "Bounded idle samples are not a guarantee of quiescence; repeat fresh processes to assess variance.",
+        "Full SDK import is retained in the module cache and may differ from normal host import paths.",
+        "Chat sessions are empty: this measures mounting and loaded-session overhead, not active turns or retained conversation content.",
+        "Explicit GC is diagnostic, not normal performance; later beforeGc stages also follow earlier forced collections."
+      ],
+      "run": "stages-single-project-tsx-gc",
+      "stages": [
+        {
+          "name": "baseline",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 24677376,
+            "heapUsed": 7905944,
+            "heapTotal": 13189120,
+            "external": 2916033,
+            "arrayBuffers": 306922
+          },
+          "afterGcMedianBytes": {
+            "rss": 25005080,
+            "heapUsed": 7198032,
+            "heapTotal": 9781248,
+            "external": 2916033,
+            "arrayBuffers": 143887
+          }
+        },
+        {
+          "name": "full-sdk-imported",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 684402288,
+            "heapUsed": 342102032,
+            "heapTotal": 448970752,
+            "external": 59373622,
+            "arrayBuffers": 7309055
+          },
+          "afterGcMedianBytes": {
+            "rss": 683927056,
+            "heapUsed": 249782640,
+            "heapTotal": 445857792,
+            "external": 52573202,
+            "arrayBuffers": 5737540
+          }
+        },
+        {
+          "name": "one-project-zero-chats",
+          "projects": 1,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 686286376,
+            "heapUsed": 258812120,
+            "heapTotal": 446382080,
+            "external": 51001756,
+            "arrayBuffers": 5737540
+          },
+          "afterGcMedianBytes": {
+            "rss": 656205352,
+            "heapUsed": 250895056,
+            "heapTotal": 401293312,
+            "external": 51001687,
+            "arrayBuffers": 5737540
+          }
+        },
+        {
+          "name": "one-project-1-chats",
+          "projects": 1,
+          "chats": 1,
+          "beforeGcMedianBytes": {
+            "rss": 656336424,
+            "heapUsed": 252263712,
+            "heapTotal": 401293312,
+            "external": 51073223,
+            "arrayBuffers": 5743540
+          },
+          "afterGcMedianBytes": {
+            "rss": 656483880,
+            "heapUsed": 251352608,
+            "heapTotal": 268124160,
+            "external": 51073223,
+            "arrayBuffers": 5743540
+          }
+        },
+        {
+          "name": "one-project-5-chats",
+          "projects": 1,
+          "chats": 5,
+          "beforeGcMedianBytes": {
+            "rss": 656664104,
+            "heapUsed": 251834568,
+            "heapTotal": 271269888,
+            "external": 51073223,
+            "arrayBuffers": 5743540
+          },
+          "afterGcMedianBytes": {
+            "rss": 656762408,
+            "heapUsed": 251696872,
+            "heapTotal": 268124160,
+            "external": 51073223,
+            "arrayBuffers": 5743540
+          }
+        },
+        {
+          "name": "one-project-15-chats",
+          "projects": 1,
+          "chats": 15,
+          "beforeGcMedianBytes": {
+            "rss": 657499688,
+            "heapUsed": 253590576,
+            "heapTotal": 271794176,
+            "external": 51073223,
+            "arrayBuffers": 5743540
+          },
+          "afterGcMedianBytes": {
+            "rss": 657810984,
+            "heapUsed": 252645120,
+            "heapTotal": 268648448,
+            "external": 51073223,
+            "arrayBuffers": 5743540
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "three-projects",
+      "launchMode": "plain-node",
+      "diagnosticGcEnabled": false,
+      "sampleCount": 5,
+      "sampleIntervalMs": 200,
+      "limitations": [
+        "Current-process memory only; RSS includes resident native allocations and mapped pages, not just the V8 heap.",
+        "Bounded idle samples are not a guarantee of quiescence; repeat fresh processes to assess variance.",
+        "Full SDK import is retained in the module cache and may differ from normal host import paths.",
+        "Chat sessions are empty: this measures mounting and loaded-session overhead, not active turns or retained conversation content."
+      ],
+      "run": "stages-three-projects-compiled-js-1",
+      "stages": [
+        {
+          "name": "baseline",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 13043488,
+            "heapUsed": 4259656,
+            "heapTotal": 6111232,
+            "external": 1782737,
+            "arrayBuffers": 137503
+          }
+        },
+        {
+          "name": "full-sdk-imported",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 306037640,
+            "heapUsed": 99889600,
+            "heapTotal": 228769792,
+            "external": 22865101,
+            "arrayBuffers": 6870751
+          }
+        },
+        {
+          "name": "three-projects-zero-chats",
+          "projects": 3,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 327124976,
+            "heapUsed": 130585752,
+            "heapTotal": 237944832,
+            "external": 22865170,
+            "arrayBuffers": 6870751
+          }
+        },
+        {
+          "name": "three-projects-five-chats-each",
+          "projects": 3,
+          "chats": 15,
+          "beforeGcMedianBytes": {
+            "rss": 328812624,
+            "heapUsed": 141891816,
+            "heapTotal": 239517696,
+            "external": 23079709,
+            "arrayBuffers": 6888751
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "three-projects",
+      "launchMode": "plain-node",
+      "diagnosticGcEnabled": false,
+      "sampleCount": 5,
+      "sampleIntervalMs": 200,
+      "limitations": [
+        "Current-process memory only; RSS includes resident native allocations and mapped pages, not just the V8 heap.",
+        "Bounded idle samples are not a guarantee of quiescence; repeat fresh processes to assess variance.",
+        "Full SDK import is retained in the module cache and may differ from normal host import paths.",
+        "Chat sessions are empty: this measures mounting and loaded-session overhead, not active turns or retained conversation content."
+      ],
+      "run": "stages-three-projects-compiled-js-2",
+      "stages": [
+        {
+          "name": "baseline",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 13109024,
+            "heapUsed": 4259656,
+            "heapTotal": 6111232,
+            "external": 1782737,
+            "arrayBuffers": 137503
+          }
+        },
+        {
+          "name": "full-sdk-imported",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 325355744,
+            "heapUsed": 91644288,
+            "heapTotal": 237420544,
+            "external": 24275116,
+            "arrayBuffers": 5868340
+          }
+        },
+        {
+          "name": "three-projects-zero-chats",
+          "projects": 3,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 330516776,
+            "heapUsed": 109722416,
+            "heapTotal": 238206976,
+            "external": 21862759,
+            "arrayBuffers": 5868340
+          }
+        },
+        {
+          "name": "three-projects-five-chats-each",
+          "projects": 3,
+          "chats": 15,
+          "beforeGcMedianBytes": {
+            "rss": 331663704,
+            "heapUsed": 121042080,
+            "heapTotal": 239255552,
+            "external": 22077298,
+            "arrayBuffers": 5886340
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "three-projects",
+      "launchMode": "plain-node",
+      "diagnosticGcEnabled": false,
+      "sampleCount": 5,
+      "sampleIntervalMs": 200,
+      "limitations": [
+        "Current-process memory only; RSS includes resident native allocations and mapped pages, not just the V8 heap.",
+        "Bounded idle samples are not a guarantee of quiescence; repeat fresh processes to assess variance.",
+        "Full SDK import is retained in the module cache and may differ from normal host import paths.",
+        "Chat sessions are empty: this measures mounting and loaded-session overhead, not active turns or retained conversation content."
+      ],
+      "run": "stages-three-projects-compiled-js-3",
+      "stages": [
+        {
+          "name": "baseline",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 12896008,
+            "heapUsed": 4259656,
+            "heapTotal": 6111232,
+            "external": 1782737,
+            "arrayBuffers": 137503
+          }
+        },
+        {
+          "name": "full-sdk-imported",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 287951984,
+            "heapUsed": 108804008,
+            "heapTotal": 246071296,
+            "external": 22865101,
+            "arrayBuffers": 6870751
+          }
+        },
+        {
+          "name": "three-projects-zero-chats",
+          "projects": 3,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 337398920,
+            "heapUsed": 140871144,
+            "heapTotal": 246857728,
+            "external": 22865170,
+            "arrayBuffers": 6870751
+          }
+        },
+        {
+          "name": "three-projects-five-chats-each",
+          "projects": 3,
+          "chats": 15,
+          "beforeGcMedianBytes": {
+            "rss": 338578616,
+            "heapUsed": 152176856,
+            "heapTotal": 247906304,
+            "external": 23079709,
+            "arrayBuffers": 6888751
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "three-projects",
+      "launchMode": "tsx",
+      "diagnosticGcEnabled": false,
+      "sampleCount": 5,
+      "sampleIntervalMs": 200,
+      "limitations": [
+        "Current-process memory only; RSS includes resident native allocations and mapped pages, not just the V8 heap.",
+        "Bounded idle samples are not a guarantee of quiescence; repeat fresh processes to assess variance.",
+        "Full SDK import is retained in the module cache and may differ from normal host import paths.",
+        "Chat sessions are empty: this measures mounting and loaded-session overhead, not active turns or retained conversation content."
+      ],
+      "run": "stages-three-projects-tsx-1",
+      "stages": [
+        {
+          "name": "baseline",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 23841816,
+            "heapUsed": 7959736,
+            "heapTotal": 12926976,
+            "external": 2916012,
+            "arrayBuffers": 306922
+          }
+        },
+        {
+          "name": "full-sdk-imported",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 592085856,
+            "heapUsed": 324047264,
+            "heapTotal": 430751744,
+            "external": 63473354,
+            "arrayBuffers": 6778387
+          }
+        },
+        {
+          "name": "three-projects-zero-chats",
+          "projects": 3,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 597459928,
+            "heapUsed": 312548944,
+            "heapTotal": 449888256,
+            "external": 63471206,
+            "arrayBuffers": 6776239
+          }
+        },
+        {
+          "name": "three-projects-five-chats-each",
+          "projects": 3,
+          "chats": 15,
+          "beforeGcMedianBytes": {
+            "rss": 598524912,
+            "heapUsed": 323875200,
+            "heapTotal": 450674688,
+            "external": 63685814,
+            "arrayBuffers": 6794239
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "three-projects",
+      "launchMode": "tsx",
+      "diagnosticGcEnabled": false,
+      "sampleCount": 5,
+      "sampleIntervalMs": 200,
+      "limitations": [
+        "Current-process memory only; RSS includes resident native allocations and mapped pages, not just the V8 heap.",
+        "Bounded idle samples are not a guarantee of quiescence; repeat fresh processes to assess variance.",
+        "Full SDK import is retained in the module cache and may differ from normal host import paths.",
+        "Chat sessions are empty: this measures mounting and loaded-session overhead, not active turns or retained conversation content."
+      ],
+      "run": "stages-three-projects-tsx-2",
+      "stages": [
+        {
+          "name": "baseline",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 23759944,
+            "heapUsed": 8001208,
+            "heapTotal": 13189120,
+            "external": 2916012,
+            "arrayBuffers": 306922
+          }
+        },
+        {
+          "name": "full-sdk-imported",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 615009376,
+            "heapUsed": 362393376,
+            "heapTotal": 470319104,
+            "external": 64414202,
+            "arrayBuffers": 7719235
+          }
+        },
+        {
+          "name": "three-projects-zero-chats",
+          "projects": 3,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 623955664,
+            "heapUsed": 296436616,
+            "heapTotal": 459259904,
+            "external": 51001735,
+            "arrayBuffers": 5737540
+          }
+        },
+        {
+          "name": "three-projects-five-chats-each",
+          "projects": 3,
+          "chats": 15,
+          "beforeGcMedianBytes": {
+            "rss": 625118976,
+            "heapUsed": 307761384,
+            "heapTotal": 460308480,
+            "external": 51216274,
+            "arrayBuffers": 5755540
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "three-projects",
+      "launchMode": "tsx",
+      "diagnosticGcEnabled": false,
+      "sampleCount": 5,
+      "sampleIntervalMs": 200,
+      "limitations": [
+        "Current-process memory only; RSS includes resident native allocations and mapped pages, not just the V8 heap.",
+        "Bounded idle samples are not a guarantee of quiescence; repeat fresh processes to assess variance.",
+        "Full SDK import is retained in the module cache and may differ from normal host import paths.",
+        "Chat sessions are empty: this measures mounting and loaded-session overhead, not active turns or retained conversation content."
+      ],
+      "run": "stages-three-projects-tsx-3",
+      "stages": [
+        {
+          "name": "baseline",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 23956456,
+            "heapUsed": 7967112,
+            "heapTotal": 12926976,
+            "external": 2916012,
+            "arrayBuffers": 306922
+          }
+        },
+        {
+          "name": "full-sdk-imported",
+          "projects": 0,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 618286032,
+            "heapUsed": 366538472,
+            "heapTotal": 473399296,
+            "external": 65474203,
+            "arrayBuffers": 8779236
+          }
+        },
+        {
+          "name": "three-projects-zero-chats",
+          "projects": 3,
+          "chats": 0,
+          "beforeGcMedianBytes": {
+            "rss": 642618240,
+            "heapUsed": 355074928,
+            "heapTotal": 492011520,
+            "external": 65472055,
+            "arrayBuffers": 8777088
+          }
+        },
+        {
+          "name": "three-projects-five-chats-each",
+          "projects": 3,
+          "chats": 15,
+          "beforeGcMedianBytes": {
+            "rss": 644174792,
+            "heapUsed": 366397296,
+            "heapTotal": 493322240,
+            "external": 65686663,
+            "arrayBuffers": 8795088
+          }
+        }
+      ]
+    }
+  ]
+}

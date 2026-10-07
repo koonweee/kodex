@@ -9,6 +9,7 @@ import { aggregateBenchmarks, checkTurns, formatBenchmarkMarkdown, measureProces
 
 const ps = promisify(execFile);
 const workerFile = fileURLToPath(import.meta.url);
+const executionMode = workerFile.endsWith('.ts') ? 'tsx' : 'compiled-js';
 const prompts = [
   'Do not use any tools. Reply with exactly KODEX_BENCH_OK and nothing else.',
   'Do not use any tools. Reply with exactly KODEX_BENCH_FOLLOWUP and nothing else.',
@@ -114,7 +115,7 @@ async function runCase(harness: BenchmarkHarness, scenario: Scenario, repetition
   };
   const started = performance.now();
   const child = fork(workerFile, ['--worker', harness], {
-    execArgv: ['--import', 'tsx'], detached: true,
+    execArgv: executionMode === 'tsx' ? ['--import', 'tsx'] : [], detached: true,
     // Deliberately do not persist credential-bearing upstream diagnostics.
     stdio: ['ignore', 'ignore', 'ignore', 'ipc'], env: { ...process.env },
   });
@@ -188,12 +189,15 @@ async function runCase(harness: BenchmarkHarness, scenario: Scenario, repetition
 export async function runBenchmarkCli(args: string[]): Promise<number> {
   const readOption = (name: string) => { const index = args.indexOf(name); return index >= 0 ? args[index + 1] : undefined; };
   if (args.includes('--help')) {
-    console.log('node --import tsx src/benchmark.ts [--repetitions 3] [--harness all|mastra|codex] [--only sequential|memory-5|memory-15|concurrent-5] [--output artifacts/benchmark-<timestamp>]');
+    const command = executionMode === 'tsx' ? 'node --import tsx src/benchmark.ts' : 'node dist/benchmark.js';
+    console.log(`${command} [--repetitions 3] [--memory-repetitions 1] [--concurrent-repetitions 1] [--harness all|mastra|codex] [--only sequential|memory-1|memory-5|memory-15|concurrent-5] [--output artifacts/benchmark-<timestamp>]`);
     return 0;
   }
   const repetitions = Number(readOption('--repetitions') ?? 3);
+  const memoryRepetitions = Number(readOption('--memory-repetitions') ?? 1);
+  const concurrentRepetitions = Number(readOption('--concurrent-repetitions') ?? 1);
   const selectedHarness = readOption('--harness') ?? 'all';
-  if (!Number.isInteger(repetitions) || repetitions < 1 || repetitions > 10 || !['all', 'mastra', 'codex'].includes(selectedHarness)) throw new Error('Invalid benchmark options');
+  if ([repetitions, memoryRepetitions, concurrentRepetitions].some(value => !Number.isInteger(value) || value < 1 || value > 10) || !['all', 'mastra', 'codex'].includes(selectedHarness)) throw new Error('Invalid benchmark options');
   const mastraModel = process.env.KODEX_MASTRA_MODEL ?? 'openai/gpt-6.1-sol';
   const codexModel = process.env.KODEX_CODEX_BENCH_MODEL ?? 'gpt-6.1-sol';
   if (selectedHarness === 'all' && mastraModel.replace(/^openai\//, '') !== codexModel) throw new Error('Both harnesses must benchmark the same underlying model');
@@ -202,9 +206,10 @@ export async function runBenchmarkCli(args: string[]): Promise<number> {
   if ((await readdir(outputRoot)).length) throw new Error('Benchmark output directory must be fresh and empty');
   const scenarios: Scenario[] = [
     { name: 'sequential', projects: 1, chats: 1, active: 1, prompts, repetitions },
-    { name: 'memory-5', projects: 1, chats: 5, active: 0, prompts: [], repetitions: 1 },
-    { name: 'memory-15', projects: 3, chats: 5, active: 0, prompts: [], repetitions: 1 },
-    { name: 'concurrent-5', projects: 1, chats: 5, active: 5, prompts: prompts.slice(0, 1), repetitions: 1 },
+    { name: 'memory-1', projects: 1, chats: 1, active: 0, prompts: [], repetitions: memoryRepetitions },
+    { name: 'memory-5', projects: 1, chats: 5, active: 0, prompts: [], repetitions: memoryRepetitions },
+    { name: 'memory-15', projects: 3, chats: 5, active: 0, prompts: [], repetitions: memoryRepetitions },
+    { name: 'concurrent-5', projects: 1, chats: 5, active: 5, prompts: prompts.slice(0, 1), repetitions: concurrentRepetitions },
   ];
   const only = readOption('--only');
   if (only && !scenarios.some(scenario => scenario.name === only)) throw new Error('Unknown benchmark scenario');
@@ -228,7 +233,7 @@ export async function runBenchmarkCli(args: string[]): Promise<number> {
   const versions = { node: process.version, packages, codex: codexVersion, platform: process.platform, arch: process.arch };
   const persist = async () => {
     const summary = aggregateBenchmarks(runs);
-    await writeFile(join(outputRoot, 'report.json'), JSON.stringify({ generatedAt, versions, samplingIntervalMs: 500, idleSettleMs: 1_100, effort: 'low', models: { mastra: process.env.KODEX_MASTRA_MODEL ?? 'openai/gpt-6.1-sol', codex: process.env.KODEX_CODEX_BENCH_MODEL ?? 'gpt-6.1-sol' }, runs, summary }, null, 2) + '\n');
+    await writeFile(join(outputRoot, 'report.json'), JSON.stringify({ generatedAt, versions, executionMode, samplingIntervalMs: 500, idleSettleMs: 1_100, effort: 'low', models: { mastra: process.env.KODEX_MASTRA_MODEL ?? 'openai/gpt-6.1-sol', codex: process.env.KODEX_CODEX_BENCH_MODEL ?? 'gpt-6.1-sol' }, runs, summary }, null, 2) + '\n');
     await writeFile(join(outputRoot, 'summary.md'), formatBenchmarkMarkdown(summary));
     return summary;
   };

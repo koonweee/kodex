@@ -33,6 +33,8 @@ See the [decision handoff](mastra-code-sdk-handoff.md) for the complete accepted
 
 ## Current work
 
+Completed [built-runtime memory evaluation](mastra-memory-evaluation.md): 48 paired cases / 60 live turns and 14 staged probes passed. Plain-Node Mastra measured roughly 340/344/351 MiB idle for 1/5/15 chats and 392 MiB at the five-concurrent-chat sampled peak, about 30–36% below tsx. Full SDK import dominates the separate empty-session probe; fixed overhead remains, but a large per-chat penalty is not demonstrated. Use built code for production-like comparisons. Long-history/sustained/plugin workloads remain future validation, not an inferred blocker.
+
 Milestone 2 is complete under the [baseline-scoped configuration audit](mastra-config-isolation.md). Global/project/environment resource overrides change native default metadata but do not mix explicit chat identities, persisted history or resumed model input. Namespaced MCP reads, external file edits, native reload and persisted project disable state behave predictably. Global changes require reload on each affected project manager; eventual Kodex routing must coordinate that and browser refills.
 
 Next: the first real Kodex UI → oRPC → Code SDK chat slice. No SDK patch or move to Core is justified by these checks. Keep native explicit resource/thread identities and the accepted CLI/file MCP setup; the current app-server's versioned browser config writer is not implemented by the Mastra manager. Product MCP wiring remains pending and disabled by default; plugins/hooks remain unverified. Instruction bookkeeping and zero ambient reads are not blockers. The MCP fixture requires explicit subprocess exit after successful assertions/awaited teardown, so natural shutdown/hot retirement is not proven.
@@ -68,6 +70,8 @@ Mastra follow-up sentinel requests reached 98.6% cached input; file tasks reache
 
 - 2026-10-07: both requested configuration ownership checks pass: three resource override cases and native MCP precedence/edit/reload/disable-state proof. Configuration milestone complete within the accepted baseline; first chat slice next.
 
+- 2026-10-07: repeated built-vs-tsx memory evaluation completed; results materially reduce the earlier overhead concern. Native-first Code SDK direction retained, realistic workload validation remains scoped to future integrations.
+
 ## Validation ledger
 
-Latest completed chunk: 42/42 spike tests, TypeScript check and independent test/source review pass. Resource and MCP characterization tests verify existing native behavior; no runtime patch was needed. Previous affinity milestone: 12 paired benchmark cases / 28 live turns passed. These checks use local model/MCP fixtures only; no new live calls or deployment. No production UI migration is implemented. Long-context behavior, plugin execution/concurrency, HTTP MCP/OAuth and natural process retirement remain unproven.
+Latest completed chunk: 43/43 tests, TypeScript check, build and independent source/results review pass. Memory evaluation: 48 paired cases / 60 correct live turns, plus 12 ordinary stage probes and 2 separately labeled GC diagnostics. Earlier configuration ownership checks pass without runtime patches. No deployment or production UI migration. Long-context behavior, plugin execution/concurrency, HTTP MCP/OAuth and natural process retirement remain unproven.

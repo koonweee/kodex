@@ -4,7 +4,7 @@
 
 An isolated experiment for a future Kodex TypeScript/oRPC gateway. It does not start or replace the production gateway. See the [plan](../../plans/mastra-code-sdk-spike.md) for accepted product decisions and validation status.
 
-Validated on 2026-10-07: 42 tests, typecheck and independent review pass. The added shutdown characterization test reproduces a native title-write failure and confirms the completed answer survives reopening. Real ChatGPT requests passed in two separate processes using saved credentials. Production migration gates remain below.
+Validated on 2026-10-07: 43 tests, typecheck and independent review pass. The added shutdown characterization test reproduces a native title-write failure and confirms the completed answer survives reopening. Real ChatGPT requests passed in two separate processes using saved credentials. Production migration gates remain below.
 
 Requires Node 24+:
 
@@ -50,6 +50,12 @@ The driver writes sanitized measurements to ignored `artifacts/benchmark-*/repor
 ## Supported ChatGPT affinity
 
 The runtime supplies `session-id` through the SDK's public per-step processor, scoped to native ChatGPT OAuth and the persisted thread identity. Native fixtures cover concurrent chats, tool continuation, retry and reopen. The full paired live rerun passed 28 turns, with 98.6% cache reuse on Mastra follow-ups; see the [running log](../../plans/mastra-port.md) for totals and limitations.
+
+## Built-runtime memory evaluation
+
+Use `npm run build` then `npm run benchmark:built -- --only memory-5 --memory-repetitions 3` for plain Node workers. `--concurrent-repetitions 3` repeats the active five-chat case. Reports distinguish `compiled-js` from `tsx`; the dependency versions remain pinned. Source-only output is ignored under `dist/`.
+
+`node dist/memory-stages.js --scenario single-project --output artifacts/new-memory.json` measures import/mount/session stages without model calls. The `three-projects` scenario is separate; `--expose-gc` enables explicitly labeled diagnostic collections only. Output files must be fresh. See [results and limits](../../plans/mastra-memory-evaluation.md): built Mastra uses about 30–36% less RSS than tsx in the repeated workload, with most stage-probe growth at import time.
 
 ## Cache investigation
 

@@ -19,6 +19,7 @@ Focused subsystem replacements are encouraged wherever they reduce maintained co
 
 | Plan | Status | Scope | Notes |
 | --- | --- | --- | --- |
+| [Mastra built-runtime memory evaluation](mastra-memory-evaluation.md) | Complete | Compare built plain Node vs tsx and repeat multi-chat memory measurements | 48 cases/60 live turns and 14 stage probes passed; built Mastra roughly 30–36% less RSS than tsx, import overhead dominates empty-chat growth. |
 | [Kodex Mastra port — running log](mastra-port.md) | Active | Track the long-running native Code SDK port and milestone exits | Supported per-session cache affinity complete; configuration ownership checks pass against app-server baseline; first real Kodex chat slice next; separate worktree, production unchanged. |
 | [Mastra configuration isolation audit](mastra-config-isolation.md) | Complete | Pinned SDK discovery-path audit | Audit complete; Skill discovery, explicit resource identity and native MCP file-edit/reload checks pass. Ambient-read limitations accepted against baseline; product MCP wiring and plugin concurrency remain pending. |
 | [Native harness cache investigation](mastra-cache-investigation.md) | Complete | Explain short-turn cache reuse differences with controlled evaluations and upstream research | Missing ChatGPT session-id affinity reproduced; native header-only follow-ups reached 98.6% cached. Supported integration and full workload rerun passed; see running port log. |

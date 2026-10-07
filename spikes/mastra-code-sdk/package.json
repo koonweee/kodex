@@ -10,7 +10,9 @@
     "check": "tsc --noEmit",
     "login": "node --import tsx src/login.ts",
     "live": "node --import tsx src/live.ts",
-    "benchmark": "node --import tsx src/benchmark.ts"
+    "benchmark": "node --import tsx src/benchmark.ts",
+    "build": "tsc --project tsconfig.build.json",
+    "benchmark:built": "node dist/benchmark.js"
   },
   "dependencies": {
     "@mastra/code-sdk": "1.10.1",
