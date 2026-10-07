@@ -19,6 +19,20 @@ Appearance has a mode (`auto`, `light` or `dark`) plus independent light/dark th
 
 Palette-preview cards intentionally render candidate semantic pairs independently of the active theme. Their selection/focus chrome still uses the active theme's shared control styles. Focus is a thin, desaturated shared `focus-ring` outline with the shared offset, and must remain visible against adjacent surfaces. Text inputs and textareas intentionally omit focus rings and keep their normal control boundaries while focused. Buttons, selection controls and composer toolbar controls retain their shared keyboard focus indicators.
 
+## Scrollbars
+
+Kodex scrollbars use shared aliases in `styles/ui.css`: `scrollbar-thumb` derives from `border-control`, and `scrollbar-thumb-hover` derives from `text-secondary`. Tracks stay transparent. Native overflow uses the standard thin scrollbar setting with a rounded 6px WebKit fallback; the browser and operating system determine the exact standard thickness. See the [CSS Scrollbars specification](https://drafts.csswg.org/css-scrollbars/).
+
+Mantine keeps its 8px drag lane with a 4px painted thumb. The terminal keeps xterm's 14px drag lane with a 6px painted thumb; CSS owns its colors so theme changes apply live. Dockview uses the same thumb alias. Intentionally hidden tab-strip and terminal accessory scrollbars remain hidden. Sandboxed generated apps and MCP app documents own their inner scrollbar styling.
+
+The contrast gate includes native resting colors, Mantine resting/hover colors, and live theme changes. `tests/scrollbars.spec.ts` checks native keyboard scrolling and horizontal overflow at desktop, narrow fine-pointer and narrow touch shapes, plus Mantine dragging with a fine pointer. Opt-in captures also exercise real xterm dragging and terminal thumb contrast across all themes without starting a shell:
+
+```sh
+KODEX_SCROLLBAR_AUDIT_DIR=../../artifacts/scrollbar-audit npx playwright test tests/scrollbars.spec.ts --workers=1
+```
+
+These ignored captures show the workbench's native, Mantine and terminal scrollbars. Physical-device overlay rendering and older WebKit fallback behavior still require their own browser checks.
+
 ## Safe role pairings
 
 The names below omit the `--kodex-` CSS-variable prefix. Keep the foreground and background together when authoring and reviewing a surface. A role validated on one surface is not permission to use it on every surface.

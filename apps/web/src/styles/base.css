@@ -15,14 +15,39 @@ body {
   color: var(--kodex-text-primary);
 }
 
-* {
-  scrollbar-color: color-mix(in srgb, var(--kodex-text-muted) 48%, transparent) transparent;
+:where(*) {
+  scrollbar-width: thin;
+  scrollbar-color: var(--kodex-scrollbar-thumb) transparent;
 }
 
-*::-webkit-scrollbar,
-*::-webkit-scrollbar-track,
-*::-webkit-scrollbar-corner {
+/* Older WebKit uses pseudo-elements instead of the standard properties. */
+:where(*)::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
   background: transparent;
+}
+
+:where(*)::-webkit-scrollbar-track,
+:where(*)::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+:where(*)::-webkit-scrollbar-thumb {
+  background: var(--kodex-scrollbar-thumb);
+  border-radius: var(--kodex-radius-round);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  :where(*)::-webkit-scrollbar-thumb:hover {
+    background: var(--kodex-scrollbar-thumb-hover);
+  }
+}
+
+@media (forced-colors: active) {
+  :where(*) {
+    scrollbar-color: auto;
+    scrollbar-width: auto;
+  }
 }
 
 .kodex-list-button[data-active="true"] {

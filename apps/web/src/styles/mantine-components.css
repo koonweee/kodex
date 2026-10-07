@@ -411,12 +411,33 @@
   color: var(--kodex-text-primary);
 }
 
+/* Keep the drag lane while narrowing the painted thumb. */
 .kodex-mantine-scroll-area-scrollbar {
+  padding: 2px;
   background: transparent;
 }
 
 .kodex-mantine-scroll-area-thumb {
-  background: var(--kodex-border-strong);
+  background: var(--kodex-scrollbar-thumb);
+}
+
+.kodex-mantine-scroll-area-scrollbar:hover,
+.kodex-mantine-scroll-area-scrollbar:active {
+  background: transparent;
+}
+
+.kodex-mantine-scroll-area-scrollbar:hover > .kodex-mantine-scroll-area-thumb {
+  background: var(--kodex-scrollbar-thumb);
+}
+
+.kodex-mantine-scroll-area-scrollbar:active > .kodex-mantine-scroll-area-thumb {
+  background: var(--kodex-scrollbar-thumb-hover);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kodex-mantine-scroll-area-scrollbar:hover > .kodex-mantine-scroll-area-thumb {
+    background: var(--kodex-scrollbar-thumb-hover);
+  }
 }
 
 .kodex-mantine-progress-root {

@@ -304,7 +304,7 @@ export function ThemeWorkbench({
             <Stack gap="sm">
               <Text fw={700}>Data surfaces</Text>
               <Paper>
-                <ScrollArea h={126}>
+                <ScrollArea h={126} type="always" viewportProps={{ role: "region", "aria-label": "Custom scrollbar sample", tabIndex: 0 }}>
                   <Table stickyHeader>
                     <Table.Thead>
                       <Table.Tr>
@@ -323,6 +323,13 @@ export function ThemeWorkbench({
                   </Table>
                 </ScrollArea>
               </Paper>
+              <div aria-label="Native scrollbar sample" className="kodex-theme-workbench-scroll" role="region" tabIndex={0}>
+                <div className="kodex-theme-workbench-scroll-content">
+                  {Array.from({ length: 12 }, (_, index) => (
+                    <Text key={index} size="sm">Scrollable content {index + 1}: theme colors follow both horizontal and vertical scrollbars.</Text>
+                  ))}
+                </div>
+              </div>
             </Stack>
           </section>
 

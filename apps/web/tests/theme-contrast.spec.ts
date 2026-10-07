@@ -131,6 +131,17 @@ async function checkWorkbench(page: Page, label: string) {
     readable((await sample(page.getByText(text, { exact: true }))).ratio, `${label} ${text}`);
   }
 
+  const nativeScroll = await sample(page.getByRole("region", { name: "Native scrollbar sample", exact: true }));
+  readable(nativeScroll.scrollbarRatio, `${label} native scrollbar thumb`, 3);
+  const customScroll = page.getByRole("region", { name: "Custom scrollbar sample", exact: true });
+  const customBar = customScroll.locator("..").locator('.kodex-mantine-scroll-area-scrollbar[data-orientation="vertical"]');
+  const thumb = customBar.locator(".kodex-mantine-scroll-area-thumb");
+  await page.mouse.move(0, 0);
+  readable((await sample(thumb)).surfaceRatio, `${label} custom scrollbar thumb`, 3);
+  await customBar.hover();
+  await settle(page);
+  readable((await sample(thumb)).surfaceRatio, `${label} custom scrollbar hover thumb`, 3);
+
   // Tab produces actual keyboard focus, including :focus-visible styling.
   await page.getByRole("button", { name: "Subtle", exact: true }).focus();
   await page.keyboard.press("Tab");
@@ -172,11 +183,13 @@ async function renderedPairs(page: Page) {
     page.getByText("Mantine dimmed text on panel", { exact: true }),
     page.getByRole("textbox", { name: "Plain text input", exact: true }),
     ...["red", "yellow", "green", "blue"].map(color => page.getByText(`${color} status`, { exact: true })),
+    page.getByRole("region", { name: "Native scrollbar sample", exact: true }),
+    page.locator('.kodex-mantine-scroll-area-thumb').first(),
   ];
   const pairs = [];
   for (const locator of specimens) {
     const measured = await sample(locator);
-    pairs.push({ foreground: measured.foreground, background: measured.background, placeholderRatio: measured.placeholderRatio, borderRatio: measured.borderRatio });
+    pairs.push({ foreground: measured.foreground, background: measured.background, placeholderRatio: measured.placeholderRatio, borderRatio: measured.borderRatio, scrollbarColor: measured.scrollbarColor });
   }
   return pairs;
 }

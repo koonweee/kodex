@@ -121,6 +121,25 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/* xterm owns a 14px drag lane; paint a slim thumb inside it. */
+.kodex-terminal-viewport .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider {
+  box-sizing: border-box;
+  border-inline: 4px solid transparent;
+  border-radius: var(--kodex-radius-round);
+  background-color: var(--kodex-scrollbar-thumb);
+  background-clip: padding-box;
+}
+
+.kodex-terminal-viewport .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider.active {
+  background-color: var(--kodex-scrollbar-thumb-hover);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kodex-terminal-viewport .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider:hover {
+    background-color: var(--kodex-scrollbar-thumb-hover);
+  }
+}
+
 @media (hover: hover) and (pointer: fine) {
   .kodex-terminal-reconnect-button.kodex-mantine-button-root:hover {
     background: color-mix(in srgb, var(--kodex-border-info) 46%, var(--kodex-bg-raised));

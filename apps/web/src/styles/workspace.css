@@ -45,7 +45,8 @@
   --dv-tabs-and-actions-container-background-color: color-mix(in srgb, var(--kodex-pane-bg) 82%, var(--kodex-bg-shell));
   --dv-tabs-and-actions-container-font-size: 0.75rem;
   --dv-tabs-and-actions-container-height: 32px;
-  --dv-tabs-container-scrollbar-color: var(--kodex-scroll-button-border);
+  --dv-scrollbar-background-color: var(--kodex-scrollbar-thumb);
+  --dv-tabs-container-scrollbar-color: var(--kodex-scrollbar-thumb);
   --dv-transition-duration: 120ms;
 }
 

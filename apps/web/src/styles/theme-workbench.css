@@ -65,3 +65,13 @@
     justify-content: flex-start;
   }
 }
+
+.kodex-theme-workbench-scroll {
+  height: 126px;
+  overflow: auto;
+  background: var(--kodex-bg-panel);
+}
+
+.kodex-theme-workbench-scroll-content {
+  min-width: 640px;
+}

@@ -44,6 +44,8 @@ export function measureTheme(target?: Element) {
     if (overControl) ancestors.push(overControl);
     const unsupported = ancestors.some(parent => Number(getComputedStyle(parent).opacity) < 1 || getComputedStyle(parent).backgroundImage !== "none");
     const foreground = el instanceof SVGElement ? css.stroke !== "none" ? css.stroke : css.fill !== "none" ? css.fill : css.color : css.color;
+    const scrollbarColors = css.scrollbarColor.match(/(?:rgba?|color|oklch|oklab|lch|lab)\([^)]*\)/g);
+    const scrollbarThumb = scrollbarColors?.[0];
     const placeholder = getComputedStyle(el, "::placeholder");
     const placeholderColor = rgba(placeholder.color);
     placeholderColor[3] *= Number(placeholder.opacity);
@@ -58,6 +60,8 @@ export function measureTheme(target?: Element) {
       tag: el.tagName, class: el.getAttribute("class"), foreground, background: bg.slice(0, 3),
       ratio: ratio(over(rgba(foreground), bg), bg),
       surfaceRatio: ratio(bg, outer),
+      scrollbarColor: css.scrollbarColor,
+      scrollbarRatio: scrollbarThumb ? ratio(over(rgba(scrollbarThumb), bg), bg) : null,
       indicatorRatio: hasIndicator ? ratio(over(indicatorColor, over(rgba(after.backgroundColor), bg)), over(rgba(after.backgroundColor), bg)) : null,
       indicatorUnsupported: hasIndicator && (after.backgroundImage !== "none" || Number(after.opacity) < 1),
       placeholderRatio: el.matches("input,textarea") ? ratio(over(placeholderColor, bg), bg) : null,
