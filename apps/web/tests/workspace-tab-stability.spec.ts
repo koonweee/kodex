@@ -39,3 +39,28 @@ test("tab and close-control geometry stays stable across hover and selection wit
   expect(fixture.errors).toEqual([]);
   expect(fixture.unexpected).toEqual([]);
 });
+
+test("unread and close share a stable slot while native close remains actionable", async ({ context }) => {
+  const fixture = await nativeSettingsFixture(context);
+  try {
+    const page = await fixture.page("unread-slot");
+    await expect.poll(() => fixture.connected("unread-slot")).toBe(true);
+    fixture.detail.thread.unreadCompletedAgentTurn = true;
+    fixture.refreshRequired();
+    const tab = page.locator(".dv-tab:has([data-unread])");
+    const dot = tab.locator(".kodex-workspace-pane-title-adornment");
+    const close = tab.locator(".dv-default-tab-action");
+    await page.mouse.move(800, 500);
+    await expect(dot).toHaveCSS("opacity", "1");
+    await expect(close).toBeHidden();
+    const before = await tab.boundingBox();
+    await tab.hover();
+    await expect(dot).toHaveCSS("opacity", "0");
+    await expect(close).toBeVisible();
+    expect(await tab.boundingBox()).toEqual(before);
+    await close.click();
+    await expect(tab).toHaveCount(0);
+  } finally { await fixture.close(); }
+  expect(fixture.errors).toEqual([]);
+  expect(fixture.unexpected).toEqual([]);
+});

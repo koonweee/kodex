@@ -125,7 +125,6 @@
   white-space: nowrap;
 }
 
-.kodex-workspace-dock .kodex-workspace-tab-content,
 .kodex-workspace-single-pane-title {
   align-items: center;
   display: inline-flex;
@@ -134,7 +133,6 @@
   max-width: 100%;
 }
 
-.kodex-workspace-tab-title,
 .kodex-workspace-single-pane-title-text {
   min-width: 0;
   overflow: hidden;
@@ -144,8 +142,7 @@
 
 /* Fade only title ink; padding keeps fitting names outside the fade region.
    Status indicators and close controls remain fully opaque. */
-.kodex-workspace-dock .dv-tabs-container .dv-default-tab-content:not(.kodex-workspace-tab-content),
-.kodex-workspace-dock .dv-tabs-container .kodex-workspace-tab-title {
+.kodex-workspace-dock .dv-tabs-container .dv-default-tab-content {
   padding-right: 16px;
   text-overflow: clip;
   mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
@@ -164,12 +161,6 @@
 
 .kodex-workspace-pane-title-adornment .kodex-thread-pane-title-spinner {
   display: block;
-}
-
-.kodex-workspace-tab-close-icon {
-  align-items: center;
-  display: inline-flex;
-  justify-content: center;
 }
 
 .kodex-workspace-terminal-tab .dv-default-tab-content {

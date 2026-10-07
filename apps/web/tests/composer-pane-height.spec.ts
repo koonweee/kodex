@@ -49,7 +49,7 @@ test("short split panes use compact rows while neighboring tall panes retain nor
 });
 
 test("mobile inline composer keeps two starting rows in tall and short panes", async ({ browser }) => {
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, baseURL: "http://127.0.0.1:5174" });
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, baseURL: test.info().project.use.baseURL });
   const fixture = await nativeSettingsFixture(context);
   try {
     const page = await fixture.page("mobile-height", "/");

@@ -102,7 +102,7 @@ describe("WorkspaceDock sync", () => {
         panes: [workspacePane],
         schemaVersion: 1,
       })}>
-        <PaneAdornmentHarness activePaneId="pane-thread" pane={workspacePane} />
+        <MantineProvider><PaneAdornmentHarness activePaneId="pane-thread" pane={workspacePane} /></MantineProvider>
       </WorkspaceProvider>,
     );
 
@@ -143,7 +143,7 @@ describe("WorkspaceDock sync", () => {
         <WorkspaceProvider paneStore={createMemoryWorkspacePaneStore({ activePaneId: "pane-thread", dockviewLayout: null, panes: [workspacePane], schemaVersion: 1 })} threadSummariesById={{ "thread-1": {
           id: "thread-1", status, unreadCompletedAgentTurn: unread,
         } as ThreadSummary }}>
-          <PaneAdornmentHarness activePaneId="pane-thread" pane={workspacePane} />
+          <MantineProvider><PaneAdornmentHarness activePaneId="pane-thread" pane={workspacePane} /></MantineProvider>
         </WorkspaceProvider>
       </MantineProvider>
     );

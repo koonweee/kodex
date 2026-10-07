@@ -159,3 +159,65 @@
   width: var(--dv-tab-close-icon-size);
   height: var(--dv-tab-close-icon-size);
 }
+
+/* Native tab owns title, close and pointer handling; the wrapper adds a slot.
+   Shared grid tracks keep the indicator before the native close control. */
+.kodex-workspace-tab {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  height: 100%;
+  width: 100%;
+  min-width: 0;
+}
+
+.kodex-workspace-tab[data-inline-adornment]:not([data-unread]) {
+  grid-template-columns: minmax(0, 1fr) 20px auto;
+}
+
+.kodex-workspace-dock .kodex-workspace-tab > .dv-default-tab {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-area: 1 / 1 / 2 / -1;
+}
+
+.kodex-workspace-tab > .dv-default-tab > .dv-default-tab-action {
+  grid-column: -2;
+}
+
+.kodex-workspace-tab > .kodex-workspace-pane-title-adornment {
+  grid-area: 1 / 2;
+  pointer-events: none;
+}
+
+/* On hover-capable devices the unread dot shares the native close slot. */
+@media (hover: hover) and (pointer: fine) {
+  .kodex-workspace-dock .dv-tabs-container > .dv-tab .dv-default-tab .dv-default-tab-action {
+    visibility: hidden;
+  }
+
+  .kodex-workspace-dock .dv-tabs-container > .dv-tab:hover .dv-default-tab .dv-default-tab-action,
+  .kodex-workspace-dock .dv-tabs-container > .dv-tab:focus-visible .dv-default-tab .dv-default-tab-action {
+    visibility: visible;
+  }
+
+  .kodex-workspace-dock .dv-tab:hover [data-unread] > .kodex-workspace-pane-title-adornment,
+  .kodex-workspace-dock .dv-tab:focus-visible [data-unread] > .kodex-workspace-pane-title-adornment {
+    opacity: 0;
+  }
+}
+
+@media (hover: none), (pointer: coarse), (any-pointer: coarse) {
+  .kodex-workspace-tab[data-unread] {
+    grid-template-columns: minmax(0, 1fr) 20px auto;
+  }
+}
+
+@media (hover: none), (pointer: coarse), (any-pointer: coarse) {
+  .kodex-workspace-dock .dv-tabs-container > .dv-tab .dv-default-tab .dv-default-tab-action {
+    visibility: visible;
+  }
+  .kodex-workspace-dock .dv-tabs-container > .dv-tab [data-unread] > .kodex-workspace-pane-title-adornment {
+    opacity: 1;
+  }
+}
