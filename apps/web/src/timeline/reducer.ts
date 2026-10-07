@@ -541,17 +541,33 @@ function applyThreadViewItemDelta(state: TimelineState, event: EventEnvelope): T
     return applyThreadViewDeltaRefreshRequired(state, event);
   }
 
-  let applied = false;
+  const changedRows = new Map<string, TimelineRow>();
+  const changedItems = new Map<string, TimelineItem>();
   const target = { itemId, turnId, delta };
-  const rows = state.rows.map((row) =>
-    replaceDeltaTargetInRow(row, target, () => {
-      applied = true;
-    }),
-  );
-  if (!applied) {
+  for (const rowKey of rowKeys) {
+    const row = timelineRowByKey(indexes, rowKey);
+    if (!row) continue;
+    const nextRow = replaceDeltaTargetInRow(row, target, (item) => {
+      changedItems.set(item.id, item);
+    });
+    if (nextRow !== row) changedRows.set(rowKey, nextRow);
+  }
+  if (changedRows.size === 0) {
     return applyThreadViewDeltaRefreshRequired(state, event);
   }
-  return createTimelineStateFromDraft(timelineDraftFromState(rebuildTimelineRows(state, rows), {
+
+  // Text-only deltas preserve row order, membership, and native turn metadata.
+  // Copy the changed value stores without rebuilding historical item indexes.
+  const nextIndexes = {
+    ...indexes,
+    itemUpdatesById: new Map([...indexes.itemUpdatesById, ...changedItems]),
+    rowByKey: new Map([...indexes.rowByKey, ...changedRows]),
+  };
+  compactTimelineStores(nextIndexes);
+  return createTimelineStateFromDraft(timelineDraftFromState(state, {
+    indexes: nextIndexes,
+    rows: state.rows.map((row) => changedRows.get(row.key) ?? row),
+    rowsAreIndexed: true,
     lastSeq: Math.max(state.lastSeq, event.seq),
     viewRevision: revision,
   }));
@@ -589,40 +605,42 @@ type ItemDeltaTarget = {
   delta: string;
 };
 
-function replaceDeltaTargetInRow(row: TimelineRow, target: ItemDeltaTarget, onApplied: () => void): TimelineRow {
+function replaceDeltaTargetInRow(row: TimelineRow, target: ItemDeltaTarget, onApplied: (item: TimelineItem) => void): TimelineRow {
   if (row.type === "item") {
     const item = appendDeltaToItem(row.item, target);
     if (item === row.item) {
       return row;
     }
-    onApplied();
+    onApplied(item);
     return { ...row, item };
   }
   if (row.type === "activity") {
     let changed = false;
     const items = row.items.map((item) => {
       const next = appendDeltaToItem(item, target);
-      changed ||= next !== item;
+      if (next !== item) {
+        changed = true;
+        onApplied(next);
+      }
       return next;
     });
     if (!changed) {
       return row;
     }
-    onApplied();
     return { ...row, items };
   }
   if (row.type === "work") {
     let changed = false;
     const collapsedRows = row.collapsedRows.map((collapsedRow) => {
-      const next = replaceDeltaTargetInRow(collapsedRow, target, () => {
+      const next = replaceDeltaTargetInRow(collapsedRow, target, (item) => {
         changed = true;
+        onApplied(item);
       });
       return next as typeof collapsedRow;
     });
     if (!changed) {
       return row;
     }
-    onApplied();
     return { ...row, collapsedRows };
   }
   return row;
@@ -1098,7 +1116,7 @@ function timelineDraftFromState(
 ): TimelineDraft {
   return {
     activeTurnId: state.activeTurnId,
-    indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
+    indexes: overrides.indexes ?? prepareTimelineIndexesForUpdate(indexesForState(state)),
     rows: state.rows,
     pendingApprovalRequests: state.pendingApprovalRequests,
     pendingUserInputRequests: state.pendingUserInputRequests,
