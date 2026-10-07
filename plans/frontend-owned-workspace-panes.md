@@ -30,6 +30,11 @@ The architectural boundary is:
   stopping a terminal, or killing a terminal remains an explicit backend
   resource action.
 
+Thread reading positions remain pane-local. Temporarily hiding a pane, including
+opening the narrow sidebar, must preserve its initialized scroll container and
+reading position when it becomes visible again. Replacing a container or switching
+threads starts a fresh viewport; this is browser-local state, not gateway state.
+
 This plan is a hard pivot from the partially implemented gateway-owned workspace
 work. Cleanup is part of the plan.
 

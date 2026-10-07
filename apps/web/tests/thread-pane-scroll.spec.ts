@@ -17,21 +17,26 @@ for (const shape of [
         const scroll = pane.locator(".kodex-timeline-scroll");
         await expect(pane.locator('[data-initial-bottom-aligned="true"]')).toBeVisible();
         await expect.poll(async () => (await metrics(scroll)).top).toBeGreaterThan(1000);
+        await settle(page, scroll);
         await scroll.evaluate(el => {
           el.dispatchEvent(new Event("wheel", { bubbles: true }));
           el.scrollTop = Math.floor((el.scrollHeight - el.clientHeight) / 2);
         });
         await expect(pane.getByRole("button", { name: "Scroll to bottom", exact: true })).toBeVisible();
         await expect.poll(async () => (await metrics(scroll)).bottom).toBeGreaterThan(60);
-        await settle(page);
+        await settle(page, scroll);
         const before = await metrics(scroll);
+        expect(before.top).toBeGreaterThan(1000);
+        expect(before.bottom).toBeGreaterThan(1000);
+        const original = await scroll.elementHandle();
         for (let i = 0; i < 3; i += 1) {
           if (shape.width < 900) await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
           const sidebar = page.getByRole("navigation", { name: "Workspace", exact: true });
           await sidebar.getByRole("button", { name: "Chats", exact: true }).click();
           await sidebar.getByRole("button", { name: "Native settings chat", exact: true }).click();
           await expect(scroll).toBeVisible();
-          await settle(page);
+          await settle(page, scroll);
+          expect(await original!.evaluate(el => el.isConnected)).toBe(true);
           expect((await metrics(scroll)).top).toBeCloseTo(before.top, 0);
         }
         await page.screenshot({ path: test.info().outputPath("sidebar-thread-reading-position.png"), animations: "disabled" });
@@ -52,19 +57,22 @@ for (const shape of [
         const scroll = pane.locator(".kodex-timeline-scroll");
         await expect(pane).not.toHaveAttribute("data-workspace-pane-active", "true");
         await expect(pane.locator('[data-initial-bottom-aligned="true"]')).toBeVisible();
+        await settle(page, scroll);
         await scroll.evaluate(el => {
           el.dispatchEvent(new Event("wheel", { bubbles: true }));
           el.scrollTop = Math.floor((el.scrollHeight - el.clientHeight) / 2);
         });
         await expect(pane.getByRole("button", { name: "Scroll to bottom", exact: true })).toBeVisible();
         await expect.poll(async () => (await metrics(scroll)).top).toBeGreaterThan(1000);
-        await settle(page);
+        await settle(page, scroll);
         const before = await metrics(scroll);
+        expect(before.top).toBeGreaterThan(1000);
+        expect(before.bottom).toBeGreaterThan(1000);
         const original = await scroll.elementHandle();
         for (let i = 0; i < 3; i += 1) {
           await sidebar.getByRole("button", { name: "Native settings chat", exact: true }).click();
           await expect(pane).toHaveAttribute("data-workspace-pane-active", "true");
-          await settle(page);
+          await settle(page, scroll);
           expect(await original!.evaluate(el => el.isConnected)).toBe(true);
           expect((await metrics(scroll)).top).toBeCloseTo(before.top, 0);
           if (i < 2) {
@@ -89,11 +97,36 @@ async function scrollingFixture(context: Parameters<typeof nativeSettingsFixture
   return fixture;
 }
 
-async function settle(page: Page) {
+async function settle(page: Page, scroll: Locator) {
   await page.evaluate(async () => {
-    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    await document.fonts.ready;
     await Promise.all(document.getAnimations().filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity)
       .map(animation => animation.finished.catch(() => undefined)));
+  });
+  // Virtuoso measures newly rendered rows after the initial alignment and scroll.
+  // Wait for its viewport geometry to remain stable before capturing a reading position.
+  await scroll.evaluate(async el => {
+    const geometry = () => JSON.stringify({
+      top: el.scrollTop, height: el.scrollHeight, viewport: el.clientHeight,
+      rows: [...el.querySelectorAll(".kodex-timeline-virtual-row")].map(row => {
+        const rect = row.getBoundingClientRect();
+        return [row.getAttribute("data-index"), rect.top, rect.height];
+      }),
+    });
+    let previous = geometry();
+    let stableSince = performance.now();
+    const deadline = stableSince + 5000;
+    while (performance.now() < deadline) {
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      const current = geometry();
+      if (current !== previous) {
+        previous = current;
+        stableSince = performance.now();
+      } else if (performance.now() - stableSince >= 250) {
+        return;
+      }
+    }
+    throw new Error("Timeline viewport geometry did not settle");
   });
 }
 

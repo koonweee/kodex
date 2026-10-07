@@ -15,6 +15,7 @@ import {
 } from "./derive";
 import { TimelineActivityGroupRenderer, TimelineFileChangesRenderer, TimelineItemRenderer, TimelineWorkRowRenderer } from "./renderers";
 import type { TimelineItem, TimelineRow, TimelineState } from "./reducer";
+import { useTimelineScrollParent } from "./useTimelineScrollParent";
 import {
   getDistanceFromBottom,
   getScrollElementBottomTop,
@@ -120,7 +121,7 @@ export function TimelineView({
   );
   const approvalsByRowKey = useMemo(() => buildTimelineRowApprovalMap(rows, approvalIndex), [approvalIndex, rows]);
   const rowCount = visibleRows.length;
-  const virtuosoScrollParent = scrollParentElement && scrollParentElement.clientHeight > 0 ? scrollParentElement : null;
+  const virtuosoScrollParent = useTimelineScrollParent(scrollParentElement);
   const virtuosoInitialPositionProps = virtuosoScrollParent
     ? { initialTopMostItemIndex: { index: "LAST" as const, align: "end" as const } }
     : { initialItemCount: Math.min(rowCount, 30) };
