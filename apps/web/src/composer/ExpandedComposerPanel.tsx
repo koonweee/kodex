@@ -1,8 +1,11 @@
 import { Box, Text } from "@mantine/core";
 import { Minimize2 } from "lucide-react";
-import { useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from "react";
 
+import { usePaneLayout } from "../shared/PaneLayout";
+import { useNarrowWorkspace } from "../shared/layoutBreakpoints";
+import { shouldExpandComposerOnTouch } from "./presentationPolicy";
 import type { SkillMetadata } from "../api/client";
 import type { GoalControls } from "../goals/GoalControls";
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
@@ -15,12 +18,12 @@ import type { ComposerDraftState } from "./useComposerDraftState";
 import { useComposerKeyboardViewport } from "./useComposerKeyboardViewport";
 import type { SkillCatalogState } from "./useSkillCatalog";
 
-const MOBILE_COMPOSER_TEXT = {
+const EXPANDED_COMPOSER_TEXT = {
   collapse: "Collapse composer",
   compose: "Compose",
 };
 
-type MobileComposerPanelProps = ComposerPanelProps & {
+type ExpandedComposerPanelProps = ComposerPanelProps & {
   goalControls?: GoalControls;
   queuePanel?: ReactNode;
   queueOnSubmit?: boolean;
@@ -43,7 +46,7 @@ type MobileComposerPanelProps = ComposerPanelProps & {
   textareaRef: RefObject<HTMLTextAreaElement | null>;
 };
 
-export function MobileComposerPanel({
+export function ExpandedComposerPanel({
   attachmentInputRef,
   canCompose,
   canSubmitComposer,
@@ -79,9 +82,15 @@ export function MobileComposerPanel({
   slashPopupOpen,
   textareaRef,
   ...inlineComposerProps
-}: MobileComposerPanelProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const keyboardViewport = useComposerKeyboardViewport();
+}: ExpandedComposerPanelProps) {
+  const { compact } = usePaneLayout();
+  const narrowWorkspace = useNarrowWorkspace();
+  const [expansionRequested, setIsExpanded] = useState(false);
+  const isExpanded = expansionRequested && narrowWorkspace;
+  useLayoutEffect(() => {
+    if (!narrowWorkspace) setIsExpanded(false);
+  }, [narrowWorkspace]);
+  const keyboardViewport = useComposerKeyboardViewport(isExpanded);
   const expandedStyle = {
     "--kodex-mobile-keyboard-inset": `${keyboardViewport.keyboardInset}px`,
     "--kodex-mobile-visual-viewport-offset-top": `${keyboardViewport.viewportOffsetTop}px`,
@@ -128,14 +137,14 @@ export function MobileComposerPanel({
         composerSettingsDisabled={composerSettingsDisabled}
         composerSettingsError={composerSettingsError}
         contextUsage={contextUsage}
-        density="mobile"
+        density={compact ? "compact" : "regular"}
         expanded={isExpanded ? {
           style: expandedStyle,
           header: (
             <Box className="kodex-mobile-composer-expanded-header">
               <span aria-hidden="true" />
-              <Text fw={700} size="sm">{MOBILE_COMPOSER_TEXT.compose}</Text>
-              <AdaptiveIconButton label={MOBILE_COMPOSER_TEXT.collapse} onClick={() => setIsExpanded(false)}>
+              <Text fw={700} size="sm">{EXPANDED_COMPOSER_TEXT.compose}</Text>
+              <AdaptiveIconButton label={EXPANDED_COMPOSER_TEXT.collapse} onClick={() => setIsExpanded(false)}>
                 <Minimize2 />
               </AdaptiveIconButton>
             </Box>
@@ -154,7 +163,11 @@ export function MobileComposerPanel({
         onAttachmentInputChange={onAttachmentInputChange}
         onComposerPaste={onComposerPaste}
         onComposerSettingsChange={onComposerSettingsChange}
-        onFocusComposer={() => setIsExpanded(true)}
+        onEditablePointerDown={(event) => {
+          if (!isComposerDisabled && shouldExpandComposerOnTouch(narrowWorkspace, event.pointerType)) {
+            setIsExpanded(true);
+          }
+        }}
         onImageOpen={onImageOpen}
         onRemovePendingAttachment={onRemovePendingAttachment}
         onStopTurn={onStopTurn}
@@ -173,7 +186,7 @@ export function MobileComposerPanel({
         skillCatalog={skillCatalog}
         skillPopupOpen={skillPopupOpen}
         slashPopupOpen={slashPopupOpen}
-        renderSkillSuggestions={renderSkillCommandSheet}
+        renderSkillSuggestions={compact || isExpanded ? renderSkillCommandSheet : undefined}
         textareaRef={textareaRef}
       />
     </>

@@ -1,3 +1,4 @@
+import { readNarrowWorkspace } from "../shared/layoutBreakpoints";
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 
 import type { ThreadSummary } from "../api/client";
@@ -6,7 +7,6 @@ import { findKnownThreadSelection as findKnownThreadSelectionInCaches } from "..
 import {
   currentKodexRoute,
   historyState,
-  isNarrowViewport,
   pathForKodexRoute,
   pushKodexRoute,
   replaceKodexRoute,
@@ -401,7 +401,7 @@ export function useShellSelection({
     }
     directMobileDeepLinkSeededRef.current = true;
     const route = currentKodexRoute();
-    if (!route.threadId || route.panel !== null || !isNarrowViewport()) {
+    if (!route.threadId || route.panel !== null || !readNarrowWorkspace()) {
       return;
     }
     const state = historyState();

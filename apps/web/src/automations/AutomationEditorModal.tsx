@@ -9,7 +9,7 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
-import { useMediaQuery } from "@mantine/hooks";
+import { useCompactDialog } from "../shared/layoutBreakpoints";
 import { AlertCircle, Pause, Play, Save, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -61,11 +61,11 @@ export function AutomationEditorModal({
   const [values, setValues] = useState<AutomationFormValues>(() => automationFormValues(automation, fallbackThreadId));
   const [submittingAction, setSubmittingAction] = useState<string | null>(null);
   const [deletePendingConfirmation, setDeletePendingConfirmation] = useState(false);
-  const [mobileTab, setMobileTab] = useState<"details" | "prompt">("details");
+  const [compactTab, setCompactTab] = useState<"details" | "prompt">("details");
   const [error, setError] = useState<string | null>(null);
   const title = automation ? "Automation details" : "New automation";
   const isSubmitting = submittingAction !== null;
-  const isMobileModal = useMediaQuery("(max-width: 700px)");
+  const compactDialog = useCompactDialog();
   const selectedThreadExists = values.targetThreadId
     ? threadOptions.some((option) => option.value === values.targetThreadId)
     : true;
@@ -82,7 +82,7 @@ export function AutomationEditorModal({
       setError(null);
       setDeletePendingConfirmation(false);
       setSubmittingAction(null);
-      setMobileTab("details");
+      setCompactTab("details");
     }
   }, [automation, fallbackThreadId, opened]);
 
@@ -245,9 +245,9 @@ export function AutomationEditorModal({
 
   return (
     <Modal
-      centered={!isMobileModal}
+      centered={!compactDialog}
       className="kodex-automation-modal"
-      fullScreen={isMobileModal}
+      fullScreen={compactDialog}
       onClose={onClose}
       opened={opened}
       size="xl"
@@ -259,16 +259,16 @@ export function AutomationEditorModal({
             {error}
           </Alert>
         ) : null}
-        {isMobileModal ? (
+        {compactDialog ? (
           <Tabs
             className="kodex-automation-modal-tabs"
             keepMounted={false}
             onChange={(value) => {
               if (value === "details" || value === "prompt") {
-                setMobileTab(value);
+                setCompactTab(value);
               }
             }}
-            value={mobileTab}
+            value={compactTab}
           >
             <Tabs.List grow>
               <Tabs.Tab value="details">Details</Tabs.Tab>

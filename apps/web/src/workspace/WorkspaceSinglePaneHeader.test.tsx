@@ -6,37 +6,19 @@ import { describe, expect, it, vi } from "vitest";
 import { createMemoryWorkspacePaneStore } from "./paneStore";
 import type { WorkspacePane, WorkspacePaneState } from "./paneTypes";
 import { WorkspaceProvider, useWorkspace } from "./WorkspaceProvider";
-import { WorkspaceSinglePaneShell } from "./WorkspaceSinglePaneShell";
+import { WorkspaceSinglePaneHeader } from "./WorkspaceSinglePaneHeader";
 
-vi.mock("./paneRegistry", async (importActual) => {
-  const actual = await importActual<typeof import("./paneRegistry")>();
-  return {
-    ...actual,
-    WorkspacePaneRenderer: ({ isActive, pane }: { isActive: boolean; pane: WorkspacePane }) => (
-      <section data-active={isActive ? "true" : "false"} data-testid={`single-pane-${pane.id}`}>
-        {pane.title}
-        {pane.kind === "thread" && pane.target.mode === "draft" ? <input aria-label="Retained draft input" /> : null}
-      </section>
-    ),
-  };
-});
-
-describe("WorkspaceSinglePaneShell", () => {
-  it("renders only the active pane and switches visible panes from the pane manager", async () => {
-    const onVisibleThreadIdsChange = vi.fn();
+describe("WorkspaceSinglePaneHeader", () => {
+  it("shows the active pane title and switches selection through the pane manager", async () => {
     const onShowMobileSidebar = vi.fn();
     const store = createMemoryWorkspacePaneStore(workspaceState([
       threadPane("pane-thread-1", "thread-1", "First thread"),
       threadPane("pane-thread-2", "thread-2", "Second thread"),
     ], "pane-thread-2"));
 
-    renderShell(store, { onShowMobileSidebar, onVisibleThreadIdsChange });
+    renderShell(store, { onShowMobileSidebar });
 
-    expect(screen.getByTestId("single-pane-pane-thread-2")).toHaveAttribute("data-active", "true");
-    expect(screen.queryByTestId("single-pane-pane-thread-1")).not.toBeInTheDocument();
-    await waitFor(() => {
-      expect(onVisibleThreadIdsChange).toHaveBeenLastCalledWith(["thread-2"]);
-    });
+    expect(screen.getByRole("button", { name: /switch workspace pane/i })).toHaveTextContent("Second thread");
 
     fireEvent.click(screen.getByRole("button", { name: /switch workspace pane/i }));
     const manager = await screen.findByRole("dialog", { name: /active panes/i });
@@ -51,33 +33,13 @@ describe("WorkspaceSinglePaneShell", () => {
     expect(within(manager).queryByRole("button", { name: /new pane/i })).not.toBeInTheDocument();
     fireEvent.click(within(manager).getByRole("button", { name: /^first thread$/i }));
 
-    expect(screen.getByTestId("single-pane-pane-thread-1")).toHaveAttribute("data-active", "true");
-    expect(screen.queryByTestId("single-pane-pane-thread-2")).not.toBeInTheDocument();
+    expect(store.getState().activePaneId).toBe("pane-thread-1");
+    expect(screen.getByRole("button", { name: /switch workspace pane/i })).toHaveTextContent("First thread");
     expect(screen.queryByRole("dialog", { name: /active panes/i })).not.toBeInTheDocument();
-    await waitFor(() => {
-      expect(onVisibleThreadIdsChange).toHaveBeenLastCalledWith(["thread-1"]);
-    });
 
     fireEvent.click(screen.getByRole("button", { name: /show sidebar/i }));
     expect(onShowMobileSidebar).toHaveBeenCalledTimes(1);
     expect(within(screen.getByRole("toolbar", { name: "Pane actions" })).queryByRole("button", { name: /close pane/i })).not.toBeInTheDocument();
-  });
-
-  it("retains draft input while hidden and restores the same composer when focused", async () => {
-    const store = createMemoryWorkspacePaneStore(workspaceState([
-      draftThreadPane("draft", "Draft"), threadPane("existing", "thread-1", "Existing"),
-    ], "draft"));
-    renderShell(store);
-    const input = screen.getByRole("textbox", { name: "Retained draft input" });
-    fireEvent.change(input, { target: { value: "Unsent work" } });
-    fireEvent.click(screen.getByRole("button", { name: /switch workspace pane/i }));
-    fireEvent.click(within(await screen.findByRole("dialog", { name: /active panes/i })).getByRole("button", { name: "Existing" }));
-    expect(input).not.toBeVisible();
-    expect(input).toHaveValue("Unsent work");
-    fireEvent.click(screen.getByRole("button", { name: /switch workspace pane/i }));
-    fireEvent.click(within(await screen.findByRole("dialog", { name: /active panes/i })).getByRole("button", { name: "Draft" }));
-    expect(screen.getByRole("textbox", { name: "Retained draft input" })).toBe(input);
-    expect(input).toHaveValue("Unsent work");
   });
 
   it("closes the active pane from the pane manager and focuses the next pane", async () => {
@@ -97,8 +59,7 @@ describe("WorkspaceSinglePaneShell", () => {
       expect(store.getState().activePaneId).toBe("pane-thread-3");
     });
     expect(store.getState().panes.map((pane) => pane.id)).toEqual(["pane-thread-1", "pane-thread-3"]);
-    expect(screen.getByTestId("single-pane-pane-thread-3")).toHaveAttribute("data-active", "true");
-    expect(screen.queryByTestId("single-pane-pane-thread-2")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /switch workspace pane/i })).toHaveTextContent("Third thread");
     expect(within(manager).queryByRole("button", { name: /^second thread$/i })).not.toBeInTheDocument();
     expect(within(manager).getByRole("button", { name: /^third thread$/i })).toHaveAttribute("aria-current", "page");
   });
@@ -120,16 +81,15 @@ describe("WorkspaceSinglePaneShell", () => {
       expect(store.getState().panes.map((pane) => pane.id)).toEqual(["pane-thread-1", "pane-thread-2"]);
     });
     expect(store.getState().activePaneId).toBe("pane-thread-2");
-    expect(screen.getByTestId("single-pane-pane-thread-2")).toHaveAttribute("data-active", "true");
+    expect(screen.getByRole("button", { name: /switch workspace pane/i })).toHaveTextContent("Second thread");
   });
 
   it("opens a new chat when the last visible pane is closed", async () => {
-    const onVisibleThreadIdsChange = vi.fn();
     const store = createMemoryWorkspacePaneStore(workspaceState([
       threadPane("pane-thread-1", "thread-1", "First thread"),
     ]));
 
-    renderShell(store, { onVisibleThreadIdsChange });
+    renderShell(store);
 
     fireEvent.click(screen.getByRole("button", { name: /switch workspace pane/i }));
     const manager = await screen.findByRole("dialog", { name: /active panes/i });
@@ -142,9 +102,6 @@ describe("WorkspaceSinglePaneShell", () => {
     expect(store.getState().activePaneId).toBe(store.getState().panes[0]?.id);
     expect(within(screen.getByRole("button", { name: /switch workspace pane/i })).getByText("New chat")).toBeInTheDocument();
     expect(within(manager).getByRole("button", { name: /^new chat$/i })).toHaveAttribute("aria-current", "page");
-    await waitFor(() => {
-      expect(onVisibleThreadIdsChange).toHaveBeenLastCalledWith([]);
-    });
     expect(within(screen.getByRole("toolbar", { name: "Pane actions" })).queryByRole("button", { name: /close pane/i })).not.toBeInTheDocument();
   });
 
@@ -155,7 +112,7 @@ describe("WorkspaceSinglePaneShell", () => {
 
     renderShell(store);
 
-    expect(screen.getAllByText("New chat")).toHaveLength(2);
+    expect(screen.getAllByText("New chat")).toHaveLength(1);
     expect(within(screen.getByRole("toolbar", { name: "Pane actions" })).queryByRole("button", { name: /close pane/i })).not.toBeInTheDocument();
   });
 
@@ -191,19 +148,17 @@ function renderShell(
     adornmentPaneId?: string;
     actionPaneId?: string;
     onShowMobileSidebar?: () => void;
-    onVisibleThreadIdsChange?: (threadIds: string[]) => void;
   } = {},
 ) {
   render(
     <MantineProvider>
       <WorkspaceProvider
         onShowMobileSidebar={options.onShowMobileSidebar}
-        onVisibleThreadIdsChange={options.onVisibleThreadIdsChange}
         paneStore={paneStore}
       >
         {options.adornmentPaneId ? <PaneAdornmentHarness paneId={options.adornmentPaneId} /> : null}
         {options.actionPaneId ? <PaneActionHarness paneId={options.actionPaneId} /> : null}
-        <WorkspaceSinglePaneShell />
+        <WorkspaceSinglePaneHeader />
       </WorkspaceProvider>
     </MantineProvider>,
   );

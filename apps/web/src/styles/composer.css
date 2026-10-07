@@ -563,12 +563,10 @@
   opacity: 0.65;
 }
 
-@media (max-width: 700px) {
-  .kodex-composer-hero-stage {
-    margin-bottom: 24px;
-  }
+.kodex-composer-shell[data-inline-density="compact"] .kodex-composer-hero-stage {
+  margin-bottom: 24px;
+}
 
-  .kodex-composer-hero {
-    font-size: 30px;
-  }
+.kodex-composer-shell[data-inline-density="compact"] .kodex-composer-hero {
+  font-size: 30px;
 }

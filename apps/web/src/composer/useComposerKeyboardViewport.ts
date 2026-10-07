@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useLayoutEffect, useState } from "react";
 
 export type ComposerKeyboardViewport = {
   keyboardInset: number;
@@ -6,16 +6,20 @@ export type ComposerKeyboardViewport = {
   viewportHeight: number;
 };
 
-export function useComposerKeyboardViewport(): ComposerKeyboardViewport {
+export function useComposerKeyboardViewport(enabled = true): ComposerKeyboardViewport {
   const [viewport, setViewport] = useState(readViewport);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!enabled) return;
     const visualViewport = window.visualViewport;
 
     function updateViewport() {
-      setViewport(readViewport());
+      const next = readViewport();
+      setViewport(current => current.keyboardInset === next.keyboardInset &&
+        current.viewportHeight === next.viewportHeight && current.viewportOffsetTop === next.viewportOffsetTop ? current : next);
     }
 
+    updateViewport();
     window.addEventListener("resize", updateViewport);
     visualViewport?.addEventListener("resize", updateViewport);
     visualViewport?.addEventListener("scroll", updateViewport);
@@ -24,7 +28,7 @@ export function useComposerKeyboardViewport(): ComposerKeyboardViewport {
       visualViewport?.removeEventListener("resize", updateViewport);
       visualViewport?.removeEventListener("scroll", updateViewport);
     };
-  }, []);
+  }, [enabled]);
 
   return viewport;
 }

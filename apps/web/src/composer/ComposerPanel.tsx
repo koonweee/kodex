@@ -16,10 +16,8 @@ import {
 } from "../ComposerFooterControls";
 import type { ModelSummary, TextElement, TimelineSkillMention, UserInput } from "../api/client";
 import type { ImageLightboxImage } from "../images/types";
-import { useInputCapabilities } from "../shared/inputCapabilities";
-import { NARROW_WORKSPACE_QUERY } from "../shared/layoutBreakpoints";
-import { InlineComposerPanel } from "./InlineComposerPanel";
-import { MobileComposerPanel } from "./MobileComposerPanel";
+import { usePaneLayout } from "../shared/PaneLayout";
+import { ExpandedComposerPanel } from "./ExpandedComposerPanel";
 import { filterSlashCommands, replaceSlashCommandToken, slashCommandItems } from "./slashCommands";
 import { filterSkillsForQuery } from "./skillMentions";
 import type { PendingAttachment } from "./types";
@@ -142,9 +140,7 @@ export function ComposerPanel({
   useLayoutEffect(() => {
     onDraftDisposableChange?.(draftDisposable);
   }, [draftDisposable, onDraftDisposableChange]);
-  const isNarrowComposer = useIsNarrowComposer();
-  const inputCapabilities = useInputCapabilities();
-  const isMobileComposer = isNarrowComposer && inputCapabilities.hasTouchInput;
+  const { compact } = usePaneLayout();
   const threadGoal = useThreadGoal(goalThreadId);
   const currentGoalThreadId = useRef(goalThreadId);
   currentGoalThreadId.current = goalThreadId;
@@ -162,7 +158,7 @@ export function ComposerPanel({
     ready: threadGoal.ready,
     pending: threadGoal.pending,
     error: threadGoal.error,
-    compact: isNarrowComposer,
+    compact,
     onOpen: openGoalEditor,
     onReload: threadGoal.reload,
     onDelete: () => {
@@ -426,40 +422,11 @@ export function ComposerPanel({
     <AssistantSelectionAction composerShellRef={internalComposerShellRef}
       disabled={isComposerControlsDisabled || !selectedThreadPresent} draftKey={composerDraftKey}
       onAdd={draftState.addAnnotation} />
-    {isMobileComposer ? (
-    <MobileComposerPanel {...representationProps} />
-  ) : (
-    <InlineComposerPanel {...representationProps} />
-  )}
+    <ExpandedComposerPanel {...representationProps} />
     {goalThreadId && goalEditorThreadId === goalThreadId ? (
       <GoalModal key={goalThreadId} goal={threadGoal.goal} pending={threadGoal.pending} error={threadGoal.error}
         ready={threadGoal.ready} onReload={threadGoal.reload} onClose={() => setGoalEditorThreadId((current) => current === goalThreadId ? null : current)}
         onUpdate={threadGoal.update} onClear={threadGoal.clear} />
     ) : null}
   </>;
-}
-
-function useIsNarrowComposer() {
-  const [isNarrow, setIsNarrow] = useState(() => readIsNarrowComposer());
-
-  useEffect(() => {
-    if (typeof window.matchMedia !== "function") {
-      return;
-    }
-
-    const mediaQuery = window.matchMedia(NARROW_WORKSPACE_QUERY);
-    function updateNarrowComposer() {
-      setIsNarrow(mediaQuery.matches);
-    }
-
-    updateNarrowComposer();
-    mediaQuery.addEventListener("change", updateNarrowComposer);
-    return () => mediaQuery.removeEventListener("change", updateNarrowComposer);
-  }, []);
-
-  return isNarrow;
-}
-
-function readIsNarrowComposer() {
-  return typeof window.matchMedia === "function" && window.matchMedia(NARROW_WORKSPACE_QUERY).matches;
 }

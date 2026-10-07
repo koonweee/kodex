@@ -16,6 +16,9 @@ vi.mock("../api/client", async (importActual) => ({
   listSkills: vi.fn(),
 }));
 
+const paneLayout = vi.hoisted(() => ({ compact: true, short: false }));
+vi.mock("../shared/PaneLayout", () => ({ usePaneLayout: () => paneLayout }));
+
 const composerSettings: ComposerSettings = {
   effort: "high",
   fast: false,
@@ -30,6 +33,14 @@ describe("Mobile composer panel", () => {
   beforeEach(() => {
     vi.mocked(listSkills).mockReset();
     setMobileViewport(true);
+    paneLayout.compact = true;
+    vi.stubGlobal("PointerEvent", class extends MouseEvent {
+      pointerType: string;
+      constructor(type: string, options: PointerEventInit = {}) {
+        super(type, options);
+        this.pointerType = options.pointerType ?? "";
+      }
+    });
   });
 
   afterEach(() => {
@@ -37,12 +48,12 @@ describe("Mobile composer panel", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders the shared inline composer with mobile density without an existing-thread underbar", async () => {
+  it("renders the shared inline composer with compact density without an existing-thread underbar", async () => {
     renderComposerPanel({
       contextUsage: { contextTokens: 24_000, modelContextWindow: 120_000 },
     });
 
-    expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "mobile");
+    expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "compact");
     expect(screen.getByLabelText(/message composer/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /model: gpt-5\.5, high/i })).toBeInTheDocument();
@@ -51,11 +62,11 @@ describe("Mobile composer panel", () => {
     expect(screen.queryByRole("toolbar", { name: /composer context|draft thread toolbar/i })).not.toBeInTheDocument();
   });
 
-  it("opens fullscreen composer when the touch mobile inline textarea is focused", async () => {
+  it("opens fullscreen composer when its editable field receives touch", async () => {
     renderComposerPanel();
 
     const textarea = screen.getByLabelText(/message composer/i);
-    await userEvent.click(textarea);
+    await openByTouch(textarea);
 
     expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toBe(textarea);
@@ -68,9 +79,46 @@ describe("Mobile composer panel", () => {
 
     await userEvent.click(screen.getByLabelText(/message composer/i));
 
-    expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "desktop");
+    expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "compact");
     expect(screen.queryByRole("dialog", { name: /compose/i })).not.toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toHaveFocus();
+  });
+
+  it("keeps mouse and programmatic focus inline on a touch-capable workspace, then expands on touch of the focused field", async () => {
+    renderComposerPanel();
+    const textarea = screen.getByLabelText(/message composer/i);
+    await userEvent.click(textarea);
+    expect(textarea).toHaveFocus();
+    expect(screen.queryByRole("dialog", { name: /compose/i })).not.toBeInTheDocument();
+    fireEvent.focus(textarea);
+    expect(screen.queryByRole("dialog", { name: /compose/i })).not.toBeInTheDocument();
+    fireEvent.pointerDown(textarea, { pointerType: "touch" });
+    expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/message composer/i)).toBe(textarea);
+    expect(textarea).toHaveFocus();
+  });
+
+  it("keeps the input, draft and selection through compact and regular pane transitions in a wide workspace", async () => {
+    setMobileViewport(false);
+    const view = renderComposerPanel();
+    const input = screen.getByLabelText(/message composer/i) as HTMLTextAreaElement;
+    await userEvent.type(input, "Keep composing");
+    input.setSelectionRange(2, 6);
+    fireEvent.compositionStart(input);
+    paneLayout.compact = false;
+    view.refreshLayout();
+    expect(screen.getByLabelText(/message composer/i)).toBe(input);
+    expect(input).toHaveFocus();
+    expect(input).toHaveValue("Keep composing");
+    expect([input.selectionStart, input.selectionEnd]).toEqual([2, 6]);
+    paneLayout.compact = true;
+    view.refreshLayout();
+    fireEvent.compositionEnd(input);
+    fireEvent.pointerDown(input, { pointerType: "touch" });
+    expect(screen.queryByRole("dialog", { name: /compose/i })).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/message composer/i)).toBe(input);
+    expect(input).toHaveFocus();
+    expect([input.selectionStart, input.selectionEnd]).toEqual([2, 6]);
   });
 
   it("anchors fullscreen composer to the visual viewport when mobile browser chrome shifts", async () => {
@@ -83,7 +131,7 @@ describe("Mobile composer panel", () => {
     });
     renderComposerPanel();
 
-    await userEvent.click(screen.getByLabelText(/message composer/i));
+    await openByTouch(screen.getByLabelText(/message composer/i));
 
     const dialog = screen.getByRole("dialog", { name: /compose/i });
     expect(dialog).toHaveStyle({
@@ -97,7 +145,7 @@ describe("Mobile composer panel", () => {
   it("preserves draft text when collapsing back to inline mode", async () => {
     renderComposerPanel();
 
-    await userEvent.click(screen.getByLabelText(/message composer/i));
+    await openByTouch(screen.getByLabelText(/message composer/i));
     expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText(/message composer/i), "Long mobile draft");
@@ -105,20 +153,20 @@ describe("Mobile composer panel", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /collapse composer/i }));
 
-    expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "mobile");
+    expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "compact");
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("Long mobile draft");
   });
 
-  it("preserves the selected draft position when reopening fullscreen from inline focus", async () => {
+  it("preserves the selected draft position when reopening fullscreen from touch", async () => {
     renderComposerPanel();
 
-    await userEvent.click(screen.getByLabelText(/message composer/i));
+    await openByTouch(screen.getByLabelText(/message composer/i));
     await userEvent.type(screen.getByLabelText(/message composer/i), "Long mobile draft");
     await userEvent.click(screen.getByRole("button", { name: /collapse composer/i }));
 
     const inlineTextarea = screen.getByLabelText(/message composer/i) as HTMLTextAreaElement;
     inlineTextarea.setSelectionRange(3, 7);
-    fireEvent.focus(inlineTextarea);
+    fireEvent.pointerDown(inlineTextarea, { pointerType: "touch" });
 
     const expandedTextarea = screen.getByLabelText(/message composer/i) as HTMLTextAreaElement;
     await waitFor(() => {
@@ -130,20 +178,20 @@ describe("Mobile composer panel", () => {
   it("returns from expanded composer to inline mode on collapse", async () => {
     renderComposerPanel();
 
-    await userEvent.click(screen.getByLabelText(/message composer/i));
+    await openByTouch(screen.getByLabelText(/message composer/i));
     expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /collapse composer/i }));
     await waitFor(() =>
-      expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "mobile"),
+      expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "compact"),
     );
 
-    await userEvent.click(screen.getByLabelText(/message composer/i));
+    await openByTouch(screen.getByLabelText(/message composer/i));
     expect(await screen.findByRole("dialog", { name: /compose/i })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /collapse composer/i }));
 
     await waitFor(() => expect(screen.queryByRole("dialog", { name: /compose/i })).not.toBeInTheDocument());
-    expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "mobile");
+    expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "compact");
   });
 
   it("closes expanded composer after submit and preserves the shared submit controls", async () => {
@@ -156,13 +204,13 @@ describe("Mobile composer panel", () => {
       },
     });
 
-    await userEvent.click(screen.getByLabelText(/message composer/i));
+    await openByTouch(screen.getByLabelText(/message composer/i));
     expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/message composer/i), "Send from expanded");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
     await waitFor(() => expect(submittedDrafts).toEqual(["Send from expanded"]));
-    expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "mobile");
+    expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "compact");
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
   });
 
@@ -180,9 +228,9 @@ describe("Mobile composer panel", () => {
     });
 
     expect(screen.getByRole("button", { name: /remove preview\.png/i })).toBeInTheDocument();
-    expect(document.querySelector(".kodex-attachment-tray")).toHaveAttribute("data-compact", "false");
+    expect(document.querySelector(".kodex-attachment-tray")).toHaveAttribute("data-compact", "true");
 
-    await userEvent.click(screen.getByLabelText(/message composer/i));
+    await openByTouch(screen.getByLabelText(/message composer/i));
 
     expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /remove preview\.png/i })).toBeInTheDocument();
@@ -193,7 +241,7 @@ describe("Mobile composer panel", () => {
     const onComposerSettingsChange = vi.fn();
     renderComposerPanel({ onComposerSettingsChange });
 
-    await userEvent.click(screen.getByLabelText(/message composer/i));
+    await openByTouch(screen.getByLabelText(/message composer/i));
     expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /open attachment menu/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
@@ -225,7 +273,7 @@ describe("Mobile composer panel", () => {
     ]);
     renderComposerPanel();
 
-    await userEvent.click(screen.getByLabelText(/message composer/i));
+    await openByTouch(screen.getByLabelText(/message composer/i));
     await userEvent.type(screen.getByLabelText(/message composer/i), "$img");
 
     expect(await screen.findByRole("listbox", { name: /skill suggestions/i })).toBeInTheDocument();
@@ -249,7 +297,7 @@ describe("Mobile composer panel", () => {
   it("uses the mobile command sheet for slash command suggestions", async () => {
     renderComposerPanel();
 
-    await userEvent.click(screen.getByLabelText(/message composer/i));
+    await openByTouch(screen.getByLabelText(/message composer/i));
     await userEvent.type(screen.getByLabelText(/message composer/i), "/co");
 
     expect(await screen.findByRole("listbox", { name: /slash command suggestions/i })).toBeInTheDocument();
@@ -271,7 +319,7 @@ describe("Mobile composer panel", () => {
     ]);
     renderComposerPanel();
 
-    await userEvent.click(screen.getByLabelText(/message composer/i));
+    await openByTouch(screen.getByLabelText(/message composer/i));
     await userEvent.type(screen.getByLabelText(/message composer/i), "$drive");
 
     const option = await screen.findByRole("option", { name: /google drive/i });
@@ -295,7 +343,7 @@ describe("Mobile composer panel", () => {
     ]);
     renderComposerPanel();
 
-    await userEvent.click(screen.getByLabelText(/message composer/i));
+    await openByTouch(screen.getByLabelText(/message composer/i));
     await userEvent.type(screen.getByLabelText(/message composer/i), "$drive");
 
     const option = await screen.findByRole("option", { name: /google drive/i });
@@ -318,7 +366,7 @@ describe("Mobile composer panel", () => {
     ]);
     renderComposerPanel();
 
-    await userEvent.click(screen.getByLabelText(/message composer/i));
+    await openByTouch(screen.getByLabelText(/message composer/i));
     expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/message composer/i), "$img");
     expect(await screen.findByRole("listbox", { name: /skill suggestions/i })).toBeInTheDocument();
@@ -341,7 +389,7 @@ describe("Mobile composer panel", () => {
 function renderComposerPanel(props: Partial<ComponentProps<typeof ComposerPanel>> = {}) {
   const attachmentInputRef = { current: null } as RefObject<HTMLInputElement | null>;
   const queryClient = createKodexQueryClient();
-  return render(
+  const node = () => (
     <QueryClientProvider client={queryClient}>
       <MantineProvider>
         <ComposerPanel
@@ -389,8 +437,16 @@ function renderComposerPanel(props: Partial<ComponentProps<typeof ComposerPanel>
           {...props}
         />
       </MantineProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const view = render(node());
+  return { ...view, refreshLayout: () => view.rerender(node()) };
+}
+
+async function openByTouch(textarea: HTMLElement) {
+  // JSDOM focus comes from the ensuing click; the event initiating expansion is touch.
+  fireEvent.pointerDown(textarea, { pointerType: "touch" });
+  await userEvent.click(textarea);
 }
 
 function mockSkills(skills: SkillMetadata[]) {

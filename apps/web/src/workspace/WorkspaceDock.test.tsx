@@ -37,7 +37,7 @@ describe("WorkspaceDock sync", () => {
       onDidLayoutChange: (listener: () => void) => { emitLayout = listener; return subscribe(); },
       onDidActivePanelChange: subscribe, onDidRemovePanel: subscribe,
       onDidAddPanel: subscribe, onDidAddGroup: subscribe,
-      onDidRemoveGroup: subscribe, onDidMovePanel: subscribe,
+      onDidRemoveGroup: subscribe, onDidMovePanel: subscribe, onDidMaximizedGroupChange: subscribe,
     }) as unknown as DockviewApi;
     const panes = [
       pane("pane-chat", "thread", { mode: "existing", threadId: "chat" }),

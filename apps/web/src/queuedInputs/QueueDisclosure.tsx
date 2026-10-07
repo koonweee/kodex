@@ -1,16 +1,15 @@
 import { Box, Button } from "@mantine/core";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { useId, useRef, useState, type ReactNode } from "react";
-import { useCompactComposer } from "../composer/useCompactComposer";
+import { useId, useState, type ReactNode } from "react";
+import { usePaneLayout } from "../shared/PaneLayout";
 
 export function QueueDisclosure({ count, partial, children }: { count: number; partial: boolean; children: ReactNode }) {
-  const root = useRef<HTMLDivElement>(null);
-  const compact = useCompactComposer(root);
+  const { short } = usePaneLayout();
   // Disclosure is intentionally local to this pane; native queue contents stay authoritative.
   const [choice, setChoice] = useState<boolean | null>(null);
   const contentId = useId();
-  const collapsed = count > 1 && (choice ?? compact);
-  return <Box ref={root} role="region" aria-label="Queued messages" className="kodex-queued-messages">
+  const collapsed = count > 1 && (choice ?? short);
+  return <Box role="region" aria-label="Queued messages" className="kodex-queued-messages">
     {count > 1 ? <div className={collapsed ? undefined : "kodex-queue-collapse-zone"}>
       <Button variant="subtle" color="gray" className={collapsed ? "kodex-queue-summary" : "kodex-queue-collapse"}
         aria-label={collapsed ? undefined : "Collapse queued messages"}

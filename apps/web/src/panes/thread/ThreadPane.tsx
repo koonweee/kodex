@@ -1,3 +1,4 @@
+import { PaneLayout } from "../../shared/PaneLayout";
 import { threadIndicatorState } from "../../threads/ThreadStatusIndicator";
 import { AsyncQuestionReplyProvider } from "../../composer/AsyncQuestionReplyProvider";
 import { refreshUnreadBadge } from "../../notifications/unreadBadge";
@@ -538,7 +539,7 @@ function ExistingThreadPane({
   }
 
   return (
-    <section className="kodex-thread-pane kodex-thread-pane-existing" data-workspace-pane-active={isActive ? "true" : undefined}>
+    <PaneLayout component="section" className="kodex-thread-pane kodex-thread-pane-existing" data-workspace-pane-active={isActive ? "true" : undefined}>
       <Title className="kodex-thread-pane-accessible-title" order={3} size="h5" title={title}>
         {title}
       </Title>
@@ -627,7 +628,7 @@ function ExistingThreadPane({
         selectedThreadPresent: true,
         thread,
       })}
-    </section>
+    </PaneLayout>
   );
 }
 
@@ -728,7 +729,7 @@ function DraftThreadPane({
   isActive: boolean;
 }) {
   return (
-    <section className="kodex-thread-pane kodex-thread-pane-empty" data-workspace-pane-active={isActive ? "true" : undefined}>
+    <PaneLayout component="section" className="kodex-thread-pane kodex-thread-pane-empty" data-workspace-pane-active={isActive ? "true" : undefined}>
       <Title className="kodex-thread-pane-accessible-title" order={3} size="h5">
         Draft thread
       </Title>
@@ -736,7 +737,7 @@ function DraftThreadPane({
         {errorMessage ? <ThreadPaneErrorMessage message={errorMessage} /> : null}
         {composer}
       </div>
-    </section>
+    </PaneLayout>
   );
 }
 

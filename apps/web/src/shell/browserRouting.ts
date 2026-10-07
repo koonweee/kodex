@@ -6,7 +6,6 @@ import {
   threadPath,
   type KodexRoute,
 } from "./navigation";
-import { NARROW_WORKSPACE_QUERY } from "../shared/layoutBreakpoints";
 
 export function currentKodexRoute(): KodexRoute {
   return parseKodexLocation(window.location);
@@ -23,10 +22,6 @@ function currentLocationPath(): string {
 export function historyState(): Record<string, unknown> {
   const state = window.history.state;
   return state && typeof state === "object" ? { ...(state as Record<string, unknown>) } : {};
-}
-
-export function isNarrowViewport(): boolean {
-  return typeof window.matchMedia === "function" && window.matchMedia(NARROW_WORKSPACE_QUERY).matches;
 }
 
 export function pathForKodexRoute(route: KodexRoute): string {

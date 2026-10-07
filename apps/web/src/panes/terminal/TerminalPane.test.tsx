@@ -50,7 +50,7 @@ const session: TerminalSessionInfo = {
 
 describe("TerminalPane", () => {
   beforeEach(() => {
-    vi.mocked(useInputCapabilities).mockReturnValue({ hasTouchInput: false, hasCoarsePointer: false, hasFineHover: true });
+    vi.mocked(useInputCapabilities).mockReturnValue({ hasTouchInput: false, hasAnyCoarsePointer: false, hasPrimaryFineHover: true });
     workspaceMocks.openNewTerminalPane.mockReset();
     workspaceMocks.openNewTerminalPane.mockResolvedValue(undefined);
     workspaceMocks.openTerminalPane.mockReset();
@@ -77,7 +77,7 @@ describe("TerminalPane", () => {
   });
 
   it("keeps accessory keys working on touch-capable devices", () => {
-    vi.mocked(useInputCapabilities).mockReturnValue({ hasTouchInput: true, hasCoarsePointer: false, hasFineHover: true });
+    vi.mocked(useInputCapabilities).mockReturnValue({ hasTouchInput: true, hasAnyCoarsePointer: false, hasPrimaryFineHover: true });
     renderTerminalPane(workspacePane({ terminalId: "terminal-1" }));
     fireEvent.click(screen.getByRole("button", { name: "Ctrl-C" }));
     expect(screen.getByTestId("xterm-terminal")).toHaveAttribute("data-input-signal", "\x03");

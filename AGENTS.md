@@ -73,11 +73,25 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 
 ## Frontend Responsive Styling
 
-- Treat viewport width and input modality as separate concerns. Use width breakpoints for structural layout and content fit, such as the single-panel shell, table-to-card transforms, stacked forms, hidden side panes, and bounded image grids.
-- Use shared frontend input-capability helpers or hooks for touch/coarse-pointer decisions instead of ad hoc `matchMedia` or `navigator.maxTouchPoints` checks in feature components.
-- Scope touch ergonomics to touch/coarse-pointer devices: 44px tap targets, 16px editable inputs for iOS zoom avoidance, safe-area and visual-viewport keyboard handling, touch scrolling, bottom sheets, and controls that must be visible without hover.
-- Keep fine-pointer hover affordances behind hover-capable media queries or explicit pointer handling, and make sure touch users have a non-hover path to the same actions.
-- When changing responsive UI behavior, test at least desktop fine pointer, narrow fine pointer, and narrow touch/mobile shapes if the feature has both layout and input-modality behavior.
+Treat available space and input capabilities as independent facts. Components consume shared facts or a small domain policy; do not invent `isMobile` device classifications. The current contract and acceptance matrix live in [plans/responsive-ui-contract.md](plans/responsive-ui-contract.md).
+
+| Fact | Owner | Treatments |
+| --- | --- | --- |
+| Browser viewport fit | `shared/layoutBreakpoints.ts` | Workspace/sidebar structure and global overlay fit |
+| Pane width | `shared/PaneLayout.tsx` | Compact composer/accessories, wrapping, stacked questions and media fit |
+| Pane height | `shared/PaneLayout.tsx` | Untouched queue disclosure defaults and bounded accessory height |
+| Available input capabilities | `shared/inputCapabilities.ts` | Touch targets, editable-input sizing and hover alternatives |
+| Actual opening interaction | Domain policy plus `PointerEvent.pointerType` | Automatic composer expansion only for touch opening in a narrow workspace |
+| Visual viewport and safe areas | Existing keyboard-viewport hook and CSS | Sizing an expanded composer, keyboard avoidance and bottom padding |
+
+- Observe each pane at its shared boundary. Use its scoped `data-pane-width="compact|regular"` and `data-pane-height="short|regular"` attributes for CSS and `usePaneLayout()` for React decisions; update React only when classifications change. Descendants must use their nearest intended owner, so a compact pane does not change its spacious sibling or an independently sized nested surface. Pane fit uses pane classifications/container queries, not browser media queries.
+- Global overlays use viewport fit. Pane-owned portals must receive the required presentation policy explicitly because they cannot inherit a pane boundary through DOM ancestry. Placement geometry such as `getBoundingClientRect`, `innerWidth` and visual-viewport bounds remains valid for positioning, not a competing classification system.
+- `hasPrimaryFineHover` means the primary input can hover with a fine pointer. `hasAnyCoarsePointer` means an available pointer is coarse. `hasTouchInput` expresses touch availability, including reported touch points. These facts can coexist on a hybrid computer; none proves that a particular action was touch. Keep fine-hover affordances behind their capability rule and provide a non-hover route to every action.
+- Compact fine-pointer panes reuse the compact presentation while keeping inline composition, anchored menus and keyboard interactions. A wide workspace with a narrow touch pane stays inline. Automatic fullscreen requires a narrow browser window and a touch interaction opening an editable field, including an already-focused field. Mouse, Tab, programmatic focus and resize never initiate expansion.
+- Keep the textarea mounted across compact/regular changes and expansion/collapse. Preserve focus, selection, IME composition, drafts, annotations, skills and attachments. An expanded composer returns inline when the workspace becomes wide. Preserve existing keyboard-submit behavior under its separate legacy policy; hybrid shortcut changes require their own scope.
+- Scope touch ergonomics to touch/coarse capability: 44px targets, 16px editable inputs for iOS zoom avoidance, safe-area handling, touch scrolling and actions that must be reachable without hover. A narrow width alone does not authorize these treatments. Modal fullscreen may remain viewport-owned when needed for fit.
+- `npm run trim` includes `trim:responsive`, a TypeScript-parser ownership audit with fixture tests. Direct touch-point reads, responsive `matchMedia` calls and Mantine media-hook bypasses belong only in the named shared owners. Appearance/reduced-motion queries and actual pointer-event checks remain allowed. The focused CSS audit covers migrated pane-only style files; mixed global/overlay files still require review of each rule's owner. Add narrow, explained exceptions only for a demonstrated ownership need.
+- Validate desktop fine pointer, narrow fine pointer, narrow touch, wide touch with a compact pane, and hybrid touch plus fine hover. Check adjacent compact/regular panes, independent height resize, editing continuity across breakpoints, keyboard viewport changes and portalled controls. Use rendered behavior/browser evidence; do not add tests asserting CSS strings or breakpoint constants. Responsive state is intentionally per-tab and must not alter shared submission/lifecycle ownership.
 
 ## Multi-Client State Ownership
 

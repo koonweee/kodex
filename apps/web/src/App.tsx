@@ -99,7 +99,8 @@ import { mergeThreadReadState, preserveNewerThreadReadState } from "./threads/re
 import { threadReadUpdateFromEvent } from "./threads/events";
 import { useThreadViewPresence } from "./threads/useThreadViewPresence";
 import { errorMessageFrom } from "./shared/values";
-import { KodexShellView, useNarrowThreadWorkspace } from "./shell/KodexShellView";
+import { KodexShellView } from "./shell/KodexShellView";
+import { useNarrowWorkspace } from "./shared/layoutBreakpoints";
 import {
   currentKodexRoute,
   isThemeWorkbenchRoute,
@@ -205,7 +206,7 @@ function KodexShell({
 }) {
   const [initialRoute] = useState(() => currentKodexRoute());
   const queryClientForShell = useQueryClient();
-  const useSingleThreadWorkspace = useNarrowThreadWorkspace();
+  const useSingleThreadWorkspace = useNarrowWorkspace();
   const [pendingTitleThreadIds, setPendingTitleThreadIds] = useState<Set<string>>(new Set());
   const [materializingThreadIds, setMaterializingThreadIds] = useState<Set<string>>(new Set());
   const [projectFormOpen, setProjectFormOpen] = useState(false);

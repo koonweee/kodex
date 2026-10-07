@@ -10,7 +10,6 @@ import {
   Stack,
   Text,
 } from "@mantine/core";
-import { useMediaQuery } from "@mantine/hooks";
 import {
   Folder,
   FolderOpen,
@@ -40,7 +39,7 @@ import { useGatewayInstanceStorage } from "../api/GatewayInstanceBoundary";
 import type { UsageLimitLines } from "../account/rateLimits";
 import { SidebarAccountMenu } from "../account/SidebarAccountFooter";
 import { useInputCapabilities } from "../shared/inputCapabilities";
-import { NARROW_WORKSPACE_QUERY } from "../shared/layoutBreakpoints";
+import { useNarrowWorkspace } from "../shared/layoutBreakpoints";
 import { AdaptiveIcon } from "../ui/AdaptiveIcon";
 import { EmptyPanel } from "../ui/EmptyPanel";
 import {
@@ -198,8 +197,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const [searchActive, setSearchActive] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sidebarScrollState, setSidebarScrollState] = useState({ bottom: false, stickyProjectHeader: false, top: false });
-  const isNarrowSidebar = useMediaQuery(NARROW_WORKSPACE_QUERY, false);
-  const { hasTouchInput: useTouchDensity, hasFineHover } = useInputCapabilities();
+  const isNarrowWorkspace = useNarrowWorkspace();
+  const { hasTouchInput: useTouchDensity, hasPrimaryFineHover } = useInputCapabilities();
   const projectGroupRefs = useRef<Map<string, HTMLElement>>(new Map());
   const pendingProjectAnimationRects = useRef<Map<string, DOMRect> | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -427,7 +426,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
       data-sidebar-scope={sidebarScope}
       style={{ width: sidebarWidth }}
     >
-      <SidebarPeek collapsed={sidebarCollapsed} enabled={hasFineHover && !isNarrowSidebar}
+      <SidebarPeek collapsed={sidebarCollapsed} enabled={hasPrimaryFineHover && !isNarrowWorkspace}
         rail={(handlers) => <CollapsedSidebarRail
           onExpand={onSidebarExpandClick}
           onExpandPointerEnter={handlers.onPointerEnter}
@@ -437,7 +436,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
           onSearch={handleCollapsedSearchClick}
           recentThreads={recentThreads}
         />}>
-        <Stack gap={isNarrowSidebar ? 8 : "lg"} h="100%">
+        <Stack gap={isNarrowWorkspace ? 8 : "lg"} h="100%">
             <Box className="kodex-sidebar-header">
               <SidebarAccountMenu
                 account={account}
@@ -450,9 +449,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
               />
               {!sidebarCollapsed ? <SidebarIconButton
                 className="kodex-sidebar-header-action"
-                label={isNarrowSidebar ? SIDEBAR_TEXT.showThread : SIDEBAR_TEXT.collapseSidebar}
-                onClick={isNarrowSidebar ? onShowThread : onSidebarCollapseClick}
-                tooltipProps={{ position: isNarrowSidebar ? "bottom" : "right" }}
+                label={isNarrowWorkspace ? SIDEBAR_TEXT.showThread : SIDEBAR_TEXT.collapseSidebar}
+                onClick={isNarrowWorkspace ? onShowThread : onSidebarCollapseClick}
+                tooltipProps={{ position: isNarrowWorkspace ? "bottom" : "right" }}
               >
                 <PanelLeftClose size={16} />
               </SidebarIconButton> : null}

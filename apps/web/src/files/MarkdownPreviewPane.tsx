@@ -1,5 +1,5 @@
 import { Box, Drawer, Group, Loader, Modal, SegmentedControl, Stack, Text } from "@mantine/core";
-import { useMediaQuery } from "@mantine/hooks";
+import { useNarrowWorkspace } from "../shared/layoutBreakpoints";
 import { FileText } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -18,7 +18,8 @@ export function MarkdownPreviewPane({ onClose, preview, threadId }: MarkdownPrev
   const [content, setContent] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const isDesktopPreview = useMediaQuery("(min-width: 901px)", true);
+  // This portal is a global overlay: its presentation follows workspace fit.
+  const isNarrowWorkspace = useNarrowWorkspace();
   const title =
     preview?.title ||
     (preview?.path
@@ -145,7 +146,7 @@ export function MarkdownPreviewPane({ onClose, preview, threadId }: MarkdownPrev
     </Stack>
   );
 
-  if (isDesktopPreview) {
+  if (!isNarrowWorkspace) {
     return (
       <Modal
         centered

@@ -345,14 +345,14 @@ export function useComposerOrchestration({
     if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
       return;
     }
-    const mobileInput = usesMobileComposerInput();
-    if (mobileInput && !event.metaKey) {
+    const touchSubmitPolicy = usesLegacyTouchSubmitPolicy();
+    if (touchSubmitPolicy && !event.metaKey) {
       return;
     }
 
     event.preventDefault();
     const form = event.currentTarget.form;
-    if (event.metaKey && !mobileInput && selectedThreadId) {
+    if (event.metaKey && !touchSubmitPolicy && selectedThreadId) {
       const queueSubmitter = form?.querySelector<HTMLButtonElement>('button[data-submit-intent="queue"]');
       if (queueSubmitter && !queueSubmitter.disabled) form?.requestSubmit(queueSubmitter);
       return;
@@ -551,7 +551,9 @@ export function useComposerOrchestration({
   };
 }
 
-function usesMobileComposerInput(): boolean {
+// Preserve the existing capability-based keyboard behavior independently of
+// compact layout and actual-touch fullscreen activation.
+function usesLegacyTouchSubmitPolicy(): boolean {
   return isTouchInputDevice();
 }
 

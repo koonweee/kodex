@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { nativeSettingsFixture } from "./native-settings.fixture";
 
 test.use({ viewport: { width: 910, height: 600 } });
@@ -11,6 +11,7 @@ test("tab and close-control geometry stays stable across hover and selection wit
       status: "active", updatedAt: 1777501300, preview: "Working", canAcceptDirectInput: false,
     }] } }));
     const page = await fixture.page("stable-tabs");
+    await useSingleTabGroup(page);
     await expect(page.getByRole("button", { name: "Show subagents", exact: true })).toBeVisible();
     const sidebar = page.getByRole("navigation", { name: "Workspace", exact: true });
     await sidebar.getByRole("button", { name: "Chats", exact: true }).click();
@@ -73,6 +74,7 @@ test("tab strip fades track the clipped edges as it scrolls", async ({ context }
   const fixture = await nativeSettingsFixture(context);
   try {
     const page = await fixture.page("tab-fades");
+    await useSingleTabGroup(page);
     const sidebar = page.getByRole("navigation", { name: "Workspace", exact: true });
     await sidebar.getByRole("button", { name: "Chats", exact: true }).click();
     for (let i = 0; i < 5; i++) {
@@ -94,3 +96,14 @@ test("tab strip fades track the clipped edges as it scrolls", async ({ context }
   expect(fixture.errors).toEqual([]);
   expect(fixture.unexpected).toEqual([]);
 });
+
+async function useSingleTabGroup(page: Page) {
+  // The workspace can now allocate two columns at this viewport. These checks
+  // exercise tab-strip behavior, so constrain its allocation and dock as tabs.
+  await page.locator(".kodex-workspace-dock").evaluate(el => { el.style.maxWidth = "580px"; });
+  await page.locator(".dv-tab").filter({ hasText: "New chat" }).dragTo(
+    page.locator(".dv-tab").filter({ hasText: "Native settings chat" }),
+  );
+  await expect(page.locator(".dv-tabs-container")).toHaveCount(1);
+  await page.locator(".dv-tab").filter({ hasText: "Native settings chat" }).click();
+}

@@ -1,5 +1,5 @@
 import { Group, Loader, Menu } from "@mantine/core";
-import { ArrowUp, ListPlus, Maximize2, Paperclip, Plus, Square, Target } from "lucide-react";
+import { ArrowUp, ListPlus, Paperclip, Plus, Square, Target } from "lucide-react";
 import { memo } from "react";
 import type { RefObject } from "react";
 
@@ -14,7 +14,6 @@ import "./touchQueueHold.css";
 const COMPOSER_TOOLBAR_TEXT = {
   addAttachment: "Add attachment",
   attachments: "Attachment options",
-  expand: "Expand composer",
   openAttachments: "Open attachment menu",
   send: "Send message",
   addToQueue: "Add to queue",
@@ -30,7 +29,6 @@ type ComposerToolbarProps = {
   contextUsage?: ContextUsage | null;
   disabled: boolean;
   models: ModelSummary[];
-  onExpandComposer?: () => void;
   onSettingsChange: (settings: ComposerSettingsChange) => void;
   onStopTurn: () => void;
   selectedThreadPresent: boolean;
@@ -51,7 +49,6 @@ export const ComposerToolbar = memo(function ComposerToolbar({
   contextUsage,
   disabled,
   models,
-  onExpandComposer,
   onSettingsChange,
   onStopTurn,
   selectedThreadPresent,
@@ -130,16 +127,6 @@ export const ComposerToolbar = memo(function ComposerToolbar({
         />
         {goalControls && (goalControls.compact || (goalControls.error && !goalControls.goal)) ? <GoalButton controls={goalControls} /> : null}
       </Group>
-      {onExpandComposer ? (
-        <AdaptiveIconButton
-          className="kodex-composer-secondary-action kodex-composer-expand-action"
-          disabled={disabled}
-          label={COMPOSER_TOOLBAR_TEXT.expand}
-          onClick={onExpandComposer}
-        >
-          <Maximize2 />
-        </AdaptiveIconButton>
-      ) : null}
       {isSubmitting ? (
         <AdaptiveIconButton
           className="kodex-composer-action"

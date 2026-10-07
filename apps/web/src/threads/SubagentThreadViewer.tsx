@@ -7,6 +7,7 @@ import type { MarkdownPreviewRequest } from "../files/types";
 import type { ImageLightboxImage } from "../images/types";
 import { TimelineView } from "../timeline/TimelineView";
 import { useReadonlyThreadTimeline } from "../timeline/useReadonlyThreadTimeline";
+import { PaneLayout } from "../shared/PaneLayout";
 import { errorMessageFrom } from "../shared/values";
 
 const EMPTY_APPROVALS: Approval[] = [];
@@ -61,7 +62,7 @@ export function SubagentThreadViewer({
   }));
 
   return (
-    <aside aria-label="Subagent thread viewer" className="kodex-subagent-viewer">
+    <PaneLayout component="aside" aria-label="Subagent thread viewer" className="kodex-subagent-viewer">
       <Stack className="kodex-subagent-viewer-inner" gap="sm">
         {error ? (
           <Alert color="red" title="Subagents could not be loaded">
@@ -81,9 +82,11 @@ export function SubagentThreadViewer({
             {statusLabel(selectedSubagent.status)}
           </Badge>
         </Group>
+        {/* Keep the portal out of document overflow while measuring mobile pane fit. */}
         <Select
             label="Subagent"
             className="kodex-subagent-selector"
+            comboboxProps={{ floatingStrategy: "fixed" }}
             data={selectorData}
             onChange={(id) => { if (id) onSelectSubagent(id); }}
             allowDeselect={false}
@@ -126,7 +129,7 @@ export function SubagentThreadViewer({
         </>}
         {hasMore ? <Button variant="subtle" size="compact-sm" onClick={onLoadMore} loading={loadingMore}>Load more subagents</Button> : null}
       </Stack>
-    </aside>
+    </PaneLayout>
   );
 }
 

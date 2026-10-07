@@ -1,7 +1,7 @@
 import { Box, Group, Menu, Textarea } from "@mantine/core";
 import { ChevronDown, Folder, MessageSquare } from "lucide-react";
 import { useId } from "react";
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from "react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject, PointerEventHandler } from "react";
 
 import type { SkillMetadata } from "../api/client";
 import { AttachmentTray } from "./AttachmentTray";
@@ -30,7 +30,7 @@ type InlineComposerPanelProps = ComposerPanelProps & {
   queuePanel?: ReactNode;
   queueOnSubmit?: boolean;
   canSubmitComposer: boolean;
-  density?: "desktop" | "mobile";
+  density?: "regular" | "compact";
   expanded?: { header: ReactNode; style: CSSProperties };
   draftState: ComposerDraftState;
   filteredSkills: SkillMetadata[];
@@ -40,8 +40,7 @@ type InlineComposerPanelProps = ComposerPanelProps & {
   isComposerControlsDisabled: boolean;
   isComposerDisabled: boolean;
   isEntryPending: boolean;
-  onExpandComposer?: () => void;
-  onFocusComposer?: () => void;
+  onEditablePointerDown?: PointerEventHandler<HTMLTextAreaElement>;
   renderSkillSuggestions?: () => ReactNode;
   selectSkill: (skillIndex?: number) => void;
   selectSlashCommand: (commandIndex?: number) => void;
@@ -62,7 +61,7 @@ export function InlineComposerPanel({
   composerSettingsError,
   contextUsage,
   currentProjectName,
-  density = "desktop",
+  density = "regular",
   expanded,
   draftProjectSelector,
   draftState,
@@ -86,8 +85,7 @@ export function InlineComposerPanel({
   onComposerKeyDown,
   onComposerPaste,
   onComposerSettingsChange,
-  onExpandComposer,
-  onFocusComposer,
+  onEditablePointerDown,
   onImageOpen,
   onRemovePendingAttachment,
   onStopTurn,
@@ -188,14 +186,14 @@ export function InlineComposerPanel({
         />
         {pendingAttachments.length > 0 && !isComposerBusy ? (
           <AttachmentTray
-            compact={Boolean(expanded)}
+            compact={density === "compact" || Boolean(expanded)}
             attachments={pendingAttachments}
             onImageOpen={onImageOpen}
             onRemove={onRemovePendingAttachment}
           />
         ) : null}
         <ComposerAnnotations draftState={draftState} disabled={isComposerControlsDisabled}
-          collapseByDefault={density === "mobile"} onFocus={onFocusComposer} onKeyDown={onComposerKeyDown} />
+          collapseByDefault={density === "compact"} onPointerDown={onEditablePointerDown} onKeyDown={onComposerKeyDown} />
         <Textarea
           ref={textareaRef}
           aria-label="Message composer"
@@ -211,11 +209,7 @@ export function InlineComposerPanel({
             }
           }}
           onClick={(event) => draftState.updateComposerText(event.currentTarget.value, event.currentTarget.selectionStart)}
-          onFocus={() => {
-            if (!isComposerDisabled) {
-              onFocusComposer?.();
-            }
-          }}
+          onPointerDown={isComposerDisabled ? undefined : onEditablePointerDown}
           onKeyUp={(event) => {
             if (shouldSyncComposerCursorOnKeyUp(event.key)) {
               draftState.updateComposerText(event.currentTarget.value, event.currentTarget.selectionStart);
@@ -241,7 +235,6 @@ export function InlineComposerPanel({
             contextUsage={contextUsage}
             disabled={isComposerControlsDisabled}
             models={models}
-            onExpandComposer={onExpandComposer}
             onSettingsChange={onComposerSettingsChange}
             onStopTurn={onStopTurn}
             selectedThreadPresent={selectedThreadPresent}

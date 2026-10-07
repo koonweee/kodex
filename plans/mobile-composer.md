@@ -2,6 +2,8 @@
 
 ## Status
 
+Historical implementation record. Responsive classification and activation guidance in this completed plan is superseded by the [responsive UI contract](responsive-ui-contract.md). That contract separates pane fit, workspace fit, input availability and actual touch opening; the results below describe the earlier implementation.
+
 Complete. The composer now uses shared draft, skill, attachment, submit, stop, and settings logic. Mobile non-fullscreen composition reuses the shared inline composer structure with mobile density styling and the same toolbar and underbar as desktop. Fullscreen opens when its textarea receives focus. Expansion keeps the same textarea mounted and focused, changing only its layout, with keyboard-aware sizing and a mobile skill command sheet.
 
 Implemented code:

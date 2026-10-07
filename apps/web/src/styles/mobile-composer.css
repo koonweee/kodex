@@ -1,36 +1,38 @@
-.kodex-composer-shell[data-inline-density="mobile"] .kodex-composer {
+.kodex-composer-shell[data-inline-density="compact"] .kodex-composer {
   border-radius: var(--kodex-radius-composer);
   padding: 10px 10px 8px;
 }
 
-.kodex-composer-shell[data-inline-density="mobile"] .kodex-composer-toolbar,
+.kodex-composer-shell[data-inline-density="compact"] .kodex-composer-toolbar,
 .kodex-mobile-composer-expanded .kodex-composer-toolbar {
   flex-wrap: nowrap;
 }
 
-.kodex-composer-shell[data-inline-density="mobile"] .kodex-composer-toolbar-left,
+.kodex-composer-shell[data-inline-density="compact"] .kodex-composer-toolbar-left,
 .kodex-mobile-composer-expanded .kodex-composer-toolbar-left {
   min-width: 0;
 }
 
-.kodex-composer-shell[data-inline-density="mobile"] .kodex-composer-footer-controls,
+.kodex-composer-shell[data-inline-density="compact"] .kodex-composer-footer-controls,
 .kodex-mobile-composer-expanded .kodex-composer-footer-controls {
   min-width: 0;
 }
 
-.kodex-composer-shell[data-inline-density="mobile"] .kodex-composer-control,
+.kodex-composer-shell[data-inline-density="compact"] .kodex-composer-control,
 .kodex-mobile-composer-expanded .kodex-composer-control {
   max-width: 132px;
 }
 
-.kodex-composer-shell[data-inline-density="mobile"] .kodex-composer-textarea textarea {
-  min-height: 44px;
-  max-height: min(32dvh, 220px);
-  font-size: 16px;
-}
+/* Editable size and safe areas follow touch capability, independently of density. */
+@media (pointer: coarse), (any-pointer: coarse) {
+  .kodex-composer-textarea textarea {
+    min-height: 44px;
+    font-size: 16px;
+  }
 
-.kodex-thread-pane-existing > .kodex-composer-shell[data-inline-density="mobile"]:not(.kodex-mobile-composer-expanded) {
-  margin-bottom: calc(var(--kodex-pane-edge-space) + 4px + env(safe-area-inset-bottom));
+  .kodex-thread-pane-existing > .kodex-composer-shell:not(.kodex-mobile-composer-expanded) {
+    margin-bottom: calc(var(--kodex-pane-edge-space) + 4px + env(safe-area-inset-bottom));
+  }
 }
 
 .kodex-mobile-composer-keyboard-mask {
@@ -41,7 +43,7 @@
   pointer-events: none;
 }
 
-.kodex-composer-shell[data-inline-density="mobile"].kodex-mobile-composer-expanded {
+.kodex-composer-shell.kodex-mobile-composer-expanded {
   position: fixed;
   top: var(--kodex-mobile-visual-viewport-offset-top, 0px);
   right: 0;
@@ -73,7 +75,7 @@
   text-align: center;
 }
 
-.kodex-composer-shell[data-inline-density="mobile"] .kodex-mobile-composer-expanded-body {
+.kodex-mobile-composer-expanded-body {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -106,7 +108,7 @@
   min-height: 0;
 }
 
-.kodex-composer-shell[data-inline-density="mobile"] .kodex-mobile-composer-textarea textarea {
+.kodex-mobile-composer-textarea textarea {
   /* Constrain autosize without replacing the focused textarea. */
   min-height: 100%;
   overscroll-behavior: contain;
@@ -132,7 +134,7 @@
   -webkit-text-fill-color: var(--input-color);
 }
 
-.kodex-composer-shell[data-inline-density="mobile"] .kodex-attachment-tray,
+.kodex-composer-shell[data-inline-density="compact"] .kodex-attachment-tray,
 .kodex-mobile-composer-expanded .kodex-attachment-tray[data-compact="true"] {
   flex-wrap: nowrap;
   gap: 6px;
@@ -143,7 +145,7 @@
   -webkit-overflow-scrolling: touch;
 }
 
-.kodex-composer-shell[data-inline-density="mobile"] .kodex-attachment-thumb,
+.kodex-composer-shell[data-inline-density="compact"] .kodex-attachment-thumb,
 .kodex-mobile-composer-expanded .kodex-attachment-tray[data-compact="true"] .kodex-attachment-thumb {
   flex: 0 0 auto;
   width: 52px;

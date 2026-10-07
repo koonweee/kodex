@@ -3,6 +3,10 @@ import { AlertCircle, ArrowLeft, Check, ChevronRight, Gauge, X } from "lucide-re
 import type { CSSProperties } from "react";
 import { useLayoutEffect, useRef, useState } from "react";
 
+import { useCompactDialog } from "./shared/layoutBreakpoints";
+import { useInputCapabilities } from "./shared/inputCapabilities";
+import { composerSettingsPresentation } from "./composer/presentationPolicy";
+
 import type { ModelSummary } from "./api/client";
 import { AdaptiveIconButton } from "./ui/AdaptiveIconButton";
 import { CheckboxMenuItem } from "./ui/CheckboxMenuItem";
@@ -39,6 +43,9 @@ export function ComposerFooterControls({
   settings,
   onSettingsChange,
 }: ComposerFooterControlsProps) {
+  const compactDialog = useCompactDialog();
+  const { hasAnyCoarsePointer } = useInputCapabilities();
+  const menuPresentation = composerSettingsPresentation(compactDialog, hasAnyCoarsePointer);
   const defaultModel = models.find((model) => model.isDefault) ?? models[0] ?? null;
   const selectedModel = settings?.model ? models.find((model) => model.id === settings.model) ?? null : defaultModel;
   const selectedModelLabel = selectedModel ? modelFullLabel(selectedModel) : settings?.model ?? "Model";
@@ -132,6 +139,7 @@ export function ComposerFooterControls({
             aria-label={submenu === "model" ? "Model" : submenu === "reasoning" ? "Reasoning" : "Model and speed controls"}
             aria-labelledby=""
             className="kodex-composer-menu kodex-run-settings-menu"
+            data-presentation={menuPresentation}
             ref={dropdownRef}
             onKeyDown={(event) => {
               if (submenu && event.key === "ArrowLeft") {
@@ -141,7 +149,7 @@ export function ComposerFooterControls({
               }
             }}
           >
-            <MobileMenuHeader title={submenu === "model" ? "Model" : submenu === "reasoning" ? "Reasoning" : "Run settings"} onClose={() => changeMenuOpened(false)} />
+            <SettingsMenuHeader title={submenu === "model" ? "Model" : submenu === "reasoning" ? "Reasoning" : "Run settings"} onClose={() => changeMenuOpened(false)} />
             {submenu ? (
               <>
                 <Menu.Item closeMenuOnClick={false} leftSection={<ArrowLeft size={14} />} onClick={goBack}>Back</Menu.Item>
@@ -230,7 +238,7 @@ export function ComposerFooterControls({
   );
 }
 
-function MobileMenuHeader({ onClose, title }: { onClose: () => void; title: string }) {
+function SettingsMenuHeader({ onClose, title }: { onClose: () => void; title: string }) {
   return (
     <Group className="kodex-run-settings-header" justify="space-between" wrap="nowrap">
       <Text fw={700} size="sm">

@@ -2,11 +2,16 @@ import "dockview/dist/styles/dockview.css";
 import "../styles/workspace.css";
 
 import { Alert, Center, Loader, Stack } from "@mantine/core";
+import { useRef } from "react";
+import type { DockviewApi } from "dockview";
+import { WorkspaceSinglePaneHeader } from "./WorkspaceSinglePaneHeader";
+import { focusWorkspaceDockPanel } from "./focusWorkspaceDockPanel";
 
 import { WorkspaceDock } from "./WorkspaceDock";
 import { useWorkspace } from "./WorkspaceProvider";
 
-export function WorkspaceShell() {
+export function WorkspaceShell({ singlePane = false }: { singlePane?: boolean }) {
+  const dockApi = useRef<DockviewApi | null>(null);
   const {
     clearPanePlacementHints,
     closePane,
@@ -38,8 +43,20 @@ export function WorkspaceShell() {
   }
 
   return (
-    <Stack className="kodex-workspace-shell" gap={0}>
+    <Stack className="kodex-workspace-shell" data-single-pane={singlePane ? "true" : undefined} gap={0}>
+      {singlePane ? <WorkspaceSinglePaneHeader onClosePane={(paneId, nextActivePaneId) => {
+        const api = dockApi.current;
+        const panel = api?.getPanel(paneId);
+        if (!api || !panel) {
+          closePane(paneId, null, { nextActivePaneId });
+          return;
+        }
+        if (nextActivePaneId) focusWorkspaceDockPanel(api.getPanel(nextActivePaneId));
+        api.removePanel(panel);
+      }} /> : null}
       <WorkspaceDock
+        singlePane={singlePane}
+        onApiReady={api => { dockApi.current = api; }}
         onActivePaneChange={focusPane}
         onLayoutChange={persistLayout}
         onPanePlacementHintsConsumed={clearPanePlacementHints}

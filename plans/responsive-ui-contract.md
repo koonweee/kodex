@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Scoping and product decisions are complete; implementation has not started. This plan authorizes no deployment. Created 2026-10-08.
+Implemented and validated. Full frontend/backend deployment explicitly requested 2026-10-08 and pending. Created 2026-10-08.
 
 ## Objective
 
@@ -15,7 +15,7 @@ Retain the existing native/gateway ownership of conversation, settings, queue an
 1. Automatic fullscreen composer expansion requires a **narrow browser window and a touch interaction that opens the composer**. Mouse or keyboard focus stays inline, including on a touch-capable computer. A narrow pane inside a wide browser does not qualify by itself.
 2. Compact panes reuse the **current mobile treatment** for composer controls, attachments and annotations. Do not invent a new toolbar redesign or replace it with an all-controls-wrapped layout. Separate its layout rules from touch ergonomics.
 3. **Keyboard-submit behavior remains unchanged.** Hybrid keyboard shortcuts are a separate follow-up, not an implicit consequence of classification cleanup. In particular, do not change Enter, Shift+Enter, Meta+Enter, queue submission or IME handling as part of this plan.
-4. Scope includes shared enforcement and cleanup of existing classifications. Implementation follows this proposed plan separately.
+4. Scope includes shared enforcement and cleanup of existing classifications. Implementation and full frontend/backend deployment were subsequently requested.
 
 ## Current Evidence and Gaps
 
@@ -133,7 +133,7 @@ Exit: the inventory has no unexplained classifications; adjacent narrow/wide pan
 - Extend existing domain/component and Playwright suites; prefer the existing mobile-composer, composer-pane-height, settings-menu, annotation, goal, terminal and workspace fixtures.
 - Complete the matrix below, visual review and independent final review.
 - Update architecture/development guidance and mark historical plan guidance superseded without rewriting completed historical results.
-- Update this plan and plans/index.md only after exit criteria are satisfied. Commit coherent tested chunks; deployment is a separate user request.
+- Update this plan and plans/index.md only after exit criteria are satisfied. Commit coherent tested chunks; the subsequent user request authorizes full deployment after validation.
 
 Exit: all required tests, build/typecheck and frontend trim/architecture guard pass; relevant browser screenshots are reviewed; known physical-device limitations are recorded, not claimed as passed.
 
@@ -164,7 +164,7 @@ Run relevant domain tests, `cd apps/web && npm run build`, and `./tools/trim-fro
 - No new device taxonomy, user-agent detection, animation framework, breakpoint generator or persistent responsive state.
 - No keyboard-shortcut redesign or hardware-keyboard detection.
 - No changes to docking persistence, thread scroll/reading-intent policy, core composer autosize or generated-app internals.
-- No production deployment or service restart under this plan.
+- Full frontend/backend deployment is authorized by the subsequent explicit user request. Use the macOS service updater after validation, and verify its independent operation succeeds.
 - Concurrent work currently touches timeline scrolling, message rendering and reducer behavior. Re-read the latest checkout before implementation, coordinate overlapping files and preserve those changes. Do not absorb unrelated workspace edits into this plan's commits.
 
 ## References
@@ -176,3 +176,23 @@ Run relevant domain tests, `cd apps/web && npm run build`, and `./tools/trim-fro
 - [Contributor rules](../AGENTS.md)
 - [Architecture](../docs/architecture.md)
 - [Development and verification](../docs/development.md)
+
+## Implementation Decisions (2026-10-08)
+
+- Pane density uses a 640px width boundary and short height remains below 600px. The compact treatment fits a 360px desktop column beside a regular pane; both retain independent composer density, attachments and inline focus. Workspace layout remains 900px; global compact dialogs retain 700px.
+- Every pane owner exposes `data-pane-width` and `data-pane-height` from one border-box ResizeObserver. React classification changes only across boundaries; hidden zero-size observations retain the previous useful classification. Nested transcript and prompt-editor owners reset their inherited fit variables.
+- Browser breakpoint continuity requires keeping the Dockview render tree mounted. Narrow layout uses native group maximization plus the existing pane-manager header. Its temporary maximize marker is not saved as a user layout preference; desktop proportions and explicit maximize choices are preserved.
+- Remaining viewport rules are intentional for global preferences, the workspace sidebar/single-panel chrome, automation tables/dialogs, and generated-app host chrome in the single-panel workspace. Generated-app interiors are unchanged. Terminal geometry follows its allocated pane; touch accessory controls remain capability-owned.
+- Keyboard submission remains the existing `isTouchInputDevice` policy, with a source comment documenting the separate future hybrid-shortcut decision. Fullscreen activation uses the actual editable-field pointer event instead.
+- The TypeScript-based architecture check is part of `npm run trim`. It rejects feature-owned responsive media/input detection and viewport-fit CSS in migrated pane-only styles; appearance queries and placement geometry remain valid.
+- Browser validation uses bundled Playwright Chromium because agent-browser is unavailable in this environment. Physical iOS keyboard and hardware hybrid behavior remain manual verification limits.
+
+## Validation Results
+
+- Frontend: 159 unit/component suites, 1,146 tests passing and one pre-existing skipped test. The stable full run passed 1,145 tests; the remaining immediate composer lookup was changed to await its asynchronous mount, and all 19 tests in that suite passed on rerun.
+- Browser: all 41 relevant Chromium cases pass across the serial matrix and focused reruns. This includes narrow fine pointer/touch/hybrid activation, wide-touch inline behavior, compact/regular siblings, native split-size restoration, same textarea/focus/selection through width changes, two-to-five rows and four-pane heights, question/image fit, subagent return paths, portaled menus, annotations/queued quotes, terminal presentation, tab geometry and history/bottom scroll continuity. Existing two-tab snapshot/SSE convergence checks remain intact.
+- Production frontend build, typecheck, unused-code/dependency checks and all 11 architecture-check fixtures pass. Backend test suites pass (650 library tests plus four integration tests; existing ignored suites remain ignored), and backend trim passes.
+- Browser screenshots were reviewed for compact composer versus regular sibling, stacked question choices, touch layouts and subagent fit. Independent source/fixture reviews completed with all findings resolved.
+- Several prior native-input/acknowledgment test fixtures were stale: updated exact Send payloads, canonical client correlation, asynchronous mount waits and queued-quote editor inspection without changing application semantics. Tab tests explicitly establish a single tab group because workspace placement can legitimately allocate two columns.
+- Tests using a stale Vite server or during source HMR/CPU contention were discarded. Final evidence uses this checkout and bundled Chromium with frozen source. The terminal harness's transient missing Vite prebundle passed on a fresh isolated server.
+- Physical iOS keyboard and real hardware hybrid interaction are not claimed as validated by Chromium emulation.

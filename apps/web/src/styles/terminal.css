@@ -2,19 +2,18 @@
   --kodex-terminal-edge-space: 10px;
   --kodex-terminal-bg: color-mix(in srgb, var(--kodex-bg-app) 96%, black);
 
-  position: fixed;
-  inset-inline: 12px;
-  bottom: max(12px, env(safe-area-inset-bottom));
-  z-index: 260;
+  /* Terminals live in allocated workspace panes. */
+  position: relative;
+  width: 100%;
   display: flex;
   flex-direction: column;
-  height: min(48dvh, 460px);
-  min-height: 280px;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--kodex-border-subtle) 88%, transparent);
-  border-radius: var(--kodex-radius-md);
+  border: 0;
+  border-radius: 0;
   background: var(--kodex-terminal-bg);
-  box-shadow: var(--kodex-shadow-strong);
+  box-shadow: none;
 }
 
 .kodex-terminal-header {
@@ -43,7 +42,7 @@
 }
 
 .kodex-terminal-cwd {
-  max-width: min(72vw, 980px);
+  max-width: 100%;
   overflow: hidden;
   color: var(--kodex-text-muted);
   font-family: var(--kodex-monospace-font);
@@ -149,27 +148,6 @@
   .kodex-terminal-accessory-key:hover {
     background: var(--kodex-bg-button-hover);
     color: var(--kodex-text-primary);
-  }
-}
-
-@media (max-width: 900px) {
-  .kodex-terminal-host {
-    inset-inline: 0;
-    bottom: 0;
-    height: min(85dvh, 760px);
-    min-height: 320px;
-    border-right: 0;
-    border-bottom: 0;
-    border-left: 0;
-    border-radius: var(--kodex-radius-md) var(--kodex-radius-md) 0 0;
-  }
-
-  .kodex-terminal-cwd {
-    max-width: 58vw;
-  }
-
-  .kodex-terminal-viewport .xterm {
-    font-size: 16px;
   }
 }
 

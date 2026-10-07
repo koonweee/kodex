@@ -119,6 +119,12 @@ This test issues a real code through the Account dialog and immediately cancels 
 
 The native fixtures also verify approval replay/resolution, projects/settings/pins/config, queue admission and promotion, history, read state, installed Control, scoped hosted widgets and MCP OAuth. OAuth and hosted-widget proofs use local synthetic services; they establish native callback/token/resource compatibility rather than real provider consent. Browser E2E covers two-tab convergence, conflicts, missed notifications, delayed stale snapshots and real SSE reconnects. Responsive flows run at desktop, narrow fine-pointer and narrow touch sizes. These fixtures do not establish completed interactive Codex account sign-in, OS PWA installation, mobile Safari behavior, target-device Web Push delivery, operator VPN/TLS setup or release readiness.
 
+## Responsive UI ownership
+
+Responsive layout follows the available surface: the shared workspace breakpoint controls navigation, while each `PaneLayout` boundary provides independent pane-width and pane-height classifications through `data-pane-width`, `data-pane-height` and `usePaneLayout()`. Compact panes reuse the compact composer and accessory treatment on both mouse and touch devices. Shared input capabilities separately control ergonomics and hover alternatives; primary fine hover and available touch/coarse input can coexist. Automatic composer expansion requires actual touch opening in a narrow browser window. Mouse, keyboard focus and narrow columns inside a wide workspace stay inline. Keyboard-submit behavior retains its existing policy.
+
+Keep pane styling scoped to its intended boundary and pass policies explicitly to pane-owned portals. Browser geometry remains appropriate for placement, and global dialogs may use viewport-fit rules. `npm run trim:responsive` runs the architecture checker and its fixture tests; the normal frontend trim command includes it. The checker rejects feature-local responsive detection and viewport-fit rules in migrated pane styles, while browser acceptance tests establish that each surface uses the correct axis. See the [responsive UI contract](../plans/responsive-ui-contract.md) and [contributor guidance](../AGENTS.md#frontend-responsive-styling) for the required combination and editing-continuity checks.
+
 ## Production-style local serving
 
 Build the web app and have the gateway serve the static assets:

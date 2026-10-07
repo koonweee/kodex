@@ -11,8 +11,9 @@ import {
   type ReactContextMenuItemConfig,
   type IDockviewPanelProps,
 } from "dockview";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 
+import { applyResponsiveWorkspaceMode, serializeWorkspaceDock, type ResponsiveDockviewSession } from "./responsiveDockview";
 import { panelPlacementOptions } from "./autoPanelPlacement";
 import { focusWorkspaceDockPanel } from "./focusWorkspaceDockPanel";
 import type { WorkspaceModel, WorkspacePane } from "./paneTypes";
@@ -28,6 +29,8 @@ type DockviewPaneParams = {
 };
 
 type WorkspaceDockProps = {
+  singlePane?: boolean;
+  onApiReady?: (api: DockviewApi) => void;
   onActivePaneChange: (paneId: string | null) => void;
   onLayoutChange: (layout: unknown, activePaneId: string | null) => void;
   onPaneClose: (paneId: string, layout: unknown) => void;
@@ -52,6 +55,8 @@ export const kodexDockviewTheme = {
 } satisfies DockviewTheme;
 
 export function WorkspaceDock({
+  singlePane = false,
+  onApiReady,
   onActivePaneChange,
   onLayoutChange,
   onPaneClose,
@@ -63,6 +68,9 @@ export function WorkspaceDock({
   const { openDraftThreadPane, paneThreadContextsById, threadProjectIdsById } = useWorkspace();
   const apiRef = useRef<DockviewApi | null>(null);
   const suppressEventsRef = useRef(false);
+  const singlePaneRef = useRef(singlePane);
+  singlePaneRef.current = singlePane;
+  const responsiveSession = useRef<ResponsiveDockviewSession>({ active: false, previousMaximizedPanelId: null });
   const debounceRef = useRef<number | null>(null);
   const disposablesRef = useRef<Array<{ dispose: () => void }>>([]);
 
@@ -75,7 +83,7 @@ export function WorkspaceDock({
 
   const scheduleLayoutChange = useCallback(
     (api: DockviewApi) => {
-      if (suppressEventsRef.current) {
+      if (suppressEventsRef.current || singlePaneRef.current) {
         return;
       }
       const livePanelIds = new Set(api.panels.map((panel) => panel.id));
@@ -86,7 +94,7 @@ export function WorkspaceDock({
         window.clearTimeout(debounceRef.current);
       }
       debounceRef.current = window.setTimeout(() => {
-        onLayoutChange(api.toJSON(), api.activePanel?.id ?? null);
+        onLayoutChange(serializeWorkspaceDock(api, responsiveSession.current), api.activePanel?.id ?? null);
       }, 350);
     },
     [onLayoutChange, workspace.panes],
@@ -101,14 +109,16 @@ export function WorkspaceDock({
   const handleReady = useCallback(
     (event: DockviewReadyEvent) => {
       apiRef.current = event.api;
+      onApiReady?.(event.api);
       syncWorkspaceIntoDockview(
         event.api,
         workspace,
         suppressEventsRef,
-        onLayoutChange,
+        (_layout, activePaneId) => onLayoutChange(serializeWorkspaceDock(event.api, responsiveSession.current), activePaneId),
         panePlacementHintsById,
         onPanePlacementHintsConsumed,
       );
+      applyResponsiveWorkspaceMode(event.api, singlePaneRef.current, responsiveSession.current);
       reportVisiblePaneIds(event.api);
       disposablesRef.current = [
         event.api.onDidLayoutChange(() => {
@@ -116,6 +126,7 @@ export function WorkspaceDock({
           reportVisiblePaneIds(event.api);
         }),
         event.api.onDidActivePanelChange((panel) => {
+          applyResponsiveWorkspaceMode(event.api, singlePaneRef.current, responsiveSession.current);
           if (!suppressEventsRef.current) {
             onActivePaneChange(panel?.id ?? null);
           }
@@ -123,7 +134,7 @@ export function WorkspaceDock({
         }),
         event.api.onDidRemovePanel((panel) => {
           if (!suppressEventsRef.current) {
-            onPaneClose(panel.id, event.api.toJSON());
+            onPaneClose(panel.id, serializeWorkspaceDock(event.api, responsiveSession.current));
           }
           reportVisiblePaneIds(event.api);
         }),
@@ -131,10 +142,12 @@ export function WorkspaceDock({
         event.api.onDidAddGroup(() => reportVisiblePaneIds(event.api)),
         event.api.onDidRemoveGroup(() => reportVisiblePaneIds(event.api)),
         event.api.onDidMovePanel(() => reportVisiblePaneIds(event.api)),
+        event.api.onDidMaximizedGroupChange(() => reportVisiblePaneIds(event.api)),
       ];
     },
     [
       onActivePaneChange,
+      onApiReady,
       onPaneClose,
       onPanePlacementHintsConsumed,
       panePlacementHintsById,
@@ -167,16 +180,25 @@ export function WorkspaceDock({
         api,
         workspace,
         suppressEventsRef,
-        onLayoutChange,
+        (_layout, activePaneId) => onLayoutChange(serializeWorkspaceDock(api, responsiveSession.current), activePaneId),
         panePlacementHintsById,
         onPanePlacementHintsConsumed,
       );
+      applyResponsiveWorkspaceMode(api, singlePaneRef.current, responsiveSession.current);
       reportVisiblePaneIds(api);
     }
   }, [onLayoutChange, onPanePlacementHintsConsumed, panePlacementHintsById, reportVisiblePaneIds, workspace]);
 
+  useLayoutEffect(() => {
+    const api = apiRef.current;
+    if (!api) return;
+    applyResponsiveWorkspaceMode(api, singlePane, responsiveSession.current);
+    reportVisiblePaneIds(api);
+  }, [singlePane, reportVisiblePaneIds]);
+
   useEffect(
     () => () => {
+      apiRef.current = null;
       if (debounceRef.current) {
         window.clearTimeout(debounceRef.current);
       }
@@ -194,11 +216,13 @@ export function WorkspaceDock({
         components={components}
         defaultTabComponent={WorkspaceDefaultTab}
         disableTabsOverflowList
+        disableDnd={singlePane}
+        locked={singlePane}
         disableFloatingGroups
         getTabContextMenuItems={getTabContextMenuItems}
-        leftHeaderActionsComponent={WorkspaceTabOverflowActions}
+        leftHeaderActionsComponent={singlePane ? undefined : WorkspaceTabOverflowActions}
         onReady={handleReady}
-        rightHeaderActionsComponent={WorkspaceRightHeaderActions}
+        rightHeaderActionsComponent={singlePane ? undefined : WorkspaceRightHeaderActions}
         theme={kodexDockviewTheme}
       />
     </div>
@@ -248,6 +272,7 @@ function projectIdForWorkspacePane(pane: WorkspacePane, threadProjectIdsById: Re
 export function visibleDockviewPanelIds(api: Pick<DockviewApi, "groups" | "activePanel">): string[] {
   const panelIds = new Set<string>();
   for (const group of api.groups) {
+    if (group.api?.isVisible === false) continue;
     const panelId = group.activePanel?.id;
     if (panelId) {
       panelIds.add(panelId);

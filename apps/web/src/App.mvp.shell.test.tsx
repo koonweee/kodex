@@ -1303,7 +1303,10 @@ describe("MVP shell flows", () => {
 
   it("converges selected and sidebar thread titles from another client's name event", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
-    mockGateway(baseRoutes());
+    let authoritativeThread = { ...thread };
+    mockGateway(baseRoutes({
+      "GET /v1/threads": () => ({ threads: [authoritativeThread], nextCursor: null, backwardsCursor: null, rawPayload: {} }),
+    }));
 
     render(<App />);
 
@@ -1313,6 +1316,7 @@ describe("MVP shell flows", () => {
     const selectedThreadStream = FakeEventSource.instances.find((instance) => streamIncludesThread(instance, "thread-1"));
     expect(selectedThreadStream).toBeDefined();
 
+    authoritativeThread = { ...thread, name: "Renamed in another tab" };
     act(() => {
       selectedThreadStream?.emit({
         id: "event-thread-name-sidebar",
@@ -1329,7 +1333,7 @@ describe("MVP shell flows", () => {
     });
 
     expect(await screen.findByRole("heading", { name: /^renamed in another tab$/i })).toBeInTheDocument();
-    expect(within(kodexGroup).getByRole("button", { name: /^renamed in another tab$/i })).toBeInTheDocument();
+    expect(await within(kodexGroup).findByRole("button", { name: /^renamed in another tab$/i })).toBeInTheDocument();
   });
 
   it("archives a thread from the thread selector hover action", async () => {
@@ -1485,7 +1489,7 @@ describe("MVP shell flows", () => {
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "threads");
   });
 
-  it("uses the single-thread main pane without Dockview chrome on narrow viewports", async () => {
+  it("uses single-pane navigation on narrow viewports", async () => {
     stubNarrowViewport();
     mockGateway(
       baseRoutes({
@@ -1505,9 +1509,7 @@ describe("MVP shell flows", () => {
 
     expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     const main = screen.getByRole("main", { name: /thread/i });
-    expect(main.querySelector(".kodex-workspace-dock")).not.toBeInTheDocument();
-    expect(main.querySelector(".dockview")).not.toBeInTheDocument();
-    expect(within(main).getAllByLabelText(/message composer/i)).toHaveLength(1);
+    expect(within(main).getAllByRole("textbox", { name: /message composer/i })).toHaveLength(1);
 
     await userEvent.click(within(main).getByRole("button", { name: /show sidebar/i }));
     await userEvent.click(within(screen.getByRole("navigation", { name: /workspace/i })).getByRole("button", { name: /^second thread$/i }));
@@ -1515,8 +1517,6 @@ describe("MVP shell flows", () => {
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
     expect(await screen.findByRole("heading", { name: /^second thread$/i })).toBeInTheDocument();
     expect(await screen.findByText(/second thread snapshot/i)).toBeInTheDocument();
-    expect(main.querySelector(".kodex-workspace-dock")).not.toBeInTheDocument();
-    expect(main.querySelector(".dockview")).not.toBeInTheDocument();
   });
 
   it("uses the active workspace thread pane as the narrow viewport display pane", async () => {
@@ -1562,8 +1562,6 @@ describe("MVP shell flows", () => {
     const main = screen.getByRole("main", { name: /thread/i });
     expect(await within(main).findByRole("heading", { name: /^second thread$/i })).toBeInTheDocument();
     expect(await within(main).findByText(/active pane snapshot/i)).toBeInTheDocument();
-    expect(main.querySelector(".kodex-workspace-dock")).not.toBeInTheDocument();
-    expect(main.querySelector(".dockview")).not.toBeInTheDocument();
   });
 
   it("renders when an older gateway capability response omits terminal support", async () => {
@@ -1624,7 +1622,7 @@ describe("MVP shell flows", () => {
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
   });
 
-  it("focuses an existing terminal pane and closes the narrow viewport sidebar", async () => {
+  it("opens the active chat terminal and closes the narrow viewport sidebar", async () => {
     stubNarrowViewport();
     mockGateway(baseRoutes());
     setInitialWorkspacePaneState({
@@ -1659,8 +1657,9 @@ describe("MVP shell flows", () => {
     await userEvent.click(screen.getByRole("button", { name: "Terminal" }));
 
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
-    expect(screen.getByRole("region", { name: /terminal pane/i })).toBeInTheDocument();
-    expect(document.querySelectorAll(".kodex-terminal-host")).toHaveLength(1);
+    const activeGroup = document.querySelector<HTMLElement>(".dv-active-group");
+    expect(activeGroup).not.toBeNull();
+    expect(within(activeGroup!).getByRole("region", { name: /terminal pane/i })).toBeInTheDocument();
   });
 
   it("creates a chat from the narrow viewport Chats scope create action", async () => {

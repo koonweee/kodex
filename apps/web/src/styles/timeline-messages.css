@@ -1,3 +1,13 @@
+/* Reset at each owner so nested viewers use their own available space. */
+[data-pane-width] {
+  --kodex-message-image-min: 72px;
+  --kodex-message-image-width: 96px;
+}
+[data-pane-width="compact"] {
+  --kodex-message-image-min: 64px;
+  --kodex-message-image-width: 72px;
+}
+
 .kodex-assistant-markdown {
   overflow-wrap: anywhere;
   word-break: break-word;
@@ -42,14 +52,14 @@
 
 .kodex-user-image-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(72px, 96px));
+  grid-template-columns: repeat(auto-fit, minmax(var(--kodex-message-image-min, 72px), var(--kodex-message-image-width, 96px)));
   justify-content: end;
   gap: 8px;
   max-width: min(100%, 416px);
 }
 
 .kodex-user-image-grid img {
-  width: 96px;
+  width: var(--kodex-message-image-width, 96px);
   aspect-ratio: 1;
   border: 1px solid var(--kodex-border-strong);
   border-radius: var(--kodex-radius-md);
@@ -161,16 +171,6 @@
   background: currentColor;
   mask: var(--skill-icon-mask) center / contain no-repeat;
   -webkit-mask: var(--skill-icon-mask) center / contain no-repeat;
-}
-
-@media (max-width: 640px) {
-  .kodex-user-image-grid {
-    grid-template-columns: repeat(auto-fit, minmax(64px, 72px));
-  }
-
-  .kodex-user-image-grid img {
-    width: 72px;
-  }
 }
 
 .kodex-assistant-markdown {

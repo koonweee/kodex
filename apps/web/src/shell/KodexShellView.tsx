@@ -1,15 +1,14 @@
 import { AppShell, Button, Group, Stack, Title } from "@mantine/core";
-import { lazy, Suspense, useEffect, useRef, useState, type ComponentProps } from "react";
+import { lazy, Suspense, useEffect, useRef, type ComponentProps } from "react";
 
 import type { AutomationsPane as AutomationsPaneComponent } from "../automations/AutomationsPane";
 import type { PreferencesModalProps } from "../PreferencesModal";
 import type { ProjectPane as ProjectPaneComponent } from "../projects/ProjectPane";
 import { useInputCapabilities } from "../shared/inputCapabilities";
-import { NARROW_WORKSPACE_QUERY } from "../shared/layoutBreakpoints";
+import { readNarrowWorkspace, useNarrowWorkspace } from "../shared/layoutBreakpoints";
 import { useProjectTerminal } from "../projects/useProjectTerminal";
 import { WorkspaceSidebar } from "../threads/WorkspaceSidebar";
 import type { ThreadSummary } from "../api/client";
-import { WorkspaceSinglePaneShell } from "../workspace/WorkspaceSinglePaneShell";
 import { WorkspaceShell } from "../workspace/WorkspaceShell";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
 
@@ -72,7 +71,7 @@ export function KodexShellView({
   workspaceSelectedThreadPaneId,
 }: KodexShellViewProps) {
   const mainLabel = mainPane === "automations" ? "Automations" : mainPane === "project" ? "Project" : "Thread workspace";
-  const isNarrowThreadWorkspace = useNarrowThreadWorkspace();
+  const isNarrowThreadWorkspace = useNarrowWorkspace();
   const useTouchCollapsedSidebarWidth = useInputCapabilities().hasTouchInput;
   const sidebarCollapsed = desktopSidebarCollapsed && !isNarrowThreadWorkspace;
   const collapsedSidebarWidth = useTouchCollapsedSidebarWidth
@@ -118,10 +117,8 @@ export function KodexShellView({
             <Suspense fallback={null}>
               <ProjectPane {...projectPaneProps} />
             </Suspense>
-          ) : useSingleThreadWorkspace ? (
-            <WorkspaceSinglePaneShell />
           ) : (
-            <WorkspaceShell />
+            <WorkspaceShell singlePane={useSingleThreadWorkspace} />
           )}
         </Stack>
       </AppShell.Main>
@@ -134,37 +131,6 @@ export function KodexShellView({
   );
 }
 
-export function useNarrowThreadWorkspace(): boolean {
-  const [matches, setMatches] = useState(() => narrowThreadWorkspaceMatches());
-
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-      return;
-    }
-    const mediaQuery = window.matchMedia(NARROW_WORKSPACE_QUERY);
-    setMatches(mediaQuery.matches);
-
-    const handleChange = (event: MediaQueryListEvent) => {
-      setMatches(event.matches);
-    };
-    mediaQuery.addEventListener?.("change", handleChange);
-    mediaQuery.addListener?.(handleChange);
-    return () => {
-      mediaQuery.removeEventListener?.("change", handleChange);
-      mediaQuery.removeListener?.(handleChange);
-    };
-  }, []);
-
-  return matches;
-}
-
-function narrowThreadWorkspaceMatches(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia(NARROW_WORKSPACE_QUERY).matches
-  );
-}
 
 type WorkspaceSidebarWithPaneActionsProps = ComponentProps<typeof WorkspaceSidebar> & {
   useSingleThreadMode: boolean;
@@ -183,7 +149,7 @@ function WorkspaceSidebarWithPaneActions({
     selectedProjectId: props.selectedProjectId,
     onOpened: () => {
       props.onOpenTerminal?.();
-      if (useSingleThreadMode || narrowThreadWorkspaceMatches()) props.onShowThread?.();
+      if (useSingleThreadMode || readNarrowWorkspace()) props.onShowThread?.();
     },
   });
   const titleLookupPropsRef = useRef(props);
