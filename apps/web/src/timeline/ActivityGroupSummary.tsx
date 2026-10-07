@@ -25,7 +25,7 @@ export function ActivityGroupSummary({ items }: { items: TimelineItem[] }) {
   const suffix = commandCount === 1 ? " command" : " commands";
   const summary = commandCount ? `${prefix}${commandCount}${suffix}` : prefix;
   return (
-    <Text size="xs" c="dimmed" fw={700} className="kodex-activity-group-title" title={summary}>
+    <Text size="xs" c="var(--kodex-text-secondary)" fw={700} className="kodex-activity-group-title" title={summary}>
       {commandCount > 0 ? (
         <>
           <VisuallyHidden>{summary}</VisuallyHidden>

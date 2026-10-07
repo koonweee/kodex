@@ -448,6 +448,12 @@
   border-radius: var(--kodex-radius-round);
 }
 
+/* Inset Send and Stop circles while preserving the shared action hit area. */
+.kodex-composer-action:is([data-action-state="idle"], [data-action-state="active"]) {
+  padding: 1px;
+  background-clip: content-box;
+}
+
 .kodex-composer-control {
   max-width: 176px;
   min-width: 0;
