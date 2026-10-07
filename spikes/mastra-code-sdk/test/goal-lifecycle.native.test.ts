@@ -144,7 +144,7 @@ for (const stop of [false, true]) for (const decision of ['done', 'continue'] as
 
 
 for (const [replaceDuringJudge, configuredJudge] of [[false, true], [true, true], [false, false]] as const) {
-  test(`native goal reminder ${!configuredJudge ? 'pauses when the mounted custom judge has no profile default' : replaceDuringJudge ? 'starts replacement after an old judge' : 'starts an idle goal'}`,  { timeout: 20_000 }, async t => {
+  test(`native goal reminder ${!configuredJudge ? 'resolves its custom judge without a profile default' : replaceDuringJudge ? 'starts replacement after an old judge' : 'starts an idle goal'}`,  { timeout: 20_000 }, async t => {
     const name = `reminder-${replaceDuringJudge}-${configuredJudge}`;
     const originalSettings = await readFile(profile.settingsPath, 'utf8');
     if (!configuredJudge) {
@@ -197,11 +197,12 @@ for (const [replaceDuringJudge, configuredJudge] of [[false, true], [true, true]
     const start = fixture.requests.length;
     await remind();
     if (!configuredJudge) {
+      gate.release.resolve();
       await completed.promise;
       await Promise.all(producers);
       const saved = await agent.getObjective({ threadId: name });
-      assert.equal(saved?.status, 'paused', 'bare custom judge fallback does not inherit the SDK gateway');
-      assert.ok(fixture.requests.slice(start).every(request => request.model !== 'judge'));
+      assert.equal(saved?.status, 'done', 'the mounted scorer inherits the SDK gateway');
+      assert.equal(fixture.requests.slice(start).filter(request => request.model === 'judge').length, 1);
       return;
     }
     await gate.reached.promise;

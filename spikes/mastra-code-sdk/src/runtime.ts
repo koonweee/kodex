@@ -7,6 +7,7 @@ import type { MastraCodeState } from '@mastra/code-sdk/schema';
 import { assertProfileActive, type SpikeProfile } from './profile.js';
 import { createChatGptAffinityProcessor } from './chatgpt-affinity.js';
 import { createChatFastProcessor } from './chat-fast.js';
+import { createHostModelGateways } from './model-gateways.js';
 
 export interface ProjectRuntimeOptions {
   projectPath: string;
@@ -69,7 +70,8 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
     ...(options.extraTools && { extraTools: options.extraTools }),
     ...(options.subagents && { subagents: options.subagents }),
   });
-  const mastra = new Mastra({ ...prepared.mastraArgs, ...(options.schedules && { schedules: options.schedules }) });
+  const gateways = await createHostModelGateways(options.profile.settingsPath, prepared.base.authStorage);
+  const mastra = new Mastra({ ...prepared.mastraArgs, gateways, ...(options.schedules && { schedules: options.schedules }) });
   await prepared.finalize();
   const base = { ...prepared.base, mastra };
   const sessions = new Map<string, { resourceId: string; scope?: string; session: NativeSession }>();
