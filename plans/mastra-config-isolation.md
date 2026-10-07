@@ -43,6 +43,20 @@ Prefer narrow upstream changes: thread `homeDir` through MCP/resource discovery 
 
 Validation: the new discovery test failed before the fix with all three outside-home skills visible and dedicated global skills missing. After the fix, all 38 spike tests and TypeScript checks pass; independent source/implementation review found no material issues.
 
+## Upstream reports and available options (2026-10-07)
+
+GitHub API searches covered `homeDir`, `skipGlobalInstructions`, `getStaticallyLoadedInstructionPaths`, `getResourceIdOverride` and MCP discovery/isolation. Search results cannot prove no narrower report exists.
+
+- [Issue #23241](https://github.com/mastra-ai/mastra/issues/23241) is open and explicitly requests embedding Code SDK without ambient host discovery. It identifies the incompleteness of targeted disable flags.
+- [PR #23991](https://github.com/mastra-ai/mastra/pull/23991) proposes `@mastra/code-sdk/restricted`; it is open and unmerged. It requires explicit host components and omits native auth discovery, goals, subagents and workflows. This is broader than dedicated-profile configuration and would sacrifice accepted Kodex features; do not adopt it merely to close these path gaps.
+- [PR #20633](https://github.com/mastra-ai/mastra/pull/20633), merged August 4, introduced `initialState.skipGlobalInstructions` after host instructions changed factory review output. Kodex already uses this option. Its prompt-loading fix does not close the separate instruction-path bookkeeping read.
+- [Issue #19545](https://github.com/mastra-ai/mastra/issues/19545) reports real-home MCP configuration contaminating tests. Related [PR #19558](https://github.com/mastra-ai/mastra/pull/19558) only isolates HOME in tests and is closed without merging; neither supplies a production discovery override.
+- [PR #24314](https://github.com/mastra-ai/mastra/pull/24314), splitting configuration from app state, is closed **unmerged** according to the current GitHub API. Older indexed pages show it open. It is not a released fix for these discovery gaps.
+
+Release check: npm stable Code SDK **1.11.0** (core **1.75.0**), published October 7, was inspected directly from its package archive without installation. The three omissions remain in release commit [`b10b70fd`](https://github.com/mastra-ai/mastra/tree/b10b70fd775598c52d35b4417a0dc3449aea0723): [MCP global path](https://github.com/mastra-ai/mastra/blob/b10b70fd775598c52d35b4417a0dc3449aea0723/mastracode/sdk/src/mcp/config.ts#L104), [resource override](https://github.com/mastra-ai/mastra/blob/b10b70fd775598c52d35b4417a0dc3449aea0723/mastracode/sdk/src/utils/project.ts#L522), and [instruction bookkeeping caller](https://github.com/mastra-ai/mastra/blob/b10b70fd775598c52d35b4417a0dc3449aea0723/mastracode/sdk/src/index.ts#L1086). Current main `ae230b70` also retains them. Updating from the pinned 1.10.1 alone will not resolve isolation.
+
+Existing knobs remain useful but partial: `homeDir` plus session `initialState.homeDir`, `skipGlobalInstructions`, `disableMcp`, explicit storage/settings, and `MASTRA_APP_DATA_DIR`. `mcpServers` adds/overrides discovered entries; it does not disable discovery. `MASTRA_RESOURCE_ID` skips resource-file discovery but is process-global, so it is not an appropriate per-project fix. No runtime upgrade, upstream issue/comment or PR was published as part of this research.
+
 ## Source evidence
 
 Findings were checked against the installed pinned package, not inferred from option comments. Versioned upstream sources at the package release commit:

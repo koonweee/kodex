@@ -60,6 +60,8 @@ Mastra follow-up sentinel requests reached 98.6% cached input; file tasks reache
 
 - 2026-10-07: configuration check found and fixed native skill discovery using public state `homeDir`; independent source and implementation review clear. Remaining MCP/resource/instruction-path reads documented. No live calls, production changes or user credential reads.
 
+- 2026-10-07: upstream report/config-option research found open issue #23241 and unmerged restricted API PR #23991. The proposed API omits retained native capabilities; current partial controls remain in use. See the configuration audit for links and release status.
+
 ## Validation ledger
 
 Latest completed chunk: 38/38 spike tests, TypeScript check and independent configuration/source/implementation review pass. The skill discovery test failed before the fix and passes after it. Previous affinity milestone: 12 paired benchmark cases / 28 live turns passed; no live benchmark was repeated for this configuration change. No production UI migration is implemented. Long-context behavior, arbitrary plugin concurrency and complete discovery isolation remain unproven. Update this ledger as each milestone progresses.
