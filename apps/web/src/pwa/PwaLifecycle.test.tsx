@@ -72,8 +72,24 @@ describe("PwaLifecycle", () => {
     });
 
     expect(screen.getByRole("status")).toHaveTextContent("Update available");
-    fireEvent.click(screen.getByRole("button", { name: /update/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Update" }));
 
     expect(updateServiceWorker).toHaveBeenCalledTimes(1);
+  });
+
+  it("can defer the update without accepting it until the app is reopened", () => {
+    const updateServiceWorker = vi.fn().mockResolvedValue(undefined);
+    act(() => emitPwaState({ needRefresh: true, updateServiceWorker }));
+    const view = renderPwaLifecycle();
+
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss update notice" }));
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(updateServiceWorker).not.toHaveBeenCalled();
+
+    act(() => emitPwaState({ needRefresh: true, updateServiceWorker }));
+    expect(screen.queryByRole("status")).toBeNull();
+    view.unmount();
+    renderPwaLifecycle();
+    expect(screen.getByRole("status")).toHaveTextContent("Update available");
   });
 });

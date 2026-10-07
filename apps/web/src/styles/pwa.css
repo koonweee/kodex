@@ -19,7 +19,7 @@
 
 .kodex-pwa-lifecycle {
   position: fixed;
-  top: max(12px, env(safe-area-inset-top));
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
   right: max(12px, env(safe-area-inset-right));
   left: max(12px, env(safe-area-inset-left));
   z-index: 1200;
@@ -28,30 +28,36 @@
   pointer-events: none;
 }
 
-.kodex-pwa-lifecycle-alert {
-  width: min(560px, 100%);
+.kodex-pwa-lifecycle-notice {
+  box-sizing: border-box;
+  width: min(360px, 100%);
+  padding: 8px 10px;
   box-shadow: var(--kodex-shadow-floating);
   pointer-events: auto;
 }
 
-.kodex-pwa-lifecycle-copy {
-  min-width: min(100%, 280px);
+.kodex-pwa-lifecycle-icon {
+  flex: 0 0 auto;
+  color: var(--kodex-text-secondary);
 }
 
-@media (pointer: coarse) {
-  .kodex-pwa-lifecycle .mantine-Button-root {
+.kodex-pwa-lifecycle-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+@media (pointer: coarse), (any-pointer: coarse) {
+  .kodex-pwa-lifecycle .mantine-Button-root,
+  .kodex-pwa-lifecycle .mantine-CloseButton-root {
     min-height: 44px;
+    min-width: 44px;
   }
 }
 
 @media (max-width: 48em) {
   .kodex-pwa-lifecycle {
-    top: max(8px, env(safe-area-inset-top));
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
     right: max(8px, env(safe-area-inset-right));
     left: max(8px, env(safe-area-inset-left));
-  }
-
-  .kodex-pwa-lifecycle .mantine-Button-root {
-    min-height: 44px;
   }
 }
