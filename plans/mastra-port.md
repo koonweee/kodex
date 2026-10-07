@@ -13,6 +13,10 @@ Updated: 2026-10-07. Status: Active. This is the running status document for the
 
 Full Mastra Code SDK, TypeScript/oRPC backend and retained React/Vite UI. Mastra owns execution, tools, history, memory, goals and scheduling wherever supported. Kodex owns its product projection and minimal coordination. One process supports multiple projects/chats; use distinct native per-chat identities. Fresh dedicated profile and ChatGPT login. No sandbox; localhost/trusted VPN only. Native volatile queues/Stop and restart limitations are accepted. MCP Apps deferred. Preserve a browser widget extension seam. Do not revive the abandoned generic adapter or Pi migration.
 
+**Compare every Mastra issue against the current Kodex app-server implementation before treating it as a blocker or proposing extra machinery.** State the actual app-server guarantee/limitation, the Mastra behavior, and the concrete user-visible difference. Distinguish demonstrated regressions, accepted native differences, unverified behavior and optional improvements. Do not silently raise the port's requirements beyond the existing product or reopen explicitly accepted simplifications. Prefer native ownership; justify patches, custom coordination or a move to Core by the product impact and ongoing maintenance cost, not by an idealized isolation or lifecycle standard.
+
+Configuration example: the current app-server isolates owned credentials/state but accepts ambient skills and project configuration. For this port, require separate credentials/state and predictable configuration ownership; zero reads outside the dedicated directory is not a requirement. See the [baseline boundary](../docs/audits/2026-10-04-app-server-native-audit.md) and [configuration audit](mastra-config-isolation.md).
+
 See the [decision handoff](mastra-code-sdk-handoff.md) for the complete accepted scope and [compatibility spike](mastra-code-sdk-spike.md) for proofs and limitations.
 
 ## Milestones
@@ -22,7 +26,7 @@ See the [decision handoff](mastra-code-sdk-handoff.md) for the complete accepted
 | Compatibility and ownership proof | Complete | Native concurrency/history/queue/goals/schedules/oRPC proofs and narrow shutdown characterization. |
 | Baseline and cache diagnosis | Complete | [Benchmark](mastra-code-sdk-benchmark.md) and [cache investigation](mastra-cache-investigation.md); cache affinity cause reproduced. |
 | 1. Supported ChatGPT affinity | Complete | Use public per-request/session hooks, no global fetch patch; fixture coverage for isolation/tool steps/retry/resume and native live validation; rerun original paired workload. |
-| 2. Dedicated configuration isolation | Active — upstream gaps | Verify actual SDK discovery paths and supported options; enable plugins/MCP only after isolation and concurrency are proven. No HOME swapping/custom discovery system. |
+| 2. Configuration ownership against app-server baseline | Active — behavior checks | Verify separate credentials/state and predictable configuration ownership. Test material identity/discovery effects and MCP read/edit/reload consistency before enabling; plugin concurrency remains unverified. Zero real-home reads is not an exit condition. |
 | 3. First real chat slice | Pending | Kodex UI → TypeScript/oRPC → Code SDK create/open/stream/Send/Queue/Stop/history; two clients converge across reconnect/restart. Repo remains runnable alongside old production. |
 | 4. Retained product workflows | Pending | Milestone-sized work for goals, automations, projects/pins/read state, terminal, Control tools, file/app panes and PWA. Detail only when preceding milestones inform the design. |
 | 5. Production cutover | Not authorized | Separate deployment scope after retained workflow acceptance, operational checks and user authorization. |
@@ -33,7 +37,7 @@ Milestone 2: [config audit](mastra-config-isolation.md) verified. The supported 
 
 Complete no-real-home-read isolation still needs upstream support: MCP and project resource metadata ignore `homeDir`; the built-in instruction-path deduplication helper ignores global skip/config-directory options. The latter reads text only to derive paths, with no demonstrated global prompt injection. Avoid HOME mutation, loader forks and a process-global resource-ID workaround. Native plugin/hook paths support the dedicated home, but execution/concurrency remains unproven.
 
-Next: prepare narrowly scoped upstream fixes or track these gaps while proceeding to the first chat slice with optional integrations disabled. Full isolation is not marked complete.
+Next: test whether resource overrides affect Kodex’s explicit chat identities and verify MCP read/edit/reload ownership before enabling MCP. The instruction bookkeeping read is not a blocker by itself; a deliberate namespaced global config path may be acceptable. Proceed with the first chat slice while optional integrations remain disabled. Upstream fixes are optional improvements unless baseline comparison demonstrates a material regression; do not gate the port on zero real-home reads.
 
 Milestone 1 uses the public `inputProcessors → processInputStep → modelSettings.headers` seam. The stateless processor uses persisted native thread IDs and native request-scoped credential selection for ChatGPT OAuth. No provider replacement, auth fork, global fetch interception or body cache key is used in runtime integration.
 
@@ -61,6 +65,8 @@ Mastra follow-up sentinel requests reached 98.6% cached input; file tasks reache
 - 2026-10-07: configuration check found and fixed native skill discovery using public state `homeDir`; independent source and implementation review clear. Remaining MCP/resource/instruction-path reads documented. No live calls, production changes or user credential reads.
 
 - 2026-10-07: upstream report/config-option research found open issue #23241 and unmerged restricted API PR #23991. The proposed API omits retained native capabilities; current partial controls remain in use. See the configuration audit for links and release status.
+
+- 2026-10-07: user established app-server baseline comparison as a guiding principle for every Mastra issue. Reframed configuration milestone around owned state and predictable behavior, not complete discovery isolation.
 
 ## Validation ledger
 

@@ -4,6 +4,12 @@ Updated: 2026-10-07. Status: Source audit complete; supported skills isolation i
 
 The public `homeDir` option is useful but is not a complete discovery boundary in this pin. The dedicated app-data profile and explicit storage already keep native auth/history separate. Skills now use an additional supported state setting; MCP still has a real-home discovery gap. This change follows the completed affinity benchmark in a separate commit, keeping that benchmark attributable to affinity.
 
+## Product requirement and app-server baseline
+
+The user clarified that all Mastra issues must be assessed against the current app-server implementation. App-server uses dedicated owned state and credentials but still discovers real-home `.agents/skills` and project configuration; managed-account storage confinement is unsupported. We require separate credentials/state and predictable configuration ownership, not zero real-home reads. The audit below records SDK behavior, not automatic port blockers.
+
+The instruction bookkeeping read is not a blocker by itself. A deliberate namespaced MCP config path can be acceptable after read/edit/reload consistency is validated. Test whether resource overrides actually affect Kodex's explicit identities before treating them as a correctness regression. Optional upstream cleanup must not become an implicit requirement to fork the SDK or move to Core. Native plugin/hook concurrency remains unverified rather than a demonstrated regression.
+
 ## Actual paths and supported options
 
 In this table, `project` means the SDK's detected project root, `configDir` is the configured single directory name, and `profile.homeDir` is the dedicated profile's home directory.

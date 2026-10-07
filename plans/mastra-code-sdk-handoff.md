@@ -33,6 +33,7 @@ Do not resume the abandoned generic adapter or Pi implementation plans by defaul
 
 The governing principle: **Mastra should own as much non-Kodex-specific behavior as possible; Kodex should implement only its product needs and unavoidable integration.** Prefer native semantics and frameworks over custom orchestration, persistence duplication, plugin rewrites or miscellaneous plumbing.
 
+- Evaluate every Mastra issue against the current app-server baseline before treating it as a blocker. Require concrete product impact to justify additional machinery; zero real-home configuration reads is not a port requirement. See the [running guidance](mastra-port.md).
 - Use full **Mastra Code SDK**, not an agent assembled from core alone.
 - Eventual gateway: **TypeScript + oRPC**; keep React/Vite.
 - One Node process can host many chats. The spike mounts a native controller and Mastra instance per project, with per-project native databases. Use a distinct native Session/resource identity per chat; browser tabs share that Session.
