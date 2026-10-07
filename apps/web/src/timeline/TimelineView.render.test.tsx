@@ -169,12 +169,12 @@ describe("TimelineView debug rendering", () => {
 
     expect(screen.getByText("Latest question")).toBeInTheDocument();
     expect(screen.getByText("Latest answer")).toBeInTheDocument();
-    expect(screen.getByText("8:01:02 AM")).toBeInTheDocument();
-    expect(screen.getByText("yesterday 9:02:03 AM")).toBeInTheDocument();
-    expect(screen.getByText("10:03:04 AM")).toBeInTheDocument();
-    expect(screen.getByText("3d ago 11:04:05 AM")).toBeInTheDocument();
-    expect(screen.queryByText("10:30:00 AM")).not.toBeInTheDocument();
-    expect(screen.queryByText("10:03:04")).not.toBeInTheDocument();
+    expect(screen.getByText("8:01 AM")).toBeInTheDocument();
+    expect(screen.getByText("yesterday 9:02 AM")).toBeInTheDocument();
+    expect(screen.getByText("10:03 AM")).toBeInTheDocument();
+    expect(screen.getByText("3d ago 11:04 AM")).toBeInTheDocument();
+    expect(screen.queryByText("10:30 AM")).not.toBeInTheDocument();
+    expect(screen.queryByText("10:03")).not.toBeInTheDocument();
   });
 
   it("keeps hidden debug events out of visible row order while exposing them in a debug panel", () => {

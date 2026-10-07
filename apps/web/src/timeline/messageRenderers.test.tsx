@@ -293,7 +293,7 @@ describe("timeline message renderers", () => {
     );
 
     const toolbar = container.querySelector(".kodex-message-toolbar");
-    const timestamp = screen.getByText("9:08:07 AM");
+    const timestamp = screen.getByText("9:08 AM");
     const copyButton = screen.getByRole("button", { name: /copy message/i });
     expect(toolbar).toContainElement(timestamp);
     expect(toolbar).toContainElement(copyButton);
@@ -661,7 +661,7 @@ describe("timeline message renderers", () => {
     );
 
     const toolbar = container.querySelector(".kodex-message-toolbar");
-    const timestamp = screen.getByText("yesterday 9:08:07 AM");
+    const timestamp = screen.getByText("yesterday 9:08 AM");
     const copyButton = screen.getByRole("button", { name: /copy message/i });
     expect(toolbar).toContainElement(timestamp);
     expect(toolbar).toContainElement(copyButton);
@@ -683,6 +683,6 @@ describe("timeline message renderers", () => {
     );
 
     expect(screen.queryByRole("button", { name: /copy message/i })).not.toBeInTheDocument();
-    expect(screen.queryByText("9:08:07 AM")).not.toBeInTheDocument();
+    expect(screen.queryByText("9:08 AM")).not.toBeInTheDocument();
   });
 });

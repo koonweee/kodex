@@ -331,9 +331,8 @@ function formatMessageToolbarTime(date: Date): string {
   const hours = date.getHours();
   const displayHours = hours % 12 || 12;
   const minutes = String(date.getMinutes()).padStart(2, "0");
-  const seconds = String(date.getSeconds()).padStart(2, "0");
   const meridiem = hours < 12 ? "AM" : "PM";
-  return `${displayHours}:${minutes}:${seconds} ${meridiem}`;
+  return `${displayHours}:${minutes} ${meridiem}`;
 }
 
 function localDayStart(date: Date): Date {
