@@ -19,7 +19,7 @@ Focused subsystem replacements are encouraged wherever they reduce maintained co
 
 | Plan | Status | Scope | Notes |
 | --- | --- | --- | --- |
-| [Mastra Code SDK compatibility spike](mastra-code-sdk-spike.md) | Complete | Isolated TypeScript/oRPC runtime evaluation | 16 tests, typecheck and real saved-login ChatGPT requests pass; shutdown, persistence ordering and plugin/MCP isolation gates remain before production migration. |
+| [Mastra Code SDK compatibility spike](mastra-code-sdk-spike.md) | Complete | Isolated TypeScript/oRPC runtime evaluation | 17 tests, typecheck and real saved-login ChatGPT requests pass; native shutdown audit reproduces detached-title failure while completed answers survive. Plugin/MCP isolation and broader lifecycle cases remain unproven. |
 | [Native goal management](native-goals.md) | Complete | Native-backed goal visibility and management | Desktop goal bar, mobile bullseye/modal, model-created goals and cross-client recovery. |
 | [Integration shortcut cleanup](integration-shortcut-cleanup.md) | Complete | Resolve runtime integration audit follow-ups | Tested and deployed native reads/errors, browser compatibility, PWA and contract tooling. |
 | [Pinned upstream runtime](pinned-runtime-distribution.md) | Complete | Direct official runtime acquisition | Deployed verified complete package; native Code Mode proof passed; adjacent audit recorded. |

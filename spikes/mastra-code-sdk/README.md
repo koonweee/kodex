@@ -2,7 +2,7 @@
 
 An isolated experiment for a future Kodex TypeScript/oRPC gateway. It does not start or replace the production gateway. See the [plan](../../plans/mastra-code-sdk-spike.md) for accepted product decisions and validation status.
 
-Validated on 2026-10-07: 16 tests, typecheck and independent review pass. Real ChatGPT requests passed in two separate processes using saved credentials. Production migration gates remain below.
+Validated on 2026-10-07: 17 tests, typecheck and independent review pass. The added shutdown characterization test reproduces a native title-write failure and confirms the completed answer survives reopening. Real ChatGPT requests passed in two separate processes using saved credentials. Production migration gates remain below.
 
 Requires Node 24+:
 
@@ -50,7 +50,7 @@ A native schedule's trigger outcome acknowledges delivery/wake; it does not prov
 ## Limits before a production migration
 
 - This is a compatibility proof, not a gateway or harness abstraction layer. There are no production routes, schema migration, UI changes or deployment commands here.
-- SDK `agent_end` / `sendMessage()` completion does not necessarily join trailing title generation and workflow-snapshot writes. Immediate `Mastra.shutdown()` closes SQLite before some writes finish. Hot project retirement and graceful shutdown require further upstream/native lifecycle work; a passing transcript test does not establish that guarantee.
+- SDK `agent_end` / `sendMessage()` completion does not necessarily join trailing title generation and workflow-snapshot writes. Immediate `Mastra.shutdown()` closes SQLite before some writes finish. The focused shutdown test confirms the completed answer survives reopening while delayed title persistence fails, even after `Memory.settled()` and a 30-second native drain budget. This narrows the demonstrated risk to unfinished title/internal cleanup at shutdown; universal safe hot retirement is still unproven. Expected `CLIENT_CLOSED` diagnostics in that characterization test are not a failed assertion. See the plan’s native shutdown audit.
 - The transport sends full snapshots for simplicity. oRPC buffers one invalidation per consumer; overlapping native events force a new history read. It is not a production paging/delta protocol or a durable replay log. The revision covers observed Session events, not native database commits; late writes without a notification are not fenced. Continuous updates can postpone a read. Restart creates a new projection epoch.
 - MCP servers, arbitrary plugins/hooks, custom browser widgets, subagent rendering, attachments, long-context observation/compaction, terminal supervision and existing Kodex product integrations are not exercised by this suite. MCP discovery and arbitrary plugins/hooks are disabled while dedicated-profile isolation is assessed. Some native config discovery still uses the real home instead of `homeDir`; the spike uses a distinct config-directory name and explicitly selects the native default thread memory scope.
 - No sandbox and no gateway authentication. The temporary transport binds only to `127.0.0.1`; future deployment remains localhost/trusted VPN only.
