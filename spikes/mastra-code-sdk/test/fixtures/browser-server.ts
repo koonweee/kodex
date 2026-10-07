@@ -24,6 +24,7 @@ const model = await startModelFixture(request => {
     if (!tool) throw new Error('Native view tool missing');
     return { toolCalls: [{ name: tool.function.name, arguments: { path: 'marker.txt' } }] };
   }
+  if (user.includes('READ_MARKER') && !JSON.stringify(request.messages.at(-1)).includes('BROWSER_TOOL_MARKER')) throw new Error('Native tool did not return the marker contents');
   return { text: `fixture:${user}` };
 });
 model.holdNext('HOLD_STOP');

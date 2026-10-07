@@ -71,6 +71,7 @@ type WorkspaceTerminalOpenOptions = WorkspacePaneOpenOptions & Pick<CreateTermin
 type WorkspaceProviderProps = {
   approvals?: Approval[];
   children: ReactNode;
+  liveTransport?: "app-server" | "external";
   errorMessage?: string | null;
   isVisible?: boolean;
   imagePreviewUrlsByPath?: Record<string, string>;
@@ -163,6 +164,7 @@ const noopSubscribeThreadPaneTimelineAction = () => () => undefined;
 export function WorkspaceProvider({
   approvals = [],
   children,
+  liveTransport = "app-server",
   errorMessage = null,
   isVisible = true,
   imagePreviewUrlsByPath = {},
@@ -323,6 +325,7 @@ export function WorkspaceProvider({
   const subscribedThreadIdsKey = subscribedThreadIds.join("\n");
 
   useEffect(() => {
+    if (liveTransport === "external") return;
     const client = createEventStreamClient({
       beforeConnect: validateInstance,
       cursor: liveEventCursorRef.current,
@@ -346,7 +349,7 @@ export function WorkspaceProvider({
     });
     client.connect();
     return client.close;
-  }, [handleStreamConnected, publishThreadPaneTimelineAction, subscribedThreadIdsKey, validateInstance]);
+  }, [handleStreamConnected, liveTransport, publishThreadPaneTimelineAction, subscribedThreadIdsKey, validateInstance]);
 
   const { paneThreadContextsById, setPaneThreadContext } = usePaneThreadContexts(workspace.panes);
 

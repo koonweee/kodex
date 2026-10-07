@@ -146,7 +146,9 @@ For compatible UI changes, `./tools/kodex-service update-frontend --repo "$PWD"`
 
 ## Project status
 
-The isolated [Mastra Code SDK compatibility spike](plans/mastra-code-sdk-spike.md) lives in [`spikes/mastra-code-sdk`](spikes/mastra-code-sdk). It evaluates a future TypeScript/oRPC runtime on its own branch and does not change the running gateway.
+The isolated [Mastra Code SDK compatibility spike](plans/mastra-code-sdk-spike.md) lives in [`spikes/mastra-code-sdk`](spikes/mastra-code-sdk). The [running port](plans/mastra-port.md) now connects an opt-in existing Kodex frontend to a dedicated TypeScript/oRPC chat backend on its own branch. It does not change the running gateway. See the [spike commands](spikes/mastra-code-sdk/README.md#existing-kodex-ui-spike) for separate development ports and profile setup.
+
+On the Mastra port branch, run `npm ci --ignore-scripts` in `spikes/mastra-code-sdk` before frontend checks: the frontend infers its native wire types directly from that package’s oRPC router. The original Rust/OpenAPI contract remains unchanged.
 
 The [native app-server redesign](plans/native-app-server-redesign.md) is validated for the intended personal-account deployment, including fresh sign-in and cold authenticated restart. Organization-managed storage confinement is unsupported. Target-device PWA checks were explicitly skipped and remain unverified. The subsequent [macOS login-service deployment](plans/macos-login-service.md) is installed and validated separately.
 

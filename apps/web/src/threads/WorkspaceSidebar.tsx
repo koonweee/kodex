@@ -35,7 +35,8 @@ import {
   type RefObject,
 } from "react";
 
-import type { AccountResponse, Approval, Project, ThreadSummary } from "../api/client";
+import type { AccountResponse, Approval } from "../api/client";
+import type { ThreadListEntry as ThreadSummary, ProjectListEntry as Project } from "./viewTypes";
 import { useGatewayInstanceStorage } from "../api/GatewayInstanceBoundary";
 import type { UsageLimitLines } from "../account/rateLimits";
 import { SidebarAccountMenu } from "../account/SidebarAccountFooter";
@@ -46,7 +47,6 @@ import { EmptyPanel } from "../ui/EmptyPanel";
 import {
   threadDisplayTitle,
   threadInProgress,
-  type ThreadsByProjectId,
 } from "./helpers";
 import { moveProjectInSidebarOrderAt } from "../projects/dragOrder";
 import { SidebarIconButton } from "./SidebarIconButton";
@@ -187,7 +187,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   showDebugEvents: boolean;
   sidebarCollapsed?: boolean;
   sidebarWidth: number;
-  threadsByProjectId: ThreadsByProjectId;
+  threadsByProjectId: Record<string, ThreadSummary[]>;
   usageLimitLines?: UsageLimitLines | null;
 }) {
   const instanceStorage = useGatewayInstanceStorage();
@@ -822,7 +822,7 @@ function recentSidebarThreads({
   chatThreads: ThreadSummary[];
   pinnedThreads: ThreadSummary[];
   projects: Project[];
-  threadsByProjectId: ThreadsByProjectId;
+  threadsByProjectId: Record<string, ThreadSummary[]>;
 }): RecentSidebarThread[] {
   const byThreadId = new Map<string, RecentSidebarThread>();
   for (const [projectId, threads] of Object.entries(threadsByProjectId)) {
@@ -849,8 +849,8 @@ function recentSidebarThreads({
   return [...byThreadId.values()]
     .sort(
       (left, right) =>
-        right.thread.updatedAt - left.thread.updatedAt ||
-        right.thread.createdAt - left.thread.createdAt ||
+        (right.thread.updatedAt ?? 0) - (left.thread.updatedAt ?? 0) ||
+        (right.thread.createdAt ?? 0) - (left.thread.createdAt ?? 0) ||
         threadDisplayTitle(left.thread).localeCompare(threadDisplayTitle(right.thread)) ||
         left.thread.id.localeCompare(right.thread.id),
     )

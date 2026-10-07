@@ -4,7 +4,7 @@
 
 An isolated experiment for a future Kodex TypeScript/oRPC gateway. It does not start or replace the production gateway. See the [plan](../../plans/mastra-code-sdk-spike.md) for accepted product decisions and validation status.
 
-Backend validation on 2026-10-07: 51 tests, typecheck, build and independent review pass; frontend milestone validation is in progress. The added shutdown characterization test reproduces a native title-write failure and confirms the completed answer survives reopening. Real ChatGPT requests passed in two separate processes using saved credentials. Production migration gates remain below.
+Backend validation on 2026-10-07: 51 tests, typecheck, build and independent review pass; the first existing-UI slice also passes 1,076 frontend tests, builds/trim, independent review and real two-tab browser acceptance in three viewport/input modes. The added shutdown characterization test reproduces a native title-write failure and confirms the completed answer survives reopening. Real ChatGPT requests passed in two separate processes using saved credentials. Production migration gates remain below.
 
 Requires Node 24+:
 
@@ -19,7 +19,7 @@ Tests use the published SDK for sessions, tools, memory, goals, scheduling and p
 
 ## Existing Kodex UI spike
 
-Milestone 3 is active. The existing Kodex shell, docking, composer and timeline use native Mastra snapshots through typed oRPC when explicitly selected. This is a WIP backend: unported controls remain visible and return ordinary errors. No app-server fallback or deployment is performed.
+Milestone 3 is complete within the bounded chat spike. The existing Kodex shell, docking, composer and timeline use native Mastra snapshots through typed oRPC when explicitly selected. This is a WIP backend: unported controls remain visible and return ordinary errors. No app-server fallback or deployment is performed.
 
 After dedicated-profile login, run the backend with one or more project directories:
 
@@ -45,7 +45,7 @@ cd apps/web
 npx playwright test --config playwright.mastra.config.ts
 ```
 
-It uses ports 5184/18789, separate from production and the ordinary dev commands. It does not access real credentials. Test status and remaining exit conditions are recorded in the running port log. The test-only fixture explicitly exits after awaited disposal; this does not prove native natural shutdown or safe hot retirement.
+It exercises desktop, narrow mouse and narrow touch with ports 5184/18789, separate from production and the ordinary dev commands. It does not access real credentials. Test status and remaining exit conditions are recorded in the running port log. The test-only fixture explicitly exits after awaited disposal; this does not prove native natural shutdown or safe hot retirement.
 
 ## ChatGPT smoke
 

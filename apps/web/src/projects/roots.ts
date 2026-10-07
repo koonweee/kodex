@@ -1,4 +1,4 @@
-import type { Project } from "../api/client";
+import type { ProjectListEntry as Project } from "../threads/viewTypes";
 
 export function singleProjectRoot(project: Project | null | undefined): string | null {
   return project?.roots.length === 1 ? project.roots[0].path || null : null;

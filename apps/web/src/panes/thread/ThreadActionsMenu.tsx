@@ -1,11 +1,11 @@
 import { Menu, Switch } from "@mantine/core";
 import { Archive, Copy, CopyPlus, MoreHorizontal, Pencil, Pin, PinOff } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
-import type { ThreadSummary } from "../../api/client";
+import type { ThreadListEntry } from "../../threads/viewTypes";
 import { AdaptiveIconButton } from "../../ui/AdaptiveIconButton";
 import { copyTextToClipboard } from "../../shared/clipboard";
 
-export function ThreadActionsMenu({
+export function ThreadActionsMenu<T extends ThreadListEntry & { notificationsEnabled?: boolean }>({
   onDuplicatePane,
   onArchiveThread,
   onPinThread,
@@ -21,10 +21,10 @@ export function ThreadActionsMenu({
   onArchiveThread?: (threadId: string) => void;
   onPinThread?: (threadId: string) => void;
   onRenameThread: () => void;
-  onSetThread: Dispatch<SetStateAction<ThreadSummary | null>>;
+  onSetThread?: Dispatch<SetStateAction<T | null>>;
   onSetThreadNotificationsEnabled?: (threadId: string, enabled: boolean) => void;
   onUnpinThread?: (threadId: string) => void;
-  thread: ThreadSummary | null;
+  thread: T | null;
   threadId: string;
 }) {
   const notificationsEnabled = thread?.notificationsEnabled !== false;
@@ -63,7 +63,7 @@ export function ThreadActionsMenu({
               onClick={() => {
                 const nextEnabled = !notificationsEnabled;
                 onSetThreadNotificationsEnabled?.(thread.id, nextEnabled);
-                onSetThread((current) =>
+                onSetThread?.((current) =>
                   current ? { ...current, notificationsEnabled: nextEnabled } : current,
                 );
               }}

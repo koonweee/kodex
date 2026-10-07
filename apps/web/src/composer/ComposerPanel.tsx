@@ -45,6 +45,7 @@ type ComposerProjectOption = {
 
 export type ComposerPanelProps = {
   activeSelectedTurnId: string | null;
+  isRunning?: boolean;
   attachmentInputRef: RefObject<HTMLInputElement | null>;
   canCompose: boolean;
   composerSettings: ComposerSettings | null;
@@ -97,6 +98,7 @@ export type ComposerPanelProps = {
 
 export function ComposerPanel({
   activeSelectedTurnId,
+  isRunning = activeSelectedTurnId !== null,
   attachmentInputRef,
   canCompose,
   composerSettings,
@@ -180,7 +182,7 @@ export function ComposerPanel({
   const isComposerControlsDisabled = isComposerDisabled || isEntryPending;
   const canSubmitComposer =
     !isComposerControlsDisabled && (Boolean(draftState.composerText.trim()) || draftState.annotations.length > 0 || pendingAttachments.length > 0);
-  const shouldShowStopAction = activeSelectedTurnId !== null && !canSubmitComposer && !isComposerSubmitting;
+  const shouldShowStopAction = isRunning && !canSubmitComposer && !isComposerSubmitting;
   const skillPopupOpen = !isComposerControlsDisabled && draftState.skillToken !== null;
   const slashPopupOpen = !isComposerControlsDisabled && draftState.slashToken !== null;
   const triggerPopupOpen = skillPopupOpen || slashPopupOpen;
@@ -196,15 +198,15 @@ export function ComposerPanel({
   const slashCommands = useMemo(() => {
     const compactDisabledReason = !selectedThreadPresent
       ? "Select a thread before compacting"
-      : activeSelectedTurnId !== null
+      : isRunning
         ? "Wait for the current task to finish"
         : "Compact is unavailable right now";
     return slashCommandItems({
-      canCompact: selectedThreadPresent && activeSelectedTurnId === null,
+      canCompact: selectedThreadPresent && !isRunning,
       compactDisabledReason,
       canSetGoal: goalThreadId !== null,
     });
-  }, [activeSelectedTurnId, selectedThreadPresent, goalThreadId]);
+  }, [isRunning, selectedThreadPresent, goalThreadId]);
   const filteredSlashCommands = useMemo(
     () => filterSlashCommands(slashCommands, draftState.slashToken?.query ?? ""),
     [draftState.slashToken?.query, slashCommands],

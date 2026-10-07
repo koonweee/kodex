@@ -1,7 +1,7 @@
 import { Autocomplete, Button, Modal, Stack, Text } from "@mantine/core";
 import { useState } from "react";
 
-import type { Project } from "../api/client";
+import type { ProjectListEntry as Project } from "../threads/viewTypes";
 import { paneTargetRecord } from "../workspace/paneTypes";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
 import { singleProjectRoot } from "./roots";

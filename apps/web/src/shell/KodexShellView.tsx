@@ -8,7 +8,7 @@ import { useInputCapabilities } from "../shared/inputCapabilities";
 import { NARROW_WORKSPACE_QUERY } from "../shared/layoutBreakpoints";
 import { useProjectTerminal } from "../projects/useProjectTerminal";
 import { WorkspaceSidebar } from "../threads/WorkspaceSidebar";
-import type { ThreadSummary } from "../api/client";
+import type { ThreadListEntry as ThreadSummary } from "../threads/viewTypes";
 import { WorkspaceSinglePaneShell } from "../workspace/WorkspaceSinglePaneShell";
 import { WorkspaceShell } from "../workspace/WorkspaceShell";
 import { useWorkspace } from "../workspace/WorkspaceProvider";

@@ -28,6 +28,10 @@ const InstanceConnectionContext = createContext<{
   onConnected: () => void;
 } | undefined>(undefined);
 
+export function InstanceStorageProvider({ children, storage }: { children: ReactNode; storage: InstanceStorage | null }) {
+  return <InstanceStorageContext.Provider value={storage}>{children}</InstanceStorageContext.Provider>;
+}
+
 export function useGatewayInstanceStorage(): InstanceStorage | null {
   return useContext(InstanceStorageContext);
 }

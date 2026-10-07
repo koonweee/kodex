@@ -1,6 +1,6 @@
 import { Alert, Box, Button, Group, Title } from "@mantine/core";
 
-import type { Project } from "../api/client";
+import type { ProjectListEntry as Project } from "../threads/viewTypes";
 import { ProjectEditor } from "./ProjectEditor";
 
 export function ProjectPane({

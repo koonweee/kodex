@@ -1,4 +1,5 @@
 import type { Approval, ThreadSummary } from "../api/client";
+import type { ThreadListEntry } from "./viewTypes";
 import { asRecord, stringValue } from "../shared/values";
 
 const THREAD_TEXT = {
@@ -38,7 +39,7 @@ export function threadById(current: ThreadsByProjectId, threadId: string): Threa
   return null;
 }
 
-export function threadDisplayTitle(thread: ThreadSummary): string {
+export function threadDisplayTitle(thread: ThreadListEntry): string {
   return (
     threadNameTitle(thread) ??
     normalizeTitle(previewTitle(thread.preview)) ??
@@ -46,7 +47,7 @@ export function threadDisplayTitle(thread: ThreadSummary): string {
   );
 }
 
-export function threadHasDisplayTitle(thread: ThreadSummary): boolean {
+export function threadHasDisplayTitle(thread: ThreadListEntry): boolean {
   return Boolean(threadNameTitle(thread) ?? normalizeTitle(previewTitle(thread.preview)));
 }
 
@@ -63,19 +64,19 @@ export function optimisticThreadSummary(thread: ThreadSummary, firstMessageText:
   return { ...thread, preview };
 }
 
-export function threadNeedsApproval(thread: ThreadSummary, approvals: Approval[]): boolean {
+export function threadNeedsApproval(thread: ThreadListEntry, approvals: Approval[]): boolean {
   return approvals.some((approval) => approval.threadId === thread.id && approval.status === "pending") || threadStatusNeedsApproval(thread);
 }
 
-export function threadInProgress(thread: ThreadSummary): boolean {
-  return typeof thread.status === "string" && thread.status.toLowerCase() === "active";
+export function threadInProgress(thread: ThreadListEntry): boolean {
+  return thread.isRunning === true || (typeof thread.status === "string" && thread.status.toLowerCase() === "active");
 }
 
-function threadStatusNeedsApproval(thread: ThreadSummary): boolean {
+function threadStatusNeedsApproval(thread: ThreadListEntry): boolean {
   return typeof thread.status === "string" && thread.status.toLowerCase().includes("approval");
 }
 
-function threadNameTitle(thread: ThreadSummary): string | null {
+function threadNameTitle(thread: ThreadListEntry): string | null {
   const name = normalizeTitle(thread.name ?? null);
   return name === THREAD_TEXT.new ? null : name;
 }

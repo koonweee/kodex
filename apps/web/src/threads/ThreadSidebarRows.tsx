@@ -1,7 +1,8 @@
 import { Badge, Box, Group, Menu, Stack, Text, Tooltip } from "@mantine/core";
 import { Archive, MoreHorizontal, Pin, PinOff } from "lucide-react";
 import { memo, useRef, type PointerEvent as ReactPointerEvent } from "react";
-import type { Approval, ThreadSummary } from "../api/client";
+import type { Approval } from "../api/client";
+import type { ThreadListEntry as ThreadSummary } from "../threads/viewTypes";
 import { PinnedOrderMenuItems, type PinnedThreadActions } from "./PinnedOrderMenuItems";
 import { threadDisplayTitle, threadInProgress, threadNeedsApproval } from "./helpers";
 import { SidebarIconButton } from "./SidebarIconButton";

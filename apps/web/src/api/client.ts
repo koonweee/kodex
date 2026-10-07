@@ -106,7 +106,7 @@ const api = createClient<paths>({
   fetch: (request) => compatibleFetch(request),
 });
 
-function getApiBaseUrl(): string {
+export function getApiBaseUrl(): string {
   if (import.meta.env.VITE_KODEX_API_BASE_URL) {
     return import.meta.env.VITE_KODEX_API_BASE_URL;
   }

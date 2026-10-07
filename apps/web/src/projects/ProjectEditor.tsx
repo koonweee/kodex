@@ -2,7 +2,8 @@ import { Alert, Button, Modal, Stack, Text, Textarea, TextInput } from "@mantine
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { deleteProject, updateProject, type Project, type UpdateProjectRequest } from "../api/client";
+import type { ProjectListEntry as Project } from "../threads/viewTypes";
+import { deleteProject, updateProject, type UpdateProjectRequest } from "../api/client";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
 import { errorMessageFrom } from "../shared/values";
 import { refreshProjectState } from "./cache";

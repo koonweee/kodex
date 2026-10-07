@@ -25,6 +25,8 @@ import {
   type TimelineScrollBehavior,
 } from "./scrollPolicy";
 
+export type TimelinePresentation = Pick<TimelineState, "rows" | "hiddenItems" | "hasOlderHistory" | "isLoadingOlderHistory" | "lastSeq" | "pendingApprovalRequests" | "pendingUserInputRequests">;
+
 const EMPTY_APPROVALS: Approval[] = [];
 
 const TIMELINE_TEXT = {
@@ -69,7 +71,7 @@ export function TimelineView({
   scrollParentElement: HTMLDivElement | null;
   showDebug: boolean;
   threadId?: string;
-  timeline: TimelineState;
+  timeline: TimelinePresentation;
 }) {
   const rows = timeline.rows;
   const [expandedWorkRowKeys, setExpandedWorkRowKeys] = useState<ReadonlySet<string>>(() => new Set());
@@ -312,7 +314,7 @@ function usePrependScrollRestoration({
 }
 
 function pendingTimelineRequestSummaries(
-  timeline: TimelineState,
+  timeline: TimelinePresentation,
   approvals: Approval[],
 ): PendingTimelineRequestSummary[] {
   const renderedApprovalIds = new Set(approvals.map((approval) => approval.id));

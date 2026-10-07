@@ -1,3 +1,4 @@
+import { usesMastraBackend } from "./mastra/client";
 import { CompatibilityNotice } from "./api/CompatibilityNotice";
 import { refreshUnreadBadge } from "./notifications/unreadBadge";
 import { usePinnedThreads } from "./threads/usePinnedThreads";
@@ -119,6 +120,8 @@ import type { WorkspacePaneStoreAdapter } from "./workspace/paneStore";
 import type { WorkspacePane } from "./workspace/paneTypes";
 import "./App.css";
 
+const NativeShell = lazy(() => import("./mastra/NativeShell").then((module) => ({ default: module.NativeShell })));
+
 const DRAFT_COMPOSER_TRANSITION_MS = 280;
 const EMPTY_AUTOMATIONS: Automation[] = [];
 const EMPTY_PROJECTS: Project[] = [];
@@ -167,6 +170,7 @@ export function App({ queryClientInstance = queryClient, workspacePaneStore }: A
   useEffect(() => installLiveLongTaskObserver(), []);
 
   const isThemeWorkbench = isThemeWorkbenchRoute();
+  const Shell = usesMastraBackend ? NativeShell : KodexShell;
 
   return (
     <QueryClientProvider client={queryClientInstance}>
@@ -178,13 +182,13 @@ export function App({ queryClientInstance = queryClient, workspacePaneStore }: A
             <ThemeWorkbench colorSchemeId={colorSchemeId} onColorSchemeChange={selectTheme} />
           </Suspense>
         ) : (
-          <KodexShell
+          <Suspense fallback={null}><Shell
             colorSchemeId={colorSchemeId}
             appearance={preferences}
             onAppearanceModeChange={setMode}
             onThemeChange={setTheme}
             workspacePaneStore={workspacePaneStore}
-          />
+          /></Suspense>
         )}
       </MantineProvider>
     </QueryClientProvider>

@@ -44,6 +44,12 @@ type DraftThreadCreateResult = { threadId: string };
 
 type UseComposerOrchestrationParams = {
   activeSelectedTurnId: string | null;
+  isRunning?: boolean;
+  commands?: {
+    send: (threadId: string, input: UserInput[], attachments: TimelineFileAttachment[]) => Promise<unknown>;
+    queue: (threadId: string, input: UserInput[], attachments: TimelineFileAttachment[]) => Promise<unknown>;
+    stop: (threadId: string) => Promise<unknown>;
+  };
   activeSelectedTurnIdOverrideRef?: { current: string | null | undefined };
   canCompose: boolean;
   canComposeOverrideRef?: { current: boolean | undefined };
@@ -71,6 +77,8 @@ type UseComposerOrchestrationParams = {
 
 export function useComposerOrchestration({
   activeSelectedTurnId,
+  isRunning,
+  commands,
   activeSelectedTurnIdOverrideRef,
   canCompose,
   canComposeOverrideRef,
@@ -193,7 +201,8 @@ export function useComposerOrchestration({
         const payload = await buildTurnPayload(selectedThreadId, text, attachments, skillInputs, skillTextElements);
         if (queueRequested) {
           try {
-            await createQueuedInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId);
+            if (commands) await commands.queue(selectedThreadId, payload.input, payload.attachments);
+            else await createQueuedInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId);
           } finally {
             void refreshQueuedInputs(queryClient, selectedThreadId);
           }
@@ -213,7 +222,8 @@ export function useComposerOrchestration({
             threadId: selectedThreadId,
           });
         }
-        await submitThreadInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId);
+        if (commands) await commands.send(selectedThreadId, payload.input, payload.attachments);
+        else await submitThreadInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId);
         if (optimisticClientRequestId) {
           onOptimisticUserMessageSent?.(optimisticClientRequestId);
         }
@@ -247,12 +257,8 @@ export function useComposerOrchestration({
       onThreadTurnStarted(threadId);
       draftControls.clearText();
       const payload = await buildTurnPayload(threadId, text, attachments, skillInputs, skillTextElements);
-      await submitThreadInput(
-        threadId,
-        payload.input,
-        payload.attachments,
-        clientUserMessageId,
-      );
+      if (commands) await commands.send(threadId, payload.input, payload.attachments);
+      else await submitThreadInput(threadId, payload.input, payload.attachments, clientUserMessageId);
       onThreadMaterialized(threadId);
       clearPendingAttachments();
       setIsComposerSubmitting(false);
@@ -274,11 +280,14 @@ export function useComposerOrchestration({
   }
 
   async function handleStopTurn() {
-    if (!selectedThreadId || !currentActiveSelectedTurnId()) {
+    if (!selectedThreadId || !(isRunning ?? Boolean(currentActiveSelectedTurnId()))) {
       return;
     }
 
-    await interruptCurrentTurn(selectedThreadId);
+    try {
+      if (commands) await commands.stop(selectedThreadId);
+      else await interruptCurrentTurn(selectedThreadId);
+    } catch (error) { onError(error); }
   }
 
   function handleAttachmentInputChange(event: ReactChangeEvent<HTMLInputElement>) {
