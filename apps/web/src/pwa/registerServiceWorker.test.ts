@@ -35,13 +35,13 @@ describe("registerKodexServiceWorker", () => {
 
     try {
       await registerPwaServiceWorker();
-      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      await vi.advanceTimersByTimeAsync(60_000);
       expect(update).toHaveBeenCalledTimes(1);
       document.dispatchEvent(new Event("visibilitychange"));
       expect(update).toHaveBeenCalledTimes(1);
 
       visibility.mockReturnValue("hidden");
-      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      await vi.advanceTimersByTimeAsync(60_000);
       expect(update).toHaveBeenCalledTimes(1);
 
       visibility.mockReturnValue("visible");
