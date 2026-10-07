@@ -61,7 +61,7 @@
   outline-offset: -1px;
 }
 
-/* One small motion-path highlight follows the native tab's rounded rectangle.
+/* A dashed SVG stroke bends around the actual tab radius at any tab width.
    It occupies no layout space and never intercepts tab/close/drag gestures. */
 .kodex-workspace-dock .kodex-workspace-tab:has(.kodex-workspace-tab-running) {
   position: static;
@@ -73,38 +73,31 @@
   pointer-events: none;
 }
 
-.kodex-workspace-dock .dv-tabs-container .kodex-workspace-tab-running::after {
-  content: "";
-  position: absolute;
-  top: 1px;
-  left: 50%;
-  width: 24px;
-  height: 3px;
-  border-radius: var(--kodex-radius-round);
-  background: radial-gradient(ellipse, color-mix(in srgb, var(--kodex-accent) 65%, transparent), transparent 75%);
-  pointer-events: none;
+.kodex-workspace-tab-running svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
-@supports (offset-path: inset(1px round 12px)) {
-  .kodex-workspace-dock .dv-tabs-container .kodex-workspace-tab-running::after {
-    top: 0;
-    left: 0;
-    offset-path: inset(1px round calc(var(--dv-tab-border-radius) - 1px));
-    offset-distance: 0%;
-    /* Keep the tiny moving highlight on its own layer instead of repainting. */
-    will-change: transform;
-    animation: kodex-tab-perimeter-pulse 5s linear infinite;
-  }
+.kodex-workspace-tab-running rect {
+  width: calc(100% - 2px);
+  height: calc(100% - 2px);
+  rx: calc(var(--dv-tab-border-radius) - 1px);
+  fill: none;
+  stroke: color-mix(in srgb, var(--kodex-accent) 65%, transparent);
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-dasharray: 8 92;
+  animation: kodex-tab-perimeter-pulse 6.667s linear infinite;
 }
 
 @keyframes kodex-tab-perimeter-pulse {
-  to { offset-distance: 100%; }
+  to { stroke-dashoffset: -100; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .kodex-workspace-dock .dv-tabs-container .kodex-workspace-tab-running::after {
+  .kodex-workspace-tab-running rect {
     animation: none;
-    will-change: auto;
   }
 }
 

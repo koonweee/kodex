@@ -26,7 +26,9 @@ export function WorkspaceDefaultTab(props: IDockviewPanelHeaderProps<DockviewPan
       ? paneContext.indicatorState : null;
   const syncing = paneHeaderAdornmentsById[props.api.id];
   const headerAdornment = indicatorState === "running"
-    ? <span className="kodex-workspace-tab-running" aria-label="Thread in progress" role="status" />
+    ? <span className="kodex-workspace-tab-running" aria-label="Thread in progress" role="status">
+        <svg aria-hidden="true" focusable="false"><rect x="1" y="1" pathLength="100" /></svg>
+      </span>
     : indicatorState ? <ThreadStatusIndicator state={indicatorState} />
     : syncing ? <span aria-label="Pane syncing" role="status" title="Pane syncing">{syncing}</span> : null;
   const terminalStatus = pane.kind === "terminal" ? paneTabStatusById[props.api.id] : undefined;
