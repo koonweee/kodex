@@ -1,5 +1,5 @@
 .kodex-composer-shell {
-  --kodex-composer-shadow: 0 8px 18px rgb(0 0 0 / 20%);
+  --kodex-composer-shadow: 0 2px 6px -2px rgb(0 0 0 / 12%);
 
   position: relative;
   display: grid;
