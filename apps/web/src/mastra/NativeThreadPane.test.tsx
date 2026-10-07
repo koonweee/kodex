@@ -9,15 +9,15 @@ import type { ComposerDraftStore } from '../composer/useComposerDraftState';
 import type { WorkspacePane } from '../workspace/paneTypes';
 import { NativeThreadPane } from './NativeThreadPane';
 
-const native = vi.hoisted(() => ({ snapshot: null as ChatSnapshot | null, useWorkspace: vi.fn(), rename: vi.fn(), registrations: vi.fn(), duplicate: vi.fn() }));
+const native = vi.hoisted(() => ({ snapshot: null as ChatSnapshot | null, useWorkspace: vi.fn(), rename: vi.fn(), legacyRename: vi.fn(), registrations: vi.fn(), duplicate: vi.fn() }));
 vi.mock('./useNativeSnapshots', () => ({ useNativeChat: () => ({ snapshot: native.snapshot, error: null }) }));
 vi.mock('../workspace/WorkspaceProvider', () => ({ useWorkspace: () => native.useWorkspace() }));
-vi.mock('../api/client', () => ({ renameThread: (...args: unknown[]) => native.rename(...args) }));
+vi.mock('../api/client', () => ({ renameThread: (...args: unknown[]) => native.legacyRename(...args) }));
 vi.mock('./NativeComposer', () => ({ NativeComposer: () => <div>Composer</div> }));
 vi.mock('../timeline/TimelineView', () => ({ TimelineView: () => <div>Native timeline</div> }));
 const pane: WorkspacePane = { id: 'pane', kind: 'thread', title: 'Chat title', target: { mode: 'existing', threadId: 'chat' } };
 const context = createContext<Record<string, unknown>>({});
-const stableActions = { onArchiveThread: vi.fn(), onPinThread: vi.fn(), onUnpinThread: vi.fn(), onSetThreadNotificationsEnabled: vi.fn() };
+const stableActions = { onRenameThread: native.rename, onArchiveThread: vi.fn(), onPinThread: vi.fn(), onUnpinThread: vi.fn(), onSetThreadNotificationsEnabled: vi.fn() };
 const stable = { errorMessage: null, setPaneThreadContext: vi.fn(), updatePane: vi.fn().mockResolvedValue(undefined), duplicatePane: native.duplicate, onShowMobileSidebar: vi.fn(), onImageOpen: vi.fn(), onMarkdownOpen: vi.fn(), threadActions: stableActions, showDebugEvents: false };
 const onError = vi.fn();
 function Harness({ children }: { children?: ReactNode }) {
@@ -25,12 +25,12 @@ function Harness({ children }: { children?: ReactNode }) {
   const setPaneHeaderActions = useCallback((id: string, actions: ReactNode | null) => { native.registrations(id, actions); setHeader(actions); }, []);
   // Header registration changes provider identity, just as the real workspace does.
   const value = useMemo(() => ({ ...stable, workspace: { activePaneId: 'pane' }, setPaneHeaderActions, header }), [header, setPaneHeaderActions]);
-  return <MantineProvider><context.Provider value={value}><div aria-label="Workspace header">{header}</div>{children ?? <NativeThreadPane pane={pane} draftStore={{} as ComposerDraftStore} onError={onError} />}</context.Provider></MantineProvider>;
+  return <MantineProvider env="test"><context.Provider value={value}><div aria-label="Workspace header">{header}</div>{children ?? <NativeThreadPane pane={pane} draftStore={{} as ComposerDraftStore} onError={onError} />}</context.Provider></MantineProvider>;
 }
 afterEach(() => { vi.clearAllMocks(); });
 it('registers one workspace action menu, keeps it stable while streaming, and unregisters on removal', async () => {
   native.useWorkspace.mockImplementation(() => useContext(context));
-  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: 'project', cwd: '/project', title: 'Chat title' }, display: defaultDisplayState(), messages: [], error: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture() };
+  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: 'project', cwd: '/project', title: 'Chat title', name: 'Chat title', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture() };
   const view = render(<Harness />);
   const header = screen.getByLabelText('Workspace header');
   expect(within(header).getByRole('button', { name: 'Thread actions' })).toBeInTheDocument();
@@ -50,7 +50,7 @@ it('registers one workspace action menu, keeps it stable while streaming, and un
 });
 it('opens rename from the workspace header with the current title and preserves the command', async () => {
   native.useWorkspace.mockImplementation(() => useContext(context));
-  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: 'project', cwd: '/project', title: 'Native title' }, display: defaultDisplayState(), messages: [], error: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture() };
+  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: 'project', cwd: '/project', title: 'Native title', name: 'Native title', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture() };
   native.rename.mockResolvedValue({});
   render(<Harness />);
   fireEvent.click(screen.getByRole('button', { name: 'Thread actions' }));
@@ -61,4 +61,93 @@ it('opens rename from the workspace header with the current title and preserves 
   fireEvent.click(within(dialog).getByRole('button', { name: 'Rename' }));
   await waitFor(() => expect(native.rename).toHaveBeenCalledWith('chat', 'Renamed'));
   await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Rename thread' })).not.toBeInTheDocument());
+});
+
+it('renders pin and notification preferences only from canonical chat snapshots', async () => {
+  native.useWorkspace.mockImplementation(() => useContext(context));
+  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: null, cwd: '/retained', title: 'Native title', name: 'Native title', pinned: true, notificationsEnabled: false }, display: defaultDisplayState(), messages: [], error: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture() };
+  const view = render(<Harness />);
+  fireEvent.click(screen.getByRole('button', { name: 'Thread actions' }));
+  expect(await screen.findByRole('menuitem', { name: 'Unpin thread' })).toBeInTheDocument();
+  const notifications = await screen.findByRole('menuitem', { name: 'Notifications' });
+  expect(notifications).toHaveAttribute('aria-checked', 'false');
+  fireEvent.click(notifications);
+  expect(stableActions.onSetThreadNotificationsEnabled).toHaveBeenCalledWith('chat', true);
+  expect(notifications).toHaveAttribute('aria-checked', 'false');
+  native.snapshot = { ...native.snapshot, revision: 2, chat: { ...native.snapshot.chat, pinned: false, notificationsEnabled: true } };
+  await act(async () => view.rerender(<Harness />));
+  expect(screen.getByRole('menuitem', { name: 'Notifications' })).toHaveAttribute('aria-checked', 'true');
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Pin thread' }));
+  expect(stableActions.onPinThread).toHaveBeenCalledWith('chat');
+});
+
+it('keeps a rejected rename draft in the exact main form and validates blank names locally', async () => {
+  native.useWorkspace.mockImplementation(() => useContext(context));
+  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: null, cwd: '/project', title: 'Original', name: 'Original', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture() };
+  native.rename.mockRejectedValue(new Error('Native rename failed'));
+  render(<Harness />);
+  fireEvent.click(screen.getByRole('button', { name: 'Thread actions' }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename thread' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Rename thread' });
+  const input = within(dialog).getByRole('textbox', { name: 'Thread name' });
+  expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeEnabled();
+  fireEvent.change(input, { target: { value: '   ' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Rename' }));
+  expect(await within(dialog).findByText('Thread name cannot be empty.')).toBeInTheDocument();
+  expect(native.rename).not.toHaveBeenCalled();
+  fireEvent.change(input, { target: { value: ' My name ' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Rename' }));
+  expect(await within(dialog).findByText('Native rename failed')).toBeInTheDocument();
+  expect(input).toHaveValue(' My name ');
+  expect(native.rename).toHaveBeenCalledWith('chat', 'My name');
+  expect(native.legacyRename).not.toHaveBeenCalled();
+  expect(screen.getByRole('region', { name: 'Original' })).toBeInTheDocument();
+});
+
+it('starts an unnamed chat rename with a blank name and keeps acknowledgments separate from watched titles', async () => {
+  native.useWorkspace.mockImplementation(() => useContext(context));
+  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: null, cwd: '/project', title: 'First user preview', name: null, pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture() };
+  let acknowledge!: () => void;
+  native.rename.mockReturnValue(new Promise<void>(resolve => { acknowledge = resolve; }));
+  const view = render(<Harness />);
+  fireEvent.click(screen.getByRole('button', { name: 'Thread actions' }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename thread' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Rename thread' });
+  const input = within(dialog).getByRole('textbox', { name: 'Thread name' });
+  expect(input).toHaveValue(''); expect(input).toHaveAttribute('placeholder', 'First user preview');
+  fireEvent.change(input, { target: { value: 'My name' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Rename' }));
+  await waitFor(() => expect(native.rename).toHaveBeenCalledWith('chat', 'My name'));
+  expect(input).toBeDisabled(); expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Rename' }));
+  expect(native.rename).toHaveBeenCalledOnce();
+  native.snapshot = { ...native.snapshot, revision: 2, chat: { ...native.snapshot.chat, title: 'Other client name', name: 'Other client name' } };
+  await act(async () => view.rerender(<Harness />));
+  expect(input).toHaveValue('My name');
+  await act(async () => acknowledge());
+  expect(screen.queryByRole('dialog', { name: 'Rename thread' })).not.toBeInTheDocument();
+  expect(screen.getByRole('region', { name: 'Other client name' })).toBeInTheDocument();
+  expect(native.legacyRename).not.toHaveBeenCalled();
+});
+
+it('ignores a late rename failure after the pane changes chats', async () => {
+  native.useWorkspace.mockImplementation(() => useContext(context));
+  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: null, cwd: '/project', title: 'Original', name: 'Original', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture() };
+  let reject!: (error: Error) => void;
+  native.rename.mockReturnValue(new Promise((_resolve, fail) => { reject = fail; }));
+  const view = render(<Harness><NativeThreadPane pane={pane} draftStore={{} as ComposerDraftStore} onError={onError} /></Harness>);
+  fireEvent.click(screen.getByRole('button', { name: 'Thread actions' }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename thread' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Thread name' }), { target: { value: 'Old draft' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+  await waitFor(() => expect(native.rename).toHaveBeenCalled());
+  native.snapshot = { ...native.snapshot, chat: { ...native.snapshot.chat, id: 'other', title: 'Other chat', name: 'Other chat' } };
+  await act(async () => view.rerender(<Harness><NativeThreadPane pane={{ ...pane, target: { mode: 'existing', threadId: 'other' } }} draftStore={{} as ComposerDraftStore} onError={onError} /></Harness>));
+  expect(screen.queryByRole('dialog', { name: 'Rename thread' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Thread actions' }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename thread' }));
+  await act(async () => reject(new Error('Obsolete rename error')));
+  expect(screen.getByRole('textbox', { name: 'Thread name' })).toHaveValue('Other chat');
+  expect(screen.queryByText('Obsolete rename error')).not.toBeInTheDocument();
+  expect(onError).not.toHaveBeenCalled();
 });

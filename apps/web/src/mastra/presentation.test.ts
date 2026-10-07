@@ -5,7 +5,7 @@ import { acceptsSnapshot, timelinePresentation } from './presentation';
 import type { ChatSnapshot } from './client';
 
 function snapshot(): ChatSnapshot {
-  return { epoch: 'session-a', revision: 1, chat: { id: 'chat', projectId: 'project', title: 'Chat', cwd: '/project' }, error: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(),
+  return { epoch: 'session-a', revision: 1, chat: { pinned: false, notificationsEnabled: true, id: 'chat', projectId: 'project', title: 'Chat', name: 'Chat', cwd: '/project' }, error: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(),
     display: defaultDisplayState(), messages: [
       { id: 'user', role: 'user', createdAt: new Date(0), content: { format: 2, parts: [{ type: 'text', text: 'Hello' }] } },
       { id: 'assistant', role: 'assistant', createdAt: new Date(1), content: { format: 2, parts: [{ type: 'text', text: 'Old' }] } },

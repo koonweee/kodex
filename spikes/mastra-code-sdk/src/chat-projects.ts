@@ -1,13 +1,14 @@
 import { basename } from 'node:path';
+import { readChatName, readChatTitle } from './chat-titles.js';
 import { homedir } from 'node:os';
 import { ORPCError } from '@orpc/server';
 import { createProjectRuntime, type ProjectRuntime } from './runtime.js';
-import { openProductRegistry, ProductRegistryError, type ProductRegistry, type ProjectSeed, type ProjectPatch, type RuntimeBinding } from './product-registry.js';
+import { openProductRegistry, ProductRegistryError, type ProductRegistry, type ProjectSeed, type ProjectPatch, type RuntimeBinding, type ChatMetadata } from './product-registry.js';
 import { listProjectDirectories } from './project-directories.js';
 import type { SpikeProfile } from './profile.js';
 
 export type NativeThread = NonNullable<Awaited<ReturnType<ProjectRuntime['controller']['queryThreadById']>>>;
-export interface Chat { id: string; projectId: string | null; title: string; cwd: string }
+export interface Chat { id: string; projectId: string | null; title: string; name: string | null; cwd: string; pinned: boolean; notificationsEnabled: boolean }
 export interface ChatProjectOptions {
   profile: SpikeProfile;
   projects?: ProjectSeed[];
@@ -17,7 +18,7 @@ export interface ChatProjectOptions {
 }
 const missing = () => new ORPCError('NOT_FOUND', { message: 'Chat or project not found.' });
 export const ownsThread = (binding: RuntimeBinding, thread: NativeThread) => thread.metadata?.projectPath === binding.cwd && thread.metadata?.forkedSubagent !== true;
-export const describeChat = (binding: RuntimeBinding, thread: NativeThread): Chat => ({ id: thread.id, projectId: binding.projectId, title: thread.title?.trim() || 'New chat', cwd: binding.cwd });
+const describeChat = (binding: RuntimeBinding, thread: NativeThread, title: string, metadata?: ChatMetadata): Chat => ({ id: thread.id, projectId: binding.projectId, title, name: readChatName(thread), cwd: binding.cwd, pinned: metadata?.pinPosition !== undefined && metadata.pinPosition !== null, notificationsEnabled: metadata?.notificationsEnabled ?? true });
 
 /** Product membership is read from the registry. Native runtimes remain attached
  * to immutable binding identities and cwd, including detached standalone chats.
@@ -72,15 +73,26 @@ export function createChatProjects(options: ChatProjectOptions, assertActive: ()
   async function inventory() {
     for (;;) {
       const snapshot = await registryCall(store => store.snapshot());
+      const metadata = await registryCall(store => store.chatMetadataSnapshot());
+      if (metadata.revision !== snapshot.revision) continue;
+      const byIdentity = new Map(metadata.entries.map(entry => [JSON.stringify([entry.bindingId, entry.threadId]), entry]));
       const bindings = await listBindings();
       const chats: Chat[] = [];
+      const nativeIdentities = new Set<string>();
       for (const binding of bindings) {
         const runtime = await runtimeFor(binding);
         const threads = await runtime.controller.queryThreads({ metadata: { projectPath: binding.cwd } });
-        for (const thread of threads) if (ownsThread(binding, thread)) chats.push(describeChat(binding, thread));
+        for (const thread of threads) if (ownsThread(binding, thread)) {
+          const identity = JSON.stringify([binding.id, thread.id]);
+          nativeIdentities.add(identity);
+          chats.push(describeChat(binding, thread, await readChatTitle(runtime, thread), byIdentity.get(identity)));
+        }
       }
       assertActive();
-      if ((await registryCall(store => store.snapshot())).revision === snapshot.revision) return { projects: snapshot.projects, chats };
+      if ((await registryCall(store => store.snapshot())).revision === snapshot.revision) {
+        const pinnedChatIds = metadata.entries.filter(entry => entry.pinPosition !== null && nativeIdentities.has(JSON.stringify([entry.bindingId, entry.threadId]))).sort((left, right) => left.pinPosition! - right.pinPosition!).map(entry => entry.threadId);
+        return { projects: snapshot.projects, chats, pinnedChatIds };
+      }
     }
   }
   async function findThread(chatId: string) {
@@ -96,6 +108,30 @@ export function createChatProjects(options: ChatProjectOptions, assertActive: ()
   }
   return {
     runtimeFor, executionBinding, currentBinding, inventory, findThread,
+    async describe(bindingId: string, thread: NativeThread) {
+      for (;;) {
+        const metadata = await registryCall(store => store.chatMetadataSnapshot());
+        const binding = await currentBinding(bindingId);
+        if ((await registryCall(store => store.snapshot())).revision !== metadata.revision) continue;
+        const title = await readChatTitle(await runtimeFor(binding), thread);
+        if ((await registryCall(store => store.snapshot())).revision !== metadata.revision) continue;
+        return describeChat(binding, thread, title, metadata.entries.find(entry => entry.bindingId === bindingId && entry.threadId === thread.id));
+      }
+    },
+    async setChatPinned(input: { chatId: string; pinned: boolean; beforeChatId?: string | null }) {
+      if (!input.pinned && Object.hasOwn(input, 'beforeChatId')) throw new ORPCError('BAD_REQUEST', { message: 'Unpin does not accept a target chat.' });
+      const current = await findThread(input.chatId);
+      let before: { bindingId: string; threadId: string } | null | undefined;
+      if (input.beforeChatId !== undefined && input.beforeChatId !== null) {
+        const target = await findThread(input.beforeChatId);
+        before = { bindingId: target.binding.id, threadId: target.thread.id };
+      } else if (input.beforeChatId === null) before = null;
+      await registryCall(store => store.setChatPinned({ bindingId: current.binding.id, threadId: current.thread.id, pinned: input.pinned, ...(before !== undefined ? { before } : {}) }));
+    },
+    async setChatNotifications(input: { chatId: string; enabled: boolean }) {
+      const current = await findThread(input.chatId);
+      await registryCall(store => store.setChatNotifications({ bindingId: current.binding.id, threadId: current.thread.id, enabled: input.enabled }));
+    },
     async defaultsRuntime() { return runtimeFor(await executionBinding(null)); },
     async listDirectories(input: { path?: string }) { return listProjectDirectories({ home, ...input }); },
     async createProject(input: { createKey: string; path: string }) {

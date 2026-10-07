@@ -8,7 +8,8 @@ import { mergeThreadSummaryMetadata } from "../../threads/summaryMetadata";
 import { subagentsEventInvalidatesThread } from "../../threads/subagentsCache";
 import { useThreadPaneTitle } from "./useThreadPaneTitle";
 import { ThreadActionsMenu } from "./ThreadActionsMenu";
-import { Badge, Box, Button, Group, Loader, Modal, Skeleton, TextInput, Title } from "@mantine/core";
+import { RenameThreadDialog } from "./RenameThreadDialog";
+import { Badge, Box, Group, Loader, Skeleton, Title } from "@mantine/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, Sparkles } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
@@ -542,34 +543,9 @@ function ExistingThreadPane({
       <Title className="kodex-thread-pane-accessible-title" order={3} size="h5" title={title}>
         {title}
       </Title>
-      <Modal centered onClose={closeRenameModal} opened={renameModalOpen && thread !== null} title="Rename thread">
-        <Box component="form" onSubmit={handleRenameSubmit}>
-          <TextInput
-            autoFocus
-            data-autofocus
-            description="Type a name and press Enter."
-            disabled={renamePending}
-            error={renameError}
-            label="Thread name"
-            onChange={(event) => {
-              setRenameValue(event.currentTarget.value);
-              if (renameError) {
-                setRenameError(null);
-              }
-            }}
-            placeholder={title}
-            value={renameValue}
-          />
-          <Group justify="flex-end" mt="md">
-            <Button color="gray" disabled={renamePending} onClick={closeRenameModal} type="button" variant="light">
-              Cancel
-            </Button>
-            <Button loading={renamePending} type="submit">
-              Rename
-            </Button>
-          </Group>
-        </Box>
-      </Modal>
+      <RenameThreadDialog opened={renameModalOpen && thread !== null} title={title} name={renameValue}
+        pending={renamePending} error={renameError} onClose={closeRenameModal} onSubmit={handleRenameSubmit}
+        onChange={(value) => { setRenameValue(value); if (renameError) setRenameError(null); }} />
       <div className="kodex-thread-pane-status">
         {isActive && appErrorMessage ? <ThreadPaneErrorMessage message={appErrorMessage} /> : null}
         {paneErrorMessage && !isUnavailable ? (

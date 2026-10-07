@@ -42,7 +42,7 @@ function stream() {
     iterable: { [Symbol.asyncIterator]() { return { next: () => new Promise<IteratorResult<CatalogSnapshot>>(resolve => { next = resolve; }) }; } } };
 }
 const project = { id: 'project', name: 'Research', roots: ['/home/Research'] };
-const catalog = (revision = 1): CatalogSnapshot => ({ epoch: 'epoch', revision, projects: [project], chats: [{ id: 'chat', title: 'Chat', projectId: 'project', cwd: '/home/Research' }] });
+const catalog = (revision = 1): CatalogSnapshot => ({ epoch: 'epoch', revision, projects: [project], pinnedChatIds: [], chats: [{ id: 'chat', title: 'Chat', name: 'Chat', projectId: 'project', cwd: '/home/Research', pinned: false, notificationsEnabled: true }] });
 function shell() {
   return <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MantineProvider env="test"><NativeShell colorSchemeId="oled-black" appearance={DEFAULT_APPEARANCE_PREFERENCES} onAppearanceModeChange={vi.fn()} onThemeChange={vi.fn()} /></MantineProvider></QueryClientProvider>;
 }

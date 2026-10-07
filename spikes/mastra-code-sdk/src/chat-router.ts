@@ -22,6 +22,9 @@ function objectInput<T extends Record<string, string>>(keys: (keyof T & string)[
   return inputSchema<T>(value => object(value) && only(value, keys) && keys.every(key => string(value[key], key === 'text' ? 100_000 : 256)));
 }
 const chatInput = objectInput<{ chatId: string }>(['chatId']);
+const pinInput = inputSchema<{ chatId: string; pinned: boolean; beforeChatId?: string | null }>(value => object(value) && only(value, ['chatId', 'pinned', 'beforeChatId']) && string(value.chatId) && typeof value.pinned === 'boolean' && (!('beforeChatId' in value) || value.pinned && (value.beforeChatId === null || string(value.beforeChatId))));
+const notificationsInput = inputSchema<{ chatId: string; enabled: boolean }>(value => object(value) && only(value, ['chatId', 'enabled']) && string(value.chatId) && typeof value.enabled === 'boolean');
+const renameInput = objectInput<{ chatId: string; title: string }>(['chatId', 'title']);
 const messageInput = objectInput<{ chatId: string; text: string }>(['chatId', 'text']);
 const sendInput = inputSchema<{ chatId: string; text: string; queueIfPending?: boolean }>(value => object(value) && only(value, ['chatId', 'text', 'queueIfPending']) && string(value.chatId) && string(value.text, 100_000) && (!('queueIfPending' in value) || typeof value.queueIfPending === 'boolean'));
 const queueVersion = (value: Record<string, unknown>) => string(value.chatId) && string(value.epoch) && Number.isSafeInteger(value.revision) && (value.revision as number) >= 0;
@@ -52,6 +55,9 @@ export function createChatRouter(service: ChatService) {
     updateProject: os.input(projectUpdateInput).handler(({ input }) => service.updateProject(input)),
     deleteProject: os.input(objectInput<{ projectId: string }>(['projectId'])).handler(({ input }) => service.deleteProject(input)),
     moveProjectBefore: os.input(projectMoveInput).handler(({ input }) => service.moveProjectBefore(input)),
+    setChatPinned: os.input(pinInput).handler(({ input }) => service.setChatPinned(input)),
+    setChatNotifications: os.input(notificationsInput).handler(({ input }) => service.setChatNotifications(input)),
+    renameChat: os.input(renameInput).handler(({ input }) => service.renameChat(input)),
     getChatSettings: os.input(chatInput).handler(({ input }) => service.getChatSettings(input)),
     updateChatSettings: os.input(chatSettingsInput).handler(({ input }) => service.updateChatSettings(input)),
     getDraftDefaults: os.handler(() => service.getDraftDefaults()),

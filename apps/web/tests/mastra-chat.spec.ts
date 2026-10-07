@@ -216,3 +216,87 @@ test('project controls share canonical membership while retained chats survive d
     await rm(root, { recursive: true, force: true });
   }
 });
+
+async function openChatActions(page: Page) {
+  const showThread = page.getByRole('button', { name: 'Show thread', exact: true });
+  if (await showThread.isVisible()) await showThread.click();
+  const activeHost = page.locator('.dv-groupview.dv-active-group:visible, .kodex-workspace-single-pane-shell:visible');
+  await activeHost.getByRole('button', { name: 'Thread actions', exact: true }).click();
+}
+
+test('pins, order and notification preferences converge across tabs and backend restart', async ({ context, page }) => {
+  const root = await mkdtemp(join(tmpdir(), 'kodex-mastra-pins-browser-'));
+  let backend: ChildProcessWithoutNullStreams | undefined;
+  const errors: string[] = [];
+  const legacy: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  context.on('page', tab => tab.on('pageerror', error => errors.push(error.message)));
+  context.on('request', request => {
+    if (/^\/v1\/(pins|pinned-threads|threads\/[^/]+\/(pin|notifications|name))/.test(new URL(request.url()).pathname)) legacy.push(request.url());
+  });
+  const pinnedRows = (tab: Page) => tab.getByRole('group', { name: 'Pinned', exact: true }).locator('.kodex-thread-list-button');
+  try {
+    backend = await startBackend(root);
+    await page.goto('/');
+    await send(page, 'PIN_STANDALONE');
+    await expect(pane(page).getByText('fixture:PIN_STANDALONE', { exact: true })).toBeVisible();
+    const firstUrl = page.url();
+    await openChatActions(page);
+    await page.getByRole('menuitem', { name: 'Pin thread', exact: true }).click();
+    const second = await context.newPage();
+    await second.goto(firstUrl);
+    await expect(pane(second).getByText('fixture:PIN_STANDALONE', { exact: true })).toBeVisible();
+    await openChatActions(second);
+    await expect(second.getByRole('menuitem', { name: 'Unpin thread', exact: true })).toBeVisible();
+    await second.getByRole('menuitem', { name: 'Notifications', exact: true }).click();
+    await expect(second.getByRole('menuitem', { name: 'Notifications', exact: true })).toHaveAttribute('aria-checked', 'false');
+    await second.keyboard.press('Escape');
+    await openChatActions(second);
+    await second.getByRole('menuitem', { name: 'Rename thread', exact: true }).click();
+    const rename = second.getByRole('dialog', { name: 'Rename thread', exact: true });
+    await rename.getByRole('textbox', { name: 'Thread name', exact: true }).fill('Pinned standalone renamed');
+    await rename.getByRole('button', { name: 'Rename', exact: true }).click();
+    await expect(rename).not.toBeVisible();
+    for (const tab of [page, second]) await expect(pane(tab)).toHaveAttribute('aria-label', 'Pinned standalone renamed');
+    await openChatActions(page);
+    await expect(page.getByRole('menuitem', { name: 'Notifications', exact: true })).toHaveAttribute('aria-checked', 'false');
+    await page.keyboard.press('Escape');
+    await showSidebar(page);
+    await page.getByRole('button', { name: 'Create thread in project', exact: true }).click();
+    await send(page, 'PIN_PROJECT');
+    await expect(pane(page).getByText('fixture:PIN_PROJECT', { exact: true })).toBeVisible();
+    const secondUrl = page.url();
+    expect(secondUrl).not.toBe(firstUrl);
+    await openChatActions(page);
+    await page.getByRole('menuitem', { name: 'Pin thread', exact: true }).click();
+    for (const tab of [page, second]) { await showSidebar(tab); await expect(pinnedRows(tab)).toHaveCount(2); }
+    await expect(pinnedRows(page).last()).toHaveAttribute('data-active', 'true');
+    const moving = pinnedRows(page).last();
+    if (!test.info().project.use.hasTouch) await moving.hover();
+    await moving.getByRole('button', { name: /^Thread actions for / }).click();
+    await page.getByRole('menuitem', { name: 'Move up', exact: true }).click();
+    await expect(pinnedRows(page).first()).toHaveAttribute('data-active', 'true');
+    await expect(pinnedRows(second).last()).toHaveAttribute('data-active', 'true');
+    await stopBackend(backend, true);
+    backend = await startBackend(root);
+    // Reopen native history to prove this is persisted metadata, not a retained
+    // browser projection surviving the disconnect.
+    await page.reload(); await second.reload();
+    for (const tab of [page, second]) { await showSidebar(tab); await expect(pinnedRows(tab)).toHaveCount(2); }
+    await expect(pinnedRows(page).first()).toHaveAttribute('data-active', 'true');
+    await expect(pinnedRows(second).last()).toHaveAttribute('data-active', 'true');
+    await expect(pane(second)).toHaveAttribute('aria-label', 'Pinned standalone renamed');
+    await expect(pinnedRows(page).last()).toContainText('Pinned standalone renamed');
+    await openChatActions(second);
+    await expect(second.getByRole('menuitem', { name: 'Notifications', exact: true })).toHaveAttribute('aria-checked', 'false');
+    await second.getByRole('menuitem', { name: 'Unpin thread', exact: true }).click();
+    for (const tab of [page, second]) { await showSidebar(tab); await expect(pinnedRows(tab)).toHaveCount(1); }
+    expect(legacy).toEqual([]); expect(errors).toEqual([]);
+  } catch (failure) {
+    await test.info().attach('metadata-tab-diagnostics', { body: JSON.stringify({ errors, tabs: await Promise.all(context.pages().map(tab => tab.locator('body').innerText().catch(() => 'Unavailable'))) }), contentType: 'application/json' });
+    throw failure;
+  } finally {
+    if (backend) await stopBackend(backend);
+    await rm(root, { recursive: true, force: true });
+  }
+});

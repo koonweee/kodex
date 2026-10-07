@@ -159,3 +159,45 @@ test('seed batch failure rolls back membership and seed memory; default standalo
   t.after(() => defaultStore.close());
   assert.equal((await defaultStore.executionBinding(null)).cwd, homedir());
 });
+
+
+test('chat pin order is global, retry-safe and atomically rejects an invalid before target', async t => {
+  const { open } = await fixture(t); const first = await open(); const second = await open();
+  const a = await first.createProject({ createKey: 'pins-a', name: 'A', roots: [] });
+  const b = await first.createProject({ createKey: 'pins-b', name: 'B', roots: [] });
+  await first.updateProject({ id: a.id, patch: { roots: ['/project-a'] } });
+  await first.updateProject({ id: b.id, patch: { roots: ['/project-b'] } });
+  const bindings = [await first.executionBinding(a.id), await first.executionBinding(b.id), await first.executionBinding(null)];
+  const identities = bindings.map((binding, index) => ({ bindingId: binding.id, threadId: `native-${index}` }));
+  for (const identity of identities) await first.setChatPinned({ ...identity, pinned: true });
+  const order = async () => (await second.chatMetadataSnapshot()).entries.filter(row => row.pinPosition !== null).sort((a, b) => a.pinPosition! - b.pinPosition!).map(row => row.threadId);
+  assert.deepEqual(await order(), ['native-0', 'native-1', 'native-2']);
+  await second.setChatPinned({ ...identities[1]!, pinned: true });
+  assert.deepEqual(await order(), ['native-0', 'native-1', 'native-2']);
+  await first.setChatPinned({ ...identities[2]!, pinned: true, before: identities[1] });
+  assert.deepEqual(await order(), ['native-0', 'native-2', 'native-1']);
+  const before = await first.chatMetadataSnapshot();
+  await assert.rejects(second.setChatPinned({ ...identities[0]!, pinned: true, before: { bindingId: bindings[0]!.id, threadId: 'not-pinned' } }), hasCode('CONFLICT'));
+  assert.deepEqual(await first.chatMetadataSnapshot(), before);
+  await assert.rejects(first.setChatPinned({ ...identities[1]!, pinned: false, before: null }), hasCode('INVALID_INPUT'));
+  await first.setChatPinned({ ...identities[2]!, pinned: false });
+  assert.deepEqual(await order(), ['native-0', 'native-1']);
+  await first.setChatPinned({ ...identities[0]!, pinned: true, before: null });
+  assert.deepEqual(await order(), ['native-1', 'native-0']);
+});
+
+test('chat notification metadata stays independent from project ownership and same-path recreation', async t => {
+  const { root, open } = await fixture(t); const first = await open();
+  const project = await first.createProject({ createKey: 'chat-metadata', name: 'Metadata', roots: [join(root, 'cwd')] });
+  const old = await first.executionBinding(project.id); const identity = { bindingId: old.id, threadId: 'native-chat' };
+  await Promise.all([first.setChatPinned({ ...identity, pinned: true }), first.setChatNotifications({ ...identity, enabled: false })]);
+  await first.deleteProject({ id: project.id });
+  const recreated = await first.createProject({ createKey: 'recreated-metadata', name: 'New', roots: [old.cwd] });
+  const fresh = await first.executionBinding(recreated.id);
+  await first.close(); const reopened = await open();
+  assert.notEqual(old.id, fresh.id);
+  assert.deepEqual((await reopened.chatMetadataSnapshot()).entries, [{ ...identity, pinPosition: 0, notificationsEnabled: false }]);
+  assert.equal((await reopened.listBindings()).find(row => row.id === old.id)!.projectId, null);
+  await assert.rejects(reopened.setChatNotifications({ bindingId: 'missing-binding', threadId: 'native-chat', enabled: false }), hasCode('NOT_FOUND'));
+  assert.equal((await reopened.chatMetadataSnapshot()).entries.length, 1);
+});

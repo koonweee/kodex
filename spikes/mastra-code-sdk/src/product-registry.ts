@@ -8,6 +8,9 @@ import type { SpikeProfile } from './profile.js';
 
 export interface ProductProject { id: string; name: string; roots: string[] }
 export interface RuntimeBinding { id: string; projectId: string | null; cwd: string; runtimeRoot: string }
+export interface ChatIdentity { bindingId: string; threadId: string }
+export interface ChatMetadata extends ChatIdentity { pinPosition: number | null; notificationsEnabled: boolean }
+export interface ChatMetadataSnapshot { revision: number; entries: ChatMetadata[] }
 export interface ProjectRegistrySnapshot { revision: number; projects: ProductProject[] }
 export interface ProjectSeed { id: string; name: string; path: string; runtimeRoot: string }
 export interface ProjectPatch { name?: string; roots?: string[] }
@@ -16,7 +19,7 @@ export class ProductRegistryError extends Error {
     super(message); this.name = 'ProductRegistryError';
   }
 }
-const invalid = () => new ProductRegistryError('INVALID_INPUT', 'Invalid project metadata.');
+const invalid = () => new ProductRegistryError('INVALID_INPUT', 'Invalid product metadata.');
 const missing = () => new ProductRegistryError('NOT_FOUND', 'Project not found.');
 function text(value: string): string {
   if (typeof value !== 'string' || !value.trim() || value.includes('\0')) throw invalid();
@@ -34,6 +37,11 @@ function project(row: Row): ProductProject {
 function binding(row: Row): RuntimeBinding {
   return { id: String(row.id), projectId: row.project_id === null ? null : String(row.project_id), cwd: String(row.cwd), runtimeRoot: String(row.runtime_root) };
 }
+
+function chatMetadata(row: Row): ChatMetadata {
+  return { bindingId: String(row.binding_id), threadId: String(row.thread_id), pinPosition: row.pin_position === null ? null : Number(row.pin_position), notificationsEnabled: Number(row.notifications_enabled) !== 0 };
+}
+const sameChat = (left: ChatIdentity, right: ChatIdentity) => left.bindingId === right.bindingId && left.threadId === right.threadId;
 
 // Local libSQL writes begin synchronously. Serialize transactions for one file
 // across registry handles so another handle cannot block its own process's writer.
@@ -64,6 +72,7 @@ export async function openProductRegistry(profile: SpikeProfile, options: { stan
       await db.batch([
         `CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, roots_json TEXT NOT NULL, position INTEGER NOT NULL)`,
         `CREATE TABLE IF NOT EXISTS runtime_bindings (id TEXT PRIMARY KEY, project_id TEXT, cwd TEXT NOT NULL, runtime_root TEXT NOT NULL UNIQUE)`,
+        `CREATE TABLE IF NOT EXISTS chat_metadata (binding_id TEXT NOT NULL, thread_id TEXT NOT NULL, pin_position INTEGER, notifications_enabled INTEGER NOT NULL DEFAULT 1 CHECK (notifications_enabled IN (0, 1)), PRIMARY KEY (binding_id, thread_id))`,
         `CREATE TABLE IF NOT EXISTS project_seeds (id TEXT PRIMARY KEY)`,
         `CREATE TABLE IF NOT EXISTS project_creates (create_key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, project_id TEXT NOT NULL)`,
         `CREATE TABLE IF NOT EXISTS registry_state (id INTEGER PRIMARY KEY CHECK (id = 1), revision INTEGER NOT NULL, standalone_binding_id TEXT)`,
@@ -87,6 +96,11 @@ export async function openProductRegistry(profile: SpikeProfile, options: { stan
     if (!row) throw missing();
     return project(row);
   };
+  async function validChatIdentity(tx: Transaction, input: ChatIdentity) {
+    const identity = { bindingId: text(input.bindingId), threadId: text(input.threadId) };
+    if (!(await tx.execute({ sql: 'SELECT id FROM runtime_bindings WHERE id = ?', args: [identity.bindingId] })).rows.length) throw missing();
+    return identity;
+  }
   const changed = async (tx: Transaction) => { await tx.execute('UPDATE registry_state SET revision = revision + 1 WHERE id = 1'); };
   const nextPosition = async (tx: Transaction) => Number((await tx.execute('SELECT COALESCE(MAX(position), -1) + 1 AS position FROM projects')).rows[0]!.position);
   async function insertBinding(tx: Transaction, projectId: string | null, cwd: string, runtimeRoot?: string) {
@@ -106,6 +120,55 @@ export async function openProductRegistry(profile: SpikeProfile, options: { stan
     },
     async listBindings(): Promise<RuntimeBinding[]> {
       return transaction('read', async tx => (await tx.execute('SELECT * FROM runtime_bindings ORDER BY rowid')).rows.map(binding));
+    },
+    async chatMetadataSnapshot(): Promise<ChatMetadataSnapshot> {
+      return transaction('read', async tx => {
+        const revision = Number((await tx.execute('SELECT revision FROM registry_state WHERE id = 1')).rows[0]!.revision);
+        const entries = (await tx.execute('SELECT * FROM chat_metadata ORDER BY pin_position IS NULL, pin_position, binding_id, thread_id')).rows.map(chatMetadata);
+        return { revision, entries };
+      });
+    },
+    async setChatNotifications(input: ChatIdentity & { enabled: boolean }): Promise<void> {
+      if (typeof input.enabled !== 'boolean') throw invalid();
+      await transaction('write', async tx => {
+        const { bindingId, threadId } = await validChatIdentity(tx, input);
+        const current = (await tx.execute({ sql: 'SELECT notifications_enabled FROM chat_metadata WHERE binding_id = ? AND thread_id = ?', args: [bindingId, threadId] })).rows[0];
+        if ((current ? Number(current.notifications_enabled) !== 0 : true) === input.enabled) return;
+        await tx.execute({ sql: `INSERT INTO chat_metadata (binding_id, thread_id, notifications_enabled) VALUES (?, ?, ?)
+          ON CONFLICT (binding_id, thread_id) DO UPDATE SET notifications_enabled = excluded.notifications_enabled`, args: [bindingId, threadId, input.enabled ? 1 : 0] });
+        await changed(tx);
+      });
+    },
+    async setChatPinned(input: ChatIdentity & { pinned: boolean; before?: ChatIdentity | null }): Promise<void> {
+      const hasBefore = Object.hasOwn(input, 'before');
+      if (typeof input.pinned !== 'boolean' || (!input.pinned && hasBefore) || (hasBefore && input.before === undefined)) throw invalid();
+      await transaction('write', async tx => {
+        const identity = await validChatIdentity(tx, input);
+        const pinned = (await tx.execute('SELECT * FROM chat_metadata WHERE pin_position IS NOT NULL ORDER BY pin_position, binding_id, thread_id')).rows.map(chatMetadata);
+        const current = pinned.findIndex(row => sameChat(row, identity));
+        if (!input.pinned) {
+          if (current < 0) return;
+          await tx.execute({ sql: 'UPDATE chat_metadata SET pin_position = NULL WHERE binding_id = ? AND thread_id = ?', args: [identity.bindingId, identity.threadId] });
+          await changed(tx);
+          return;
+        }
+        if (current >= 0 && !hasBefore) return; // Repeat Pin must not reorder.
+        const next: ChatIdentity[] = pinned.filter(row => !sameChat(row, identity));
+        let position = next.length;
+        if (input.before !== undefined && input.before !== null) {
+          const before = { bindingId: text(input.before.bindingId), threadId: text(input.before.threadId) };
+          if (sameChat(before, identity) && current >= 0) return;
+          position = next.findIndex(row => sameChat(row, before));
+          if (position < 0) throw new ProductRegistryError('CONFLICT', 'The target chat is not pinned.');
+        }
+        next.splice(position, 0, identity);
+        if (next.length === pinned.length && next.every((row, index) => sameChat(row, pinned[index]!))) return;
+        for (const [pinPosition, row] of next.entries()) {
+          await tx.execute({ sql: `INSERT INTO chat_metadata (binding_id, thread_id, pin_position) VALUES (?, ?, ?)
+            ON CONFLICT (binding_id, thread_id) DO UPDATE SET pin_position = excluded.pin_position`, args: [row.bindingId, row.threadId, pinPosition] });
+        }
+        await changed(tx);
+      });
     },
     async seedProjects(seeds: ProjectSeed[]): Promise<void> {
       // CLI seeds are remembered even after deletion. They never update existing

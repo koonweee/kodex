@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import { pinUnnamedChat, renameNativeChat } from './chat-titles.js';
 import { EventPublisher, ORPCError } from '@orpc/server';
 import type { NativeSession, ProjectRuntime } from './runtime.js';
-import { createChatProjects, describeChat, ownsThread, type Chat, type ChatProjectOptions } from './chat-projects.js';
+import { createChatProjects, ownsThread, type Chat, type ChatProjectOptions } from './chat-projects.js';
 import type { ProductProject, ProjectPatch, RuntimeBinding } from './product-registry.js';
 import { assertProfileActive, type SpikeProfile } from './profile.js';
 import { createAccountService } from './account-service.js';
@@ -10,7 +11,7 @@ import { createChatQueue, type ChatQueueInput, type ChatQueueSnapshot, type Chat
 import { createNativeChatSettings, type ChatSettings, type ChatSettingsPatch } from './chat-settings.js';
 import { createSessionProjection, type SessionSnapshot } from './transport.js';
 
-export interface CatalogSnapshot { epoch: string; revision: number; projects: ProductProject[]; chats: Chat[] }
+export interface CatalogSnapshot { epoch: string; revision: number; projects: ProductProject[]; chats: Chat[]; pinnedChatIds: string[] }
 export interface ChatSnapshot extends SessionSnapshot { chat: Chat; error: string | null; settings: ChatSettings; queue: ChatQueueSnapshot }
 export interface QueuedSelection { chatId: string; epoch: string; revision: number; id: string }
 export interface QueuedEdit extends QueuedSelection { input: ChatQueueInput }
@@ -80,7 +81,7 @@ export function createChatService(options: ChatServiceOptions) {
       handle.revision++;
       if (event.type === 'agent_start') handle.error = null;
       if (event.type === 'error') handle.error = 'The model run failed. Please try again.';
-      if (event.type === 'thread_created' || event.type === 'thread_changed' || event.type === 'agent_end' || event.type === 'message_end') invalidateCatalog();
+      if (event.type === 'thread_created' || event.type === 'thread_changed' || event.type === 'thread_title_updated' || event.type === 'agent_end' || event.type === 'message_end') invalidateCatalog();
     });
     return handle;
   }
@@ -117,9 +118,9 @@ export function createChatService(options: ChatServiceOptions) {
       if (!thread || !ownsThread(handle.binding, thread)) throw missing();
       const publicSettings = await settings.readChat(handle.session);
       if (current.revision !== handle.revision) continue;
-      const binding = await projects.currentBinding(handle.binding.id);
+      const chat = await projects.describe(handle.binding.id, thread);
       if (current.revision !== handle.revision) continue;
-      return { ...current, chat: describeChat(binding, thread), error: handle.error, settings: publicSettings, queue: handle.queue.snapshot() };
+      return { ...current, chat, error: handle.error, settings: publicSettings, queue: handle.queue.snapshot() };
     }
   }
   async function catalogSnapshot(signal?: AbortSignal): Promise<CatalogSnapshot> {
@@ -180,6 +181,19 @@ export function createChatService(options: ChatServiceOptions) {
     async updateProject(input: { projectId: string; patch: ProjectPatch }) { const value = await projects.updateProject(input); invalidateProjects(); return value; },
     async deleteProject(input: { projectId: string }) { await projects.deleteProject(input); invalidateProjects(); return accepted(); },
     async moveProjectBefore(input: { projectId: string; beforeId: string | null }) { await projects.moveProjectBefore(input); invalidateProjects(); return accepted(); },
+    async setChatPinned(input: { chatId: string; pinned: boolean; beforeChatId?: string | null }) { await projects.setChatPinned(input); invalidateProjects(); return accepted(); },
+    async setChatNotifications(input: { chatId: string; enabled: boolean }) { await projects.setChatNotifications(input); invalidateProjects(); return accepted(); },
+    async renameChat({ chatId, title }: { chatId: string; title: string }) {
+      const name = title.trim();
+      if (!name) throw new ORPCError('BAD_REQUEST', { message: 'Chat name cannot be empty.' });
+      const handle = await handleFor(chatId);
+      assertActive();
+      try { await renameNativeChat(handle.session, name); }
+      catch { throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Chat name could not be changed.' }); }
+      invalidateCatalog();
+      handle.session.emit({ type: 'display_state_changed', displayState: handle.session.displayState.get() });
+      return accepted();
+    },
     async getChatSettings({ chatId }: { chatId: string }) {
       const current = await snapshot(await handleFor(chatId));
       return { epoch: current.epoch, revision: current.revision, ...current.settings };
@@ -219,6 +233,7 @@ export function createChatService(options: ChatServiceOptions) {
         await settings.validate(runtime, draft ?? {}, defaults.modelId);
         const session = await runtime.createSession({ resourceId, threadId: chatId });
         await settings.updateChat(runtime, session, { modelId: defaults.modelId, ...draft });
+        await pinUnnamedChat(session);
         return bind(binding, runtime, session);
       });
       const created = await snapshot(handle);

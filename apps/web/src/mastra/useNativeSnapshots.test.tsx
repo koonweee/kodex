@@ -18,7 +18,7 @@ function stream() {
   };
 }
 function snapshot(epoch: string, revision: number, title: string): ChatSnapshot {
-  return { epoch, revision, chat: { id: 'chat', projectId: 'project', cwd: '/project', title }, error: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(),
+  return { epoch, revision, chat: { pinned: false, notificationsEnabled: true, id: 'chat', projectId: 'project', cwd: '/project', title, name: title }, error: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(),
     display: defaultDisplayState(), messages: [] };
 }
 afterEach(() => { rpc.watchChat.mockReset(); });
@@ -65,7 +65,7 @@ describe('native chat snapshot subscription', () => {
     hook.rerender({ id: 'other' });
     expect(hook.result.current.snapshot).toBeNull();
     await waitFor(() => expect(rpc.watchChat).toHaveBeenCalledTimes(2));
-    await act(async () => next.publish({ ...snapshot('other', 0, 'Other'), chat: { id: 'other', title: 'Other', cwd: '/project', projectId: 'project' } }));
+    await act(async () => next.publish({ ...snapshot('other', 0, 'Other'), chat: { pinned: false, notificationsEnabled: true, id: 'other', title: 'Other', name: 'Other', cwd: '/project', projectId: 'project' } }));
     expect(hook.result.current.snapshot?.chat.id).toBe('other');
   });
 });
