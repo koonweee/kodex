@@ -8,6 +8,7 @@ import { AttachmentTray } from "./AttachmentTray";
 import { ComposerAnnotations } from "./ComposerAnnotations";
 import type { ComposerPanelProps } from "./ComposerPanel";
 import { GoalBar, type GoalControls } from "../goals/GoalControls";
+import { useCompactComposer } from "./useCompactComposer";
 import { ComposerToolbar } from "./ComposerToolbar";
 import { SlashCommandPopup } from "./SlashCommandPopup";
 import { SkillMentionPopup } from "./SkillMentionPopup";
@@ -109,6 +110,7 @@ export function InlineComposerPanel({
   const formId = useId();
   const draftHeroText = greetingForDate(new Date());
   const shouldShowDraftHero = !expanded && (isDraftThreadSelected || isDraftComposerTransitioning);
+  const compactComposer = useCompactComposer(textareaRef);
   const selectedDraftProject =
     draftProjectSelector?.projects.find((project) => project.id === draftProjectSelector.value) ?? null;
   const draftProjectSelectorLabel = selectedDraftProject?.name ?? COMPOSER_TEXT.noProject;
@@ -201,8 +203,8 @@ export function InlineComposerPanel({
           aria-label="Message composer"
           className={`kodex-composer-textarea${expanded ? " kodex-mobile-composer-textarea" : ""}`}
           placeholder={canCompose ? COMPOSER_TEXT.placeholder : COMPOSER_TEXT.disabledPlaceholder}
-          minRows={expanded ? 3 : 2}
-          maxRows={expanded ? 16 : 10}
+          minRows={expanded ? 3 : compactComposer ? 2 : 4}
+          maxRows={expanded ? 16 : compactComposer ? 5 : 10}
           autosize
           value={draftState.composerText}
           onChange={(event) => {
