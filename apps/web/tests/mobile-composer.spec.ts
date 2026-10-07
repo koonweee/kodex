@@ -45,6 +45,19 @@ for (const shape of [
         expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(420);
         await page.screenshot({ path: test.info().outputPath("composer-reduced-height.png") });
         if (shape.hasTouch) {
+          const longDraft = Array.from({ length: 80 }, (_, i) => `Draft line ${i}`).join("\n");
+          await textarea.fill(longDraft);
+          const wrapper = pane.locator(".kodex-mobile-composer-textarea");
+          await expect.poll(() => wrapper.evaluate(el => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1);
+          await expect.poll(() => textarea.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+          const before = await send.boundingBox();
+          await textarea.evaluate(el => { el.scrollTop = el.scrollHeight; });
+          await expect.poll(() => textarea.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+          expect(await send.boundingBox()).toEqual(before);
+          await expect(pane.getByRole("button", { name: "Collapse composer", exact: true })).toBeInViewport();
+          await textarea.fill("A draft that survives viewport changes");
+        }
+        if (shape.hasTouch) {
           await pane.getByRole("button", { name: "Collapse composer", exact: true }).tap();
           await expect(pane.getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
           expect(await originalTextarea!.evaluate((element) => element.isConnected)).toBe(true);
