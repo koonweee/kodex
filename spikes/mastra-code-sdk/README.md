@@ -4,7 +4,7 @@
 
 An isolated experiment for a future Kodex TypeScript/oRPC gateway. It does not start or replace the production gateway. See the [plan](../../plans/mastra-code-sdk-spike.md) for accepted product decisions and validation status.
 
-Validated on 2026-10-07: 43 tests, typecheck and independent review pass. The added shutdown characterization test reproduces a native title-write failure and confirms the completed answer survives reopening. Real ChatGPT requests passed in two separate processes using saved credentials. Production migration gates remain below.
+Backend validation on 2026-10-07: 51 tests, typecheck, build and independent review pass; frontend milestone validation is in progress. The added shutdown characterization test reproduces a native title-write failure and confirms the completed answer survives reopening. Real ChatGPT requests passed in two separate processes using saved credentials. Production migration gates remain below.
 
 Requires Node 24+:
 
@@ -15,7 +15,37 @@ npm test
 npm run check
 ```
 
-Tests use the published SDK for sessions, tools, memory, goals, scheduling and persistence. Only the remote model is replaced by a local HTTP fixture. The oRPC test uses real localhost HTTP/SSE clients; it does not validate a browser renderer. Tests create disposable profiles and projects. The restart test terminates only its own disposable child process.
+Tests use the published SDK for sessions, tools, memory, goals, scheduling and persistence. Only the remote model is replaced by a local HTTP fixture. The oRPC test uses real localhost HTTP/SSE clients; the new browser acceptance test additionally exercises the retained Kodex renderer against native SDK state. Tests create disposable profiles and projects. The restart test terminates only its own disposable child process.
+
+## Existing Kodex UI spike
+
+Milestone 3 is active. The existing Kodex shell, docking, composer and timeline use native Mastra snapshots through typed oRPC when explicitly selected. This is a WIP backend: unported controls remain visible and return ordinary errors. No app-server fallback or deployment is performed.
+
+After dedicated-profile login, run the backend with one or more project directories:
+
+```sh
+npm run login -- login --mode device
+npm run build
+npm run serve:built -- --project /absolute/project
+# In another terminal, from the repository root:
+cd apps/web
+VITE_KODEX_BACKEND=mastra npm run dev -- --port 5174 --strictPort
+```
+
+The backend binds `127.0.0.1:8789`; Vite sends both `/rpc` and unfinished `/v1` requests to that backend. The original frontend development target remains available without `VITE_KODEX_BACKEND=mastra`. Never point the Mastra frontend at the production gateway. No sandbox or gateway authentication is provided; localhost/trusted VPN only.
+
+`--profile`, `--port`, and `--model` configure the backend; `KODEX_MASTRA_PROFILE` and `KODEX_MASTRA_MODEL` supply defaults. The model defaults to the previously verified `openai/gpt-6.1-sol`. The native settings API seeds missing memory/judge model choices with that provider and sets the accepted effectively unlimited goal evaluation count; existing memory model selections are preserved. Use a model available to your account.
+
+Project paths are configured by CLI for this slice. Canonical directory paths select stable project stores within the dedicated profile; native thread rows supply chat inventory and history. Moving a project directory selects a fresh store. Browser project creation, pins, settings, attachments, and other retained workflows are later milestones. Existing native histories are reloaded after backend restart; pending follow-ups may be dropped as agreed.
+
+The browser proof uses a disposable native SDK backend and local model fixture, with Playwright's bundled Chromium:
+
+```sh
+cd apps/web
+npx playwright test --config playwright.mastra.config.ts
+```
+
+It uses ports 5184/18789, separate from production and the ordinary dev commands. It does not access real credentials. Test status and remaining exit conditions are recorded in the running port log. The test-only fixture explicitly exits after awaited disposal; this does not prove native natural shutdown or safe hot retirement.
 
 ## ChatGPT smoke
 
@@ -91,7 +121,7 @@ Native fixtures verify explicit chat identities/history survive global, project 
 
 ## Limits before a production migration
 
-- This is a compatibility proof, not a gateway or harness abstraction layer. There are no production routes, schema migration, UI changes or deployment commands here.
+- This is a compatibility proof, not a gateway or harness abstraction layer. The opt-in UI chat backend is under implementation; there is no production cutover, schema migration, or deployment command here.
 - SDK `agent_end` / `sendMessage()` completion does not necessarily join trailing title generation and workflow-snapshot writes. Immediate `Mastra.shutdown()` closes SQLite before some writes finish. The focused shutdown test confirms the completed answer survives reopening while delayed title persistence fails, even after `Memory.settled()` and a 30-second native drain budget. This narrows the demonstrated risk to unfinished title/internal cleanup at shutdown; universal safe hot retirement is still unproven. Expected `CLIENT_CLOSED` diagnostics in that characterization test are not a failed assertion. See the plan’s native shutdown audit.
 - The transport sends full snapshots for simplicity. oRPC buffers one invalidation per consumer; overlapping native events force a new history read. It is not a production paging/delta protocol or a durable replay log. The revision covers observed Session events, not native database commits; late writes without a notification are not fenced. Continuous updates can postpone a read. Restart creates a new projection epoch.
 - MCP servers, arbitrary plugins/hooks, custom browser widgets, subagent rendering, attachments, long-context observation/compaction, terminal supervision and existing Kodex product integrations are not exercised by this suite. MCP discovery and arbitrary plugins/hooks are disabled while dedicated-profile isolation is assessed. Skills now use supported session `homeDir`, with native discovery coverage across two projects. Some MCP/resource and instruction-path discovery still reads the real home; see the [configuration audit](../../plans/mastra-config-isolation.md). The spike uses a distinct config-directory name and explicitly selects native thread memory scope.
