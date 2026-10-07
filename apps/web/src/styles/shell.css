@@ -33,6 +33,12 @@
   overflow: hidden;
 }
 
+/* Dockview owns the full surface; pane-local spacing keeps content inset.
+   The outer radius clips the grid without positioning-dependent edge rules. */
+.kodex-main-stack:has(> .kodex-workspace-shell) {
+  padding: 0;
+}
+
 .kodex-thread-column {
   box-sizing: border-box;
   width: min(
