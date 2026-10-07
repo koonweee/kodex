@@ -48,5 +48,5 @@
 /* The native 1px gaps expose one shared surface, including nested intersections.
    Keep the wider resize hit areas transparent instead of painting extra borders. */
 .kodex-workspace-dock .dv-dockview {
-  background-color: color-mix(in srgb, var(--kodex-border-subtle) 50%, var(--kodex-pane-bg));
+  background-color: color-mix(in srgb, var(--kodex-border-subtle) 75%, var(--kodex-pane-bg));
 }
