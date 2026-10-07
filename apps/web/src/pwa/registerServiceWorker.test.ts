@@ -18,6 +18,44 @@ afterEach(() => {
 });
 
 describe("registerKodexServiceWorker", () => {
+  it("checks for updates in an open tab and when it returns to the foreground", async () => {
+    vi.useFakeTimers();
+    const original = navigator.serviceWorker;
+    const visibility = vi.spyOn(document, "visibilityState", "get");
+    const update = vi.fn().mockResolvedValue(undefined);
+    const registration = { scope: "/", update } as unknown as ServiceWorkerRegistration;
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: Object.assign(new EventTarget(), { getRegistration: vi.fn().mockResolvedValue(registration), controller: {} }),
+    });
+    setRegisterSWLoaderForTests(() => Promise.resolve((options) => {
+      options?.onRegisteredSW?.("/sw.js", registration);
+      return vi.fn().mockResolvedValue(undefined);
+    }));
+
+    try {
+      await registerPwaServiceWorker();
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      expect(update).toHaveBeenCalledTimes(1);
+      document.dispatchEvent(new Event("visibilitychange"));
+      expect(update).toHaveBeenCalledTimes(1);
+
+      visibility.mockReturnValue("hidden");
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      expect(update).toHaveBeenCalledTimes(1);
+
+      visibility.mockReturnValue("visible");
+      document.dispatchEvent(new Event("visibilitychange"));
+      await Promise.resolve();
+      expect(update).toHaveBeenCalledTimes(2);
+    } finally {
+      resetPwaServiceWorkerStateForTests();
+      visibility.mockRestore();
+      vi.useRealTimers();
+      Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: original });
+    }
+  });
+
   it("returns unsupported when service workers are unavailable", async () => {
     const original = navigator.serviceWorker;
     Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: undefined });

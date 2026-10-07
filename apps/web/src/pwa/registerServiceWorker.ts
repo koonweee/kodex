@@ -18,6 +18,7 @@ type PwaRegistrationOptions = {
 };
 
 const listeners = new Set<PwaUpdateListener>();
+const UPDATE_CHECK_INTERVAL_MS = 5 * 60_000;
 
 let loadRegisterSW: () => Promise<RegisterSW> = async () => {
   const pwaModule = await import("virtual:pwa-register");
@@ -29,6 +30,7 @@ let registrationPromise: Promise<ServiceWorkerRegistrationResult> | null = null;
 let serviceWorkerRegistrationPromise: Promise<ServiceWorkerRegistration> | null = null;
 let needRefresh = false;
 let updateServiceWorker: (() => Promise<void>) | null = null;
+let stopUpdateChecks: (() => void) | null = null;
 
 export function pwaGatewayIsSameOrigin(): boolean {
   if (typeof window === "undefined") return false;
@@ -60,6 +62,29 @@ function emitUpdateState() {
 
 function failedRegistrationResult(error: unknown): ServiceWorkerRegistrationResult {
   return { registered: false, reason: "failed", error };
+}
+
+function startUpdateChecks(registration: ServiceWorkerRegistration) {
+  stopUpdateChecks?.();
+  if (typeof registration.update !== "function") return;
+
+  let checking = false;
+  let lastCheckAt = Date.now();
+  const check = () => {
+    if (checking || Date.now() - lastCheckAt < UPDATE_CHECK_INTERVAL_MS ||
+      document.visibilityState !== "visible" || !navigator.onLine || registration.installing) return;
+    checking = true;
+    lastCheckAt = Date.now();
+    void registration.update().catch(() => undefined).finally(() => { checking = false; });
+  };
+  const onVisibilityChange = () => check();
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  const interval = window.setInterval(check, UPDATE_CHECK_INTERVAL_MS);
+  stopUpdateChecks = () => {
+    document.removeEventListener("visibilitychange", onVisibilityChange);
+    window.clearInterval(interval);
+    stopUpdateChecks = null;
+  };
 }
 
 async function activeServiceWorkerRegistration(): Promise<ServiceWorkerRegistration> {
@@ -137,6 +162,7 @@ export async function registerPwaServiceWorker(
             settled = true;
             if (!result.registered) {
               registrationFailed = true;
+              stopUpdateChecks?.();
               workerContainer.removeEventListener?.("controllerchange", onControllerChange);
               registrationStarted = false;
               registrationPromise = null;
@@ -146,6 +172,7 @@ export async function registerPwaServiceWorker(
               emitUpdateState();
             } else {
               serviceWorkerRegistrationPromise = Promise.resolve(result.registration);
+              startUpdateChecks(result.registration);
             }
             resolve(result);
           };
@@ -207,6 +234,7 @@ export async function registerPwaServiceWorker(
     )
     .catch((error: unknown) => {
       registrationStarted = false;
+      stopUpdateChecks?.();
       registrationPromise = null;
       serviceWorkerRegistrationPromise = null;
       updateServiceWorker = null;
@@ -240,6 +268,7 @@ export function setRegisterSWLoaderForTests(loader: () => Promise<RegisterSW>): 
 }
 
 export function resetPwaServiceWorkerStateForTests(): void {
+  stopUpdateChecks?.();
   listeners.clear();
   registrationStarted = false;
   registrationPromise = null;
