@@ -14,14 +14,12 @@ import {
   createPresentationItem,
   isErrorEvent,
   isWarningEvent,
-  mergeImages,
   type TimelinePresentationItem,
 } from "./presentation";
-import type { CollabAgentNameMap } from "./presentationCollab";
+import { buildTimelineIndexesFromRows, compactStoredTimelineEvent, createTimelineIndexBuilder } from "./indexBuilder";
 import { threadViewProjectionRevision } from "./threadViewEvents";
 import {
   compactTimelineStores,
-  createEmptyTimelineIndexes,
   createTimelineState,
   createTimelineStateFromDraft,
   indexesForState,
@@ -29,14 +27,10 @@ import {
   timelineRowByKey,
   timelineRowKeysByItemId,
   timelineItemById,
-  timelineItems,
   timelineTurnById,
-  type TimelineCollabAgent,
-  type TimelineCollabAgentPresentation,
   type TimelineItem,
   type TimelineRow,
   type TimelineState,
-  type WebSearchAction,
   type TimelineDraft,
 } from "./state";
 
@@ -221,16 +215,12 @@ export function applyTimelineHistoryWindow(state: TimelineState, snapshot: Threa
   if (revision >= state.viewRevision || snapshot.historyPage?.resetWindow) {
     return applyTimelineSnapshot(state, snapshot);
   }
-  const indexes = createEmptyTimelineIndexes();
-  const mapped = canonicalTimelineRowsToViewRows(snapshot.thread.id, snapshot.timeline.rows ?? [], indexes);
+  const mapped = canonicalTimelineRowsToViewRows(snapshot.thread.id, snapshot.timeline.rows ?? []);
   const existingKeys = new Set(state.rows.map((row) => row.key));
   const rows = [...mapped.rows.filter((row) => !existingKeys.has(row.key)), ...removeMatchedOptimisticUserRows(state.rows, mapped.rows)].sort(
     (left, right) => timelineRowDisplayOrder(left) - timelineRowDisplayOrder(right),
   );
-  const mergedIndexes = createEmptyTimelineIndexes();
-  for (const row of rows) {
-    addTimelineRowItemsToIndexes(row, mergedIndexes);
-  }
+  const mergedIndexes = buildTimelineIndexesFromRows(rows);
   mergedIndexes.hiddenItems.push(...state.hiddenItems, ...mapped.hiddenItems);
   const next = createTimelineStateFromDraft({
     ...timelineDraftFromState(state),
@@ -259,16 +249,17 @@ function applyCanonicalTimelineSnapshot(
   if (revision < state.viewRevision) {
     return state;
   }
-  const indexes = createEmptyTimelineIndexes();
+  const builder = createTimelineIndexBuilder();
   const mapped = canonicalTimelineRowsToViewRows(
     snapshot.thread.id,
     canonicalTimeline.rows ?? [],
-    indexes,
+    builder,
   );
   const rows = preserveUnconfirmedOptimisticUserRows(state.rows, mapped.rows);
   for (const row of rows) {
-    if (row.type === "item" && row.item.source === "optimistic") addTimelineRowItemsToIndexes(row, indexes);
+    if (row.type === "item" && row.item.source === "optimistic") builder.addRow(row);
   }
+  const indexes = builder.finish();
   indexes.hiddenItems.push(...mapped.hiddenItems);
   const next = createTimelineStateFromDraft({
     activeTurnId: canonicalTimeline.activeTurnId ?? null,
@@ -305,12 +296,12 @@ function withHistoryPageState(
 function canonicalTimelineRowsToViewRows(
   threadId: string,
   canonicalRows: ThreadTimelineRow[],
-  indexes = createEmptyTimelineIndexes(),
+  builder = createTimelineIndexBuilder(),
 ): { rows: TimelineRow[]; hiddenItems: TimelineItem[] } {
   const hiddenItems: TimelineItem[] = [];
   const rows = [...canonicalRows]
     .sort((left, right) => left.displayOrder - right.displayOrder)
-    .map((row) => canonicalTimelineRowToViewRow(threadId, row, indexes, hiddenItems))
+    .map((row) => canonicalTimelineRowToViewRow(threadId, row, builder, hiddenItems))
     .filter((row): row is TimelineRow => row !== null);
   return { rows, hiddenItems };
 }
@@ -318,7 +309,7 @@ function canonicalTimelineRowsToViewRows(
 function canonicalTimelineRowToViewRow(
   threadId: string,
   row: ThreadTimelineRow | ThreadTimelineWorkDetailRow,
-  indexes: ReturnType<typeof createEmptyTimelineIndexes>,
+  builder: ReturnType<typeof createTimelineIndexBuilder>,
   hiddenItems: TimelineItem[],
 ): TimelineRow | null {
   const base = {
@@ -340,7 +331,7 @@ function canonicalTimelineRowToViewRow(
       startedAtMs: unixSecondsToMs(row.work?.startedAt),
       completedAtMs: workState === "running" ? undefined : unixSecondsToMs(row.work?.completedAt),
       collapsedRows: row.collapsedRows
-        .map((collapsedRow) => canonicalTimelineRowToViewRow(threadId, collapsedRow, indexes, hiddenItems))
+        .map((collapsedRow) => canonicalTimelineRowToViewRow(threadId, collapsedRow, builder, hiddenItems))
         .filter((collapsedRow): collapsedRow is Exclude<TimelineRow, { type: "work" }> => collapsedRow !== null && collapsedRow.type !== "work"),
       displayOrder: row.displayOrder,
     };
@@ -348,7 +339,7 @@ function canonicalTimelineRowToViewRow(
 
   if (row.kind === "activity") {
     const items = row.items
-      .map((item) => canonicalTimelineItemToViewItem(threadId, item, indexes, hiddenItems))
+      .map((item) => canonicalTimelineItemToViewItem(threadId, item, builder, hiddenItems))
       .filter((item): item is TimelineItem => item !== null);
     if (items.length === 0) {
       return null;
@@ -369,64 +360,28 @@ function canonicalTimelineRowToViewRow(
   if (!row.item) {
     return null;
   }
-  const item = canonicalTimelineItemToViewItem(threadId, row.item, indexes, hiddenItems);
+  const item = canonicalTimelineItemToViewItem(threadId, row.item, builder, hiddenItems);
   return item ? { ...base, type: "item", displayOrder: row.displayOrder, item } : null;
 }
 
 function canonicalTimelineItemToViewItem(
   threadId: string,
   item: ThreadTimelineSnapshotItem,
-  indexes: ReturnType<typeof createEmptyTimelineIndexes>,
+  builder: ReturnType<typeof createTimelineIndexBuilder>,
   hiddenItems: TimelineItem[],
 ): TimelineItem | null {
   const event = canonicalSnapshotItemEvent(threadId, item);
-  const existingItem = timelineItemById(indexes, item.id);
+  const existingItem = builder.itemById(item.id);
   const presentation = createPresentationItem(event, existingItem, {
-    collabAgentNames: collabAgentNameMap(indexes),
+    collabAgentNames: builder.collabAgentNames(),
   });
   if (!presentation || presentation.hidden) {
     hiddenItems.push(createDiagnosticItem(event));
     return null;
   }
   const nextItem = canonicalPresentationItem(presentation, item).item;
-  addOrReplaceItem(
-    {
-      activeTurnId: null,
-      indexes,
-      lastSeq: 0,
-      viewRevision: 0,
-      snapshotCoverageRevision: 0,
-      snapshotRefillIntent: null,
-    },
-    nextItem,
-  );
+  builder.addItem(nextItem);
   return nextItem;
-}
-
-function addTimelineRowItemsToIndexes(row: TimelineRow, indexes: ReturnType<typeof createEmptyTimelineIndexes>) {
-  const draft = {
-    activeTurnId: null,
-    indexes,
-    lastSeq: 0,
-    viewRevision: 0,
-    snapshotCoverageRevision: 0,
-    snapshotRefillIntent: null,
-  };
-  if (row.type === "item") {
-    addOrReplaceItem(draft, row.item);
-    return;
-  }
-  if (row.type === "activity") {
-    for (const item of row.items) {
-      addOrReplaceItem(draft, item);
-    }
-    return;
-  }
-  if (row.type === "work") {
-    for (const collapsedRow of row.collapsedRows) {
-      addTimelineRowItemsToIndexes(collapsedRow, indexes);
-    }
-  }
 }
 
 function timelineRowDisplayOrder(row: TimelineRow): number {
@@ -688,13 +643,9 @@ function applyCanonicalRowsPatch(state: TimelineState, threadId: string, patch: 
   }
   const fullRows = patch.rows;
   if (patch.scope === "full_snapshot" && Array.isArray(fullRows)) {
-    const currentIndexes = createEmptyTimelineIndexes();
-    const mapped = canonicalTimelineRowsToViewRows(threadId, fullRows, currentIndexes);
+    const mapped = canonicalTimelineRowsToViewRows(threadId, fullRows);
     const rows = preserveUnconfirmedOptimisticUserRows(state.rows, mapped.rows);
-    const indexes = createEmptyTimelineIndexes();
-    for (const row of rows) {
-      addTimelineRowItemsToIndexes(row, indexes);
-    }
+    const indexes = buildTimelineIndexesFromRows(rows);
     indexes.hiddenItems.push(...mapped.hiddenItems);
     return createTimelineStateFromDraft({
       ...timelineDraftFromState(state),
@@ -704,7 +655,7 @@ function applyCanonicalRowsPatch(state: TimelineState, threadId: string, patch: 
   }
 
   const affectedTurnIds = new Set(patch.affectedTurnIds ?? []);
-  const mappedPatchRows = canonicalTimelineRowsToViewRows(threadId, patch.rows ?? [], createEmptyTimelineIndexes());
+  const mappedPatchRows = canonicalTimelineRowsToViewRows(threadId, patch.rows ?? []);
   const retainedRows = removeMatchedOptimisticUserRows(
     state.rows.filter((row) => !row.turnId || !affectedTurnIds.has(row.turnId)),
     mappedPatchRows.rows,
@@ -714,10 +665,7 @@ function applyCanonicalRowsPatch(state: TimelineState, threadId: string, patch: 
     ...mappedPatchRows.rows,
   ].sort((left, right) => timelineRowDisplayOrder(left) - timelineRowDisplayOrder(right));
   reducerInstrumentation.turnPatchIndexedRows += rows.length;
-  const indexes = createEmptyTimelineIndexes();
-  for (const row of rows) {
-    addTimelineRowItemsToIndexes(row, indexes);
-  }
+  const indexes = buildTimelineIndexesFromRows(rows);
   indexes.hiddenItems.push(
     ...state.hiddenItems.filter((item) => !item.turnId || !affectedTurnIds.has(item.turnId)),
     ...mappedPatchRows.hiddenItems,
@@ -790,16 +738,13 @@ function applyCanonicalRowDeltaPatch(
     }
   }
 
-  const mappedPatchRows = canonicalTimelineRowsToViewRows(threadId, rows, createEmptyTimelineIndexes());
+  const mappedPatchRows = canonicalTimelineRowsToViewRows(threadId, rows);
   const mergedRows = [
     ...removeMatchedOptimisticUserRows(state.rows, mappedPatchRows.rows).filter((row) => !removedRowIds.has(row.key) && !changedRowIds.has(row.key)),
     ...mappedPatchRows.rows,
   ].sort((left, right) => timelineRowDisplayOrder(left) - timelineRowDisplayOrder(right));
 
-  const indexes = createEmptyTimelineIndexes();
-  for (const row of mergedRows) {
-    addTimelineRowItemsToIndexes(row, indexes);
-  }
+  const indexes = buildTimelineIndexesFromRows(mergedRows);
   indexes.hiddenItems.push(
     ...state.hiddenItems.filter((item) => !hiddenItemIdsToReplace.has(item.id)),
     ...mappedPatchRows.hiddenItems,
@@ -917,10 +862,7 @@ function optimisticDisplayOrder(state: TimelineState): number {
 
 function rebuildTimelineRows(state: TimelineState, rows: TimelineRow[]): TimelineState {
   const normalizedRows = [...rows].sort((left, right) => timelineRowDisplayOrder(left) - timelineRowDisplayOrder(right));
-  const indexes = createEmptyTimelineIndexes();
-  for (const row of normalizedRows) {
-    addTimelineRowItemsToIndexes(row, indexes);
-  }
+  const indexes = buildTimelineIndexesFromRows(normalizedRows);
   indexes.hiddenItems.push(...state.hiddenItems);
   return createTimelineStateFromDraft({
     ...timelineDraftFromState(state),
@@ -934,159 +876,6 @@ function preserveUnconfirmedOptimisticUserRows(currentRows: TimelineRow[], canon
     ...canonicalRows,
     ...removeMatchedOptimisticUserRows(currentRows, canonicalRows).filter((row) => row.type === "item" && row.item.source === "optimistic" && row.item.confirmationState === "sending"),
   ];
-}
-
-function mergeTimelineItem(existing: TimelineItem, incoming: TimelineItem, event: EventEnvelope): TimelineItem {
-  const compactEvent = compactStoredTimelineEvent(event);
-  return {
-    ...existing,
-    ...incoming,
-    actions: mergeActions(existing.actions, incoming.actions),
-    argsSummary: incoming.argsSummary || existing.argsSummary,
-    collab: mergeCollabPresentation(existing.collab, incoming.collab),
-    command: incoming.command || existing.command,
-    cwd: incoming.cwd || existing.cwd,
-    debugEvents: [...existing.debugEvents, compactEvent],
-    imageSrc: incoming.imageSrc || existing.imageSrc,
-    kind: incoming.kind === "debug_event" && existing.kind !== "debug_event" ? existing.kind : incoming.kind,
-    output: incoming.output || existing.output,
-    path: incoming.path || existing.path,
-    messagePhase: incoming.messagePhase || existing.messagePhase,
-    images: mergeImages(existing.images, incoming.images),
-    skillMentions: incoming.skillMentions ?? existing.skillMentions,
-    payload: compactStoredPayload(incoming),
-    resultSummary: incoming.resultSummary || existing.resultSummary,
-    displayOrder: incoming.displayOrder,
-    timestampMs: incoming.timestampMs ?? existing.timestampMs,
-    status: incoming.status,
-    toolName: incoming.toolName || existing.toolName,
-    text: incoming.text || existing.text,
-  };
-}
-
-function collabAgentNameMap(indexes: ReturnType<typeof indexesForState>): CollabAgentNameMap {
-  const names: CollabAgentNameMap = new Map();
-  for (const item of timelineItems(indexes)) {
-    if (item.kind !== "collab_agent_tool_call" || !item.collab) {
-      continue;
-    }
-    for (const agent of item.collab.agents) {
-      const prior = names.get(agent.threadId);
-      names.set(agent.threadId, mergeCollabAgentName(prior, agent));
-    }
-  }
-  return names;
-}
-
-function mergeCollabAgentName(
-  prior: TimelineCollabAgent | undefined,
-  incoming: TimelineCollabAgent,
-): TimelineCollabAgent {
-  if (!prior) {
-    return incoming;
-  }
-  if (incoming.nickname || (!prior.nickname && incoming.role && incoming.nameSource !== "ordinal")) {
-    return { ...prior, ...incoming };
-  }
-  return {
-    ...incoming,
-    displayName: prior.displayName,
-    nameSource: prior.nameSource,
-    nickname: prior.nickname,
-    role: incoming.role || prior.role,
-  };
-}
-
-function mergeCollabPresentation(
-  existing: TimelineCollabAgentPresentation | undefined,
-  incoming: TimelineCollabAgentPresentation | undefined,
-): TimelineCollabAgentPresentation | undefined {
-  if (!existing) {
-    return incoming;
-  }
-  if (!incoming) {
-    return existing;
-  }
-  const agentsByThreadId = new Map(existing.agents.map((agent) => [agent.threadId, agent]));
-  for (const agent of incoming.agents) {
-    const prior = agentsByThreadId.get(agent.threadId);
-    agentsByThreadId.set(agent.threadId, prior ? { ...prior, ...agent } : agent);
-  }
-  return {
-    agents: [...agentsByThreadId.values()],
-    prompt: incoming.prompt || existing.prompt,
-    model: incoming.model || existing.model,
-    reasoningEffort: incoming.reasoningEffort || existing.reasoningEffort,
-  };
-}
-
-function mergeActions(
-  existing: WebSearchAction[] | undefined,
-  incoming: WebSearchAction[] | undefined,
-): WebSearchAction[] | undefined {
-  if (!existing && !incoming) {
-    return undefined;
-  }
-  return [...(existing ?? []), ...(incoming ?? [])];
-}
-
-function addOrReplaceItem(state: TimelineDraft, item: TimelineItem) {
-  const existing = timelineItemById(state.indexes, item.id);
-  if (existing) {
-    state.indexes.itemUpdatesById.set(item.id, mergeTimelineItem(existing, item, item.debugEvents[item.debugEvents.length - 1]));
-  } else {
-    addItem(state, item);
-    addToTurn(state, item);
-  }
-  compactTimelineStores(state.indexes);
-}
-
-function compactStoredPayload(item: TimelineItem): unknown {
-  if (item.source === "app_server") {
-    return {};
-  }
-  return item.payload;
-}
-
-function compactStoredTimelineEvent(event: EventEnvelope): EventEnvelope {
-  return {
-    ...event,
-    payload: {},
-  };
-}
-
-function addItem(state: TimelineDraft, item: TimelineItem) {
-  state.indexes.itemIds = [...state.indexes.itemIds, item.id];
-  state.indexes.itemUpdatesById.set(item.id, item);
-  state.indexes.itemIds = [...state.indexes.itemIds]
-    .map((itemId, index) => ({ itemId, index, item: timelineItemById(state.indexes, itemId) }))
-    .sort((left, right) => (left.item?.displayOrder ?? 0) - (right.item?.displayOrder ?? 0) || left.index - right.index)
-    .map(({ itemId }) => itemId);
-}
-
-function addToTurn(state: TimelineDraft, item: TimelineItem) {
-  if (!item.turnId) {
-    return;
-  }
-  const existing = timelineTurnById(state.indexes, item.turnId);
-  if (existing) {
-    if (existing.itemIds.includes(item.id)) {
-      return;
-    }
-    state.indexes.turnUpdatesById.set(item.turnId, {
-      turnId: existing.turnId,
-      itemIds: [...existing.itemIds, item.id],
-      status: existing.status,
-      startedAtMs: existing.startedAtMs,
-      completedAtMs: existing.completedAtMs,
-    });
-    return;
-  }
-  state.indexes.turnIds = [...state.indexes.turnIds, item.turnId];
-  state.indexes.turnUpdatesById.set(item.turnId, {
-    turnId: item.turnId,
-    itemIds: [item.id],
-  });
 }
 
 type TimelineTurnSnapshotUpdate = {

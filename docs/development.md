@@ -119,6 +119,10 @@ This test issues a real code through the Account dialog and immediately cancels 
 
 The native fixtures also verify approval replay/resolution, projects/settings/pins/config, queue admission and promotion, history, read state, installed Control, scoped hosted widgets and MCP OAuth. OAuth and hosted-widget proofs use local synthetic services; they establish native callback/token/resource compatibility rather than real provider consent. Browser E2E covers two-tab convergence, conflicts, missed notifications, delayed stale snapshots and real SSE reconnects. Responsive flows run at desktop, narrow fine-pointer and narrow touch sizes. These fixtures do not establish completed interactive Codex account sign-in, OS PWA installation, mobile Safari behavior, target-device Web Push delivery, operator VPN/TLS setup or release readiness.
 
+## Live performance diagnostics
+
+The browser exposes event counts, reducer timings and long-task totals through `window.__KODEX_LIVE_DIAGNOSTICS__()`. Patch byte counting is opt-in because serializing large timeline payloads affects the timings being measured. Set `window.__KODEX_LIVE_DIAGNOSTICS_PAYLOAD_BYTES__ = true` in the browser console to count subsequent patch bytes, and set it to `false` when finished. Diagnostics retain counts and timings, not payload text.
+
 ## Responsive UI ownership
 
 Responsive layout follows the available surface: the shared workspace breakpoint controls navigation, while each `PaneLayout` boundary provides independent pane-width and pane-height classifications through `data-pane-width`, `data-pane-height` and `usePaneLayout()`. Compact panes reuse the compact composer and accessory treatment on both mouse and touch devices. Shared input capabilities separately control ergonomics and hover alternatives; primary fine hover and available touch/coarse input can coexist. Automatic composer expansion requires actual touch opening in a narrow browser window. Mouse, keyboard focus and narrow columns inside a wide workspace stay inline. Keyboard-submit behavior retains its existing policy.

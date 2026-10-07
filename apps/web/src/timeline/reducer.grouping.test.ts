@@ -55,6 +55,33 @@ describe("canonical activity grouping", () => {
     expect(state.hiddenItems).toHaveLength(4);
   });
 
+  it("carries ordinal, role and upgraded nickname names into later metadata-less collaboration calls", () => {
+    const collaboration = (id: string, order: number, agent: string, fields: Record<string, unknown> = {}) => canonicalItem(
+      id, "collabAgentToolCall", order,
+      { tool: "spawnAgent", receiverThreadIds: [agent], ...fields },
+    );
+    const calls = [
+      collaboration("spawn-a", 1, "agent-a"),
+      collaboration("spawn-b", 2, "agent-b"),
+      canonicalItem("command-between", "commandExecution", 3, { command: "pwd" }),
+      collaboration("wait-b", 4, "agent-b", { tool: "wait" }),
+      collaboration("role-a", 5, "reviewer-a", { agentRole: "reviewer" }),
+      collaboration("role-b", 6, "reviewer-b", { agentRole: "reviewer" }),
+      collaboration("nickname", 7, "agent-a", { agentNickname: "Ada", agentRole: "reviewer" }),
+      collaboration("send-a", 8, "agent-a", { tool: "sendInput" }),
+      collaboration("send-role-b", 9, "reviewer-b", { tool: "sendInput" }),
+    ];
+    const state = applyTimelineSnapshot(createTimelineState(), snapshot(1, calls.map(itemRow).reverse()));
+    const name = (id: string) => state.items.find(item => item.serverItemId === id)?.collab?.agents[0]?.displayName;
+    expect(name("spawn-a")).toBe("Agent 1");
+    expect(name("spawn-b")).toBe("Agent 2");
+    expect(name("wait-b")).toBe("Agent 2");
+    expect(name("role-a")).toBe("Reviewer 1");
+    expect(name("role-b")).toBe("Reviewer 2");
+    expect(name("send-a")).toBe("Ada [reviewer]");
+    expect(name("send-role-b")).toBe("Reviewer 2");
+  });
+
   it("converges two clients after hidden reasoning becomes visible and later disappears", () => {
     const initial = snapshot(1, groupedRows);
     let liveClient = applyTimelineSnapshot(createTimelineState(), initial);
