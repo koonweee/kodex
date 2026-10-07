@@ -147,9 +147,10 @@
   color: var(--kodex-text-secondary);
   display: inline-flex;
   flex: 0 0 auto;
-  height: 14px;
+  /* The 8px unread dot expands to 20px; reserve the full pulse footprint. */
+  height: 20px;
   justify-content: center;
-  width: 14px;
+  width: 20px;
 }
 
 .kodex-workspace-pane-title-adornment .kodex-thread-pane-title-spinner {
