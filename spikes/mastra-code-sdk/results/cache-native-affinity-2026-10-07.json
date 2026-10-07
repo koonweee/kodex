@@ -1,0 +1,1843 @@
+{
+  "mode": "native-affinity",
+  "model": "gpt-6.1-sol",
+  "effort": "low",
+  "sdk": "1.10.1",
+  "generatedAt": "2026-10-07T10:24:17.248Z",
+  "native": [
+    {
+      "index": 0,
+      "condition": "header-off",
+      "request": {
+        "root": {
+          "hash": "18e3934faed8b60dbcc67e6d424519d530fe873f3c7fe04b849b93663ea6de9e",
+          "length": 81339
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": false,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "5876bee49fc7de027df0ddb74f960f88db1e997968c898f3813998c1e39d7a95",
+          "length": 33435
+        },
+        "inputItems": [
+          {
+            "hash": "26a716a7587ce7fc56d9f0ae1da1b09d94722ebd7127309c3bed6633d58063ad",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "eb884e2f4e0257dad27db895b84cda2cd003c31e1f5dee99a3f1ffe733a9580c",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "headersPresent": {
+        "session-id": false,
+        "session_id": false,
+        "x-session-id": false,
+        "x-codex-turn-metadata": false,
+        "x-codex-turn-state": false,
+        "originator": true
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19671,
+        "cached": 3712,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 2792.5890409999997
+      }
+    },
+    {
+      "index": 1,
+      "condition": "header-off",
+      "request": {
+        "root": {
+          "hash": "c565796dd91e9b2689a715fc20c3574e1a1e9fa67391401c12be65df7ac0ad72",
+          "length": 81633
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": false,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "ba7dec6d7c81c993a9fa333af107615a97f72ebba54279d6b433616be80c6752",
+          "length": 33729
+        },
+        "inputItems": [
+          {
+            "hash": "26a716a7587ce7fc56d9f0ae1da1b09d94722ebd7127309c3bed6633d58063ad",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "eb884e2f4e0257dad27db895b84cda2cd003c31e1f5dee99a3f1ffe733a9580c",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "6aae55742aa06151a6352c5d2b8bf343c90d1ee7a29562f856d1e9c68023f7b7",
+            "length": 164,
+            "role": "assistant",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "headersPresent": {
+        "session-id": false,
+        "session_id": false,
+        "x-session-id": false,
+        "x-codex-turn-metadata": false,
+        "x-codex-turn-state": false,
+        "originator": true
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19701,
+        "cached": 12160,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 6490.546375
+      },
+      "comparedWithPrevious": {
+        "instructionsEqual": true,
+        "toolsEqual": true,
+        "commonLeadingInputItems": 6,
+        "instructionCommonPrefixLength": 264,
+        "toolCommonPrefixLength": 47402,
+        "inputCommonPrefixLength": 33346
+      }
+    },
+    {
+      "index": 2,
+      "condition": "header-off",
+      "request": {
+        "root": {
+          "hash": "79f0ff58d91ad3d0da3a8e252ef149e7c33cc0c91ed49b5d6e1f0384be01ea1b",
+          "length": 81927
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": false,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "51b1b8c7d90145ee1b40bda656d05dfda5096040de337f1f70a5d54e1776936b",
+          "length": 34023
+        },
+        "inputItems": [
+          {
+            "hash": "26a716a7587ce7fc56d9f0ae1da1b09d94722ebd7127309c3bed6633d58063ad",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "eb884e2f4e0257dad27db895b84cda2cd003c31e1f5dee99a3f1ffe733a9580c",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "6aae55742aa06151a6352c5d2b8bf343c90d1ee7a29562f856d1e9c68023f7b7",
+            "length": 164,
+            "role": "assistant",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "046864adcb1463133fe72ae41134465a7fb5839c0c47c5d8d5c3edecc033d75c",
+            "length": 164,
+            "role": "assistant",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "headersPresent": {
+        "session-id": false,
+        "session_id": false,
+        "x-session-id": false,
+        "x-codex-turn-metadata": false,
+        "x-codex-turn-state": false,
+        "originator": true
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19731,
+        "cached": 12160,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 4178.561750000001
+      },
+      "comparedWithPrevious": {
+        "instructionsEqual": true,
+        "toolsEqual": true,
+        "commonLeadingInputItems": 8,
+        "instructionCommonPrefixLength": 264,
+        "toolCommonPrefixLength": 47402,
+        "inputCommonPrefixLength": 33640
+      }
+    },
+    {
+      "index": 3,
+      "condition": "header-off",
+      "request": {
+        "root": {
+          "hash": "e9acb422b7f85177304882b80e8356840b3144d704f57548afb99afed77a80b0",
+          "length": 82221
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": false,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "254043a7dba911fffc0e1f9f54f6811168f2b34f88d9d861fb52fb8fd5a8b29e",
+          "length": 34317
+        },
+        "inputItems": [
+          {
+            "hash": "26a716a7587ce7fc56d9f0ae1da1b09d94722ebd7127309c3bed6633d58063ad",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "eb884e2f4e0257dad27db895b84cda2cd003c31e1f5dee99a3f1ffe733a9580c",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "6aae55742aa06151a6352c5d2b8bf343c90d1ee7a29562f856d1e9c68023f7b7",
+            "length": 164,
+            "role": "assistant",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "046864adcb1463133fe72ae41134465a7fb5839c0c47c5d8d5c3edecc033d75c",
+            "length": 164,
+            "role": "assistant",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "0218fbd17f4e03aaa408cbc1aa6dd78508644ca36d1317eb3465e0145c93c1fd",
+            "length": 164,
+            "role": "assistant",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "headersPresent": {
+        "session-id": false,
+        "session_id": false,
+        "x-session-id": false,
+        "x-codex-turn-metadata": false,
+        "x-codex-turn-state": false,
+        "originator": true
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19761,
+        "cached": 12160,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 3072.814875
+      },
+      "comparedWithPrevious": {
+        "instructionsEqual": true,
+        "toolsEqual": true,
+        "commonLeadingInputItems": 10,
+        "instructionCommonPrefixLength": 264,
+        "toolCommonPrefixLength": 47402,
+        "inputCommonPrefixLength": 33934
+      }
+    },
+    {
+      "index": 4,
+      "condition": "header-on",
+      "request": {
+        "root": {
+          "hash": "18e3934faed8b60dbcc67e6d424519d530fe873f3c7fe04b849b93663ea6de9e",
+          "length": 81339
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": false,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "5876bee49fc7de027df0ddb74f960f88db1e997968c898f3813998c1e39d7a95",
+          "length": 33435
+        },
+        "inputItems": [
+          {
+            "hash": "26a716a7587ce7fc56d9f0ae1da1b09d94722ebd7127309c3bed6633d58063ad",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "eb884e2f4e0257dad27db895b84cda2cd003c31e1f5dee99a3f1ffe733a9580c",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "headersPresent": {
+        "session-id": true,
+        "session_id": false,
+        "x-session-id": false,
+        "x-codex-turn-metadata": false,
+        "x-codex-turn-state": false,
+        "originator": true
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19671,
+        "cached": 12160,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 2696.351749999998
+      },
+      "comparedWithPrevious": {
+        "instructionsEqual": true,
+        "toolsEqual": true,
+        "commonLeadingInputItems": 6,
+        "instructionCommonPrefixLength": 264,
+        "toolCommonPrefixLength": 47402,
+        "inputCommonPrefixLength": 33346
+      }
+    },
+    {
+      "index": 5,
+      "condition": "header-on",
+      "request": {
+        "root": {
+          "hash": "fce2faf197bcffc4131b8fe323c75342443b9bbdfb2330953599dd22debedb5b",
+          "length": 81633
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": false,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "7ca1cd9ef938434b5e4d98db81cb886a024173a2d91c54a20d4e48658e0b6cb7",
+          "length": 33729
+        },
+        "inputItems": [
+          {
+            "hash": "26a716a7587ce7fc56d9f0ae1da1b09d94722ebd7127309c3bed6633d58063ad",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "eb884e2f4e0257dad27db895b84cda2cd003c31e1f5dee99a3f1ffe733a9580c",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "6f495640ff5921cb9141402b77ec58c9d76707e61a476f82a02eef3b912a52a5",
+            "length": 164,
+            "role": "assistant",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "headersPresent": {
+        "session-id": true,
+        "session_id": false,
+        "x-session-id": false,
+        "x-codex-turn-metadata": false,
+        "x-codex-turn-state": false,
+        "originator": true
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19701,
+        "cached": 19456,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 2533.8013329999994
+      },
+      "comparedWithPrevious": {
+        "instructionsEqual": true,
+        "toolsEqual": true,
+        "commonLeadingInputItems": 6,
+        "instructionCommonPrefixLength": 264,
+        "toolCommonPrefixLength": 47402,
+        "inputCommonPrefixLength": 33346
+      }
+    },
+    {
+      "index": 6,
+      "condition": "header-on",
+      "request": {
+        "root": {
+          "hash": "7920ac33107598220f82e3bc6b97bc1753d27ebf8f00b9fff8bdf0664ee10a33",
+          "length": 81927
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": false,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "6fe8f5711f1795cdd87bd23b82eef6fca96001525ebfbf7258aa223867fd7353",
+          "length": 34023
+        },
+        "inputItems": [
+          {
+            "hash": "26a716a7587ce7fc56d9f0ae1da1b09d94722ebd7127309c3bed6633d58063ad",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "eb884e2f4e0257dad27db895b84cda2cd003c31e1f5dee99a3f1ffe733a9580c",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "6f495640ff5921cb9141402b77ec58c9d76707e61a476f82a02eef3b912a52a5",
+            "length": 164,
+            "role": "assistant",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "4db6842c54014c8da98c3c274477ea243019c55135bd6fda462c5b6d2846c80e",
+            "length": 164,
+            "role": "assistant",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "headersPresent": {
+        "session-id": true,
+        "session_id": false,
+        "x-session-id": false,
+        "x-codex-turn-metadata": false,
+        "x-codex-turn-state": false,
+        "originator": true
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19731,
+        "cached": 19456,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 2792.5150409999987
+      },
+      "comparedWithPrevious": {
+        "instructionsEqual": true,
+        "toolsEqual": true,
+        "commonLeadingInputItems": 8,
+        "instructionCommonPrefixLength": 264,
+        "toolCommonPrefixLength": 47402,
+        "inputCommonPrefixLength": 33640
+      }
+    },
+    {
+      "index": 7,
+      "condition": "header-on",
+      "request": {
+        "root": {
+          "hash": "7ec87ba6ffbaf41bece9a4b8a41d5ecba6455624210a61230567a8f9f467cee6",
+          "length": 82221
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": false,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "ce9a3af1e3f3aa4cafa26d6efb053df4a97df3d9d9053f7104bf8fdd66f03c42",
+          "length": 34317
+        },
+        "inputItems": [
+          {
+            "hash": "26a716a7587ce7fc56d9f0ae1da1b09d94722ebd7127309c3bed6633d58063ad",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "eb884e2f4e0257dad27db895b84cda2cd003c31e1f5dee99a3f1ffe733a9580c",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "6f495640ff5921cb9141402b77ec58c9d76707e61a476f82a02eef3b912a52a5",
+            "length": 164,
+            "role": "assistant",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "4db6842c54014c8da98c3c274477ea243019c55135bd6fda462c5b6d2846c80e",
+            "length": 164,
+            "role": "assistant",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "725091e28ba06fac8c417130d0cd816d8385b6f1a5b272e91df3bb3149c63b78",
+            "length": 164,
+            "role": "assistant",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "headersPresent": {
+        "session-id": true,
+        "session_id": false,
+        "x-session-id": false,
+        "x-codex-turn-metadata": false,
+        "x-codex-turn-state": false,
+        "originator": true
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19761,
+        "cached": 19456,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 3441.670750000001
+      },
+      "comparedWithPrevious": {
+        "instructionsEqual": true,
+        "toolsEqual": true,
+        "commonLeadingInputItems": 10,
+        "instructionCommonPrefixLength": 264,
+        "toolCommonPrefixLength": 47402,
+        "inputCommonPrefixLength": 33934
+      }
+    },
+    {
+      "index": 8,
+      "condition": "header-on",
+      "request": {
+        "root": {
+          "hash": "18e3934faed8b60dbcc67e6d424519d530fe873f3c7fe04b849b93663ea6de9e",
+          "length": 81339
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": false,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "5876bee49fc7de027df0ddb74f960f88db1e997968c898f3813998c1e39d7a95",
+          "length": 33435
+        },
+        "inputItems": [
+          {
+            "hash": "26a716a7587ce7fc56d9f0ae1da1b09d94722ebd7127309c3bed6633d58063ad",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "eb884e2f4e0257dad27db895b84cda2cd003c31e1f5dee99a3f1ffe733a9580c",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "headersPresent": {
+        "session-id": true,
+        "session_id": false,
+        "x-session-id": false,
+        "x-codex-turn-metadata": false,
+        "x-codex-turn-state": false,
+        "originator": true
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19671,
+        "cached": 3968,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 2454.472458
+      },
+      "comparedWithPrevious": {
+        "instructionsEqual": true,
+        "toolsEqual": true,
+        "commonLeadingInputItems": 6,
+        "instructionCommonPrefixLength": 264,
+        "toolCommonPrefixLength": 47402,
+        "inputCommonPrefixLength": 33346
+      }
+    },
+    {
+      "index": 9,
+      "condition": "header-on",
+      "request": {
+        "root": {
+          "hash": "afc906610ff2130b227b815a7c128df9e2f8946f633b676806d450572047a9ac",
+          "length": 81633
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": false,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "b06d82c631fac6a2844c2856f030172cb0aba4f0d53ca9f73bd2ef0f68993516",
+          "length": 33729
+        },
+        "inputItems": [
+          {
+            "hash": "26a716a7587ce7fc56d9f0ae1da1b09d94722ebd7127309c3bed6633d58063ad",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "eb884e2f4e0257dad27db895b84cda2cd003c31e1f5dee99a3f1ffe733a9580c",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "e82dc523186ac503f34dddad03170877c1dbe26b45db93eb12d6b1d7744f4058",
+            "length": 164,
+            "role": "assistant",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "headersPresent": {
+        "session-id": true,
+        "session_id": false,
+        "x-session-id": false,
+        "x-codex-turn-metadata": false,
+        "x-codex-turn-state": false,
+        "originator": true
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19701,
+        "cached": 19456,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 2266.855834000002
+      },
+      "comparedWithPrevious": {
+        "instructionsEqual": true,
+        "toolsEqual": true,
+        "commonLeadingInputItems": 6,
+        "instructionCommonPrefixLength": 264,
+        "toolCommonPrefixLength": 47402,
+        "inputCommonPrefixLength": 33346
+      }
+    },
+    {
+      "index": 10,
+      "condition": "header-on",
+      "request": {
+        "root": {
+          "hash": "b01a4f02cd213c0228bafca805f7638a4c93df5de662e2f807918bd169031179",
+          "length": 81927
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": false,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "d6afb1ed808519bab6446afb6de02b63e7f3ff54008fd0a9878a957330164611",
+          "length": 34023
+        },
+        "inputItems": [
+          {
+            "hash": "26a716a7587ce7fc56d9f0ae1da1b09d94722ebd7127309c3bed6633d58063ad",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "eb884e2f4e0257dad27db895b84cda2cd003c31e1f5dee99a3f1ffe733a9580c",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "e82dc523186ac503f34dddad03170877c1dbe26b45db93eb12d6b1d7744f4058",
+            "length": 164,
+            "role": "assistant",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "51df5ad203ec97486a8e26f5bc8e58b84bee15ecc0318f3b127a31e86279485c",
+            "length": 164,
+            "role": "assistant",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "headersPresent": {
+        "session-id": true,
+        "session_id": false,
+        "x-session-id": false,
+        "x-codex-turn-metadata": false,
+        "x-codex-turn-state": false,
+        "originator": true
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19731,
+        "cached": 19456,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 3066.814416999994
+      },
+      "comparedWithPrevious": {
+        "instructionsEqual": true,
+        "toolsEqual": true,
+        "commonLeadingInputItems": 8,
+        "instructionCommonPrefixLength": 264,
+        "toolCommonPrefixLength": 47402,
+        "inputCommonPrefixLength": 33640
+      }
+    },
+    {
+      "index": 11,
+      "condition": "header-on",
+      "request": {
+        "root": {
+          "hash": "38d129598bc421fb02e848b621110099dcb0d806d95bee36c8cdfa1d9c38dabe",
+          "length": 82221
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": false,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "3f784cb86b4bef25ea16d84ceea3e4600f8006135378ed4aabf3da84987bd6c0",
+          "length": 34317
+        },
+        "inputItems": [
+          {
+            "hash": "26a716a7587ce7fc56d9f0ae1da1b09d94722ebd7127309c3bed6633d58063ad",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "eb884e2f4e0257dad27db895b84cda2cd003c31e1f5dee99a3f1ffe733a9580c",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "e82dc523186ac503f34dddad03170877c1dbe26b45db93eb12d6b1d7744f4058",
+            "length": 164,
+            "role": "assistant",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "51df5ad203ec97486a8e26f5bc8e58b84bee15ecc0318f3b127a31e86279485c",
+            "length": 164,
+            "role": "assistant",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "eaf90c9c112d18106d7aacb04acaa3dd854ee4205f2aca9c991e66b0d66cff14",
+            "length": 164,
+            "role": "assistant",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "headersPresent": {
+        "session-id": true,
+        "session_id": false,
+        "x-session-id": false,
+        "x-codex-turn-metadata": false,
+        "x-codex-turn-state": false,
+        "originator": true
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19761,
+        "cached": 19456,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 3930.9133750000037
+      },
+      "comparedWithPrevious": {
+        "instructionsEqual": true,
+        "toolsEqual": true,
+        "commonLeadingInputItems": 10,
+        "instructionCommonPrefixLength": 264,
+        "toolCommonPrefixLength": 47402,
+        "inputCommonPrefixLength": 33934
+      }
+    },
+    {
+      "index": 12,
+      "condition": "header-off",
+      "request": {
+        "root": {
+          "hash": "18e3934faed8b60dbcc67e6d424519d530fe873f3c7fe04b849b93663ea6de9e",
+          "length": 81339
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": false,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "5876bee49fc7de027df0ddb74f960f88db1e997968c898f3813998c1e39d7a95",
+          "length": 33435
+        },
+        "inputItems": [
+          {
+            "hash": "26a716a7587ce7fc56d9f0ae1da1b09d94722ebd7127309c3bed6633d58063ad",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "eb884e2f4e0257dad27db895b84cda2cd003c31e1f5dee99a3f1ffe733a9580c",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "headersPresent": {
+        "session-id": false,
+        "session_id": false,
+        "x-session-id": false,
+        "x-codex-turn-metadata": false,
+        "x-codex-turn-state": false,
+        "originator": true
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19671,
+        "cached": 12160,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 4945.310084000004
+      },
+      "comparedWithPrevious": {
+        "instructionsEqual": true,
+        "toolsEqual": true,
+        "commonLeadingInputItems": 6,
+        "instructionCommonPrefixLength": 264,
+        "toolCommonPrefixLength": 47402,
+        "inputCommonPrefixLength": 33346
+      }
+    },
+    {
+      "index": 13,
+      "condition": "header-off",
+      "request": {
+        "root": {
+          "hash": "695c01f1d1bc5a831ad4e4cca09a75489e45224df939b772ca02bb1c2f1b35c9",
+          "length": 81633
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": false,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "fa2be56fb238f71673698caef57949b55105e9bfbcb77b7fc48087e80ef440af",
+          "length": 33729
+        },
+        "inputItems": [
+          {
+            "hash": "26a716a7587ce7fc56d9f0ae1da1b09d94722ebd7127309c3bed6633d58063ad",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "eb884e2f4e0257dad27db895b84cda2cd003c31e1f5dee99a3f1ffe733a9580c",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "ad97c05f854edc47b4633e711946e33b416fc02a38863653d0f29db704f5bfa0",
+            "length": 164,
+            "role": "assistant",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "headersPresent": {
+        "session-id": false,
+        "session_id": false,
+        "x-session-id": false,
+        "x-codex-turn-metadata": false,
+        "x-codex-turn-state": false,
+        "originator": true
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19701,
+        "cached": 3712,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 2656.3936669999966
+      },
+      "comparedWithPrevious": {
+        "instructionsEqual": true,
+        "toolsEqual": true,
+        "commonLeadingInputItems": 6,
+        "instructionCommonPrefixLength": 264,
+        "toolCommonPrefixLength": 47402,
+        "inputCommonPrefixLength": 33346
+      }
+    },
+    {
+      "index": 14,
+      "condition": "header-off",
+      "request": {
+        "root": {
+          "hash": "c062b2f5de1503912efd915da0be0d2127495c05bd6e3ff05cf12ebeeda1f7ea",
+          "length": 81927
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": false,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "15245f314dc7834a82df4fbc84189b74cbf1227fcd8ae40eb346773a85102437",
+          "length": 34023
+        },
+        "inputItems": [
+          {
+            "hash": "26a716a7587ce7fc56d9f0ae1da1b09d94722ebd7127309c3bed6633d58063ad",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "eb884e2f4e0257dad27db895b84cda2cd003c31e1f5dee99a3f1ffe733a9580c",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "ad97c05f854edc47b4633e711946e33b416fc02a38863653d0f29db704f5bfa0",
+            "length": 164,
+            "role": "assistant",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "3319c5a0a485b50a526638e12b9238c777417a0bd8cc94c47ae96633ff23cb4f",
+            "length": 164,
+            "role": "assistant",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "headersPresent": {
+        "session-id": false,
+        "session_id": false,
+        "x-session-id": false,
+        "x-codex-turn-metadata": false,
+        "x-codex-turn-state": false,
+        "originator": true
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19731,
+        "cached": 3968,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 3417.8571250000023
+      },
+      "comparedWithPrevious": {
+        "instructionsEqual": true,
+        "toolsEqual": true,
+        "commonLeadingInputItems": 8,
+        "instructionCommonPrefixLength": 264,
+        "toolCommonPrefixLength": 47402,
+        "inputCommonPrefixLength": 33640
+      }
+    },
+    {
+      "index": 15,
+      "condition": "header-off",
+      "request": {
+        "root": {
+          "hash": "1b910857173f32d5895dc3881c15b7bd36d8ac5f53f4b8d48d1279c2cc551a4a",
+          "length": 82221
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": false,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "82736eb6120c67033f797b0f41e1d9fa58bc2c0f172c1ccbe4a2689105bb7f43",
+          "length": 34317
+        },
+        "inputItems": [
+          {
+            "hash": "26a716a7587ce7fc56d9f0ae1da1b09d94722ebd7127309c3bed6633d58063ad",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "eb884e2f4e0257dad27db895b84cda2cd003c31e1f5dee99a3f1ffe733a9580c",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "ad97c05f854edc47b4633e711946e33b416fc02a38863653d0f29db704f5bfa0",
+            "length": 164,
+            "role": "assistant",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "3319c5a0a485b50a526638e12b9238c777417a0bd8cc94c47ae96633ff23cb4f",
+            "length": 164,
+            "role": "assistant",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "9954676da43425954546806ebac77c3910845328b827d4e31016a35104126253",
+            "length": 164,
+            "role": "assistant",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "headersPresent": {
+        "session-id": false,
+        "session_id": false,
+        "x-session-id": false,
+        "x-codex-turn-metadata": false,
+        "x-codex-turn-state": false,
+        "originator": true
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19761,
+        "cached": 3712,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 2783.4642500000045
+      },
+      "comparedWithPrevious": {
+        "instructionsEqual": true,
+        "toolsEqual": true,
+        "commonLeadingInputItems": 10,
+        "instructionCommonPrefixLength": 264,
+        "toolCommonPrefixLength": 47402,
+        "inputCommonPrefixLength": 33934
+      }
+    }
+  ],
+  "replay": [],
+  "errors": []
+}

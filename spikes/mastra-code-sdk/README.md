@@ -4,7 +4,7 @@
 
 An isolated experiment for a future Kodex TypeScript/oRPC gateway. It does not start or replace the production gateway. See the [plan](../../plans/mastra-code-sdk-spike.md) for accepted product decisions and validation status.
 
-Validated on 2026-10-07: 25 tests, typecheck and independent review pass. The added shutdown characterization test reproduces a native title-write failure and confirms the completed answer survives reopening. Real ChatGPT requests passed in two separate processes using saved credentials. Production migration gates remain below.
+Validated on 2026-10-07: 32 tests, typecheck and independent review pass. The added shutdown characterization test reproduces a native title-write failure and confirms the completed answer survives reopening. Real ChatGPT requests passed in two separate processes using saved credentials. Production migration gates remain below.
 
 Requires Node 24+:
 
@@ -46,6 +46,18 @@ npm run benchmark -- --only sequential --repetitions 3
 Use the schema-matched Codex 0.160.0 binary. Native `codex login --device-auth` must be performed with `CODEX_HOME=~/.kodex/mastra-spike/app-server-benchmark` and `-c 'cli_auth_credentials_store="file"'`; never point the benchmark at the production home. Optional `KODEX_CODEX_BENCH_HOME`, `KODEX_MASTRA_PROFILE` and paired `KODEX_MASTRA_MODEL` / `KODEX_CODEX_BENCH_MODEL` overrides are supported. Both harnesses must use the same underlying model.
 
 The driver writes sanitized measurements to ignored `artifacts/benchmark-*/report.json` and `summary.md`. Project fixtures and native runtime stores are disposable. Each case uses a fresh worker process; RSS separates its Node overhead from the app-server child. Native prompts/tool inventories differ, cached usage can be unknown, and these short tasks do not measure long-context memory or complete account billing.
+
+## Cache investigation
+
+The [cache investigation](../../plans/mastra-cache-investigation.md) found a reproducible ChatGPT affinity gap in the pinned provider. The isolated diagnostic CLI compares request fingerprints, identical replays and header-only native sessions:
+
+```sh
+node --import tsx src/cache-evaluation.ts artifacts/new-screen screen
+node --import tsx src/cache-evaluation.ts artifacts/new-affinity affinity
+node --import tsx src/cache-evaluation.ts artifacts/new-native native-affinity
+```
+
+These opt-in commands make real requests with the dedicated native login and require fresh output directories. Raw request bodies stay in memory; artifacts contain hashes, lengths, allowlisted configuration, header-presence flags and usage. Fetch interception is experimental measurement code, not a production runtime change. The public API's explicit cache controls were rejected by the subscription endpoint in this evaluation; see the report for scope and controls.
 
 ## Ownership demonstrated
 

@@ -1,0 +1,1085 @@
+{
+  "mode": "affinity",
+  "model": "gpt-6.1-sol",
+  "effort": "low",
+  "sdk": "1.10.1",
+  "generatedAt": "2026-10-07T10:23:05.745Z",
+  "native": [
+    {
+      "index": 0,
+      "condition": "stock",
+      "request": {
+        "root": {
+          "hash": "0f9e86fcbd5190a0c162b0090a25f1bb54c6acacd06ba241ec2ac01cc517f2b5",
+          "length": 81339
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": false,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "8b650f2f2e9589fcebc1f8890e7e214750820b075e090f822839520552a88bb0",
+          "length": 33435
+        },
+        "inputItems": [
+          {
+            "hash": "18510e39bb8cbe2ab92f38133149209b31033ece38959a240f87c436e37d3747",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "6e1b3f83e67c01b4919212a0a7d12e075b94b75145952bd727bc07138f6e190f",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "headersPresent": {
+        "session-id": false,
+        "session_id": false,
+        "x-session-id": false,
+        "x-codex-turn-metadata": false,
+        "x-codex-turn-state": false,
+        "originator": true
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19665,
+        "cached": 12160,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 2621.8972499999995
+      }
+    }
+  ],
+  "replay": [
+    {
+      "order": 0,
+      "variant": "key",
+      "repeat": 0,
+      "request": {
+        "root": {
+          "hash": "51252a4a9b3d91f4c867d05b7e4d756ac6d627e75edc5c60881001f8436d6498",
+          "length": 81397
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": true,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "8b650f2f2e9589fcebc1f8890e7e214750820b075e090f822839520552a88bb0",
+          "length": 33435
+        },
+        "inputItems": [
+          {
+            "hash": "18510e39bb8cbe2ab92f38133149209b31033ece38959a240f87c436e37d3747",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "6e1b3f83e67c01b4919212a0a7d12e075b94b75145952bd727bc07138f6e190f",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19665,
+        "cached": 3968,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 3913.3580420000008
+      }
+    },
+    {
+      "order": 1,
+      "variant": "key-session",
+      "repeat": 0,
+      "request": {
+        "root": {
+          "hash": "51252a4a9b3d91f4c867d05b7e4d756ac6d627e75edc5c60881001f8436d6498",
+          "length": 81397
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": true,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "8b650f2f2e9589fcebc1f8890e7e214750820b075e090f822839520552a88bb0",
+          "length": 33435
+        },
+        "inputItems": [
+          {
+            "hash": "18510e39bb8cbe2ab92f38133149209b31033ece38959a240f87c436e37d3747",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "6e1b3f83e67c01b4919212a0a7d12e075b94b75145952bd727bc07138f6e190f",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19665,
+        "cached": 3968,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 2869.6267499999994
+      }
+    },
+    {
+      "order": 2,
+      "variant": "key-session",
+      "repeat": 0,
+      "request": {
+        "root": {
+          "hash": "51252a4a9b3d91f4c867d05b7e4d756ac6d627e75edc5c60881001f8436d6498",
+          "length": 81397
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": true,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "8b650f2f2e9589fcebc1f8890e7e214750820b075e090f822839520552a88bb0",
+          "length": 33435
+        },
+        "inputItems": [
+          {
+            "hash": "18510e39bb8cbe2ab92f38133149209b31033ece38959a240f87c436e37d3747",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "6e1b3f83e67c01b4919212a0a7d12e075b94b75145952bd727bc07138f6e190f",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19665,
+        "cached": 19456,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 2755.660167
+      }
+    },
+    {
+      "order": 3,
+      "variant": "key",
+      "repeat": 0,
+      "request": {
+        "root": {
+          "hash": "51252a4a9b3d91f4c867d05b7e4d756ac6d627e75edc5c60881001f8436d6498",
+          "length": 81397
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": true,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "8b650f2f2e9589fcebc1f8890e7e214750820b075e090f822839520552a88bb0",
+          "length": 33435
+        },
+        "inputItems": [
+          {
+            "hash": "18510e39bb8cbe2ab92f38133149209b31033ece38959a240f87c436e37d3747",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "6e1b3f83e67c01b4919212a0a7d12e075b94b75145952bd727bc07138f6e190f",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19665,
+        "cached": 3968,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 2540.4454579999983
+      }
+    },
+    {
+      "order": 4,
+      "variant": "key-session",
+      "repeat": 0,
+      "request": {
+        "root": {
+          "hash": "51252a4a9b3d91f4c867d05b7e4d756ac6d627e75edc5c60881001f8436d6498",
+          "length": 81397
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": true,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "8b650f2f2e9589fcebc1f8890e7e214750820b075e090f822839520552a88bb0",
+          "length": 33435
+        },
+        "inputItems": [
+          {
+            "hash": "18510e39bb8cbe2ab92f38133149209b31033ece38959a240f87c436e37d3747",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "6e1b3f83e67c01b4919212a0a7d12e075b94b75145952bd727bc07138f6e190f",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19665,
+        "cached": 19456,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 2793.659125000002
+      }
+    },
+    {
+      "order": 5,
+      "variant": "key",
+      "repeat": 0,
+      "request": {
+        "root": {
+          "hash": "51252a4a9b3d91f4c867d05b7e4d756ac6d627e75edc5c60881001f8436d6498",
+          "length": 81397
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": true,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "8b650f2f2e9589fcebc1f8890e7e214750820b075e090f822839520552a88bb0",
+          "length": 33435
+        },
+        "inputItems": [
+          {
+            "hash": "18510e39bb8cbe2ab92f38133149209b31033ece38959a240f87c436e37d3747",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "6e1b3f83e67c01b4919212a0a7d12e075b94b75145952bd727bc07138f6e190f",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19665,
+        "cached": 3968,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 3334.5784170000006
+      }
+    },
+    {
+      "order": 6,
+      "variant": "key",
+      "repeat": 0,
+      "request": {
+        "root": {
+          "hash": "51252a4a9b3d91f4c867d05b7e4d756ac6d627e75edc5c60881001f8436d6498",
+          "length": 81397
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": true,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "8b650f2f2e9589fcebc1f8890e7e214750820b075e090f822839520552a88bb0",
+          "length": 33435
+        },
+        "inputItems": [
+          {
+            "hash": "18510e39bb8cbe2ab92f38133149209b31033ece38959a240f87c436e37d3747",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "6e1b3f83e67c01b4919212a0a7d12e075b94b75145952bd727bc07138f6e190f",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19665,
+        "cached": 3968,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 2406.449124999999
+      }
+    },
+    {
+      "order": 7,
+      "variant": "key-session",
+      "repeat": 0,
+      "request": {
+        "root": {
+          "hash": "51252a4a9b3d91f4c867d05b7e4d756ac6d627e75edc5c60881001f8436d6498",
+          "length": 81397
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": true,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "8b650f2f2e9589fcebc1f8890e7e214750820b075e090f822839520552a88bb0",
+          "length": 33435
+        },
+        "inputItems": [
+          {
+            "hash": "18510e39bb8cbe2ab92f38133149209b31033ece38959a240f87c436e37d3747",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "6e1b3f83e67c01b4919212a0a7d12e075b94b75145952bd727bc07138f6e190f",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19665,
+        "cached": 19456,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 3040.1810829999995
+      }
+    },
+    {
+      "order": 8,
+      "variant": "key-session",
+      "repeat": 0,
+      "request": {
+        "root": {
+          "hash": "51252a4a9b3d91f4c867d05b7e4d756ac6d627e75edc5c60881001f8436d6498",
+          "length": 81397
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": true,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "8b650f2f2e9589fcebc1f8890e7e214750820b075e090f822839520552a88bb0",
+          "length": 33435
+        },
+        "inputItems": [
+          {
+            "hash": "18510e39bb8cbe2ab92f38133149209b31033ece38959a240f87c436e37d3747",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "6e1b3f83e67c01b4919212a0a7d12e075b94b75145952bd727bc07138f6e190f",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19665,
+        "cached": 19456,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 2741.161
+      }
+    },
+    {
+      "order": 9,
+      "variant": "key",
+      "repeat": 0,
+      "request": {
+        "root": {
+          "hash": "51252a4a9b3d91f4c867d05b7e4d756ac6d627e75edc5c60881001f8436d6498",
+          "length": 81397
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": true,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "8b650f2f2e9589fcebc1f8890e7e214750820b075e090f822839520552a88bb0",
+          "length": 33435
+        },
+        "inputItems": [
+          {
+            "hash": "18510e39bb8cbe2ab92f38133149209b31033ece38959a240f87c436e37d3747",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "6e1b3f83e67c01b4919212a0a7d12e075b94b75145952bd727bc07138f6e190f",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19665,
+        "cached": 12160,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 2760.373625000004
+      }
+    },
+    {
+      "order": 10,
+      "variant": "key-session",
+      "repeat": 0,
+      "request": {
+        "root": {
+          "hash": "51252a4a9b3d91f4c867d05b7e4d756ac6d627e75edc5c60881001f8436d6498",
+          "length": 81397
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": true,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "8b650f2f2e9589fcebc1f8890e7e214750820b075e090f822839520552a88bb0",
+          "length": 33435
+        },
+        "inputItems": [
+          {
+            "hash": "18510e39bb8cbe2ab92f38133149209b31033ece38959a240f87c436e37d3747",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "6e1b3f83e67c01b4919212a0a7d12e075b94b75145952bd727bc07138f6e190f",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19665,
+        "cached": 19456,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 2909.008249999999
+      }
+    },
+    {
+      "order": 11,
+      "variant": "key",
+      "repeat": 0,
+      "request": {
+        "root": {
+          "hash": "51252a4a9b3d91f4c867d05b7e4d756ac6d627e75edc5c60881001f8436d6498",
+          "length": 81397
+        },
+        "model": "gpt-6.1-sol",
+        "reasoningEffort": "low",
+        "reasoningSummary": null,
+        "store": false,
+        "cache": {
+          "keyPresent": true,
+          "mode": null,
+          "ttl": null,
+          "retention": null
+        },
+        "instructions": {
+          "hash": "0e99ee1b3d637083e81875acbca389bab3d464272ea1c4527f1d14992c2d66fb",
+          "length": 264
+        },
+        "tools": {
+          "hash": "6aaa45d1d1308e8cb3f00610a04fa6ed0e829d315c858dd38e2cd34be7896629",
+          "length": 47426,
+          "count": 31
+        },
+        "input": {
+          "hash": "8b650f2f2e9589fcebc1f8890e7e214750820b075e090f822839520552a88bb0",
+          "length": 33435
+        },
+        "inputItems": [
+          {
+            "hash": "18510e39bb8cbe2ab92f38133149209b31033ece38959a240f87c436e37d3747",
+            "length": 19959,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5259bd349b145e9b842c494bb0c160ddcbb3f66625bd41170e615ab29272fcac",
+            "length": 491,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "6e1b3f83e67c01b4919212a0a7d12e075b94b75145952bd727bc07138f6e190f",
+            "length": 921,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "3f53e64936c0a5d79d1b9c0aa60b132a38bde75c2993d8cb3162af0a5b994389",
+            "length": 11374,
+            "role": "developer",
+            "type": null
+          },
+          {
+            "hash": "5a18e7899e2ff787427f10ae37b1c3e7e7d0e3c6d773a02f78368f20124b0bc2",
+            "length": 555,
+            "role": "user",
+            "type": null
+          },
+          {
+            "hash": "5b36bdeaca6f9ad2101aa8745c46844a098960a5299099e42c447af4087520a6",
+            "length": 128,
+            "role": "user",
+            "type": null
+          }
+        ]
+      },
+      "result": {
+        "status": 200,
+        "completed": true,
+        "correct": true,
+        "input": 19665,
+        "cached": 3968,
+        "output": 8,
+        "cacheWrite": 0,
+        "elapsedMs": 2733.8648329999996
+      }
+    }
+  ],
+  "errors": []
+}

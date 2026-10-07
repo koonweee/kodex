@@ -2,11 +2,11 @@
 
 Updated 2026-10-07. Read this before resuming the migration discussion.
 
-## Current state: benchmark measured
+## Current state: cache affinity investigated
 
-The user returned and authorized the benchmark; dedicated app-server login is complete. The [short-task benchmark](mastra-code-sdk-benchmark.md) now has 12 cases / 28 passing turns. Read its results and limits before proceeding. No production deployment, restart, push, or upstream issue submission is authorized.
+The user returned and authorized the benchmark; dedicated app-server login is complete. The [short-task benchmark](mastra-code-sdk-benchmark.md) now has 12 cases / 28 passing turns. The [cache investigation](mastra-cache-investigation.md) then identified a missing ChatGPT `session-id` affinity header: header-only native follow-ups reached 98.6% cached input. Read both results before proceeding. No production deployment, restart, push, or upstream issue submission is authorized.
 
-The short-task benchmark found about 14% more total main-turn input and 6.7× uncached input for Mastra in the repeated tasks. Investigating native cache reuse is the recommended next step; realistic coding workloads, config/plugin/MCP verification and a small real Kodex UI → oRPC → Code SDK chat slice remain follow-ons.
+The short-task benchmark found about 14% more total main-turn input and 6.7× uncached input for Mastra in the repeated tasks. A supported per-session provider affinity fix and paired workload rerun are the recommended next steps; realistic coding workloads, config/plugin/MCP verification and a small real Kodex UI → oRPC → Code SDK chat slice remain follow-ons.
 
 ## Where the work lives
 

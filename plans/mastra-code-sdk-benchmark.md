@@ -61,7 +61,11 @@ Mastra has a substantially larger process baseline here, but these short cases s
 - First text can be commentary before a tool; completion is the better task-level comparison. Three sequential repetitions and one concurrency batch are too few for strong tail-latency claims.
 - Review found and fixed asymmetric ancestor repository discovery before live measurement by moving fixtures outside the checkout. Native Session tags do preserve projectPath; the initial concern that all sessions would collapse to one root was not confirmed.
 
-## Recommendation and next step
+## Follow-up finding
+
+The [cache investigation](mastra-cache-investigation.md) reproduced the gap with identical requests and identified missing ChatGPT `session-id` affinity in the pinned Mastra integration. Header-only native follow-ups reached about 98.6% cached input. The original 6.7× uncached difference is not an inherent Code SDK/compaction penalty. A supported provider integration and full workload rerun remain to be done.
+
+## Original recommendation and next step
 
 Keep Code SDK as a viable architecture candidate: the shared process supports concurrent chats without Pi's assumed process-per-chat footprint. Before committing the production migration, investigate why its prompt cache reuse is much lower on these short follow-ups, using supported native configuration and payload structure rather than custom orchestration. Establish whether this is a stable context prefix, cache-key/provider integration issue, or unavoidable harness behavior. Then run a small realistic coding task if needed; do not infer that replacing SDK tools/prompts or using core is already necessary.
 
