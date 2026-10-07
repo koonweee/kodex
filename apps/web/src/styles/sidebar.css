@@ -493,9 +493,31 @@
 
   .kodex-thread-list-button .kodex-sidebar-row-leading {
     position: absolute;
+    z-index: 1;
     top: 50%;
     left: 8px;
     transform: translateY(-50%);
+    isolation: isolate;
+  }
+
+  .kodex-thread-list-button .kodex-sidebar-row-leading::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: 0 -10px 0 -4px;
+    border-radius: var(--kodex-radius-sm);
+    background: linear-gradient(90deg, var(--kodex-bg-button-hover) 0%, var(--kodex-bg-button-hover) 60%, transparent 100%);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .kodex-thread-list-button[data-active="true"] .kodex-sidebar-row-leading::before {
+    background: linear-gradient(90deg, var(--kodex-bg-selected) 0%, var(--kodex-bg-selected) 60%, transparent 100%);
+  }
+
+  .kodex-thread-list-button:hover .kodex-sidebar-row-leading::before,
+  .kodex-thread-list-button:focus-within .kodex-sidebar-row-leading::before {
+    opacity: 1;
   }
 
   .kodex-sidebar-text-action-row.kodex-ui-button:hover {
