@@ -10,8 +10,7 @@ type TriggerHandlers = {
 
 // The rail keeps the shell's layout width; this preview is per-tab presentation only.
 // React events also bubble from owned portals, keeping menus inside this boundary.
-export function SidebarPeek({ collapsed, enabled, rail, children, onPin }: {
-  onPin: () => void;
+export function SidebarPeek({ collapsed, enabled, rail, children }: {
   collapsed: boolean;
   enabled: boolean;
   rail: (handlers: TriggerHandlers) => ReactNode;
@@ -23,7 +22,6 @@ export function SidebarPeek({ collapsed, enabled, rail, children, onPin }: {
   const pointerInside = useRef(false);
   const focusedElement = useRef<EventTarget | null>(null);
   const dragging = useRef(false);
-  const triggerIntent = useRef<DOMRect | null>(null);
   const suppressHover = useRef(false);
   const restoreTriggerFocus = useRef(false);
   const boundaryRef = useRef<HTMLDivElement>(null);
@@ -44,7 +42,6 @@ export function SidebarPeek({ collapsed, enabled, rail, children, onPin }: {
       pointerInside.current = false;
       focusedElement.current = null;
       dragging.current = false;
-      triggerIntent.current = null;
       suppressHover.current = false;
     }
     return () => { clearTimeout(openTimer.current); clearTimeout(closeTimer.current); };
@@ -64,7 +61,6 @@ export function SidebarPeek({ collapsed, enabled, rail, children, onPin }: {
         (event.target instanceof Element && event.target.closest('[role="menu"]'))) return;
       event.preventDefault();
       suppressHover.current = pointerInside.current;
-      triggerIntent.current = null;
       restoreTriggerFocus.current = true;
       setOpen(false);
     };
@@ -82,42 +78,22 @@ export function SidebarPeek({ collapsed, enabled, rail, children, onPin }: {
     onPointerLeave={() => {
       pointerInside.current = false;
       suppressHover.current = false;
-      triggerIntent.current = null;
       scheduleClose();
-    }}
-    onPointerMove={(event) => {
-      const rect = triggerIntent.current;
-      if (rect && (event.clientX < rect.left || event.clientX > rect.right ||
-        event.clientY < rect.top || event.clientY > rect.bottom)) triggerIntent.current = null;
-    }}
-    onClickCapture={(event) => {
-      const rect = triggerIntent.current;
-      // Covering the hovered icon must not turn its pending click into Account settings.
-      if (!open || !rect || event.detail === 0 || event.button !== 0 ||
-        event.clientX < rect.left || event.clientX > rect.right ||
-        event.clientY < rect.top || event.clientY > rect.bottom) return;
-      event.preventDefault();
-      event.stopPropagation();
-      triggerIntent.current = null;
-      onPin();
     }}
     onFocusCapture={(event) => { focusedElement.current = event.target; cancelClose(); }}
     onBlurCapture={() => { focusedElement.current = null; scheduleClose(); }}
     onDragStartCapture={() => { dragging.current = true; cancelClose(); }}
     onDragEndCapture={() => { dragging.current = false; scheduleClose(); }}
     >
-    <Box className="kodex-sidebar-peek-rail" inert={active && open} aria-hidden={active && open ? true : undefined}>
     {rail({
       onPointerEnter: (event) => {
         if (!active || suppressHover.current || event.pointerType === "touch") return;
-        triggerIntent.current = event.currentTarget.getBoundingClientRect();
         cancelOpen();
         cancelClose();
         openTimer.current = setTimeout(() => setOpen(true), 200);
       },
       onPointerLeave: cancelOpen,
     })}
-    </Box>
     <Transition mounted={active && open} duration={reducedMotion ? 0 : 140} timingFunction="ease-out"
       transition={{ in: { opacity: 1, transform: "translateX(0)" }, out: { opacity: 0, transform: "translateX(-8px)" },
         common: {}, transitionProperty: "transform, opacity" }}>

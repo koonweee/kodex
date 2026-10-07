@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { SidebarPeek } from "./SidebarPeek";
 
 function view(enabled = true, showAction = true) {
-  return <MantineProvider env="test"><SidebarPeek onPin={vi.fn()} enabled={enabled} collapsed
+  return <MantineProvider env="test"><SidebarPeek enabled={enabled} collapsed
     rail={(handlers) => <button {...handlers}>Expand</button>}>
     {showAction && <button>Sidebar action</button>}
     {createPortal(<button>Portal action</button>, document.body)}
@@ -27,7 +27,7 @@ describe("sidebar peek", () => {
     fireEvent.pointerEnter(trigger, { pointerType: "mouse" });
     advance(400);
     expect(screen.getByRole("button", { name: "Sidebar action" })).toBeVisible();
-    fireEvent.pointerLeave(screen.getByText("Expand").parentElement!.parentElement!, { pointerType: "mouse" });
+    fireEvent.pointerLeave(screen.getByText("Expand").parentElement!, { pointerType: "mouse" });
     advance(200);
     expect(screen.getByRole("button", { name: "Sidebar action" })).toBeVisible();
     advance(500);
@@ -39,7 +39,7 @@ describe("sidebar peek", () => {
     fireEvent.pointerEnter(screen.getByText("Expand"), { pointerType: "mouse" });
     advance(400);
     act(() => screen.getByText("Portal action").focus());
-    fireEvent.pointerLeave(screen.getByText("Expand").parentElement!.parentElement!, { pointerType: "mouse" });
+    fireEvent.pointerLeave(screen.getByText("Expand").parentElement!, { pointerType: "mouse" });
     advance(700);
     expect(screen.getByText("Sidebar action")).toBeVisible();
     act(() => screen.getByText("Pane action").focus());
@@ -54,7 +54,7 @@ describe("sidebar peek", () => {
     act(() => screen.getByText("Sidebar action").focus());
     rendered.rerender(view(true, false));
     expect(document.activeElement).toBe(document.body);
-    fireEvent.pointerLeave(screen.getByText("Expand").parentElement!.parentElement!, { pointerType: "mouse" });
+    fireEvent.pointerLeave(screen.getByText("Expand").parentElement!, { pointerType: "mouse" });
     advance(700);
     expect(screen.queryByText("Portal action")).toBeNull();
   });
@@ -65,7 +65,7 @@ describe("sidebar peek", () => {
     advance(400);
     const action = screen.getByText("Sidebar action");
     fireEvent.dragStart(action);
-    fireEvent.pointerLeave(screen.getByText("Expand").parentElement!.parentElement!, { pointerType: "mouse" });
+    fireEvent.pointerLeave(screen.getByText("Expand").parentElement!, { pointerType: "mouse" });
     advance(700);
     expect(action).toBeVisible();
     fireEvent.dragEnd(action);

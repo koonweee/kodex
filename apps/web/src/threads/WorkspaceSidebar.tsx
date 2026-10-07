@@ -18,7 +18,6 @@ import {
   Inbox,
   MessageSquare,
   PanelLeftClose,
-  PanelLeftOpen,
   Search,
   Settings,
   SquarePen,
@@ -428,7 +427,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
       data-sidebar-scope={sidebarScope}
       style={{ width: sidebarWidth }}
     >
-      <SidebarPeek onPin={onSidebarExpandClick} collapsed={sidebarCollapsed} enabled={hasFineHover && !isNarrowSidebar}
+      <SidebarPeek collapsed={sidebarCollapsed} enabled={hasFineHover && !isNarrowSidebar}
         rail={(handlers) => <CollapsedSidebarRail
           onExpand={onSidebarExpandClick}
           onExpandPointerEnter={handlers.onPointerEnter}
@@ -449,14 +448,14 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                 showDebugEvents={showDebugEvents}
                 usageLimitLines={usageLimitLines}
               />
-              <SidebarIconButton
+              {!sidebarCollapsed ? <SidebarIconButton
                 className="kodex-sidebar-header-action"
-                label={isNarrowSidebar ? SIDEBAR_TEXT.showThread : sidebarCollapsed ? "Keep workspace sidebar open" : SIDEBAR_TEXT.collapseSidebar}
-                onClick={isNarrowSidebar ? onShowThread : sidebarCollapsed ? onSidebarExpandClick : onSidebarCollapseClick}
+                label={isNarrowSidebar ? SIDEBAR_TEXT.showThread : SIDEBAR_TEXT.collapseSidebar}
+                onClick={isNarrowSidebar ? onShowThread : onSidebarCollapseClick}
                 tooltipProps={{ position: isNarrowSidebar ? "bottom" : "right" }}
               >
-                {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
-              </SidebarIconButton>
+                <PanelLeftClose size={16} />
+              </SidebarIconButton> : null}
             </Box>
             <Box className="kodex-sidebar-actions" aria-label="Sidebar actions">
               <SearchActionRow

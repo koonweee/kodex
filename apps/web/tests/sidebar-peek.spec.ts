@@ -24,6 +24,7 @@ test.describe("desktop sidebar peek", () => {
       const pane = first.locator(".kodex-main-stack");
       await expect.poll(() => pane.evaluate((element) => element.getBoundingClientRect().x)).toBe(44);
       const initialRect = await rectangle(pane);
+      const railRect = await rectangle(first.getByRole("navigation", { name: "Workspace", exact: true }));
       await trigger.hover();
       await first.waitForTimeout(60);
       await moveOutside(first);
@@ -32,8 +33,8 @@ test.describe("desktop sidebar peek", () => {
       await trigger.hover();
       await expect(preview).toBeVisible();
       await expect(preview.getByRole("button", { name: "Projects", exact: true })).toBeVisible();
-      await expect.poll(() => rectangle(preview)).toEqual(expandedRect);
-      await expect.poll(() => rectangle(preview.getByRole("button", { name: "Projects", exact: true }))).toEqual(expandedProjectsRect);
+      await expect.poll(() => rectangle(preview)).toEqual({ ...expandedRect, x: railRect.x + railRect.width });
+      await expect.poll(() => rectangle(preview.getByRole("button", { name: "Projects", exact: true }))).toEqual({ ...expandedProjectsRect, x: expandedProjectsRect.x + railRect.width });
       await expect.poll(() => rectangle(pane)).toEqual(initialRect);
       await expect(second.locator(".kodex-sidebar-peek-panel")).toHaveCount(0);
       await expect(second.getByRole("button", { name: "Expand workspace sidebar", exact: true })).toBeVisible();
@@ -42,7 +43,9 @@ test.describe("desktop sidebar peek", () => {
       await expect(preview).toHaveCount(0);
       await trigger.hover();
       await expect(preview).toBeVisible();
-      await preview.getByRole("button", { name: "Keep workspace sidebar open", exact: true }).click();
+      await expect(preview.getByRole("button", { name: /workspace sidebar/ })).toHaveCount(0);
+      await expect(trigger).toBeVisible();
+      await trigger.click();
       await moveOutside(first);
       await expect(preview).toHaveCount(0);
       await expect(first.getByRole("button", { name: "Collapse workspace sidebar", exact: true })).toBeVisible();
