@@ -106,6 +106,8 @@ async fn native_revert_clears_history_live_input_and_cursors_and_replays_a_refil
         exclude_thread_id: None,
         include_global: None,
         thread_ids: None,
+        include_debug_events: None,
+        include_command_outputs: None,
     };
     let stored = state
         .store
@@ -220,6 +222,8 @@ async fn http_sse_delivers_refill_signals_without_rewinding_transcript_high_wate
         exclude_thread_id: None,
         include_global: None,
         thread_ids: None,
+        include_debug_events: None,
+        include_command_outputs: None,
     };
     let mut body = events(headers, State(state.clone()), Query(query))
         .await

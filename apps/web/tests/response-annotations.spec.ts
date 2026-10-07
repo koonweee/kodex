@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../src/test/canonicalPayloadFixture";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { appendResponseAnnotations } from "../src/composer/annotations";
@@ -347,15 +348,15 @@ async function selectExcerpt(page: Page, text: string, touch: boolean) {
 
 function assistantRow(): ThreadTimelineRow {
   return { id: "answer", turnId: "turn-answer", kind: "assistant_message", status: "completed", displayOrder: 1,
-    items: [], collapsedRows: [], fileChanges: [],
+
     item: { id: "answer", threadId: "settings-chat", turnId: "turn-answer", itemId: "answer", itemType: "agentMessage", status: "completed", displayOrder: 1, codexMethod: "item/completed",
-      payload: { source: "appServerSnapshot", turnId: "turn-answer", itemId: "answer", itemSnapshot: { id: "answer", itemType: "agentMessage" }, item: { id: "answer", type: "agentMessage", phase: "final_answer", text: assistantText } } },
+      payload: compactCanonicalPayload({ id: "answer", type: "agentMessage", phase: "final_answer", text: assistantText }, { id: "answer", itemType: "agentMessage" }) },
   };
 }
 function submittedRow(text: string, clientId: string): ThreadTimelineRow {
   return { id: "submitted", turnId: "turn-1", kind: "user_message", status: "completed", displayOrder: 2,
-    items: [], collapsedRows: [], fileChanges: [],
+
     item: { id: "submitted", threadId: "settings-chat", turnId: "turn-1", itemId: "submitted", itemType: "userMessage", status: "completed", displayOrder: 2, codexMethod: "item/completed",
-      payload: { source: "appServerSnapshot", turnId: "turn-1", itemId: "submitted", itemSnapshot: { id: "submitted", itemType: "userMessage", clientId }, item: { id: "submitted", type: "userMessage", clientId, content: [{ type: "text", text }] } } },
+      payload: compactCanonicalPayload({ id: "submitted", type: "userMessage", clientId, content: [{ type: "text", text }] }, { id: "submitted", itemType: "userMessage", clientId }) },
   };
 }

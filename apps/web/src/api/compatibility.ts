@@ -1,7 +1,7 @@
 import type { components } from "./generated/schema";
 
 // Deliberately checked against the generated native contract when the API epoch changes.
-const API_VERSION = "2" satisfies components["schemas"]["ApiVersion"];
+const API_VERSION = "3" satisfies components["schemas"]["ApiVersion"];
 const HEADER = "x-kodex-api-version";
 let required = false;
 const listeners = new Set<() => void>();

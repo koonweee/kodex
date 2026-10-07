@@ -15,7 +15,7 @@ describe("API compatibility", () => {
     const fetch = vi.fn().mockResolvedValue(new Response('{}', { status: 409, headers: { "x-kodex-api-version": "future" } }));
     vi.stubGlobal("fetch", fetch);
     await expect(compatibleFetch(new Request("http://localhost/v1/projects", { method: "POST" }))).rejects.toThrow("Update Kodex");
-    expect(fetch.mock.calls[0][0].headers.get("x-kodex-api-version")).toBe("2");
+    expect(fetch.mock.calls[0][0].headers.get("x-kodex-api-version")).toBe("3");
     expect(compatibilityRequired()).toBe(true);
     await expect(compatibleFetch(new Request("http://localhost/v1/projects", { method: "POST" }))).rejects.toThrow("Update Kodex");
     expect(fetch).toHaveBeenCalledTimes(1);

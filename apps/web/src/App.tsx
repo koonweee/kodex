@@ -1,3 +1,4 @@
+import { ThreadDeliveryProvider } from "./timeline/ThreadDeliveryPreferences";
 import { SubagentPaneToggle } from "./threads/SubagentPaneToggle";
 import { CompatibilityNotice } from "./api/CompatibilityNotice";
 import { refreshUnreadBadge } from "./notifications/unreadBadge";
@@ -211,6 +212,7 @@ function KodexShell({
   const [materializingThreadIds, setMaterializingThreadIds] = useState<Set<string>>(new Set());
   const [projectFormOpen, setProjectFormOpen] = useState(false);
   const [showDebugEvents, setShowDebugEvents] = useState(false);
+  const [showCommandOutputs, setShowCommandOutputs] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lightboxImage, setLightboxImage] = useState<ImageLightboxImage | null>(null);
   const [markdownPreview, setMarkdownPreview] = useState<MarkdownPreviewRequest | null>(null);
@@ -1029,7 +1031,7 @@ function KodexShell({
     [selectedThreadId, subagents.error, subagents.open, subagents.subagents.length, subagents.toggle],
   );
   return (
-    <>
+    <ThreadDeliveryProvider includeDebugEvents={showDebugEvents} includeCommandOutputs={showCommandOutputs}>
       <WorkspaceProvider
         approvals={approvals}
         errorMessage={errorMessage}
@@ -1100,7 +1102,7 @@ function KodexShell({
           onOpenPreferences: handleOpenPreferences, onOpenTerminal: gatewayTerminalAvailable ? handleShowWorkspace : undefined,
           onMoveProject: handleMoveProject, onSelectChatThread: stableHandleSelectChatThread,
           onSelectAutomations: stableHandleSelectAutomations, onSelectPinnedThread: stableHandleSelectPinnedThread, onSelectProjectSettings: stableHandleSelectProjectSettings, onSelectThread: stableHandleSelectThread, onUnpinThread: stableHandleUnpinThread,
-          onShowThread: handleShowMobileThread, onShowDebugEventsChange: setShowDebugEvents, onSidebarCollapseClick: handleSidebarCollapseClick,
+          onShowThread: handleShowMobileThread, onShowDebugEventsChange: setShowDebugEvents, onShowCommandOutputsChange: setShowCommandOutputs, onSidebarCollapseClick: handleSidebarCollapseClick,
           onSidebarExpandClick: handleSidebarExpandClick, onThreadActionHoverChange: setHoveredThreadActionId,
           pinnedThreads,
           pinnedThreadsHasMore: nativePinned.hasMore, pinnedThreadsPaginationState: nativePinned.paginationState,
@@ -1109,7 +1111,7 @@ function KodexShell({
           projectThreadHasMoreById: Object.fromEntries(Object.entries(projectThreadNextCursors).map(([projectId, cursor]) => [projectId, cursor !== null])),
           projectThreadPaginationStateById,
           projects: orderedProjects, selectedMainPane, selectedProjectId, selectedThreadId: selectedMainPane === "thread" ? selectedThreadId : null,
-          showDebugEvents, sidebarWidth, threadsByProjectId, usageLimitLines,
+          showDebugEvents, showCommandOutputs, sidebarWidth, threadsByProjectId, usageLimitLines,
         }}
         workspaceSelectedThreadPaneId={
           selectedMainPane === "thread" && !isSelectedThreadSnapshotDeferred ? routeThreadPaneId ?? unavailableThreadId : null
@@ -1127,6 +1129,6 @@ function KodexShell({
           <MarkdownPreviewPane preview={markdownPreview} threadId={selectedThreadId ?? undefined} onClose={handleCloseMarkdownPreview} />
         </Suspense>
       ) : null}
-    </>
+    </ThreadDeliveryProvider>
   );
 }

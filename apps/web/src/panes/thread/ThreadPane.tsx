@@ -1,3 +1,4 @@
+import { useThreadDeliveryPreferences } from "../../timeline/ThreadDeliveryPreferences";
 import { PaneLayout } from "../../shared/PaneLayout";
 import { threadIndicatorState } from "../../threads/ThreadStatusIndicator";
 import { AsyncQuestionReplyProvider } from "../../composer/AsyncQuestionReplyProvider";
@@ -90,6 +91,7 @@ function ExistingThreadPane({
   paneTitle: string | null;
   threadId: string;
 }) {
+  const { getOptions: getDeliveryOptions } = useThreadDeliveryPreferences();
   const {
     approvals,
     errorMessage: appErrorMessage,
@@ -176,7 +178,7 @@ function ExistingThreadPane({
         : { phase: "loadingSnapshot", threadId },
     );
     try {
-      const snapshot = await attachThread(threadId, controller.signal);
+      const snapshot = await attachThread(threadId, controller.signal, getDeliveryOptions());
       controller.signal.throwIfAborted();
       if (requestId !== refreshRequestIdRef.current || requestThreadId !== latestThreadIdRef.current) {
         return;
@@ -208,7 +210,7 @@ function ExistingThreadPane({
         void refreshSnapshot();
       }
     }
-  }, [onThreadSnapshotLoadFailed, onThreadSnapshotLoaded, threadId]);
+  }, [getDeliveryOptions, onThreadSnapshotLoadFailed, onThreadSnapshotLoaded, threadId]);
 
   useThreadReadState({
     thread,
@@ -390,7 +392,7 @@ function ExistingThreadPane({
     historyControllerRef.current = controller;
     const snapshotRequestId = refreshRequestIdRef.current;
     setTimeline((current) => setTimelineOlderHistoryLoading(current, true));
-    void getThreadTimelinePage(threadId, { cursor, signal: controller.signal })
+    void getThreadTimelinePage(threadId, { cursor, signal: controller.signal, ...getDeliveryOptions() })
       .then((snapshot) => {
         if (controller.signal.aborted || snapshotRequestId !== refreshRequestIdRef.current || threadId !== latestThreadIdRef.current) return;
         setTimeline((current) => applyTimelineHistoryWindow(current, snapshot));
@@ -405,7 +407,7 @@ function ExistingThreadPane({
       .finally(() => {
         if (historyControllerRef.current === controller) historyControllerRef.current = null;
       });
-  }, [threadId, timeline.isLoadingOlderHistory, timeline.olderCursor]);
+  }, [getDeliveryOptions, threadId, timeline.isLoadingOlderHistory, timeline.olderCursor]);
   const threadApprovals = approvals.filter((approval) => approval.threadId === threadId);
   const isReady = entry.phase === "streamingLive" || entry.phase === "refreshingSnapshot";
   const isInitialSnapshotLoading = (entry.phase === "loadingSnapshot" || entry.phase === "refreshingSnapshot") && !thread;

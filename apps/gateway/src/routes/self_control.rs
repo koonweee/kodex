@@ -369,13 +369,15 @@ pub async fn get_self_control_sidebar_threads(
     get,
     path = "/v1/self-control/threads/{threadId}",
     summary = "Read a thread detail view through self-control",
+    params(crate::thread_view_delivery::ThreadViewDeliveryQuery),
     responses((status = 200, body = ThreadViewResponse))
 )]
 pub async fn get_self_control_thread(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
+    Query(delivery): Query<crate::thread_view_delivery::ThreadViewDeliveryQuery>,
 ) -> ApiResult<Json<ThreadViewResponse>> {
-    crate::routes::threads::get_thread(State(state), Path(thread_id)).await
+    crate::routes::threads::get_thread(State(state), Path(thread_id), Query(delivery)).await
 }
 
 #[utoipa::path(
@@ -876,18 +878,23 @@ async fn require_control_thread(state: &AppState, thread_id: &str) -> ApiResult<
     post,
     path = "/v1/self-control/threads/{threadId}/attach",
     summary = "Attach or resume a thread through self-control",
+    params(crate::thread_view_delivery::ThreadViewDeliveryQuery),
     request_body = SelfControlMutationRequest,
     responses((status = 200, body = ThreadViewResponse))
 )]
 pub async fn attach_self_control_thread(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
+    Query(delivery): Query<crate::thread_view_delivery::ThreadViewDeliveryQuery>,
     request: Option<Json<SelfControlMutationRequest>>,
 ) -> ApiResult<Json<ThreadViewResponse>> {
     let source = optional_source(request);
-    let response =
-        crate::routes::threads::attach_thread(State(state.clone()), Path(thread_id.clone()))
-            .await?;
+    let response = crate::routes::threads::attach_thread(
+        State(state.clone()),
+        Path(thread_id.clone()),
+        Query(delivery),
+    )
+    .await?;
     audit_thread_mutation(&state, &thread_id, "self_control.thread_attached", source).await?;
     Ok(response)
 }

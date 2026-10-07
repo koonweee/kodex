@@ -2328,10 +2328,7 @@ mod tests {
                 let items = serialized_timeline_items(&body["timeline"]);
                 assert_eq!(items.len(), 1);
                 assert_eq!(items[0]["itemId"], "native-control-user");
-                assert_eq!(
-                    items[0]["payload"]["itemSnapshot"]["clientId"],
-                    "control-client"
-                );
+                assert_eq!(items[0]["payload"]["clientId"], "control-client");
                 let requests = app_server.requests.lock().unwrap();
                 assert_eq!(
                     requests[0],
@@ -4448,7 +4445,7 @@ mod tests {
         assert_eq!(body["timeline"]["liveState"], "streaming");
         let items = serialized_timeline_items(&body["timeline"]);
         assert_eq!(items[0]["itemId"], "pending-user-fixture-pending");
-        assert_eq!(items[0]["payload"]["item"]["clientId"], "fixture-pending");
+        assert_eq!(items[0]["payload"]["clientId"], "fixture-pending");
         assert_eq!(
             items[0]["payload"]["item"]["content"][0]["text"],
             "Search Google for OpenAI news"
@@ -8768,7 +8765,7 @@ mod tests {
 
         let response = app
             .oneshot(
-                Request::get("/v1/events?threadId=thread-2")
+                Request::get("/v1/events?threadId=thread-2&includeCommandOutputs=true")
                     .header("accept", "text/event-stream")
                     .body(Body::empty())
                     .unwrap(),

@@ -120,6 +120,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onSelectThread,
   onShowThread = () => undefined,
   onShowDebugEventsChange,
+  onShowCommandOutputsChange,
   onSidebarCollapseClick,
   onSidebarExpandClick,
   onThreadActionHoverChange,
@@ -133,6 +134,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   selectedMainPane,
   selectedThreadId,
   showDebugEvents,
+  showCommandOutputs = false,
   sidebarCollapsed = false,
   sidebarWidth,
   threadsByProjectId,
@@ -167,6 +169,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onSelectThread: (projectId: string, threadId: string) => void;
   onShowThread?: () => void;
   onShowDebugEventsChange: (value: boolean) => void;
+  onShowCommandOutputsChange?: (value: boolean) => void;
   onSidebarCollapseClick: () => void;
   onSidebarExpandClick: () => void;
   onThreadActionHoverChange: (threadId: string | null) => void;
@@ -180,6 +183,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   selectedMainPane: "thread" | "automations" | "project";
   selectedThreadId: string | null;
   showDebugEvents: boolean;
+  showCommandOutputs?: boolean;
   sidebarCollapsed?: boolean;
   sidebarWidth: number;
   threadsByProjectId: ThreadsByProjectId;
@@ -445,6 +449,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                 onOpenPreferences={onOpenPreferences}
                 onShowDebugEventsChange={onShowDebugEventsChange}
                 showDebugEvents={showDebugEvents}
+                onShowCommandOutputsChange={onShowCommandOutputsChange}
+                showCommandOutputs={showCommandOutputs}
                 usageLimitLines={usageLimitLines}
               />
               {!sidebarCollapsed ? <SidebarIconButton

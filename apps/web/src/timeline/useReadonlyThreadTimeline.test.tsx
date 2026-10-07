@@ -1,8 +1,10 @@
+import { compactCanonicalPayload } from "../test/canonicalPayloadFixture";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { StrictMode } from "react";
+import { StrictMode, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { attachThread, getThreadDetail, type EventEnvelope, type ThreadTimelineRow, type ThreadViewPatch, type ThreadViewResponse } from "../api/client";
+import { ThreadDeliveryProvider } from "./ThreadDeliveryPreferences";
 import type { TimelineState } from "./reducer";
 import { useReadonlyThreadTimeline } from "./useReadonlyThreadTimeline";
 
@@ -48,6 +50,34 @@ describe("useReadonlyThreadTimeline", () => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
     FakeEventSource.instances = [];
+  });
+
+  it("updates per-tab delivery preferences without a history refill and applies them to the next ordinary read", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    vi.mocked(getThreadDetail).mockReset().mockResolvedValue(threadDetail("Stored history", 1));
+    let enabled = false;
+    const wrapper = ({ children }: { children: ReactNode }) => <ThreadDeliveryProvider includeDebugEvents={enabled} includeCommandOutputs={enabled}>{children}</ThreadDeliveryProvider>;
+    const first = renderHook(() => useReadonlyThreadTimeline({ onError: vi.fn(), threadId: "thread-1" }), { wrapper });
+    const second = renderHook(() => useReadonlyThreadTimeline({ onError: vi.fn(), threadId: "thread-1" }));
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(2));
+    expect(getThreadDetail).toHaveBeenCalledTimes(2);
+    const otherStream = FakeEventSource.instances[1];
+    enabled = true;
+    first.rerender();
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(3));
+    expect(getThreadDetail).toHaveBeenCalledTimes(2);
+    expect(otherStream.closed).toBe(false);
+    expect(timelineText(first.result.current.timeline)).toBe("Stored history");
+    expect(timelineText(second.result.current.timeline)).toBe("Stored history");
+    const url = new URL(FakeEventSource.instances[2].url, window.location.origin);
+    expect(url.searchParams.get("includeDebugEvents")).toBe("true");
+    expect(url.searchParams.get("includeCommandOutputs")).toBe("true");
+    act(() => FakeEventSource.instances[2].emitNamed("thread_view.refresh_required", refreshRequiredEvent(2)));
+    await waitFor(() => expect(getThreadDetail).toHaveBeenCalledTimes(3));
+    expect(vi.mocked(getThreadDetail).mock.calls[2][2]).toEqual({ includeDebugEvents: true, includeCommandOutputs: true });
+    enabled = false;
+    first.rerender();
+    expect(getThreadDetail).toHaveBeenCalledTimes(3);
   });
 
   it("keeps two read-only observers on history reads when their streams reconnect", async () => {
@@ -209,11 +239,7 @@ describe("useReadonlyThreadTimeline", () => {
       ...row, id: "pending-row", kind: "user_message", displayOrder: 2,
       item: {
         ...row.item!, id: "pending-input", itemId: "pending-input", itemType: "userMessage", displayOrder: 2,
-        payload: {
-          source: "gatewayStream", turnId: "turn-1", itemId: "pending-input",
-          item: { id: "pending-input", type: "userMessage", content: [{ type: "text", text: "Pending input" }] },
-          itemSnapshot: { id: "pending-input", itemType: "userMessage", clientId: "pending-client" },
-        },
+        payload: compactCanonicalPayload({ id: "pending-input", type: "userMessage", content: [{ type: "text", text: "Pending input" }] }, { id: "pending-input", itemType: "userMessage", clientId: "pending-client" }),
       },
     };
     const partial: ThreadViewPatch = {
@@ -385,13 +411,7 @@ function threadDetail(text: string, viewRevision: number): ThreadViewResponse {
     displayOrder: 1,
     codexMethod: "item/upsert",
     timestampMs: 1,
-    payload: {
-      item: { id: "agent-1", type: "agentMessage", text },
-      itemId: "agent-1",
-      itemSnapshot: { id: "agent-1", itemType: "agentMessage" },
-      source: "appServerSnapshot" as const,
-      turnId: "turn-1",
-    },
+    payload: compactCanonicalPayload({ id: "agent-1", type: "agentMessage", text }, { id: "agent-1", itemType: "agentMessage" }),
   };
   return {
     historyPage: null,

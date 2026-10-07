@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "./canonicalPayloadFixture";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { useRef } from "react";
@@ -293,10 +294,8 @@ async function threadDetailFromSnapshot(
   }
   return {
     thread: sourceThread,
-    turns,
     liveState: sourceThread.status === "active" ? "streaming" : "idle",
     timeline: timelineFromTurns(sourceThread, turns),
-    rawPayload: {},
   };
 }
 
@@ -334,10 +333,8 @@ function snapshotItem(id: string, itemType: string, payload: Record<string, unkn
 function threadDetail(sourceThread: TestThreadSummary, turns: ReturnType<typeof snapshotTurn>[] = []) {
   return {
     thread: sourceThread,
-    turns,
     liveState: sourceThread.status === "active" ? "streaming" : "idle",
     timeline: timelineFromTurns(sourceThread, turns),
-    rawPayload: {},
   };
 }
 
@@ -358,13 +355,7 @@ function timelineFromTurns(sourceThread: TestThreadSummary, turns: TestSnapshotT
         displayOrder,
         codexMethod: turn.status === "completed" ? "item/completed" : "item/upsert",
         timestampMs: displayOrder,
-        payload: {
-          source: "appServerSnapshot",
-          turnId: turn.id,
-          itemId: snapshot.id ?? `item-${displayOrder}`,
-          item: snapshot.rawPayload ?? item,
-          itemSnapshot: item,
-        },
+        payload: compactCanonicalPayload(snapshot.rawPayload ?? item, item),
       };
     }),
   );
@@ -372,8 +363,10 @@ function timelineFromTurns(sourceThread: TestThreadSummary, turns: TestSnapshotT
     viewRevision: 1,
     activeTurnId: activeTurn?.id ?? null,
     liveState: sourceThread.status === "active" ? "streaming" : "idle",
+    pendingApprovalRequests: [],
+    pendingUserInputRequests: [],
     rows: canonicalRowsFromSnapshotItems(items),
-    items,
+    turns: turns.map(({ id, status }) => ({ id, status })),
   };
 }
 
@@ -418,22 +411,12 @@ function projectionPatchEvent({
     status,
     timestampMs: displayOrder,
     codexMethod: status === "completed" ? "item/completed" : "item/upsert",
-    payload: {
-      source: "gatewayStream",
-      turnId,
-      itemId,
-      item: itemType === "userMessage"
-        ? { id: itemId, type: "userMessage", content: userContent }
-        : { id: itemId, type: "agentMessage", text },
-      itemSnapshot: {
-        id: itemId,
-        itemType,
-        ...(skillMentions ? { skillMentions } : {}),
-        rawPayload: itemType === "userMessage"
-          ? { id: itemId, type: "userMessage", content: userContent }
-          : { id: itemId, type: "agentMessage", text },
-      },
-    },
+    payload: compactCanonicalPayload(
+      itemType === "userMessage"
+        ? { content: userContent }
+        : { text },
+      { skillMentions },
+    ),
   };
   return {
     id,
@@ -455,7 +438,6 @@ function projectionPatchEvent({
       affectedTurnIds: [turnId],
       rows: canonicalRowsFromSnapshotItems([item]),
       turns: [{ id: turnId, status }],
-      items: [item],
     },
     receivedAt: "2026-04-30T00:00:02Z",
   };
@@ -490,12 +472,7 @@ function canonicalRowsFromSnapshotItems(items: TestTimelineItem[]) {
       displayOrder: first.displayOrder,
       status: first.status,
       timestampMs: first.timestampMs,
-      item: null,
       items: activityItems,
-      fileChanges: [],
-      work: null,
-      collapsedRows: [],
-      dividerBefore: null,
     });
     activityItems = [];
   };
@@ -511,12 +488,7 @@ function canonicalRowsFromSnapshotItems(items: TestTimelineItem[]) {
       displayOrder: first.displayOrder,
       status: first.status,
       timestampMs: first.timestampMs,
-      item: null,
-      items: [],
       fileChanges: fileItems.map(fileChangeEntryFromItem),
-      work: null,
-      collapsedRows: [],
-      dividerBefore: null,
     });
     fileItems = [];
   };
@@ -551,11 +523,6 @@ function canonicalItemRow(item: TestTimelineItem, kind = canonicalKind(item.item
     status: item.status,
     timestampMs: item.timestampMs,
     item,
-    items: [],
-    fileChanges: [],
-    work: null,
-    collapsedRows: [],
-    dividerBefore: null,
   };
 }
 

@@ -49,6 +49,106 @@ describe("event stream client", () => {
     FakeEventSource.instances = [];
   });
 
+  it("changes delivery flags without losing the cursor or reporting a network reconnect", () => {
+    vi.useFakeTimers();
+    const onStatusChange = vi.fn();
+    const client = createEventStreamClient({ EventSourceCtor: FakeEventSource, cursor: 4, onEvent: vi.fn(), onStatusChange, reconnectDelayMs: 250 });
+    client.connect();
+    FakeEventSource.instances[0].open();
+    FakeEventSource.instances[0].emit({ seq: 9 });
+    client.updateDeliveryOptions({ includeDebugEvents: true, includeCommandOutputs: true });
+    const changed = FakeEventSource.instances[1];
+    const url = new URL(changed.url, window.location.origin);
+    expect(FakeEventSource.instances[0].closed).toBe(true);
+    expect(url.searchParams.get("cursor")).toBe("9");
+    expect(url.searchParams.get("includeDebugEvents")).toBe("true");
+    expect(url.searchParams.get("includeCommandOutputs")).toBe("true");
+    changed.open();
+    expect(onStatusChange).toHaveBeenLastCalledWith("connected", "delivery_options");
+    expect(onStatusChange.mock.calls.some(([status]) => status === "reconnecting")).toBe(false);
+    changed.fail();
+    vi.advanceTimersByTime(250);
+    expect(onStatusChange).toHaveBeenLastCalledWith("reconnecting");
+    client.close();
+  });
+
+  it("still reports network recovery if delivery options change during a retry", () => {
+    vi.useFakeTimers();
+    const onStatusChange = vi.fn();
+    const client = createEventStreamClient({ EventSourceCtor: FakeEventSource, onEvent: vi.fn(), onStatusChange, reconnectDelayMs: 250 });
+    client.connect();
+    FakeEventSource.instances[0].open();
+    FakeEventSource.instances[0].fail();
+    client.updateDeliveryOptions({ includeCommandOutputs: true });
+    expect(onStatusChange).toHaveBeenLastCalledWith("reconnecting");
+    FakeEventSource.instances[1].open();
+    expect(onStatusChange).toHaveBeenLastCalledWith("connected");
+    vi.advanceTimersByTime(250);
+    expect(FakeEventSource.instances).toHaveLength(2);
+    client.close();
+  });
+
+  it("preserves normal recovery when flags change twice before the replacement stream opens", () => {
+    vi.useFakeTimers();
+    const onStatusChange = vi.fn();
+    const client = createEventStreamClient({ EventSourceCtor: FakeEventSource, onEvent: vi.fn(), onStatusChange, reconnectDelayMs: 250 });
+    client.connect();
+    FakeEventSource.instances[0].open();
+    FakeEventSource.instances[0].emit({ seq: 7 });
+    FakeEventSource.instances[0].fail();
+    vi.advanceTimersByTime(250);
+    const recovering = FakeEventSource.instances[1];
+    client.updateDeliveryOptions({ includeCommandOutputs: true });
+    const firstReplacement = FakeEventSource.instances[2];
+    client.updateDeliveryOptions({ includeCommandOutputs: true, includeDebugEvents: true });
+    recovering.open();
+    firstReplacement.open();
+    const latest = FakeEventSource.instances[3];
+    latest.open();
+    expect(onStatusChange).toHaveBeenLastCalledWith("connected");
+    expect(onStatusChange.mock.calls.filter(([status]) => status === "connected")).toHaveLength(2);
+    const url = new URL(latest.url, window.location.origin);
+    expect(url.searchParams.get("cursor")).toBe("7");
+    expect(url.searchParams.get("includeCommandOutputs")).toBe("true");
+    expect(url.searchParams.get("includeDebugEvents")).toBe("true");
+    client.close();
+  });
+
+  it("keeps initial connected recovery if flags change before the first stream opens", () => {
+    const onStatusChange = vi.fn();
+    const client = createEventStreamClient({ EventSourceCtor: FakeEventSource, onEvent: vi.fn(), onStatusChange });
+    client.connect();
+    client.updateDeliveryOptions({ includeCommandOutputs: true });
+    FakeEventSource.instances[0].open();
+    expect(onStatusChange).not.toHaveBeenCalled();
+    FakeEventSource.instances[1].open();
+    expect(onStatusChange).toHaveBeenCalledWith("connected");
+    client.close();
+  });
+
+  it("uses ordinary connected recovery when toggling before the first event establishes a replay cursor", () => {
+    const onStatusChange = vi.fn();
+    const client = createEventStreamClient({ EventSourceCtor: FakeEventSource, onEvent: vi.fn(), onStatusChange });
+    client.connect();
+    FakeEventSource.instances[0].open();
+    client.updateDeliveryOptions({ includeCommandOutputs: true });
+    const replacement = FakeEventSource.instances[1];
+    expect(new URL(replacement.url, window.location.origin).searchParams.has("cursor")).toBe(false);
+    replacement.open();
+    expect(onStatusChange.mock.calls).toEqual([["connected"], ["connected"]]);
+    client.close();
+  });
+
+  it("keeps delivery preferences independent between clients", () => {
+    const first = createEventStreamClient({ EventSourceCtor: FakeEventSource, onEvent: vi.fn() });
+    const second = createEventStreamClient({ EventSourceCtor: FakeEventSource, onEvent: vi.fn() });
+    first.connect(); second.connect();
+    first.updateDeliveryOptions({ includeDebugEvents: true, includeCommandOutputs: true });
+    expect(FakeEventSource.instances[1].closed).toBe(false);
+    expect(new URL(FakeEventSource.instances[1].url, window.location.origin).searchParams.has("includeCommandOutputs")).toBe(false);
+    first.close(); second.close();
+  });
+
   it("starts fresh streams without a replay cursor", () => {
     const client = createEventStreamClient({
       EventSourceCtor: FakeEventSource,

@@ -119,5 +119,5 @@ pub(super) fn user_message_client_id(item: &ThreadTimelineSnapshotItem) -> Optio
     if !item.item_type.eq_ignore_ascii_case("userMessage") {
         return None;
     }
-    item.payload.item.client_id.as_deref()
+    item.payload.client_id.as_deref()
 }

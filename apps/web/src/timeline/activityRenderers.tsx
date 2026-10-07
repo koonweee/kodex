@@ -5,6 +5,7 @@ import type { SyntheticEvent } from "react";
 
 import type { MarkdownPreviewRequest } from "../files/types";
 import type { ImageLightboxImage } from "../images/types";
+import { useThreadDeliveryPreferences } from "./ThreadDeliveryPreferences";
 import { ActivityGroupSummary } from "./ActivityGroupSummary";
 import { FileChangeBlock } from "./fileRenderers";
 import { ImageActivityBlock } from "./imageRenderers";
@@ -114,6 +115,7 @@ export function WebSearchBlock({ actions }: { actions: WebSearchAction[] }) {
 }
 
 export function CommandBlock({ item }: { item: TimelineItem }) {
+  const { includeCommandOutputs } = useThreadDeliveryPreferences();
   const command = item.command || payloadValue(item.payload, "command");
   const output = item.output || payloadValue(item.payload, "output") || payloadValue(item.payload, "stdout") || payloadValue(item.payload, "stderr");
   const status = commandStatusMeta(item.status);
@@ -129,7 +131,7 @@ export function CommandBlock({ item }: { item: TimelineItem }) {
       ) : (
         <MessageText text={item.text || "Command"} />
       )}
-      {output ? (
+      {includeCommandOutputs && output ? (
         <Code block className="kodex-timeline-output">
           {output}
         </Code>

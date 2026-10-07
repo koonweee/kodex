@@ -1,3 +1,4 @@
+import { useThreadDeliveryPreferences } from "../timeline/ThreadDeliveryPreferences";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
@@ -319,6 +320,8 @@ export function WorkspaceProvider({
     onVisibleThreadIdsChange(visibleThreadIds);
   }, [onVisibleThreadIdsChange, visibleThreadIds]);
 
+  const { includeDebugEvents, includeCommandOutputs, getOptions: getDeliveryOptions } = useThreadDeliveryPreferences();
+  const deliveryStreamRef = useRef<ReturnType<typeof createEventStreamClient> | null>(null);
   const subscribedThreadIds = useMemo(() => workspaceSubscribedThreadIds(workspace.panes), [workspace.panes]);
   const subscribedThreadIdsKey = subscribedThreadIds.join("\n");
 
@@ -327,9 +330,10 @@ export function WorkspaceProvider({
       beforeConnect: validateInstance,
       cursor: liveEventCursorRef.current,
       includeGlobal: true,
+      ...getDeliveryOptions(),
       threadIds: subscribedThreadIds,
-      onStatusChange: (status) => {
-        if (status === "connected") {
+      onStatusChange: (status, reason) => {
+        if (status === "connected" && reason !== "delivery_options") {
           handleStreamConnected?.();
           publishThreadPaneTimelineAction({ kind: "refresh_snapshot" });
         }
@@ -344,9 +348,14 @@ export function WorkspaceProvider({
         appSurfacePresentationHandlerRef.current(event);
       },
     });
+    deliveryStreamRef.current = client;
     client.connect();
-    return client.close;
-  }, [handleStreamConnected, publishThreadPaneTimelineAction, subscribedThreadIdsKey, validateInstance]);
+    return () => { deliveryStreamRef.current = null; client.close(); };
+  }, [handleStreamConnected, publishThreadPaneTimelineAction, subscribedThreadIdsKey, validateInstance, getDeliveryOptions]);
+
+  useEffect(() => {
+    deliveryStreamRef.current?.updateDeliveryOptions({ includeDebugEvents, includeCommandOutputs });
+  }, [includeDebugEvents, includeCommandOutputs]);
 
   const { paneThreadContextsById, setPaneThreadContext } = usePaneThreadContexts(workspace.panes);
 

@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../test/canonicalPayloadFixture";
 import { describe, expect, it } from "vitest";
 
 import type {
@@ -140,13 +141,7 @@ function canonicalItem(
     displayOrder,
     codexMethod: "item/completed",
     timestampMs: null,
-    payload: {
-      source: "appServerSnapshot",
-      turnId: "turn-1",
-      itemId,
-      item: { id: itemId, type: itemType, ...fields },
-      itemSnapshot: { id: itemId, itemType },
-    },
+    payload: compactCanonicalPayload({ id: itemId, type: itemType, ...fields }, { id: itemId, itemType }),
   };
 }
 

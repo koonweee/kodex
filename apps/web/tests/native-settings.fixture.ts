@@ -1,11 +1,13 @@
+import { compactCanonicalPayload } from "../src/test/canonicalPayloadFixture";
 import type { BrowserContext, Page, Route } from "@playwright/test";
+import { projectPayloadDelivery } from "./native-payload-delivery.fixture";
 import { createServer, type ServerResponse } from "node:http";
 
 import type { components } from "../src/api/generated/schema";
 
 import type { AppSurfaceSession, Automation, AutomationRun, Capabilities, EventEnvelope, MarkThreadSeenRequest, QueuedInput, QueueTransfer, ThreadRead, ThreadSettingsResponse, UnreadBadgeResponse, ThreadSettingsUpdateRequest, ThreadViewPatch, ThreadViewResponse } from "../src/api/client";
 
-export async function nativeSettingsFixture(context: BrowserContext, options: { queuedSteerClient?: string } = {}) {
+export async function nativeSettingsFixture(context: BrowserContext, options: { queuedSteerClient?: string; payloadDelivery?: boolean } = {}) {
   let goal: components["schemas"]["ThreadGoal"] | null = null;
   const settings: ThreadSettingsResponse = { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null };
   const detail: ThreadViewResponse = {
@@ -15,13 +17,15 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
   };
   const badge: UnreadBadgeResponse = { count: 0, readRevision: 0 };
   const capabilities: Capabilities = {
-    gateway: { apiVersion: "2", instanceId: "native-settings-fixture", version: "test", sse: true, approvals: true, terminals: { enabled: false }, gatewayAuth: false, trustedNetworkOnly: true },
+    gateway: { apiVersion: "3", instanceId: "native-settings-fixture", version: "test", sse: true, approvals: true, terminals: { enabled: false }, gatewayAuth: false, trustedNetworkOnly: true },
     appServer: { ready: true, experimentalApi: true, schemaVersion: "0.160.0", detectedVersion: "0.160.0", detectedVersionMatchesSchema: true },
   };
   const clients = new Map<Page, string>();
   const streams = new Map<ServerResponse, string>();
+  const streamUrls = new Map<ServerResponse, URL>();
+  const streamRequests: Array<{ client: string; url: string }> = [];
   const connections = new Map<string, number>();
-  const requests: Array<{ client: string; key: string; body: unknown; failure: () => string | null }> = [];
+  const requests: Array<{ client: string; key: string; url: string; body: unknown; failure: () => string | null }> = [];
   const pending: ThreadSettingsUpdateRequest[] = [];
   const automations: Automation[] = [];
   const automationRuns = new Map<string, AutomationRun[]>();
@@ -52,8 +56,10 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
     response.writeHead(200, { "Content-Type": "text/event-stream", "Access-Control-Allow-Origin": "*" });
     response.flushHeaders();
     streams.set(response, client);
+    streamUrls.set(response, url);
+    streamRequests.push({ client, url: url.href });
     connections.set(client, (connections.get(client) ?? 0) + 1);
-    response.on("close", () => streams.delete(response));
+    response.on("close", () => { streams.delete(response); streamUrls.delete(response); });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
@@ -63,7 +69,11 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
     seq = Math.max(seq, eventSeq);
     const event: EventEnvelope = { id: `${eventSeq}-${kind}`, seq: eventSeq, kind, threadId: ["config.changed", "mcp.oauth_login_completed", "mcp.server_status_updated", "thread.subagents_changed", "automation.run_updated"].includes(kind) ? null : detail.thread.id, payload, receivedAt: "2026-10-04T00:00:00Z" };
     for (const [stream, id] of streams) {
-      if (!client || client === id) stream.write(`id: ${eventSeq}\nevent: ${kind}\ndata: ${JSON.stringify(event)}\n\n`);
+      if (!client || client === id) {
+        const delivery = options.payloadDelivery && kind === "thread_view.patch"
+          ? { ...event, payload: projectPayloadDelivery(event.payload, streamUrls.get(stream)!) } : event;
+        stream.write(`id: ${eventSeq}\nevent: ${kind}\ndata: ${JSON.stringify(delivery)}\n\n`);
+      }
     }
   }
   function applyRead(read: ThreadRead) {
@@ -92,9 +102,8 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
       id: `row-${itemId}`, kind: "user_message", turnId, status, displayOrder: detail.timeline.rows.length + 1,
       item: { id: itemId, itemId, itemType: "userMessage", threadId: detail.thread.id, turnId, status,
         displayOrder: detail.timeline.rows.length + 1, codexMethod: nativeItemId ? "item/completed" : "item/upsert",
-        payload: { source: "gatewayStream", turnId, itemId, item: rawItem,
-          itemSnapshot: { id: itemId, itemType: "userMessage", clientId: transfer.id } } },
-      items: [], collapsedRows: [], fileChanges: [],
+        payload: compactCanonicalPayload(rawItem, { id: itemId, itemType: "userMessage", clientId: transfer.id }) },
+
     };
     detail.timeline = { ...detail.timeline,
       rows: [...detail.timeline.rows.filter((entry) => entry.item?.itemId !== pendingItemId && entry.item?.itemId !== itemId), row] };
@@ -118,7 +127,7 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
     const key = `${request.method()} ${url.pathname}`;
     const client = clients.get(request.frame().page()) ?? "";
     const body = request.postData() ? request.postDataJSON() as unknown : null;
-    requests.push({ client, key, body, failure: () => request.failure()?.errorText ?? null });
+    requests.push({ client, key, url: url.href, body, failure: () => request.failure()?.errorText ?? null });
     if (key === "GET /v1/events") {
       url.searchParams.set("client", client);
       return route.continue({ url: `http://127.0.0.1:${address.port}${url.pathname}${url.search}` });
@@ -134,7 +143,7 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
       "GET /v1/models": { models: [{ id: "gpt-5.4", model: "gpt-5.4", displayName: "GPT-5.4", description: "Test model", defaultReasoningEffort: "medium", isDefault: true, hidden: false, inputModalities: ["text"], supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced" }, { reasoningEffort: "high", description: "Deeper reasoning" }], rawPayload: {} }], rawPayload: {} },
       "GET /v1/composer-settings": {},
       "GET /v1/permission-profiles": { profiles: [] },
-      "GET /v1/threads/settings-chat": detail,
+      "GET /v1/threads/settings-chat": options.payloadDelivery ? projectPayloadDelivery(detail, url) : detail,
       "GET /v1/threads/settings-chat/app-surface": { session: null },
       "GET /v1/threads/settings-chat/subagents": { subagents: [] },
       "PUT /v1/thread-view-presence": { ok: true },
@@ -161,7 +170,8 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
       emit("thread.read_updated", read);
       return respond(route, read, 200, `seen:${client}`);
     }
-    if (key === "POST /v1/threads/settings-chat/attach") return respond(route, detail, 200, `snapshot:${client}`);
+    if (key === "POST /v1/threads/settings-chat/attach") return respond(route, options.payloadDelivery ? projectPayloadDelivery(detail, url) : detail, 200, `snapshot:${client}`);
+    if (options.payloadDelivery && key === "GET /v1/threads/settings-chat/timeline/pages") return respond(route, projectPayloadDelivery(detail, url));
     if (key === "POST /v1/threads/settings-chat/interrupt-current") {
       if (goal?.status === "active") {
         goal = { ...goal, status: "paused" };
@@ -311,7 +321,7 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
     return respond(route, { code: "not_found", message: key, retryable: false }, 404);
   });
   return {
-    settings, requests, pending, connections, unexpected, errors, settingsChanged,
+    settings, requests, streamRequests, pending, connections, unexpected, errors, settingsChanged,
     get goal() { return goal; },
     setGoal(value: components["schemas"]["ThreadGoal"] | null, client?: string) {
       goal = value;

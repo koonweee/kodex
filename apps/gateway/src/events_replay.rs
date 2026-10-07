@@ -222,6 +222,8 @@ mod tests {
             exclude_thread_id: None,
             include_global: None,
             thread_ids: None,
+            include_debug_events: None,
+            include_command_outputs: None,
         };
         let replay = workspace_sse_replay_events(
             vec![
@@ -256,6 +258,8 @@ mod tests {
             exclude_thread_id: None,
             include_global: Some(true),
             thread_ids: Some("thread-1,thread-1, thread-2".to_string()),
+            include_debug_events: None,
+            include_command_outputs: None,
         };
 
         let replay = workspace_sse_replay_events(
@@ -293,6 +297,8 @@ mod tests {
             exclude_thread_id: None,
             include_global: Some(true),
             thread_ids: Some("thread-1".to_string()),
+            include_debug_events: None,
+            include_command_outputs: None,
         };
 
         let replay = workspace_sse_replay_events(
@@ -324,6 +330,8 @@ mod tests {
             exclude_thread_id: None,
             include_global: Some(true),
             thread_ids: Some("thread-1,thread-1,thread-2".to_string()),
+            include_debug_events: None,
+            include_command_outputs: None,
         };
 
         let replay = workspace_sse_replay_events(

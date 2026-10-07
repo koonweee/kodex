@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useLayoutEffect, type ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -19,6 +19,7 @@ vi.mock("../events/stream", () => ({
   createEventStreamClient: vi.fn((options: { onEvent?: (event: EventEnvelope) => void; threadIds?: string[] }) => {
     const client = {
       close: vi.fn(),
+      updateDeliveryOptions: vi.fn(),
       connect: vi.fn(),
       emit: (event: EventEnvelope) => options.onEvent?.(event),
       threadIds: options.threadIds ?? [],
@@ -223,14 +224,14 @@ describe("WorkspaceProvider pane commands", () => {
       expect(streamClients[0]?.connect).toHaveBeenCalled();
     });
 
-    streamClients[0].emit(appSurfacePresentationEvent("open", 1));
+    await act(async () => streamClients[0].emit(appSurfacePresentationEvent("open", 1)));
 
     await waitFor(() => {
       expect(screen.getByTestId("pane-count")).toHaveTextContent("2");
     });
     expect(screen.getByTestId("active-pane")).not.toHaveTextContent("pane-thread-1");
 
-    streamClients[0].emit(appSurfacePresentationEvent("focus", 2));
+    await act(async () => streamClients[0].emit(appSurfacePresentationEvent("focus", 2)));
 
     await waitFor(() => {
       expect(screen.getByTestId("active-pane")).not.toHaveTextContent("pane-thread-1");

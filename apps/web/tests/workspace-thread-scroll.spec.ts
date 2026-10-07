@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../src/test/canonicalPayloadFixture";
 import { expect, test, type Locator } from "@playwright/test";
 import { nativeSettingsFixture } from "./native-settings.fixture";
 
@@ -11,13 +12,11 @@ for (const position of ["history", "bottom"] as const) {
       const id = `answer-${index}`;
       return {
         id, turnId: turn.id, kind: "assistant_message", status: "completed", displayOrder: index,
-        items: [], collapsedRows: [], fileChanges: [],
+
         item: {
           id, threadId: "settings-chat", turnId: turn.id, itemId: id, itemType: "agentMessage",
           status: "completed", displayOrder: index, codexMethod: "item/completed",
-          payload: { source: "appServerSnapshot", turnId: turn.id, itemId: id,
-            itemSnapshot: { id, itemType: "agentMessage" },
-            item: { id, type: "agentMessage", phase: "final_answer", text: `Message ${index}\n\n${"History content. ".repeat(30)}` } },
+          payload: compactCanonicalPayload({ id, type: "agentMessage", phase: "final_answer", text: `Message ${index}\n\n${"History content. ".repeat(30)}` }, { id, itemType: "agentMessage" }),
         },
       };
     });

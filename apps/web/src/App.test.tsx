@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "./test/canonicalPayloadFixture";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { VirtuosoMockContext } from "react-virtuoso";
@@ -103,13 +104,7 @@ function timelineFromTurns(thread: Record<string, unknown>, turns: ReturnType<ty
         displayOrder,
         codexMethod: turn.status === "completed" ? "item/completed" : "item/upsert",
         timestampMs: displayOrder,
-        payload: {
-          source: "appServerSnapshot",
-          turnId: turn.id,
-          itemId: snapshot.id ?? `item-${displayOrder}`,
-          item: snapshot.rawPayload ?? item,
-          itemSnapshot: item,
-        },
+        payload: compactCanonicalPayload(snapshot.rawPayload ?? item, item),
       };
     }),
   );
@@ -149,17 +144,11 @@ function projectionPatchEvent({
     status: "running",
     timestampMs: displayOrder,
     codexMethod: "item/upsert",
-    payload: {
-      source: "gatewayStream",
-      turnId,
-      itemId,
-      item: { id: itemId, type: "agentMessage", text },
-      itemSnapshot: {
+    payload: compactCanonicalPayload({ id: itemId, type: "agentMessage", text }, {
         id: itemId,
         itemType: "agentMessage",
         rawPayload: { id: itemId, type: "agentMessage", text },
-      },
-    },
+      }),
   };
   return {
     id,

@@ -7,6 +7,21 @@ import type { AccountResponse } from "../api/client";
 import { SidebarAccountMenu } from "./SidebarAccountFooter";
 
 describe("SidebarAccountMenu", () => {
+  it("offers independent debug and command-output toggles in that order", async () => {
+    const onDebug = vi.fn();
+    const onOutputs = vi.fn();
+    render(<QueryClientProvider client={new QueryClient()}><MantineProvider><SidebarAccountMenu account={null} onLogout={vi.fn()} onOpenPreferences={vi.fn()} onSelectAutomations={vi.fn()} onShowDebugEventsChange={onDebug} onShowCommandOutputsChange={onOutputs} showDebugEvents={false} showCommandOutputs={false} /></MantineProvider></QueryClientProvider>);
+    fireEvent.click(screen.getByRole("button", { name: /account settings/i }));
+    const debug = await screen.findByRole("menuitemcheckbox", { name: "Show debug events" });
+    const outputs = await screen.findByRole("menuitemcheckbox", { name: "Show command outputs", hidden: true });
+    expect(debug).toHaveAttribute("aria-checked", "false");
+    expect(outputs).toHaveAttribute("aria-checked", "false");
+    expect(debug.compareDocumentPosition(outputs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(outputs);
+    expect(onOutputs).toHaveBeenCalledWith(true);
+    expect(onDebug).not.toHaveBeenCalled();
+  });
+
   it("offers native sign-in from the logged-out account menu", async () => {
     renderMenu({ account: { account: null, requiresOpenaiAuth: true, rawPayload: {} } });
     fireEvent.click(screen.getByRole("button", { name: /account settings/i }));

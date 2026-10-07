@@ -1,3 +1,4 @@
+import type { ThreadTimelineRow } from "./api/client";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -206,8 +207,7 @@ describe("MVP composer input flows", () => {
         displayOrder: 3,
         status: "running",
       });
-      Object.assign(receipt.payload.items[0].payload.item, { clientId: submittedInput.clientUserMessageId });
-      Object.assign(receipt.payload.items[0].payload.itemSnapshot, { clientId: submittedInput.clientUserMessageId });
+      (receipt.payload.rows as ThreadTimelineRow[])[0].item!.payload.clientId = submittedInput.clientUserMessageId;
       selectedThreadStream?.emitNamed("thread_view.patch", receipt);
     });
     await waitFor(() => expect(within(timelineElement(container)).getAllByText("Ship it")).toHaveLength(1));

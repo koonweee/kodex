@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 import type { Capabilities } from "../src/api/client";
 
 const capabilities: Capabilities = {
-  gateway: { apiVersion: "2",
+  gateway: { apiVersion: "3",
     instanceId: "browser-isolation-fixture",
     version: "test",
     sse: true,

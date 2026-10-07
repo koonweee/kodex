@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../test/canonicalPayloadFixture";
 import { describe, expect, it } from "vitest";
 
 import { applyLiveTimelineUpdate, canApplyThreadViewItemDelta, createTimelineState, replayTimeline } from "./reducer";
@@ -409,19 +410,13 @@ function projectionPatch(text: string): Record<string, unknown> & { testItem: Re
     displayOrder: 1,
     codexMethod: "item/completed",
     timestampMs: 1_779_000_000_000,
-    payload: {
-      source: "gatewayStream",
-      turnId: "turn-1",
-      itemId: "item-1",
-      item: { id: "item-1", type: "agentMessage", phase: "final_answer", text },
-      itemSnapshot: {
+    payload: compactCanonicalPayload({ id: "item-1", type: "agentMessage", phase: "final_answer", text }, {
         id: "item-1",
         itemType: "agentMessage",
         text,
         rawPayload: { id: "item-1", type: "agentMessage", phase: "final_answer", text },
         skillMentions: [],
-      },
-    },
+      }),
   };
   return {
     scope: "full_snapshot",
@@ -460,18 +455,13 @@ function projectionPatchWithLiveState({
     turnId,
     status,
     codexMethod: status === "completed" ? "item/completed" : "item/upsert",
-    payload: {
-      ...baseItem.payload,
-      turnId,
-      item: { id: "item-1", type: "agentMessage", text },
-      itemSnapshot: {
+    payload: compactCanonicalPayload({ id: "item-1", type: "agentMessage", text }, {
         id: "item-1",
         itemType: "agentMessage",
         text,
         rawPayload: { id: "item-1", type: "agentMessage", phase: "final_answer", text },
         skillMentions: [],
-      },
-    },
+      }),
   };
   return {
     ...patch,

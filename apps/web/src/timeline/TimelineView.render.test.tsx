@@ -5,8 +5,15 @@ import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { VirtuosoMockContext } from "react-virtuoso";
 
+import type { EventEnvelope } from "../api/client";
 import { TimelineView } from "./TimelineView";
 import { timelineItem, timelineState } from "./testBuilders";
+
+const retainedDebugEvent: EventEnvelope = {
+  id: "retained-debug", seq: 1, kind: "debug_event", codexMethod: null,
+  itemId: null, threadId: "thread-1", turnId: "turn-1", projectId: null,
+  payload: { status: "complete" }, receivedAt: "2026-10-08T00:00:00Z",
+};
 
 function renderWithTimelineProviders(ui: ReactElement) {
   return render(
@@ -184,7 +191,7 @@ describe("TimelineView debug rendering", () => {
         timelineItem({ id: "user-1", kind: "user_message", displayOrder: 1, text: "Visible question" }),
       ],
       hiddenItems: [
-        timelineItem({ id: "debug-1", kind: "debug_event", displayOrder: 0, text: "turn/completed" }),
+        timelineItem({ id: "debug-1", kind: "debug_event", displayOrder: 0, text: "turn/completed", debugEvents: [retainedDebugEvent] }),
       ],
     });
     const props = {
@@ -224,10 +231,16 @@ describe("TimelineView debug rendering", () => {
     expect(screen.getByText("turn/completed")).toBeInTheDocument();
   });
 
+  it("keeps omitted diagnostic markers invisible when debug is enabled", () => {
+    renderWithTimelineProviders(<TimelineView approvals={[]} imagePreviewUrlsByPath={{}} onApprovalDecision={vi.fn()} onImageOpen={vi.fn()} onReady={vi.fn()} scrollParentElement={null} showDebug timeline={timelineState({ hiddenItems: [timelineItem({ id: "omitted", kind: "debug_event", text: "", debugEvents: [] })] })} />);
+    expect(screen.queryByText("Hidden debug events")).not.toBeInTheDocument();
+    expect(screen.queryByText("Unsupported item")).not.toBeInTheDocument();
+  });
+
   it("shows hidden debug events even when there are no visible timeline rows", () => {
     const timeline = timelineState({
       hiddenItems: [
-        timelineItem({ id: "debug-only-1", kind: "debug_event", displayOrder: 1, text: "thread/status" }),
+        timelineItem({ id: "debug-only-1", kind: "debug_event", displayOrder: 1, text: "thread/status", debugEvents: [retainedDebugEvent] }),
       ],
     });
 

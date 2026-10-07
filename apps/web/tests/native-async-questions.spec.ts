@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../src/test/canonicalPayloadFixture";
 import { expect, test, type Page } from "@playwright/test";
 import type { ThreadTimelineRow } from "../src/api/client";
 import type { components } from "../src/api/generated/schema";
@@ -120,8 +121,8 @@ function replyRow(id: string, text: string, clientId: string, order: number): Th
 }
 function row(id: string, itemType: string, raw: Record<string, unknown>, order: number): ThreadTimelineRow {
   return { id: `row-${id}`, turnId: "turn-1", kind: itemType === "agentMessage" ? "assistant_message" : "user_message", status: "completed", displayOrder: order,
-    item: { id: `row-${id}`, threadId: "settings-chat", turnId: "turn-1", itemId: id, itemType, status: "completed", codexMethod: "item/completed", displayOrder: order, payload: { source: "appServerSnapshot", turnId: "turn-1", itemId: id, item: raw, itemSnapshot: { id, itemType, clientId: raw.clientId ?? null } } },
-    items: [], collapsedRows: [], fileChanges: [] };
+    item: { id: `row-${id}`, threadId: "settings-chat", turnId: "turn-1", itemId: id, itemType, status: "completed", codexMethod: "item/completed", displayOrder: order, payload: compactCanonicalPayload(raw, { id, itemType, clientId: raw.clientId ?? null }) },
+  };
 }
 
 test("question choices follow their pane width in a wide workspace", async ({ context }) => {

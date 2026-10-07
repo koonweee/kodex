@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../src/test/canonicalPayloadFixture";
 import { expect, test } from "@playwright/test";
 
 import { nativeSettingsFixture } from "./native-settings.fixture";
@@ -16,15 +17,11 @@ test("assistant tables keep words intact and scroll within the table when needed
     turns: [{ id: "turn-table", status: "completed" }],
     rows: [{
       id, turnId: "turn-table", kind: "assistant_message", status: "completed", displayOrder: 1,
-      items: [], collapsedRows: [], fileChanges: [],
+
       item: {
         id, threadId: "settings-chat", turnId: "turn-table", itemId: id, itemType: "agentMessage",
         status: "completed", displayOrder: 1, codexMethod: "item/completed",
-        payload: {
-          source: "appServerSnapshot", turnId: "turn-table", itemId: id,
-          itemSnapshot: { id, itemType: "agentMessage" },
-          item: { id, type: "agentMessage", phase: "final_answer", text },
-        },
+        payload: compactCanonicalPayload({ id, type: "agentMessage", phase: "final_answer", text }, { id, itemType: "agentMessage" }),
       },
     }],
   };

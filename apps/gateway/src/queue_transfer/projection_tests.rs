@@ -13,7 +13,7 @@ async fn accepted_steer_projects_native_input_and_receipt_replaces_the_pending_r
         format!("pending-user-{}", accepted.id)
     );
     assert_eq!(
-        pending.items[0].payload.item.client_id.as_deref(),
+        pending.items[0].payload.client_id.as_deref(),
         Some(accepted.id.as_str())
     );
     assert_eq!(pending.items[0].payload.item.content, Some(json!(input())));

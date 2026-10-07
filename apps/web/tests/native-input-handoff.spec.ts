@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../src/test/canonicalPayloadFixture";
 import { expect, test } from "@playwright/test";
 import type { ThreadTimelineRow } from "../src/api/client";
 import { nativeSettingsFixture } from "./native-settings.fixture";
@@ -10,11 +11,10 @@ function row(id: string, text: string, order: number, clientId?: string): Thread
     : { id, type: "agentMessage", phase: "commentary", text };
   return {
     id, turnId: "turn-1", kind: user ? "user_message" : "assistant_message", status: "completed", displayOrder: order,
-    items: [], collapsedRows: [], fileChanges: [],
+
     item: { id, itemId: id, threadId: "settings-chat", turnId: "turn-1", itemType: item.type,
       status: "completed", displayOrder: order, codexMethod: "item/completed",
-      payload: { source: "appServerSnapshot", turnId: "turn-1", itemId: id, item,
-        itemSnapshot: { id, itemType: item.type, clientId } } },
+      payload: compactCanonicalPayload(item, { id, itemType: item.type, clientId }) },
   };
 }
 

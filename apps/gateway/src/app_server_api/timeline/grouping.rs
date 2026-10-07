@@ -6,17 +6,25 @@ use serde_json::Value;
 // This is recomputed from canonical items on every projection, not cached state.
 pub(super) fn is_transparent_separator(item: &ThreadTimelineSnapshotItem) -> bool {
     let payload = &item.payload.item;
-    match normalized_thread_item_kind(item).as_str() {
-        "reasoning_summary" => {
-            !has_text(payload.text.as_deref())
-                && !has_content(payload.content.as_ref())
-                && !has_summary(payload.summary.as_ref())
-        }
-        "plan" => {
-            !has_text(payload.text.as_deref())
-                && !has_text(payload.message.as_deref())
-                && !has_content(payload.content.as_ref())
-        }
+    is_transparent_separator_fields(
+        &normalized_thread_item_kind(item),
+        payload.text.as_deref(),
+        payload.message.as_deref(),
+        payload.content.as_ref(),
+        payload.summary.as_ref(),
+    )
+}
+
+pub(super) fn is_transparent_separator_fields(
+    kind: &str,
+    text: Option<&str>,
+    message: Option<&str>,
+    content: Option<&Value>,
+    summary: Option<&Value>,
+) -> bool {
+    match kind {
+        "reasoning_summary" => !has_text(text) && !has_content(content) && !has_summary(summary),
+        "plan" => !has_text(text) && !has_text(message) && !has_content(content),
         "hook_prompt" => true,
         "user_message"
         | "assistant_message"

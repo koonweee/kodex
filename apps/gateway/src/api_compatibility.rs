@@ -12,12 +12,12 @@ use utoipa::ToSchema;
 pub const HEADER: &str = "x-kodex-api-version";
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub enum ApiVersion {
-    #[serde(rename = "2")]
-    V2,
+    #[serde(rename = "3")]
+    V3,
 }
 
 pub async fn enforce(request: Request, next: Next) -> Response {
-    let version = serde_json::to_value(ApiVersion::V2).unwrap();
+    let version = serde_json::to_value(ApiVersion::V3).unwrap();
     let version = version.as_str().unwrap();
     // Unversioned CLI/Control callers remain supported. Browser requests carry this header.
     let mismatch = request.headers().get(HEADER).is_some_and(|v| v != version);
@@ -56,7 +56,8 @@ mod tests {
         for (version, status) in [
             (Some("old"), StatusCode::CONFLICT),
             (Some("1"), StatusCode::CONFLICT),
-            (Some("2"), StatusCode::CREATED),
+            (Some("2"), StatusCode::CONFLICT),
+            (Some("3"), StatusCode::CREATED),
             (None, StatusCode::CREATED),
         ] {
             let mut request = Request::builder().method("POST").uri("/v1/projects");
@@ -69,7 +70,7 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(response.status(), status);
-            assert_eq!(response.headers()[HEADER], "2");
+            assert_eq!(response.headers()[HEADER], "3");
         }
     }
 }

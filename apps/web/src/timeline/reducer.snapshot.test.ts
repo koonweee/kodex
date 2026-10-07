@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../test/canonicalPayloadFixture";
 import { describe, expect, it } from "vitest";
 
 import type { EventEnvelope, ThreadViewResponse } from "../api/client";
@@ -1040,20 +1041,14 @@ function timelineItem({
     displayOrder,
     codexMethod: status === "completed" ? "item/completed" : "item/upsert",
     timestampMs: 1_779_000_000_000 + displayOrder,
-    payload: {
-      source: "appServerSnapshot",
-      turnId,
-      itemId,
-      item: rawPayload,
-      itemSnapshot: {
+    payload: compactCanonicalPayload(rawPayload, {
         id: itemId,
         itemType,
         clientId,
         text,
         rawPayload,
         skillMentions: [],
-      },
-    },
+      }),
   };
 }
 

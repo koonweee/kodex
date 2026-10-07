@@ -16,6 +16,7 @@ vi.mock("react-markdown", async (importOriginal) => {
   };
 });
 
+import { ThreadDeliveryProvider } from "./ThreadDeliveryPreferences";
 import { TimelineActivityGroupRenderer, TimelineItemRenderer, TimelineWorkRowRenderer } from "./renderers";
 import type { TimelineItem } from "./reducer";
 
@@ -45,6 +46,20 @@ describe("timeline activity renderers", () => {
 
   beforeEach(() => {
     reactMarkdownRenderSpy.mockClear();
+  });
+
+  it("hides retained command outputs when off and reveals them only while enabled", () => {
+    const command = item({ kind: "command_execution", command: "pwd", output: "saved output", status: "failed" });
+    const tree = (enabled: boolean) => <MantineProvider><ThreadDeliveryProvider includeCommandOutputs={enabled}><TimelineItemRenderer item={command} /></ThreadDeliveryProvider></MantineProvider>;
+    const view = render(tree(false));
+    expect(screen.getByText("$ pwd")).toBeInTheDocument();
+    expect(screen.getAllByText("Failed")[0]).toBeInTheDocument();
+    expect(screen.queryByText("saved output")).not.toBeInTheDocument();
+    view.rerender(tree(true));
+    expect(screen.getByText("saved output")).toBeInTheDocument();
+    view.rerender(tree(false));
+    expect(screen.queryByText("saved output")).not.toBeInTheDocument();
+    expect(screen.getByText("$ pwd")).toBeInTheDocument();
   });
 
   it("marks failed command activity in collapsed and expanded command renderings", () => {
@@ -105,7 +120,7 @@ describe("timeline activity renderers", () => {
 
   it("renders supporting timeline activity as a nested collapsible group", () => {
     const { container } = render(
-      <MantineProvider>
+      <MantineProvider><ThreadDeliveryProvider includeCommandOutputs>
         <TimelineActivityGroupRenderer
           items={[
             item({
@@ -143,7 +158,7 @@ describe("timeline activity renderers", () => {
             }),
           ]}
         />
-      </MantineProvider>,
+      </ThreadDeliveryProvider></MantineProvider>,
     );
 
     expect(container.querySelector(".kodex-activity-group")).not.toHaveAttribute("open");

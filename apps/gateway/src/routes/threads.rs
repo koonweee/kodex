@@ -25,6 +25,7 @@ use crate::{
     routes::projects::Project,
     store::{EventEnvelope, NewEvent, ThreadNotificationSetting, ThreadRead},
     thread_view,
+    thread_view_delivery::ThreadViewDeliveryQuery,
 };
 
 pub const THREAD_READ_UPDATED_EVENT: &str = "thread.read_updated";
@@ -83,6 +84,8 @@ const SIDEBAR_GROUP_FETCH_CONCURRENCY: usize = 8;
 pub struct ThreadTimelinePageQuery {
     pub cursor: Option<String>,
     pub limit: Option<u32>,
+    pub include_debug_events: Option<bool>,
+    pub include_command_outputs: Option<bool>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -728,10 +731,11 @@ mod tests {
     }
 }
 
-#[utoipa::path(get, path = "/v1/threads/{threadId}", responses((status = 200, body = ThreadViewResponse)))]
+#[utoipa::path(get, path = "/v1/threads/{threadId}", params(ThreadViewDeliveryQuery), responses((status = 200, body = ThreadViewResponse)))]
 pub async fn get_thread(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
+    Query(delivery): Query<ThreadViewDeliveryQuery>,
 ) -> ApiResult<Json<ThreadViewResponse>> {
     let timeline_revision = state.store.latest_event_seq().await?;
     let mut response = app_server_api::client(&state.app_server)
@@ -744,6 +748,7 @@ pub async fn get_thread(
         ThreadTimelineMergeMode::ReplaceWindow,
     )
     .await?;
+    delivery.project_snapshot(&mut response.timeline);
     Ok(Json(ThreadViewResponse::from_detail(response)))
 }
 
@@ -753,6 +758,10 @@ pub async fn get_thread_timeline_page(
     Path(thread_id): Path<String>,
     Query(query): Query<ThreadTimelinePageQuery>,
 ) -> ApiResult<Json<ThreadViewResponse>> {
+    let delivery = ThreadViewDeliveryQuery {
+        include_debug_events: query.include_debug_events.unwrap_or(false),
+        include_command_outputs: query.include_command_outputs.unwrap_or(false),
+    };
     let timeline_revision = state.store.latest_event_seq().await?;
     let Some(cursor) = query.cursor else {
         return Err(ApiError::BadRequest(
@@ -792,13 +801,15 @@ pub async fn get_thread_timeline_page(
         },
     )
     .await?;
+    delivery.project_snapshot(&mut response.timeline);
     Ok(Json(ThreadViewResponse::from_detail(response)))
 }
 
-#[utoipa::path(post, path = "/v1/threads/{threadId}/attach", responses((status = 200, body = ThreadViewResponse)))]
+#[utoipa::path(post, path = "/v1/threads/{threadId}/attach", params(ThreadViewDeliveryQuery), responses((status = 200, body = ThreadViewResponse)))]
 pub async fn attach_thread(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
+    Query(delivery): Query<ThreadViewDeliveryQuery>,
 ) -> ApiResult<Json<ThreadViewResponse>> {
     let timeline_revision = state.store.latest_event_seq().await?;
     let mut response = app_server_api::client(&state.app_server)
@@ -811,6 +822,7 @@ pub async fn attach_thread(
         ThreadTimelineMergeMode::ReplaceWindow,
     )
     .await?;
+    delivery.project_snapshot(&mut response.timeline);
     Ok(Json(ThreadViewResponse::from_detail(response)))
 }
 

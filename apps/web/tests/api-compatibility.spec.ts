@@ -16,7 +16,7 @@ for (const width of [1280, 390]) {
       let writes = 0;
       await first.route("**/v1/threads/*/input", async (route) => {
         writes += 1;
-        expect(route.request().headers()["x-kodex-api-version"]).toBe("2");
+        expect(route.request().headers()["x-kodex-api-version"]).toBe("3");
         await route.fulfill({ status: 409, headers: { "x-kodex-api-version": "future" }, json: { code: "client_update_required", message: "Update Kodex before making changes.", retryable: false } });
       });
       await pane(first).getByRole("button", { name: "Send message", exact: true }).click();

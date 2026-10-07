@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../test/canonicalPayloadFixture";
 import { describe, expect, it } from "vitest";
 
 import type { EventEnvelope } from "../api/client";
@@ -323,17 +324,11 @@ function canonicalItem(text: string, index = 1) {
     status: "running",
     timestampMs: 1,
     codexMethod: "item/upsert",
-    payload: {
-      source: "gatewayStream",
-      turnId: `turn-${index}`,
-      itemId: `answer-${index}`,
-      item: { id: `answer-${index}`, type: "agentMessage", text },
-      itemSnapshot: {
+    payload: compactCanonicalPayload({ id: `answer-${index}`, type: "agentMessage", text }, {
         id: `answer-${index}`,
         itemType: "agentMessage",
         rawPayload: { id: `answer-${index}`, type: "agentMessage", text },
-      },
-    },
+      }),
   };
 }
 

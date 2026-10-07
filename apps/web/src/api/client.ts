@@ -3,6 +3,8 @@ import createClient from "openapi-fetch";
 
 import type { components, paths } from "./generated/schema";
 
+export type ThreadDeliveryOptions = Pick<NonNullable<paths["/v1/threads/{threadId}"]["get"]["parameters"]["query"]>, "includeDebugEvents" | "includeCommandOutputs">;
+
 export type AccountLoginCompleted = components["schemas"]["AccountLoginCompleted"];
 export type LoginStartResponse = components["schemas"]["LoginStartResponse"];
 export type AccountResponse = components["schemas"]["AccountResponse"];
@@ -235,23 +237,27 @@ export async function createChatThread(
   return response.thread;
 }
 
-export async function attachThread(threadId: string, signal?: AbortSignal): Promise<ThreadViewResponse> {
-  return unwrap(api.POST("/v1/threads/{threadId}/attach", { params: { path: { threadId } }, signal }));
+function threadDeliveryQuery(options: ThreadDeliveryOptions) {
+  return { includeDebugEvents: options.includeDebugEvents || undefined, includeCommandOutputs: options.includeCommandOutputs || undefined };
 }
 
-export async function getThreadDetail(threadId: string, signal?: AbortSignal): Promise<ThreadViewResponse> {
-  return unwrap(api.GET("/v1/threads/{threadId}", { params: { path: { threadId } }, cache: "no-store", signal }));
+export async function attachThread(threadId: string, signal?: AbortSignal, deliveryOptions: ThreadDeliveryOptions = {}): Promise<ThreadViewResponse> {
+  return unwrap(api.POST("/v1/threads/{threadId}/attach", { params: { path: { threadId }, query: threadDeliveryQuery(deliveryOptions) }, signal }));
+}
+
+export async function getThreadDetail(threadId: string, signal?: AbortSignal, deliveryOptions: ThreadDeliveryOptions = {}): Promise<ThreadViewResponse> {
+  return unwrap(api.GET("/v1/threads/{threadId}", { params: { path: { threadId }, query: threadDeliveryQuery(deliveryOptions) }, cache: "no-store", signal }));
 }
 
 export async function getThreadTimelinePage(
   threadId: string,
-  options: { cursor?: string | null; limit?: number; signal?: AbortSignal } = {},
+  options: ThreadDeliveryOptions & { cursor?: string | null; limit?: number; signal?: AbortSignal } = {},
 ): Promise<ThreadViewResponse> {
   return unwrap(
     api.GET("/v1/threads/{threadId}/timeline/pages", {
       params: {
         path: { threadId },
-        query: { cursor: options.cursor ?? undefined, limit: options.limit ?? undefined },
+        query: { cursor: options.cursor ?? undefined, limit: options.limit ?? undefined, ...threadDeliveryQuery(options) },
       },
       signal: options.signal,
     }),

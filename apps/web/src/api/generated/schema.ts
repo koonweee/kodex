@@ -1966,7 +1966,7 @@ export interface components {
             retryable: boolean;
         };
         /** @enum {string} */
-        ApiVersion: "2";
+        ApiVersion: "3";
         AppServerCapabilities: {
             detectedVersion?: string | null;
             detectedVersionMatchesSchema?: boolean | null;
@@ -2241,6 +2241,16 @@ export interface components {
             end: number;
             /** Format: int32 */
             start: number;
+        };
+        /**
+         * @description A canonical item has one identity envelope and normalized user-input metadata.
+         *     Native source/raw item state remains internal for projection reconciliation.
+         */
+        CanonicalTimelineItemPayload: {
+            clientId?: string | null;
+            fileAttachments?: components["schemas"]["TimelineFileAttachment"][];
+            item: components["schemas"]["TimelineDisplayItemPayload"];
+            skillMentions?: components["schemas"]["TimelineSkillMention"][];
         };
         CapabilitiesResponse: {
             appServer: components["schemas"]["AppServerCapabilities"];
@@ -3483,18 +3493,20 @@ export interface components {
         };
         ThreadTimelinePageQuery: {
             cursor?: string | null;
+            includeCommandOutputs?: boolean | null;
+            includeDebugEvents?: boolean | null;
             /** Format: int32 */
             limit?: number | null;
         };
         ThreadTimelineRow: {
-            collapsedRows: components["schemas"]["ThreadTimelineWorkDetailRow"][];
+            collapsedRows?: components["schemas"]["ThreadTimelineWorkDetailRow"][];
             /** Format: int64 */
             displayOrder: number;
             dividerBefore?: string | null;
-            fileChanges: components["schemas"]["ThreadTimelineFileChangeEntry"][];
+            fileChanges?: components["schemas"]["ThreadTimelineFileChangeEntry"][];
             id: string;
             item?: null | components["schemas"]["ThreadTimelineSnapshotItem"];
-            items: components["schemas"]["ThreadTimelineSnapshotItem"][];
+            items?: components["schemas"]["ThreadTimelineSnapshotItem"][];
             kind: string;
             status: string;
             /** Format: int64 */
@@ -3519,7 +3531,7 @@ export interface components {
             id: string;
             itemId: string;
             itemType: string;
-            payload: components["schemas"]["TimelineItemUpsertPayload"];
+            payload: components["schemas"]["CanonicalTimelineItemPayload"];
             status: string;
             threadId: string;
             /** Format: int64 */
@@ -3549,10 +3561,10 @@ export interface components {
             /** Format: int64 */
             displayOrder: number;
             dividerBefore?: string | null;
-            fileChanges: components["schemas"]["ThreadTimelineFileChangeEntry"][];
+            fileChanges?: components["schemas"]["ThreadTimelineFileChangeEntry"][];
             id: string;
             item?: null | components["schemas"]["ThreadTimelineSnapshotItem"];
-            items: components["schemas"]["ThreadTimelineSnapshotItem"][];
+            items?: components["schemas"]["ThreadTimelineSnapshotItem"][];
             kind: string;
             status: string;
             /** Format: int64 */
@@ -4353,6 +4365,8 @@ export interface operations {
                 excludeThreadId?: string | null;
                 includeGlobal?: boolean | null;
                 threadIds?: string | null;
+                includeDebugEvents?: boolean | null;
+                includeCommandOutputs?: boolean | null;
             };
             header?: never;
             path?: never;
@@ -4415,6 +4429,8 @@ export interface operations {
                 excludeThreadId?: string | null;
                 includeGlobal?: boolean | null;
                 threadIds?: string | null;
+                includeDebugEvents?: boolean | null;
+                includeCommandOutputs?: boolean | null;
             };
             header?: never;
             path?: never;
@@ -5325,6 +5341,8 @@ export interface operations {
                 excludeThreadId?: string | null;
                 includeGlobal?: boolean | null;
                 threadIds?: string | null;
+                includeDebugEvents?: boolean | null;
+                includeCommandOutputs?: boolean | null;
             };
             header?: never;
             path?: never;
@@ -5491,7 +5509,10 @@ export interface operations {
     };
     get_self_control_thread: {
         parameters: {
-            query?: never;
+            query?: {
+                includeDebugEvents?: boolean;
+                includeCommandOutputs?: boolean;
+            };
             header?: never;
             path: {
                 threadId: string;
@@ -5633,7 +5654,10 @@ export interface operations {
     };
     attach_self_control_thread: {
         parameters: {
-            query?: never;
+            query?: {
+                includeDebugEvents?: boolean;
+                includeCommandOutputs?: boolean;
+            };
             header?: never;
             path: {
                 threadId: string;
@@ -5930,6 +5954,8 @@ export interface operations {
             query?: {
                 cursor?: string | null;
                 limit?: number | null;
+                includeDebugEvents?: boolean | null;
+                includeCommandOutputs?: boolean | null;
             };
             header?: never;
             path: {
@@ -6176,7 +6202,10 @@ export interface operations {
     };
     get_thread: {
         parameters: {
-            query?: never;
+            query?: {
+                includeDebugEvents?: boolean;
+                includeCommandOutputs?: boolean;
+            };
             header?: never;
             path: {
                 threadId: string;
@@ -6239,7 +6268,10 @@ export interface operations {
     };
     attach_thread: {
         parameters: {
-            query?: never;
+            query?: {
+                includeDebugEvents?: boolean;
+                includeCommandOutputs?: boolean;
+            };
             header?: never;
             path: {
                 threadId: string;
@@ -6857,6 +6889,8 @@ export interface operations {
             query?: {
                 cursor?: string | null;
                 limit?: number | null;
+                includeDebugEvents?: boolean | null;
+                includeCommandOutputs?: boolean | null;
             };
             header?: never;
             path: {

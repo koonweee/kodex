@@ -145,7 +145,7 @@ async fn native_skill_content_projects_live_canonical_patch_without_catalog_or_f
     assert_eq!(row["itemId"], "native-user");
     assert_eq!(row["payload"]["item"]["content"], content);
     assert_eq!(
-        row["payload"]["itemSnapshot"]["skillMentions"],
+        row["payload"]["skillMentions"],
         json!([
             {"start":3,"end":11,"name":"missing","path":"/unavailable/SKILL.md"}
         ])

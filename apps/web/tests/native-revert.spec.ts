@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../src/test/canonicalPayloadFixture";
 import { expect, test, type Page } from "@playwright/test";
 
 import type { ThreadTimelineRow } from "../src/api/client";
@@ -77,10 +78,7 @@ function message(page: Page, id: string) {
 function row(id: string, displayOrder: number): ThreadTimelineRow {
   const turnId = `turn-${id}`;
   return {
-    id, turnId, kind: "user_message", status: "completed", displayOrder, items: [], collapsedRows: [], fileChanges: [],
-    item: { id, threadId: "settings-chat", turnId, itemId: id, itemType: "userMessage", status: "completed", displayOrder, codexMethod: "item/completed", payload: {
-      source: "appServerSnapshot", turnId, itemId: id, itemSnapshot: { id, itemType: "userMessage" },
-      item: { id, type: "userMessage", content: [{ type: "text", text: `Native ${id} history` }] },
-    } },
+    id, turnId, kind: "user_message", status: "completed", displayOrder,
+    item: { id, threadId: "settings-chat", turnId, itemId: id, itemType: "userMessage", status: "completed", displayOrder, codexMethod: "item/completed", payload: compactCanonicalPayload({ id, type: "userMessage", content: [{ type: "text", text: `Native ${id} history` }] }, { id, itemType: "userMessage" }) },
   };
 }

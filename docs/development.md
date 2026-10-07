@@ -121,6 +121,8 @@ The native fixtures also verify approval replay/resolution, projects/settings/pi
 
 ## Live performance diagnostics
 
+The account menu's “Show debug events” and “Show command outputs” controls are independent, per-tab preferences and default off. They control detail delivery in canonical snapshots, history pages and streamed patches. Changing either preference does not fetch history once a replay cursor is known. Future reads and updates use the current selection; startup without a replay cursor and ordinary reconnect recovery still refill authoritative state, and an updated command can include output accumulated before the preference was enabled. Disabled details are hidden even when already retained. Compact hidden-item identity markers preserve scoped patch bases without diagnostic bodies or blank debug rows. The wire projection keeps native identity, correlation, lifecycle and user-input metadata while omitting duplicate envelope fields and empty row collections. These controls do not change native execution or shared thread state.
+
 The browser exposes event counts, reducer timings and long-task totals through `window.__KODEX_LIVE_DIAGNOSTICS__()`. Patch byte counting is opt-in because serializing large timeline payloads affects the timings being measured. Set `window.__KODEX_LIVE_DIAGNOSTICS_PAYLOAD_BYTES__ = true` in the browser console to count subsequent patch bytes, and set it to `false` when finished. Diagnostics retain counts and timings, not payload text.
 
 ## Responsive UI ownership

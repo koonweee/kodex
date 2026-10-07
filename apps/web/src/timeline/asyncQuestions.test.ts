@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../test/canonicalPayloadFixture";
 import { describe, expect, it } from "vitest";
 import { asyncQuestions } from "./asyncQuestions";
 
@@ -24,7 +25,7 @@ it("retains normalized questions through canonical row compaction and later text
     payload: { scope: "full_snapshot", threadId: "thread", viewRevision: 1, activeTurnId: "turn", liveState: "streaming", turns: [{ id: "turn", status: "inProgress" }], pendingApprovalRequests: [], pendingUserInputRequests: [], rows: [
       { id: "row", turnId: "turn", kind: "assistant_message", status: "inProgress", displayOrder: 1, items: [], collapsedRows: [], fileChanges: [],
         item: { id: "item", itemId: "native", itemType: "agentMessage", threadId: "thread", turnId: "turn", status: "inProgress", displayOrder: 1,
-          payload: { item: { id: "native", type: "agentMessage", delivery: "async", questions, text: "Question fallback" }, itemSnapshot: { id: "native", itemType: "agentMessage" } } } },
+          payload: compactCanonicalPayload({ id: "native", type: "agentMessage", delivery: "async", questions, text: "Question fallback" }, { id: "native", itemType: "agentMessage" }) } },
     ] },
   };
   const state = applyLiveTimelineUpdate(createTimelineState(), event);

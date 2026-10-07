@@ -246,9 +246,7 @@ async fn idle_native_attach_returns_chronological_resume_page_without_extra_hist
     );
     assert_eq!(
         rows.iter()
-            .map(|item| item["payload"]["itemSnapshot"]["clientId"]
-                .as_str()
-                .unwrap())
+            .map(|item| item["payload"]["clientId"].as_str().unwrap())
             .collect::<Vec<_>>(),
         vec!["client-oldest", " opaque 客户端 ", "reused-client"]
     );
@@ -299,14 +297,8 @@ async fn active_native_attach_uses_stable_page_ids_and_keeps_live_receipt_after_
                 "native-live"
             ]
         );
-        assert_eq!(
-            rows[2]["payload"]["itemSnapshot"]["clientId"],
-            "reused-client"
-        );
-        assert_eq!(
-            rows[3]["payload"]["itemSnapshot"]["clientId"],
-            "reused-client"
-        );
+        assert_eq!(rows[2]["payload"]["clientId"], "reused-client");
+        assert_eq!(rows[3]["payload"]["clientId"], "reused-client");
         assert!(body["timeline"]["viewRevision"].as_i64().unwrap() >= received_revision);
     }
     let current = state.thread_views.patch_for_thread(THREAD).await;

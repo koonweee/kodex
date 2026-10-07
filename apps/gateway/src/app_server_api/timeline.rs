@@ -7,7 +7,7 @@ use utoipa::ToSchema;
 
 use super::{
     is_terminal_turn_status, ThreadItemSnapshot, ThreadLiveState, ThreadTurnSnapshot,
-    TimelineFileAttachment, TimelineItemUpsertPayload, TimelineUpdateSource,
+    TimelineFileAttachment, TimelineItemUpsertPayload, TimelineSkillMention, TimelineUpdateSource,
 };
 
 mod grouping;
@@ -94,15 +94,23 @@ impl ThreadTimelineSnapshot {
 pub struct ThreadTimelineRow {
     pub id: String,
     pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_id: Option<String>,
     pub display_order: i64,
     pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timestamp_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item: Option<ThreadTimelineSnapshotItem>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub items: Vec<ThreadTimelineSnapshotItem>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub file_changes: Vec<ThreadTimelineFileChangeEntry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work: Option<ThreadTimelineWorkSummary>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub collapsed_rows: Vec<ThreadTimelineWorkDetailRow>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub divider_before: Option<String>,
 }
 
@@ -111,13 +119,19 @@ pub struct ThreadTimelineRow {
 pub struct ThreadTimelineWorkDetailRow {
     pub id: String,
     pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_id: Option<String>,
     pub display_order: i64,
     pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timestamp_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item: Option<ThreadTimelineSnapshotItem>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub items: Vec<ThreadTimelineSnapshotItem>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub file_changes: Vec<ThreadTimelineFileChangeEntry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub divider_before: Option<String>,
 }
 
@@ -199,7 +213,85 @@ pub struct ThreadTimelineSnapshotItem {
     pub display_order: i64,
     pub codex_method: String,
     pub timestamp_ms: Option<i64>,
-    pub payload: TimelineItemUpsertPayload,
+    pub payload: CanonicalTimelineItemPayload,
+}
+
+/// A canonical item has one identity envelope and normalized user-input metadata.
+/// Native source/raw item state remains internal for projection reconciliation.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CanonicalTimelineItemPayload {
+    pub item: TimelineDisplayItemPayload,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skill_mentions: Vec<TimelineSkillMention>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub file_attachments: Vec<TimelineFileAttachment>,
+    #[serde(skip, default = "canonical_snapshot_source")]
+    #[schema(ignore)]
+    pub(crate) source: TimelineUpdateSource,
+    #[serde(skip, default = "empty_native_item")]
+    #[schema(ignore)]
+    pub(crate) item_snapshot: ThreadItemSnapshot,
+}
+
+fn canonical_snapshot_source() -> TimelineUpdateSource {
+    TimelineUpdateSource::AppServerSnapshot
+}
+
+fn empty_native_item() -> ThreadItemSnapshot {
+    ThreadItemSnapshot {
+        id: String::new(),
+        client_id: None,
+        item_type: String::new(),
+        skill_mentions: Vec::new(),
+        file_attachments: Vec::new(),
+        raw_payload: Value::Null,
+    }
+}
+
+impl From<TimelineItemUpsertPayload> for CanonicalTimelineItemPayload {
+    fn from(payload: TimelineItemUpsertPayload) -> Self {
+        let mut item = payload.item;
+        let client_id = payload
+            .item_snapshot
+            .client_id
+            .clone()
+            .or_else(|| item.client_id.take());
+        let file_attachments = if payload.item_snapshot.file_attachments.is_empty() {
+            std::mem::take(&mut item.file_attachments)
+        } else {
+            payload.item_snapshot.file_attachments.clone()
+        };
+        item.id = None;
+        item.item_type = None;
+        item.kind = None;
+        item.client_id = None;
+        item.file_attachments.clear();
+        Self {
+            item,
+            client_id,
+            skill_mentions: payload.item_snapshot.skill_mentions.clone(),
+            file_attachments,
+            source: payload.source,
+            item_snapshot: payload.item_snapshot,
+        }
+    }
+}
+
+pub(crate) fn timeline_item_is_diagnostic(item: &ThreadTimelineSnapshotItem) -> bool {
+    grouping::is_transparent_separator(item)
+}
+
+pub(crate) fn timeline_json_item_is_diagnostic(item_type: &str, payload: &Value) -> bool {
+    grouping::is_transparent_separator_fields(
+        &normalized_thread_item_type(item_type),
+        payload.get("text").and_then(Value::as_str),
+        payload.get("message").and_then(Value::as_str),
+        payload.get("content"),
+        payload.get("summary"),
+    )
 }
 
 impl ThreadTimelineSnapshotItem {
@@ -237,7 +329,8 @@ impl ThreadTimelineSnapshotItem {
                 item_id: item.id.clone(),
                 item: compact_timeline_item_payload(&item.raw_payload),
                 item_snapshot: item.clone(),
-            },
+            }
+            .into(),
         }
     }
 }
@@ -693,8 +786,12 @@ fn is_final_response_item(item: &ThreadTimelineSnapshotItem) -> bool {
 }
 
 fn normalized_thread_item_kind(item: &ThreadTimelineSnapshotItem) -> String {
-    let item_type = item.item_type.to_ascii_lowercase().replace(['_', '-'], "");
-    match item_type.as_str() {
+    normalized_thread_item_type(&item.item_type)
+}
+
+pub(crate) fn normalized_thread_item_type(item_type: &str) -> String {
+    let normalized = item_type.to_ascii_lowercase().replace(['_', '-'], "");
+    match normalized.as_str() {
         "agentmessage" | "assistantmessage" => "assistant_message",
         "collabagenttoolcall" => "collab_agent_tool_call",
         "commandexecution" => "command_execution",
@@ -711,7 +808,7 @@ fn normalized_thread_item_kind(item: &ThreadTimelineSnapshotItem) -> String {
         "reasoning" => "reasoning_summary",
         "usermessage" => "user_message",
         "websearch" => "web_search_group",
-        _ => item.item_type.as_str(),
+        _ => item_type,
     }
     .to_string()
 }

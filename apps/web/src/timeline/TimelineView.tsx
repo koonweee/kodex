@@ -61,6 +61,7 @@ export function TimelineView({
   timeline: TimelineState;
 }) {
   const rows = timeline.rows;
+  const visibleDebugItems = showDebug ? timeline.hiddenItems.filter((item) => item.debugEvents.length > 0) : [];
   const [expandedWorkRowKeys, setExpandedWorkRowKeys] = useState<ReadonlySet<string>>(() => new Set());
   useEffect(() => {
     setExpandedWorkRowKeys(new Set());
@@ -150,7 +151,7 @@ export function TimelineView({
       <>
         {olderHistoryBoundary}
         <HiddenDebugPanel
-          hiddenItems={showDebug ? timeline.hiddenItems : []}
+          hiddenItems={visibleDebugItems}
           imagePreviewUrlsByPath={imagePreviewUrlsByPath}
           onImageOpen={onImageOpen}
           onMarkdownOpen={onMarkdownOpen}
@@ -200,7 +201,7 @@ export function TimelineView({
         ref={virtuosoRef}
       />
       <HiddenDebugPanel
-        hiddenItems={showDebug ? timeline.hiddenItems : []}
+        hiddenItems={visibleDebugItems}
         imagePreviewUrlsByPath={imagePreviewUrlsByPath}
         onImageOpen={onImageOpen}
         onMarkdownOpen={onMarkdownOpen}

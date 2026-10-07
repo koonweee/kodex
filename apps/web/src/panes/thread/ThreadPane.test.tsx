@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../../test/canonicalPayloadFixture";
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -174,10 +175,7 @@ it("commits one editable-pane refill in StrictMode and queues one newer repair b
         item: {
           id: "answer", itemId: "answer", itemType: "agentMessage", threadId: "shared", turnId: "turn-1",
           status: "inProgress", displayOrder: 1, codexMethod: "item/started",
-          payload: {
-            source: "gatewayStream", turnId: "turn-1", itemId: "answer",
-            item: { id: "answer", type: "agentMessage", text }, itemSnapshot: { id: "answer", itemType: "agentMessage" },
-          },
+          payload: compactCanonicalPayload({ id: "answer", type: "agentMessage", text }, { id: "answer", itemType: "agentMessage" }),
         },
       }],
     },

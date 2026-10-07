@@ -2,7 +2,6 @@ import type {
   EventEnvelope,
   ThreadTimelineRow,
   ThreadTimelineSnapshot,
-  ThreadTimelineSnapshotItem,
   ThreadTimelineWorkDetailRow,
   ThreadViewResponse,
   ThreadViewPatch,
@@ -11,12 +10,12 @@ import type {
 } from "../api/client";
 import {
   createDiagnosticItem,
-  createPresentationItem,
   isErrorEvent,
   isWarningEvent,
-  type TimelinePresentationItem,
 } from "./presentation";
-import { buildTimelineIndexesFromRows, compactStoredTimelineEvent, createTimelineIndexBuilder } from "./indexBuilder";
+import { buildTimelineIndexesFromRows, createTimelineIndexBuilder } from "./indexBuilder";
+import { canonicalTimelineRowsToViewRows } from "./canonicalPayload";
+import { unixSecondsToMs } from "../shared/values";
 import { threadViewProjectionRevision } from "./threadViewEvents";
 import {
   compactTimelineStores,
@@ -218,7 +217,7 @@ export function applyTimelineHistoryWindow(state: TimelineState, snapshot: Threa
   const mapped = canonicalTimelineRowsToViewRows(snapshot.thread.id, snapshot.timeline.rows ?? []);
   const existingKeys = new Set(state.rows.map((row) => row.key));
   const rows = [...mapped.rows.filter((row) => !existingKeys.has(row.key)), ...removeMatchedOptimisticUserRows(state.rows, mapped.rows)].sort(
-    (left, right) => timelineRowDisplayOrder(left) - timelineRowDisplayOrder(right),
+    (left, right) => left.displayOrder - right.displayOrder,
   );
   const mergedIndexes = buildTimelineIndexesFromRows(rows);
   mergedIndexes.hiddenItems.push(...state.hiddenItems, ...mapped.hiddenItems);
@@ -291,167 +290,6 @@ function withHistoryPageState(
     lastSeq: overrides.lastSeq ?? state.lastSeq,
     viewRevision: overrides.viewRevision ?? state.viewRevision,
   });
-}
-
-function canonicalTimelineRowsToViewRows(
-  threadId: string,
-  canonicalRows: ThreadTimelineRow[],
-  builder = createTimelineIndexBuilder(),
-): { rows: TimelineRow[]; hiddenItems: TimelineItem[] } {
-  const hiddenItems: TimelineItem[] = [];
-  const rows = [...canonicalRows]
-    .sort((left, right) => left.displayOrder - right.displayOrder)
-    .map((row) => canonicalTimelineRowToViewRow(threadId, row, builder, hiddenItems))
-    .filter((row): row is TimelineRow => row !== null);
-  return { rows, hiddenItems };
-}
-
-function canonicalTimelineRowToViewRow(
-  threadId: string,
-  row: ThreadTimelineRow | ThreadTimelineWorkDetailRow,
-  builder: ReturnType<typeof createTimelineIndexBuilder>,
-  hiddenItems: TimelineItem[],
-): TimelineRow | null {
-  const base = {
-    key: row.id,
-    turnKey: row.turnId ? `turn-${row.turnId}` : `row-${row.id}`,
-    turnId: row.turnId ?? null,
-    dividerBefore: row.dividerBefore === "final_response" ? ("final_response" as const) : undefined,
-  };
-
-  if (row.kind === "work" && "work" in row) {
-    const nativeState = row.work?.state;
-    const workState = nativeState === "running" || nativeState === "failed" || nativeState === "interrupted" ? nativeState : "completed";
-    return {
-      ...base,
-      type: "work",
-      turnId: row.turnId ?? "",
-      state: workState,
-      errorMessage: row.work?.errorMessage ?? undefined,
-      startedAtMs: unixSecondsToMs(row.work?.startedAt),
-      completedAtMs: workState === "running" ? undefined : unixSecondsToMs(row.work?.completedAt),
-      collapsedRows: row.collapsedRows
-        .map((collapsedRow) => canonicalTimelineRowToViewRow(threadId, collapsedRow, builder, hiddenItems))
-        .filter((collapsedRow): collapsedRow is Exclude<TimelineRow, { type: "work" }> => collapsedRow !== null && collapsedRow.type !== "work"),
-      displayOrder: row.displayOrder,
-    };
-  }
-
-  if (row.kind === "activity") {
-    const items = row.items
-      .map((item) => canonicalTimelineItemToViewItem(threadId, item, builder, hiddenItems))
-      .filter((item): item is TimelineItem => item !== null);
-    if (items.length === 0) {
-      return null;
-    }
-    return { ...base, type: "activity", displayOrder: row.displayOrder, items };
-  }
-
-  if (row.kind === "file_changes") {
-    return {
-      ...base,
-      type: "file_changes",
-      entries: row.fileChanges ?? [],
-      itemIds: (row.fileChanges ?? []).flatMap((entry) => entry.itemIds),
-      displayOrder: row.displayOrder,
-    };
-  }
-
-  if (!row.item) {
-    return null;
-  }
-  const item = canonicalTimelineItemToViewItem(threadId, row.item, builder, hiddenItems);
-  return item ? { ...base, type: "item", displayOrder: row.displayOrder, item } : null;
-}
-
-function canonicalTimelineItemToViewItem(
-  threadId: string,
-  item: ThreadTimelineSnapshotItem,
-  builder: ReturnType<typeof createTimelineIndexBuilder>,
-  hiddenItems: TimelineItem[],
-): TimelineItem | null {
-  const event = canonicalSnapshotItemEvent(threadId, item);
-  const existingItem = builder.itemById(item.id);
-  const presentation = createPresentationItem(event, existingItem, {
-    collabAgentNames: builder.collabAgentNames(),
-  });
-  if (!presentation || presentation.hidden) {
-    hiddenItems.push(createDiagnosticItem(event));
-    return null;
-  }
-  const nextItem = canonicalPresentationItem(presentation, item).item;
-  builder.addItem(nextItem);
-  return nextItem;
-}
-
-function timelineRowDisplayOrder(row: TimelineRow): number {
-  return row.displayOrder;
-}
-
-function canonicalSnapshotItemEvent(threadId: string, item: ThreadTimelineSnapshotItem): EventEnvelope {
-  return {
-    id: item.id,
-    seq: item.displayOrder,
-    kind: "timeline.canonical_item",
-    codexMethod: item.codexMethod ?? "item/upsert",
-    threadId: item.threadId ?? threadId,
-    turnId: item.turnId,
-    itemId: item.id,
-    projectId: null,
-    payload: item.payload,
-    receivedAt: canonicalSnapshotItemReceivedAt(item),
-  };
-}
-
-function canonicalPresentationItem(
-  presentation: TimelinePresentationItem,
-  item: ThreadTimelineSnapshotItem,
-): TimelinePresentationItem {
-  const compactItem = {
-    ...presentation.item,
-    debugEvents: presentation.item.debugEvents.map(compactStoredTimelineEvent),
-    payload: {},
-  };
-  return {
-    ...presentation,
-    item: {
-      ...compactItem,
-      id: item.id,
-      clientId: item.payload.itemSnapshot.clientId ?? undefined,
-      serverItemId: item.itemId,
-      source: "app_server",
-      displayOrder: item.displayOrder,
-      status: canonicalTimelineStatus(item.status, presentation.item.status),
-      timestampMs: item.timestampMs ?? presentation.item.timestampMs,
-    },
-  };
-}
-
-function canonicalTimelineStatus(status: string | undefined, fallback: TimelineItem["status"]): TimelineItem["status"] {
-  const normalized = status?.toLowerCase() ?? "";
-  if (normalized.includes("fail") || normalized.includes("error")) {
-    return "failed";
-  }
-  if (normalized.includes("wait")) {
-    return "waiting";
-  }
-  if (normalized.includes("cancel")) {
-    return "cancelled";
-  }
-  if (normalized.includes("approval")) {
-    return "approval_required";
-  }
-  if (normalized === "completed" || normalized === "complete") {
-    return "completed";
-  }
-  if (normalized === "running" || normalized === "streaming" || normalized === "pending") {
-    return "running";
-  }
-  return fallback;
-}
-
-function canonicalSnapshotItemReceivedAt(item: ThreadTimelineSnapshotItem): string {
-  return typeof item.timestampMs === "number" ? new Date(item.timestampMs).toISOString() : new Date(0).toISOString();
 }
 
 function applyThreadViewPatch(state: TimelineState, event: EventEnvelope): TimelineState {
@@ -663,7 +501,7 @@ function applyCanonicalRowsPatch(state: TimelineState, threadId: string, patch: 
   const rows = [
     ...retainedRows,
     ...mappedPatchRows.rows,
-  ].sort((left, right) => timelineRowDisplayOrder(left) - timelineRowDisplayOrder(right));
+  ].sort((left, right) => left.displayOrder - right.displayOrder);
   reducerInstrumentation.turnPatchIndexedRows += rows.length;
   const indexes = buildTimelineIndexesFromRows(rows);
   indexes.hiddenItems.push(
@@ -742,7 +580,7 @@ function applyCanonicalRowDeltaPatch(
   const mergedRows = [
     ...removeMatchedOptimisticUserRows(state.rows, mappedPatchRows.rows).filter((row) => !removedRowIds.has(row.key) && !changedRowIds.has(row.key)),
     ...mappedPatchRows.rows,
-  ].sort((left, right) => timelineRowDisplayOrder(left) - timelineRowDisplayOrder(right));
+  ].sort((left, right) => left.displayOrder - right.displayOrder);
 
   const indexes = buildTimelineIndexesFromRows(mergedRows);
   indexes.hiddenItems.push(
@@ -861,7 +699,7 @@ function optimisticDisplayOrder(state: TimelineState): number {
 }
 
 function rebuildTimelineRows(state: TimelineState, rows: TimelineRow[]): TimelineState {
-  const normalizedRows = [...rows].sort((left, right) => timelineRowDisplayOrder(left) - timelineRowDisplayOrder(right));
+  const normalizedRows = [...rows].sort((left, right) => left.displayOrder - right.displayOrder);
   const indexes = buildTimelineIndexesFromRows(normalizedRows);
   indexes.hiddenItems.push(...state.hiddenItems);
   return createTimelineStateFromDraft({
@@ -926,8 +764,4 @@ function recordPayload(value: unknown): Record<string, unknown> | null {
 
 function stringPayload(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function unixSecondsToMs(value: number | null | undefined): number | undefined {
-  return typeof value === "number" ? value * 1_000 : undefined;
 }

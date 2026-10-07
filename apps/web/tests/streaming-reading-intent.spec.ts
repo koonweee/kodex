@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../src/test/canonicalPayloadFixture";
 import { expect, test } from "@playwright/test";
 import { appendResponseAnnotations } from "../src/composer/annotations";
 import type { ThreadTimelineRow } from "../src/api/client";
@@ -6,10 +7,9 @@ import { nativeSettingsFixture } from "./native-settings.fixture";
 function row(id: string, text: string, user = false): ThreadTimelineRow {
   const type = user ? "userMessage" : "agentMessage";
   return { id, turnId: "turn-live", kind: user ? "user_message" : "assistant_message", status: "inProgress", displayOrder: user ? 1 : 2,
-    items: [], collapsedRows: [], fileChanges: [],
+
     item: { id, threadId: "settings-chat", turnId: "turn-live", itemId: id, itemType: type, status: "inProgress", displayOrder: user ? 1 : 2,
-      payload: { source: "gatewayStream", turnId: "turn-live", itemId: id, itemSnapshot: { id, itemType: type },
-        item: user ? { id, type, content: [{ type: "text", text }] } : { id, type, phase: "final_answer", text } } } };
+      payload: compactCanonicalPayload(user ? { id, type, content: [{ type: "text", text }] } : { id, type, phase: "final_answer", text }, { id, itemType: type }) } };
 }
 for (const shape of [{ name: "desktop", width: 1280, touch: false }, { name: "narrow pointer", width: 390, touch: false }, { name: "touch", width: 390, touch: true }]) {
   test.describe(shape.name, () => {
