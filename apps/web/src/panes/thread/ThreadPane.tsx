@@ -1,3 +1,4 @@
+import { threadIndicatorState } from "../../threads/ThreadStatusIndicator";
 import { AsyncQuestionReplyProvider } from "../../composer/AsyncQuestionReplyProvider";
 import { refreshUnreadBadge } from "../../notifications/unreadBadge";
 import { useThreadReadState } from "../../threads/useThreadReadState";
@@ -141,8 +142,8 @@ function ExistingThreadPane({
   });
 
   useEffect(() => {
-    setPaneThreadContext(pane.id, thread ? { id: thread.id, projectId: thread.projectId, cwd: thread.cwd } : null);
-  }, [pane.id, setPaneThreadContext, thread?.id, thread?.projectId, thread?.cwd]);
+    setPaneThreadContext(pane.id, thread ? { id: thread.id, projectId: thread.projectId, cwd: thread.cwd, indicatorState: threadIndicatorState(thread) } : null);
+  }, [pane.id, setPaneThreadContext, thread?.id, thread?.projectId, thread?.cwd, thread?.status, thread?.unreadCompletedAgentTurn]);
 
   latestThreadIdRef.current = threadId;
   latestPaneThreadRef.current = thread;

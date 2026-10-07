@@ -1,3 +1,4 @@
+import { WorkspaceDefaultTab } from "./WorkspaceDefaultTab";
 import { MantineProvider } from "@mantine/core";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useEffect } from "react";
@@ -6,7 +7,6 @@ import type { DockviewApi } from "dockview";
 
 import {
   WorkspaceDock,
-  WorkspaceDefaultTab,
   WorkspaceRightHeaderActions,
   WorkspaceTabOverflowActions,
   kodexDockviewTheme,
@@ -14,6 +14,7 @@ import {
   visibleDockviewPanelIds,
   workspaceTabContextMenuItems,
 } from "./WorkspaceDock";
+import type { ThreadSummary } from "../api/client";
 import { createMemoryWorkspacePaneStore } from "./paneStore";
 import type { WorkspaceModel, WorkspacePane } from "./paneTypes";
 import { WorkspaceProvider, useWorkspace } from "./WorkspaceProvider";
@@ -108,6 +109,45 @@ describe("WorkspaceDock sync", () => {
     expect(screen.getByText("First thread")).toBeInTheDocument();
     expect(await screen.findByRole("status", { name: "Pane syncing" })).toBeInTheDocument();
     expect(screen.getByTestId("thread-sync-spinner")).toBeInTheDocument();
+  });
+
+  it("projects thread running and unread state into tabs, ahead of snapshot syncing", () => {
+    const workspacePane = pane("pane-thread", "thread", { mode: "existing", threadId: "thread-1" }, "First thread");
+    const renderTab = (status: string, unread: boolean) => (
+      <MantineProvider>
+        <WorkspaceProvider paneStore={createMemoryWorkspacePaneStore({ activePaneId: "pane-thread", dockviewLayout: null, panes: [workspacePane], schemaVersion: 1 })} threadSummariesById={{ "thread-1": {
+          id: "thread-1", status, unreadCompletedAgentTurn: unread,
+        } as ThreadSummary }}>
+          <PaneAdornmentHarness activePaneId="pane-thread" pane={workspacePane} />
+        </WorkspaceProvider>
+      </MantineProvider>
+    );
+    const view = render(renderTab("active", true));
+    expect(screen.getByRole("status", { name: "Thread in progress" })).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Pane syncing" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "Unread completed agent turn" })).not.toBeInTheDocument();
+    view.rerender(renderTab("idle", true));
+    expect(screen.getByRole("img", { name: "Unread completed agent turn" })).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Thread in progress" })).not.toBeInTheDocument();
+    view.rerender(renderTab("idle", false));
+    expect(screen.queryByRole("img", { name: "Unread completed agent turn" })).not.toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Pane syncing" })).toBeInTheDocument();
+  });
+
+  it("keeps indicators for unlisted inactive chats using the mounted pane projection", () => {
+    const workspacePane = pane("pane-thread", "thread", { mode: "existing", threadId: "unlisted" });
+    function MountedPane() {
+      const { setPaneThreadContext } = useWorkspace();
+      useEffect(() => {
+        setPaneThreadContext("pane-thread", { id: "unlisted", projectId: null, cwd: "/", indicatorState: "running" });
+      }, [setPaneThreadContext]);
+      return <PaneAdornmentHarness activePaneId="pane-thread" pane={workspacePane} />;
+    }
+    render(<MantineProvider><WorkspaceProvider paneStore={createMemoryWorkspacePaneStore({
+      activePaneId: "other", panes: [workspacePane, pane("other", "thread", { mode: "draft" })],
+      dockviewLayout: null, schemaVersion: 1,
+    })}><MountedPane /></WorkspaceProvider></MantineProvider>);
+    expect(screen.getByRole("status", { name: "Thread in progress" })).toBeInTheDocument();
   });
 
   it("renders a dropdown for measured overflow tabs and focuses the chosen panel", async () => {

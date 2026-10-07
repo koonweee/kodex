@@ -1,14 +1,15 @@
-import { Badge, Box, Group, Menu, Stack, Text, Tooltip } from "@mantine/core";
+import { ThreadStatusIndicator, threadIndicatorState } from "./ThreadStatusIndicator";
+import { Badge, Group, Menu, Stack, Text } from "@mantine/core";
 import { Archive, MoreHorizontal, Pin, PinOff } from "lucide-react";
 import { memo, useRef, type PointerEvent as ReactPointerEvent } from "react";
 import type { Approval, ThreadSummary } from "../api/client";
 import { PinnedOrderMenuItems, type PinnedThreadActions } from "./PinnedOrderMenuItems";
-import { threadDisplayTitle, threadInProgress, threadNeedsApproval } from "./helpers";
+import { threadDisplayTitle, threadNeedsApproval } from "./helpers";
 import { SidebarIconButton } from "./SidebarIconButton";
 import { SidebarRowFrame } from "./sidebarRows";
 import "../styles/thread-sidebar-rows.css";
 
-const SIDEBAR_TEXT = { newThread: "New thread", pinThread: "Pin thread", unpinThread: "Unpin thread", threadInProgress: "Thread in progress", unreadAgentTurn: "Unread completed agent turn", showMoreLoading: "Loading more", showLessThreads: "Show less", showMoreThreads: "Show more", showMoreError: "Could not load more threads" };
+const SIDEBAR_TEXT = { newThread: "New thread", pinThread: "Pin thread", unpinThread: "Unpin thread", showMoreLoading: "Loading more", showLessThreads: "Show less", showMoreThreads: "Show more", showMoreError: "Could not load more threads" };
 const VISIBLE_THREAD_LIMIT = 5;
 type SidebarPaginationState = "idle" | "loading" | "error";
 function threadDisplayTitleWithPending(thread: ThreadSummary, pending: Set<string>) { return pending.has(thread.id) ? SIDEBAR_TEXT.newThread : threadDisplayTitle(thread); }
@@ -42,8 +43,7 @@ export const ThreadListRow = memo(function ThreadListRow({
   thread, onMovePinnedThread, pinPending, previousThreadId, followingThreadId, canMoveDown,
 }: ThreadListRowProps) {
   const needsApproval = threadNeedsApproval(thread, approvals);
-  const isThreadInProgress = threadInProgress(thread);
-  const hasUnreadAgentTurn = thread.unreadCompletedAgentTurn === true;
+  const indicatorState = threadIndicatorState(thread);
   const displayTitle = threadDisplayTitleWithPending(thread, pendingTitleThreadIds);
   const isPinned = thread.pinned;
   const pinLabel = isPinned ? SIDEBAR_TEXT.unpinThread : SIDEBAR_TEXT.pinThread;
@@ -122,29 +122,8 @@ export const ThreadListRow = memo(function ThreadListRow({
               <Menu.Item onClick={() => onArchiveThread(thread.id)}>Archive thread</Menu.Item>
             </Menu.Dropdown>
           </Menu> : null}
-          {isThreadInProgress && !showThreadArchiveAction ? (
-            <Tooltip label={SIDEBAR_TEXT.threadInProgress}>
-              <Box
-                aria-label={SIDEBAR_TEXT.threadInProgress}
-                className="kodex-thread-status-slot"
-                component="span"
-                role="status"
-              >
-                <span className="kodex-thread-progress-indicator" />
-              </Box>
-            </Tooltip>
-          ) : null}
-          {hasUnreadAgentTurn && !isThreadInProgress && !showThreadArchiveAction ? (
-            <Tooltip label={SIDEBAR_TEXT.unreadAgentTurn}>
-              <Box
-                aria-label={SIDEBAR_TEXT.unreadAgentTurn}
-                className="kodex-thread-status-slot"
-                component="span"
-                role="img"
-              >
-                <span className="kodex-thread-unread-agent-turn-indicator" />
-              </Box>
-            </Tooltip>
+          {indicatorState && !showThreadArchiveAction ? (
+            <ThreadStatusIndicator state={indicatorState} className="kodex-thread-status-slot" />
           ) : null}
           {showThreadArchiveAction ? (
             <SidebarIconButton
