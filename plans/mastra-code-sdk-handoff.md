@@ -1,6 +1,6 @@
 # Kodex → Mastra Code SDK: conversation handoff
 
-Updated 2026-10-07. Read this before resuming the migration discussion.
+Updated 2026-10-07. Read this before resuming the migration discussion. Current implementation status lives in the [running port log](mastra-port.md); update that document at every implementation boundary.
 
 ## Current state: cache affinity investigated
 

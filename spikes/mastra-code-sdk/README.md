@@ -1,10 +1,10 @@
 # Mastra Code SDK compatibility spike
 
-[Conversation handoff and next benchmark](../../plans/mastra-code-sdk-handoff.md).
+[Running port status](../../plans/mastra-port.md) · [Decision handoff](../../plans/mastra-code-sdk-handoff.md).
 
 An isolated experiment for a future Kodex TypeScript/oRPC gateway. It does not start or replace the production gateway. See the [plan](../../plans/mastra-code-sdk-spike.md) for accepted product decisions and validation status.
 
-Validated on 2026-10-07: 32 tests, typecheck and independent review pass. The added shutdown characterization test reproduces a native title-write failure and confirms the completed answer survives reopening. Real ChatGPT requests passed in two separate processes using saved credentials. Production migration gates remain below.
+Validated on 2026-10-07: 37 tests, typecheck and independent review pass. The added shutdown characterization test reproduces a native title-write failure and confirms the completed answer survives reopening. Real ChatGPT requests passed in two separate processes using saved credentials. Production migration gates remain below.
 
 Requires Node 24+:
 
@@ -47,6 +47,10 @@ Use the schema-matched Codex 0.160.0 binary. Native `codex login --device-auth` 
 
 The driver writes sanitized measurements to ignored `artifacts/benchmark-*/report.json` and `summary.md`. Project fixtures and native runtime stores are disposable. Each case uses a fresh worker process; RSS separates its Node overhead from the app-server child. Native prompts/tool inventories differ, cached usage can be unknown, and these short tasks do not measure long-context memory or complete account billing.
 
+## Supported ChatGPT affinity
+
+The runtime supplies `session-id` through the SDK's public per-step processor, scoped to native ChatGPT OAuth and the persisted thread identity. Native fixtures cover concurrent chats, tool continuation, retry and reopen. The full paired live rerun passed 28 turns, with 98.6% cache reuse on Mastra follow-ups; see the [running log](../../plans/mastra-port.md) for totals and limitations.
+
 ## Cache investigation
 
 The [cache investigation](../../plans/mastra-cache-investigation.md) found a reproducible ChatGPT affinity gap in the pinned provider. The isolated diagnostic CLI compares request fingerprints, identical replays and header-only native sessions:
@@ -57,7 +61,7 @@ node --import tsx src/cache-evaluation.ts artifacts/new-affinity affinity
 node --import tsx src/cache-evaluation.ts artifacts/new-native native-affinity
 ```
 
-These opt-in commands make real requests with the dedicated native login and require fresh output directories. Raw request bodies stay in memory; artifacts contain hashes, lengths, allowlisted configuration, header-presence flags and usage. Fetch interception is experimental measurement code, not a production runtime change. The public API's explicit cache controls were rejected by the subscription endpoint in this evaluation; see the report for scope and controls.
+Historical diagnostic reports predate supported runtime affinity; current runtime-backed diagnostic baselines include it unless the diagnostic explicitly overrides the header. These opt-in commands make real requests with the dedicated native login and require fresh output directories. Raw request bodies stay in memory; artifacts contain hashes, lengths, allowlisted configuration, header-presence flags and usage. Fetch interception is experimental measurement code, not a production runtime change. The public API's explicit cache controls were rejected by the subscription endpoint in this evaluation; see the report for scope and controls.
 
 ## Ownership demonstrated
 

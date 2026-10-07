@@ -5,6 +5,7 @@ import type { Mastra } from '@mastra/core/mastra';
 import type { Session } from '@mastra/core/agent-controller';
 import type { MastraCodeState } from '@mastra/code-sdk/schema';
 import { assertProfileActive, type SpikeProfile } from './profile.js';
+import { createChatGptAffinityProcessor } from './chatgpt-affinity.js';
 
 export interface ProjectRuntimeOptions {
   projectPath: string;
@@ -29,6 +30,18 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
   // Profile activation precedes runtime imports and any SDK global initialization.
   const { prepareAgentControllerMount } = await import('@mastra/code-sdk');
   const { Mastra } = await import('@mastra/core/mastra');
+  const { createRequestScopedCredentialStore } = await import('@mastra/code-sdk/agents/model');
+  const { resolveCredentialStore } = await import('@mastra/code-sdk/agents/credential-resolver');
+  const { getGlobalAuthStorage } = await import('@mastra/code-sdk/agents/mastracode-gateway');
+  const affinity = createChatGptAffinityProcessor({
+    isNativeCodexModel: ({ model, requestContext }) => {
+      if (typeof model !== 'object' || model === null || !('provider' in model) || model.provider !== 'openai.responses') return false;
+      // Reuse native request/account selection. OAuth and API-key models share
+      // the same provider name; provider metadata alone cannot scope this header.
+      const credentials = createRequestScopedCredentialStore(resolveCredentialStore(requestContext) ?? getGlobalAuthStorage(), requestContext);
+      return credentials.get('openai-codex')?.type === 'oauth';
+    },
+  });
   const prepared = await prepareAgentControllerMount({
     cwd: projectPath,
     homeDir: options.profile.homeDir,
@@ -42,6 +55,7 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
     },
     omScope: 'thread',
     initialState: { yolo: true, skipGlobalInstructions: true },
+    inputProcessors: [affinity],
     disableEnvFile: true,
     disableGithubSignals: true,
     disableMcp: options.disableMcp ?? true,
