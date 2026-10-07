@@ -3,7 +3,7 @@ import { nativeSettingsFixture } from "./native-settings.fixture";
 
 const groups = (page: Page) => page.locator(".dv-groupview:visible");
 const activeDraft = (page: Page) => page.locator('.kodex-thread-pane-empty[data-workspace-pane-active="true"]');
-const activeGroup = (page: Page) => groups(page).filter({ has: activeDraft(page) });
+const activeGroup = (page: Page) => page.locator(".dv-groupview.dv-active-group:visible");
 const tabs = (page: Page) => page.getByTestId("dockview-dv-default-tab");
 
 async function newDraft(page: Page, text: string) {
@@ -93,7 +93,7 @@ test.describe("automatic pane placement", () => {
       const tabPane = await bounds(activeGroup(page));
       expect(tabPane.x).toBeCloseTo(bottomRight.x, 0);
       expect(tabPane.y).toBeCloseTo(bottomRight.y, 0);
-      const tabGroup = groups(page).filter({ has: activeDraft(page) });
+      const tabGroup = page.locator(".dv-groupview.dv-active-group:visible");
       await expect(tabGroup.getByTestId("dockview-dv-default-tab")).toHaveCount(2);
       await expect(activeDraft(page).getByRole("textbox", { name: /message composer/i })).toHaveValue("Keep bottom-right tab");
       await page.screenshot({ path: test.info().outputPath("capacity-falls-back-to-bottom-right-tab.png"), animations: "disabled" });
@@ -105,7 +105,7 @@ test.describe("automatic pane placement", () => {
       await expect(groups(page)).toHaveCount(6);
       await expect(tabs(page)).toHaveCount(7);
       expectSameBounds(await groupBounds(page), tiledBounds);
-      await expect(groups(page).filter({ has: activeDraft(page) }).getByTestId("dockview-dv-default-tab")).toHaveCount(2);
+      await expect(page.locator(".dv-groupview.dv-active-group:visible").getByTestId("dockview-dv-default-tab")).toHaveCount(2);
     } finally { await fixture.close(); }
     expect(fixture.errors).toEqual([]);
     expect(fixture.unexpected).toEqual([]);
