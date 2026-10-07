@@ -122,7 +122,7 @@ describe("explicit skill retry", () => {
     ] };
     const bodies = await Promise.all(gateway.callsFor("POST", `/v1/threads/thread-1/${endpoint}`).map(requestJson));
     if (endpoint === "input") {
-      for (const body of bodies) expect(body).toEqual({ ...expectedBody, clientUserMessageId: expect.any(String) });
+      for (const body of bodies) expect(body).toEqual({ ...expectedBody, queueIfPending: true, clientUserMessageId: expect.any(String) });
       expect(bodies[0].clientUserMessageId).not.toBe(bodies[1].clientUserMessageId);
       expect(onOptimisticUserMessageStarted).toHaveBeenCalledTimes(2);
       for (const [index, body] of bodies.entries()) expect(onOptimisticUserMessageStarted.mock.calls[index]).toEqual([

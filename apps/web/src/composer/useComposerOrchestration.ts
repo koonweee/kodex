@@ -202,8 +202,6 @@ export function useComposerOrchestration({
           return;
         }
 
-        startedThreadId = selectedThreadId;
-        onThreadTurnStarted(selectedThreadId);
         if (text && attachments.length === 0) {
           optimisticClientRequestId = clientUserMessageId;
           onOptimisticUserMessageStarted?.({
@@ -213,7 +211,16 @@ export function useComposerOrchestration({
             threadId: selectedThreadId,
           });
         }
-        await submitThreadInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId);
+        const result = await submitThreadInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId, true);
+        if (result.disposition === "queued") {
+          if (optimisticClientRequestId) onOptimisticUserMessageRemoved?.(optimisticClientRequestId);
+          void refreshQueuedInputs(queryClient, selectedThreadId);
+          clearPendingAttachments();
+          setIsComposerSubmitting(false);
+          return;
+        }
+        startedThreadId = selectedThreadId;
+        onThreadTurnStarted(selectedThreadId);
         if (optimisticClientRequestId) {
           onOptimisticUserMessageSent?.(optimisticClientRequestId);
         }

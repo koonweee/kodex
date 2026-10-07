@@ -361,6 +361,7 @@ export function ComposerPanel({
   const representationProps = {
     goalControls,
     queuePanel,
+    queueOnSubmit: Boolean(nativeQueue.query.data?.queuedInputs.length),
     activeSelectedTurnId,
     attachmentInputRef,
     canCompose,

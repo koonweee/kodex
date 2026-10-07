@@ -2695,6 +2695,11 @@ export interface components {
             filePath: string;
             version: string;
         };
+        NativeQueuedSubmission: {
+            clientUserMessageId: string;
+            id: string;
+            input: unknown[];
+        };
         NotificationStatusResponse: {
             configured: boolean;
             subscriptionsEnabled: boolean;
@@ -3308,6 +3313,17 @@ export interface components {
         };
         /** @enum {string} */
         ThreadGoalStatus: "active" | "paused" | "blocked" | "usageLimited" | "budgetLimited" | "complete";
+        /** @enum {string} */
+        ThreadInputDisposition: "submitted" | "queued";
+        ThreadInputRequest: components["schemas"]["TurnStartRequest"] & {
+            /** @description Composer policy: append to existing native queued work before start-or-steer. */
+            queueIfPending?: boolean;
+        };
+        ThreadInputResponse: {
+            disposition?: null | components["schemas"]["ThreadInputDisposition"];
+            payload: unknown;
+            queuedInput?: null | components["schemas"]["NativeQueuedSubmission"];
+        };
         /** @enum {string} */
         ThreadInterruptCurrentDisposition: "interrupted" | "idle";
         ThreadInterruptCurrentResponse: {
@@ -6403,7 +6419,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["TurnStartRequest"];
+                "application/json": components["schemas"]["ThreadInputRequest"];
             };
         };
         responses: {
@@ -6412,7 +6428,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RawAppServerResponse"];
+                    "application/json": components["schemas"]["ThreadInputResponse"];
                 };
             };
         };

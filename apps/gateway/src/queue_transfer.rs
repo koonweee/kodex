@@ -40,8 +40,8 @@ pub async fn enqueue(
     enqueue_locked(state, thread_id, input, client_id).await
 }
 
-/// Caller must hold the shared thread input lock. Used only by Control's
-/// explicit target activation so submission cannot race another Kodex writer.
+/// Caller must hold the shared thread input lock, including across any queue
+/// routing read or explicit target activation preceding this admission.
 pub(crate) async fn enqueue_locked(
     state: &AppState,
     thread_id: &str,

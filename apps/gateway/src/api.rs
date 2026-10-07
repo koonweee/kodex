@@ -118,9 +118,9 @@ use crate::{
             ThreadTimelinePageQuery,
         },
         turns::{
-            ThreadCompactDisposition, ThreadCompactResponse, ThreadInputResponse,
-            ThreadInterruptCurrentDisposition, ThreadInterruptCurrentResponse, TurnStartRequest,
-            TurnSteerRequest,
+            ThreadCompactDisposition, ThreadCompactResponse, ThreadInputDisposition,
+            ThreadInputRequest, ThreadInputResponse, ThreadInterruptCurrentDisposition,
+            ThreadInterruptCurrentResponse, TurnStartRequest, TurnSteerRequest,
         },
         uploads::{
             FileUploadRequest, FileUploadResponse, ImageUpload, ImageUploadRequest,
@@ -465,7 +465,9 @@ impl AppState {
         TurnSteerRequest,
         ThreadCompactResponse,
         ThreadCompactDisposition,
+        ThreadInputRequest,
         ThreadInputResponse,
+        ThreadInputDisposition,
         ThreadInterruptCurrentResponse,
         ThreadInterruptCurrentDisposition,
         QueuedInput,

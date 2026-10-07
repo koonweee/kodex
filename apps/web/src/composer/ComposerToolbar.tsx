@@ -8,6 +8,8 @@ import type { ComposerSettings, ComposerSettingsChange, ContextUsage } from "../
 import type { ModelSummary } from "../api/client";
 import { GoalButton, type GoalControls } from "../goals/GoalControls";
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
+import { useTouchQueueHold } from "./useTouchQueueHold";
+import "./touchQueueHold.css";
 
 const COMPOSER_TOOLBAR_TEXT = {
   addAttachment: "Add attachment",
@@ -15,6 +17,7 @@ const COMPOSER_TOOLBAR_TEXT = {
   expand: "Expand composer",
   openAttachments: "Open attachment menu",
   send: "Send message",
+  addToQueue: "Add to queue",
   sending: "Sending message",
   stop: "Stop turn",
 };
@@ -31,6 +34,7 @@ type ComposerToolbarProps = {
   onSettingsChange: (settings: ComposerSettingsChange) => void;
   onStopTurn: () => void;
   selectedThreadPresent: boolean;
+  queueOnSubmit?: boolean;
   settings: ComposerSettings | null;
   settingsDisabled?: boolean;
   settingsError?: string | null;
@@ -51,6 +55,7 @@ export const ComposerToolbar = memo(function ComposerToolbar({
   onSettingsChange,
   onStopTurn,
   selectedThreadPresent,
+  queueOnSubmit = false,
   settings,
   settingsDisabled,
   settingsError,
@@ -58,11 +63,19 @@ export const ComposerToolbar = memo(function ComposerToolbar({
   isSubmitting,
   showContextUsage = true,
 }: ComposerToolbarProps) {
+  const queueHold = useTouchQueueHold({
+    enabled: selectedThreadPresent && canSubmitComposer && !disabled && !isSubmitting && !shouldShowStopAction,
+    onQueue: () => {
+      const form = document.getElementById(formId) as HTMLFormElement | null;
+      const submitter = form?.querySelector<HTMLButtonElement>('button[hidden][data-submit-intent="queue"]');
+      if (submitter && !submitter.disabled) form?.requestSubmit(submitter);
+    },
+  });
   const actionLabel = isSubmitting
     ? COMPOSER_TOOLBAR_TEXT.sending
     : shouldShowStopAction
       ? COMPOSER_TOOLBAR_TEXT.stop
-      : COMPOSER_TOOLBAR_TEXT.send;
+      : queueOnSubmit ? COMPOSER_TOOLBAR_TEXT.addToQueue : COMPOSER_TOOLBAR_TEXT.send;
 
   return (
     <Group className="kodex-composer-toolbar" justify="space-between" wrap="wrap">
@@ -152,11 +165,15 @@ export const ComposerToolbar = memo(function ComposerToolbar({
           className="kodex-composer-action"
           data-action-state="idle"
           disabled={!canSubmitComposer}
-          label={COMPOSER_TOOLBAR_TEXT.send}
-          tooltip={actionLabel}
+          label={actionLabel}
+          tooltip={selectedThreadPresent ? `${actionLabel} · Hold to queue on touch` : actionLabel}
           type="submit"
+          {...queueHold.handlers}
         >
-          <ArrowUp />
+          {queueOnSubmit ? <ListPlus /> : <ArrowUp />}
+          {queueHold.holding ? <span className="kodex-composer-hold-progress" aria-hidden="true">
+            <svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" pathLength="100" /></svg>
+          </span> : null}
         </AdaptiveIconButton>
       )}
     </Group>

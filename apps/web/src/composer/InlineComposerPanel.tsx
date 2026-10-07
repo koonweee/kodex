@@ -28,6 +28,7 @@ const COMPOSER_TEXT = {
 type InlineComposerPanelProps = ComposerPanelProps & {
   goalControls?: GoalControls;
   queuePanel?: ReactNode;
+  queueOnSubmit?: boolean;
   canSubmitComposer: boolean;
   density?: "desktop" | "mobile";
   expanded?: { header: ReactNode; style: CSSProperties };
@@ -93,6 +94,7 @@ export function InlineComposerPanel({
   onSubmitTurn,
   pendingAttachments,
   queuePanel,
+  queueOnSubmit,
   selectedThreadPresent,
   selectSkill,
   selectSlashCommand,
@@ -231,6 +233,7 @@ export function InlineComposerPanel({
         ) : null}
         {expanded && (skillPopupOpen || slashPopupOpen) ? null : (
           <ComposerToolbar
+            queueOnSubmit={queueOnSubmit}
             goalControls={goalControls}
             formId={formId}
             attachmentInputRef={attachmentInputRef}
