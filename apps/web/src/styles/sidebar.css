@@ -439,8 +439,7 @@
   display: block;
 }
 
-.kodex-thread-list-button:focus-within .kodex-thread-pin-button,
-.kodex-thread-list-button[data-pinned="true"] .kodex-thread-pin-button {
+.kodex-thread-list-button:focus-within .kodex-thread-pin-button {
   opacity: 1;
   pointer-events: auto;
 }
@@ -488,6 +487,17 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
+  .kodex-thread-list-button[data-has-leading="true"] {
+    grid-template-columns: minmax(0, 1fr) var(--kodex-sidebar-trailing-rail);
+  }
+
+  .kodex-thread-list-button .kodex-sidebar-row-leading {
+    position: absolute;
+    top: 50%;
+    left: 8px;
+    transform: translateY(-50%);
+  }
+
   .kodex-sidebar-text-action-row.kodex-ui-button:hover {
     background: var(--kodex-bg-button-hover);
     color: var(--kodex-text-primary);
