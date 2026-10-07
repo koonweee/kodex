@@ -27,7 +27,6 @@
   --kodex-shadow-modal: var(--kodex-shadow-floating);
   --kodex-shadow-swatch: inset 0 1px 2px rgb(255 255 255 / 12%);
   --kodex-unread-pulse-start: color-mix(in srgb, var(--kodex-accent) 55%, transparent);
-  --kodex-unread-pulse-end: color-mix(in srgb, var(--kodex-accent) 0%, transparent);
 }
 
 .kodex-ui-button {

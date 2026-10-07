@@ -107,13 +107,23 @@
 }
 
 .kodex-thread-unread-agent-turn-indicator {
+  position: relative;
   display: block;
   width: 8px;
   height: 8px;
   flex: 0 0 8px;
   border-radius: var(--kodex-radius-round);
   background: var(--kodex-accent);
-  box-shadow: 0 0 0 0 var(--kodex-unread-pulse-start);
+}
+
+.kodex-thread-unread-agent-turn-indicator::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--kodex-unread-pulse-start);
+  pointer-events: none;
+  opacity: 0;
   animation: kodex-unread-agent-turn-pulse 1.8s ease-out infinite;
 }
 
@@ -214,21 +224,24 @@
 
 @keyframes kodex-unread-agent-turn-pulse {
   0% {
-    box-shadow: 0 0 0 0 var(--kodex-unread-pulse-start);
+    transform: scale(1);
+    opacity: 1;
   }
 
   70% {
-    box-shadow: 0 0 0 6px var(--kodex-unread-pulse-end);
+    transform: scale(2.5);
+    opacity: 0;
   }
 
   100% {
-    box-shadow: 0 0 0 0 var(--kodex-unread-pulse-end);
+    transform: scale(1);
+    opacity: 0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .kodex-thread-progress-indicator,
-  .kodex-thread-unread-agent-turn-indicator {
+  .kodex-thread-unread-agent-turn-indicator::before {
     animation: none;
   }
 }
