@@ -1,0 +1,37 @@
+.kodex-command-count {
+  display: inline-grid;
+  min-inline-size: 3ch;
+  overflow: hidden;
+  vertical-align: bottom;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.kodex-command-count > span {
+  grid-area: 1 / 1;
+}
+
+.kodex-command-count-old {
+  visibility: hidden;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .kodex-command-count-new {
+    animation: kodex-count-in 150ms ease-out both;
+  }
+
+  .kodex-command-count-old {
+    visibility: visible;
+    animation: kodex-count-out 150ms ease-out both;
+  }
+}
+
+@keyframes kodex-count-in {
+  from { opacity: 0; transform: translateY(45%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes kodex-count-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-45%); }
+}

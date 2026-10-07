@@ -5,6 +5,7 @@ import type { SyntheticEvent } from "react";
 
 import type { MarkdownPreviewRequest } from "../files/types";
 import type { ImageLightboxImage } from "../images/types";
+import { ActivityGroupSummary } from "./ActivityGroupSummary";
 import { FileChangeBlock } from "./fileRenderers";
 import { ImageActivityBlock } from "./imageRenderers";
 import { AssistantMessageMarkdown, UserMessageBubble } from "./messageRenderers";
@@ -16,7 +17,6 @@ import {
   LazyMarkdownContent,
   MessageText,
   payloadValue,
-  sentenceCase,
   TimelineIcon,
   timelineItemLabels,
   titleCase,
@@ -56,9 +56,7 @@ function TimelineActivityGroupRendererImpl({
       <summary>
         <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
           <Terminal size={15} />
-          <Text size="sm" fw={700} className="kodex-activity-group-title" title={activityGroupSummary(items)}>
-            {activityGroupSummary(items)}
-          </Text>
+          <ActivityGroupSummary items={items} />
         </Group>
         <ChevronRight size={16} className="kodex-activity-caret" aria-hidden="true" />
       </summary>
@@ -405,26 +403,6 @@ function webSearchActionText(action: WebSearchAction): string {
   return action.label;
 }
 
-function activityGroupSummary(items: TimelineItem[]): string {
-  const commandCount = items.filter((item) => item.kind === "command_execution").length;
-  const fileCount = items.filter((item) => item.kind === "file_change").length;
-  const webCount = items.filter((item) => item.kind === "web_search_group").length;
-  const toolCount = items.filter((item) => item.kind === "mcp_tool_call" || item.kind === "dynamic_tool_call").length;
-  const agentCount = collabAgentCount(items);
-  const generatedImageCount = items.filter((item) => item.kind === "image_generation").length;
-  const viewedImageCount = items.filter((item) => item.kind === "image_view").length;
-  const parts = [
-    webCount ? "Searched web" : "",
-    fileCount ? fileCount === 1 ? "changed 1 file" : `changed ${fileCount} files` : "",
-    toolCount ? toolCount === 1 ? "used 1 tool" : `used ${toolCount} tools` : "",
-    agentCount ? agentCount === 1 ? "used 1 agent" : `used ${agentCount} agents` : "",
-    generatedImageCount ? generatedImageCount === 1 ? "generated 1 image" : `generated ${generatedImageCount} images` : "",
-    viewedImageCount ? viewedImageCount === 1 ? "viewed 1 image" : `viewed ${viewedImageCount} images` : "",
-    commandCount ? commandCount === 1 ? "ran 1 command" : `ran ${commandCount} commands` : "",
-  ].filter(Boolean);
-  return parts.length ? sentenceCase(parts.join(", ")) : "Worked";
-}
-
 function commandSummary(item: TimelineItem): string {
   const command = displayCommand(item.command || payloadValue(item.payload, "command"));
   if (!command) {
@@ -466,24 +444,6 @@ function collabActivitySummary(item: TimelineItem): string {
     return item.text;
   }
   return "Agent activity";
-}
-
-function collabAgentCount(items: TimelineItem[]): number {
-  const agentIds = new Set<string>();
-  let fallbackRows = 0;
-  for (const item of items) {
-    if (item.kind !== "collab_agent_tool_call") {
-      continue;
-    }
-    if (!item.collab?.agents.length) {
-      fallbackRows += 1;
-      continue;
-    }
-    for (const agent of item.collab.agents) {
-      agentIds.add(agent.threadId);
-    }
-  }
-  return agentIds.size || fallbackRows;
 }
 
 function CollabAgentChips({ item }: { item: TimelineItem }) {
