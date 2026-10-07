@@ -98,6 +98,8 @@ for (const shape of [
           await expect(page.getByRole("menu")).toBeHidden();
         }
         await model.click();
+        await expect(page.getByRole("menu", { name: "Model and speed controls" })).toBeVisible();
+        await expect.poll(() => page.getByRole("menu").evaluate(el => el.contains(document.activeElement))).toBe(true);
         if (shape.width <= 900) {
           await page.locator(".kodex-workspace-single-pane-header").click({ position: { x: 2, y: 2 } });
         } else {

@@ -148,8 +148,10 @@ test("compact desktop pane keeps its input and actions while a spacious sibling 
     await expect(page.locator(".dv-groupview:visible")).toHaveCount(2);
     expect(await handle!.evaluate(el => el.isConnected && document.activeElement === el)).toBe(true);
     await expect(input).toHaveValue("Draft in a narrow desktop column");
-    const restoredProportions = await page.locator(".dv-groupview:visible").evaluateAll(groups => groups.map(group => group.getBoundingClientRect().width));
-    for (let index = 0; index < proportions.length; index++) expect(restoredProportions[index]).toBeCloseTo(proportions[index], -1);
+    for (let index = 0; index < proportions.length; index++) {
+      await expect.poll(() => page.locator(".dv-groupview:visible").nth(index).evaluate(group => group.getBoundingClientRect().width))
+        .toBeCloseTo(proportions[index], -1);
+    }
   } finally { await fixture.close(); }
   expect(fixture.errors).toEqual([]);
   expect(fixture.unexpected).toEqual([]);

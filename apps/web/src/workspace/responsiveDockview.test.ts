@@ -1,4 +1,4 @@
-import type { DockviewApi, IDockviewPanel } from "dockview";
+import { createDockview, type DockviewApi, type IDockviewPanel } from "dockview";
 import { describe, expect, it, vi } from "vitest";
 import { applyResponsiveWorkspaceMode, serializeWorkspaceDock, type ResponsiveDockviewSession } from "./responsiveDockview";
 
@@ -19,7 +19,7 @@ function nativeDock() {
   };
   return { api: api as unknown as DockviewApi, harness: api };
 }
-function session(): ResponsiveDockviewSession { return { active: false, previousMaximizedPanelId: null }; }
+function session(): ResponsiveDockviewSession { return { active: false, previousMaximizedPanelId: null, restoreSize: null }; }
 
 describe("responsive native workspace maximize", () => {
   it("maximizes the current pane once and restores split layout without persisting the responsive maximize", () => {
@@ -76,4 +76,30 @@ describe("responsive native workspace maximize", () => {
     expect(harness.exitMaximizedGroup).toHaveBeenCalledTimes(1);
     expect(api.activePanel).toBe(harness.panels[1]);
   });
+});
+
+it("serializes a narrow native maximize without changing its cached split proportions", () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const api = createDockview(host, {
+    createComponent: () => ({ element: document.createElement("div"), init() {} }),
+    disableAutoResizing: true,
+    theme: { name: "responsive-test", className: "responsive-test", gap: 1 },
+  });
+  try {
+    api.layout(1620, 900);
+    api.addPanel({ id: "one", component: "test" });
+    api.addPanel({ id: "two", component: "test", position: { referencePanel: "one", direction: "right" } });
+    const widths = api.groups.map(group => group.api.width);
+    const state = session();
+    applyResponsiveWorkspaceMode(api, true, state);
+    api.layout(390, 844);
+    const saved = serializeWorkspaceDock(api, state);
+    expect(saved.grid).not.toHaveProperty("maximizedNode");
+    expect(api.width).toBe(390);
+    expect(api.groups.filter(group => group.api.isVisible)).toHaveLength(1);
+    api.layout(1620, 900);
+    applyResponsiveWorkspaceMode(api, false, state);
+    api.groups.forEach((group, index) => expect(group.api.width).toBeCloseTo(widths[index], 0));
+  } finally { api.dispose(); host.remove(); }
 });

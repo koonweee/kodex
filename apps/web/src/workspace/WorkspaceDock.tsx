@@ -67,10 +67,11 @@ export function WorkspaceDock({
 }: WorkspaceDockProps) {
   const { openDraftThreadPane, paneThreadContextsById, threadProjectIdsById } = useWorkspace();
   const apiRef = useRef<DockviewApi | null>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
   const suppressEventsRef = useRef(false);
   const singlePaneRef = useRef(singlePane);
   singlePaneRef.current = singlePane;
-  const responsiveSession = useRef<ResponsiveDockviewSession>({ active: false, previousMaximizedPanelId: null });
+  const responsiveSession = useRef<ResponsiveDockviewSession>({ active: false, previousMaximizedPanelId: null, restoreSize: null });
   const debounceRef = useRef<number | null>(null);
   const disposablesRef = useRef<Array<{ dispose: () => void }>>([]);
 
@@ -94,6 +95,8 @@ export function WorkspaceDock({
         window.clearTimeout(debounceRef.current);
       }
       debounceRef.current = window.setTimeout(() => {
+        debounceRef.current = null;
+        if (suppressEventsRef.current || singlePaneRef.current) return;
         onLayoutChange(serializeWorkspaceDock(api, responsiveSession.current), api.activePanel?.id ?? null);
       }, 350);
     },
@@ -114,9 +117,10 @@ export function WorkspaceDock({
         event.api,
         workspace,
         suppressEventsRef,
-        (_layout, activePaneId) => onLayoutChange(serializeWorkspaceDock(event.api, responsiveSession.current), activePaneId),
+        onLayoutChange,
         panePlacementHintsById,
         onPanePlacementHintsConsumed,
+        () => serializeWorkspaceDock(event.api, responsiveSession.current),
       );
       applyResponsiveWorkspaceMode(event.api, singlePaneRef.current, responsiveSession.current);
       reportVisiblePaneIds(event.api);
@@ -180,9 +184,10 @@ export function WorkspaceDock({
         api,
         workspace,
         suppressEventsRef,
-        (_layout, activePaneId) => onLayoutChange(serializeWorkspaceDock(api, responsiveSession.current), activePaneId),
+        onLayoutChange,
         panePlacementHintsById,
         onPanePlacementHintsConsumed,
+        () => serializeWorkspaceDock(api, responsiveSession.current),
       );
       applyResponsiveWorkspaceMode(api, singlePaneRef.current, responsiveSession.current);
       reportVisiblePaneIds(api);
@@ -192,6 +197,18 @@ export function WorkspaceDock({
   useLayoutEffect(() => {
     const api = apiRef.current;
     if (!api) return;
+    if (singlePane && debounceRef.current !== null) {
+      window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    if (!singlePane && responsiveSession.current.active) {
+      const dock = dockRef.current;
+      // Dockview defers automatic sizing to an animation frame. Restore wide
+      // geometry before native maximize reveals the hidden split groups.
+      if (dock && dock.clientWidth > 0 && dock.clientHeight > 0) {
+        api.layout(dock.clientWidth, dock.clientHeight);
+      }
+    }
     applyResponsiveWorkspaceMode(api, singlePane, responsiveSession.current);
     reportVisiblePaneIds(api);
   }, [singlePane, reportVisiblePaneIds]);
@@ -211,7 +228,7 @@ export function WorkspaceDock({
   );
 
   return (
-    <div className="kodex-workspace-dock" data-testid="workspace-dock">
+    <div ref={dockRef} className="kodex-workspace-dock" data-testid="workspace-dock">
       <DockviewReact
         components={components}
         defaultTabComponent={WorkspaceDefaultTab}
@@ -312,6 +329,7 @@ export function syncWorkspaceIntoDockview(
   onReconciledLayout?: (layout: unknown, activePaneId: string | null) => void,
   panePlacementHintsById: WorkspacePanePlacementHintsById = {},
   onPanePlacementHintsConsumed?: (paneIds: string[]) => void,
+  serializeLayout: () => unknown = () => api.toJSON(),
 ) {
   suppressEventsRef.current = true;
   let shouldPersistLiveLayout = false;
@@ -357,7 +375,7 @@ export function syncWorkspaceIntoDockview(
         onPanePlacementHintsConsumed?.([...consumedPlacementHintIds]);
       }
       if (shouldPersistLiveLayout) {
-        onReconciledLayout?.(api.toJSON(), api.activePanel?.id ?? workspace.activePaneId ?? null);
+        onReconciledLayout?.(serializeLayout(), api.activePanel?.id ?? workspace.activePaneId ?? null);
       }
     }, 0);
   }
