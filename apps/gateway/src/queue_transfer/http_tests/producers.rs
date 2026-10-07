@@ -328,3 +328,66 @@ async fn transfer_receipt_retains_witness_until_exact_producer_settlement_succee
             .all(|(m, _)| m != "thread/queue/start" && m != "thread/resume"));
     }
 }
+
+#[tokio::test]
+async fn idle_send_now_preserves_automation_handoff_bookkeeping_on_success_and_lost_ack() {
+    for lost in [false, true] {
+        let (state, native) = producer_state().await;
+        let run = admitted_run(&state).await;
+        let native_id = run.native_queue_id.as_deref().unwrap();
+        *native.idle.lock().unwrap() = true;
+        if lost {
+            *native.lost_method.lock().unwrap() = Some("thread/queue/start");
+            *native.watched_run.lock().unwrap() = Some(run.id.clone());
+        }
+        let (status, body) = request(
+            &state,
+            "POST",
+            &format!("{BASE}/{native_id}/steer"),
+            Value::Null,
+        )
+        .await;
+        assert_eq!(
+            status,
+            if lost {
+                StatusCode::BAD_GATEWAY
+            } else {
+                StatusCode::OK
+            },
+            "{body}"
+        );
+        let stored = state.store.get_automation_run(&run.id).await.unwrap();
+        assert_eq!(
+            stored.phase,
+            if lost {
+                Phase::Uncertain
+            } else {
+                Phase::Dispatched
+            }
+        );
+        if !lost {
+            assert_eq!(stored.turn_id.as_deref(), Some("native-started-turn"));
+        }
+        assert_eq!(
+            native
+                .native
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(method, _)| method == "thread/queue/start")
+                .count(),
+            1
+        );
+        assert!(native
+            .native
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|(method, _)| !matches!(
+                method.as_str(),
+                "thread/queue/delete" | "turn/steer" | "turn/start"
+            )));
+    }
+}

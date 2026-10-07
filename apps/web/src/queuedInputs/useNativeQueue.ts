@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 
-import { listQueuedInputs, steerFirstQueuedInput } from "../api/client";
+import { listQueuedInputs, sendFirstQueuedInputNow, sendQueuedInputNow } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { errorMessageFrom } from "../shared/values";
 import { refreshQueuedInputs } from "./cache";
@@ -29,9 +29,9 @@ export function useNativeQueue(threadId: string | null) {
     }
   }
 
-  function steerFirst() {
+  function sendNow(queueId?: string) {
     if (threadId === null || !query.data?.queuedInputs.length) return false;
-    void mutate(() => steerFirstQueuedInput(threadId));
+    void mutate(() => queueId === undefined ? sendFirstQueuedInputNow(threadId) : sendQueuedInputNow(threadId, queueId));
     return true;
   }
 
@@ -40,7 +40,7 @@ export function useNativeQueue(threadId: string | null) {
     if (threadId !== null) void refreshQueuedInputs(client, threadId);
   }
 
-  return { query, busy, mutate, steerFirst, reload,
+  return { query, busy, mutate, sendNow, reload,
     error: failure?.threadId === threadId ? failure.message : null,
   };
 }

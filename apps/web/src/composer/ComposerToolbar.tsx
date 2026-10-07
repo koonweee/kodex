@@ -125,7 +125,7 @@ export const ComposerToolbar = memo(function ComposerToolbar({
                 type="submit"
                 form={formId}
                 data-submit-intent="queue"
-                title="Queue message (⌘Enter on desktop)"
+                title="Queue message"
               >
                 Queue message
               </Menu.Item>

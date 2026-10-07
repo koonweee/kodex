@@ -15,7 +15,8 @@ type QueuedMessageListProps = {
   partial: boolean;
   isActive: boolean;
   onReorder: (ids: string[]) => void;
-  onSteer: (row: QueuedInput) => void;
+  transferringIds?: string[];
+  onSendNow: (row: QueuedInput) => void;
   onEdit: (row: QueuedInput) => void;
   onRemove: (row: QueuedInput) => void;
 };
@@ -26,7 +27,7 @@ export function QueuedMessageList(props: QueuedMessageListProps) {
   </QueueDisclosure>;
 }
 
-function QueueRows({ rows, busy, partial, isActive, onReorder, onSteer, onEdit, onRemove }: QueuedMessageListProps) {
+function QueueRows({ rows, busy, partial, isActive, onReorder, transferringIds = [], onSendNow, onEdit, onRemove }: QueuedMessageListProps) {
   const instructionsId = useId();
   const list = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
@@ -143,8 +144,8 @@ function QueueRows({ rows, busy, partial, isActive, onReorder, onSteer, onEdit, 
             {row.attachments.length > 0 ? <Text size="xs" className="kodex-queue-attachments">{row.attachments.length} attached file(s)</Text> : null}
           </div>
           <div className="kodex-queue-actions">
-            {row.canSteer ? <AdaptiveIconButton density="compact" label="Steer" disabled={busy}
-              onClick={() => onSteer(row)}><CornerDownRight /></AdaptiveIconButton> : null}
+            <AdaptiveIconButton density="compact" label={row.canSteer ? "Steer" : "Send now"} disabled={busy || transferringIds.includes(row.id)}
+              onClick={() => onSendNow(row)}><CornerDownRight /></AdaptiveIconButton>
             <AdaptiveIconButton density="compact" label="Remove" disabled={busy} onClick={() => onRemove(row)}><Trash2 /></AdaptiveIconButton>
             <AdaptiveIconButton density="compact" label="Edit" disabled={busy} onClick={() => onEdit(row)}><Pencil /></AdaptiveIconButton>
           </div>

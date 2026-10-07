@@ -110,9 +110,21 @@ impl AppServer for NativeQueue {
                     .collect();
                 Ok(json!({}))
             }
-            "thread/queue/start" => Ok(json!({"turn":{
-                "id":"native-started-turn","status":"inProgress","items":[],"itemsView":"notLoaded","error":null,"startedAt":null,"completedAt":null,"durationMs":null,
-            }})),
+            "thread/queue/start" => {
+                // Fixtures also exercise the explicit start route with an
+                // active head. Consume only when modelling its idle success.
+                if *self.idle.lock().unwrap() {
+                    self.rows
+                        .lock()
+                        .unwrap()
+                        .retain(|row| row["id"] != params["queuedSubmissionId"]);
+                    *self.idle.lock().unwrap() = false;
+                    *self.current_turn.lock().unwrap() = Some("native-started-turn".into());
+                }
+                Ok(json!({"turn":{
+                    "id":"native-started-turn","status":"inProgress","items":[],"itemsView":"notLoaded","error":null,"startedAt":null,"completedAt":null,"durationMs":null,
+                }}))
+            }
             "turn/steer" if *self.steer_error.lock().unwrap() => Err(ApiError::BadGateway(
                 "native steer acknowledgement lost".into(),
             )),

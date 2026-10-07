@@ -28,7 +28,8 @@ pub struct QueuedInput {
     pub client_user_message_id: String,
     pub input: Vec<Value>,
     pub attachments: Vec<TimelineFileAttachment>,
-    /// Current native active-turn hint. The command captures and revalidates its target at request time.
+    /// Active-turn presentation hint. Send now remains available when idle;
+    /// the gateway captures and revalidates native routing at request time.
     pub can_steer: bool,
 }
 
@@ -268,28 +269,17 @@ pub async fn start_queued_input(
     Json(request): Json<QueuedInputStartRequest>,
 ) -> ApiResult<Json<RawAppServerResponse>> {
     let _guard = state.thread_input_locks.lock(&thread_id).await;
+    let probe = state.queue_steer_guards.begin_probe(&thread_id);
     let client = app_server_api::client(&state.app_server);
     client.check_direct_input_capability(&thread_id).await?;
     let id = request.queued_submission_id;
     ensure_not_transferring(&state, &thread_id, &id).await?;
-    crate::automations::observe_queue_handoff_pending(&state, &thread_id, &id).await?;
-    let result = client
-        .queue_start(thread_id.clone(), Some(id.clone()))
-        .await;
-    if let Ok(ack) = &result {
-        if let Some(turn) = ack.payload.pointer("/turn/id").and_then(Value::as_str) {
-            if let Err(error) =
-                crate::automations::observe_promoted_receipt(&state, &thread_id, &id, turn).await
-            {
-                tracing::warn!(%error, "failed to record acknowledged automation dispatch");
-            }
-        }
-    }
+    let result = queue_transfer::start_locked(&state, &thread_id, &id, &probe).await;
     broadcast_changed_best_effort(&state, &thread_id).await;
     Ok(Json(result?))
 }
 
-#[utoipa::path(post, path = "/v1/threads/{threadId}/queued-inputs/steer-first", responses((status = 200, body = PromotionOutcome), (status = 409, description = "Queue is empty or its first message cannot be steered")))]
+#[utoipa::path(post, path = "/v1/threads/{threadId}/queued-inputs/steer-first", responses((status = 200, body = PromotionOutcome), (status = 409, description = "Queue is empty or native lifecycle changed during send-now preflight")))]
 pub async fn steer_first_queued_input(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,

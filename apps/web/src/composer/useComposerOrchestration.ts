@@ -35,7 +35,7 @@ import {
   revokeObjectUrl,
 } from "./attachmentUtils";
 import type { ComposerDraftControls } from "./ComposerPanel";
-import { isTouchInputDevice } from "../shared/inputCapabilities";
+import { composerSubmissionIntent, submitComposerFromKeyDown } from "./submissionIntent";
 import { createClientRequestId } from "../shared/id";
 import type { PendingAttachment } from "./types";
 
@@ -136,8 +136,7 @@ export function useComposerOrchestration({
     skillMentions: TimelineSkillMention[] = [],
   ) {
     event.preventDefault();
-    const submitter = "submitter" in event.nativeEvent ? event.nativeEvent.submitter : null;
-    const queueRequested = submitter instanceof HTMLElement && submitter.dataset.submitIntent === "queue";
+    const intent = composerSubmissionIntent(event);
     const canSubmitComposer =
       currentCanCompose() &&
       !isComposerSubmitting &&
@@ -191,7 +190,7 @@ export function useComposerOrchestration({
       if (selectedThreadId) {
         draftControls.clearText();
         const payload = await buildTurnPayload(selectedThreadId, text, attachments, skillInputs, skillTextElements);
-        if (queueRequested) {
+        if (intent === "queue") {
           try {
             await createQueuedInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId);
           } finally {
@@ -211,7 +210,7 @@ export function useComposerOrchestration({
             threadId: selectedThreadId,
           });
         }
-        const result = await submitThreadInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId, true);
+        const result = await submitThreadInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId, intent !== "sendNow");
         if (result.disposition === "queued") {
           if (optimisticClientRequestId) onOptimisticUserMessageRemoved?.(optimisticClientRequestId);
           void refreshQueuedInputs(queryClient, selectedThreadId);
@@ -342,22 +341,7 @@ export function useComposerOrchestration({
   }
 
   function handleComposerKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
-      return;
-    }
-    const touchSubmitPolicy = usesLegacyTouchSubmitPolicy();
-    if (touchSubmitPolicy && !event.metaKey) {
-      return;
-    }
-
-    event.preventDefault();
-    const form = event.currentTarget.form;
-    if (event.metaKey && !touchSubmitPolicy && selectedThreadId) {
-      const queueSubmitter = form?.querySelector<HTMLButtonElement>('button[data-submit-intent="queue"]');
-      if (queueSubmitter && !queueSubmitter.disabled) form?.requestSubmit(queueSubmitter);
-      return;
-    }
-    form?.requestSubmit();
+    submitComposerFromKeyDown(event);
   }
 
   function currentActiveSelectedTurnId() {
@@ -549,12 +533,6 @@ export function useComposerOrchestration({
     pendingAttachments,
     removePendingAttachment,
   };
-}
-
-// Preserve the existing capability-based keyboard behavior independently of
-// compact layout and actual-touch fullscreen activation.
-function usesLegacyTouchSubmitPolicy(): boolean {
-  return isTouchInputDevice();
 }
 
 function isImageFile(file: File): boolean {

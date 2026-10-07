@@ -187,6 +187,7 @@ export function InlineComposerPanel({
         }
       >
         {selectedThreadPresent ? <button type="submit" hidden data-submit-intent="queue" disabled={!canSubmitComposer} /> : null}
+        <button type="submit" hidden data-submit-intent="sendNow" disabled={!canSubmitComposer} />
         {skillPopupOpen || slashPopupOpen ? (
           renderSkillSuggestions ? renderSkillSuggestions() : skillPopupOpen ? (
             <SkillMentionPopup

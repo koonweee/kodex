@@ -40,7 +40,7 @@ it("only offers reordering when there are multiple queued messages", async () =>
   await waitFor(() => expect(screen.queryByRole("button", { name: "Reorder queued message" })).not.toBeInTheDocument());
 });
 
-it("uses native order and eligibility, preserves unknown native input when editing, and submits one complete reorder", async () => {
+it("uses native order and active-turn hints, preserves unknown native input when editing, and submits one complete reorder", async () => {
   let rows = [{ ...row("b", true), input: [{ type: "text", text: "b", nativeKey: "keep" }, { type: "futureInput", opaque: [1, 2] }] }, row("a")];
   const writes: unknown[] = [];
   mockGateway({
@@ -52,7 +52,7 @@ it("uses native order and eligibility, preserves unknown native input when editi
   const groups = await screen.findAllByRole("group", { name: "Queued message" });
   expect(groups.map((group) => group.textContent?.slice(0, 1))).toEqual(["b", "a"]);
   expect(within(groups[0]).getByRole("button", { name: "Steer" })).toBeEnabled();
-  expect(within(groups[1]).queryByRole("button", { name: "Steer" })).not.toBeInTheDocument();
+  expect(within(groups[1]).getByRole("button", { name: "Send now" })).toBeEnabled();
   await userEvent.click(within(groups[0]).getByRole("button", { name: "Edit" }));
   fireEvent.change(screen.getByLabelText("Queued message text"), { target: { value: "Edited" } });
   await userEvent.click(screen.getByRole("button", { name: "Save queued message" }));
@@ -154,4 +154,40 @@ it("reveals uncertain delivery recovery and restores text only after an explicit
   await userEvent.click(screen.getByRole("button", { name: "Reconcile" }));
   await waitFor(() => expect(gateway.callsFor("POST", "/v1/queue-transfers/transfer/reconcile")).toHaveLength(1));
   expect(screen.getByRole("button", { name: "Dismiss" })).toBeEnabled();
+});
+
+
+it("sends a stopped queued message now and converges another client through queue invalidation", async () => {
+  let rows = [row("first"), row("selected"), row("last")];
+  const gateway = mockGateway({
+    "GET /v1/threads/chat/queued-inputs": () => ({ queuedInputs: rows, transfers: [], nextCursor: null }),
+    "POST /v1/threads/chat/queued-inputs/selected/steer": () => {
+      rows = rows.filter((item) => item.id !== "selected");
+      return { status: "delivered", id: "selected" };
+    },
+  });
+  mount();
+  const secondClient = mount();
+  await waitFor(() => expect(screen.getAllByRole("group", { name: "Queued message" })).toHaveLength(6));
+  const selected = screen.getAllByRole("group", { name: "Queued message" })[1];
+  await userEvent.click(within(selected).getByRole("button", { name: "Send now" }));
+  await waitFor(() => expect(gateway.callsFor("POST", "/v1/threads/chat/queued-inputs/selected/steer")).toHaveLength(1));
+  applyQueueEvent(secondClient, { id: "3", seq: 3, kind: "turn_queue.changed", threadId: "chat", payload: { threadId: "chat" }, receivedAt: "2026-10-08T00:00:00Z" });
+  await waitFor(() => expect(screen.getAllByRole("group", { name: "Queued message" })).toHaveLength(4));
+  expect(screen.getAllByRole("group", { name: "Queued message" }).map((group) => group.textContent)).toEqual(["first", "last", "first", "last"]);
+  expect(gateway.calls.filter((request) => request.method === "POST")).toHaveLength(1);
+});
+
+
+it.each<QueueTransfer["phase"]>(["deleting", "deleted", "steering", "accepted", "uncertain"])("blocks send now for a row with an unresolved %s transfer", async (phase) => {
+  const gateway = mockGateway({ "GET /v1/threads/chat/queued-inputs": {
+    queuedInputs: [row("b"), row("other")], transfers: [saved(phase)], nextCursor: null,
+  } });
+  mount();
+  const groups = await screen.findAllByRole("group", { name: "Queued message" });
+  const blocked = within(groups[0]).getByRole("button", { name: "Send now" });
+  expect(blocked).toBeDisabled();
+  await userEvent.click(blocked);
+  expect(within(groups[1]).getByRole("button", { name: "Send now" })).toBeEnabled();
+  expect(gateway.calls.filter((request) => request.method === "POST")).toHaveLength(0);
 });

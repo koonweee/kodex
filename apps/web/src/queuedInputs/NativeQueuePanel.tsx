@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 
 import {
   deleteQueuedInput, dismissQueueTransfer, reconcileQueueTransfer,
-  reorderQueuedInputs, steerQueuedInput, updateQueuedInput,
+  reorderQueuedInputs, updateQueuedInput,
   type QueuedInput, type QueueTransfer,
 } from "../api/client";
 import { appendResponseAnnotations, type DraftAnnotation } from "../composer/annotations";
@@ -71,7 +71,8 @@ export function NativeQueuePanel({ threadId, queue, onRestoreText, canRestoreTex
     </Alert> : null}
     {rows.length > 0 ? <QueuedMessageList rows={rows} busy={busy} partial={Boolean(query.data?.nextCursor)} isActive={isActive}
       onReorder={(ids) => void mutate(() => reorderQueuedInputs(threadId, ids))}
-      onSteer={(row) => void mutate(() => steerQueuedInput(threadId, row.id))}
+      onSendNow={(row) => queue.sendNow(row.id)}
+      transferringIds={(query.data?.transfers ?? []).map((transfer) => transfer.nativeQueueId)}
       onEdit={(row) => {
         setEditing(row);
         setEdits(new Map(editableQueueText(row.input).map(({ index, text }) => [index, queuedTextEdit(text)])));

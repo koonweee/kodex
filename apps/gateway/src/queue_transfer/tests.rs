@@ -26,6 +26,9 @@ mod preflight_tests;
 #[path = "projection_tests.rs"]
 mod projection_tests;
 
+#[path = "send_now_tests.rs"]
+mod send_now_tests;
+
 const THREAD: &str = "promotion-chat";
 const TURN: &str = "original-active-turn";
 const ROW: &str = "selected-native-row";
@@ -53,6 +56,7 @@ struct PromotionNative {
     delete_reply: Mutex<DeleteReply>,
     add_lost: Mutex<bool>,
     steer_error: Mutex<Option<String>>,
+    start_lost: Mutex<bool>,
     gates: Mutex<HashMap<String, Gate>>,
 }
 
@@ -66,6 +70,7 @@ impl PromotionNative {
             delete_reply: Mutex::new(DeleteReply::Deleted),
             add_lost: Mutex::new(false),
             steer_error: Mutex::new(None),
+            start_lost: Mutex::new(false),
             gates: Mutex::new(HashMap::new()),
         }
     }
@@ -190,6 +195,30 @@ impl AppServer for PromotionNative {
                 Some(message) => Err(ApiError::BadGateway(message)),
                 None => Ok(json!({"turnId":params["expectedTurnId"]})),
             },
+            "thread/queue/start" => {
+                if self.active_turn.lock().unwrap().is_some() {
+                    Err(ApiError::BadRequest("native turn already active".into()))
+                } else {
+                    let mut rows = self.rows.lock().unwrap();
+                    let Some(index) = rows
+                        .iter()
+                        .position(|row| row["id"] == params["queuedSubmissionId"])
+                    else {
+                        return Err(ApiError::BadRequest("native queued row missing".into()));
+                    };
+                    rows.remove(index);
+                    *self.active_turn.lock().unwrap() = Some("native-started-turn".into());
+                    if *self.start_lost.lock().unwrap() {
+                        Err(ApiError::BadGateway(
+                            "queue start acknowledgement lost".into(),
+                        ))
+                    } else {
+                        Ok(json!({"turn":{
+                            "id":"native-started-turn","status":"inProgress","items":[],"itemsView":"notLoaded","error":null,"startedAt":null,"completedAt":null,"durationMs":null,
+                        }}))
+                    }
+                }
+            }
             _ => Err(ApiError::BadGateway(format!(
                 "unexpected promotion RPC: {method}"
             ))),
@@ -367,8 +396,8 @@ async fn older_queued_row_steers_after_original_turn_ends_and_runtime_recovers()
 }
 
 #[tokio::test]
-async fn idle_or_prohibited_native_context_cannot_delete_a_queued_row() {
-    for (active, capability) in [(None, Some(true)), (Some(TURN), Some(false))] {
+async fn prohibited_native_context_cannot_delete_a_queued_row() {
+    for (active, capability) in [(None, Some(false)), (Some(TURN), Some(false))] {
         let (state, native) = fixture().await;
         *native.active_turn.lock().unwrap() = active.map(str::to_string);
         *native.capability.lock().unwrap() = capability;

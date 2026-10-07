@@ -164,3 +164,70 @@ async fn native_http_steer_first_returns_unresolved_front_without_skipping_or_wr
         "thread/queue/add" | "thread/queue/list" | "thread/read" | "thread/turns/list"
     )));
 }
+
+#[tokio::test]
+async fn native_http_send_now_after_stop_starts_selected_or_first_queue_row_and_refills_two_clients(
+) {
+    for first in [false, true] {
+        let (state, native) = state().await;
+        let a = create(&state).await;
+        let b = create(&state).await;
+        let other = state.clone();
+        let cursor = state.store.latest_event_seq().await.unwrap();
+        let mut first_stream = stream(&state, cursor).await;
+        let mut other_stream = stream(&other, cursor).await;
+        *native.idle.lock().unwrap() = true;
+        ingest_inbound(InboundMessage::Notification {
+            method:"turn/completed".into(),
+            params:json!({"threadId":THREAD,"turn":{"id":TURN,"status":"interrupted","items":[]}}),
+        }, &state).await.unwrap();
+        marker(&mut first_stream, "turn_queue.changed").await;
+        marker(&mut other_stream, "turn_queue.changed").await;
+        let (_, paused) = request(&other, "GET", BASE, Value::Null).await;
+        assert_eq!(paused["queuedInputs"].as_array().unwrap().len(), 2);
+        assert!(paused["queuedInputs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["canSteer"] == false));
+        assert!(native
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|(method, _)| method != "thread/queue/start"));
+        let (selected, remaining) = if first { (&a, &b) } else { (&b, &a) };
+        let (status, body) = if first {
+            steer_first(&state).await
+        } else {
+            request(
+                &state,
+                "POST",
+                &format!("{BASE}/{}/steer", selected["id"].as_str().unwrap()),
+                Value::Null,
+            )
+            .await
+        };
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body, json!({"status":"delivered","id":selected["id"]}));
+        marker(&mut first_stream, "turn_queue.changed").await;
+        marker(&mut other_stream, "turn_queue.changed").await;
+        for client in [&state, &other] {
+            let (_, listed) = request(client, "GET", BASE, Value::Null).await;
+            assert_eq!(listed["queuedInputs"].as_array().unwrap().len(), 1);
+            assert_eq!(listed["queuedInputs"][0]["id"], remaining["id"]);
+            assert_eq!(listed["transfers"], json!([]));
+        }
+        let calls = native.requests.lock().unwrap();
+        let starts = calls
+            .iter()
+            .filter(|(method, _)| method == "thread/queue/start")
+            .collect::<Vec<_>>();
+        assert_eq!(starts.len(), 1);
+        assert_eq!(starts[0].1["queuedSubmissionId"], selected["id"]);
+        assert!(calls.iter().all(|(method, _)| !matches!(
+            method.as_str(),
+            "turn/steer" | "turn/start" | "thread/queue/delete" | "thread/resume"
+        )));
+    }
+}

@@ -129,7 +129,7 @@ describe("annotation submissions", () => {
   it.each([
     { activeTurnId: null, endpoint: "input" },
     { activeTurnId: "active-turn", endpoint: "queued-inputs" },
-    { activeTurnId: "active-turn", endpoint: "queued-inputs", shortcut: true },
+    { activeTurnId: "active-turn", endpoint: "input", shortcut: true },
   ])("sends annotation-only input, removes entries, and restores after rejected $endpoint", async ({ activeTurnId, endpoint, shortcut }) => {
     let attempts = 0;
     const gateway = mockGateway({
@@ -160,7 +160,7 @@ describe("annotation submissions", () => {
     await waitFor(() => expect(gateway.callsFor("POST", `/v1/threads/thread-1/${endpoint}`)).toHaveLength(2));
     const bodies = await Promise.all(gateway.callsFor("POST", `/v1/threads/thread-1/${endpoint}`).map(requestJson));
     const text = '<response_annotations>\n<annotation1>\nAssistant text: "Both trim checks passed."\nUser annotation: "Which checks ran?"\n</annotation1>\n</response_annotations>';
-    for (const body of bodies) expect(body).toEqual({ ...(endpoint === "input" ? { queueIfPending: true } : {}), input: [{ type: "text", text }], clientUserMessageId: expect.any(String) });
+    for (const body of bodies) expect(body).toEqual({ ...(endpoint === "input" && !shortcut ? { queueIfPending: true } : {}), input: [{ type: "text", text }], clientUserMessageId: expect.any(String) });
     expect(bodies[0].clientUserMessageId).not.toBe(bodies[1].clientUserMessageId);
     await waitFor(() => expect(screen.queryByRole("textbox", { name: "Annotation 1 comment" })).not.toBeInTheDocument());
     if (endpoint === "input") expect(onOptimisticUserMessageStarted).toHaveBeenCalledWith(expect.objectContaining({ text }));

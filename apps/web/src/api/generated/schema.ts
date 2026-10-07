@@ -2876,7 +2876,10 @@ export interface components {
         QueueTransferPhase: "deleting" | "deleted" | "steering" | "accepted" | "uncertain";
         QueuedInput: {
             attachments: components["schemas"]["TimelineFileAttachment"][];
-            /** @description Current native active-turn hint. The command captures and revalidates its target at request time. */
+            /**
+             * @description Active-turn presentation hint. Send now remains available when idle;
+             *     the gateway captures and revalidates native routing at request time.
+             */
             canSteer: boolean;
             clientUserMessageId: string;
             id: string;
@@ -6648,7 +6651,7 @@ export interface operations {
                     "application/json": components["schemas"]["PromotionOutcome"];
                 };
             };
-            /** @description Queue is empty or its first message cannot be steered */
+            /** @description Queue is empty or native lifecycle changed during send-now preflight */
             409: {
                 headers: {
                     [name: string]: unknown;

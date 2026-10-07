@@ -266,8 +266,21 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
       }
       if (request.method() === "POST" && (queuePath[2] === "/steer" || steerFirst)) {
         const expectedTurnId = detail.timeline.activeTurnId;
-        if (!row || !expectedTurnId || !canSteerQueuedInput(row.id)) return respond(route, { code: "conflict", message: "The queued message cannot be steered", retryable: false }, 409);
+        if (!row || transfers.some((transfer) => transfer.nativeQueueId === row.id)) return respond(route, { code: "conflict", message: "The queued message cannot be sent now", retryable: false }, 409);
         queuedInputs.splice(index, 1);
+        if (!expectedTurnId) {
+          const turnId = `queue-start-${row.id}`;
+          const revision = Math.max(seq, detail.timeline.viewRevision ?? 0) + 1;
+          detail.thread.status = "active";
+          detail.liveState = "streaming";
+          detail.timeline = { ...detail.timeline, activeTurnId: turnId, liveState: "streaming", viewRevision: revision,
+            turns: [...detail.timeline.turns, { id: turnId, status: "inProgress" }] };
+          const patch: ThreadViewPatch = { ...detail.timeline, scope: "full_snapshot", threadId: detail.thread.id,
+            affectedTurnIds: detail.timeline.turns.map((turn) => turn.id) };
+          emit("thread_view.patch", patch, undefined, revision);
+          emit("turn_queue.changed", { threadId: detail.thread.id });
+          return respond(route, { status: "delivered", id: row.id });
+        }
         const transfer: QueueTransfer = { id: `transfer-${++nextTransferId}`, threadId: detail.thread.id, nativeQueueId: row.id, clientUserMessageId: row.clientUserMessageId, expectedTurnId, input: row.input, phase: "accepted", error: null, createdAt: "2026-10-05T00:00:00Z", updatedAt: "2026-10-05T00:00:00Z" };
         transfers.push(transfer);
         emit("turn_queue.changed", { threadId: detail.thread.id });
