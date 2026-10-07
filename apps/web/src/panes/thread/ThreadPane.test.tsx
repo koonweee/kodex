@@ -39,9 +39,13 @@ it("loads each client's editable pane from one attach snapshot and reattaches on
     liveState: "idle",
     timeline: { liveState: "idle", pendingApprovalRequests: [], pendingUserInputRequests: [], rows: [], turns: [], viewRevision: 1 },
   };
+  let holdReads = false;
+  const heldReads: Array<{ signal: AbortSignal; resolve: (value: ThreadViewResponse) => void }> = [];
   const gateway = mockGateway({
     "GET /v1/threads/shared": () => snapshot,
-    "POST /v1/threads/shared/attach": () => snapshot,
+    "POST /v1/threads/shared/attach": (request: Request) => holdReads
+      ? new Promise<ThreadViewResponse>(resolve => heldReads.push({ signal: request.signal, resolve }))
+      : snapshot,
     "GET /v1/threads/shared/app-surface": { session: null },
   });
   for (const client of ["first", "second"]) {
@@ -75,6 +79,25 @@ it("loads each client's editable pane from one attach snapshot and reattaches on
   await waitFor(() => expect(screen.getAllByRole("heading", { name: "Recovered native page" })).toHaveLength(2));
   expect(gateway.callsFor("POST", "/v1/threads/shared/attach")).toHaveLength(6);
   expect(gateway.callsFor("GET", "/v1/threads/shared")).toHaveLength(0);
+
+  holdReads = true;
+  const recoveredStreams = UnopenedEventSource.instances.slice(2);
+  const refresh = (seq: number): EventEnvelope => ({
+    id: `refresh-${seq}`, seq, kind: "thread_view.refresh_required", threadId: "shared",
+    payload: { threadId: "shared", reason: "snapshot_required" }, receivedAt: "2026-10-07T00:00:00Z",
+  });
+  act(() => recoveredStreams.forEach(stream => stream.emit(refresh(3))));
+  await waitFor(() => expect(heldReads).toHaveLength(2));
+  expect(screen.getByText("first: ready")).toBeVisible();
+  expect(screen.getByText("second: ready")).toBeVisible();
+  act(() => recoveredStreams.forEach(stream => stream.emit(refresh(4))));
+  await waitFor(() => expect(heldReads).toHaveLength(4));
+  expect(heldReads.slice(0, 2).every(read => read.signal.aborted)).toBe(true);
+  expect(screen.getByText("first: ready")).toBeVisible();
+  expect(screen.getByText("second: ready")).toBeVisible();
+  await act(async () => heldReads.forEach(read => read.resolve(snapshot)));
+  expect(screen.getByText("first: ready")).toBeVisible();
+  expect(screen.getByText("second: ready")).toBeVisible();
 });
 
 it("loads the canonical initial snapshot after StrictMode cleanup without waiting for the event stream", async () => {

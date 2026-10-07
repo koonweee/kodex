@@ -170,7 +170,7 @@ function ExistingThreadPane({
     const controller = new AbortController();
     snapshotControllerRef.current = controller;
     setEntry((current) =>
-      current.threadId === threadId && current.phase === "streamingLive"
+      current.threadId === threadId && (current.phase === "streamingLive" || current.phase === "refreshingSnapshot")
         ? { phase: "refreshingSnapshot", threadId }
         : { phase: "loadingSnapshot", threadId },
     );
