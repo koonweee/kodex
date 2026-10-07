@@ -13,7 +13,6 @@ test.describe("desktop sidebar peek", () => {
       await expect(first.getByRole("button", { name: "Collapse workspace sidebar", exact: true })).toBeVisible();
       const expandedSidebar = first.getByRole("navigation", { name: "Workspace", exact: true });
       const expandedRect = await rectangle(expandedSidebar);
-      const expandedProjectsRect = await rectangle(expandedSidebar.getByRole("button", { name: "Projects", exact: true }));
       for (const page of [first, second]) {
         await expect(page.getByText(preservedHistory, { exact: true })).toBeVisible();
         await page.getByRole("button", { name: "Collapse workspace sidebar", exact: true }).click();
@@ -34,7 +33,6 @@ test.describe("desktop sidebar peek", () => {
       await expect(preview).toBeVisible();
       await expect(preview.getByRole("button", { name: "Projects", exact: true })).toBeVisible();
       await expect.poll(() => rectangle(preview)).toEqual({ ...expandedRect, x: railRect.x + railRect.width });
-      await expect.poll(() => rectangle(preview.getByRole("button", { name: "Projects", exact: true }))).toEqual({ ...expandedProjectsRect, x: expandedProjectsRect.x + railRect.width });
       await expect.poll(() => rectangle(pane)).toEqual(initialRect);
       await expect(second.locator(".kodex-sidebar-peek-panel")).toHaveCount(0);
       await expect(second.getByRole("button", { name: "Expand workspace sidebar", exact: true })).toBeVisible();

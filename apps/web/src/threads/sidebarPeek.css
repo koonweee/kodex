@@ -11,7 +11,8 @@
   inset-block: 0;
   left: 100%;
   width: 292px;
-  padding: var(--mantine-spacing-xs);
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-xs) var(--mantine-spacing-xs) 0;
+  border-radius: 0 var(--kodex-radius-shell) var(--kodex-radius-shell) 0;
   background: var(--kodex-bg-sidebar);
   color: var(--kodex-text-primary);
 }
