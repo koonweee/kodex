@@ -125,6 +125,8 @@ Terminals belong to the gateway, independently of app-server. Closing a pane det
 
 For prerequisites, tests, schema generation, and production-style static serving, see [Development](docs/development.md). For network binding, configuration and notifications, see [Deployment](docs/deployment.md).
 
+The real push-provider browser proof is manual-only; run it from your own terminal using the [development guide](docs/development.md). Routine browser validation uses bundled Chromium to avoid installed-Chrome App Management alerts attributed to the gateway on macOS.
+
 ## Repository map
 
 | Path | Purpose |

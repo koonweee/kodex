@@ -7,7 +7,9 @@ import { join } from "node:path";
 import type { components } from "../src/api/generated/schema";
 import { nativeTerminalEnabled, nativeTerminalFixture } from "./native-terminal.fixture";
 
-// This opt-in workflow handles a real provider endpoint and subscription keys.
+// Manual-only: run test:push-provider:manual from a user-opened terminal.
+// Installed Chrome startup can trigger macOS App Management under a gateway parent.
+// This workflow handles a real provider endpoint and subscription keys.
 // Keep those out of traces, screenshots, videos, assertion diffs, and evidence.
 test.use({ trace: "off", screenshot: "off", video: "off" });
 test.skip(!nativeTerminalEnabled || !process.env.KODEX_TEST_CHROME_BINARY,
