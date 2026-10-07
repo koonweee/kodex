@@ -29,7 +29,12 @@ export function AsyncQuestionCard({ item, threadId, onImageOpen, onMarkdownOpen 
           </Group>
           <form onSubmit={(event) => { event.preventDefault(); void replies.send(key, state?.draft ?? "", true); }}>
             <Textarea mt="sm" aria-label={`Reply to question ${index + 1}`} placeholder="Write your reply…" autosize minRows={2}
-              value={state?.draft ?? ""} disabled={disabled} onChange={(event) => replies.setDraft(key, event.currentTarget.value)} />
+              value={state?.draft ?? ""} disabled={disabled}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+                event.preventDefault();
+                if (!disabled) event.currentTarget.form?.requestSubmit();
+              }} onChange={(event) => replies.setDraft(key, event.currentTarget.value)} />
             <Group justify="flex-end" mt="xs"><Button type="submit" size="xs" loading={state?.pending}
               disabled={disabled || !state?.draft.trim()}>Send reply</Button></Group>
           </form>

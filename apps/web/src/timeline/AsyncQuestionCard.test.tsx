@@ -1,3 +1,4 @@
+import userEvent from "@testing-library/user-event";
 import { MantineProvider } from "@mantine/core";
 import { act, fireEvent, render, screen, waitFor, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -21,6 +22,24 @@ describe("async question card", () => {
     fireEvent.click(screen.getByRole("button", { name: "I’ll log in now" }));
     await waitFor(() => expect(submitThreadInput).toHaveBeenCalledWith("pal", [{ type: "text", text: "I’ll log in now" }], [], expect.any(String)));
   });
+  it("submits with Enter, keeps Shift+Enter as a newline and ignores IME confirmation", async () => {
+    vi.mocked(submitThreadInput).mockResolvedValue({ payload: {} });
+    const user = userEvent.setup();
+    render(view());
+    const reply = screen.getByRole("textbox");
+    fireEvent.change(reply, { target: { value: "First line" } });
+    expect(fireEvent.keyDown(reply, { key: "Enter", shiftKey: true })).toBe(true);
+    expect(fireEvent.keyDown(reply, { key: "Enter", isComposing: true })).toBe(true);
+    expect(submitThreadInput).not.toHaveBeenCalled();
+    await user.click(reply);
+    await user.keyboard("{Shift>}{Enter}{/Shift}Second line");
+    expect(reply).toHaveValue("First line\nSecond line");
+    expect(fireEvent.keyDown(reply, { key: "Enter" })).toBe(false);
+    await waitFor(() => expect(submitThreadInput).toHaveBeenCalledWith("pal", [{ type: "text", text: "First line\nSecond line" }], [], expect.any(String)));
+    await waitFor(() => expect(reply).toHaveValue(""));
+    fireEvent.keyDown(reply, { key: "Enter" });
+    expect(submitThreadInput).toHaveBeenCalledTimes(1);
+  });
   it("retains drafts across virtual row unmounts and errors, prevents concurrent sends and clears after success", async () => {
     let reject!: (error: Error) => void;
     vi.mocked(submitThreadInput).mockReturnValue(new Promise((_, fail) => { reject = fail; }));
@@ -29,7 +48,8 @@ describe("async question card", () => {
     rendered.rerender(view(true, false));
     rendered.rerender(view());
     expect(screen.getByRole("textbox")).toHaveValue("logged in");
-    fireEvent.click(screen.getByRole("button", { name: "Send reply" }));
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
     fireEvent.click(screen.getByRole("button", { name: "I’ll log in now" }));
     expect(submitThreadInput).toHaveBeenCalledTimes(1);
     await act(async () => reject(new Error("Connection lost")));
