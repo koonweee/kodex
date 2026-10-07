@@ -55,6 +55,18 @@ describe("composer goals", () => {
     expect(clearThreadGoal).toHaveBeenCalledWith("thread-1");
   });
 
+  it("deletes a completed goal directly from the bar and refills native state", async () => {
+    vi.mocked(getThreadGoal).mockResolvedValue({ goal: { ...goal, status: "complete" } });
+    const onSubmitTurn = vi.fn();
+    composer({ onSubmitTurn });
+    const remove = await screen.findByRole("button", { name: "Delete goal" });
+    vi.mocked(getThreadGoal).mockResolvedValue({ goal: null });
+    await userEvent.click(remove);
+    await waitFor(() => expect(clearThreadGoal).toHaveBeenCalledWith("thread-1"));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Chat goal" })).not.toBeInTheDocument());
+    expect(onSubmitTurn).not.toHaveBeenCalled();
+  });
+
   it.each([false, true])("keeps a paused goal accessible through the narrow icon (touch=%s)", async (touch) => {
     window.matchMedia = (query) => ({ ...originalMatchMedia(query), matches: query === "(max-width: 900px)" || (touch && query.includes("coarse")) });
     vi.mocked(getThreadGoal).mockResolvedValue({ goal: { ...goal, status: "paused" } });
