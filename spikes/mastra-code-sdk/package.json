@@ -1,0 +1,26 @@
+{
+  "name": "@kodex/mastra-code-sdk-spike",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "test": "node --import tsx --test --test-concurrency=1 test/*.test.ts",
+    "check": "tsc --noEmit",
+    "login": "node --import tsx src/login.ts",
+    "live": "node --import tsx src/live.ts"
+  },
+  "dependencies": {
+    "@mastra/code-sdk": "1.10.1",
+    "@mastra/core": "1.74.0",
+    "@mastra/libsql": "1.25.0",
+    "@mastra/memory": "1.35.0",
+    "@orpc/client": "1.15.4",
+    "@orpc/server": "1.15.4",
+    "zod": "4.6.4"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "tsx": "4.23.1",
+    "typescript": "5.9.3"
+  }
+}

@@ -146,6 +146,8 @@ For compatible UI changes, `./tools/kodex-service update-frontend --repo "$PWD"`
 
 ## Project status
 
+The isolated [Mastra Code SDK compatibility spike](plans/mastra-code-sdk-spike.md) lives in [`spikes/mastra-code-sdk`](spikes/mastra-code-sdk). It evaluates a future TypeScript/oRPC runtime on its own branch and does not change the running gateway.
+
 The [native app-server redesign](plans/native-app-server-redesign.md) is validated for the intended personal-account deployment, including fresh sign-in and cold authenticated restart. Organization-managed storage confinement is unsupported. Target-device PWA checks were explicitly skipped and remain unverified. The subsequent [macOS login-service deployment](plans/macos-login-service.md) is installed and validated separately.
 
 Kodex is an actively developed personal project. The Rust gateway and React client are functional, but the security and deployment model remains deliberately local/private-network only. The repository no longer contains a native iOS client; mobile access is through the responsive PWA.

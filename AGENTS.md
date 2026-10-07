@@ -158,3 +158,9 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 - ChatGPT/Codex auth is handled through app-server account APIs.
 
 - Browser API compatibility: bump `ApiVersion` in `apps/gateway/src/api_compatibility.rs` on incompatible API changes, regenerate OpenAPI types, and update the frontend epoch to satisfy the generated type. Versioned stale writes are rejected by middleware; unversioned CLI/Control callers remain supported.
+
+## Mastra compatibility spike
+
+- `spikes/mastra-code-sdk` is an isolated TypeScript experiment governed by [its plan](plans/mastra-code-sdk-spike.md). Explicit Mastra product decisions in that plan apply to the experiment; existing Rust/OpenAPI/app-server rules continue to govern production code.
+- Run `npm ci`, `npm test`, and `npm run check` in the spike package. Use real SDK lifecycle/persistence with deterministic model fixtures; keep live OAuth checks opt-in and reports credential-free.
+- Use a dedicated fresh Mastra profile and disposable projects. Do not reuse Codex/Pi credentials or change the launchd service. Pin and lock the evaluated SDK versions; do not introduce production adapters, migration readers, or a duplicate durable input queue.
