@@ -44,6 +44,10 @@ function markdownComponents(
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void,
 ): Components {
   return {
+    img: ({ alt, src, title }) => {
+      const preview = localImagePreviewHref(threadId, src);
+      return <img alt={alt} className="kodex-markdown-image" src={preview?.href ?? src} title={title} />;
+    },
     a: ({ children, href, title }) => {
       const imagePreview = localImagePreviewHref(threadId, href);
       const filePreview = localFilePreviewHref(threadId, href);
@@ -247,10 +251,13 @@ function localFilePreviewActionTarget(href: string): {
 
 function localImagePreviewTarget(href: string): { path: string } | null {
   const { path } = localFilePreviewTarget(href);
-  if (!isLocalImagePath(path)) {
-    return null;
+  let decodedPath = path;
+  try {
+    decodedPath = decodeURIComponent(path);
+  } catch {
+    // Files can contain a literal percent character rather than a URL escape.
   }
-  return { path };
+  return isLocalImagePath(decodedPath) ? { path: decodedPath } : null;
 }
 
 function localFilePreviewTarget(href: string): { fragment: string; path: string } {
