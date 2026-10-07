@@ -1,6 +1,6 @@
 # Mastra dedicated configuration isolation audit
 
-Updated: 2026-10-07. Status: Source audit complete; supported skills isolation implemented and tested. Complete isolation and enabling MCP/plugins remain pending. Pinned Code SDK `1.10.1`, core `1.74.0`. The follow-up uses local fixtures only; no live model requests or user credentials are needed.
+Updated: 2026-10-07. Status: Baseline-scoped configuration ownership checks complete. Supported skills isolation, explicit chat identity and native MCP file-edit/reload behavior verified. Product MCP wiring and plugin/hook execution remain pending. Pinned Code SDK `1.10.1`, core `1.74.0`. The follow-up uses local fixtures only; no live model requests or user credentials are needed.
 
 The public `homeDir` option is useful but is not a complete discovery boundary in this pin. The dedicated app-data profile and explicit storage already keep native auth/history separate. Skills now use an additional supported state setting; MCP still has a real-home discovery gap. This change follows the completed affinity benchmark in a separate commit, keeping that benchmark attributable to affinity.
 
@@ -43,11 +43,38 @@ Prefer narrow upstream changes: thread `homeDir` through MCP/resource discovery 
 1. **Implemented:** supported state `homeDir` with a native discovery regression test. Two project controllers coexist; native skill listing and content reads include dedicated-profile/project fixtures and exclude outside-home/other-project fixtures across all three supported skill directories. Synthetic HOME is confined to the disposable test subprocess; production HOME remains unchanged.
 2. Keep explicit storage/settings/OM scope and existing environment-file/global-instruction disabling. Verify auth/settings/history still resolve within the dedicated instance.
 3. Test native plugin/hook discovery and two-chat concurrency before enabling those features. Their path configuration does not require a custom discovery system.
-4. Resolve the native MCP home-directory gap before enabling MCP. Prefer an upstream supported option or an explicitly accepted dedicated namespace policy; do not swap `HOME` or build a replacement loader to conceal the gap.
-5. Fix the built-in instruction-path deduplication options upstream; the existing global prompt skip is not a no-read guarantee.
-6. Do not claim complete configuration isolation while unconditional resource-ID discovery remains. Explicit storage proves old databases are not opened, not that all legacy configuration files are unread.
+4. Validate MCP discovery/edit/reload under the accepted namespaced configuration policy before enabling it in the product. A native home override is optional if ownership is predictable; do not swap `HOME` or build a replacement loader.
+5. Treat upstream instruction-path deduplication cleanup as optional: the existing global prompt skip is not a no-read guarantee, and zero ambient reads is not a port requirement.
+6. Verify resource overrides do not alter explicit Kodex chat identities/history. Keep the native default-metadata behavior documented; do not demand complete no-read isolation.
 
 Validation: the new discovery test failed before the fix with all three outside-home skills visible and dedicated global skills missing. After the fix, all 38 spike tests and TypeScript checks pass; independent source/implementation review found no material issues.
+
+## Behavioral checks against the app-server baseline
+
+### Explicit chat identity under native resource overrides
+
+`test/resource-identity.test.ts` uses actual project runtimes and local model fixtures. All three cases pass: namespaced global `database.json`, project `database.json`, and `MASTRA_RESOURCE_ID` (with lower-priority conflicting values). A default native session proves each override really took effect. Two chats share project A's database, with another chat in project B; all use explicit distinct resource/thread IDs.
+
+Native session identities, persisted resource mappings, resource-filtered thread lists, completed history and the model's resumed conversation input stay separate before and after runtime disposal/reopen. No extra identity layer or SDK patch is needed for the accepted per-chat identity design.
+
+A shared override does make mounted default `sessionId` metadata equal across projects. Do not use that default as Kodex's project/chat routing key; keep explicit native resource/thread identities and project ownership. This is a witnessed default-metadata limitation, not a demonstrated transcript collision. Current app-server likewise owns native chat IDs rather than inferring them from an ambient project default. Long-context observation is outside this short-turn fixture; native thread OM scope is already explicitly selected.
+
+### Native MCP configuration ownership
+
+`test/mcp-ownership.test.ts` mounts actual project runtimes with a local stdio MCP fixture. Native agent tool resolution uses an existing session's real request context, and an MCP tool is executed. The passing checks establish:
+
+- Global config comes from real-home `.kodex-mastra-spike/mcp.json`; stock `.mastracode` and the profile's synthetic home config are excluded. Project `.kodex-mastra-spike/mcp.json` wins over root `.mcp.json`, which wins over the namespaced global entry by server name. Removing winners falls back in that order.
+- External atomic file edits followed by native `mcpManager.reload()` add replacement tools and remove obsolete ones for an existing session. This is a file-edit test, not an SDK configuration-writer test.
+- Each project manager has its own loaded view. A global file edit becomes visible to each manager after its own reload; Kodex must fan out native reloads to affected loaded projects and publish its authoritative refill when product integration lands. No custom discovery or persisted config mirror is needed.
+- Native project enable/disable writes native app state, leaves the config file unchanged, does not disable another project's server, and survives manager recreation. Native inheritance restores the configured server. Source locates this state in dedicated app-data `mcp-state.json`.
+
+Against app-server: the current gateway exposes native versioned configuration writes and separately requests reload; a queued reload is not readiness. Code SDK's manager does not expose an equivalent general server-definition writer/version token. The accepted initial CLI/file setup can use its native loader/reload without rebuilding browser editing. If browser editing returns later, conflict handling and write ownership require their own scoped design. `getConfigPaths()` reports primary project/global/Claude paths but omits the additionally discovered root `.mcp.json`; UI provenance must not mistake it for a complete source list.
+
+This check uses local stdio only, not HTTP/OAuth servers, concurrent file writers, browser convergence or arbitrary plugin execution. An initial run completed awaited teardown but kept the subprocess alive; the fixture explicitly exits only after all assertions and teardown succeed. It therefore proves config behavior and manager recreation, not natural process exit or safe hot retirement. No production shutdown workaround was added.
+
+Full validation: 42/42 spike tests and TypeScript checks pass; independent review covers the native test evidence and cleanup limits. No production runtime behavior changed.
+
+**Disposition:** both requested configuration checks pass under the accepted app-server-relative standard. Keep explicit native chat identities; accept the documented namespaced MCP path and per-manager reload responsibility. Proceed to the first chat slice. MCP remains disabled by default until product wiring is added; plugins/hooks remain independently unverified. Zero ambient reads and upstream cleanup are not prerequisites.
 
 ## Upstream reports and available options (2026-10-07)
 

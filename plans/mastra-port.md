@@ -26,18 +26,16 @@ See the [decision handoff](mastra-code-sdk-handoff.md) for the complete accepted
 | Compatibility and ownership proof | Complete | Native concurrency/history/queue/goals/schedules/oRPC proofs and narrow shutdown characterization. |
 | Baseline and cache diagnosis | Complete | [Benchmark](mastra-code-sdk-benchmark.md) and [cache investigation](mastra-cache-investigation.md); cache affinity cause reproduced. |
 | 1. Supported ChatGPT affinity | Complete | Use public per-request/session hooks, no global fetch patch; fixture coverage for isolation/tool steps/retry/resume and native live validation; rerun original paired workload. |
-| 2. Configuration ownership against app-server baseline | Active — behavior checks | Verify separate credentials/state and predictable configuration ownership. Test material identity/discovery effects and MCP read/edit/reload consistency before enabling; plugin concurrency remains unverified. Zero real-home reads is not an exit condition. |
+| 2. Configuration ownership against app-server baseline | Complete — bounded checks | Verify separate credentials/state and predictable configuration ownership. Test material identity/discovery effects and MCP read/edit/reload consistency before enabling; plugin concurrency remains unverified. Zero real-home reads is not an exit condition. |
 | 3. First real chat slice | Pending | Kodex UI → TypeScript/oRPC → Code SDK create/open/stream/Send/Queue/Stop/history; two clients converge across reconnect/restart. Repo remains runnable alongside old production. |
 | 4. Retained product workflows | Pending | Milestone-sized work for goals, automations, projects/pins/read state, terminal, Control tools, file/app panes and PWA. Detail only when preceding milestones inform the design. |
 | 5. Production cutover | Not authorized | Separate deployment scope after retained workflow acceptance, operational checks and user authorization. |
 
 ## Current work
 
-Milestone 2: [config audit](mastra-config-isolation.md) verified. The supported `initialState.homeDir` fix now confines native skills discovery to the dedicated profile and the current project. Auth/settings/storage already use the dedicated profile. MCP/plugins/hooks remain disabled.
+Milestone 2 is complete under the [baseline-scoped configuration audit](mastra-config-isolation.md). Global/project/environment resource overrides change native default metadata but do not mix explicit chat identities, persisted history or resumed model input. Namespaced MCP reads, external file edits, native reload and persisted project disable state behave predictably. Global changes require reload on each affected project manager; eventual Kodex routing must coordinate that and browser refills.
 
-Complete no-real-home-read isolation still needs upstream support: MCP and project resource metadata ignore `homeDir`; the built-in instruction-path deduplication helper ignores global skip/config-directory options. The latter reads text only to derive paths, with no demonstrated global prompt injection. Avoid HOME mutation, loader forks and a process-global resource-ID workaround. Native plugin/hook paths support the dedicated home, but execution/concurrency remains unproven.
-
-Next: test whether resource overrides affect Kodex’s explicit chat identities and verify MCP read/edit/reload ownership before enabling MCP. The instruction bookkeeping read is not a blocker by itself; a deliberate namespaced global config path may be acceptable. Proceed with the first chat slice while optional integrations remain disabled. Upstream fixes are optional improvements unless baseline comparison demonstrates a material regression; do not gate the port on zero real-home reads.
+Next: the first real Kodex UI → oRPC → Code SDK chat slice. No SDK patch or move to Core is justified by these checks. Keep native explicit resource/thread identities and the accepted CLI/file MCP setup; the current app-server's versioned browser config writer is not implemented by the Mastra manager. Product MCP wiring remains pending and disabled by default; plugins/hooks remain unverified. Instruction bookkeeping and zero ambient reads are not blockers. The MCP fixture requires explicit subprocess exit after successful assertions/awaited teardown, so natural shutdown/hot retirement is not proven.
 
 Milestone 1 uses the public `inputProcessors → processInputStep → modelSettings.headers` seam. The stateless processor uses persisted native thread IDs and native request-scoped credential selection for ChatGPT OAuth. No provider replacement, auth fork, global fetch interception or body cache key is used in runtime integration.
 
@@ -68,6 +66,8 @@ Mastra follow-up sentinel requests reached 98.6% cached input; file tasks reache
 
 - 2026-10-07: user established app-server baseline comparison as a guiding principle for every Mastra issue. Reframed configuration milestone around owned state and predictable behavior, not complete discovery isolation.
 
+- 2026-10-07: both requested configuration ownership checks pass: three resource override cases and native MCP precedence/edit/reload/disable-state proof. Configuration milestone complete within the accepted baseline; first chat slice next.
+
 ## Validation ledger
 
-Latest completed chunk: 38/38 spike tests, TypeScript check and independent configuration/source/implementation review pass. The skill discovery test failed before the fix and passes after it. Previous affinity milestone: 12 paired benchmark cases / 28 live turns passed; no live benchmark was repeated for this configuration change. No production UI migration is implemented. Long-context behavior, arbitrary plugin concurrency and complete discovery isolation remain unproven. Update this ledger as each milestone progresses.
+Latest completed chunk: 42/42 spike tests, TypeScript check and independent test/source review pass. Resource and MCP characterization tests verify existing native behavior; no runtime patch was needed. Previous affinity milestone: 12 paired benchmark cases / 28 live turns passed. These checks use local model/MCP fixtures only; no new live calls or deployment. No production UI migration is implemented. Long-context behavior, plugin execution/concurrency, HTTP MCP/OAuth and natural process retirement remain unproven.

@@ -4,7 +4,7 @@
 
 An isolated experiment for a future Kodex TypeScript/oRPC gateway. It does not start or replace the production gateway. See the [plan](../../plans/mastra-code-sdk-spike.md) for accepted product decisions and validation status.
 
-Validated on 2026-10-07: 38 tests, typecheck and independent review pass. The added shutdown characterization test reproduces a native title-write failure and confirms the completed answer survives reopening. Real ChatGPT requests passed in two separate processes using saved credentials. Production migration gates remain below.
+Validated on 2026-10-07: 42 tests, typecheck and independent review pass. The added shutdown characterization test reproduces a native title-write failure and confirms the completed answer survives reopening. Real ChatGPT requests passed in two separate processes using saved credentials. Production migration gates remain below.
 
 Requires Node 24+:
 
@@ -78,6 +78,10 @@ Historical diagnostic reports predate supported runtime affinity; current runtim
 `Session.queueMessage()` inherited the current run's abort signal in this SDK version. `followUp()` already supplies an independent signal, so accepted follow-ups can run after Stop without a Kodex queue implementation. Pending follow-ups remain volatile across process restart.
 
 A native schedule's trigger outcome acknowledges delivery/wake; it does not prove an assistant answer completed. The tests check persisted assistant responses separately. The persistent calendar is `mastra.schedules`; the SDK's local `threadScheduler` is a different, process-local facility.
+
+## Configuration ownership checks
+
+Native fixtures verify explicit chat identities/history survive global, project and environment resource overrides, including reopening two chats in one database. MCP fixtures verify namespaced global/project precedence, external file edits, existing-session tool refresh after native reload, and durable project disable state. Each affected project manager needs its own reload. See the [configuration audit](../../plans/mastra-config-isolation.md) for scope and the app-server comparison. The MCP fixture explicitly exits after assertions/awaited teardown; it does not prove natural process exit. Default MCP/plugins/hooks remain disabled pending product wiring or execution validation.
 
 ## Limits before a production migration
 
