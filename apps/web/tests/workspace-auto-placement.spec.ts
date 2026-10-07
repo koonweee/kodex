@@ -3,9 +3,12 @@ import { nativeSettingsFixture } from "./native-settings.fixture";
 
 const groups = (page: Page) => page.locator(".dv-groupview:visible");
 const activeDraft = (page: Page) => page.locator('.kodex-thread-pane-empty[data-workspace-pane-active="true"]');
+const activeGroup = (page: Page) => groups(page).filter({ has: activeDraft(page) });
+const tabs = (page: Page) => page.getByTestId("dockview-dv-default-tab");
 
 async function newDraft(page: Page, text: string) {
   const sidebar = page.getByRole("navigation", { name: "Workspace", exact: true });
+  if (!await sidebar.isVisible()) await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
   await sidebar.getByRole("button", { name: "Chats", exact: true }).click();
   await sidebar.getByRole("button", { name: "New chat", exact: true }).click();
   await activeDraft(page).getByRole("textbox", { name: /message composer/i }).fill(text);
@@ -18,83 +21,87 @@ async function bounds(locator: Locator) {
   return box!;
 }
 
+async function groupBounds(page: Page) {
+  return groups(page).evaluateAll(elements => elements.map(el => {
+    const { x, y, width, height } = el.getBoundingClientRect();
+    return { x, y, width, height };
+  }));
+}
+
 test.describe("automatic pane placement", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("tiles readable columns vertically, then uses another roomy column and finally a tab", async ({ context }) => {
+  test("adds three columns, fills lower rows from right to left, then tabs bottom-right independently of focus", async ({ context }) => {
     const fixture = await nativeSettingsFixture(context);
     try {
       const page = await fixture.page("auto-tiles", "/");
-      const initialPane = page.locator(".kodex-thread-pane-empty").first();
-      await initialPane.getByRole("textbox", { name: /message composer/i }).fill("Keep initial draft");
+      await activeDraft(page).getByRole("textbox", { name: /message composer/i }).fill("Keep initial draft");
       await expect(groups(page)).toHaveCount(1);
       await newDraft(page, "Keep draft one");
       await expect(groups(page)).toHaveCount(2);
-      const firstDraft = activeDraft(page);
-      const initialExisting = await bounds(initialPane);
-      const initialDraft = await bounds(firstDraft);
-      expect(initialDraft.x).toBeGreaterThan(initialExisting.x + initialExisting.width - 2);
-      expect(initialDraft.y).toBeCloseTo(initialExisting.y, 0);
-      expect(initialExisting.width).toBeGreaterThanOrEqual(479);
-      expect(initialDraft.width).toBeGreaterThanOrEqual(479);
-
+      await tabs(page).first().click();
       await newDraft(page, "Keep draft two");
       await expect(groups(page)).toHaveCount(3);
-      const visibleComposers = page.getByRole("textbox", { name: /message composer/i }).filter({ visible: true });
-      const secondBox = await bounds(activeDraft(page));
-      expect(Math.abs(secondBox.x - initialDraft.x)).toBeLessThanOrEqual(8);
-      expect(Math.abs(secondBox.width - initialDraft.width)).toBeLessThanOrEqual(8);
-      expect(secondBox.y).toBeGreaterThan(initialDraft.y + 100);
-      await expect(visibleComposers).toHaveCount(3);
-
-      await newDraft(page, "Keep draft three");
-      await expect(groups(page)).toHaveCount(4);
-      const thirdBox = await bounds(activeDraft(page));
-      expect(Math.abs(thirdBox.x - initialExisting.x)).toBeLessThanOrEqual(8);
-      expect(thirdBox.y).toBeGreaterThan(initialExisting.y + 100);
-      for (const group of await groups(page).all()) {
-        const box = await bounds(group);
-        expect(box.width).toBeGreaterThanOrEqual(479);
-        expect(box.height).toBeGreaterThanOrEqual(319);
+      const columns = (await groupBounds(page)).sort((a, b) => a.x - b.x);
+      for (const column of columns) {
+        expect(column.width).toBeGreaterThanOrEqual(359);
+        expect(column.height).toBeGreaterThanOrEqual(639);
+        expect(column.y).toBeCloseTo(columns[0].y, 0);
       }
-      await page.screenshot({ path: test.info().outputPath("four-readable-tiles.png"), animations: "disabled" });
+      expect(columns[1].x).toBeGreaterThan(columns[0].x + columns[0].width - 2);
+      expect(columns[2].x).toBeGreaterThan(columns[1].x + columns[1].width - 2);
+      await page.screenshot({ path: test.info().outputPath("three-readable-columns.png"), animations: "disabled" });
 
-      const tiledBounds = await groups(page).evaluateAll(elements => elements.map(el => {
-        const { x, y, width, height } = el.getBoundingClientRect();
-        return { x, y, width, height };
-      }));
-      await newDraft(page, "Keep draft four");
-      await expect(groups(page)).toHaveCount(4);
-      await expect(page.getByTestId("dockview-dv-default-tab")).toHaveCount(5);
-      expect(await groups(page).evaluateAll(elements => elements.map(el => {
-        const { x, y, width, height } = el.getBoundingClientRect();
-        return { x, y, width, height };
-      }))).toEqual(tiledBounds);
-      await expect(activeDraft(page).getByRole("textbox", { name: /message composer/i })).toHaveValue("Keep draft four");
-      await page.screenshot({ path: test.info().outputPath("capacity-falls-back-to-tab.png"), animations: "disabled" });
+      for (const [index, columnIndex] of [2, 1, 0].entries()) {
+        await tabs(page).first().click();
+        await newDraft(page, `Keep lower draft ${index + 1}`);
+        await expect(groups(page)).toHaveCount(4 + index);
+        const added = await bounds(activeGroup(page));
+        const column = columns[columnIndex];
+        expect(Math.abs(added.x - column.x)).toBeLessThanOrEqual(8);
+        expect(Math.abs(added.width - column.width)).toBeLessThanOrEqual(8);
+        expect(added.y).toBeGreaterThan(column.y + 300);
+        for (const box of await groupBounds(page)) {
+          expect(box.width).toBeGreaterThanOrEqual(359);
+          expect(box.height).toBeGreaterThanOrEqual(319);
+        }
+      }
+      await expect(page.getByRole("textbox", { name: /message composer/i }).filter({ visible: true })).toHaveCount(6);
+      await page.screenshot({ path: test.info().outputPath("six-readable-tiles.png"), animations: "disabled" });
+      const tiledBounds = await groupBounds(page);
+      const bottomRight = tiledBounds.reduce((result, box) => box.x > result.x || (box.x === result.x && box.y > result.y) ? box : result);
+      await tabs(page).first().click();
+      await newDraft(page, "Keep bottom-right tab");
+      await expect(groups(page)).toHaveCount(6);
+      await expect(tabs(page)).toHaveCount(7);
+      expect(await groupBounds(page)).toEqual(tiledBounds);
+      const tabPane = await bounds(activeGroup(page));
+      expect(tabPane.x).toBeCloseTo(bottomRight.x, 0);
+      expect(tabPane.y).toBeCloseTo(bottomRight.y, 0);
+      const tabGroup = groups(page).filter({ has: activeDraft(page) });
+      await expect(tabGroup.getByTestId("dockview-dv-default-tab")).toHaveCount(2);
+      await expect(activeDraft(page).getByRole("textbox", { name: /message composer/i })).toHaveValue("Keep bottom-right tab");
+      await page.screenshot({ path: test.info().outputPath("capacity-falls-back-to-bottom-right-tab.png"), animations: "disabled" });
       await expect.poll(() => page.evaluate(() => {
         const saved = localStorage.getItem("kodex.instance.native-settings-fixture:kodex.workspace.panes.v1");
         return saved ? Object.keys(JSON.parse(saved).dockviewLayout?.panels ?? {}).length : 0;
-      })).toBe(5);
+      })).toBe(7);
       await page.reload();
-      await expect(groups(page)).toHaveCount(4);
-      await expect(page.getByTestId("dockview-dv-default-tab")).toHaveCount(5);
-      expect(await groups(page).evaluateAll(elements => elements.map(el => {
-        const { x, y, width, height } = el.getBoundingClientRect();
-        return { x, y, width, height };
-      }))).toEqual(tiledBounds);
+      await expect(groups(page)).toHaveCount(6);
+      await expect(tabs(page)).toHaveCount(7);
+      expect(await groupBounds(page)).toEqual(tiledBounds);
+      await expect(groups(page).filter({ has: activeDraft(page) }).getByTestId("dockview-dv-default-tab")).toHaveCount(2);
     } finally { await fixture.close(); }
     expect(fixture.errors).toEqual([]);
     expect(fixture.unexpected).toEqual([]);
   });
 
-  test("splits a manually widened column without redistributing its narrow neighbor", async ({ context }) => {
+  test("tabs in a manually narrowed right column without seeking room in the focused left column", async ({ context }) => {
     const fixture = await nativeSettingsFixture(context);
     try {
       const page = await fixture.page("uneven-columns", "/");
-      await page.setViewportSize({ width: 1600, height: 900 });
-      const initialPane = page.locator(".kodex-thread-pane-empty").first();
-      await initialPane.getByRole("textbox", { name: /message composer/i }).fill("Keep the wide draft");
+      await page.setViewportSize({ width: 1150, height: 900 });
+      await activeDraft(page).getByRole("textbox", { name: /message composer/i }).fill("Keep the wide draft");
       await newDraft(page, "Keep the narrow neighbor");
       await expect(groups(page)).toHaveCount(2);
       const left = await bounds(groups(page).nth(0));
@@ -102,40 +109,36 @@ test.describe("automatic pane placement", () => {
       const sashX = (left.x + left.width + right.x) / 2;
       await page.mouse.move(sashX, left.y + left.height / 2);
       await page.mouse.down();
-      await page.mouse.move(left.x + 1040, left.y + left.height / 2, { steps: 12 });
+      await page.mouse.move(left.x + 530, left.y + left.height / 2, { steps: 12 });
       await page.mouse.up();
-      await expect.poll(async () => (await bounds(groups(page).nth(0))).width).toBeGreaterThanOrEqual(1000);
-      const narrowNeighbor = await bounds(groups(page).nth(1));
-      expect(narrowNeighbor.width).toBeLessThan(480);
-      await page.getByTestId("dockview-dv-default-tab").first().click();
-      await newDraft(page, "Split the wide draft");
-      await expect(groups(page)).toHaveCount(3);
-      const sourceBox = await bounds(initialPane);
-      const addedBox = await bounds(activeDraft(page));
-      expect(sourceBox.width).toBeGreaterThanOrEqual(479);
-      expect(addedBox.width).toBeGreaterThanOrEqual(479);
-      expect(sourceBox.height).toBeGreaterThanOrEqual(319);
-      expect(addedBox.height).toBeGreaterThanOrEqual(319);
-      expect(addedBox.x >= sourceBox.x + sourceBox.width - 2 || addedBox.y >= sourceBox.y + sourceBox.height - 2).toBe(true);
-      const neighborAfter = await bounds(groups(page).last());
-      expect(Math.abs(neighborAfter.width - narrowNeighbor.width)).toBeLessThanOrEqual(8);
-      await page.screenshot({ path: test.info().outputPath("uneven-columns-preserve-neighbor.png"), animations: "disabled" });
+      await expect.poll(async () => (await bounds(groups(page).nth(0))).width).toBeGreaterThanOrEqual(500);
+      const before = await groupBounds(page);
+      expect(before[1].width).toBeLessThan(360);
+      await tabs(page).first().click();
+      await newDraft(page, "Use the narrow right tab");
+      await expect(groups(page)).toHaveCount(2);
+      await expect(tabs(page)).toHaveCount(3);
+      expect(await groupBounds(page)).toEqual(before);
+      const added = await bounds(activeGroup(page));
+      expect(added.x).toBeCloseTo(before[1].x, 0);
+      await expect(groups(page).nth(1).getByTestId("dockview-dv-default-tab")).toHaveCount(2);
+      await page.screenshot({ path: test.info().outputPath("uneven-columns-preserve-resize.png"), animations: "disabled" });
     } finally { await fixture.close(); }
     expect(fixture.errors).toEqual([]);
     expect(fixture.unexpected).toEqual([]);
   });
 
-  test("preserves manually uneven rows inside a nested column when placing another pane", async ({ context }) => {
+  test("preserves manually uneven nested rows while filling the next unsplit column", async ({ context }) => {
     const fixture = await nativeSettingsFixture(context);
     try {
       const page = await fixture.page("uneven-nested-rows", "/");
-      const initialPane = page.locator(".kodex-thread-pane-empty").first();
-      await initialPane.getByRole("textbox", { name: /message composer/i }).fill("Keep the unsplit column");
+      await activeDraft(page).getByRole("textbox", { name: /message composer/i }).fill("Keep the left column");
+      await newDraft(page, "Keep the middle column");
       await newDraft(page, "Keep the tall nested row");
       await newDraft(page, "Keep the short nested row");
-      await expect(groups(page)).toHaveCount(3);
-      const upperGroup = await groups(page).nth(1).elementHandle();
-      const lowerGroup = await groups(page).nth(2).elementHandle();
+      await expect(groups(page)).toHaveCount(4);
+      const upperGroup = await groups(page).nth(2).elementHandle();
+      const lowerGroup = await groups(page).nth(3).elementHandle();
       const upper = (await upperGroup!.boundingBox())!;
       const lower = (await lowerGroup!.boundingBox())!;
       const sashY = (upper.y + upper.height + lower.y) / 2;
@@ -146,14 +149,16 @@ test.describe("automatic pane placement", () => {
       await expect.poll(async () => (await upperGroup!.boundingBox())!.height).toBeGreaterThan(650);
       const resizedUpper = (await upperGroup!.boundingBox())!;
       const resizedLower = (await lowerGroup!.boundingBox())!;
+      const middle = await bounds(groups(page).nth(1));
       expect(resizedLower.height).toBeLessThan(320);
-      await page.getByTestId("dockview-dv-default-tab").nth(1).click();
-      await newDraft(page, "Find another usable split");
-      await expect(groups(page)).toHaveCount(4);
-      const added = await bounds(activeDraft(page));
-      expect(added.width).toBeGreaterThanOrEqual(479);
+      await tabs(page).first().click();
+      await newDraft(page, "Fill the middle lower row");
+      await expect(groups(page)).toHaveCount(5);
+      const added = await bounds(activeGroup(page));
+      expect(added.width).toBeGreaterThanOrEqual(359);
       expect(added.height).toBeGreaterThanOrEqual(319);
-      expect(added.x).toBeLessThan(resizedUpper.x);
+      expect(added.x).toBeCloseTo(middle.x, 0);
+      expect(added.y).toBeGreaterThan(middle.y + 300);
       for (const [group, before] of [[upperGroup!, resizedUpper], [lowerGroup!, resizedLower]] as const) {
         const after = (await group.boundingBox())!;
         expect(after.y).toBe(before.y);
@@ -162,30 +167,50 @@ test.describe("automatic pane placement", () => {
         expect(Math.abs(after.width - before.width)).toBeLessThanOrEqual(8);
       }
       await page.screenshot({ path: test.info().outputPath("nested-rows-preserve-resize.png"), animations: "disabled" });
+      await newDraft(page, "Fill the left lower row");
+      await expect(groups(page)).toHaveCount(6);
+      const full = await groupBounds(page);
+      // Even the manually enlarged upper row cannot receive a third row.
+      await (await upperGroup!.$('[data-testid="dockview-dv-default-tab"]'))!.click();
+      await newDraft(page, "Tab without subdividing the tall row");
+      await expect(groups(page)).toHaveCount(6);
+      await expect(tabs(page)).toHaveCount(7);
+      expect(await groupBounds(page)).toEqual(full);
+      await expect(activeGroup(page).getByTestId("dockview-dv-default-tab")).toHaveCount(2);
+      const final = await bounds(activeGroup(page));
+      expect(final.y).toBe(resizedLower.y);
+      expect(final.height).toBe(resizedLower.height);
+      expect(Math.abs(final.x - resizedLower.x)).toBeLessThanOrEqual(8);
     } finally { await fixture.close(); }
     expect(fixture.errors).toEqual([]);
     expect(fixture.unexpected).toEqual([]);
   });
 
-  test("stacks panes when the workspace is too narrow for two readable columns", async ({ context }) => {
+  test("stacks once when the workspace is too narrow for two columns", async ({ context }) => {
     const fixture = await nativeSettingsFixture(context);
     try {
       const page = await fixture.page("narrow-tiles", "/");
-      await page.setViewportSize({ width: 1050, height: 900 });
-      const initialPane = page.locator(".kodex-thread-pane-empty").first();
-      await initialPane.getByRole("textbox", { name: /message composer/i }).fill("Keep initial draft");
-      await expect(initialPane).toBeVisible();
+      await page.setViewportSize({ width: 950, height: 900 });
+      await activeDraft(page).getByRole("textbox", { name: /message composer/i }).fill("Keep initial draft");
+      const initial = await bounds(groups(page));
+      expect(initial.width).toBeLessThan(720);
       await newDraft(page, "Keep the stacked draft");
       await expect(groups(page)).toHaveCount(2);
-      const top = await bounds(initialPane);
-      const bottom = await bounds(activeDraft(page));
+      const top = await bounds(groups(page).nth(0));
+      const bottom = await bounds(groups(page).nth(1));
       expect(bottom.x).toBeCloseTo(top.x, 0);
       expect(bottom.width).toBeCloseTo(top.width, 0);
       expect(bottom.y).toBeGreaterThan(top.y + top.height - 2);
-      expect(bottom.width).toBeGreaterThanOrEqual(479);
-      await newDraft(page, "Use a tab at capacity");
+      expect(bottom.width).toBeGreaterThanOrEqual(359);
+      expect(top.height).toBeGreaterThanOrEqual(319);
+      expect(bottom.height).toBeGreaterThanOrEqual(319);
+      const before = await groupBounds(page);
+      await tabs(page).first().click();
+      await newDraft(page, "Use a bottom tab at capacity");
       await expect(groups(page)).toHaveCount(2);
-      await expect(page.getByTestId("dockview-dv-default-tab")).toHaveCount(3);
+      await expect(tabs(page)).toHaveCount(3);
+      expect(await groupBounds(page)).toEqual(before);
+      await expect(groups(page).nth(1).getByTestId("dockview-dv-default-tab")).toHaveCount(2);
       await page.screenshot({ path: test.info().outputPath("narrow-workspace-stacks.png"), animations: "disabled" });
     } finally { await fixture.close(); }
     expect(fixture.errors).toEqual([]);
@@ -196,14 +221,12 @@ test.describe("automatic pane placement", () => {
     const fixture = await nativeSettingsFixture(context);
     try {
       const page = await fixture.page("short-workspace", "/");
-      await page.setViewportSize({ width: 1050, height: 600 });
-      const initialPane = page.locator(".kodex-thread-pane-empty").first();
-      await initialPane.getByRole("textbox", { name: /message composer/i }).fill("Keep initial draft");
-      await expect(initialPane).toBeVisible();
+      await page.setViewportSize({ width: 950, height: 600 });
+      await activeDraft(page).getByRole("textbox", { name: /message composer/i }).fill("Keep initial draft");
       const before = await bounds(groups(page));
       await newDraft(page, "A full-height tab");
       await expect(groups(page)).toHaveCount(1);
-      await expect(page.getByTestId("dockview-dv-default-tab")).toHaveCount(2);
+      await expect(tabs(page)).toHaveCount(2);
       expect(await bounds(groups(page))).toEqual(before);
       await page.screenshot({ path: test.info().outputPath("short-workspace-tabs.png"), animations: "disabled" });
     } finally { await fixture.close(); }

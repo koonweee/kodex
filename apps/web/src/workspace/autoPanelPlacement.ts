@@ -2,68 +2,53 @@ import { Orientation, type DockviewApi, type IDockviewGroupPanel, type Serialize
 import type { WorkspacePanePlacementDirection, WorkspacePanePlacementHintsById } from "./panePlacement";
 import type { WorkspacePane } from "./paneTypes";
 
-// Soft placement targets, not resize constraints: manual layouts remain unrestricted.
-const MIN_PANE_WIDTH = 480;
+// Soft placement targets, not resize constraints. Capacity follows workspace size.
+const MIN_PANE_WIDTH = 360;
 const MIN_PANE_HEIGHT = 320;
 
-type Position = { referencePanel: string; direction: WorkspacePanePlacementDirection };
-
-export function autoPanelPlacement(api: DockviewApi, referencePanel: string, gap: number): Position {
-  const source = api.getPanel(referencePanel)?.group;
-  const grid = api.toJSON().grid;
-  const dockedGroups = api.groups.filter((group) => group.api.location.type === "grid" && group.api.isVisible);
-  const candidates = dockedGroups
-    .filter((group) => group !== source)
-    .sort((a, b) => b.api.width * b.api.height - a.api.width * a.api.height);
-  if (source) candidates.unshift(source);
-  for (const group of candidates) {
-    if (group.api.location?.type !== "grid" || !group.api.isVisible) continue;
-    const target = group === source ? referencePanel : group.activePanel?.id;
-    if (!target) continue;
-    const direction = splitDirection(group, gap, grid, dockedGroups);
-    if (direction) return { referencePanel: target, direction };
-  }
-  return { referencePanel, direction: "within" };
-}
-
+type Position = { direction: "right" } | { referencePanel: string; direction: WorkspacePanePlacementDirection };
 type GridNode = SerializedDockview["grid"]["root"];
 
-function splitDirection(group: IDockviewGroupPanel, gap: number, grid: SerializedDockview["grid"], groups: IDockviewGroupPanel[]): "right" | "below" | null {
-  const { width, height } = group.api;
-  if (width >= MIN_PANE_WIDTH * 2 + gap && height >= MIN_PANE_HEIGHT
-    && safeDistribution(grid, group.id, Orientation.HORIZONTAL, groups, gap)) return "right";
-  if (width >= MIN_PANE_WIDTH && height >= MIN_PANE_HEIGHT * 2 + gap
-    && safeDistribution(grid, group.id, Orientation.VERTICAL, groups, gap)) return "below";
-  return null;
+export function autoPanelPlacement(api: DockviewApi, gap: number): Position {
+  const { root, orientation } = api.toJSON().grid;
+  const groups = new Map(api.groups
+    .filter(group => group.api.location.type === "grid" && group.api.isVisible)
+    .map(group => [group.id, group]));
+  // The root's horizontal children are columns. A vertical root is one column.
+  const nodes = orientation === Orientation.HORIZONTAL && Array.isArray(root.data)
+    ? root.data : [root];
+  const columns = nodes.filter(node => node.visible !== false)
+    .map(node => ({ node, groups: leafGroups(node, groups) }))
+    .filter(column => column.groups.length > 0);
+  const last = columns.at(-1)?.groups.at(-1)?.activePanel;
+  if (!last) return { direction: "right" };
+
+  // Dockview redistributes root columns. Simple vertical stacks remain readable;
+  // custom horizontal nesting could shrink inner columns, so leave it alone.
+  const simpleColumns = columns.every(({ node }) => !Array.isArray(node.data)
+    || node.data.every(child => child.type === "leaf"));
+  const width = columns.reduce((sum, column) => sum + Math.min(...column.groups.map(group => group.api.width)), 0);
+  if (simpleColumns && (width - gap) / (columns.length + 1) >= MIN_PANE_WIDTH
+    && columns.every(column => column.groups.every(group => group.api.height >= MIN_PANE_HEIGHT))) {
+    return { direction: "right" };
+  }
+
+  // Fill the second row in a fixed right-to-left order. Never split an existing
+  // row again, or skip a too-small column to seek spare room somewhere else.
+  // Closing other rows can leave a branch wrapper around the sole group.
+  const next = [...columns].reverse().find(column => column.groups.length === 1);
+  const target = next?.groups[0];
+  if (target?.activePanel && target.api.width >= MIN_PANE_WIDTH && target.api.height >= MIN_PANE_HEIGHT * 2 + gap) {
+    return { referencePanel: target.activePanel.id, direction: "below" };
+  }
+  return { referencePanel: last.id, direction: "within" };
 }
 
-function safeDistribution(grid: SerializedDockview["grid"], groupId: string, axis: Orientation, groups: IDockviewGroupPanel[], gap: number): boolean {
-  const parent = findParent(grid?.root, grid?.orientation, groupId);
-  if (!parent) return false;
-  // A perpendicular split nests only the chosen group. On the same axis,
-  // Dockview equalizes all siblings; avoid shrinking nested sibling layouts.
-  if (parent.axis !== axis) return true;
-  const siblings = parent.children.filter((node) => node.visible !== false);
-  if (siblings.some((node) => node.type === "branch")) return false;
-  const sizes = siblings.map((node) => {
-    const sibling = groups.find((candidate) => !Array.isArray(node.data) && candidate.id === node.data.id);
-    return sibling ? (axis === Orientation.HORIZONTAL ? sibling.api.width : sibling.api.height) : 0;
-  });
-  const minimum = axis === Orientation.HORIZONTAL ? MIN_PANE_WIDTH : MIN_PANE_HEIGHT;
-  return (sizes.reduce((sum, size) => sum + size, 0) - gap) / (sizes.length + 1) >= minimum;
-}
-
-function findParent(node: GridNode | undefined, axis: Orientation, groupId: string): { axis: Orientation; children: GridNode[] } | null {
-  if (!node || !Array.isArray(node.data)) return null;
-  if (node.data.some((child) => child.type === "leaf" && !Array.isArray(child.data) && child.data.id === groupId)) {
-    return { axis, children: node.data };
-  }
-  const nextAxis = axis === Orientation.HORIZONTAL ? Orientation.VERTICAL : Orientation.HORIZONTAL;
-  for (const child of node.data) {
-    const parent = findParent(child, nextAxis, groupId);
-    if (parent) return parent;
-  }
-  return null;
+function leafGroups(node: GridNode, groups: Map<string, IDockviewGroupPanel>): IDockviewGroupPanel[] {
+  if (node.visible === false) return [];
+  if (Array.isArray(node.data)) return node.data.flatMap(child => leafGroups(child, groups));
+  const group = groups.get(node.data.id);
+  return group ? [group] : [];
 }
 
 export function panelPlacementOptions(
@@ -73,15 +58,15 @@ export function panelPlacementOptions(
   panePlacementHintsById: WorkspacePanePlacementHintsById,
   consumedPlacementHintIds: Set<string>,
   gap: number,
-): { floating: false; position: { direction: WorkspacePanePlacementDirection; referencePanel: string } } | Record<string, never> {
+): { floating: false; position: Position } | Record<string, never> {
   const hint = panePlacementHintsById[pane.id];
   if (hint) {
     consumedPlacementHintIds.add(pane.id);
-    if (api.getPanel(hint.referencePaneId)) {
+    if (hint.direction === "auto" || api.getPanel(hint.referencePaneId)) {
       return {
         floating: false,
         position: hint.direction === "auto"
-          ? autoPanelPlacement(api, hint.referencePaneId, gap)
+          ? autoPanelPlacement(api, gap)
           : { referencePanel: hint.referencePaneId, direction: hint.direction },
       };
     }
@@ -89,7 +74,7 @@ export function panelPlacementOptions(
   if (fallbackReferencePane && api.getPanel(fallbackReferencePane.id)) {
     return {
       floating: false,
-      position: autoPanelPlacement(api, fallbackReferencePane.id, gap),
+      position: autoPanelPlacement(api, gap),
     };
   }
   return {};

@@ -266,7 +266,7 @@ describe("WorkspaceDock sync", () => {
     expect(api.addPanel).toHaveBeenLastCalledWith(
       expect.objectContaining({
         id: "pane-b",
-        position: { referencePanel: "pane-a", direction: "right" },
+        position: { direction: "right" },
       }),
     );
     expect(api.activePanel?.id).toBe("pane-b");

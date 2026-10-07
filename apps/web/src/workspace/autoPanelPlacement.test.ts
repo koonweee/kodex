@@ -1,90 +1,126 @@
-import { createDockview, Orientation, type DockviewApi } from "dockview";
-import { describe, expect, it } from "vitest";
+import { createDockview, type DockviewApi } from "dockview";
+import { afterEach, describe, expect, it } from "vitest";
 import { autoPanelPlacement, panelPlacementOptions } from "./autoPanelPlacement";
 
-function dock(groups: { id: string; width: number; height: number; location?: string; visible?: boolean }[], orientation = Orientation.HORIZONTAL) {
-  const panels = groups.map(({ id, width, height, location = "grid", visible = true }) => ({
-    id,
-    group: { id, api: { width, height, location: { type: location }, isVisible: visible }, activePanel: { id } },
-  }));
-  return {
-    toJSON: () => ({ grid: { orientation, root: { type: "branch", data: panels.map(panel => ({ type: "leaf", data: { id: panel.id } })) } } }),
-    groups: panels.map((panel) => panel.group),
-    getPanel: (id: string) => panels.find((panel) => panel.id === id),
-  } as unknown as DockviewApi;
+const disposables: (() => void)[] = [];
+afterEach(() => disposables.splice(0).forEach(dispose => dispose()));
+
+function dock(width = 1200, height = 900) {
+  const element = document.createElement("div");
+  document.body.append(element);
+  const api = createDockview(element, {
+    createComponent: () => ({ element: document.createElement("div"), init() {} }),
+    theme: { name: "placement-test", className: "placement-test", gap: 6 },
+  });
+  disposables.push(() => { api.dispose(); element.remove(); });
+  api.layout(width, height);
+  api.addPanel({ id: "a", component: "test" });
+  return api;
 }
 
-const place = (api: DockviewApi, id = "a") => autoPanelPlacement(api, id, 6);
+const place = (api: DockviewApi) => autoPanelPlacement(api, 6);
+function add(api: DockviewApi, id: string, source = "a") {
+  api.getPanel(source)?.api.setActive();
+  const position = place(api);
+  api.addPanel({ id, component: "test", position });
+  return position;
+}
 
-describe("automatic pane placement", () => {
-  it("splits a wide pane horizontally", () => {
-    expect(place(dock([{ id: "a", width: 1200, height: 900 }]))).toEqual({ referencePanel: "a", direction: "right" });
+describe("predictable automatic pane placement", () => {
+  it("appends three mobile-width columns at the far right independently of focus", () => {
+    const api = dock();
+    expect(add(api, "b")).toEqual({ direction: "right" });
+    api.getPanel("a")!.api.setActive();
+    expect(add(api, "c")).toEqual({ direction: "right" });
+    const root = api.toJSON().grid.root;
+    expect(Array.isArray(root.data) && root.data.map(node => !Array.isArray(node.data) && node.data.views[0])).toEqual(["a", "b", "c"]);
+    for (const group of api.groups) {
+      expect(group.api.width).toBeGreaterThanOrEqual(360);
+      expect(group.api.width).toBeLessThan(480);
+    }
   });
-  it("splits a narrow tall column vertically", () => {
-    expect(place(dock([{ id: "a", width: 700, height: 900 }]))).toEqual({ referencePanel: "a", direction: "below" });
+  it("fills a second row from right to left and then tabs at bottom-right", () => {
+    const api = dock();
+    add(api, "b");
+    add(api, "c");
+    expect(add(api, "d", "a")).toEqual({ referencePanel: "c", direction: "below" });
+    expect(add(api, "e", "d")).toEqual({ referencePanel: "b", direction: "below" });
+    expect(add(api, "f", "b")).toEqual({ referencePanel: "a", direction: "below" });
+    expect(add(api, "g", "f")).toEqual({ referencePanel: "d", direction: "within" });
+    expect(api.groups).toHaveLength(6);
+    expect(api.getPanel("g")!.group).toBe(api.getPanel("d")!.group);
   });
-  it("fills another roomy column before making an existing tile smaller", () => {
-    expect(place(dock([{ id: "a", width: 700, height: 447 }, { id: "b", width: 700, height: 900 }]))).toEqual({ referencePanel: "b", direction: "below" });
+  it("never creates a third row even on a very tall display", () => {
+    const api = dock(600, 1800);
+    expect(add(api, "b")).toEqual({ referencePanel: "a", direction: "below" });
+    expect(add(api, "c")).toEqual({ referencePanel: "b", direction: "within" });
+    expect(api.groups).toHaveLength(2);
   });
-  it("uses a tab when neither direction leaves usable panes", () => {
-    expect(place(dock([{ id: "a", width: 700, height: 450 }]))).toEqual({ referencePanel: "a", direction: "within" });
-    expect(place(dock([{ id: "a", width: 400, height: 1200 }]))).toEqual({ referencePanel: "a", direction: "within" });
+  it("tabs at the far right when there is not enough height to stack", () => {
+    const api = dock(1200, 500);
+    add(api, "b"); add(api, "c");
+    expect(add(api, "d", "a")).toEqual({ referencePanel: "c", direction: "within" });
   });
-  it("includes the sash gap at width and height boundaries", () => {
-    expect(place(dock([{ id: "a", width: 965, height: 645 }])).direction).toBe("within");
-    expect(place(dock([{ id: "a", width: 966, height: 645 }])).direction).toBe("right");
-    expect(place(dock([{ id: "a", width: 965, height: 646 }])).direction).toBe("below");
+  it("calculates column capacity from current workspace width", () => {
+    const api = dock(800);
+    add(api, "b");
+    expect(place(api)).toEqual({ referencePanel: "b", direction: "below" });
+    api.layout(1200, 900);
+    expect(add(api, "c")).toEqual({ direction: "right" });
   });
-  it.each(["floating", "popout", "edge"])("does not choose %s groups as spare space", (location) => {
-    expect(place(dock([{ id: "a", width: 600, height: 400 }, { id: "b", width: 1400, height: 900, location }])).referencePanel).toBe("a");
+  it("does not seek a roomier pane or recursively split custom nested layouts", () => {
+    const api = dock(1950);
+    api.addPanel({ id: "b", component: "test", position: { referencePanel: "a", direction: "right" } });
+    api.addPanel({ id: "c", component: "test", position: { referencePanel: "b", direction: "below" } });
+    api.addPanel({ id: "d", component: "test", position: { referencePanel: "b", direction: "right" } });
+    expect(add(api, "e", "d")).toEqual({ referencePanel: "a", direction: "below" });
+    expect(add(api, "f", "a")).toEqual({ referencePanel: "c", direction: "within" });
   });
-  it("does not split hidden groups", () => {
-    expect(place(dock([{ id: "a", width: 600, height: 400 }, { id: "b", width: 1400, height: 900, visible: false }])).referencePanel).toBe("a");
+  it("keeps the same order after restoring a saved layout", () => {
+    const api = dock();
+    add(api, "b"); add(api, "c"); add(api, "d");
+    const saved = api.toJSON();
+    api.fromJSON(saved);
+    expect(add(api, "e", "a")).toEqual({ referencePanel: "b", direction: "below" });
   });
-  it.each(["right", "below", "within"] as const)("honors explicit %s placement even at capacity", (direction) => {
+  it("stacks again after closed panes leave a vertical root with one group", () => {
+    const api = dock(850);
+    add(api, "b"); add(api, "c");
+    api.removePanel(api.getPanel("a")!);
+    api.removePanel(api.getPanel("b")!);
+    api.layout(600, 900);
+    const saved = api.toJSON();
+    api.fromJSON(saved);
+    expect(add(api, "d", "c")).toEqual({ referencePanel: "c", direction: "below" });
+    expect(api.groups).toHaveLength(2);
+  });
+  it("includes divider space at the mobile-width boundary", () => {
+    expect(place(dock(725, 500))).toEqual({ referencePanel: "a", direction: "within" });
+    const api = dock(726, 500);
+    expect(add(api, "b")).toEqual({ direction: "right" });
+    for (const group of api.groups) expect(group.api.width).toBeGreaterThanOrEqual(360);
+  });
+  it("tabs at bottom-right instead of skipping a manually narrowed column", () => {
+    const api = dock(850);
+    add(api, "b");
+    api.getPanel("a")!.api.setSize({ width: 550 });
+    expect(api.getPanel("b")!.group.api.width).toBeLessThan(360);
+    expect(add(api, "c")).toEqual({ referencePanel: "b", direction: "within" });
+  });
+  it("ignores floating groups and obsolete automatic source hints", () => {
+    const api = dock(600, 400);
+    api.addPanel({ id: "floating", component: "test", floating: { width: 1500, height: 900 } });
+    expect(place(api)).toEqual({ referencePanel: "a", direction: "within" });
+    expect(panelPlacementOptions(api, { id: "new", kind: "terminal", title: null, target: {} }, null,
+      { new: { referencePaneId: "closed", direction: "auto" } }, new Set(), 6,
+    )).toEqual({ floating: false, position: { referencePanel: "a", direction: "within" } });
+  });
+  it.each(["right", "below", "within"] as const)("preserves explicit %s placement", (direction) => {
+    const api = dock(600, 400);
     const consumed = new Set<string>();
-    expect(panelPlacementOptions(dock([{ id: "a", width: 600, height: 400 }]),
-      { id: "new", kind: "terminal", title: null, target: {} }, null,
+    expect(panelPlacementOptions(api, { id: "new", kind: "terminal", title: null, target: {} }, null,
       { new: { referencePaneId: "a", direction } }, consumed, 6,
     )).toEqual({ floating: false, position: { referencePanel: "a", direction } });
     expect([...consumed]).toEqual(["new"]);
-  });
-  it("avoids horizontal redistribution when a manually narrowed neighbor would make the new columns too thin", () => {
-    expect(place(dock([{ id: "a", width: 997, height: 900 }, { id: "b", width: 203, height: 900 }]))).toEqual({ referencePanel: "a", direction: "below" });
-  });
-  it("avoids vertical redistribution beside a manually shortened row", () => {
-    expect(place(dock([{ id: "a", width: 700, height: 700 }, { id: "b", width: 700, height: 150 }], Orientation.VERTICAL))).toEqual({ referencePanel: "a", direction: "within" });
-  });
-  it("keeps nested columns readable when the outer source has room for a split", () => {
-    const element = document.createElement("div");
-    document.body.append(element);
-    const api = createDockview(element, {
-      createComponent: () => ({ element: document.createElement("div"), init() {} }),
-      theme: { name: "placement-test", className: "placement-test", gap: 6 },
-    });
-    try {
-      api.layout(1950, 900);
-      api.addPanel({ id: "a", component: "test" });
-      api.addPanel({ id: "b", component: "test", position: { referencePanel: "a", direction: "right" } });
-      api.addPanel({ id: "c", component: "test", position: { referencePanel: "b", direction: "below" } });
-      api.addPanel({ id: "d", component: "test", position: { referencePanel: "b", direction: "right" } });
-      for (const group of api.groups) expect(group.api.width).toBeGreaterThanOrEqual(480);
-
-      const position = place(api);
-      expect(position).toEqual({ referencePanel: "a", direction: "below" });
-      api.addPanel({ id: "new", component: "test", position });
-
-      expect(api.groups).toHaveLength(5);
-      for (const group of api.groups) {
-        expect(group.api.width).toBeGreaterThanOrEqual(480);
-        expect(group.api.height).toBeGreaterThanOrEqual(320);
-      }
-    } finally {
-      api.dispose();
-      element.remove();
-    }
-  });
-  it("uses a tab when layout dimensions are not yet available", () => {
-    expect(place(dock([{ id: "a", width: 0, height: 0 }])).direction).toBe("within");
   });
 });
