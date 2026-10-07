@@ -3,6 +3,17 @@
   word-break: break-word;
 }
 
+.kodex-markdown-table-scroll {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.kodex-markdown-table-scroll :is(th, td),
+.kodex-markdown-table-scroll :is(th, td) * {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
 .kodex-user-message-row {
   display: flex;
   justify-content: flex-end;
