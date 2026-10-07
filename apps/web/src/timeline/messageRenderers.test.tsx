@@ -543,7 +543,7 @@ describe("timeline message renderers", () => {
     expect(container.querySelector(".lucide-check")).toBeInTheDocument();
   });
 
-  it("renders subtle optimistic user message status", () => {
+  it("renders optimistic user messages without the redundant sending status", () => {
     render(
       <MantineProvider>
         <TimelineItemRenderer
@@ -558,7 +558,30 @@ describe("timeline message renderers", () => {
     );
 
     expect(screen.getByText("Ship it")).toBeInTheDocument();
-    expect(screen.getByText("Sending")).toBeInTheDocument();
+    expect(screen.queryByText("Sending")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { confirmationState: "uploading" as const, error: undefined, statusText: "Uploading" },
+    { confirmationState: "failed" as const, error: undefined, statusText: "Failed" },
+    { confirmationState: "failed" as const, error: "Connection lost", statusText: "Failed: Connection lost" },
+  ])("preserves user message status: $statusText", ({ confirmationState, error, statusText }) => {
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "user_message",
+            text: "Ship it",
+            source: "optimistic",
+            confirmationState,
+            error,
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText("Ship it")).toBeInTheDocument();
+    expect(screen.getByText(statusText)).toBeInTheDocument();
   });
 
   it("renders user messages as a right-aligned bubble and preserves newlines", () => {

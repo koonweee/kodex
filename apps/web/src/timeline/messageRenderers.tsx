@@ -34,6 +34,7 @@ export function UserMessageBubble({
   const copyText = parsedAnnotations ? annotationMessageCopyText(parsedAnnotations) : item.text;
   const images = item.images ?? [];
   const fileAttachments = item.fileAttachments ?? [];
+  const statusText = optimisticStatusText(item);
   return (
     <Box className="kodex-user-message-row">
       <Box className="kodex-user-message-stack">
@@ -71,9 +72,9 @@ export function UserMessageBubble({
               : <InlineSkillMentionText text={item.text} skillMentions={item.skillMentions} />}
           </Text>
         ) : null}
-        {item.confirmationState && item.confirmationState !== "sent" ? (
+        {statusText ? (
           <Text size="xs" className="kodex-user-message-status" data-state={item.confirmationState}>
-            {optimisticStatusText(item)}
+            {statusText}
           </Text>
         ) : null}
         {item.text ? <MessageToolbar align="end" text={copyText} timestampMs={toolbarTimestampMs} /> : null}
@@ -228,9 +229,6 @@ function userMessageImageSrc(
 function optimisticStatusText(item: TimelineItem): string {
   if (item.confirmationState === "uploading") {
     return "Uploading";
-  }
-  if (item.confirmationState === "sending") {
-    return "Sending";
   }
   if (item.confirmationState === "failed") {
     return item.error ? `Failed: ${item.error}` : "Failed";
