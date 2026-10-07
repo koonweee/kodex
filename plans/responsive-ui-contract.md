@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented and validated. Full frontend/backend deployment explicitly requested 2026-10-08 and pending. Created 2026-10-08.
+Complete. Implemented, validated and deployed frontend/backend on 2026-10-08. Created 2026-10-08.
 
 ## Objective
 
@@ -196,3 +196,7 @@ Run relevant domain tests, `cd apps/web && npm run build`, and `./tools/trim-fro
 - Several prior native-input/acknowledgment test fixtures were stale: updated exact Send payloads, canonical client correlation, asynchronous mount waits and queued-quote editor inspection without changing application semantics. Tab tests explicitly establish a single tab group because workspace placement can legitimately allocate two columns.
 - Tests using a stale Vite server or during source HMR/CPU contention were discarded. Final evidence uses this checkout and bundled Chromium with frozen source. The terminal harness's transient missing Vite prebundle passed on a fresh isolated server.
 - Physical iOS keyboard and real hardware hybrid interaction are not claimed as validated by Chromium emulation.
+
+## Deployment Verification
+
+Full macOS service update from implementation commit `a43072d` completed successfully. Operation `94b21d09d04f413a8fb117084ab562af` reports `succeeded`; selected release is `20261008-012419-7e5c6a05`. Live `/readyz` reports ready, the native runtime matches schema `0.160.0`, and the served frontend index matches the installed release byte for byte. Local/VPN deployment assumptions are unchanged.
