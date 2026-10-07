@@ -28,10 +28,12 @@ See the [decision handoff](mastra-code-sdk-handoff.md) for the complete accepted
 | 1. Supported ChatGPT affinity | Complete | Use public per-request/session hooks, no global fetch patch; fixture coverage for isolation/tool steps/retry/resume and native live validation; rerun original paired workload. |
 | 2. Configuration ownership against app-server baseline | Complete — bounded checks | Verify separate credentials/state and predictable configuration ownership. Test material identity/discovery effects and MCP read/edit/reload consistency before enabling; plugin concurrency remains unverified. Zero real-home reads is not an exit condition. |
 | 3. First real chat slice | Complete — bounded spike | Kodex UI → TypeScript/oRPC → Code SDK create/open/stream/Send/Queue/Stop/history; two clients converge across reconnect/restart. Repo remains runnable alongside old production. |
-| 4. Retained product workflows | Pending | Milestone-sized work for goals, automations, projects/pins/read state, terminal, Control tools, file/app panes and PWA. Detail only when preceding milestones inform the design. |
+| 4. Main frontend end-to-end on Mastra | Active | Milestone-sized work for goals, automations, projects/pins/read state, terminal, Control tools, file/app panes and PWA. Detail only when preceding milestones inform the design. |
 | 5. Production cutover | Not authorized | Separate deployment scope after retained workflow acceptance, operational checks and user authorization. |
 
 ## Current work
+
+**Active: [main frontend end-to-end parity](mastra-frontend-parity.md).** The user confirmed a live UI prompt works, then requested essentially the latest-main frontend on Mastra with minimal UI change. Freeze initial main at `00d22832cb43a2784826b1eb9a25689d4b1e5eba`; merge it once now, defer subsequent main drift to the end. Backend integration should serve the existing UI; accidental UI differences are bugs. Stop only for genuine unresolved product decisions, otherwise continue through end-to-end implementation and validation.
 
 Completed [built-runtime memory evaluation](mastra-memory-evaluation.md): 48 paired cases / 60 live turns and 14 staged probes passed. Plain-Node Mastra measured roughly 340/344/351 MiB idle for 1/5/15 chats and 392 MiB at the five-concurrent-chat sampled peak, about 30–36% below tsx. Full SDK import dominates the separate empty-session probe; fixed overhead remains, but a large per-chat penalty is not demonstrated. Use built code for production-like comparisons. Long-history/sustained/plugin workloads remain future validation, not an inferred blocker.
 
@@ -96,3 +98,5 @@ Latest completed chunk: 51/51 backend tests, 1,076/1,076 frontend tests across 1
 - Implementation commits: `3439b38` session disposal prerequisite; `36db079` native chat service/server; frontend integration and browser acceptance follow in the next commit. Main checkout and running service were not changed by this work.
 
 Next: choose the next retained-product milestone against current app-server behavior. The initial chat slice is complete; goals/automations, project/pin/read metadata, terminal/Control/file surfaces and PWA remain pending. No production cutover is authorized.
+
+- 2026-10-07: Full frontend port authorized. Durable parity plan added; pinned initial main reference `00d22832cb43a2784826b1eb9a25689d4b1e5eba`. Preserve latest-main UI/workflows, distinguish unimplemented features from native limitations, and seek clarification only for decisions that materially require it. Initial merge next.
