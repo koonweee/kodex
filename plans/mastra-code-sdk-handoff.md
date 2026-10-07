@@ -2,11 +2,11 @@
 
 Updated 2026-10-07. Read this before resuming the migration discussion.
 
-## Current instruction: wait for the user
+## Current state: benchmark measured
 
-The user is switching models and requested this Markdown summary. **Do not start the benchmark or further implementation yet.** They will say when they are back and ready. No production deployment, restart, push, or upstream issue submission is authorized.
+The user returned and authorized the benchmark; dedicated app-server login is complete. The [short-task benchmark](mastra-code-sdk-benchmark.md) now has 12 cases / 28 passing turns. Read its results and limits before proceeding. No production deployment, restart, push, or upstream issue submission is authorized.
 
-The next agreed investigation is a realistic **Mastra Code SDK versus current Codex app-server benchmark**. Config/plugin/MCP verification follows; then a small real Kodex UI → oRPC → Code SDK chat slice if the results are acceptable.
+The short-task benchmark found about 14% more total main-turn input and 6.7× uncached input for Mastra in the repeated tasks. Investigating native cache reuse is the recommended next step; realistic coding workloads, config/plugin/MCP verification and a small real Kodex UI → oRPC → Code SDK chat slice remain follow-ons.
 
 ## Where the work lives
 
@@ -60,7 +60,7 @@ npm ci --ignore-scripts
 npm test
 npm run check
 npm run login -- status
-# Opt-in real model request; wait for user resumption before more live work:
+# Opt-in real model request:
 npm run live
 ```
 
@@ -113,7 +113,7 @@ These choices **do not prove general extension concurrency or complete profile d
 
 The transport is also a proof, not a finished production protocol: full snapshots and one buffered invalidation per consumer; revision tracks observed native events, not database commits. Paging, high-volume streaming and unnotified late writes need appropriate production treatment without duplicating native durable state.
 
-## Next benchmark — only after user returns
+## Historical benchmark brief — results now available
 
 Baseline is **current Codex app-server**, not bare model API or Mastra core. Compare the same model, project and tasks with comparable features/tools enabled. Report unavoidable harness differences openly.
 
@@ -124,7 +124,7 @@ Measure:
 3. Process memory with one chat, several chats and several projects, including active execution and actual child processes where applicable.
 4. Enough output/task correctness to ensure a faster or cheaper result is doing comparable work.
 
-The observed **19,658 input tokens / 11 output tokens** came from a tiny live prompt using the stock Code SDK instructions/tool inventory. Most input was harness context, but **19.7k is total request input, not a measured incremental penalty versus Codex**. There is currently **no comparable app-server token baseline**. Do not conclude Mastra is more expensive from this figure alone. Distinguish cached tokens from uncached input and title/observer/judge/subagent calls from the primary request.
+The observed **19,658 input tokens / 11 output tokens** came from a tiny live prompt using the stock Code SDK instructions/tool inventory. Most input was harness context, but **19.7k is total request input, not a measured incremental penalty versus Codex**. At handoff time there was **no comparable app-server token baseline**; the new benchmark supplies one. Do not conclude Mastra is more expensive from this figure alone. Distinguish cached tokens from uncached input and title/observer/judge/subagent calls from the primary request.
 
 Earlier approximate idle RSS, local M4:
 
@@ -143,4 +143,4 @@ Historical scratch artifacts may still exist: `/tmp/kodex-mastra-bench-RgxqIg` a
 
 Read the worktree’s `AGENTS.md`. Keep changes scoped and reviewable, use meaningful tests, independent implementation review, focused commits and updated plans. Explicit TypeScript/oRPC spike decisions supersede old Rust/OpenAPI requirements only for this isolated experiment. Production APIs remain unchanged.
 
-No benchmark has been started in response to the handoff request. Wait for the user’s return, then continue on `codex/mastra-sdk-spike`.
+The user returned, completed the isolated app-server login, and the short-task benchmark ran on `codex/mastra-sdk-spike`. Continue from the linked results; do not repeat login or reopen settled architecture choices by default.

@@ -1,0 +1,5178 @@
+{
+  "generatedAt": "2026-10-07T09:56:53.273Z",
+  "versions": {
+    "node": "v24.21.0",
+    "packages": {
+      "@mastra/code-sdk": "1.10.1",
+      "@mastra/core": "1.74.0",
+      "@mastra/memory": "1.35.0",
+      "@mastra/libsql": "1.25.0",
+      "tsx": "4.23.1"
+    },
+    "codex": "codex-cli 0.160.0",
+    "platform": "darwin",
+    "arch": "arm64"
+  },
+  "samplingIntervalMs": 500,
+  "idleSettleMs": 1100,
+  "effort": "low",
+  "models": {
+    "mastra": "openai/gpt-6.1-sol",
+    "codex": "gpt-6.1-sol"
+  },
+  "runs": [
+    {
+      "harness": "mastra",
+      "scenario": "sequential",
+      "repetition": 1,
+      "projectCount": 1,
+      "chatsPerProject": 1,
+      "activeChats": 1,
+      "promptCount": 3,
+      "loadedChats": 1,
+      "startupMs": 1403.989083,
+      "runMs": 15157.860167,
+      "samples": [
+        {
+          "workerMainRssKiB": 240,
+          "treeRssKiB": 240,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 0.774833000000001,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 400128,
+          "treeRssKiB": 400128,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 501.92120800000004,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 631872,
+          "treeRssKiB": 631872,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 1003.022375,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 683872,
+          "treeRssKiB": 683872,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 1403.99425,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 683872,
+          "treeRssKiB": 683872,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 1503.96575,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 683872,
+          "treeRssKiB": 683872,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 2004.2619169999998,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 683872,
+          "treeRssKiB": 683872,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 2506.287042,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 683920,
+          "treeRssKiB": 683920,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 2552.04775,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 696144,
+          "treeRssKiB": 696144,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 3008.334708,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 696144,
+          "treeRssKiB": 696144,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 3509.298625,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 696144,
+          "treeRssKiB": 696144,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 4010.7598749999997,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 696144,
+          "treeRssKiB": 696144,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 4511.473458,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 716736,
+          "treeRssKiB": 716736,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 5012.406,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 716736,
+          "treeRssKiB": 716736,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 5513.648333,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 716736,
+          "treeRssKiB": 716736,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 6015.2029999999995,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 718896,
+          "treeRssKiB": 718896,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 6516.32475,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 720272,
+          "treeRssKiB": 720272,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 7017.980375,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 670464,
+          "treeRssKiB": 670464,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 7517.839875,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 606592,
+          "treeRssKiB": 606592,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 8019.115125,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 578720,
+          "treeRssKiB": 578720,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 8520.339167,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 578720,
+          "treeRssKiB": 578720,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 9021.80175,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 579024,
+          "treeRssKiB": 582144,
+          "codexRssKiB": 0,
+          "processCount": 2,
+          "processNames": [
+            "(git)",
+            "node"
+          ],
+          "elapsedMs": 9522.384417,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 578112,
+          "treeRssKiB": 578112,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 10023.592542,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 539904,
+          "treeRssKiB": 539904,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 10524.910625,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 291168,
+          "treeRssKiB": 291168,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 11025.920458,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 291216,
+          "treeRssKiB": 291216,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 11526.956,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 291552,
+          "treeRssKiB": 291552,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 12027.49225,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 288416,
+          "treeRssKiB": 288416,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 12528.449208,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 288416,
+          "treeRssKiB": 288416,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 13029.49175,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 288416,
+          "treeRssKiB": 288416,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 13533.925042,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 288784,
+          "treeRssKiB": 288784,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 14035.140208,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 290192,
+          "treeRssKiB": 290192,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 14536.526749999999,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 291136,
+          "treeRssKiB": 291136,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 15037.968333,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 291136,
+          "treeRssKiB": 291136,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 15538.992667,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 290976,
+          "treeRssKiB": 290976,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 16039.143292,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 290976,
+          "treeRssKiB": 290976,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 16540.289208,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 290976,
+          "treeRssKiB": 290976,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 17041.269,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 291008,
+          "treeRssKiB": 291008,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 17542.463917,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 291120,
+          "treeRssKiB": 291120,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 17709.880083,
+          "phase": "active"
+        }
+      ],
+      "turns": [
+        {
+          "projectIndex": 0,
+          "chatIndex": 0,
+          "promptIndex": 0,
+          "firstTextMs": 3844.196459,
+          "totalMs": 4247.888209,
+          "inputTokens": 19682,
+          "outputTokens": 11,
+          "cachedInputTokens": 3968,
+          "reasoningTokens": null,
+          "toolCalls": 0,
+          "answer": "KODEX_BENCH_OK",
+          "completed": true,
+          "errors": false
+        },
+        {
+          "projectIndex": 0,
+          "chatIndex": 0,
+          "promptIndex": 1,
+          "firstTextMs": 2379.111666999999,
+          "totalMs": 2694.54825,
+          "inputTokens": 19721,
+          "outputTokens": 13,
+          "cachedInputTokens": 3712,
+          "reasoningTokens": null,
+          "toolCalls": 0,
+          "answer": "KODEX_BENCH_FOLLOWUP",
+          "completed": true,
+          "errors": false
+        },
+        {
+          "projectIndex": 0,
+          "chatIndex": 0,
+          "promptIndex": 2,
+          "firstTextMs": 7484.145999999999,
+          "totalMs": 8210.4315,
+          "inputTokens": 39658,
+          "outputTokens": 49,
+          "cachedInputTokens": 7936,
+          "reasoningTokens": null,
+          "toolCalls": 1,
+          "answer": "{\"total\":42,\"count\":3}",
+          "completed": true,
+          "errors": false
+        }
+      ],
+      "failures": []
+    },
+    {
+      "harness": "codex",
+      "scenario": "sequential",
+      "repetition": 1,
+      "projectCount": 1,
+      "chatsPerProject": 1,
+      "activeChats": 1,
+      "promptCount": 3,
+      "loadedChats": 1,
+      "startupMs": 1561.7185000000027,
+      "runMs": 11930.443749999999,
+      "samples": [
+        {
+          "workerMainRssKiB": 176,
+          "treeRssKiB": 176,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 0.5050420000006852,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60432,
+          "treeRssKiB": 126880,
+          "codexRssKiB": 66448,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 502.02041700000336,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60432,
+          "treeRssKiB": 147424,
+          "codexRssKiB": 82896,
+          "processCount": 4,
+          "processNames": [
+            "(zsh)",
+            "codex",
+            "node",
+            "zsh"
+          ],
+          "elapsedMs": 1001.5800830000007,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60480,
+          "treeRssKiB": 193616,
+          "codexRssKiB": 133136,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 1503.2943330000016,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60480,
+          "treeRssKiB": 193680,
+          "codexRssKiB": 133200,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 1561.720792,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 60496,
+          "treeRssKiB": 218000,
+          "codexRssKiB": 157504,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 2003.494375000002,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 60496,
+          "treeRssKiB": 218048,
+          "codexRssKiB": 157552,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 2504.548375000002,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 60496,
+          "treeRssKiB": 218704,
+          "codexRssKiB": 158208,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 2681.968667000001,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 60528,
+          "treeRssKiB": 219840,
+          "codexRssKiB": 159312,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 2711.4881250000035,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60528,
+          "treeRssKiB": 227632,
+          "codexRssKiB": 167104,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 3005.988625000002,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60528,
+          "treeRssKiB": 231520,
+          "codexRssKiB": 170992,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 3516.946500000002,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60528,
+          "treeRssKiB": 232144,
+          "codexRssKiB": 171616,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 4017.2188750000023,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60528,
+          "treeRssKiB": 232192,
+          "codexRssKiB": 171664,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 4518.234833000002,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60528,
+          "treeRssKiB": 235712,
+          "codexRssKiB": 175184,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 5018.577292000002,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60592,
+          "treeRssKiB": 239344,
+          "codexRssKiB": 178752,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 5519.607458000002,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60592,
+          "treeRssKiB": 240400,
+          "codexRssKiB": 179808,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 6021.4205,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60592,
+          "treeRssKiB": 240992,
+          "codexRssKiB": 180400,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 6522.632917000003,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60592,
+          "treeRssKiB": 241520,
+          "codexRssKiB": 180928,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 7024.298042000002,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60592,
+          "treeRssKiB": 242176,
+          "codexRssKiB": 181584,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 7525.049125000001,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60592,
+          "treeRssKiB": 242720,
+          "codexRssKiB": 182128,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 8026.365208000003,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60624,
+          "treeRssKiB": 245024,
+          "codexRssKiB": 184400,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 8526.957917000003,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60624,
+          "treeRssKiB": 246160,
+          "codexRssKiB": 185536,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 9026.708625000003,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60624,
+          "treeRssKiB": 248192,
+          "codexRssKiB": 187568,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 9527.558167000003,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60624,
+          "treeRssKiB": 249056,
+          "codexRssKiB": 188432,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 10028.732000000004,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60624,
+          "treeRssKiB": 250928,
+          "codexRssKiB": 190304,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 10530.155333000002,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60624,
+          "treeRssKiB": 251600,
+          "codexRssKiB": 190976,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 11030.241208000003,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60624,
+          "treeRssKiB": 255264,
+          "codexRssKiB": 193184,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "codex-code-mode-host",
+            "node"
+          ],
+          "elapsedMs": 11531.433375,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60624,
+          "treeRssKiB": 287728,
+          "codexRssKiB": 200832,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "codex-code-mode-host",
+            "node"
+          ],
+          "elapsedMs": 12033.327417,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60624,
+          "treeRssKiB": 287728,
+          "codexRssKiB": 200832,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "codex-code-mode-host",
+            "node"
+          ],
+          "elapsedMs": 12533.562792,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60624,
+          "treeRssKiB": 287728,
+          "codexRssKiB": 200832,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "codex-code-mode-host",
+            "node"
+          ],
+          "elapsedMs": 13034.896125000003,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60624,
+          "treeRssKiB": 287776,
+          "codexRssKiB": 200880,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "codex-code-mode-host",
+            "node"
+          ],
+          "elapsedMs": 13536.396958000001,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60624,
+          "treeRssKiB": 288336,
+          "codexRssKiB": 201440,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "codex-code-mode-host",
+            "node"
+          ],
+          "elapsedMs": 14035.672833,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60640,
+          "treeRssKiB": 288352,
+          "codexRssKiB": 201440,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "codex-code-mode-host",
+            "node"
+          ],
+          "elapsedMs": 14536.852083000002,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60640,
+          "treeRssKiB": 284768,
+          "codexRssKiB": 197856,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "codex-code-mode-host",
+            "node"
+          ],
+          "elapsedMs": 14641.909083000002,
+          "phase": "active"
+        }
+      ],
+      "turns": [
+        {
+          "projectIndex": 0,
+          "chatIndex": 0,
+          "promptIndex": 0,
+          "firstTextMs": 2252.8525,
+          "totalMs": 2446.600875,
+          "inputTokens": 14260,
+          "outputTokens": 11,
+          "cachedInputTokens": 12288,
+          "reasoningTokens": 0,
+          "toolCalls": 0,
+          "answer": "KODEX_BENCH_OK",
+          "completed": true,
+          "errors": false
+        },
+        {
+          "projectIndex": 0,
+          "chatIndex": 0,
+          "promptIndex": 1,
+          "firstTextMs": 3157.842458,
+          "totalMs": 3309.687332999999,
+          "inputTokens": 17908,
+          "outputTokens": 13,
+          "cachedInputTokens": 12288,
+          "reasoningTokens": 0,
+          "toolCalls": 0,
+          "answer": "KODEX_BENCH_FOLLOWUP",
+          "completed": true,
+          "errors": false
+        },
+        {
+          "projectIndex": 0,
+          "chatIndex": 0,
+          "promptIndex": 2,
+          "firstTextMs": 5947.064250000001,
+          "totalMs": 6172.9227500000015,
+          "inputTokens": 36069,
+          "outputTokens": 42,
+          "cachedInputTokens": 31872,
+          "reasoningTokens": 0,
+          "toolCalls": 1,
+          "answer": "{\"total\":42,\"count\":3}",
+          "completed": true,
+          "errors": false
+        }
+      ],
+      "failures": []
+    },
+    {
+      "harness": "codex",
+      "scenario": "sequential",
+      "repetition": 2,
+      "projectCount": 1,
+      "chatsPerProject": 1,
+      "activeChats": 1,
+      "promptCount": 3,
+      "loadedChats": 1,
+      "startupMs": 1253.7713750000003,
+      "runMs": 13278.892958000004,
+      "samples": [
+        {
+          "workerMainRssKiB": 176,
+          "treeRssKiB": 176,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 1.4272499999970023,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60832,
+          "treeRssKiB": 135200,
+          "codexRssKiB": 74368,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 502.9606659999954,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60848,
+          "treeRssKiB": 195712,
+          "codexRssKiB": 134864,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 1003.7200409999969,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60928,
+          "treeRssKiB": 199152,
+          "codexRssKiB": 138224,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 1253.7749579999982,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 60928,
+          "treeRssKiB": 199840,
+          "codexRssKiB": 138912,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 1504.510416000001,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 60928,
+          "treeRssKiB": 226240,
+          "codexRssKiB": 165312,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 2005.6918750000004,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 60928,
+          "treeRssKiB": 226240,
+          "codexRssKiB": 165312,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 2390.327582999995,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 60928,
+          "treeRssKiB": 227616,
+          "codexRssKiB": 166688,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 2438.5708330000016,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60928,
+          "treeRssKiB": 234352,
+          "codexRssKiB": 173424,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 2506.706374999998,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60928,
+          "treeRssKiB": 234640,
+          "codexRssKiB": 173712,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 3008.2470829999984,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60944,
+          "treeRssKiB": 238016,
+          "codexRssKiB": 177072,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 3509.523790999996,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60944,
+          "treeRssKiB": 238544,
+          "codexRssKiB": 177600,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 4010.5652079999963,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60944,
+          "treeRssKiB": 238864,
+          "codexRssKiB": 177920,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 4511.520541000002,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60944,
+          "treeRssKiB": 239296,
+          "codexRssKiB": 178352,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 5012.343790999996,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60944,
+          "treeRssKiB": 239744,
+          "codexRssKiB": 178800,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 5512.199375,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 242432,
+          "codexRssKiB": 181456,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 6013.927082999999,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 243104,
+          "codexRssKiB": 182128,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 6514.517208000001,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 244496,
+          "codexRssKiB": 183520,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 7015.667040999997,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 245392,
+          "codexRssKiB": 184416,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 7516.447499999998,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 246160,
+          "codexRssKiB": 185184,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 8016.870957999996,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 247184,
+          "codexRssKiB": 186208,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 8517.936749999997,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60992,
+          "treeRssKiB": 247744,
+          "codexRssKiB": 186752,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 9018.688790999997,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60992,
+          "treeRssKiB": 249376,
+          "codexRssKiB": 188384,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 9519.309333000001,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60992,
+          "treeRssKiB": 250368,
+          "codexRssKiB": 189376,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 10020.613791,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60992,
+          "treeRssKiB": 251280,
+          "codexRssKiB": 190288,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 10521.899332999998,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60992,
+          "treeRssKiB": 252832,
+          "codexRssKiB": 191840,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 11022.993207999996,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60992,
+          "treeRssKiB": 252864,
+          "codexRssKiB": 191872,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 11523.363207999999,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60992,
+          "treeRssKiB": 296480,
+          "codexRssKiB": 204192,
+          "processCount": 4,
+          "processNames": [
+            "(zsh)",
+            "codex",
+            "codex-code-mode-host",
+            "node"
+          ],
+          "elapsedMs": 12024.183332999997,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60992,
+          "treeRssKiB": 294784,
+          "codexRssKiB": 207488,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "codex-code-mode-host",
+            "node"
+          ],
+          "elapsedMs": 12525.959957999996,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60992,
+          "treeRssKiB": 297552,
+          "codexRssKiB": 210256,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "codex-code-mode-host",
+            "node"
+          ],
+          "elapsedMs": 13026.817583,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60992,
+          "treeRssKiB": 297552,
+          "codexRssKiB": 210256,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "codex-code-mode-host",
+            "node"
+          ],
+          "elapsedMs": 13528.100083000001,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 55760,
+          "treeRssKiB": 264800,
+          "codexRssKiB": 182736,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "codex-code-mode-host",
+            "node"
+          ],
+          "elapsedMs": 14029.381790999996,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 55760,
+          "treeRssKiB": 264096,
+          "codexRssKiB": 182032,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "codex-code-mode-host",
+            "node"
+          ],
+          "elapsedMs": 14530.577125,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 55760,
+          "treeRssKiB": 264096,
+          "codexRssKiB": 182032,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "codex-code-mode-host",
+            "node"
+          ],
+          "elapsedMs": 15032.008665999998,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 55760,
+          "treeRssKiB": 264096,
+          "codexRssKiB": 182032,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "codex-code-mode-host",
+            "node"
+          ],
+          "elapsedMs": 15532.463666,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 55776,
+          "treeRssKiB": 260544,
+          "codexRssKiB": 178464,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "codex-code-mode-host",
+            "node"
+          ],
+          "elapsedMs": 15717.429249999997,
+          "phase": "active"
+        }
+      ],
+      "turns": [
+        {
+          "projectIndex": 0,
+          "chatIndex": 0,
+          "promptIndex": 0,
+          "firstTextMs": 3172.175458,
+          "totalMs": 3378.443208,
+          "inputTokens": 17333,
+          "outputTokens": 11,
+          "cachedInputTokens": 12288,
+          "reasoningTokens": 0,
+          "toolCalls": 0,
+          "answer": "KODEX_BENCH_OK",
+          "completed": true,
+          "errors": false
+        },
+        {
+          "projectIndex": 0,
+          "chatIndex": 0,
+          "promptIndex": 1,
+          "firstTextMs": 2526.6377919999995,
+          "totalMs": 2727.686708000001,
+          "inputTokens": 17372,
+          "outputTokens": 13,
+          "cachedInputTokens": 17152,
+          "reasoningTokens": 0,
+          "toolCalls": 0,
+          "answer": "KODEX_BENCH_FOLLOWUP",
+          "completed": true,
+          "errors": false
+        },
+        {
+          "projectIndex": 0,
+          "chatIndex": 0,
+          "promptIndex": 2,
+          "firstTextMs": 6966.2095420000005,
+          "totalMs": 7171.545958999999,
+          "inputTokens": 34998,
+          "outputTokens": 42,
+          "cachedInputTokens": 29440,
+          "reasoningTokens": 0,
+          "toolCalls": 1,
+          "answer": "{\"total\":42,\"count\":3}",
+          "completed": true,
+          "errors": false
+        }
+      ],
+      "failures": []
+    },
+    {
+      "harness": "mastra",
+      "scenario": "sequential",
+      "repetition": 2,
+      "projectCount": 1,
+      "chatsPerProject": 1,
+      "activeChats": 1,
+      "promptCount": 3,
+      "loadedChats": 1,
+      "startupMs": 1865.3866249999992,
+      "runMs": 17377.978916,
+      "samples": [
+        {
+          "workerMainRssKiB": 208,
+          "treeRssKiB": 208,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 1.120333999999275,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 377632,
+          "treeRssKiB": 377632,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 502.0039170000018,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 503376,
+          "treeRssKiB": 503376,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 1003.2623339999991,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 513360,
+          "treeRssKiB": 513360,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 1504.0478750000038,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 548416,
+          "treeRssKiB": 548416,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 1865.389750000002,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 547728,
+          "treeRssKiB": 547728,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 2004.9924170000013,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 531552,
+          "treeRssKiB": 531552,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 2505.837375000003,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 531552,
+          "treeRssKiB": 531552,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 2992.489333999998,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 531632,
+          "treeRssKiB": 531632,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 3035.079875000003,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 548752,
+          "treeRssKiB": 548752,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 3508.491249999999,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 548752,
+          "treeRssKiB": 548752,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 4008.6067919999987,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 548752,
+          "treeRssKiB": 548752,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 4510.080792000001,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 563392,
+          "treeRssKiB": 563392,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 5010.727334000003,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 563392,
+          "treeRssKiB": 563392,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 5512.148958999998,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 566352,
+          "treeRssKiB": 566352,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 6012.904792000001,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 567808,
+          "treeRssKiB": 567808,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 6513.723417000001,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 567808,
+          "treeRssKiB": 567808,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 7015.310750000004,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 567808,
+          "treeRssKiB": 567808,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 7516.1156249999985,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 567968,
+          "treeRssKiB": 567968,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 8016.980416999999,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 567968,
+          "treeRssKiB": 567968,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 8518.039417,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 484528,
+          "treeRssKiB": 484528,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 9018.952959000002,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 471328,
+          "treeRssKiB": 471328,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 9519.920167000004,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 452240,
+          "treeRssKiB": 452240,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 10021.307958999998,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 452240,
+          "treeRssKiB": 452240,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 10522.395125000003,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 441792,
+          "treeRssKiB": 441792,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 11023.114999999998,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 443984,
+          "treeRssKiB": 443984,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 11523.675292,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 443984,
+          "treeRssKiB": 443984,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 12025.529125000001,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 447952,
+          "treeRssKiB": 447952,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 12526.597500000003,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 447952,
+          "treeRssKiB": 447952,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 13027.061249999999,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 447952,
+          "treeRssKiB": 447952,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 13528.004042,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 448144,
+          "treeRssKiB": 448144,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 14029.345084,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 448144,
+          "treeRssKiB": 448144,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 14529.395667000004,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 448048,
+          "treeRssKiB": 448048,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 15029.737375000004,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 448272,
+          "treeRssKiB": 448272,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 15530.997584000004,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 449296,
+          "treeRssKiB": 449296,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 16031.921792000001,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 275792,
+          "treeRssKiB": 275792,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 16533.560875000003,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 274704,
+          "treeRssKiB": 274704,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 17034.569250000008,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 274704,
+          "treeRssKiB": 274704,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 17535.111708999997,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 274704,
+          "treeRssKiB": 274704,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 18036.359292,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 276096,
+          "treeRssKiB": 276096,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 18537.286667,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 276096,
+          "treeRssKiB": 276096,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 19038.240750000004,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 276096,
+          "treeRssKiB": 276096,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 19538.991125000008,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 276304,
+          "treeRssKiB": 276304,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 20040.497125,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 276768,
+          "treeRssKiB": 276768,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 20413.015625000007,
+          "phase": "active"
+        }
+      ],
+      "turns": [
+        {
+          "projectIndex": 0,
+          "chatIndex": 0,
+          "promptIndex": 0,
+          "firstTextMs": 2936.6526670000003,
+          "totalMs": 3343.650084,
+          "inputTokens": 19682,
+          "outputTokens": 11,
+          "cachedInputTokens": 3712,
+          "reasoningTokens": null,
+          "toolCalls": 0,
+          "answer": "KODEX_BENCH_OK",
+          "completed": true,
+          "errors": false
+        },
+        {
+          "projectIndex": 0,
+          "chatIndex": 0,
+          "promptIndex": 1,
+          "firstTextMs": 5129.034375,
+          "totalMs": 5683.9223329999995,
+          "inputTokens": 19721,
+          "outputTokens": 13,
+          "cachedInputTokens": 3968,
+          "reasoningTokens": null,
+          "toolCalls": 0,
+          "answer": "KODEX_BENCH_FOLLOWUP",
+          "completed": true,
+          "errors": false
+        },
+        {
+          "projectIndex": 0,
+          "chatIndex": 0,
+          "promptIndex": 2,
+          "firstTextMs": 7963.476916000001,
+          "totalMs": 8346.069000000001,
+          "inputTokens": 39658,
+          "outputTokens": 49,
+          "cachedInputTokens": 7936,
+          "reasoningTokens": null,
+          "toolCalls": 1,
+          "answer": "{\"total\":42,\"count\":3}",
+          "completed": true,
+          "errors": false
+        }
+      ],
+      "failures": []
+    },
+    {
+      "harness": "mastra",
+      "scenario": "sequential",
+      "repetition": 3,
+      "projectCount": 1,
+      "chatsPerProject": 1,
+      "activeChats": 1,
+      "promptCount": 3,
+      "loadedChats": 1,
+      "startupMs": 1320.8329999999987,
+      "runMs": 14641.631915999998,
+      "samples": [
+        {
+          "workerMainRssKiB": 1088,
+          "treeRssKiB": 1088,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 0.8823750000010477,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 388688,
+          "treeRssKiB": 388688,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 501.0867500000022,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 570336,
+          "treeRssKiB": 570336,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 1002.137791000001,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 642048,
+          "treeRssKiB": 642048,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 1320.8345410000038,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 642048,
+          "treeRssKiB": 642048,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 1503.8206250000076,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 642048,
+          "treeRssKiB": 642048,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 2004.3342910000065,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 642048,
+          "treeRssKiB": 642048,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 2438.558208000002,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 642096,
+          "treeRssKiB": 642096,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 2485.7577080000046,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 653840,
+          "treeRssKiB": 653840,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 3006.5324580000015,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 653840,
+          "treeRssKiB": 653840,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 3507.9503750000003,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 653840,
+          "treeRssKiB": 653840,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 4008.2773330000055,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 663008,
+          "treeRssKiB": 663008,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 4509.234708000004,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 663008,
+          "treeRssKiB": 663008,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 5011.221458,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 663008,
+          "treeRssKiB": 663008,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 5512.242083000005,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 665248,
+          "treeRssKiB": 665248,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 6013.725541000007,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 666560,
+          "treeRssKiB": 666560,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 6513.9911250000005,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 666560,
+          "treeRssKiB": 666560,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 7015.68525000001,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 649696,
+          "treeRssKiB": 649696,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 7516.359624999997,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 649696,
+          "treeRssKiB": 649696,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 8017.222708000001,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 649696,
+          "treeRssKiB": 649696,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 8518.676290999996,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 650016,
+          "treeRssKiB": 650016,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 9019.361250000002,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 650688,
+          "treeRssKiB": 650688,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 9520.028124999997,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 389232,
+          "treeRssKiB": 389232,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 10022.006500000003,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 260752,
+          "treeRssKiB": 260752,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 10523.540332999997,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 234624,
+          "treeRssKiB": 234624,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 11024.84375,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 234624,
+          "treeRssKiB": 234624,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 11525.256999999998,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 234624,
+          "treeRssKiB": 234624,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 12026.743958000006,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 235504,
+          "treeRssKiB": 235504,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 12527.802582999997,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 237008,
+          "treeRssKiB": 237008,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 13028.742708000005,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 238800,
+          "treeRssKiB": 238800,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 13529.170416000008,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 238800,
+          "treeRssKiB": 238800,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 14030.493083000008,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 238832,
+          "treeRssKiB": 238832,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 14531.166874999995,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 238768,
+          "treeRssKiB": 238768,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 15032.658041000002,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 238768,
+          "treeRssKiB": 238768,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 15533.168124999997,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 238768,
+          "treeRssKiB": 238768,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 16034.217916000009,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 238768,
+          "treeRssKiB": 238768,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 16535.338875,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 238992,
+          "treeRssKiB": 238992,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 17036.746625,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 239248,
+          "treeRssKiB": 239248,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 17127.36125,
+          "phase": "active"
+        }
+      ],
+      "turns": [
+        {
+          "projectIndex": 0,
+          "chatIndex": 0,
+          "promptIndex": 0,
+          "firstTextMs": 3425.0846250000004,
+          "totalMs": 3848.6465,
+          "inputTokens": 19682,
+          "outputTokens": 11,
+          "cachedInputTokens": 3968,
+          "reasoningTokens": null,
+          "toolCalls": 0,
+          "answer": "KODEX_BENCH_OK",
+          "completed": true,
+          "errors": false
+        },
+        {
+          "projectIndex": 0,
+          "chatIndex": 0,
+          "promptIndex": 1,
+          "firstTextMs": 2382.99,
+          "totalMs": 2743.94175,
+          "inputTokens": 19721,
+          "outputTokens": 13,
+          "cachedInputTokens": 3968,
+          "reasoningTokens": null,
+          "toolCalls": 0,
+          "answer": "KODEX_BENCH_FOLLOWUP",
+          "completed": true,
+          "errors": false
+        },
+        {
+          "projectIndex": 0,
+          "chatIndex": 0,
+          "promptIndex": 2,
+          "firstTextMs": 7609.864875000001,
+          "totalMs": 8043.406208999999,
+          "inputTokens": 39658,
+          "outputTokens": 49,
+          "cachedInputTokens": 7936,
+          "reasoningTokens": null,
+          "toolCalls": 1,
+          "answer": "{\"total\":42,\"count\":3}",
+          "completed": true,
+          "errors": false
+        }
+      ],
+      "failures": []
+    },
+    {
+      "harness": "codex",
+      "scenario": "sequential",
+      "repetition": 3,
+      "projectCount": 1,
+      "chatsPerProject": 1,
+      "activeChats": 1,
+      "promptCount": 3,
+      "loadedChats": 1,
+      "startupMs": 5918.534667,
+      "runMs": 12041.760583999989,
+      "samples": [
+        {
+          "workerMainRssKiB": 1088,
+          "treeRssKiB": 1088,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 0.8259580000012647,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60768,
+          "treeRssKiB": 136032,
+          "codexRssKiB": 75264,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 501.34391699999105,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60768,
+          "treeRssKiB": 139328,
+          "codexRssKiB": 78560,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 1001.8104170000006,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60768,
+          "treeRssKiB": 140304,
+          "codexRssKiB": 79536,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 1503.280958000003,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60768,
+          "treeRssKiB": 141504,
+          "codexRssKiB": 80736,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 2004.0165830000042,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60768,
+          "treeRssKiB": 144752,
+          "codexRssKiB": 83984,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 2504.2584170000046,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60768,
+          "treeRssKiB": 146320,
+          "codexRssKiB": 85552,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 3004.806832999995,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60768,
+          "treeRssKiB": 148400,
+          "codexRssKiB": 87632,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 3506.3859169999923,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60768,
+          "treeRssKiB": 149232,
+          "codexRssKiB": 88464,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 4007.3026249999966,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60768,
+          "treeRssKiB": 150000,
+          "codexRssKiB": 89232,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 4507.227125000005,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60768,
+          "treeRssKiB": 152544,
+          "codexRssKiB": 91776,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 5008.183374999993,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60832,
+          "treeRssKiB": 207392,
+          "codexRssKiB": 146560,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 5507.757041999997,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60848,
+          "treeRssKiB": 214000,
+          "codexRssKiB": 153152,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 5918.539917000002,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 60848,
+          "treeRssKiB": 214000,
+          "codexRssKiB": 153152,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 6009.537624999997,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 60848,
+          "treeRssKiB": 237552,
+          "codexRssKiB": 176704,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 6510.433042000004,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 60848,
+          "treeRssKiB": 235632,
+          "codexRssKiB": 174784,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 7010.985958000005,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 60848,
+          "treeRssKiB": 235632,
+          "codexRssKiB": 174784,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 7063.809999999998,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 60864,
+          "treeRssKiB": 236496,
+          "codexRssKiB": 175632,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 7080.961291999993,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60864,
+          "treeRssKiB": 244320,
+          "codexRssKiB": 183456,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 7511.836041999995,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60880,
+          "treeRssKiB": 249040,
+          "codexRssKiB": 188160,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 8012.726792000001,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60880,
+          "treeRssKiB": 250112,
+          "codexRssKiB": 189232,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 8513.345375000004,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60880,
+          "treeRssKiB": 250896,
+          "codexRssKiB": 190016,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 9013.233250000005,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60880,
+          "treeRssKiB": 249152,
+          "codexRssKiB": 188272,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 9513.609874999995,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60928,
+          "treeRssKiB": 252112,
+          "codexRssKiB": 191184,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 10014.493625000003,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60928,
+          "treeRssKiB": 255568,
+          "codexRssKiB": 194640,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 10514.577082999996,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60928,
+          "treeRssKiB": 257760,
+          "codexRssKiB": 196832,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 11015.644749999992,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60928,
+          "treeRssKiB": 269968,
+          "codexRssKiB": 209040,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 11516.554000000004,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60928,
+          "treeRssKiB": 323488,
+          "codexRssKiB": 262560,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 12018.272541999992,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 323760,
+          "codexRssKiB": 262784,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 12519.074500000002,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 323872,
+          "codexRssKiB": 262896,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 13020.350082999998,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 323872,
+          "codexRssKiB": 262896,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 13520.693291999996,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 323872,
+          "codexRssKiB": 262896,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 14022.390417000002,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 323888,
+          "codexRssKiB": 262912,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 14522.800707999995,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 323888,
+          "codexRssKiB": 262912,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 15024.438041999994,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 323888,
+          "codexRssKiB": 262912,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 15525.175374999992,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 289744,
+          "codexRssKiB": 228768,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 16025.683374999993,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 320720,
+          "codexRssKiB": 232928,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "codex-code-mode-host",
+            "node"
+          ],
+          "elapsedMs": 16526.865833000003,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 321568,
+          "codexRssKiB": 234304,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "codex-code-mode-host",
+            "node"
+          ],
+          "elapsedMs": 17028.354250000004,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 316304,
+          "codexRssKiB": 229040,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "codex-code-mode-host",
+            "node"
+          ],
+          "elapsedMs": 17529.339208000005,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 316304,
+          "codexRssKiB": 229040,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "codex-code-mode-host",
+            "node"
+          ],
+          "elapsedMs": 18030.052624999997,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 316304,
+          "codexRssKiB": 229040,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "codex-code-mode-host",
+            "node"
+          ],
+          "elapsedMs": 18531.206582999992,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 316304,
+          "codexRssKiB": 229040,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "codex-code-mode-host",
+            "node"
+          ],
+          "elapsedMs": 19032.265625,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 316400,
+          "codexRssKiB": 229136,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "codex-code-mode-host",
+            "node"
+          ],
+          "elapsedMs": 19122.70775,
+          "phase": "active"
+        }
+      ],
+      "turns": [
+        {
+          "projectIndex": 0,
+          "chatIndex": 0,
+          "promptIndex": 0,
+          "firstTextMs": 2582.9191250000003,
+          "totalMs": 2812.570458,
+          "inputTokens": 17333,
+          "outputTokens": 11,
+          "cachedInputTokens": 12288,
+          "reasoningTokens": 0,
+          "toolCalls": 0,
+          "answer": "KODEX_BENCH_OK",
+          "completed": true,
+          "errors": false
+        },
+        {
+          "projectIndex": 0,
+          "chatIndex": 0,
+          "promptIndex": 1,
+          "firstTextMs": 2404.083625000001,
+          "totalMs": 2615.650125,
+          "inputTokens": 17372,
+          "outputTokens": 13,
+          "cachedInputTokens": 17152,
+          "reasoningTokens": 0,
+          "toolCalls": 0,
+          "answer": "KODEX_BENCH_FOLLOWUP",
+          "completed": true,
+          "errors": false
+        },
+        {
+          "projectIndex": 0,
+          "chatIndex": 0,
+          "promptIndex": 2,
+          "firstTextMs": 6401.636250000001,
+          "totalMs": 6612.63875,
+          "inputTokens": 35012,
+          "outputTokens": 57,
+          "cachedInputTokens": 34432,
+          "reasoningTokens": 13,
+          "toolCalls": 1,
+          "answer": "{\"total\":42,\"count\":3}",
+          "completed": true,
+          "errors": false
+        }
+      ],
+      "failures": []
+    },
+    {
+      "harness": "mastra",
+      "scenario": "memory-5",
+      "repetition": 1,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "activeChats": 0,
+      "promptCount": 0,
+      "loadedChats": 5,
+      "startupMs": 1699.8268329999992,
+      "runMs": null,
+      "samples": [
+        {
+          "workerMainRssKiB": 1104,
+          "treeRssKiB": 1104,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 1.313624999995227,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 374576,
+          "treeRssKiB": 374576,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 502.9327500000072,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 533904,
+          "treeRssKiB": 533904,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 1003.3662500000064,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 610704,
+          "treeRssKiB": 610704,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 1505.0433749999938,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 643584,
+          "treeRssKiB": 643584,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 1699.8286249999946,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 643584,
+          "treeRssKiB": 643584,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 2005.8639169999951,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 643584,
+          "treeRssKiB": 643584,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 2507.325417,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 643584,
+          "treeRssKiB": 643584,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 2817.478000000003,
+          "phase": "loaded-idle"
+        }
+      ],
+      "turns": [],
+      "failures": []
+    },
+    {
+      "harness": "codex",
+      "scenario": "memory-5",
+      "repetition": 1,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "activeChats": 0,
+      "promptCount": 0,
+      "loadedChats": 5,
+      "startupMs": 3112.07583300001,
+      "runMs": null,
+      "samples": [
+        {
+          "workerMainRssKiB": 160,
+          "treeRssKiB": 160,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 1.150208000006387,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60768,
+          "treeRssKiB": 193008,
+          "codexRssKiB": 124304,
+          "processCount": 4,
+          "processNames": [
+            "(git)",
+            "codex",
+            "node",
+            "zsh"
+          ],
+          "elapsedMs": 500.8940830000065,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60832,
+          "treeRssKiB": 229824,
+          "codexRssKiB": 164000,
+          "processCount": 4,
+          "processNames": [
+            "(bash)",
+            "codex",
+            "node",
+            "zsh"
+          ],
+          "elapsedMs": 1000.7649579999998,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60864,
+          "treeRssKiB": 265216,
+          "codexRssKiB": 202080,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "node",
+            "zsh"
+          ],
+          "elapsedMs": 1501.4694170000002,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60944,
+          "treeRssKiB": 285648,
+          "codexRssKiB": 224704,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 2002.616292000006,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 61008,
+          "treeRssKiB": 294080,
+          "codexRssKiB": 233072,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 2503.4978330000013,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 61008,
+          "treeRssKiB": 305664,
+          "codexRssKiB": 244656,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 3003.993417000005,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 61024,
+          "treeRssKiB": 305680,
+          "codexRssKiB": 244656,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 3112.0814170000085,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 61024,
+          "treeRssKiB": 303232,
+          "codexRssKiB": 242208,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 3504.4482500000013,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 61024,
+          "treeRssKiB": 303232,
+          "codexRssKiB": 242208,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 4005.8503330000094,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 61024,
+          "treeRssKiB": 303232,
+          "codexRssKiB": 242208,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 4243.150333000012,
+          "phase": "loaded-idle"
+        }
+      ],
+      "turns": [],
+      "failures": []
+    },
+    {
+      "harness": "mastra",
+      "scenario": "memory-15",
+      "repetition": 1,
+      "projectCount": 3,
+      "chatsPerProject": 5,
+      "activeChats": 0,
+      "promptCount": 0,
+      "loadedChats": 15,
+      "startupMs": 1605.7251659999893,
+      "runMs": null,
+      "samples": [
+        {
+          "workerMainRssKiB": 176,
+          "treeRssKiB": 176,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 1.3744999999908032,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 385232,
+          "treeRssKiB": 385232,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 502.45687499998894,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 547888,
+          "treeRssKiB": 547888,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 1002.9047079999873,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 542064,
+          "treeRssKiB": 542064,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 1502.4079159999965,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 544416,
+          "treeRssKiB": 544416,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 1605.726749999987,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 544400,
+          "treeRssKiB": 544400,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 2003.3877079999947,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 543712,
+          "treeRssKiB": 543712,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 2504.933124999996,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 543712,
+          "treeRssKiB": 543712,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 2729.9297499999957,
+          "phase": "loaded-idle"
+        }
+      ],
+      "turns": [],
+      "failures": []
+    },
+    {
+      "harness": "codex",
+      "scenario": "memory-15",
+      "repetition": 1,
+      "projectCount": 3,
+      "chatsPerProject": 5,
+      "activeChats": 0,
+      "promptCount": 0,
+      "loadedChats": 15,
+      "startupMs": 8590.323665999997,
+      "runMs": null,
+      "samples": [
+        {
+          "workerMainRssKiB": 1088,
+          "treeRssKiB": 1088,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 0.7347500000032596,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60800,
+          "treeRssKiB": 165568,
+          "codexRssKiB": 104768,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 501.84283300000243,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60816,
+          "treeRssKiB": 228000,
+          "codexRssKiB": 167184,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 1001.3555000000051,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60880,
+          "treeRssKiB": 242592,
+          "codexRssKiB": 181712,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 1501.939624999999,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60912,
+          "treeRssKiB": 285872,
+          "codexRssKiB": 224960,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 2002.4280830000062,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60928,
+          "treeRssKiB": 288416,
+          "codexRssKiB": 227488,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 2503.4860000000044,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60944,
+          "treeRssKiB": 298880,
+          "codexRssKiB": 237936,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 3004.3301250000077,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60944,
+          "treeRssKiB": 307760,
+          "codexRssKiB": 246816,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 3504.861333000008,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60944,
+          "treeRssKiB": 320448,
+          "codexRssKiB": 259504,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 4004.668749999997,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60944,
+          "treeRssKiB": 332192,
+          "codexRssKiB": 271248,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 4505.5736250000045,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60944,
+          "treeRssKiB": 350640,
+          "codexRssKiB": 285520,
+          "processCount": 3,
+          "processNames": [
+            "(zsh)",
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 5006.28845800001,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60992,
+          "treeRssKiB": 366112,
+          "codexRssKiB": 297920,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "node",
+            "zsh"
+          ],
+          "elapsedMs": 5507.737290999998,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 360640,
+          "codexRssKiB": 292592,
+          "processCount": 3,
+          "processNames": [
+            "codex",
+            "node",
+            "zsh"
+          ],
+          "elapsedMs": 6008.197207999998,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 356992,
+          "codexRssKiB": 290832,
+          "processCount": 5,
+          "processNames": [
+            "(bash)",
+            "(id)",
+            "codex",
+            "node",
+            "zsh"
+          ],
+          "elapsedMs": 6508.978083000009,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 360320,
+          "codexRssKiB": 299344,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 7010.060041000004,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 359216,
+          "codexRssKiB": 298240,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 7510.376833000002,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 359616,
+          "codexRssKiB": 298640,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 8011.316541000007,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 351888,
+          "codexRssKiB": 290912,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 8511.847416000004,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60976,
+          "treeRssKiB": 351888,
+          "codexRssKiB": 290912,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 8590.32516600001,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 54752,
+          "treeRssKiB": 321232,
+          "codexRssKiB": 266480,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 9011.820124999998,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 45120,
+          "treeRssKiB": 304128,
+          "codexRssKiB": 259008,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 9512.379958000005,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 45120,
+          "treeRssKiB": 304176,
+          "codexRssKiB": 259056,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 9710.65462500001,
+          "phase": "loaded-idle"
+        }
+      ],
+      "turns": [],
+      "failures": []
+    },
+    {
+      "harness": "mastra",
+      "scenario": "concurrent-5",
+      "repetition": 1,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "activeChats": 5,
+      "promptCount": 1,
+      "loadedChats": 5,
+      "startupMs": 1999.7411250000005,
+      "runMs": 5605.40920899999,
+      "samples": [
+        {
+          "workerMainRssKiB": 192,
+          "treeRssKiB": 192,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 0.44724999999743886,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 354128,
+          "treeRssKiB": 354128,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 500.70912499999395,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 359056,
+          "treeRssKiB": 359056,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 1001.3344579999975,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 519632,
+          "treeRssKiB": 519632,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 1502.5192499999976,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 580336,
+          "treeRssKiB": 580336,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 1999.742499999993,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 580352,
+          "treeRssKiB": 580352,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 2505.4782080000004,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 580352,
+          "treeRssKiB": 580352,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 3006.1251249999914,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 580352,
+          "treeRssKiB": 580352,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 3119.284249999997,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 580544,
+          "treeRssKiB": 580544,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 3164.501457999999,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 595216,
+          "treeRssKiB": 595216,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 3506.7588749999995,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 595216,
+          "treeRssKiB": 595216,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 4007.2563329999975,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 613984,
+          "treeRssKiB": 613984,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 4508.017999999996,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 614544,
+          "treeRssKiB": 614544,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 5009.038749999992,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 614976,
+          "treeRssKiB": 614976,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 5510.4699580000015,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 605504,
+          "treeRssKiB": 605504,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 6010.881874999992,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 565040,
+          "treeRssKiB": 565040,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 6511.642124999984,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 564704,
+          "treeRssKiB": 564704,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 7013.378624999983,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 546912,
+          "treeRssKiB": 546912,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 7513.869624999992,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 476032,
+          "treeRssKiB": 476032,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 8014.590333,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 444800,
+          "treeRssKiB": 444800,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 8515.733000000007,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 445344,
+          "treeRssKiB": 445344,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 8769.88266599999,
+          "phase": "active"
+        }
+      ],
+      "turns": [
+        {
+          "projectIndex": 0,
+          "chatIndex": 0,
+          "promptIndex": 0,
+          "firstTextMs": 3018.871416,
+          "totalMs": 3405.7384999999995,
+          "inputTokens": 19694,
+          "outputTokens": 11,
+          "cachedInputTokens": 3712,
+          "reasoningTokens": null,
+          "toolCalls": 0,
+          "answer": "KODEX_BENCH_OK",
+          "completed": true,
+          "errors": false
+        },
+        {
+          "projectIndex": 0,
+          "chatIndex": 1,
+          "promptIndex": 0,
+          "firstTextMs": 3277.262834,
+          "totalMs": 3631.635125,
+          "inputTokens": 19694,
+          "outputTokens": 11,
+          "cachedInputTokens": 12160,
+          "reasoningTokens": null,
+          "toolCalls": 0,
+          "answer": "KODEX_BENCH_OK",
+          "completed": true,
+          "errors": false
+        },
+        {
+          "projectIndex": 0,
+          "chatIndex": 2,
+          "promptIndex": 0,
+          "firstTextMs": 3028.124875,
+          "totalMs": 3452.173666,
+          "inputTokens": 19694,
+          "outputTokens": 11,
+          "cachedInputTokens": 3968,
+          "reasoningTokens": null,
+          "toolCalls": 0,
+          "answer": "KODEX_BENCH_OK",
+          "completed": true,
+          "errors": false
+        },
+        {
+          "projectIndex": 0,
+          "chatIndex": 3,
+          "promptIndex": 0,
+          "firstTextMs": 3277.3118330000007,
+          "totalMs": 3539.1243750000003,
+          "inputTokens": 19694,
+          "outputTokens": 11,
+          "cachedInputTokens": 3712,
+          "reasoningTokens": null,
+          "toolCalls": 0,
+          "answer": "KODEX_BENCH_OK",
+          "completed": true,
+          "errors": false
+        },
+        {
+          "projectIndex": 0,
+          "chatIndex": 4,
+          "promptIndex": 0,
+          "firstTextMs": 5245.824125000001,
+          "totalMs": 5600.024208000001,
+          "inputTokens": 19694,
+          "outputTokens": 11,
+          "cachedInputTokens": 3712,
+          "reasoningTokens": null,
+          "toolCalls": 0,
+          "answer": "KODEX_BENCH_OK",
+          "completed": true,
+          "errors": false
+        }
+      ],
+      "failures": []
+    },
+    {
+      "harness": "codex",
+      "scenario": "concurrent-5",
+      "repetition": 1,
+      "projectCount": 1,
+      "chatsPerProject": 5,
+      "activeChats": 5,
+      "promptCount": 1,
+      "loadedChats": 5,
+      "startupMs": 3307.3451249999925,
+      "runMs": 4185.6530839999905,
+      "samples": [
+        {
+          "workerMainRssKiB": 1104,
+          "treeRssKiB": 1104,
+          "codexRssKiB": 0,
+          "processCount": 1,
+          "processNames": [
+            "node"
+          ],
+          "elapsedMs": 0.4082500000076834,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60720,
+          "treeRssKiB": 165280,
+          "codexRssKiB": 104560,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 500.98816700000316,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60784,
+          "treeRssKiB": 220800,
+          "codexRssKiB": 160016,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 1002.3852919999918,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60816,
+          "treeRssKiB": 239056,
+          "codexRssKiB": 178240,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 1503.3188749999972,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60864,
+          "treeRssKiB": 267872,
+          "codexRssKiB": 207008,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 2003.9613750000135,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60880,
+          "treeRssKiB": 283728,
+          "codexRssKiB": 222848,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 2505.5071250000037,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60896,
+          "treeRssKiB": 300352,
+          "codexRssKiB": 239456,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 3006.233084000007,
+          "phase": "startup"
+        },
+        {
+          "workerMainRssKiB": 60896,
+          "treeRssKiB": 301056,
+          "codexRssKiB": 240160,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 3307.3493339999986,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 60896,
+          "treeRssKiB": 301056,
+          "codexRssKiB": 240160,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 3506.812249999988,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 60896,
+          "treeRssKiB": 302400,
+          "codexRssKiB": 241504,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 4007.9939170000143,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 60896,
+          "treeRssKiB": 302688,
+          "codexRssKiB": 241792,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 4452.810208999988,
+          "phase": "loaded-idle"
+        },
+        {
+          "workerMainRssKiB": 60896,
+          "treeRssKiB": 304352,
+          "codexRssKiB": 243456,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 4491.340209000016,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60912,
+          "treeRssKiB": 337776,
+          "codexRssKiB": 276864,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 5009.5824589999975,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60928,
+          "treeRssKiB": 342656,
+          "codexRssKiB": 281728,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 5511.601834000001,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60928,
+          "treeRssKiB": 342656,
+          "codexRssKiB": 281728,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 6013.362041999993,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60928,
+          "treeRssKiB": 342880,
+          "codexRssKiB": 281952,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 6513.83587499999,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60928,
+          "treeRssKiB": 342880,
+          "codexRssKiB": 281952,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 7014.504458999989,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60960,
+          "treeRssKiB": 343760,
+          "codexRssKiB": 282800,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 7514.74008399999,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60960,
+          "treeRssKiB": 343808,
+          "codexRssKiB": 282848,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 8015.451750000007,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60960,
+          "treeRssKiB": 343808,
+          "codexRssKiB": 282848,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 8515.662749999989,
+          "phase": "active"
+        },
+        {
+          "workerMainRssKiB": 60960,
+          "treeRssKiB": 343808,
+          "codexRssKiB": 282848,
+          "processCount": 2,
+          "processNames": [
+            "codex",
+            "node"
+          ],
+          "elapsedMs": 8676.977167000005,
+          "phase": "active"
+        }
+      ],
+      "turns": [
+        {
+          "projectIndex": 0,
+          "chatIndex": 0,
+          "promptIndex": 0,
+          "firstTextMs": 2549.9037910000006,
+          "totalMs": 2792.806541,
+          "inputTokens": 17331,
+          "outputTokens": 11,
+          "cachedInputTokens": 12288,
+          "reasoningTokens": 0,
+          "toolCalls": 0,
+          "answer": "KODEX_BENCH_OK",
+          "completed": true,
+          "errors": false
+        },
+        {
+          "projectIndex": 0,
+          "chatIndex": 1,
+          "promptIndex": 0,
+          "firstTextMs": 2847.930042,
+          "totalMs": 3060.678583,
+          "inputTokens": 17331,
+          "outputTokens": 11,
+          "cachedInputTokens": 12288,
+          "reasoningTokens": 0,
+          "toolCalls": 0,
+          "answer": "KODEX_BENCH_OK",
+          "completed": true,
+          "errors": false
+        },
+        {
+          "projectIndex": 0,
+          "chatIndex": 2,
+          "promptIndex": 0,
+          "firstTextMs": 3908.8809170000004,
+          "totalMs": 4185.1245,
+          "inputTokens": 17331,
+          "outputTokens": 11,
+          "cachedInputTokens": 12288,
+          "reasoningTokens": 0,
+          "toolCalls": 0,
+          "answer": "KODEX_BENCH_OK",
+          "completed": true,
+          "errors": false
+        },
+        {
+          "projectIndex": 0,
+          "chatIndex": 3,
+          "promptIndex": 0,
+          "firstTextMs": 3534.9418750000004,
+          "totalMs": 3757.455000000001,
+          "inputTokens": 17331,
+          "outputTokens": 11,
+          "cachedInputTokens": 12288,
+          "reasoningTokens": 0,
+          "toolCalls": 0,
+          "answer": "KODEX_BENCH_OK",
+          "completed": true,
+          "errors": false
+        },
+        {
+          "projectIndex": 0,
+          "chatIndex": 4,
+          "promptIndex": 0,
+          "firstTextMs": 3122.513083,
+          "totalMs": 3249.1465829999997,
+          "inputTokens": 17331,
+          "outputTokens": 11,
+          "cachedInputTokens": 12288,
+          "reasoningTokens": 0,
+          "toolCalls": 0,
+          "answer": "KODEX_BENCH_OK",
+          "completed": true,
+          "errors": false
+        }
+      ],
+      "failures": []
+    }
+  ],
+  "summary": [
+    {
+      "turnCount": 9,
+      "firstTextMs": {
+        "count": 9,
+        "median": 3844.196459,
+        "min": 2379.111666999999,
+        "max": 7963.476916000001
+      },
+      "totalMs": {
+        "count": 9,
+        "median": 4247.888209,
+        "min": 2694.54825,
+        "max": 8346.069000000001
+      },
+      "inputTokens": 237183,
+      "outputTokens": 219,
+      "reasoningTokens": 0,
+      "reasoningKnownTurns": 0,
+      "cache": {
+        "knownTurns": 9,
+        "unknownTurns": 0,
+        "knownInputTokens": 237183,
+        "cachedInputTokens": 47104,
+        "knownUncachedInputTokens": 190079,
+        "ratio": 0.19859770725557901
+      },
+      "harness": "mastra",
+      "scenario": "sequential",
+      "runCount": 3,
+      "failureCount": 0,
+      "memorySampleCount": 121,
+      "startupMs": {
+        "count": 3,
+        "median": 1403.989083,
+        "min": 1320.8329999999987,
+        "max": 1865.3866249999992
+      },
+      "runMs": {
+        "count": 3,
+        "median": 15157.860167,
+        "min": 14641.631915999998,
+        "max": 17377.978916
+      },
+      "idleWorkerRssKiB": {
+        "count": 3,
+        "median": 642048,
+        "min": 539640,
+        "max": 683872
+      },
+      "idleTreeRssKiB": {
+        "count": 3,
+        "median": 642048,
+        "min": 539640,
+        "max": 683872
+      },
+      "idleCodexRssKiB": {
+        "count": 3,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "activePeakWorkerRssKiB": {
+        "count": 3,
+        "median": 666560,
+        "min": 567968,
+        "max": 720272
+      },
+      "activePeakTreeRssKiB": {
+        "count": 3,
+        "median": 666560,
+        "min": 567968,
+        "max": 720272
+      },
+      "activePeakCodexRssKiB": {
+        "count": 3,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "prompts": [
+        {
+          "promptIndex": 0,
+          "turnCount": 3,
+          "firstTextMs": {
+            "count": 3,
+            "median": 3425.0846250000004,
+            "min": 2936.6526670000003,
+            "max": 3844.196459
+          },
+          "totalMs": {
+            "count": 3,
+            "median": 3848.6465,
+            "min": 3343.650084,
+            "max": 4247.888209
+          },
+          "inputTokens": 59046,
+          "outputTokens": 33,
+          "reasoningTokens": 0,
+          "reasoningKnownTurns": 0,
+          "cache": {
+            "knownTurns": 3,
+            "unknownTurns": 0,
+            "knownInputTokens": 59046,
+            "cachedInputTokens": 11648,
+            "knownUncachedInputTokens": 47398,
+            "ratio": 0.19726992514310876
+          }
+        },
+        {
+          "promptIndex": 1,
+          "turnCount": 3,
+          "firstTextMs": {
+            "count": 3,
+            "median": 2382.99,
+            "min": 2379.111666999999,
+            "max": 5129.034375
+          },
+          "totalMs": {
+            "count": 3,
+            "median": 2743.94175,
+            "min": 2694.54825,
+            "max": 5683.9223329999995
+          },
+          "inputTokens": 59163,
+          "outputTokens": 39,
+          "reasoningTokens": 0,
+          "reasoningKnownTurns": 0,
+          "cache": {
+            "knownTurns": 3,
+            "unknownTurns": 0,
+            "knownInputTokens": 59163,
+            "cachedInputTokens": 11648,
+            "knownUncachedInputTokens": 47515,
+            "ratio": 0.1968798066359042
+          }
+        },
+        {
+          "promptIndex": 2,
+          "turnCount": 3,
+          "firstTextMs": {
+            "count": 3,
+            "median": 7609.864875000001,
+            "min": 7484.145999999999,
+            "max": 7963.476916000001
+          },
+          "totalMs": {
+            "count": 3,
+            "median": 8210.4315,
+            "min": 8043.406208999999,
+            "max": 8346.069000000001
+          },
+          "inputTokens": 118974,
+          "outputTokens": 147,
+          "reasoningTokens": 0,
+          "reasoningKnownTurns": 0,
+          "cache": {
+            "knownTurns": 3,
+            "unknownTurns": 0,
+            "knownInputTokens": 118974,
+            "cachedInputTokens": 23808,
+            "knownUncachedInputTokens": 95166,
+            "ratio": 0.20011094861062081
+          }
+        }
+      ]
+    },
+    {
+      "turnCount": 9,
+      "firstTextMs": {
+        "count": 9,
+        "median": 3157.842458,
+        "min": 2252.8525,
+        "max": 6966.2095420000005
+      },
+      "totalMs": {
+        "count": 9,
+        "median": 3309.687332999999,
+        "min": 2446.600875,
+        "max": 7171.545958999999
+      },
+      "inputTokens": 207657,
+      "outputTokens": 213,
+      "reasoningTokens": 13,
+      "reasoningKnownTurns": 9,
+      "cache": {
+        "knownTurns": 9,
+        "unknownTurns": 0,
+        "knownInputTokens": 207657,
+        "cachedInputTokens": 179200,
+        "knownUncachedInputTokens": 28457,
+        "ratio": 0.8629615182729212
+      },
+      "harness": "codex",
+      "scenario": "sequential",
+      "runCount": 3,
+      "failureCount": 0,
+      "memorySampleCount": 113,
+      "startupMs": {
+        "count": 3,
+        "median": 1561.7185000000027,
+        "min": 1253.7713750000003,
+        "max": 5918.534667
+      },
+      "runMs": {
+        "count": 3,
+        "median": 12041.760583999989,
+        "min": 11930.443749999999,
+        "max": 13278.892958000004
+      },
+      "idleWorkerRssKiB": {
+        "count": 3,
+        "median": 60848,
+        "min": 60496,
+        "max": 60928
+      },
+      "idleTreeRssKiB": {
+        "count": 3,
+        "median": 218024,
+        "min": 213040,
+        "max": 235632
+      },
+      "idleCodexRssKiB": {
+        "count": 3,
+        "median": 157528,
+        "min": 152112,
+        "max": 174784
+      },
+      "activePeakWorkerRssKiB": {
+        "count": 3,
+        "median": 60976,
+        "min": 60640,
+        "max": 60992
+      },
+      "activePeakTreeRssKiB": {
+        "count": 3,
+        "median": 297552,
+        "min": 288352,
+        "max": 323888
+      },
+      "activePeakCodexRssKiB": {
+        "count": 3,
+        "median": 210256,
+        "min": 201440,
+        "max": 262912
+      },
+      "prompts": [
+        {
+          "promptIndex": 0,
+          "turnCount": 3,
+          "firstTextMs": {
+            "count": 3,
+            "median": 2582.9191250000003,
+            "min": 2252.8525,
+            "max": 3172.175458
+          },
+          "totalMs": {
+            "count": 3,
+            "median": 2812.570458,
+            "min": 2446.600875,
+            "max": 3378.443208
+          },
+          "inputTokens": 48926,
+          "outputTokens": 33,
+          "reasoningTokens": 0,
+          "reasoningKnownTurns": 3,
+          "cache": {
+            "knownTurns": 3,
+            "unknownTurns": 0,
+            "knownInputTokens": 48926,
+            "cachedInputTokens": 36864,
+            "knownUncachedInputTokens": 12062,
+            "ratio": 0.7534644156481216
+          }
+        },
+        {
+          "promptIndex": 1,
+          "turnCount": 3,
+          "firstTextMs": {
+            "count": 3,
+            "median": 2526.6377919999995,
+            "min": 2404.083625000001,
+            "max": 3157.842458
+          },
+          "totalMs": {
+            "count": 3,
+            "median": 2727.686708000001,
+            "min": 2615.650125,
+            "max": 3309.687332999999
+          },
+          "inputTokens": 52652,
+          "outputTokens": 39,
+          "reasoningTokens": 0,
+          "reasoningKnownTurns": 3,
+          "cache": {
+            "knownTurns": 3,
+            "unknownTurns": 0,
+            "knownInputTokens": 52652,
+            "cachedInputTokens": 46592,
+            "knownUncachedInputTokens": 6060,
+            "ratio": 0.8849046569930867
+          }
+        },
+        {
+          "promptIndex": 2,
+          "turnCount": 3,
+          "firstTextMs": {
+            "count": 3,
+            "median": 6401.636250000001,
+            "min": 5947.064250000001,
+            "max": 6966.2095420000005
+          },
+          "totalMs": {
+            "count": 3,
+            "median": 6612.63875,
+            "min": 6172.9227500000015,
+            "max": 7171.545958999999
+          },
+          "inputTokens": 106079,
+          "outputTokens": 141,
+          "reasoningTokens": 13,
+          "reasoningKnownTurns": 3,
+          "cache": {
+            "knownTurns": 3,
+            "unknownTurns": 0,
+            "knownInputTokens": 106079,
+            "cachedInputTokens": 95744,
+            "knownUncachedInputTokens": 10335,
+            "ratio": 0.9025726109786103
+          }
+        }
+      ]
+    },
+    {
+      "turnCount": 0,
+      "firstTextMs": null,
+      "totalMs": null,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "reasoningTokens": 0,
+      "reasoningKnownTurns": 0,
+      "cache": {
+        "knownTurns": 0,
+        "unknownTurns": 0,
+        "knownInputTokens": 0,
+        "cachedInputTokens": 0,
+        "knownUncachedInputTokens": 0,
+        "ratio": null
+      },
+      "harness": "mastra",
+      "scenario": "memory-5",
+      "runCount": 1,
+      "failureCount": 0,
+      "memorySampleCount": 8,
+      "startupMs": {
+        "count": 1,
+        "median": 1699.8268329999992,
+        "min": 1699.8268329999992,
+        "max": 1699.8268329999992
+      },
+      "runMs": null,
+      "idleWorkerRssKiB": {
+        "count": 1,
+        "median": 643584,
+        "min": 643584,
+        "max": 643584
+      },
+      "idleTreeRssKiB": {
+        "count": 1,
+        "median": 643584,
+        "min": 643584,
+        "max": 643584
+      },
+      "idleCodexRssKiB": {
+        "count": 1,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "activePeakWorkerRssKiB": null,
+      "activePeakTreeRssKiB": null,
+      "activePeakCodexRssKiB": null,
+      "prompts": []
+    },
+    {
+      "turnCount": 0,
+      "firstTextMs": null,
+      "totalMs": null,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "reasoningTokens": 0,
+      "reasoningKnownTurns": 0,
+      "cache": {
+        "knownTurns": 0,
+        "unknownTurns": 0,
+        "knownInputTokens": 0,
+        "cachedInputTokens": 0,
+        "knownUncachedInputTokens": 0,
+        "ratio": null
+      },
+      "harness": "codex",
+      "scenario": "memory-5",
+      "runCount": 1,
+      "failureCount": 0,
+      "memorySampleCount": 11,
+      "startupMs": {
+        "count": 1,
+        "median": 3112.07583300001,
+        "min": 3112.07583300001,
+        "max": 3112.07583300001
+      },
+      "runMs": null,
+      "idleWorkerRssKiB": {
+        "count": 1,
+        "median": 61024,
+        "min": 61024,
+        "max": 61024
+      },
+      "idleTreeRssKiB": {
+        "count": 1,
+        "median": 303232,
+        "min": 303232,
+        "max": 303232
+      },
+      "idleCodexRssKiB": {
+        "count": 1,
+        "median": 242208,
+        "min": 242208,
+        "max": 242208
+      },
+      "activePeakWorkerRssKiB": null,
+      "activePeakTreeRssKiB": null,
+      "activePeakCodexRssKiB": null,
+      "prompts": []
+    },
+    {
+      "turnCount": 0,
+      "firstTextMs": null,
+      "totalMs": null,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "reasoningTokens": 0,
+      "reasoningKnownTurns": 0,
+      "cache": {
+        "knownTurns": 0,
+        "unknownTurns": 0,
+        "knownInputTokens": 0,
+        "cachedInputTokens": 0,
+        "knownUncachedInputTokens": 0,
+        "ratio": null
+      },
+      "harness": "mastra",
+      "scenario": "memory-15",
+      "runCount": 1,
+      "failureCount": 0,
+      "memorySampleCount": 8,
+      "startupMs": {
+        "count": 1,
+        "median": 1605.7251659999893,
+        "min": 1605.7251659999893,
+        "max": 1605.7251659999893
+      },
+      "runMs": null,
+      "idleWorkerRssKiB": {
+        "count": 1,
+        "median": 544056,
+        "min": 544056,
+        "max": 544056
+      },
+      "idleTreeRssKiB": {
+        "count": 1,
+        "median": 544056,
+        "min": 544056,
+        "max": 544056
+      },
+      "idleCodexRssKiB": {
+        "count": 1,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "activePeakWorkerRssKiB": null,
+      "activePeakTreeRssKiB": null,
+      "activePeakCodexRssKiB": null,
+      "prompts": []
+    },
+    {
+      "turnCount": 0,
+      "firstTextMs": null,
+      "totalMs": null,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "reasoningTokens": 0,
+      "reasoningKnownTurns": 0,
+      "cache": {
+        "knownTurns": 0,
+        "unknownTurns": 0,
+        "knownInputTokens": 0,
+        "cachedInputTokens": 0,
+        "knownUncachedInputTokens": 0,
+        "ratio": null
+      },
+      "harness": "codex",
+      "scenario": "memory-15",
+      "runCount": 1,
+      "failureCount": 0,
+      "memorySampleCount": 22,
+      "startupMs": {
+        "count": 1,
+        "median": 8590.323665999997,
+        "min": 8590.323665999997,
+        "max": 8590.323665999997
+      },
+      "runMs": null,
+      "idleWorkerRssKiB": {
+        "count": 1,
+        "median": 49936,
+        "min": 49936,
+        "max": 49936
+      },
+      "idleTreeRssKiB": {
+        "count": 1,
+        "median": 312704,
+        "min": 312704,
+        "max": 312704
+      },
+      "idleCodexRssKiB": {
+        "count": 1,
+        "median": 262768,
+        "min": 262768,
+        "max": 262768
+      },
+      "activePeakWorkerRssKiB": null,
+      "activePeakTreeRssKiB": null,
+      "activePeakCodexRssKiB": null,
+      "prompts": []
+    },
+    {
+      "turnCount": 5,
+      "firstTextMs": {
+        "count": 5,
+        "median": 3277.262834,
+        "min": 3018.871416,
+        "max": 5245.824125000001
+      },
+      "totalMs": {
+        "count": 5,
+        "median": 3539.1243750000003,
+        "min": 3405.7384999999995,
+        "max": 5600.024208000001
+      },
+      "inputTokens": 98470,
+      "outputTokens": 55,
+      "reasoningTokens": 0,
+      "reasoningKnownTurns": 0,
+      "cache": {
+        "knownTurns": 5,
+        "unknownTurns": 0,
+        "knownInputTokens": 98470,
+        "cachedInputTokens": 27264,
+        "knownUncachedInputTokens": 71206,
+        "ratio": 0.27687620595105106
+      },
+      "harness": "mastra",
+      "scenario": "concurrent-5",
+      "runCount": 1,
+      "failureCount": 0,
+      "memorySampleCount": 21,
+      "startupMs": {
+        "count": 1,
+        "median": 1999.7411250000005,
+        "min": 1999.7411250000005,
+        "max": 1999.7411250000005
+      },
+      "runMs": {
+        "count": 1,
+        "median": 5605.40920899999,
+        "min": 5605.40920899999,
+        "max": 5605.40920899999
+      },
+      "idleWorkerRssKiB": {
+        "count": 1,
+        "median": 580352,
+        "min": 580352,
+        "max": 580352
+      },
+      "idleTreeRssKiB": {
+        "count": 1,
+        "median": 580352,
+        "min": 580352,
+        "max": 580352
+      },
+      "idleCodexRssKiB": {
+        "count": 1,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "activePeakWorkerRssKiB": {
+        "count": 1,
+        "median": 614976,
+        "min": 614976,
+        "max": 614976
+      },
+      "activePeakTreeRssKiB": {
+        "count": 1,
+        "median": 614976,
+        "min": 614976,
+        "max": 614976
+      },
+      "activePeakCodexRssKiB": {
+        "count": 1,
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "prompts": [
+        {
+          "promptIndex": 0,
+          "turnCount": 5,
+          "firstTextMs": {
+            "count": 5,
+            "median": 3277.262834,
+            "min": 3018.871416,
+            "max": 5245.824125000001
+          },
+          "totalMs": {
+            "count": 5,
+            "median": 3539.1243750000003,
+            "min": 3405.7384999999995,
+            "max": 5600.024208000001
+          },
+          "inputTokens": 98470,
+          "outputTokens": 55,
+          "reasoningTokens": 0,
+          "reasoningKnownTurns": 0,
+          "cache": {
+            "knownTurns": 5,
+            "unknownTurns": 0,
+            "knownInputTokens": 98470,
+            "cachedInputTokens": 27264,
+            "knownUncachedInputTokens": 71206,
+            "ratio": 0.27687620595105106
+          }
+        }
+      ]
+    },
+    {
+      "turnCount": 5,
+      "firstTextMs": {
+        "count": 5,
+        "median": 3122.513083,
+        "min": 2549.9037910000006,
+        "max": 3908.8809170000004
+      },
+      "totalMs": {
+        "count": 5,
+        "median": 3249.1465829999997,
+        "min": 2792.806541,
+        "max": 4185.1245
+      },
+      "inputTokens": 86655,
+      "outputTokens": 55,
+      "reasoningTokens": 0,
+      "reasoningKnownTurns": 5,
+      "cache": {
+        "knownTurns": 5,
+        "unknownTurns": 0,
+        "knownInputTokens": 86655,
+        "cachedInputTokens": 61440,
+        "knownUncachedInputTokens": 25215,
+        "ratio": 0.7090185217240782
+      },
+      "harness": "codex",
+      "scenario": "concurrent-5",
+      "runCount": 1,
+      "failureCount": 0,
+      "memorySampleCount": 21,
+      "startupMs": {
+        "count": 1,
+        "median": 3307.3451249999925,
+        "min": 3307.3451249999925,
+        "max": 3307.3451249999925
+      },
+      "runMs": {
+        "count": 1,
+        "median": 4185.6530839999905,
+        "min": 4185.6530839999905,
+        "max": 4185.6530839999905
+      },
+      "idleWorkerRssKiB": {
+        "count": 1,
+        "median": 60896,
+        "min": 60896,
+        "max": 60896
+      },
+      "idleTreeRssKiB": {
+        "count": 1,
+        "median": 301728,
+        "min": 301728,
+        "max": 301728
+      },
+      "idleCodexRssKiB": {
+        "count": 1,
+        "median": 240832,
+        "min": 240832,
+        "max": 240832
+      },
+      "activePeakWorkerRssKiB": {
+        "count": 1,
+        "median": 60960,
+        "min": 60960,
+        "max": 60960
+      },
+      "activePeakTreeRssKiB": {
+        "count": 1,
+        "median": 343808,
+        "min": 343808,
+        "max": 343808
+      },
+      "activePeakCodexRssKiB": {
+        "count": 1,
+        "median": 282848,
+        "min": 282848,
+        "max": 282848
+      },
+      "prompts": [
+        {
+          "promptIndex": 0,
+          "turnCount": 5,
+          "firstTextMs": {
+            "count": 5,
+            "median": 3122.513083,
+            "min": 2549.9037910000006,
+            "max": 3908.8809170000004
+          },
+          "totalMs": {
+            "count": 5,
+            "median": 3249.1465829999997,
+            "min": 2792.806541,
+            "max": 4185.1245
+          },
+          "inputTokens": 86655,
+          "outputTokens": 55,
+          "reasoningTokens": 0,
+          "reasoningKnownTurns": 5,
+          "cache": {
+            "knownTurns": 5,
+            "unknownTurns": 0,
+            "knownInputTokens": 86655,
+            "cachedInputTokens": 61440,
+            "knownUncachedInputTokens": 25215,
+            "ratio": 0.7090185217240782
+          }
+        }
+      ]
+    }
+  ]
+}

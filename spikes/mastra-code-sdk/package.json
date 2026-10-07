@@ -9,7 +9,8 @@
     "test": "node --import tsx --test --test-concurrency=1 test/*.test.ts",
     "check": "tsc --noEmit",
     "login": "node --import tsx src/login.ts",
-    "live": "node --import tsx src/live.ts"
+    "live": "node --import tsx src/live.ts",
+    "benchmark": "node --import tsx src/benchmark.ts"
   },
   "dependencies": {
     "@mastra/code-sdk": "1.10.1",

@@ -4,7 +4,7 @@
 
 An isolated experiment for a future Kodex TypeScript/oRPC gateway. It does not start or replace the production gateway. See the [plan](../../plans/mastra-code-sdk-spike.md) for accepted product decisions and validation status.
 
-Validated on 2026-10-07: 17 tests, typecheck and independent review pass. The added shutdown characterization test reproduces a native title-write failure and confirms the completed answer survives reopening. Real ChatGPT requests passed in two separate processes using saved credentials. Production migration gates remain below.
+Validated on 2026-10-07: 25 tests, typecheck and independent review pass. The added shutdown characterization test reproduces a native title-write failure and confirms the completed answer survives reopening. Real ChatGPT requests passed in two separate processes using saved credentials. Production migration gates remain below.
 
 Requires Node 24+:
 
@@ -32,6 +32,20 @@ The default profile is `~/.kodex/mastra-spike`. Set `KODEX_MASTRA_PROFILE` to us
 The live command uses a disposable project/history and sends one minimal prompt through native ChatGPT OAuth. It names the test thread to avoid a separate title-generation request, configures the same provider for the SDK's title/observational-memory/judge calls, preserves native memory behavior, and sets the goal evaluation limit to `Number.MAX_SAFE_INTEGER`. It writes those model settings only inside the spike profile. `KODEX_MASTRA_MODEL` selects another model available to the account; default `openai/gpt-6.1-sol` was verified on 2026-10-07. The account rejected the SDK-era `gpt-5.4` and `gpt-5.3-codex` identifiers. A stored login or static model catalog alone is not proof of model access.
 
 Reports contain only execution status and token totals. Do not commit credentials, raw provider errors, model traffic or profile databases.
+
+## Native harness benchmark
+
+See the [benchmark plan/results](../../plans/mastra-code-sdk-benchmark.md). This opt-in command makes real ChatGPT requests using the saved Mastra profile and a separately authenticated app-server benchmark home:
+
+```sh
+KODEX_CODEX_BENCH_BINARY=/absolute/path/to/codex npm run benchmark
+# Focused sample:
+npm run benchmark -- --only sequential --repetitions 3
+```
+
+Use the schema-matched Codex 0.160.0 binary. Native `codex login --device-auth` must be performed with `CODEX_HOME=~/.kodex/mastra-spike/app-server-benchmark` and `-c 'cli_auth_credentials_store="file"'`; never point the benchmark at the production home. Optional `KODEX_CODEX_BENCH_HOME`, `KODEX_MASTRA_PROFILE` and paired `KODEX_MASTRA_MODEL` / `KODEX_CODEX_BENCH_MODEL` overrides are supported. Both harnesses must use the same underlying model.
+
+The driver writes sanitized measurements to ignored `artifacts/benchmark-*/report.json` and `summary.md`. Project fixtures and native runtime stores are disposable. Each case uses a fresh worker process; RSS separates its Node overhead from the app-server child. Native prompts/tool inventories differ, cached usage can be unknown, and these short tasks do not measure long-context memory or complete account billing.
 
 ## Ownership demonstrated
 

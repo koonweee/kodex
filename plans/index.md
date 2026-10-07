@@ -19,6 +19,7 @@ Focused subsystem replacements are encouraged wherever they reduce maintained co
 
 | Plan | Status | Scope | Notes |
 | --- | --- | --- | --- |
+| [Mastra Code SDK benchmark](mastra-code-sdk-benchmark.md) | Complete | Compare pinned Code SDK and app-server token usage, latency and memory in bounded short tasks | 12 cases / 28 turns passed; Mastra about 14% more input and 6.7× uncached input across repeated tasks. Cache diagnosis and realistic coding remain follow-ons. |
 | [Mastra Code SDK compatibility spike](mastra-code-sdk-spike.md) | Complete | Isolated TypeScript/oRPC runtime evaluation | 17 tests, typecheck and real saved-login ChatGPT requests pass; native shutdown audit reproduces detached-title failure while completed answers survive. Plugin/MCP isolation and broader lifecycle cases remain unproven. |
 | [Native goal management](native-goals.md) | Complete | Native-backed goal visibility and management | Desktop goal bar, mobile bullseye/modal, model-created goals and cross-client recovery. |
 | [Integration shortcut cleanup](integration-shortcut-cleanup.md) | Complete | Resolve runtime integration audit follow-ups | Tested and deployed native reads/errors, browser compatibility, PWA and contract tooling. |
