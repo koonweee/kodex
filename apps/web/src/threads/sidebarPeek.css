@@ -16,3 +16,14 @@
   background: var(--kodex-bg-sidebar);
   color: var(--kodex-text-primary);
 }
+
+.kodex-sidebar-peek-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: var(--kodex-shadow-floating);
+  opacity: 0.5;
+  clip-path: inset(0 -24px 0 50%);
+  pointer-events: none;
+}
