@@ -1,5 +1,7 @@
 # Mastra Code SDK compatibility spike
 
+[Conversation handoff and next benchmark](../../plans/mastra-code-sdk-handoff.md).
+
 An isolated experiment for a future Kodex TypeScript/oRPC gateway. It does not start or replace the production gateway. See the [plan](../../plans/mastra-code-sdk-spike.md) for accepted product decisions and validation status.
 
 Validated on 2026-10-07: 17 tests, typecheck and independent review pass. The added shutdown characterization test reproduces a native title-write failure and confirms the completed answer survives reopening. Real ChatGPT requests passed in two separate processes using saved credentials. Production migration gates remain below.
