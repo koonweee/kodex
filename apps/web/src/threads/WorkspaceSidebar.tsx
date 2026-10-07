@@ -428,7 +428,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
       data-sidebar-scope={sidebarScope}
       style={{ width: sidebarWidth }}
     >
-      <SidebarPeek collapsed={sidebarCollapsed} enabled={hasFineHover && !isNarrowSidebar}
+      <SidebarPeek onPin={onSidebarExpandClick} collapsed={sidebarCollapsed} enabled={hasFineHover && !isNarrowSidebar}
         rail={(handlers) => <CollapsedSidebarRail
           onExpand={onSidebarExpandClick}
           onExpandPointerEnter={handlers.onPointerEnter}

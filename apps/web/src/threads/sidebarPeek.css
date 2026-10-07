@@ -9,12 +9,17 @@
 .kodex-sidebar-peek-panel {
   position: absolute;
   inset-block: 0;
-  left: 100%;
+  left: 0;
   width: 292px;
   padding: var(--mantine-spacing-xs);
   background: var(--kodex-bg-sidebar);
   color: var(--kodex-text-primary);
-  border: 1px solid var(--kodex-border-subtle);
-  border-radius: 0 var(--kodex-radius-md) var(--kodex-radius-md) 0;
-  box-shadow: var(--kodex-shadow-floating);
+}
+
+.kodex-sidebar-peek-rail {
+  height: 100%;
+}
+
+.kodex-sidebar-peek-rail[inert] {
+  visibility: hidden;
 }

@@ -10,6 +10,10 @@ test.describe("desktop sidebar peek", () => {
     try {
       const first = await fixture.page("first", "/threads/history");
       const second = await fixture.page("second", "/threads/history");
+      await expect(first.getByRole("button", { name: "Collapse workspace sidebar", exact: true })).toBeVisible();
+      const expandedSidebar = first.getByRole("navigation", { name: "Workspace", exact: true });
+      const expandedRect = await rectangle(expandedSidebar);
+      const expandedProjectsRect = await rectangle(expandedSidebar.getByRole("button", { name: "Projects", exact: true }));
       for (const page of [first, second]) {
         await expect(page.getByText(preservedHistory, { exact: true })).toBeVisible();
         await page.getByRole("button", { name: "Collapse workspace sidebar", exact: true }).click();
@@ -28,6 +32,8 @@ test.describe("desktop sidebar peek", () => {
       await trigger.hover();
       await expect(preview).toBeVisible();
       await expect(preview.getByRole("button", { name: "Projects", exact: true })).toBeVisible();
+      await expect.poll(() => rectangle(preview)).toEqual(expandedRect);
+      await expect.poll(() => rectangle(preview.getByRole("button", { name: "Projects", exact: true }))).toEqual(expandedProjectsRect);
       await expect.poll(() => rectangle(pane)).toEqual(initialRect);
       await expect(second.locator(".kodex-sidebar-peek-panel")).toHaveCount(0);
       await expect(second.getByRole("button", { name: "Expand workspace sidebar", exact: true })).toBeVisible();
@@ -44,6 +50,42 @@ test.describe("desktop sidebar peek", () => {
       await expect(second.getByRole("button", { name: "Expand workspace sidebar", exact: true })).toBeVisible();
       await first.reload();
       await expect(first.getByRole("button", { name: "Collapse workspace sidebar", exact: true })).toBeVisible();
+      expect(fixture.errors).toEqual([]);
+      expect(fixture.unexpected).toEqual([]);
+    } finally { await fixture.close(); }
+  });
+
+  test("pins when clicking the original hover trigger and stays closed after Escape", async ({ context }) => {
+    const fixture = await nativeProjectsFixture(context);
+    try {
+      const page = await fixture.page("first", "/threads/history");
+      await page.getByRole("button", { name: "Collapse workspace sidebar", exact: true }).click();
+      await moveOutside(page);
+      const trigger = page.getByRole("button", { name: "Expand workspace sidebar", exact: true });
+      await expect.poll(() => page.getByRole("navigation", { name: "Workspace", exact: true }).evaluate((element) => element.getBoundingClientRect().width)).toBe(44);
+      const bounds = await trigger.boundingBox();
+      if (!bounds) throw new Error("Missing expand button");
+      const x = bounds.x + bounds.width / 2;
+      const y = bounds.y + bounds.height / 2;
+      await page.mouse.move(x, y);
+      const preview = page.locator(".kodex-sidebar-peek-panel");
+      await expect(preview).toBeVisible();
+      await page.mouse.click(x, y);
+      await expect(page.getByRole("button", { name: "Collapse workspace sidebar", exact: true })).toBeVisible();
+      await expect(page.getByRole("menu")).toHaveCount(0);
+      await page.getByRole("button", { name: "Collapse workspace sidebar", exact: true }).click();
+      await moveOutside(page);
+      await expect.poll(() => page.getByRole("navigation", { name: "Workspace", exact: true }).evaluate((element) => element.getBoundingClientRect().width)).toBe(44);
+      await page.mouse.move(x, y);
+      await expect(preview).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(preview).toHaveCount(0);
+      await page.waitForTimeout(600);
+      await expect(preview).toHaveCount(0);
+      await expect(trigger).toBeFocused();
+      await moveOutside(page);
+      await trigger.hover();
+      await expect(preview).toBeVisible();
       expect(fixture.errors).toEqual([]);
       expect(fixture.unexpected).toEqual([]);
     } finally { await fixture.close(); }

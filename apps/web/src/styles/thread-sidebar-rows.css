@@ -1,0 +1,234 @@
+.kodex-thread-list-button.kodex-sidebar-row {
+  --kodex-sidebar-leading-rail-size: var(--kodex-sidebar-action-size);
+
+  position: relative;
+  border: 0;
+  border-radius: var(--kodex-radius-sm);
+  background: transparent;
+  cursor: default;
+}
+
+.kodex-thread-list-button[data-has-order-menu="true"] {
+  --kodex-sidebar-trailing-rail: calc(2 * var(--kodex-sidebar-action-size) + var(--kodex-sidebar-action-gap));
+}
+
+.kodex-thread-list-button .kodex-sidebar-row-trailing {
+  width: var(--kodex-sidebar-trailing-rail);
+  justify-content: flex-start;
+  min-height: var(--kodex-sidebar-action-size);
+}
+
+.kodex-thread-list-button[data-active="true"] {
+  background: var(--kodex-bg-selected);
+}
+
+.kodex-thread-select-button {
+  appearance: none;
+  display: grid;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.kodex-thread-select-button:focus-visible,
+.kodex-thread-pin-button:focus-visible,
+.kodex-thread-archive-button:focus-visible,
+.kodex-thread-list-more-button:focus-visible {
+  outline: var(--kodex-focus-outline);
+  outline-offset: var(--kodex-focus-offset);
+}
+
+.kodex-thread-list-more-button {
+  appearance: none;
+  width: max-content;
+  max-width: 100%;
+  border: 0;
+  border-radius: var(--kodex-radius-sm);
+  padding: 2px 8px;
+  background: transparent;
+  color: var(--kodex-text-muted);
+  font: inherit;
+  font-size: var(--mantine-font-size-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.kodex-thread-list-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  width: 100%;
+  min-width: 0;
+}
+
+.kodex-thread-list-row[data-has-sidecar="true"] {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--mantine-spacing-xs);
+}
+
+.kodex-thread-list-title {
+  width: 100%;
+  min-width: 0;
+}
+
+.kodex-thread-list-sidecar {
+  min-width: 0;
+}
+
+.kodex-thread-pin-button {
+  z-index: 1;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.kodex-thread-pin-button[data-pinned="true"] .kodex-thread-pin-action-icon {
+  display: none;
+}
+
+.kodex-thread-pin-button[data-pinned="true"]:focus-visible .kodex-thread-pin-state-icon {
+  display: none;
+}
+
+.kodex-thread-pin-button[data-pinned="true"]:focus-visible .kodex-thread-pin-action-icon {
+  display: block;
+}
+
+.kodex-thread-list-button:focus-within .kodex-thread-pin-button {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.kodex-thread-unread-agent-turn-indicator {
+  display: block;
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: var(--kodex-radius-round);
+  background: var(--kodex-accent);
+  box-shadow: 0 0 0 0 var(--kodex-unread-pulse-start);
+  animation: kodex-unread-agent-turn-pulse 1.8s ease-out infinite;
+}
+
+.kodex-thread-status-slot {
+  display: grid;
+  width: var(--kodex-sidebar-action-size);
+  height: var(--kodex-sidebar-action-size);
+  place-items: center;
+}
+
+.kodex-thread-progress-indicator {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--kodex-border-strong);
+  border-top-color: var(--kodex-accent);
+  border-radius: var(--kodex-radius-round);
+  animation: kodex-thread-progress-spin 800ms linear infinite;
+}
+
+.kodex-thread-archive-button {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.kodex-thread-list-button:focus-within .kodex-thread-archive-button {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.kodex-thread-list-button:focus-within .kodex-thread-unread-agent-turn-indicator {
+  opacity: 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kodex-thread-list-button.kodex-sidebar-row[data-has-leading="true"] {
+    grid-template-columns: minmax(0, 1fr) var(--kodex-sidebar-trailing-rail);
+  }
+
+  .kodex-thread-list-button .kodex-sidebar-row-leading {
+    position: absolute;
+    z-index: 1;
+    top: 50%;
+    left: 8px;
+    transform: translateY(-50%);
+    isolation: isolate;
+  }
+
+  .kodex-thread-list-button .kodex-sidebar-row-leading::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: 0 -10px 0 -4px;
+    border-radius: var(--kodex-radius-sm);
+    background: linear-gradient(90deg, var(--kodex-bg-button-hover) 0%, var(--kodex-bg-button-hover) 60%, transparent 100%);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .kodex-thread-list-button[data-active="true"] .kodex-sidebar-row-leading::before {
+    background: linear-gradient(90deg, var(--kodex-bg-selected) 0%, var(--kodex-bg-selected) 60%, transparent 100%);
+  }
+
+  .kodex-thread-list-button:hover .kodex-sidebar-row-leading::before,
+  .kodex-thread-list-button:focus-within .kodex-sidebar-row-leading::before {
+    opacity: 1;
+  }
+
+  .kodex-thread-pin-button[data-pinned="true"]:hover .kodex-thread-pin-state-icon {
+    display: none;
+  }
+
+  .kodex-thread-pin-button[data-pinned="true"]:hover .kodex-thread-pin-action-icon {
+    display: block;
+  }
+
+  .kodex-thread-list-button:hover,
+  .kodex-thread-list-more-button:hover {
+    background: var(--kodex-bg-button-hover);
+  }
+
+  .kodex-thread-list-button:hover .kodex-thread-pin-button,
+  .kodex-thread-list-button:hover .kodex-thread-archive-button {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .kodex-thread-list-button:hover .kodex-thread-unread-agent-turn-indicator {
+    opacity: 0;
+  }
+}
+
+@keyframes kodex-thread-progress-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes kodex-unread-agent-turn-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--kodex-unread-pulse-start);
+  }
+
+  70% {
+    box-shadow: 0 0 0 6px var(--kodex-unread-pulse-end);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 var(--kodex-unread-pulse-end);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kodex-thread-progress-indicator,
+  .kodex-thread-unread-agent-turn-indicator {
+    animation: none;
+  }
+}

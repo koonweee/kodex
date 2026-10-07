@@ -6,6 +6,7 @@ import { PinnedOrderMenuItems, type PinnedThreadActions } from "./PinnedOrderMen
 import { threadDisplayTitle, threadInProgress, threadNeedsApproval } from "./helpers";
 import { SidebarIconButton } from "./SidebarIconButton";
 import { SidebarRowFrame } from "./sidebarRows";
+import "../styles/thread-sidebar-rows.css";
 
 const SIDEBAR_TEXT = { newThread: "New thread", pinThread: "Pin thread", unpinThread: "Unpin thread", threadInProgress: "Thread in progress", unreadAgentTurn: "Unread completed agent turn", showMoreLoading: "Loading more", showLessThreads: "Show less", showMoreThreads: "Show more", showMoreError: "Could not load more threads" };
 const VISIBLE_THREAD_LIMIT = 5;
@@ -96,6 +97,7 @@ export const ThreadListRow = memo(function ThreadListRow({
       rootProps={{
         "data-active": isSelected ? "true" : undefined,
         "data-pinned": isPinned ? "true" : undefined,
+        "data-has-order-menu": onMovePinnedThread ? "true" : undefined,
         onBlur: (event) => {
           focusPointerType.current = null;
           if (!event.currentTarget.contains(event.relatedTarget)) {
@@ -113,6 +115,13 @@ export const ThreadListRow = memo(function ThreadListRow({
       }}
       trailingContent={
         <>
+          {onMovePinnedThread ? <Menu position="bottom-end" withinPortal>
+            <Menu.Target><SidebarIconButton density="compact" label={`Thread actions for ${displayTitle}`} tooltip={false}><MoreHorizontal /></SidebarIconButton></Menu.Target>
+            <Menu.Dropdown>
+              <PinnedOrderMenuItems threadId={thread.id} onMovePinnedThread={onMovePinnedThread} pinPending={pinPending} previousThreadId={previousThreadId} followingThreadId={followingThreadId} canMoveDown={canMoveDown} />
+              <Menu.Item onClick={() => onArchiveThread(thread.id)}>Archive thread</Menu.Item>
+            </Menu.Dropdown>
+          </Menu> : null}
           {isThreadInProgress && !showThreadArchiveAction ? (
             <Tooltip label={SIDEBAR_TEXT.threadInProgress}>
               <Box
@@ -137,13 +146,6 @@ export const ThreadListRow = memo(function ThreadListRow({
               </Box>
             </Tooltip>
           ) : null}
-          {onMovePinnedThread ? <Menu position="bottom-end" withinPortal>
-            <Menu.Target><SidebarIconButton density="compact" label={`Thread actions for ${displayTitle}`} tooltip={false}><MoreHorizontal /></SidebarIconButton></Menu.Target>
-            <Menu.Dropdown>
-              <PinnedOrderMenuItems threadId={thread.id} onMovePinnedThread={onMovePinnedThread} pinPending={pinPending} previousThreadId={previousThreadId} followingThreadId={followingThreadId} canMoveDown={canMoveDown} />
-              <Menu.Item onClick={() => onArchiveThread(thread.id)}>Archive thread</Menu.Item>
-            </Menu.Dropdown>
-          </Menu> : null}
           {showThreadArchiveAction ? (
             <SidebarIconButton
               className="kodex-thread-archive-button"
