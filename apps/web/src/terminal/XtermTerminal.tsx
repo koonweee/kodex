@@ -1,3 +1,6 @@
+import { WebLinksAddon } from "@xterm/addon-web-links";
+import "./terminal-font.css";
+import { openTerminalLink } from "./terminalLinks";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as Xterm } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
@@ -44,11 +47,13 @@ export function XtermTerminal({ className, inputSignal, onConnectionStateChange,
       fontSize: hasTouchInput ? 16 : 13,
       minimumContrastRatio: 4.5,
       scrollback: 5000,
+      linkHandler: { activate: openTerminalLink },
       theme: terminalThemeColors(container),
     });
     const fitAddon = new FitAddon();
     terminalRef.current = terminal;
     terminal.loadAddon(fitAddon);
+    terminal.loadAddon(new WebLinksAddon(openTerminalLink));
     terminal.open(container);
 
     const socket = new WebSocket(webSocketUrl);
@@ -95,6 +100,13 @@ export function XtermTerminal({ className, inputSignal, onConnectionStateChange,
     window.addEventListener("resize", fitTerminal);
     visualViewport?.addEventListener("resize", fitTerminal);
     requestAnimationFrame(fitTerminal);
+    let disposed = false;
+    void document.fonts?.load('16px "Kodex Nerd Symbols"', "\ue0b0").then(() => {
+      if (!disposed) {
+        terminal.options.fontFamily = `Kodex Nerd Symbols, ${terminal.options.fontFamily}`;
+        fitTerminal();
+      }
+    }).catch(() => { /* Retain the system monospace fallback if the font fails to load. */ });
 
     socket.onopen = () => {
       reportConnectionState("open");
@@ -108,6 +120,7 @@ export function XtermTerminal({ className, inputSignal, onConnectionStateChange,
     };
 
     return () => {
+      disposed = true;
       dataDisposable.dispose();
       themeObserver?.disconnect();
       resizeObserver?.disconnect();
