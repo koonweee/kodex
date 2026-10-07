@@ -4,12 +4,12 @@ Run the compiled gateway under your normal macOS account using launchd. The gate
 
 ## Install
 
-Prerequisites: a logged-in macOS GUI session, Python 3.9+ (the Command Line Tools Python works), Rust, npm, and internet access to the official OpenAI Codex GitHub releases. Run commands as yourself, never with sudo. The initial installation builds and starts Kodex; it does not enable login autostart until requested.
+Prerequisites: a logged-in macOS GUI session, Python 3.9+ (the Command Line Tools Python works), Rust, npm, and internet access to the official OpenAI Codex GitHub releases. Run commands as yourself, never with sudo. The initial installation schedules an independent build/start job; it does not enable login autostart until requested.
 
 From the repository:
 
 ```bash
-./tools/kodex-service install --repo "$PWD"
+./tools/kodex-service install --repo "$PWD" --wait
 
 ~/.local/share/kodex/kodex-service autostart on
 ~/.local/share/kodex/kodex-service status
@@ -25,7 +25,9 @@ The installation layout is:
 
 ```text
 ~/.local/share/kodex/
-  kodex-service -> current/kodex-service
+  kodex-service -> controller/kodex-service
+  controller -> releases/<release>  # or controllers/<snapshot> for a controller-only upgrade
+  controllers/<snapshot>/       # optional management-only snapshots
   config.json                   # private settings, mode 0600
   releases/<release>/           # gateway, frontend, Codex, Control marketplace, controller
   current -> releases/<release>
@@ -33,6 +35,7 @@ The installation layout is:
   dev.kodex.gateway.plist        # launchd definition
   logs/gateway.log
   logs/gateway-error.log
+  operations/<id>/              # copied worker, job.json, job.log, one-shot plist
 ~/.kodex/native-v1/              # persistent gateway state and dedicated codex-home
 ~/Library/LaunchAgents/dev.kodex.gateway.plist  # present when autostart is enabled
 ```
@@ -57,7 +60,7 @@ kodex-service autostart off
 
 - `start` loads the job and verifies the owned listener, native readiness/version, instance identity and served frontend. A loaded healthy job is left running.
 - `stop` unloads the job and waits for its process to exit. It will not immediately restart. It does not change the next-login setting.
-- `restart` stops and starts the installed release; it does not build.
+- `restart` submits an independent one-shot job to stop and start the installed release; it does not build. Add `--wait` to follow its logs.
 - `status` reports launchd registration/PID, installed release, URL and autostart configuration. It is not a full health test; use `start` for that.
 - `logs` follows both log files; Ctrl-C ends only the log viewer. Logs are not automatically rotated. Stop Kodex before manually rotating them.
 - `autostart on|off` changes the next-login setting without starting or stopping the current process. Disable autostart **and** stop if you want it to stay off across logins.
@@ -80,7 +83,21 @@ When a full deployment changes the service controller itself, invoke the new che
 ./tools/kodex-service update --repo "$PWD"
 ```
 
-The installed command executes its current release's controller, so it cannot apply a new acquisition/build implementation until that controller is installed. This checkout command also upgrades an existing installation from desktop extraction to official downloads.
+The installed command executes the last installed management controller, so it cannot apply a new acquisition/build implementation until that controller is installed. A controller-only upgrade may stage the three tool files under `controllers/<snapshot>` and switch the controller/entry symlinks under the service lock without changing the gateway release or restarting it. Full updates refresh the separate `controller` pointer; gateway rollback leaves it intact, retaining independent jobs and their observer commands even when the prior gateway release has an older synchronous controller. This checkout command also upgrades an existing installation from desktop extraction to official downloads.
+
+Full `update`, `restart`, `rollback`, and the initial installation always execute in an independent per-user launchd job. The command prints an operation ID, durable log path and initial `queued` state, then returns. Returning means launchd accepted the job; completion still requires a `succeeded` result. There is no foreground execution mode. This lets a deployment finish even when stopping Kodex terminates the agent or shell that requested it.
+
+To follow the worker from a separate terminal, add `--wait`, or reconnect and inspect its persisted result:
+
+```bash
+kodex-service update --wait
+kodex-service operation-status        # latest operation, or append its ID
+kodex-service operation-wait          # follow latest operation, or append its ID
+```
+
+`--wait` and `operation-wait` only observe the existing job; ending the viewer does not cancel it. They exit unsuccessfully when the worker fails. `operation-status` reads saved state without waiting for a build. Before the first release exists, use `./tools/kodex-service` for these observer commands.
+
+Operations progress through `queued`, `running`, and `succeeded` or `failed`. The worker definition uses `RunAtLoad` with `KeepAlive` disabled, owns a copy of the controller modules, and cannot replay a terminal operation. Only one service mutation may be queued/running at a time, including frontend-only deployments. If a worker disappears, status inspection records failure after obtaining the service lock; a queued worker without a running launchd process is treated as unavailable after 30 seconds. Interrupted work is never automatically retried or rolled back: inspect its log, selected release and service status before requesting another operation. Results and logs remain in `operations/<id>/`; completed one-shot jobs stay registered but inactive until logout or explicit `launchctl bootout gui/$(id -u)/dev.kodex.operation.<id>`. Inactive operation directories may be removed when their evidence is no longer needed.
 
 The default checkout was recorded at install time. Production frontend builds explicitly use same-origin API routing, overriding development API-base settings. The update command builds the current working tree, including uncommitted changes; it does not pull Git or run the full test suite. Avoid editing or concurrently building that checkout during the update.
 
@@ -108,7 +125,7 @@ If startup/health fails, the new service is stopped and the failed release remai
 kodex-service rollback --data-compatible
 ```
 
-This swaps current/previous and starts the previous release. It never restores databases, credentials, history or project files. Incompatible storage changes require a separately planned fresh instance or other explicit policy; this tool adds no migration mechanism. Older release directories are retained, not automatically deleted. Remove only inactive releases you no longer need, after checking both symlink targets and any installed native plugin references.
+This swaps current/previous and starts the previous release. It never restores databases, credentials, history or project files. Incompatible storage changes require a separately planned fresh instance or other explicit policy; this tool adds no migration mechanism. Older release directories are retained, not automatically deleted. Remove only inactive releases you no longer need, after checking `current`, `previous`, `controller` and any installed native plugin references.
 
 Edit `~/.local/share/kodex/config.json` for subsequent starts/updates. It records the source checkout, data directory, port and explicit tool PATH. Shell profiles are not sourced by launchd. New installations omit `codex_binary`. Earlier values are ignored by the updated controller; retain the key while old controller releases remain rollback targets, since those older controllers still validate it. Native version selection now comes from the checkout schema and verified upstream package digests. The optional `environment` object accepts only the three `KODEX_VAPID_*` values, `KODEX_NOTIFICATIONS_RECHECK_DELAY_MS` and `RUST_LOG`. Configuration errors must be fixed before startup. Desktop `CODEX_HOME`, ambient API credentials and old production environment files are not inherited. Do not put secrets in the plist or commit the private configuration.
 
@@ -136,7 +153,7 @@ Do not use `serve reset`, which removes other apps' mappings, or Funnel, which e
 Service logic and failure paths can be tested without changing launchd or user storage:
 
 ```bash
-python3 -m unittest discover -s tools/tests -p 'test_kodex_service.py'
+python3 -m unittest discover -s tools/tests -p 'test_kodex_service*.py'
 ```
 
 These tests include a real loopback bind-conflict check, so a sandbox that prohibits socket binding must grant local network access. Live service validation additionally requires the logged-in GUI launchd domain. Installation, stop/start, update health and crash recovery should be exercised there; unit mocks alone do not establish launchd behavior.

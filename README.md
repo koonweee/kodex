@@ -142,7 +142,7 @@ For prerequisites, tests, schema generation, and production-style static serving
 
 For persistent hosting on your Mac, use the [login service and update commands](docs/macos-service.md). The service runs a compiled release independently of your development checkout and works with private Tailscale HTTPS. It downloads the complete official Codex runtime pinned to the checked-in app-server schema and verifies its checksum; it does not extract binaries from the desktop app.
 
-For compatible UI changes, `./tools/kodex-service update-frontend --repo "$PWD"` builds and deploys only frontend assets while keeping the gateway, active chats, and terminals running. Use the full `update` command for backend changes.
+For compatible UI changes, `./tools/kodex-service update-frontend --repo "$PWD"` builds and deploys only frontend assets while keeping the gateway, active chats, and terminals running. Use the full `update` command for backend changes. Full updates, restarts and rollbacks run as independent one-shot launchd jobs; inspect `operation-status` for completion, or use `--wait` to follow logs without owning the worker lifetime.
 
 ## Project status
 

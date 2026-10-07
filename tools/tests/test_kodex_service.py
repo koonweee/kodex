@@ -7,6 +7,8 @@ import hashlib
 import io
 import tarfile
 import socket
+import sys
+import subprocess
 import tempfile
 import unittest
 import urllib.parse
@@ -72,6 +74,25 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(self.actions, ['build', 'stop', 'start'])
         self.assertEqual((self.app.root / 'current').resolve(), new)
         self.assertEqual((self.app.root / 'previous').resolve(), old)
+
+    def test_update_keeps_worker_controller_after_rollback_to_older_release(self):
+        old, new = self.release('old'), self.release('new')
+        (old / 'kodex-service').write_text('old synchronous controller')
+        for name in service.CONTROLLER_FILES:
+            (new / name).write_bytes((SOURCE.parent / name).read_bytes())
+        service.link(self.app.root / 'current', old)
+        service.link(self.app.root / 'kodex-service', self.app.root / 'current/kodex-service')
+        with patch.object(self.app, 'build', return_value=new), \
+             patch.object(self.app, 'stop'), patch.object(self.app, 'start'):
+            self.app.update(self.root)
+            self.app.rollback(True)
+        self.assertEqual((self.app.root / 'current').resolve(), old)
+        self.assertEqual((self.app.root / 'controller').resolve(), new)
+        installed = self.app.root / 'kodex-service'
+        self.assertEqual(installed.resolve(), new / 'kodex-service')
+        observed = subprocess.run([sys.executable, str(installed), '--root', str(self.app.root),
+                                   'operation-status'], check=True, capture_output=True, text=True)
+        self.assertIsNone(json.loads(observed.stdout))
 
     def test_failed_health_stops_new_release_without_automatic_data_rollback(self):
         old, new = self.release('old'), self.release('new')
@@ -143,7 +164,8 @@ class LifecycleTests(unittest.TestCase):
                        'plugins/kodex-control', '.agents/plugins'):
             (repo / folder).mkdir(parents=True)
         (repo / 'apps/gateway/src/schema.rs').write_text('APP_SERVER_SCHEMA_VERSION: &str = "0.160.0"')
-        (repo / 'tools/kodex-service').write_text('controller')
+        for name in service.CONTROLLER_FILES:
+            (repo / 'tools' / name).write_text('controller')
         (repo / 'target/release/kodex-gateway').write_text('executable')
         (repo / 'apps/web/dist/index.html').write_text('frontend')
         (repo / '.agents/plugins/marketplace.json').write_text('{}')
@@ -160,6 +182,8 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual((release / 'frontend/index.html').read_text(), 'frontend')
         self.assertTrue((release / 'marketplace/.agents/plugins/marketplace.json').is_file())
         self.assertEqual((release / 'codex').read_text(), 'native executable')
+        for name in service.CONTROLLER_FILES:
+            self.assertEqual((release / name).read_text(), 'controller')
 
     def frontend_fixture(self):
         old, previous = self.release('old'), self.release('previous')

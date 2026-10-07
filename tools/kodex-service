@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Install and operate Kodex as a macOS per-user launchd service (Python 3.9+)."""
-import argparse
 import contextlib
 import ctypes
 import fcntl
@@ -334,7 +333,8 @@ class Service:
         stage = Path(tempfile.mkdtemp(prefix='.stage-', dir=releases))
         try:
             native = acquire_native(version, stage)
-            shutil.copy2(repo / 'tools/kodex-service', stage / 'kodex-service')
+            for name in CONTROLLER_FILES:
+                shutil.copy2(repo / 'tools' / name, stage / name)
             run(['cargo', 'build', '--release', '--locked', '-p', 'kodex-gateway',
                  '--target-dir', repo / 'target'], cwd=repo)
             run(['npm', 'ci'], cwd=repo / 'apps/web')
@@ -418,6 +418,9 @@ class Service:
         if current.exists():
             link(self.root / 'previous', current.resolve())
         link(current, release)
+        # Keep the management controller independent of gateway rollback.
+        link(self.root / 'controller', release)
+        link(self.root / 'kodex-service', self.root / 'controller/kodex-service')
         try:
             self.start()
         except Exception:
@@ -447,77 +450,24 @@ class Service:
 
 
 @contextlib.contextmanager
-def locked(root):
+def locked(root, wait=False):
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     with (root / '.service.lock').open('a') as lock:
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(lock, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
         except BlockingIOError as error:
             raise ServiceError('Another service management command is running') from error
         yield
 
 
+# Resolve symlinks so installed controllers import their own release modules.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from kodex_service_operations import CONTROLLER_FILES, Operations
+from kodex_service_cli import main as cli_main
+
+
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--root', type=Path, default=Path.home() / '.local/share/kodex')
-    commands = parser.add_subparsers(dest='command', required=True)
-    install = commands.add_parser('install', help='configure and build; starts Kodex, autostart initially off')
-    install.add_argument('--port', type=int, default=8787)
-    install.add_argument('--data-dir', type=Path, default=Path.home() / '.kodex/native-v1')
-    for command in ('install', 'update', 'update-frontend'):
-        sub = install if command == 'install' else commands.add_parser(command)
-        sub.add_argument('--repo', type=Path, default=None)
-    for command in ('start', 'stop', 'restart', 'status', 'logs', '_run'):
-        commands.add_parser(command)
-    commands.add_parser('autostart').add_argument('setting', choices=['on', 'off'])
-    commands.add_parser('rollback').add_argument('--data-compatible', action='store_true')
-    args = parser.parse_args()
-    if sys.platform != 'darwin' or os.getuid() == 0:
-        raise ServiceError('Run as your normal logged-in macOS user, not root')
-    app = Service(args.root)
-    if args.command == '_run':
-        app.execute()
-        return
-    if args.command == 'logs':
-        run(['/usr/bin/tail', '-n', '100', '-F', app.root / 'logs/gateway.log',
-             app.root / 'logs/gateway-error.log'])
-        return
-    with locked(app.root):
-        if args.command == 'install':
-            if app.config_path.exists():
-                raise ServiceError('Already configured; use update --repo /path/to/kodex')
-            if app.job() is not None or app.login_plist.exists():
-                raise ServiceError('A Kodex launchd installation already exists; use its management command')
-            check_port(args.port)
-            app.config_path.write_text(json.dumps({
-                'port': args.port, 'data_dir': str(args.data_dir.expanduser().resolve()),
-                'path': os.environ.get('PATH', '/usr/bin:/bin'), 'environment': {},
-                'repo': str((args.repo or Path(__file__).resolve().parent.parent).resolve()),
-            }, indent=2) + '\n')
-            app.config_path.chmod(0o600)
-            app.config()
-            link(app.root / 'kodex-service', app.root / 'current/kodex-service')
-            app.write_plist()
-            app.update(args.repo or Path(app.config()['repo']))
-        elif args.command == 'update':
-            app.update(args.repo or Path(app.config()['repo']))
-        elif args.command == 'update-frontend':
-            app.update_frontend(args.repo or Path(app.config()['repo']))
-        elif args.command == 'start':
-            app.start()
-        elif args.command == 'stop':
-            app.stop()
-        elif args.command == 'restart':
-            app.stop()
-            app.start()
-        elif args.command == 'autostart':
-            app.autostart(args.setting == 'on')
-        elif args.command == 'rollback':
-            app.rollback(args.data_compatible)
-        elif args.command == 'status':
-            print(json.dumps({'job': app.job(), 'autostart': app.login_plist.exists(),
-                              'current': str((app.root / 'current').resolve()),
-                              'url': f"http://127.0.0.1:{app.config()['port']}"}, indent=2))
+    cli_main(globals())
 
 
 if __name__ == '__main__':
