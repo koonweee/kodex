@@ -2,7 +2,7 @@
 
 ## Status
 
-Initial contract complete and deployed frontend/backend on 2026-10-08. Idle compact composer follow-up active. Created 2026-10-08.
+Complete. Initial contract deployed frontend/backend and idle compact composer follow-up deployed frontend-only on 2026-10-08. Created 2026-10-08.
 
 ## Objective
 
@@ -203,7 +203,7 @@ Full macOS service update from implementation commit `a43072d` completed success
 
 ## Follow-up: idle compact composer
 
-Active. The user authorized implementation and frontend-only deployment on 2026-10-08.
+Complete. The user authorized implementation and frontend-only deployment on 2026-10-08; both are verified.
 
 - All compact panes qualify; only existing conversations collapse. New-conversation greetings and project controls retain their current presentation.
 - When empty and inactive, the composer keeps its four corner radii and becomes one footer-height row. The same single-line textarea occupies the space between attachment and context/settings controls. All footer actions, including Stop, remain available.
@@ -220,4 +220,4 @@ Composer menus restore their existing trigger synchronously before reporting clo
 
 Separate pre-existing follow-up: activating another hidden native group while the workspace is narrow can exit maximize before the client receives the active-panel event and alter split allocations. This change addresses width transitions and serialization; wrapping native group activation is outside the idle-composer scope. Physical iOS keyboard behavior was not revalidated; touch and hybrid evidence uses bundled Chromium.
 
-Follow-up validation: 200 focused composer tests and 43 native workspace tests passed. All 24 bundled-Chromium cases passed across the combined run (21) and targeted rerun (3) after synchronizing the outside-menu check and replacing obsolete programmatic-fullscreen assumptions in touch-queue tests. Coverage includes adjacent pane resize, textarea identity/focus/selection, fine/touch/hybrid activation, menus, footer controls, and native queue convergence across two tabs. Production build/typecheck, full frontend trim including 11 responsive-ownership fixtures, and independent implementation/test review passed. Frontend-only deployment is pending.
+Follow-up validation: 200 focused composer tests and 43 native workspace tests passed. All 24 bundled-Chromium cases passed across the combined run (21) and targeted rerun (3) after synchronizing the outside-menu check and replacing obsolete programmatic-fullscreen assumptions in touch-queue tests. Coverage includes adjacent pane resize, textarea identity/focus/selection, fine/touch/hybrid activation, menus, footer controls, and native queue convergence across two tabs. Production build/typecheck, full frontend trim including 11 responsive-ownership fixtures, and independent implementation/test review passed. Frontend-only deployment succeeded from clean compatible snapshot `db89578` (main implementation commits `e1889d5` and `f21ab5a`). The installed release remains `20261008-012419-7e5c6a05` and gateway PID `86621` is unchanged; `/readyz` is ready. Served HTML and both entry assets match the built snapshot byte for byte. Index SHA256: `237f6df0e22d541bd4a78f9d973a42f561368542f706b4f7007c7902ba7919f0`. Other ongoing checkout work was excluded from this frontend-only deployment.
