@@ -10,6 +10,8 @@ use super::{
     TimelineFileAttachment, TimelineItemUpsertPayload, TimelineUpdateSource,
 };
 
+mod grouping;
+
 pub(crate) const TIMELINE_PREVIEW_STRING_LIMIT: usize = 16_384;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -316,6 +318,13 @@ pub(crate) fn thread_timeline_rows_from_items(
             continue;
         }
 
+        if grouping::is_transparent_separator(&item) {
+            // Retain the native item for diagnostics and subsequent content updates,
+            // but do not let an invisible row fragment the surrounding activity.
+            rows.push(item_row(item));
+            continue;
+        }
+
         flush_activity_items(
             &mut rows,
             &mut activity_items,
@@ -350,6 +359,7 @@ pub(crate) fn thread_timeline_rows_from_items(
         &mut turn_has_final_response_precursor,
     );
 
+    rows.sort_by_key(|row| row.display_order);
     insert_work_rows(rows, turns, active_turn_id, live_state)
 }
 
@@ -1123,3 +1133,6 @@ fn snapshot_item_timestamp_ms(turn: &ThreadTurnSnapshot, item: &ThreadItemSnapsh
 fn unix_seconds_to_ms(seconds: i64) -> i64 {
     seconds.saturating_mul(1000)
 }
+
+#[cfg(test)]
+mod grouping_tests;
