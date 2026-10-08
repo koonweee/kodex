@@ -58,7 +58,10 @@ async function inspectMcpOwnership(root: string) {
     const sb = await b.createSession({ resourceId: 'mcp-resource-b', threadId: 'mcp-thread-b' });
     assert.ok(a.mcpManager);
     assert.ok(b.mcpManager);
-    await Promise.all([a.mcpManager.init(), b.mcpManager.init()]);
+    assert.ok(a.mcp && b.mcp);
+    await Promise.all([a.mcp.ready, b.mcp.ready]);
+    assert.equal(a.mcp.snapshot().phase, 'ready');
+    assert.equal(b.mcp.snapshot().phase, 'ready');
     assert.deepEqual(await toolNames(a, sa), ['aOnly_probe_a_only', 'globalOnly_probe_global_only', 'shared_probe_project_a']);
     assert.deepEqual(await toolNames(b, sb), ['bOnly_probe_b_only', 'globalOnly_probe_global_only', 'shared_probe_project_b']);
     assert.equal(a.mcpManager.getConfigPaths().global, globalPath);
@@ -75,10 +78,10 @@ async function inspectMcpOwnership(root: string) {
       editConfig(projectPathA, { shared: 'edited_a', aFresh: 'a_fresh' }),
     ]);
     assert.deepEqual(await toolNames(a, sa), ['aOnly_probe_a_only', 'globalOnly_probe_global_only', 'shared_probe_project_a'], 'external edits need an explicit native reload');
-    await a.mcpManager.reload();
+    await a.mcp.reload();
     assert.deepEqual(await toolNames(a, sa), ['aFresh_probe_a_fresh', 'globalFresh_probe_global_fresh', 'shared_probe_edited_a'], 'existing session resolves new tools and drops removed tools');
     assert.deepEqual(await toolNames(b, sb), ['bOnly_probe_b_only', 'globalOnly_probe_global_only', 'shared_probe_project_b'], 'other project controller has not reloaded yet');
-    await b.mcpManager.reload();
+    await b.mcp.reload();
     assert.deepEqual(await toolNames(b, sb), ['bOnly_probe_b_only', 'globalFresh_probe_global_fresh', 'shared_probe_project_b'], 'second controller converges after its native reload');
 
     const beforeToggle = await readFile(projectPathA, 'utf8');
@@ -86,7 +89,7 @@ async function inspectMcpOwnership(root: string) {
     assert.equal(status.disabled, true);
     assert.deepEqual(await toolNames(a, sa), ['aFresh_probe_a_fresh', 'globalFresh_probe_global_fresh']);
     assert.equal(await readFile(projectPathA, 'utf8'), beforeToggle, 'native enable/disable persists app state without rewriting configuration');
-    await b.mcpManager.reload();
+    await b.mcp.reload();
     assert.ok((await toolNames(b, sb)).includes('shared_probe_project_b'), 'project disable does not affect another project');
     await a.mcpManager.disconnect();
     restarted = createMcpManager(projectA, namespace);
@@ -101,10 +104,10 @@ async function inspectMcpOwnership(root: string) {
     // Removing the namespaced project winner falls back through the root file
     // to the same namespaced global source after each explicit reload.
     await editConfig(projectPathA, {});
-    await a.mcpManager.reload();
+    await a.mcp.reload();
     assert.ok((await toolNames(a, sa)).includes('shared_probe_root_file'));
     await rm(join(projectA, '.mcp.json'));
-    await a.mcpManager.reload();
+    await a.mcp.reload();
     assert.deepEqual(await toolNames(a, sa), ['globalFresh_probe_global_fresh', 'shared_probe_new_global']);
   } finally {
     await restarted?.disconnect();

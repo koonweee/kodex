@@ -1,3 +1,4 @@
+import { shutdownBackend } from './shutdown.js';
 import { homedir } from 'node:os';
 import { createTerminalService } from './terminal-service.js';
 import { parseArgs } from 'node:util';
@@ -39,7 +40,7 @@ const service: ChatService = createChatService({
   profile, ...config,
   runtimeFactory: async options => {
     let runtime!: ProjectRuntime;
-    runtime = await createProjectRuntime({ ...options,
+    runtime = await createProjectRuntime({ ...options, disableMcp: false,
       extraTools: { ...createChildTools({ getRuntime: () => runtime }), ...createAsyncQuestionTools(),
         ...createControlTools({ getRuntime: () => runtime, getService: () => service }),
         ...createControlAutomationTools({ getRuntime: () => runtime, getService: () => service }) },
@@ -57,10 +58,10 @@ let stopping = false;
 const stop = () => {
   if (stopping) return;
   stopping = true;
-  void (async () => { await server.close(); await terminals.dispose(); await service.dispose(); })().catch(() => {
+  void shutdownBackend(server, terminals, service).catch(() => {
     console.error('Mastra shutdown failed. Native trailing-write limitations remain under evaluation.');
     process.exitCode = 1;
-  });
+  }).finally(() => process.exit(process.exitCode ?? 0));
 };
 process.once('SIGINT', stop);
 process.once('SIGTERM', stop);

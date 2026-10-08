@@ -36,6 +36,7 @@ export type PreferencesModalProps = {
   onSectionChange: (section: PreferenceSection) => void;
   opened: boolean;
   executionPanel?: ReactNode;
+  mcpPanel?: ReactNode;
 };
 
 export function PreferencesModal({
@@ -48,6 +49,7 @@ export function PreferencesModal({
   onSectionChange,
   opened,
   executionPanel,
+  mcpPanel,
 }: PreferencesModalProps) {
   const queryClient = useQueryClient();
   const pluginStatusQuery = useQuery({
@@ -209,7 +211,7 @@ export function PreferencesModal({
             statusLoading={pluginStatusQuery.isLoading}
           />
         ) : (
-          <McpPreferencesPanel />
+          mcpPanel ?? <McpPreferencesPanel />
         )}
       </Box>
     </Modal>

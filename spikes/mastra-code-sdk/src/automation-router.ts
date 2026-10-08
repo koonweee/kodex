@@ -1,4 +1,4 @@
-import { watchAutomationState } from './automation-watch.js';
+import { watchNativeRows } from './native-watch.js';
 import { os } from '@orpc/server';
 import { createAutomationService, validAutomationCreate, validAutomationId, validAutomationPatch, type AutomationCreate, type AutomationPatch } from './automation-service.js';
 import { inputSchema } from './rpc-input.js';
@@ -10,8 +10,8 @@ const updateInput = inputSchema<{ id: string; patch: AutomationPatch }>(value =>
   && Object.keys(value).length === 2 && validAutomationId(value.id) && validAutomationPatch(value.patch));
 export function createAutomationRouter(service: ReturnType<typeof createAutomationService>) {
   return {
-    watchAutomations: os.handler(({ signal }) => watchAutomationState(() => service.list(), signal)),
-    watchAutomationRuns: os.input(identity).handler(({ input, signal }) => watchAutomationState(() => service.runs(input), signal)),
+    watchAutomations: os.handler(({ signal }) => watchNativeRows(() => service.list(), signal)),
+    watchAutomationRuns: os.input(identity).handler(({ input, signal }) => watchNativeRows(() => service.runs(input), signal)),
     listAutomations: os.handler(() => service.list()),
     createAutomation: os.input(createInput).handler(({ input }) => service.create(input)),
     updateAutomation: os.input(updateInput).handler(({ input }) => service.update(input)),

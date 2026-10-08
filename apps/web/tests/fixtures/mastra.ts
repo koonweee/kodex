@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 export async function startBackend(root: string, seed?: string) {
   const child = spawn(process.execPath, ['--import', 'tsx', 'test/fixtures/browser-server.ts', root, '18789', ...(seed ? [seed] : [])], {
     cwd: resolve('../../spikes/mastra-code-sdk'), stdio: 'pipe',
+    ...(seed === 'mcp' && { env: { ...process.env, HOME: root } }),
   });
   let diagnostics = '';
   child.stderr.on('data', chunk => { diagnostics = (diagnostics + String(chunk)).slice(-8000); });

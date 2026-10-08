@@ -8,6 +8,7 @@ import { assertProfileActive, type SpikeProfile } from './profile.js';
 import { createChatGptAffinityProcessor } from './chatgpt-affinity.js';
 import { createChatFastProcessor } from './chat-fast.js';
 import { createHostModelGateways } from './model-gateways.js';
+import { createRuntimeMcp } from './runtime-mcp.js';
 
 export interface ProjectRuntimeOptions {
   projectPath: string;
@@ -79,6 +80,7 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
   });
   await prepared.finalize();
   const base = { ...prepared.base, mastra };
+  const mcp = base.mcpManager ? createRuntimeMcp(base.mcpManager) : undefined;
   const sessions = new Map<string, { resourceId: string; scope?: string; session: NativeSession; releasingThreadId?: string | null }>();
   const creatingSessions = new Map<string, Promise<NativeSession>>();
   const releasingSessions = new Map<string, Promise<void>>();
@@ -170,6 +172,7 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
     ...base,
     projectPath,
     runtimeRoot,
+    mcp,
     createSession,
     // Enumerate only bindings admitted through this runtime. Native controller
     // lookups need a known scope; no scope naming convention is assumed here.
@@ -191,6 +194,12 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
         // This complete first pass is synchronous, before any settlement await
         // or manager cancellation can publish to another still-open parent.
         for (const input of sessions.values()) quiesce(input.session);
+        // Close MCP reload admission immediately; native initialization is not
+        // joined during retirement. The backend entrypoint owns final exit.
+        const mcpDisposal = mcp?.dispose();
+        // Observe rejection now while session/storage cleanup is still awaited;
+        // the original promise remains authoritative at the later await.
+        void mcpDisposal?.catch(() => {});
         base.threadScheduler.stop();
         base.stopPluginSignalProviders();
         // Admissions were closed above. Late native creations are tracked and
@@ -208,7 +217,7 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
           await base.controller.deleteSession({ resourceId: input.resourceId, scope: input.scope });
         }
         sessions.clear();
-        await base.mcpManager?.disconnect();
+        await mcpDisposal;
         await base.mastra.shutdown();
         await base.storageMaintenance.closeStorage?.();
       })();

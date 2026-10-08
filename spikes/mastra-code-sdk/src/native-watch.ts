@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { setTimeout } from 'node:timers/promises';
 
-/** Native workers write without a public post-persistence notification. Read
+/** Native managers/workers change without a public notification API. Read
  * serialized full snapshots while observed; this never schedules agent work.
  * Epochs belong to subscriptions, so unrelated overlapping reads cannot claim
  * a shared ordering or overwrite a newer snapshot in the same subscription. */
-export async function* watchAutomationState<T>(read: () => Promise<T[]>, signal?: AbortSignal, intervalMs = 1000) {
+export async function* watchNativeRows<T>(read: () => Promise<T[]>, signal?: AbortSignal, intervalMs = 1000) {
   const epoch = randomUUID();
   let revision = 0, previous: string | undefined;
   while (!signal?.aborted) {

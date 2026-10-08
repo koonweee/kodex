@@ -28,7 +28,11 @@ const { createMcpManager } = await import('@mastra/code-sdk/mcp/manager');
 const manager: McpManager = runtime?.mcpManager ?? createMcpManager(projectPath, '.kodex-mastra-spike');
 let initSettled = false;
 emit('init-start');
-const initialization = manager.initInBackground().then(result => { initSettled = true; emit('init-settled', { result }); return result; });
+const nativeInitialization = runtime ? runtime.mcp!.ready.then(() => {
+  const statuses = manager.getServerStatuses();
+  return { connected: statuses.filter(server => server.connected), failed: statuses.filter(server => !server.connected && !server.disabled), skipped: manager.getSkippedServers(), totalTools: statuses.reduce((sum, server) => sum + server.toolCount, 0) };
+}) : manager.initInBackground();
+const initialization = nativeInitialization.then(result => { initSettled = true; emit('init-settled', { result }); return result; });
 
 if (mode.includes('during-')) {
   // Finite fixture-only observation: wait for the actual silent initialize RPC,

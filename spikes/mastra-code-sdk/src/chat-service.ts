@@ -1,3 +1,4 @@
+import { createMcpService } from './mcp-service.js';
 import { createChatActivity, type CatalogChat } from './chat-activity.js';
 import { createAutomationService } from './automation-service.js';
 import { AUTOMATION_WORKFLOW_ID, createAutomationWorkflow } from './automation-workflow.js';
@@ -470,6 +471,7 @@ export function createChatService(options: ChatServiceOptions) {
     return (input: T, ...args: Args) => admitChat(input.chatId, () => method(input, ...args));
   }
   return { ...service,
+    mcp: createMcpService({ sources: projects.mcpBindings, assertActive, signal: lifetime.signal }),
     updateGoal: guarded(service.updateGoal), clearGoal: guarded(service.clearGoal),
     readChatRoute: guarded(service.readChatRoute), readControlChat: guarded(service.readControlChat), readControlHistory: guarded(service.readControlHistory),
     openChat: guarded(service.openChat), getChatSettings: guarded(service.getChatSettings),

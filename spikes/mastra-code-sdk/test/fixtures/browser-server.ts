@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { createTerminalService } from '../../src/terminal-service.js';
 import { getLocalPlansDir, getSuggestedPlanRelativePath } from '@mastra/code-sdk/utils/plans';
 import { createTool } from '@mastra/core/tools';
@@ -22,6 +23,14 @@ const profile = activateProfile(resolveProfile(join(resolve(root), 'profile')));
 const directoryHome = await realpath(resolve(root));
 const projectPath = join(directoryHome, 'project');
 await mkdir(projectPath, { recursive: true });
+if (process.argv[4] === 'mcp') {
+  await mkdir(join(projectPath, '.kodex-mastra-spike'), { recursive: true });
+  const configPath = join(projectPath, '.kodex-mastra-spike', 'mcp.json');
+  try { await readFile(configPath); } catch {
+    await writeFile(configPath, JSON.stringify({ mcpServers: { local: { command: process.execPath, args: ['--import', 'tsx', fileURLToPath(new URL('./mcp-stdio-server.ts', import.meta.url)), 'first'] } } }));
+  }
+}
+
 await writeFile(join(projectPath, 'marker.txt'), 'BROWSER_TOOL_MARKER');
 await writeFile(join(directoryHome, 'marker.txt'), 'BROWSER_TOOL_MARKER');
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
@@ -51,6 +60,17 @@ const model = await startModelFixture(async request => {
   if (request.model === 'judge') return { text: JSON.stringify({ decision: 'done', reason: 'Browser goal complete' }) };
   if (!request.stream) return { text: 'Browser test chat' };
   const user = lastUserText(request);
+  if (process.argv[4] === 'mcp' && user.startsWith('BROWSER_MCP:')) {
+    const marker = user.slice('BROWSER_MCP:'.length);
+    if (request.messages.at(-1)?.role !== 'tool') {
+      const name = `local_probe_${marker}`;
+      if (!request.tools?.some(tool => tool.function.name === name)) throw new Error('Native MCP tool missing');
+      return { toolCalls: [{ name, arguments: {} }] };
+    }
+    if (!JSON.stringify(request.messages.at(-1)).includes(marker)) throw new Error('Native MCP result missing');
+    return { text: `BROWSER_MCP_RESULT_${marker}` };
+  }
+
   const serialized = JSON.stringify(request.messages);
   if (user.startsWith('DIRECT_CHILD_FOLLOWUP:') || user.startsWith('DIRECT_FORK_FOLLOWUP:')) {
     const saved = user.startsWith('DIRECT_CHILD_FOLLOWUP:') ? 'BROWSER_FRESH_RESULT' : 'BROWSER_CHILD_RESULT_FORKED';
@@ -176,7 +196,7 @@ const service = createChatService({
   profile, directoryHome, ...await loadServerConfig(profile, [projectPath]),
   runtimeFactory: async options => {
     let runtime!: ProjectRuntime;
-    runtime = await createProjectRuntime({ ...options, extraTools: { ...createChildTools({ getRuntime: () => runtime }), ...createAsyncQuestionTools(), ...createControlTools({ getRuntime: () => runtime, getService: () => service }), ...promptTools },
+    runtime = await createProjectRuntime({ ...options, disableMcp: process.argv[4] !== 'mcp', extraTools: { ...createChildTools({ getRuntime: () => runtime }), ...createAsyncQuestionTools(), ...createControlTools({ getRuntime: () => runtime, getService: () => service }), ...promptTools },
       modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }, ...(process.argv[4] === 'plans' ? [{ id: 'plan', defaultModelId: 'fixture/chat' }] : [])] });
     if (process.argv[4] === 'approvals') {
       const create = runtime.createSession.bind(runtime);

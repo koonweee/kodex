@@ -169,6 +169,18 @@ export function createChatProjects(options: ChatProjectOptions, assertActive: ()
   }
   return {
     runtimeFor, executionBinding, currentBinding, inventory, findThread, resolveThreadRoute,
+    async mcpBindings() {
+      for (;;) {
+        const snapshot = await registryCall(store => store.snapshot());
+        const bindings = await listBindings();
+        const sources = await Promise.all(bindings.map(async binding => ({
+          bindingId: binding.id, projectId: binding.projectId,
+          projectName: snapshot.projects.find(project => project.id === binding.projectId)?.name ?? null,
+          cwd: binding.cwd, mcp: (await runtimeFor(binding)).mcp,
+        })));
+        if ((await registryCall(store => store.snapshot())).revision === snapshot.revision) return sources;
+      }
+    },
     async nativeRuntimes() {
       const values: ProjectRuntime[] = [];
       for (const binding of await listBindings()) values.push(await runtimeFor(binding));

@@ -10,6 +10,8 @@ import { queryKeys } from "./api/queryKeys";
 import { PreferencesModal } from "./PreferencesModal";
 
 const apiMocks = vi.hoisted(() => ({
+  listMcpServers: vi.fn(),
+  listConfiguredMcpServers: vi.fn(),
   deleteCurrentPushSubscription: vi.fn(),
   deletePushSubscription: vi.fn(),
   getCurrentPushSubscriptionStatus: vi.fn(),
@@ -28,6 +30,8 @@ vi.mock("./pwa/registerServiceWorker", async (importOriginal) => ({
 
 vi.mock("./api/client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./api/client")>()),
+  listMcpServers: apiMocks.listMcpServers,
+  listConfiguredMcpServers: apiMocks.listConfiguredMcpServers,
   deleteCurrentPushSubscription: apiMocks.deleteCurrentPushSubscription,
   deletePushSubscription: apiMocks.deletePushSubscription,
   getCurrentPushSubscriptionStatus: apiMocks.getCurrentPushSubscriptionStatus,
@@ -38,7 +42,7 @@ vi.mock("./api/client", async (importOriginal) => ({
   upsertPushSubscription: apiMocks.upsertPushSubscription,
 }));
 
-function renderPreferences(initialSection: "appearance" | "execution" | "notifications" | "plugins" | "mcp" = "plugins") {
+function renderPreferences(initialSection: "appearance" | "execution" | "notifications" | "plugins" | "mcp" = "plugins", mcpPanel?: ReactNode) {
   const queryClient = createKodexQueryClient();
   queryClient.setDefaultOptions({
     queries: {
@@ -59,6 +63,7 @@ function renderPreferences(initialSection: "appearance" | "execution" | "notific
     return (
       <PreferencesModal
         activeSection={section}
+        mcpPanel={mcpPanel}
         preferences={{ mode: "dark", lightThemeId: "paper-light", darkThemeId: "oled-black" }}
         resolvedSchemeId="oled-black"
         onClose={vi.fn()}
@@ -574,5 +579,25 @@ describe("PreferencesModal notifications tab", () => {
     } finally {
       restoreNotifications();
     }
+  });
+});
+
+
+describe('PreferencesModal MCP panel extension', () => {
+  beforeEach(() => { apiMocks.listMcpServers.mockReset(); apiMocks.listConfiguredMcpServers.mockReset(); });
+  it('mounts a replacement MCP panel without legacy MCP queries', async () => {
+    renderPreferences('appearance', <p>Native MCP inventory</p>);
+    await userEvent.click(screen.getByRole('button', { name: 'MCP' }));
+    expect(screen.getByText('Native MCP inventory')).toBeInTheDocument();
+    expect(apiMocks.listMcpServers).not.toHaveBeenCalled();
+    expect(apiMocks.listConfiguredMcpServers).not.toHaveBeenCalled();
+  });
+  it('retains the existing MCP panel when no replacement is supplied', async () => {
+    apiMocks.listMcpServers.mockResolvedValue({ servers: [] });
+    apiMocks.listConfiguredMcpServers.mockResolvedValue({ servers: [], writeTarget: null });
+    renderPreferences('mcp');
+    expect(await screen.findByText('No MCP servers configured')).toBeInTheDocument();
+    expect(apiMocks.listMcpServers).toHaveBeenCalledOnce();
+    expect(apiMocks.listConfiguredMcpServers).toHaveBeenCalledOnce();
   });
 });
