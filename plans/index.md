@@ -19,6 +19,7 @@ Focused subsystem replacements are encouraged wherever they reduce maintained co
 
 | Plan | Status | Scope | Notes |
 | --- | --- | --- | --- |
+| [Streaming assistant text animation](streaming-assistant-animation.md) | Proposed | Exploratory text fades with iterative visual polish and performance comparisons | Compare fades and pacing/cadence alternatives; finish with a recommended path, comparison videos and performance findings. Preserve canonical state semantics. |
 | [Responsive UI contract and classification cleanup](responsive-ui-contract.md) | Complete | Shared workspace/pane/input classifications, enforceable ownership and compact-pane migration | Initial contract, idle composer, radius/loading refinements, subtle inline composer morph and device-local fullscreen-touch preference deployed. Shadow stability and direct fullscreen-submit idle refinements are implemented but not yet deployed. |
 | [Native goal management](native-goals.md) | Complete | Native-backed goal visibility and management | Desktop goal bar, mobile bullseye/modal, model-created goals and cross-client recovery. |
 | [Integration shortcut cleanup](integration-shortcut-cleanup.md) | Complete | Resolve runtime integration audit follow-ups | Tested and deployed native reads/errors, browser compatibility, PWA and contract tooling. |
