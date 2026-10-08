@@ -75,41 +75,79 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
   await prepared.finalize();
   const base = { ...prepared.base, mastra };
   const sessions = new Map<string, { resourceId: string; scope?: string; session: NativeSession }>();
+  const creatingSessions = new Set<Promise<NativeSession>>();
+  const releasingSessions = new Set<Promise<void>>();
   let disposed = false;
   let disposal: Promise<void> | undefined;
+  const retired = () => new Error('Project runtime is disposed');
+  function quiesce(session: NativeSession) {
+    const threadId = session.thread.getId();
+    if (threadId) session.machinery.getAgent().abortThreadStream({
+      threadId, resourceId: session.identity.getResourceId(), clearPendingSignals: true,
+    });
+    session.abort();
+  }
 
   return {
     ...base,
     projectPath,
     runtimeRoot,
     async createSession(input: SessionOptions): Promise<NativeSession> {
-      if (disposed) throw new Error('Project runtime is disposed');
-      const session = await base.controller.createSession({
-        ...input,
-        tags: { ...input.tags, projectPath },
-      });
-      const resourceId = session.identity.getResourceId();
-      sessions.set(JSON.stringify([resourceId, input.scope ?? null]), { resourceId, scope: input.scope, session });
-      return session;
+      if (disposed) throw retired();
+      const scope = input.scope;
+      const creating = (async () => {
+        const session = await base.controller.createSession({
+          ...input,
+          tags: { ...input.tags, projectPath },
+        });
+        const resourceId = session.identity.getResourceId();
+        sessions.set(JSON.stringify([resourceId, scope ?? null]), { resourceId, scope, session });
+        if (disposed) { quiesce(session); throw retired(); }
+        return session;
+      })();
+      creatingSessions.add(creating);
+      try { return await creating; }
+      finally { creatingSessions.delete(creating); }
     },
     async releaseSession(input: { resourceId: string; scope?: string }): Promise<void> {
+      // Retirement owns all remaining bindings once admissions close. Native
+      // deleteSession does not join another deletion of the same resource.
+      if (disposed) return;
       const key = JSON.stringify([input.resourceId, input.scope ?? null]);
       const tracked = sessions.get(key);
-      try { await base.controller.deleteSession(input); }
-      finally {
-        // Native deletion drops registration even if lock release fails. Keep
-        // tracking only when that same Session still owns the native resource.
-        if (sessions.get(key) === tracked && await base.controller.getSessionByResource(input.resourceId, input.scope) !== tracked?.session) sessions.delete(key);
-      }
+      const releasing = (async () => {
+        try { await base.controller.deleteSession(input); }
+        finally {
+          // Native deletion drops registration even if lock release fails. Keep
+          // tracking only when that same Session still owns the native resource.
+          if (sessions.get(key) === tracked && await base.controller.getSessionByResource(input.resourceId, input.scope) !== tracked?.session) sessions.delete(key);
+        }
+      })();
+      releasingSessions.add(releasing);
+      try { await releasing; }
+      finally { releasingSessions.delete(releasing); }
     },
-    // Native shutdown closes storage but does not join detached title/snapshot writes.
-    // This spike exercises native teardown; safe production retirement remains unproven.
+    // Stop every parent wrapper before any child cancellation can wake it. This
+    // prevents newly triggered preparation; native APIs provide no general join
+    // for preparation already underway or detached title/snapshot writes.
     dispose(): Promise<void> {
       if (disposal) return disposal;
       disposed = true;
       disposal = (async () => {
+        // This complete first pass is synchronous, before any settlement await
+        // or manager cancellation can publish to another still-open parent.
+        for (const input of sessions.values()) quiesce(input.session);
         base.threadScheduler.stop();
         base.stopPluginSignalProviders();
+        // Admissions were closed above. Late native creations are tracked and
+        // quiesced before rejecting; failures do not skip existing-session cleanup.
+        await Promise.allSettled([...creatingSessions]);
+        for (const input of sessions.values()) quiesce(input.session);
+        // Cancel native background work before retirement deletes remaining bindings.
+        await base.mastra.backgroundTaskManager?.shutdown();
+        // A native duplicate delete returns immediately, so retirement must
+        // join releases admitted before it took ownership of the bindings.
+        await Promise.allSettled([...releasingSessions]);
         for (const input of sessions.values()) {
           const memory = await input.session.machinery.getAgent().getMemory({ requestContext: await input.session.machinery.buildRequestContext() });
           if (memory && 'settled' in memory && typeof memory.settled === 'function') await memory.settled();

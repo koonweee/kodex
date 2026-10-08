@@ -246,3 +246,10 @@ Implemented the user's accepted native-summary presentation through main's share
 ### 2026-10-08 — main subagent inspector integrated
 
 Native file summaries committed as d43d61e. Main inspector now reads ordinary child activity/final results and real direct-fork history through native read-only APIs. No child/dormant-parent activation or invented fork/call identity. Canonical observer invalidations cover later peer activation, native history paging, restart and errors. Independent review caught initial-error blank inspector and indefinite fork-error loading; both fixed with regressions. Backend scoped12/12, root combined-native5/5, frontend domain146/146, final scoped31/31, browser combined6/6 and final build/trim/typecheck pass. Shared original inspector tests remain green; desktop/touch screenshots reviewed. Product code still uses built-in native delegation: steerable addressable child tools and descendant/archive coordination are next, not claimed delivered by the inspector. Full port remains active and production unchanged.
+
+
+### 2026-10-08 — runtime retirement ownership integrated
+
+All tracked sessions are synchronously quiesced before any await or native background-task cancellation. Retirement closes session creation/release admission, joins admitted creations and releases, and deletes remaining native bindings only after task-manager shutdown. A late successful creation is stopped and rejected rather than returned into a retired runtime. Native duplicate deletion does not join an earlier deletion; the release regression reproduced storage closure while an earlier lock release was held, and the host admission join fixes that overlap for both successful and failed releases.
+
+Focused actual SDK retirement/release tests pass 7/7, existing characterization remains passing, and independent review accepted. Aggregate backend suite passes 183/183 with typecheck. This is bounded ownership of runtime teardown, not a claim that native APIs drain all already-started preparation or detached writes. Ordinary child cancellation retains native continuation. No Core patch or deployment.
