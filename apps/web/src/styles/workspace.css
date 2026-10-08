@@ -367,7 +367,7 @@
   width: min(480px, calc(100vw - 24px));
   height: auto;
   max-height: min(80dvh, 100dvh);
-  border-radius: 0 0 18px 18px;
+  border-radius: var(--kodex-radius-menu);
   margin-inline: auto;
   background: color-mix(in srgb, var(--kodex-bg-panel) 92%, var(--kodex-bg-shell));
 }
