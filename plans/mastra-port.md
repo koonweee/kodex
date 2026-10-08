@@ -232,3 +232,5 @@ Public stream observation traces the late DB read to parent continuation on nati
 ### 2026-10-08 — native shell presentation validated
 
 Native commands now reuse main's command panel with real output and neutral Finished when the SDK lacks a structured process outcome; explicit tool errors remain Failed and app-server Success is unchanged. Reviewed regression29/29, build/trim/typecheck and actual nonzero-command browser3/3 pass. Browser proof covers both clients, reload, backend restart and all three layouts; screenshot inspected. Child-retirement characterization is separately committed as c747751. Full port remains active; no deployment.
+
+Retirement source follow-up: child-specific production ordering is deferred until the host child tools are integrated; current serve does not install them. Public all-session quiescence before cancellation is the narrow future change. No general preparation join or stronger-than-app-server retirement guarantee is imposed. Shell checkpoint afc76c8 leaves a clean tested worktree; file/diff payload audit is next.
