@@ -346,16 +346,18 @@ export function getKodexColorSchemeDefinition(colorSchemeId: KodexColorSchemeId)
 }
 
 export function buildKodexColorSchemeCss() {
-  return KODEX_COLOR_SCHEMES.map((scheme, index) => {
+  const themeRules = KODEX_COLOR_SCHEMES.map((scheme, index) => {
     const selector =
       index === 0
         ? `:root,\n:root[data-kodex-color-scheme="${scheme.id}"]`
         : `:root[data-kodex-color-scheme="${scheme.id}"]`;
-    const declarations = Object.entries(scheme.rootVariables)
+    const variables = Object.entries(scheme.rootVariables)
       .map(([name, value]) => `  ${name}: ${value};`)
       .join("\n");
-    return `${selector} {\n${declarations}\n}`;
+    return `${selector} {\n  color-scheme: ${scheme.mode};\n${variables}\n}`;
   }).join("\n\n");
+
+  return `${themeRules}\n\nhtml,\nbody {\n  background-color: var(--kodex-bg-app);\n  color: var(--kodex-text-primary);\n}`;
 }
 
 export function buildKodexColorSchemeBootstrapScript() {
