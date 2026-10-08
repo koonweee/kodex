@@ -88,7 +88,7 @@
   }
 
   .kodex-thread-pane-existing > .kodex-composer-shell:not(.kodex-mobile-composer-expanded) {
-    margin-bottom: calc(var(--kodex-pane-edge-space) + 4px + env(safe-area-inset-bottom));
+    margin-bottom: calc(var(--kodex-pane-edge-space) + env(safe-area-inset-bottom));
   }
 }
 
