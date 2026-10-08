@@ -32,18 +32,29 @@ for (const shape of [
               firstOffset: first.top - region.top,
               firstTop: first.top,
               regionWidth: region.width,
+              zoneCenterX: zone.left + zone.width / 2,
               zoneWidth: zone.width,
             };
           });
           expect(layout.buttonHeight).toBeGreaterThanOrEqual(44);
           expect(layout.zoneWidth).toBeLessThan(layout.regionWidth / 2);
           expect(layout.firstOffset).toBeLessThan(20);
-          expect(layout.buttonBottom).toBeLessThanOrEqual(layout.firstTop);
+          const touchOverlap = layout.buttonBottom - layout.firstTop;
+          expect(touchOverlap).toBeGreaterThan(0);
+          expect(touchOverlap).toBeLessThanOrEqual(16);
+          expect(await page.evaluate(({ x, y }) =>
+            document.elementFromPoint(x, y)?.closest("button")?.getAttribute("aria-label"), {
+              x: layout.zoneCenterX,
+              y: layout.firstTop + Math.min(4, touchOverlap / 2),
+            })).toBe("Collapse queued messages");
 
           const preview = region.getByRole("button", { name: "Modify queued message: First", exact: true });
           const previewBox = await preview.boundingBox();
           expect(previewBox).not.toBeNull();
-          await page.touchscreen.tap(previewBox!.x + previewBox!.width / 2, previewBox!.y + 8);
+          await page.touchscreen.tap(
+            previewBox!.x + previewBox!.width / 2,
+            previewBox!.y + Math.min(previewBox!.height - 8, touchOverlap + 8),
+          );
           const editor = page.getByRole("dialog", { name: "Edit queued message", exact: true });
           await expect(editor).toBeVisible();
           await page.keyboard.press("Escape");
@@ -54,6 +65,7 @@ for (const shape of [
           await toggle.hover();
           await expect(toggle).toHaveCSS("opacity", "1");
         }
+        await page.screenshot({ path: test.info().outputPath("expanded-queue.png"), animations: "disabled" });
         await page.setViewportSize({ width: shape.width, height: 540 });
         const summary = region.getByRole("button", { name: "2 queued messages" });
         await expect(summary).toBeVisible();

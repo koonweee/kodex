@@ -108,8 +108,25 @@
 }
 
 @media (hover: none), (any-pointer: coarse) {
-  .kodex-queue-collapse-zone { top: -38px; height: 44px; }
-  .kodex-queue-collapse-zone .kodex-queue-collapse { opacity: 1; height: 44px; min-width: 44px; }
+  .kodex-queue-collapse-zone { top: -26px; height: 44px; }
+  .kodex-queue-collapse-zone .kodex-queue-collapse {
+    position: relative;
+    height: 44px;
+    min-width: 44px;
+    background: transparent;
+    opacity: 1;
+  }
+  .kodex-queue-collapse-zone .kodex-queue-collapse::before {
+    position: absolute;
+    inset: 12px 0;
+    border-radius: var(--kodex-radius-xs);
+    background: var(--kodex-bg-raised-alt);
+    content: "";
+    pointer-events: none;
+  }
+  .kodex-queue-collapse-zone .kodex-queue-collapse .kodex-mantine-button-inner {
+    position: relative;
+  }
   .kodex-queued-messages .kodex-queue-summary { height: 44px; }
 }
 
