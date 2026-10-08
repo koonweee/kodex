@@ -40,6 +40,21 @@ test('native MCP file reload updates both preference panels and subsequent agent
     const peer = await context.newPage(); await peer.goto(`/threads/${chat.id}`);
     const first = await preferences(page, label), second = await preferences(peer, label);
     for (const dialog of [first, second]) await expect(dialog.getByText('local_probe_first', { exact: true })).toBeVisible();
+    const originalConfig = await readFile(binding.paths!.project, 'utf8');
+    await first.getByRole('button', { name: 'Disable', exact: true }).click();
+    for (const dialog of [first, second]) {
+      await expect(dialog.getByRole('button', { name: 'Enable', exact: true })).toBeEnabled();
+      await expect(dialog.getByText('local_probe_first', { exact: true })).toHaveCount(0);
+    }
+    expect(await readFile(binding.paths!.project, 'utf8')).toBe(originalConfig);
+    await second.getByRole('button', { name: 'Enable', exact: true }).click();
+    for (const dialog of [first, second]) {
+      await expect(dialog.getByText('local_probe_first', { exact: true })).toBeVisible();
+      await expect(dialog.getByRole('button', { name: 'Use global default', exact: true })).toBeVisible();
+    }
+    await first.getByRole('button', { name: 'Use global default', exact: true }).click();
+    for (const dialog of [first, second]) await expect(dialog.getByRole('button', { name: 'Use global default', exact: true })).toHaveCount(0);
+
     const configPath = binding.paths!.project;
     const config = JSON.parse(await readFile(configPath, 'utf8'));
     config.mcpServers.local.args[config.mcpServers.local.args.length - 1] = 'second';

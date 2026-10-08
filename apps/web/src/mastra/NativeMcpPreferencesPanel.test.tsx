@@ -12,7 +12,7 @@ type ActiveRuntime = Exclude<Runtime, { phase: 'disabled' }>;
 const originalScroll = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView');
 beforeAll(() => Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() }));
 afterAll(() => { if (originalScroll) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', originalScroll); else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView'); });
-const rpc = vi.hoisted(() => ({ nativeMcpWatch: vi.fn(), nativeMcpReload: vi.fn() }));
+const rpc = vi.hoisted(() => ({ nativeMcpWatch: vi.fn(), nativeMcpReload: vi.fn(), nativeMcpSetServerEnabled: vi.fn(), nativeMcpInheritServer: vi.fn() }));
 vi.mock('./client', () => ({ mastraClient: rpc }));
 function stream() {
   let consume: ((value: IteratorResult<Inventory>) => void) | undefined;
@@ -92,7 +92,84 @@ it.each(['rejected', 'partial'] as const)('preserves watched inventory on %s rel
   await userEvent.click(screen.getByRole('button', { name: 'Reload MCP servers' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('Reload unavailable');
   expect(screen.getByText('docs_lookup_a')).toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: /Add server|Edit|Log in|Remove|Disable/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Add server|Edit|Log in|Remove/ })).not.toBeInTheDocument();
   expect(screen.getByText(/Edit server definitions in these files/)).toBeInTheDocument();
   expect(screen.getByText(/Resource browsing is not available/)).toBeInTheDocument();
+});
+
+
+it('captures the selected binding for disable and converges both clients only through native inventory', async () => {
+  const one = stream(), two = stream(), refill = stream();
+  rpc.nativeMcpWatch.mockResolvedValueOnce(one.iterable).mockResolvedValueOnce(two.iterable).mockResolvedValueOnce(refill.iterable);
+  let acknowledge!: () => void;
+  rpc.nativeMcpSetServerEnabled.mockImplementation(() => new Promise(resolve => { acknowledge = () => resolve([{ bindingId: 'a', error: null }]); }));
+  render(<><section aria-label="Client one">{panel()}</section><section aria-label="Client two">{panel()}</section></>);
+  await waitFor(() => expect(rpc.nativeMcpWatch).toHaveBeenCalledTimes(2));
+  await act(async () => { one.publish(inventory([runtime('a'), runtime('b')])); two.publish(inventory([runtime('a'), runtime('b')])); });
+  const first = within(screen.getByRole('region', { name: 'Client one' }));
+  const second = within(screen.getByRole('region', { name: 'Client two' }));
+  await userEvent.click(first.getByRole('button', { name: 'Disable' }));
+  expect(rpc.nativeMcpSetServerEnabled).toHaveBeenCalledWith({ bindingId: 'a', server: 'docs', enabled: false });
+  expect(first.getByRole('button', { name: 'Disable' })).toBeDisabled();
+  expect(second.getByRole('button', { name: 'Disable' })).toBeEnabled();
+  await userEvent.click(first.getByRole('textbox', { name: 'Runtime' }));
+  await userEvent.click(await screen.findByRole('option', { name: 'Standalone · /b' }));
+  expect(first.getByRole('button', { name: 'Disable' })).toBeEnabled();
+  await act(async () => acknowledge());
+  await waitFor(() => expect(rpc.nativeMcpWatch).toHaveBeenCalledTimes(3));
+  expect(second.getByRole('button', { name: 'Disable' })).toBeEnabled();
+  const changed = [runtime('a', { servers: [{ name: 'docs', connected: false, disabled: true, disabledScope: 'project', projectOverride: 'disabled', globalDefault: 'enabled', toolCount: 0, toolNames: [], transport: 'stdio' }] }), runtime('b')];
+  await act(async () => { refill.publish(inventory(changed, 2)); two.publish(inventory(changed, 2)); });
+  expect(second.getByRole('button', { name: 'Enable' })).toBeEnabled();
+  expect(second.getByRole('button', { name: 'Use global default' })).toBeEnabled();
+  expect(first.getByRole('button', { name: 'Disable' })).toBeEnabled();
+  await userEvent.click(first.getByRole('textbox', { name: 'Runtime' }));
+  await userEvent.click(await screen.findByRole('option', { name: 'Project · /a' }));
+  expect(first.getByRole('button', { name: 'Enable' })).toBeEnabled();
+  expect(first.getByText('Disabled for this project')).toBeInTheDocument();
+  await userEvent.click(first.getByRole('button', { name: 'Enable' }));
+  expect(rpc.nativeMcpSetServerEnabled).toHaveBeenLastCalledWith({ bindingId: 'a', server: 'docs', enabled: true });
+});
+
+it('clears a native project override without claiming that the global kill switch can be overridden', async () => {
+  const source = stream(), refill = stream();
+  rpc.nativeMcpWatch.mockResolvedValueOnce(source.iterable).mockResolvedValueOnce(refill.iterable);
+  rpc.nativeMcpInheritServer.mockResolvedValue([{ bindingId: 'a', error: null }]);
+  render(panel()); await waitFor(() => expect(rpc.nativeMcpWatch).toHaveBeenCalledOnce());
+  await act(async () => source.publish(inventory([runtime('a', { servers: [{ name: 'docs', connected: false, disabled: true, disabledScope: 'global', globalKillSwitch: true, projectOverride: 'enabled', globalDefault: 'enabled', toolCount: 0, toolNames: [], transport: 'stdio' }] })])));
+  expect(screen.getByRole('button', { name: 'Enable' })).toBeDisabled();
+  expect(screen.getByText('MCP is disabled globally; project settings cannot enable it.')).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Use global default' }));
+  expect(rpc.nativeMcpInheritServer).toHaveBeenCalledWith({ bindingId: 'a', server: 'docs' });
+  await waitFor(() => expect(rpc.nativeMcpWatch).toHaveBeenCalledTimes(2));
+  expect(screen.getByRole('button', { name: 'Enable' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Use global default' })).toBeInTheDocument();
+  await act(async () => refill.publish(inventory([runtime('a')], 2)));
+  expect(screen.getByRole('button', { name: 'Disable' })).toBeEnabled();
+  expect(screen.queryByRole('button', { name: 'Use global default' })).not.toBeInTheDocument();
+  expect(screen.queryByText('MCP is disabled globally; project settings cannot enable it.')).not.toBeInTheDocument();
+});
+
+it.each(['rejected', 'partial'] as const)('keeps %s update errors attached to the captured runtime and server', async outcome => {
+  const source = stream(), refill = stream();
+  rpc.nativeMcpWatch.mockResolvedValueOnce(source.iterable).mockResolvedValueOnce(refill.iterable);
+  let finish!: () => void;
+  rpc.nativeMcpSetServerEnabled.mockImplementation(() => new Promise((resolve, reject) => {
+    finish = () => outcome === 'rejected' ? reject(new Error('Update unavailable')) : resolve([{ bindingId: 'a', error: 'Update unavailable' }]);
+  }));
+  render(panel()); await waitFor(() => expect(rpc.nativeMcpWatch).toHaveBeenCalledOnce());
+  const a = runtime('a'); a.servers.push({ ...a.servers[0], name: 'other', toolNames: ['other_lookup'] });
+  await act(async () => source.publish(inventory([a, runtime('b')])));
+  await userEvent.click(screen.getByRole('button', { name: 'Disable' }));
+  await userEvent.click(screen.getByRole('button', { name: /^other / }));
+  expect(screen.getByRole('button', { name: 'Disable' })).toBeEnabled();
+  await act(async () => finish());
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('textbox', { name: 'Runtime' }));
+  await userEvent.click(await screen.findByRole('option', { name: 'Standalone · /b' }));
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('textbox', { name: 'Runtime' }));
+  await userEvent.click(await screen.findByRole('option', { name: 'Project · /a' }));
+  expect(screen.getByRole('alert')).toHaveTextContent('Update unavailable');
+  expect(screen.getByRole('button', { name: 'Disable' })).toBeEnabled();
 });

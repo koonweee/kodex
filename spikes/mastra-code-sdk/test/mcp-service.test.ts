@@ -9,6 +9,7 @@ test('reload reaches retained bindings and two observers converge on native snap
     bindingId, projectId: bindingId === 'current' ? 'project' : null,
     projectName: bindingId === 'current' ? 'Project' : null, cwd: `/${bindingId}`,
     mcp: {
+      setServerEnabled: async () => {}, inheritServer: async () => {},
       snapshot: () => ({ phase: 'ready' as const, servers: [{ name: 'local', connected: true, toolCount: 1, toolNames: [`probe_${generation}`], transport: 'stdio' as const }], skipped: [], paths: { project: '/project/mcp.json', global: '/home/mcp.json', claude: '/project/settings.local.json' } }),
       reload: async () => { loaded.push(bindingId); generation++; },
     },
@@ -35,6 +36,7 @@ test('binding selection rejects unknown IDs and preserves safe per-binding reloa
   const service = createMcpService({ signal: new AbortController().signal, assertActive() {}, sources: async () => [
     { bindingId: 'disabled', projectId: null, projectName: null, cwd: '/disabled', mcp: undefined },
     { bindingId: 'failed', projectId: null, projectName: null, cwd: '/failed', mcp: {
+      setServerEnabled: async () => {}, inheritServer: async () => {},
       snapshot: () => ({ phase: 'ready' as const, servers: [], skipped: [], paths: { project: 'p', global: 'g', claude: 'c' } }),
       reload: async () => { calls++; throw new Error('secret-internal-value'); },
     } },
@@ -55,6 +57,7 @@ test('transport cancellation releases the reload reply without pretending native
   let completed = false;
   const service = createMcpService({ signal: new AbortController().signal, assertActive() {}, sources: async () => [{
     bindingId: 'held', projectId: null, projectName: null, cwd: '/held', mcp: {
+      setServerEnabled: async () => {}, inheritServer: async () => {},
       snapshot: () => ({ phase: 'reloading' as const, servers: [], skipped: [], paths: { project: 'p', global: 'g', claude: 'c' } }),
       reload: async () => { started(); await nativeWork; completed = true; },
     },
@@ -65,4 +68,25 @@ test('transport cancellation releases the reload reply without pretending native
   await assert.rejects(reply, /no longer waiting/i);
   assert.equal(completed, false);
   finish(); await nativeWork;
+});
+
+test('native project server overrides refill same-scope managers without changing other projects', async () => {
+  const calls: string[] = [];
+  const source = (bindingId: string, nativeProject: string) => ({
+    bindingId, projectId: bindingId, projectName: bindingId, cwd: `/${bindingId}`,
+    mcp: {
+      snapshot: () => ({ phase: 'ready' as const, servers: [{ name: 'docs', connected: true, toolCount: 0, toolNames: [], transport: 'stdio' as const }], skipped: [], paths: { project: nativeProject, global: '/global/mcp.json', claude: '/claude' } }),
+      reload: async () => { calls.push(`reload:${bindingId}`); },
+      setServerEnabled: async (name: string, enabled: boolean) => { calls.push(`${bindingId}:${name}:${enabled}`); },
+      inheritServer: async (name: string) => { calls.push(`inherit:${bindingId}:${name}`); },
+    },
+  });
+  const service = createMcpService({ signal: new AbortController().signal, assertActive() {}, sources: async () => [source('selected', '/same/mcp.json'), source('retained', '/same/mcp.json'), source('other', '/other/mcp.json')] });
+  assert.deepEqual(await service.setServerEnabled({ bindingId: 'selected', server: 'docs', enabled: false }), [{ bindingId: 'selected', error: null }, { bindingId: 'retained', error: null }]);
+  assert.deepEqual(calls, ['selected:docs:false', 'reload:retained']);
+  await service.inheritServer({ bindingId: 'retained', server: 'docs' });
+  assert.deepEqual(calls.slice(2), ['inherit:retained:docs', 'reload:selected']);
+  const cancelled = new AbortController(); cancelled.abort();
+  await assert.rejects(service.setServerEnabled({ bindingId: 'selected', server: 'docs', enabled: true }, cancelled.signal), /no longer waiting/);
+  assert.equal(calls.length, 4);
 });

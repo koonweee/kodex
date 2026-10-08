@@ -8,6 +8,9 @@ import { useNativeSnapshots } from './useNativeSnapshots';
 type Inventory = Awaited<ReturnType<ChatClient['nativeMcpWatch']>> extends AsyncIterable<infer T> ? T : never;
 type Runtime = Inventory['rows'][number];
 type NativeServer = Runtime['servers'][number];
+type ServerAction =
+  | { kind: 'enabled'; input: Parameters<ChatClient['nativeMcpSetServerEnabled']>[0] }
+  | { kind: 'inherit'; input: Parameters<ChatClient['nativeMcpInheritServer']>[0] };
 const runtimeLabel = (runtime: Runtime) => `${runtime.projectName ?? 'Standalone'} · ${runtime.cwd}`;
 function serverLabel(server: NativeServer) {
   if (server.disabled) return 'Disabled';
@@ -22,6 +25,13 @@ function ServerBadge({ server }: { server: NativeServer }) {
   return <Badge size="sm" variant="light" data-tone={server.disabled ? 'neutral' : server.connected ? 'success' : server.needsAuth ? 'warning' : server.error ? 'danger' : 'info'}>{serverLabel(server)}</Badge>;
 }
 
+function OperationErrors({ results, rows }: { results?: Awaited<ReturnType<ChatClient['nativeMcpReload']>>; rows: Runtime[] }) {
+  return results?.filter(result => result.error).map(result => {
+    const failedRuntime = rows.find(row => row.bindingId === result.bindingId);
+    return <Alert key={result.bindingId} color="red" variant="light">{failedRuntime ? runtimeLabel(failedRuntime) : result.bindingId}: {result.error}</Alert>;
+  });
+}
+
 export function NativeMcpPreferencesPanel() {
   const watch = useCallback((signal: AbortSignal) => mastraClient.nativeMcpWatch(undefined, { signal }), []);
   const view = useNativeSnapshots<Inventory>('native-mcp', watch);
@@ -31,8 +41,15 @@ export function NativeMcpPreferencesPanel() {
   const runtime = rows.find(row => row.bindingId === bindingId) ?? rows[0];
   const server = runtime?.servers.find(row => row.name === serverName) ?? runtime?.servers[0];
   const reload = useMutation({ mutationFn: () => mastraClient.nativeMcpReload({}), onSuccess: () => view.retry() });
+  const update = useMutation({
+    mutationFn: (action: ServerAction) => action.kind === 'enabled'
+      ? mastraClient.nativeMcpSetServerEnabled(action.input) : mastraClient.nativeMcpInheritServer(action.input),
+    onSuccess: () => view.retry(),
+  });
+  const selectedUpdate = Boolean(runtime && server && update.variables?.input.bindingId === runtime.bindingId && update.variables.input.server === server.name);
+  const updatePending = selectedUpdate && update.isPending;
+  const controlsDisabled = updatePending || runtime?.phase === 'initializing' || runtime?.phase === 'reloading';
   const loading = !view.snapshot && !view.error;
-  const reloadErrors = reload.data?.filter(result => result.error) ?? [];
   const phaseLabel = runtime ? ({ disabled: 'Disabled', initializing: 'Initializing', reloading: 'Reloading', ready: 'Ready', failed: 'Failed' } as const)[runtime.phase] : null;
 
   return <Stack className="kodex-preferences-panel kodex-mcp-panel" gap={14}>
@@ -44,10 +61,7 @@ export function NativeMcpPreferencesPanel() {
     {loading ? <Group gap={8}><Loader size={14} /><Text c="dimmed" size="xs">Loading MCP servers</Text></Group> : null}
     {view.error ? <Alert color="red" variant="light">{view.error}</Alert> : null}
     {reload.error ? <Alert color="red" variant="light">{reload.error.message}</Alert> : null}
-    {reloadErrors.map(result => {
-      const failedRuntime = rows.find(row => row.bindingId === result.bindingId);
-      return <Alert key={result.bindingId} color="red" variant="light">{failedRuntime ? runtimeLabel(failedRuntime) : result.bindingId}: {result.error}</Alert>;
-    })}
+    <OperationErrors results={reload.data} rows={rows} />
     {!loading && !view.error && !rows.length ? <Text c="dimmed" size="sm">No MCP runtimes available</Text> : null}
     {runtime ? <>
       <Select label="Runtime" data={rows.map(row => ({ value: row.bindingId, label: runtimeLabel(row) }))} value={runtime.bindingId}
@@ -82,14 +96,27 @@ export function NativeMcpPreferencesPanel() {
           </Button>)}
         </Stack>
         {server ? <Stack className="kodex-mcp-detail" gap={12}>
-          <Group justify="space-between" wrap="wrap"><Text fw={650} size="sm">{server.name}</Text><ServerBadge server={server} /></Group>
+          <Group justify="space-between" wrap="wrap">
+            <Group gap={6}><Text fw={650} size="sm">{server.name}</Text><ServerBadge server={server} /></Group>
+            <Group gap={6}>
+              <Button disabled={controlsDisabled || Boolean(server.disabled && server.globalKillSwitch)} loading={updatePending && update.variables?.kind === 'enabled'}
+                onClick={() => update.mutate({ kind: 'enabled', input: { bindingId: runtime.bindingId, server: server.name, enabled: Boolean(server.disabled) } })}
+                size="xs" type="button" variant="subtle">{server.disabled ? 'Enable' : 'Disable'}</Button>
+              {server.projectOverride ? <Button disabled={controlsDisabled} loading={updatePending && update.variables?.kind === 'inherit'}
+                onClick={() => update.mutate({ kind: 'inherit', input: { bindingId: runtime.bindingId, server: server.name } })}
+                size="xs" type="button" variant="subtle">Use global default</Button> : null}
+            </Group>
+          </Group>
+          {server.globalKillSwitch ? <Text c="dimmed" size="xs">MCP is disabled globally; project settings cannot enable it.</Text> : null}
+          {selectedUpdate && update.error ? <Alert color="red" variant="light">{update.error.message}</Alert> : null}
+          {selectedUpdate ? <OperationErrors results={update.data} rows={rows} /> : null}
           {server.error ? <Alert color="red" variant="light">{server.error}</Alert> : null}
           <Box><Text fw={650} size="xs">Tools</Text>
             <Text className="kodex-mcp-wrapping-text" c="dimmed" size="xs">
               {server.connected ? server.toolNames.length ? [...server.toolNames].sort().join(', ') : 'No tools reported' : 'Tools unavailable until connected'}
             </Text>
           </Box>
-          {server.disabledScope ? <Text c="dimmed" size="xs">Disabled for {server.disabledScope === 'global' ? 'all projects' : 'this project'}</Text> : null}
+          {server.disabledScope ? <Text c="dimmed" size="xs">{server.disabledScope === 'global' ? 'Disabled by global settings' : 'Disabled for this project'}</Text> : null}
           <Text c="dimmed" size="xs">Resource browsing is not available in this panel.</Text>
         </Stack> : null}
       </Box> : null}

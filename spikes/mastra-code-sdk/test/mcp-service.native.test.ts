@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
@@ -94,6 +94,20 @@ async function nativeServiceProof(root: string) {
     assert.equal(sessionCreations, 0, 'native MCP inventory/background setup mounts no chat Session');
     const runtimeA = runtimes.find(runtime => runtime.projectPath === oldA)!, runtimeB = runtimes.find(runtime => runtime.projectPath === cwdB)!;
     await execute(runtimeA, 'shared_probe_a_initial', 'a_initial');
+    const originalConfig = await readFile(config(oldA), 'utf8');
+    assert.deepEqual(await first.nativeMcpSetServerEnabled({ bindingId: a.bindingId, server: 'shared', enabled: false }), [{ bindingId: a.bindingId, error: null }]);
+    const disabled = await Promise.all(peers.map(peer => until(peer, snapshot => binding(snapshot.rows, a.bindingId).servers.find(server => server.name === 'shared')?.disabled === true)));
+    for (const snapshot of disabled) {
+      assert.ok(!names(binding(snapshot.rows, a.bindingId)).includes('shared_probe_a_initial'));
+      assert.ok(names(binding(snapshot.rows, b.bindingId)).includes('shared_probe_b_initial'));
+      assert.equal(binding(snapshot.rows, a.bindingId).servers.find(server => server.name === 'shared')?.projectOverride, 'disabled');
+    }
+    assert.equal(await readFile(config(oldA), 'utf8'), originalConfig, 'native project override does not rewrite server definitions');
+    await second.nativeMcpInheritServer({ bindingId: a.bindingId, server: 'shared' });
+    await Promise.all(peers.map(peer => until(peer, snapshot => names(binding(snapshot.rows, a.bindingId)).includes('shared_probe_a_initial'))));
+    await execute(runtimeA, 'shared_probe_a_initial', 'a_initial');
+    assert.equal(binding(await first.nativeMcpList(), a.bindingId).servers.find(server => server.name === 'shared')?.projectOverride, undefined);
+
     await Promise.all([editConfig(global, { common: 'global_edited' }), editConfig(config(oldA), { shared: 'a_edited' })]);
     assert.deepEqual(names(binding(await second.nativeMcpList(), a.bindingId)), names(a), 'file edits alone do not rebuild native tools');
     assert.deepEqual(await first.nativeMcpReload({ bindingId: a.bindingId }), [{ bindingId: a.bindingId, error: null }]);
@@ -133,6 +147,7 @@ async function nativeServiceProof(root: string) {
       assert.equal(binding(snapshot.rows, b.bindingId).projectId, 'b');
     }
     await assert.rejects(second.nativeMcpReload({ bindingId: 'not-a-binding' }), { code: 'NOT_FOUND' });
+    await second.nativeMcpSetServerEnabled({ bindingId: b.bindingId, server: 'shared', enabled: false });
     report('delete converged');
     watching.abort(); await Promise.all(peers.map(peer => peer.return().catch(() => undefined)));
     report('watches closed');
@@ -144,12 +159,17 @@ async function nativeServiceProof(root: string) {
     try {
       const restartedWatch = await client().nativeMcpWatch(undefined, { signal: restartAbort.signal });
       report('restart watch');
-      const restarted = await until(restartedWatch, snapshot => snapshot.rows.length === 3 && snapshot.rows.every(row => row.phase === 'ready' && row.servers.every(status => status.connected)));
+      const restarted = await until(restartedWatch, snapshot => snapshot.rows.length === 3 && snapshot.rows.every(row => row.phase === 'ready' && row.servers.every(status => status.connected || status.disabled)));
       report('restart ready');
       assert.deepEqual(new Set(restarted.rows.map(row => row.bindingId)), new Set([a.bindingId, b.bindingId, next.bindingId]));
       for (const [id, cwd, marker] of [[a.bindingId, oldA, 'a_restart'], [next.bindingId, nextA, 'next_restart'], [b.bindingId, cwdB, 'b_restart']] as const) {
         const row = binding(restarted.rows, id); assert.equal(row.cwd, cwd);
-        assert.deepEqual(names(row), ['common_probe_global_restart', `shared_probe_${marker}`]);
+        assert.deepEqual(names(row), id === b.bindingId ? ['common_probe_global_restart'] : ['common_probe_global_restart', `shared_probe_${marker}`]);
+        if (id === b.bindingId) {
+          assert.equal(row.servers.find(server => server.name === 'shared')?.projectOverride, 'disabled', 'native project override survives manager recreation');
+          await client().nativeMcpSetServerEnabled({ bindingId: id, server: 'shared', enabled: true });
+          assert.ok(names(binding(await client().nativeMcpList(), id)).includes(`shared_probe_${marker}`));
+        }
         assert.equal(row.projectId, id === b.bindingId ? 'b' : null, 'deleted CLI seed does not reattach old native bindings');
         await execute(runtimes.filter(runtime => runtime.projectPath === cwd).at(-1)!, `shared_probe_${marker}`, marker);
       }
@@ -189,6 +209,7 @@ if (process.env.KODEX_MCP_SERVICE_FIXTURE === '1') {
     let nativeFinished = false;
     const lifetime = new AbortController();
     const service = createMcpService({ assertActive() {}, signal: lifetime.signal, sources: async () => [{ bindingId: 'held', projectId: null, projectName: null, cwd: '/fixture', mcp: {
+      setServerEnabled: async () => {}, inheritServer: async () => {},
       snapshot: () => ({ phase: 'ready' as const, servers: [], skipped: [], paths: { project: '/fixture/mcp.json', global: '/fixture/global.json', claude: '/fixture/claude.json' } }),
       async reload() { entered.release(); await release.promise; nativeFinished = true; completed.release(); },
     } }] });

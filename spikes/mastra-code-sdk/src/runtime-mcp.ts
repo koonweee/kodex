@@ -7,7 +7,7 @@ export interface RuntimeMcpSnapshot {
   skipped: Array<{ name: string; reason: string }>;
   paths: ReturnType<McpManager['getConfigPaths']>;
 }
-type NativeMcpManager = Pick<McpManager, 'initInBackground' | 'reload' | 'disconnect' | 'getServerStatuses' | 'getSkippedServers' | 'getConfigPaths'>;
+type NativeMcpManager = Pick<McpManager, 'initInBackground' | 'reload' | 'disconnect' | 'getServerStatuses' | 'getSkippedServers' | 'getConfigPaths' | 'setServerDisabled' | 'inheritServer'>;
 
 /** Transient admission/operation state around one retained native manager.
  * Native discovery owns server status and tools. Disconnect is not an init
@@ -22,6 +22,23 @@ export function createRuntimeMcp(manager: NativeMcpManager) {
     catch { phase = 'failed'; }
   })();
   let tail: Promise<void> = ready;
+  function mutate(run: () => Promise<unknown>, serverName?: string): Promise<void> {
+    if (disposed) return Promise.reject(new Error('Runtime MCP is disposed.'));
+    const operation = tail.then(async () => {
+      assertOpen();
+      // A prior reload may add/remove this server. Validate only at dispatch,
+      // using native inventory rather than retaining config or status state.
+      if (serverName !== undefined && !manager.getServerStatuses().some(server => server.name === serverName)) {
+        throw new Error('MCP server not found.');
+      }
+      phase = 'reloading';
+      try { await run(); phase = 'ready'; }
+      catch { phase = 'failed'; throw new Error('MCP operation failed.'); }
+    });
+    // A failed explicit operation must not poison the next explicit attempt.
+    tail = operation.catch(() => {});
+    return operation;
+  }
   return {
     ready,
     snapshot(): RuntimeMcpSnapshot {
@@ -46,17 +63,11 @@ export function createRuntimeMcp(manager: NativeMcpManager) {
         paths: { project: paths.project, global: paths.global, claude: paths.claude },
       };
     },
-    reload(): Promise<void> {
-      if (disposed) return Promise.reject(new Error('Runtime MCP is disposed.'));
-      const operation = tail.then(async () => {
-        assertOpen(); phase = 'reloading';
-        try { await manager.reload(); phase = 'ready'; }
-        catch { phase = 'failed'; throw new Error('MCP reload failed.'); }
-      });
-      // A failed explicit reload must not poison the next explicit attempt.
-      tail = operation.catch(() => {});
-      return operation;
+    reload(): Promise<void> { return mutate(() => manager.reload()); },
+    setServerEnabled(name: string, enabled: boolean): Promise<void> {
+      return mutate(() => manager.setServerDisabled(name, !enabled), name);
     },
+    inheritServer(name: string): Promise<void> { return mutate(() => manager.inheritServer(name), name); },
     dispose(): Promise<void> {
       if (disposal) return disposal;
       disposed = true;

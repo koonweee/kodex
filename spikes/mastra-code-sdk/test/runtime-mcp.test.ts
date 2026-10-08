@@ -10,8 +10,9 @@ function gate() {
 }
 function nativeManager() {
   let statuses: McpServerStatus[] = [{ name: 'local', connected: false, connecting: true, toolCount: 0, toolNames: [], transport: 'stdio' }];
-  const initial = gate(), calls: string[] = [], reloads: Array<ReturnType<typeof gate>> = [];
-  let initError: Error | undefined, reloadError: Error | undefined;
+  const initial = gate(), calls: string[] = [], reloads: Array<ReturnType<typeof gate>> = [], mutations: Array<ReturnType<typeof gate>> = [];
+  const disableArguments: Array<[string, boolean, { global?: boolean } | undefined]> = [];
+  let initError: Error | undefined, reloadError: Error | undefined, mutationError: Error | undefined;
   const manager = {
     async initInBackground(): Promise<McpInitResult> {
       calls.push('init'); await initial.promise; if (initError) throw initError;
@@ -20,15 +21,25 @@ function nativeManager() {
     async reload() {
       calls.push('reload'); const held = reloads.shift(); if (held) await held.promise; if (reloadError) throw reloadError;
     },
+    async setServerDisabled(name: string, disabled: boolean, options?: { global?: boolean }) {
+      calls.push(`disable:${name}:${disabled}`); disableArguments.push([name, disabled, options]);
+      const held = mutations.shift(); if (held) await held.promise; if (mutationError) throw mutationError;
+      return statuses.find(server => server.name === name)!;
+    },
+    async inheritServer(name: string) {
+      calls.push(`inherit:${name}`); const held = mutations.shift(); if (held) await held.promise; if (mutationError) throw mutationError;
+      return statuses.find(server => server.name === name)!;
+    },
     async disconnect() { calls.push('disconnect'); },
     getServerStatuses: () => statuses,
     getSkippedServers: () => [{ name: 'invalid', reason: 'Secret endpoint token=TEST_SECRET' }],
     getConfigPaths: () => ({ project: '/project/.kodex-mastra-spike/mcp.json', global: '/home/.kodex-mastra-spike/mcp.json', claude: '/project/.claude/settings.local.json' }),
   };
-  return { manager, initial, calls, reloads,
+  return { manager, initial, calls, reloads, mutations, disableArguments,
     setStatuses(value: McpServerStatus[]) { statuses = value; },
     rejectInit(error: Error) { initError = error; },
     rejectReload(error: Error | undefined) { reloadError = error; },
+    rejectMutation(error: Error | undefined) { mutationError = error; },
   };
 }
 
@@ -80,4 +91,56 @@ test('disposal disconnects without joining unfinished initialization and fences 
   assert.throws(() => mcp.snapshot(), /disposed/i);
   native.initial.release(); await mcp.ready; await assert.rejects(queued, /disposed/i);
   await mcp.dispose(); assert.deepEqual(native.calls, ['init', 'disconnect'], 'queued reload cannot start after admission closes');
+});
+
+
+test('enable and inherit share reload exclusion and validate the server after the preceding native reload', async () => {
+  const native = nativeManager(), mcp = createRuntimeMcp(native.manager);
+  const reloadHeld = gate(), disableHeld = gate(); native.reloads.push(reloadHeld); native.mutations.push(disableHeld);
+  const reloaded = mcp.reload();
+  const disabled = mcp.setServerEnabled('added', false), inherited = mcp.inheritServer('added'), enabled = mcp.setServerEnabled('added', true);
+  native.initial.release(); await mcp.ready; await Promise.resolve();
+  assert.deepEqual(native.calls, ['init', 'reload']);
+  native.setStatuses([{ name: 'added', connected: true, toolCount: 1, toolNames: ['added_tool'], transport: 'stdio' }]);
+  reloadHeld.release(); await reloaded; await Promise.resolve();
+  assert.deepEqual(native.calls, ['init', 'reload', 'disable:added:true']);
+  assert.equal(mcp.snapshot().phase, 'reloading');
+  disableHeld.release(); await Promise.all([disabled, inherited, enabled]);
+  assert.deepEqual(native.calls, ['init', 'reload', 'disable:added:true', 'inherit:added', 'disable:added:false']);
+  assert.deepEqual(native.disableArguments, [['added', true, undefined], ['added', false, undefined]], 'native writes use project overrides without the global option');
+  assert.equal(mcp.snapshot().phase, 'ready');
+  await mcp.dispose();
+});
+
+test('unknown or removed server mutations fail safely before native writes and do not poison later operations', async () => {
+  const native = nativeManager(), mcp = createRuntimeMcp(native.manager); native.initial.release(); await mcp.ready;
+  const held = gate(); native.reloads.push(held);
+  const reloaded = mcp.reload(), removed = mcp.setServerEnabled('local', false); void removed.catch(() => {});
+  native.setStatuses([]); held.release(); await reloaded;
+  await assert.rejects(removed, /not found/i);
+  for (const operation of [mcp.setServerEnabled('TEST_SECRET', true), mcp.inheritServer('TEST_SECRET')]) {
+    await assert.rejects(operation, error => error instanceof Error && !error.message.includes('TEST_SECRET'));
+  }
+  assert.deepEqual(native.calls, ['init', 'reload']); assert.equal(mcp.snapshot().phase, 'ready');
+  native.setStatuses([{ name: 'local', connected: false, toolCount: 0, toolNames: [], transport: 'stdio', error: 'TEST_SECRET' }]);
+  await mcp.setServerEnabled('local', true);
+  assert.equal(mcp.snapshot().phase, 'ready', 'a native resolved mutation can report an individual server failure');
+  assert.equal(mcp.snapshot().servers[0]?.connected, false); assert.ok(mcp.snapshot().servers[0]?.error);
+  await mcp.dispose();
+});
+
+test('failed native mutations recover serially while disposal fences queued enable and inherit', async () => {
+  const native = nativeManager(), mcp = createRuntimeMcp(native.manager); native.initial.release(); await mcp.ready;
+  native.rejectMutation(new Error('TEST_SECRET'));
+  await assert.rejects(mcp.inheritServer('local'), error => error instanceof Error && !error.message.includes('TEST_SECRET'));
+  assert.equal(mcp.snapshot().phase, 'failed');
+  native.rejectMutation(undefined); await mcp.setServerEnabled('local', false); assert.equal(mcp.snapshot().phase, 'ready');
+  const held = gate(); native.reloads.push(held);
+  const reloaded = mcp.reload(), queued = [mcp.setServerEnabled('local', true), mcp.inheritServer('local')];
+  for (const pending of queued) void pending.catch(() => {});
+  await Promise.resolve(); await mcp.dispose();
+  const callsAtDisposal = [...native.calls];
+  await assert.rejects(mcp.setServerEnabled('local', true), /disposed/i); await assert.rejects(mcp.inheritServer('local'), /disposed/i);
+  held.release(); await reloaded; await Promise.all(queued.map(pending => assert.rejects(pending, /disposed/i)));
+  assert.deepEqual(native.calls, callsAtDisposal, 'no queued server mutation begins after native disconnect');
 });
