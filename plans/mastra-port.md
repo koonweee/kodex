@@ -1,6 +1,8 @@
-# Main frontend on the Mastra backend
+# Mastra port running log
 
-Status: Active. Authorized 2026-10-07. Running log: [Mastra port](mastra-port.md).
+Status: Active. Authorized 2026-10-07. Current scope, workflow inventory and exit conditions: [frontend parity plan](mastra-frontend-parity.md).
+
+Current checkpoint (2026-10-09): normal chat and retained UI slices through Push/PWA are committed and validated. Native extension wake characterization, final retained-workflow audit and moving-main comparison remain. Entries below retain historical findings; a later acceptance checkpoint supersedes its earlier investigation.
 
 ## Fixed reference and scope
 
@@ -35,9 +37,9 @@ Proceed autonomously on implementation, routine design choices, tests, fixes, re
 
 ## Progress
 
-- Frozen main merged and workflow inventory recorded. Initial integration validation passes; native settings/composer parity is active.
+- Frozen main is merged. Use the current [parity inventory](mastra-frontend-parity.md#workflow-inventory-against-the-frozen-reference); the initial inventory below records the starting state, not remaining work.
 
-## Workflow inventory against the frozen reference
+## Initial workflow inventory (historical)
 
 The reference UI path is App → KodexShellView → WorkspaceProvider → ThreadPane → ThreadPaneComposerBridge → Composer/TimelineView. Preserve these actual components; retire prototype NativeShell/NativeThreadPane/NativeComposer replacements as their domain wiring is ported. Keep inferred oRPC types, native snapshot lifecycle and named display mappings. Existing endpoint names below describe dependencies, not a new wire-contract specification.
 
@@ -936,3 +938,7 @@ Next fixture-only proof: two projects/two concurrent native Sessions with global
 2026-10-09 continuation: native-only limitation reaffirmed; no durable completion/read recovery. Push transport implementation and native extension characterization are independently reviewed; combined backend20/20 and typechecks pass. Push owns only device subscriptions/delivery attempts, with native eligibility rechecks and joined shutdown. Built same-origin frontend/installed-worker and two-tab notification validation are in progress; real-provider proof remains manual. Extension tools preserve concurrent request context, but native active-Session accessor/hook identities retain their documented limitations and provider-emitted wake behavior is not yet established. Details/evidence in mastra-frontend-parity.md; whole goal active, no deployment.
 
 2026-10-09 Push/PWA checkpoint: native transport and built same-origin serving pass combined backend20, lifecycle regression18, static7, frontend43 plus earlier Shell17, actual built-worker/two-tab browser3, checks/builds/trim and independent reviews. Fresh sirv reads preserve frontend-only PWA updates. Browser uses bundled full Chromium because headless-shell crashes on worker BadgeService. Real provider proof is manual. Details in parity log. Native-only read-state limitation retained; next provider wake characterization/final capability and main drift audit, overall goal active.
+
+2026-10-09 frozen-reference audit: full committed native backend426/426 and frontend1388/1388 pass. Independent UI audit found centered draft layout and explicit panel route/Back/reload differences; fixes and browser evidence are in progress. Initial deep-link seeding concern was withdrawn after checking unreachable frozen-main effect order. Native provider wake proof confirms child policy bypass and released-child missing context; supported tools-only mount sequence is being characterized before changing plugin scope. Details in current parity log; no deployment or SDK patch.
+
+2026-10-09 native plugin proof:2/2 native cases/check/review pass. Public provider-stop-before-finalize retains tools and reload without starting plugin event sources. User alignment pending on enabling that restricted native support; no production flags changed. Final main comparison frozen at84b0ebc7d75cc49efa577511bf2f741e6d624749:215frontend files changed since initial reference, a material expansion requiring scope discussion after categorization. Existing draft/panel parity fixes continue independently.

@@ -153,3 +153,5 @@ Focused subsystem replacements are encouraged wherever they reduce maintained co
 - New plans must be added here before implementation starts.
 
 Mastra current checkpoint (2026-10-09): native-only read-state limitation reaffirmed; Push transport and extension characterization reviewed, combined backend20/20 passing. Built frontend/PWA and two-tab notification proof passed in all three layouts, with builds/trim/review green; provider-wake characterization and final audit remain, overall port active. See [parity log](mastra-frontend-parity.md).
+
+Mastra final-audit checkpoint: committed backend426/frontend1388 tests pass. Native plugin wake/tools-only proof2/2 reviewed, production choice pending. Frozen-reference draft placement/panel navigation fixes in progress. Later-main comparison pinned84b0ebc shows material215-file frontend drift; scope categorization pending. Goal remains active.
