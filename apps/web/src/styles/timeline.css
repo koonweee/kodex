@@ -6,6 +6,21 @@
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  padding: 8px 0;
+}
+
+/* Timeline rows share one outer spacing owner. Item and work renderers retain
+   their standalone padding outside TimelineView without doubling it here. */
+.kodex-turn-group > .kodex-timeline-item,
+.kodex-turn-group > .kodex-work-row {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* The enclosing work row supplies the final 8px at an expanded disclosure's
+   bottom edge, so its last nested row must not contribute the same half-gap. */
+.kodex-work-row-contents > .kodex-turn-group:last-child {
+  padding-bottom: 0;
 }
 
 .kodex-timeline-item {

@@ -408,7 +408,7 @@ const TimelineRowView = memo(function TimelineRowView({
           onExpandedChange={(expanded) => onWorkExpandedChange(row.key, expanded)}
           row={row}
         >
-          <Stack gap={8} mt={8}>
+          <Stack gap={0} className="kodex-work-row-contents">
             {row.collapsedRows.map((collapsedRow) => (
               <TimelineRowView
                 approvals={[]}
