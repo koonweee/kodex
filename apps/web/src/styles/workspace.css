@@ -554,7 +554,7 @@
 .kodex-thread-pane-scroll {
   min-height: 0;
   overflow: auto;
-  padding: var(--kodex-pane-edge-space) var(--kodex-pane-edge-space) 20px;
+  padding: var(--kodex-pane-edge-space) var(--kodex-pane-edge-space) 16px;
 }
 
 .kodex-thread-pane-existing > .kodex-thread-content {
