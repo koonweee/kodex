@@ -1,3 +1,5 @@
+import { createAutomationService } from './automation-service.js';
+import { AUTOMATION_WORKFLOW_ID, createAutomationWorkflow } from './automation-workflow.js';
 import { join } from 'node:path';
 import { prepareChatInput, type ChatInput } from './chat-input.js';
 import { uploadChatImage } from './chat-image-uploads.js';
@@ -78,7 +80,15 @@ export function createChatService(options: ChatServiceOptions) {
     if (disposed) throw new ORPCError('SERVICE_UNAVAILABLE', { message: 'The chat service is shutting down.' });
   };
   const invalidateCatalog = () => { catalog.publish('changed', ++catalogRevision); };
-  const projects = createChatProjects(options, assertActive);
+  const projects = createChatProjects(options, assertActive, () => ({
+    [AUTOMATION_WORKFLOW_ID]: createAutomationWorkflow(input => lifecycle.admit(input.targetThreadId, async () => {
+      const target = await projects.findThread(input.targetThreadId);
+      if (input.resourceId !== target.thread.resourceId) throw missing();
+      const result = await service.send({ chatId: input.targetThreadId, text: input.prompt, queueIfPending: false });
+      if (!result.accepted) throw new Error('Scheduled input was not accepted.');
+      return accepted();
+    })),
+  }));
   const subagents = createChatSubagents({ signal: lifetime.signal, async resolveParent(chatId) {
     const parent = await projects.findThread(chatId, true);
     const handle = await handles.get(`${parent.binding.id}:${chatId}`);
@@ -205,6 +215,8 @@ export function createChatService(options: ChatServiceOptions) {
   }
 
   const service = {
+    automations: createAutomationService({ runtimes: () => projects.nativeRuntimes(), resolveTarget: chatId => projects.findThread(chatId) }),
+    async initializeAutomations() { await projects.nativeRuntimes(); },
     async terminalProjectCwd(projectId: string) { assertActive(); return (await projects.executionBinding(projectId)).cwd; },
     async getAccount() { return (await accounts()).get(); },
     async logoutAccount() { return (await accounts()).logout(); },

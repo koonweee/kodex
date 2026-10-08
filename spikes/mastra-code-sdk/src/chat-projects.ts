@@ -3,7 +3,7 @@ import { isChildThread } from './child-relation.js';
 import { readChatName, readChatTitle } from './chat-titles.js';
 import { homedir } from 'node:os';
 import { ORPCError } from '@orpc/server';
-import { createProjectRuntime, type ProjectRuntime } from './runtime.js';
+import { createProjectRuntime, type ProjectRuntime, type ProjectRuntimeOptions } from './runtime.js';
 import { openProductRegistry, ProductRegistryError, type ProductRegistry, type ProjectSeed, type ProjectPatch, type RuntimeBinding, type ChatMetadata } from './product-registry.js';
 import { listProjectDirectories } from './project-directories.js';
 import type { SpikeProfile } from './profile.js';
@@ -24,7 +24,7 @@ const describeChat = (binding: RuntimeBinding, thread: NativeThread, title: stri
 /** Product membership is read from the registry. Native runtimes remain attached
  * to immutable binding identities and cwd, including detached standalone chats.
  */
-export function createChatProjects(options: ChatProjectOptions, assertActive: () => void) {
+export function createChatProjects(options: ChatProjectOptions, assertActive: () => void, workflows?: () => ProjectRuntimeOptions['workflows']) {
   const runtimes = new Map<string, Promise<ProjectRuntime>>();
   let pendingRegistry: Promise<ProductRegistry> | undefined;
   const home = options.directoryHome ?? homedir();
@@ -56,7 +56,7 @@ export function createChatProjects(options: ChatProjectOptions, assertActive: ()
     assertActive();
     let pending = runtimes.get(binding.id);
     if (!pending) {
-      pending = (options.runtimeFactory ?? createProjectRuntime)({ projectPath: binding.cwd, runtimeRoot: binding.runtimeRoot, profile: options.profile });
+      pending = (options.runtimeFactory ?? createProjectRuntime)({ projectPath: binding.cwd, runtimeRoot: binding.runtimeRoot, profile: options.profile, ...(workflows && { workflows: workflows() }) });
       runtimes.set(binding.id, pending);
       void pending.catch(() => { if (runtimes.get(binding.id) === pending) runtimes.delete(binding.id); });
     }
@@ -117,6 +117,11 @@ export function createChatProjects(options: ChatProjectOptions, assertActive: ()
   }
   return {
     runtimeFor, executionBinding, currentBinding, inventory, findThread,
+    async nativeRuntimes() {
+      const values: ProjectRuntime[] = [];
+      for (const binding of await listBindings()) values.push(await runtimeFor(binding));
+      return values;
+    },
     async archiveChat(bindingId: string, threadId: string, descendantThreadIds?: string[]) { await registryCall(store => store.archiveChat({ bindingId, threadId, descendantThreadIds })); },
     async describe(bindingId: string, thread: NativeThread) {
       for (;;) {

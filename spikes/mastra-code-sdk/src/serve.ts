@@ -44,6 +44,7 @@ const service = createChatService({
     return runtime;
   },
 });
+await service.initializeAutomations();
 const terminals = createTerminalService({ defaultCwd: homedir(), projectCwd: id => service.terminalProjectCwd(id) });
 const server = await serveRouter(createGatewayRouter(service, terminals), port, service, terminals);
 console.log(`Kodex Mastra spike: ${server.url} (localhost only)`);

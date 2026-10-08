@@ -18,6 +18,7 @@ export interface ProjectRuntimeOptions {
   subagents?: MastraCodeConfig['subagents'];
   disableMcp?: boolean;
   schedules?: NonNullable<ConstructorParameters<typeof Mastra>[0]>['schedules'];
+  workflows?: NonNullable<ConstructorParameters<typeof Mastra>[0]>['workflows'];
 }
 
 export type SessionOptions = NonNullable<Parameters<MountedMastraCode['controller']['createSession']>[0]>;
@@ -71,7 +72,10 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
     ...(options.subagents && { subagents: options.subagents }),
   });
   const gateways = await createHostModelGateways(options.profile.settingsPath, prepared.base.authStorage);
-  const mastra = new Mastra({ ...prepared.mastraArgs, gateways, ...(options.schedules && { schedules: options.schedules }) });
+  const mastra = new Mastra({ ...prepared.mastraArgs, gateways,
+    ...(options.workflows && { workflows: { ...prepared.mastraArgs.workflows, ...options.workflows } }),
+    ...(options.schedules && { schedules: options.schedules }),
+  });
   await prepared.finalize();
   const base = { ...prepared.base, mastra };
   const sessions = new Map<string, { resourceId: string; scope?: string; session: NativeSession }>();

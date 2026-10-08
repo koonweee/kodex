@@ -221,6 +221,7 @@ if (process.argv[4] === 'input-images' && !(await service.listChats()).chats.len
       metadata: { signal: { id: 'input-images-only', type: 'user', metadata: { clientId: 'input-image-only-correlation' } } } } },
   ] });
 }
+await service.initializeAutomations();
 const terminals = createTerminalService({ defaultCwd: directoryHome, projectCwd: id => service.terminalProjectCwd(id) });
 const server = await serveRouter(createGatewayRouter(service, terminals), port, service, terminals);
 console.log(`BROWSER_FIXTURE_READY ${server.url}`);
