@@ -1,3 +1,4 @@
+import { getLocalPlansDir, getSuggestedPlanRelativePath } from '@mastra/code-sdk/utils/plans';
 import { createTool } from '@mastra/core/tools';
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -26,12 +27,23 @@ await writeFile(join(projectPath, 'pixel.png'), png);
 await writeFile(join(directoryHome, 'pixel.png'), png);
 await mkdir(join(directoryHome, 'added-project'), { recursive: true });
 await mkdir(join(directoryHome, 'changed-root'), { recursive: true });
+const browserPlanPath = getSuggestedPlanRelativePath('browser-review');
+const planPaths = [directoryHome, projectPath].map(base => join(base, browserPlanPath));
+if (process.argv[4] === 'plans') {
+  for (const base of [directoryHome, projectPath]) await mkdir(getLocalPlansDir(base), { recursive: true });
+  for (const path of planPaths) await writeFile(path, '# Browser review\nInspect **native** evidence.');
+  await writeFile(join(root, 'fixture-plan-paths.json'), JSON.stringify(planPaths));
+}
 const model = await startModelFixture(request => {
   if (request.model === 'judge') return { text: JSON.stringify({ decision: 'done', reason: 'Browser goal complete' }) };
   if (!request.stream) return { text: 'Browser test chat' };
   const user = lastUserText(request);
   const serialized = JSON.stringify(request.messages);
   if (serialized.includes('BROWSER_DELEGATE_QUESTION') && serialized.includes('BROWSER_INTERACTIVE_CHILD_RESULT')) return { text: 'BROWSER_PARENT_INTERACTION_RESULT' };
+  if (user.includes('BROWSER_NATIVE_PLAN')) {
+    if (serialized.includes('Plan approved.')) return { text: 'BROWSER_NATIVE_PLAN_RESULT' };
+    return { toolCalls: [{ name: 'submit_plan', arguments: { path: browserPlanPath }, id: 'native-plan' }] };
+  }
   if (user.includes('BROWSER_INTERACTIVE_CHILD')) {
     if (serialized.includes('User answered: Alpha, Beta')) return { text: 'BROWSER_INTERACTIVE_CHILD_RESULT' };
     return { toolCalls: [{ name: 'ask_user', arguments: { question: 'Which child evidence?', options: [{ label: 'Alpha', description: 'First source' }, { label: 'Beta', description: 'Second source' }], selectionMode: 'multi_select' }, id: 'interactive-child-question' }] };
@@ -113,7 +125,7 @@ const service = createChatService({
   runtimeFactory: async options => {
     let runtime!: ProjectRuntime;
     runtime = await createProjectRuntime({ ...options, extraTools: { ...createChildTools({ getRuntime: () => runtime }), ...createAsyncQuestionTools(), ...promptTools },
-      modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }] });
+      modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }, ...(process.argv[4] === 'plans' ? [{ id: 'plan', defaultModelId: 'fixture/chat' }] : [])] });
     if (process.argv[4] === 'approvals') {
       const create = runtime.createSession.bind(runtime);
       runtime.createSession = async input => {
@@ -121,6 +133,14 @@ const service = createChatService({
         await session.state.set({ yolo: false });
         await session.permissions.setForTool({ toolName: 'prompt_approval', policy: 'ask' });
         for (const toolName of ['ask_user', 'delegate_child']) await session.permissions.setForTool({ toolName, policy: 'allow' });
+        return session;
+      };
+    }
+    if (process.argv[4] === 'plans') {
+      const create = runtime.createSession.bind(runtime);
+      runtime.createSession = async input => {
+        const session = await create(input);
+        await session.mode.switch({ modeId: 'plan' });
         return session;
       };
     }

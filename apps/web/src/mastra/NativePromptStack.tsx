@@ -8,10 +8,10 @@ import { LazyMarkdownContent } from '../timeline/rendererShared';
 type PromptEntry = { prompt: NativePrompt; ownerTitle?: string };
 type Respond = (response: PromptResponse) => Promise<unknown>;
 
-export function NativePromptStack({ prompts, onRespond }: { prompts: PromptEntry[]; onRespond: Respond }) {
+export function NativePromptStack({ prompts, onRespond, onRefresh }: { prompts: PromptEntry[]; onRespond: Respond; onRefresh?: () => void }) {
   if (!prompts.length) return null;
   return <Stack gap="xs" className="kodex-thread-approvals kodex-thread-column">
-    {prompts.map(entry => <NativePromptCard key={promptKey(entry.prompt)} {...entry} onRespond={onRespond} />)}
+    {prompts.map(entry => <NativePromptCard key={promptKey(entry.prompt)} {...entry} onRespond={onRespond} onRefresh={onRefresh} />)}
   </Stack>;
 }
 
@@ -21,7 +21,7 @@ function promptKey(prompt: NativePrompt): string {
   return JSON.stringify([prompt.kind, target.sessionId, target.threadId, target.resourceId, target.runId, target.toolCallId]);
 }
 
-function NativePromptCard({ prompt, ownerTitle, onRespond }: PromptEntry & { onRespond: Respond }) {
+function NativePromptCard({ prompt, ownerTitle, onRespond, onRefresh }: PromptEntry & { onRespond: Respond; onRefresh?: () => void }) {
   const [draft, setDraft] = useState('');
   const [selected, setSelected] = useState<number[]>([]);
   const [pending, setPending] = useState(false);
@@ -66,12 +66,13 @@ function NativePromptCard({ prompt, ownerTitle, onRespond }: PromptEntry & { onR
   if (prompt.kind === 'plan') return <ApprovalCardFrame title={title}>
     {owner}{prompt.title ? <Text size="sm" fw={600}>{prompt.title}</Text> : null}
     <Text size="sm">{prompt.path}</Text>
-    {prompt.plan?.trim() ? markdown(prompt.plan) : <Text size="sm" c="dimmed">Plan preview unavailable</Text>}
+    {prompt.plan?.trim() ? markdown(prompt.plan) : <Text size="sm" c="dimmed">{prompt.previewError ?? 'Plan preview unavailable'}</Text>}
     <Textarea aria-label="Plan feedback" placeholder="Describe any changes…" value={draft} disabled={pending}
       autosize minRows={2} onChange={event => setDraft(event.currentTarget.value)} />
     <Group className="kodex-approval-actions" gap="xs" mt="sm">
-      {action('Approve plan', { kind: 'plan', target, action: 'approved' }, false, !prompt.plan?.trim())}
-      {action('Request changes', { kind: 'plan', target, action: 'rejected', ...(draft.trim() && { feedback: draft }) }, true)}
+      {action('Approve plan', { kind: 'plan', target, action: 'approved', previewVersion: prompt.previewVersion }, false, !prompt.plan?.trim() || !prompt.previewVersion)}
+      {action('Request changes', { kind: 'plan', target, action: 'rejected', ...(prompt.previewVersion && { previewVersion: prompt.previewVersion }), ...(draft.trim() && { feedback: draft }) }, true)}
+      {onRefresh ? <Button variant="default" size="xs" disabled={pending} onClick={() => { setError(null); onRefresh(); }}>Reload plan</Button> : null}
     </Group>{feedback}
   </ApprovalCardFrame>;
   const options = prompt.options ?? [];

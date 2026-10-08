@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests",
-  testIgnore: "mastra-chat.spec.ts",
+  testIgnore: "mastra-*.spec.ts",
   fullyParallel: true,
   reporter: "list",
   use: {

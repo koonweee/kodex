@@ -1,4 +1,5 @@
 import { ORPCError } from '@orpc/server';
+import { readNativePlan, rereadNativePlan } from './chat-plans.js';
 import { captureChatFastRequestContext } from './chat-fast.js';
 import type { NativeSession } from './runtime.js';
 
@@ -12,12 +13,12 @@ export interface NativePromptTarget {
 export type NativePrompt =
   | { kind: 'question'; target: NativePromptTarget; question: string; options?: Array<{ label: string; description?: string }>; selectionMode?: 'single_select' | 'multi_select' }
   | { kind: 'approval'; target: NativePromptTarget; toolName: string; args: unknown }
-  | { kind: 'plan'; target: NativePromptTarget; path: string; title?: string; plan?: string }
+  | { kind: 'plan'; target: NativePromptTarget; path: string; title?: string; plan?: string; previewVersion?: string; previewError?: string }
   | { kind: 'unsupported'; target: NativePromptTarget | null; toolCallId: string; toolName: string; reason: string };
 export type PromptResponse = { target: NativePromptTarget } & (
   | { kind: 'question'; answer: string | string[] }
   | { kind: 'approval'; decision: 'approve' | 'decline' | 'always_allow_category' }
-  | { kind: 'plan'; action: 'approved' | 'rejected'; feedback?: string }
+  | { kind: 'plan'; action: 'approved' | 'rejected'; feedback?: string; previewVersion?: string }
 );
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
@@ -74,8 +75,22 @@ export function readNativePrompts(session: NativeSession): NativePrompt[] {
   return result;
 }
 
+/** Plan files belong to the native workspace; no durable prompt/content mirror. */
+export async function readNativePromptViews(session: NativeSession, projectPath: string): Promise<NativePrompt[]> {
+  return Promise.all(readNativePrompts(session).map(async prompt => {
+    if (prompt.kind !== 'plan') return prompt;
+    try {
+      const preview = await readNativePlan({ projectPath, submittedPath: prompt.path, factoryProjectId: session.state.get().factoryProjectId });
+      return { ...prompt, title: preview.title, plan: preview.plan, previewVersion: preview.version };
+    } catch (error) {
+      return { ...prompt, title: undefined, plan: undefined,
+        previewError: error instanceof ORPCError ? error.message : 'Plan preview could not be read.' };
+    }
+  }));
+}
+
 /** Validate and claim after context awaits; starting the response shares that tick. */
-export async function respondNativePrompt(session: NativeSession, input: PromptResponse): Promise<{ accepted: true }> {
+export async function respondNativePrompt(session: NativeSession, input: PromptResponse, projectPath?: string): Promise<{ accepted: true }> {
   const submitted = record(input), expected = record(submitted?.target);
   if (!submitted || !expected || !['sessionId', 'threadId', 'resourceId', 'runId', 'toolCallId'].every(key => typeof expected[key] === 'string' && expected[key])) {
     throw invalid('Provide the exact native prompt target.');
@@ -96,8 +111,19 @@ export async function respondNativePrompt(session: NativeSession, input: PromptR
   } else if (prompt.kind === 'plan') {
     if ((submitted.action !== 'approved' && submitted.action !== 'rejected')
       || (submitted.feedback !== undefined && typeof submitted.feedback !== 'string')) throw invalid('Provide a native plan decision and optional text feedback.');
+    if (submitted.previewVersion !== undefined && typeof submitted.previewVersion !== 'string') throw invalid('Provide the reviewed plan version.');
+    if (submitted.action === 'approved' && !submitted.previewVersion) throw invalid('Load and review the plan before approving it.');
+    if (submitted.previewVersion && !projectPath) throw invalid('The plan workspace is unavailable.');
+    const preview = submitted.previewVersion
+      ? await rereadNativePlan({ projectPath: projectPath ?? '', submittedPath: prompt.path, factoryProjectId: session.state.get().factoryProjectId }, submitted.previewVersion as string)
+      : undefined;
+    if (submitted.action === 'approved' && !preview?.plan.trim()) throw invalid('The plan has no reviewable contents.');
+    // File/context awaits must never claim a replacement prompt or a stopped run.
+    const current = readNativePrompts(session).find(candidate => candidate.kind === 'plan' && candidate.path === prompt.path
+      && candidate.target && Object.entries(prompt.target).every(([key, value]) => candidate.target![key as keyof NativePromptTarget] === value));
+    if (!current || session.run.isAbortRequested()) throw conflict();
     resumeData = { action: submitted.action, ...(submitted.feedback !== undefined && { feedback: submitted.feedback }), path: prompt.path,
-      ...(prompt.title !== undefined && { title: prompt.title }), ...(prompt.plan !== undefined && { plan: prompt.plan }) };
+      ...(preview && { title: preview.title, plan: preview.plan }) };
   } else if (submitted.decision !== 'approve' && submitted.decision !== 'decline' && submitted.decision !== 'always_allow_category') throw invalid('Provide a native approval decision.');
 
   const toolCallId = prompt.target.toolCallId;

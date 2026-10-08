@@ -32,6 +32,7 @@ function nativeToolFields(name: string, args: unknown, result: unknown, failed: 
 }
 type PresentationSnapshot = Pick<ChatSnapshot, 'messages' | 'history' | 'revision'> & {
   display?: Pick<ChatSnapshot['display'], 'currentMessage' | 'isRunning' | 'activeTools'>;
+  prompts?: ChatSnapshot['prompts'];
 };
 export function timelinePresentation(snapshot: PresentationSnapshot, isLoadingOlderHistory = false): TimelinePresentation {
   const current = snapshot.display?.currentMessage;
@@ -86,8 +87,16 @@ export function timelinePresentation(snapshot: PresentationSnapshot, isLoadingOl
       ? { kind: previous.kind, path: previous.path, imageSrc: previous.imageSrc, resultSummary: undefined }
       : nativeImageFields(tool.name, args, tool.result, Boolean(tool.isError || tool.status === 'error'));
     const item = { id, kind: 'dynamic_tool_call', text: '', asyncQuestions: undefined, serverItemId: undefined, status: tool.isError || tool.status === 'error' ? 'failed' as const : tool.status === 'completed' ? 'completed' as const : 'running' as const, toolName: tool.name, argsSummary: printable(args), output, resultSummary: output, payload: tool, imageSrc: undefined, path: undefined, action: undefined, fileChangeOutcomeKnown: undefined, command: undefined, commandOutcomeKnown: undefined, ...(question ?? image ?? file ?? nativeCommandFields(tool.name, args)) };
-    if (existing === undefined) append(item);
+    if (existing === undefined) { toolIndexes.set(id, items.length); append(item); }
     else items[existing] = { ...items[existing], ...item };
+  }
+  // Native suspension can mark a tool errored while keeping a live response gate.
+  // Only the matching authoritative mounted prompt supersedes that presentation.
+  for (const prompt of snapshot.prompts ?? []) {
+    if (prompt.kind === 'unsupported') continue;
+    const name = prompt.kind === 'plan' ? 'submit_plan' : prompt.kind === 'question' ? 'ask_user' : prompt.toolName;
+    const index = toolIndexes.get(prompt.target.toolCallId);
+    if (index !== undefined && items[index].toolName === name) items[index] = { ...items[index], status: prompt.kind === 'question' ? 'waiting' : 'approval_required' };
   }
   const rows: TimelineRow[] = items.map(item => ({ type: 'item', key: item.id, turnKey: item.id, turnId: null, displayOrder: item.displayOrder, item }));
   return { rows, hiddenItems: [], hasOlderHistory: snapshot.history.hasOlder, isLoadingOlderHistory, lastSeq: snapshot.revision, pendingApprovalRequests: [], pendingUserInputRequests: [] };

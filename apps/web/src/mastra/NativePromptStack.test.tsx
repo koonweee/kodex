@@ -105,11 +105,28 @@ describe('native prompt cards', () => {
   });
   it('renders supplied plan Markdown and approves through the native plan response', async () => {
     const respond = vi.fn(async () => ({ accepted: true }));
-    render(stack([{ prompt: { kind: 'plan', target, path: 'plan.md', title: 'Deployment plan', plan: '**Run** the checks.' } }], respond));
+    render(stack([{ prompt: { kind: 'plan', target, path: 'plan.md', title: 'Deployment plan', plan: '**Run** the checks.', previewVersion: 'reviewed-version' } }], respond));
     expect(screen.getByText('Deployment plan')).toBeVisible();
     expect(await screen.findByText('Run')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Approve plan' }));
-    expect(respond).toHaveBeenCalledExactlyOnceWith({ kind: 'plan', target, action: 'approved' });
+    expect(respond).toHaveBeenCalledExactlyOnceWith({ kind: 'plan', target, action: 'approved', previewVersion: 'reviewed-version' });
+  });
+  it('reloads a changed plan without discarding feedback and submits the revised version only on another click', async () => {
+    const respond = vi.fn().mockRejectedValueOnce(new Error('The plan changed since you reviewed it.')).mockResolvedValue({ accepted: true });
+    const reload = vi.fn();
+    const plan: NativePrompt = { kind: 'plan', target, path: 'plan.md', title: 'Original', plan: 'Original body', previewVersion: 'before' };
+    const view = render(<MantineProvider><NativePromptStack prompts={[{ prompt: plan }]} onRespond={respond} onRefresh={reload} /></MantineProvider>);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Plan feedback' }), { target: { value: 'Keep my feedback' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Approve plan' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('The plan changed');
+    fireEvent.click(screen.getByRole('button', { name: 'Reload plan' }));
+    expect(reload).toHaveBeenCalledOnce(); expect(respond).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    view.rerender(<MantineProvider><NativePromptStack prompts={[{ prompt: { ...plan, title: 'Revised', plan: 'Revised body', previewVersion: 'after' } }]} onRespond={respond} onRefresh={reload} /></MantineProvider>);
+    expect(await screen.findByText('Revised body')).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Plan feedback' })).toHaveValue('Keep my feedback');
+    fireEvent.click(screen.getByRole('button', { name: 'Request changes' }));
+    expect(respond).toHaveBeenLastCalledWith({ kind: 'plan', target, action: 'rejected', previewVersion: 'after', feedback: 'Keep my feedback' });
   });
   it.each(['approve', 'decline', 'always_allow_category'] as const)('uses the native %s approval action', decision => {
     const respond = vi.fn(async () => ({ accepted: true }));

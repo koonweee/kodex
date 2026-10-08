@@ -30,7 +30,11 @@ export function NativeSubagentViewer({ chatId, inventory, selectedId, onSelect, 
   const [scrollParent, setScrollParent] = useState<HTMLDivElement | null>(null);
   const failure = error ?? (viewingHistory ? history.error : null);
   const text = invocation?.result ?? invocation?.activity?.textDelta ?? '';
-  const timeline = history.snapshot ? timelinePresentation(history.snapshot, history.isLoadingOlderHistory) : null;
+  // Inventory and child history share a root revision but arrive independently.
+  const prompts = selected?.kind === 'child' && inventory && history.snapshot
+    && inventory.epoch === history.snapshot.epoch && inventory.revision >= history.snapshot.revision
+    ? inventory.childPrompts.filter(entry => entry.prompt.target?.threadId === selected.nativeId).map(entry => entry.prompt) : undefined;
+  const timeline = history.snapshot ? timelinePresentation({ ...history.snapshot, prompts }, history.isLoadingOlderHistory) : null;
   const loading = viewingHistory && !history.snapshot && !history.error;
   return <SubagentViewerView subagents={entries} selectedSubagentId={selected?.id ?? null} onSelectSubagent={onSelect}
     error={failure ? new Error(failure) : null} onReload={() => { onReload(); history.retry(); }}

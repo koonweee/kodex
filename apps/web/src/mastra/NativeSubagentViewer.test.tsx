@@ -87,3 +87,19 @@ it('observes delegated child live display and saved history read-only, keeping f
   expect(screen.queryByText('Saved delegated findings')).not.toBeInTheDocument();
   expect(screen.queryByText('Inspecting workspace now')).not.toBeInTheDocument();
 });
+
+it('does not let stale child prompt inventory hide a newer failed tool result', async () => {
+  const saved: Awaited<ReturnType<ChatClient['openSubagent']>> = { epoch: 'epoch', revision: 2, chatId: 'parent', kind: 'child', id: 'child', invocation: null,
+    messages: [{ id: 'tool', role: 'assistant', createdAt: new Date(0), content: { format: 2, parts: [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'plan', toolName: 'submit_plan', state: 'result', args: {}, isError: true } }] } }], history: { earliest: null, hasOlder: false } };
+  rpc.watchSubagent.mockResolvedValue({ async *[Symbol.asyncIterator]() { yield saved; await new Promise(() => {}); } });
+  const stale: typeof inventory = { ...inventory, children: [{ id: 'child', title: 'Review plan', active: false }], childPrompts: [{ ownerTitle: 'Review plan', prompt: { kind: 'plan', path: 'plan.md', target: { sessionId: 'session', threadId: 'child', resourceId: 'child', runId: 'run', toolCallId: 'plan' } } }] };
+  const view = render(<MantineProvider><NativeSubagentViewer {...props} inventory={stale} selectedId="child:child" /></MantineProvider>);
+  expect(await screen.findByText(/^failed$/i)).toBeVisible();
+  view.rerender(<MantineProvider><NativeSubagentViewer {...props} inventory={{ ...stale, revision: 2 }} selectedId="child:child" /></MantineProvider>);
+  expect(await screen.findByText('approval required')).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Approve plan' })).not.toBeInTheDocument();
+  view.rerender(<MantineProvider><NativeSubagentViewer {...props} inventory={{ ...stale, epoch: 'obsolete', revision: 3 }} selectedId="child:child" /></MantineProvider>);
+  expect(await screen.findByText(/^failed$/i)).toBeVisible();
+  view.rerender(<MantineProvider><NativeSubagentViewer {...props} inventory={{ ...stale, revision: 3, childPrompts: [] }} selectedId="child:child" /></MantineProvider>);
+  expect(await screen.findByText(/^failed$/i)).toBeVisible();
+});

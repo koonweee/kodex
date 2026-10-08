@@ -1,4 +1,4 @@
-import { readNativePrompts, type NativePrompt } from './chat-prompts.js';
+import { readNativePromptViews, type NativePrompt } from './chat-prompts.js';
 import { randomUUID } from 'node:crypto';
 import { readChildRelation } from './child-relation.js';
 import { readChatDescendants } from './chat-descendants.js';
@@ -162,7 +162,7 @@ export function createChatSubagents(options: { resolveParent: (chatId: string) =
       const fresh = await Promise.all(descendants.filter(row => row.kind === 'child').map(async ({ thread: child }) => {
         const session = await liveChild(parent, child);
         return { id: child.id, title: child.title ?? 'Delegated child', active: session?.displayState.get().isRunning ?? false,
-          prompts: session ? readNativePrompts(session) : [] };
+          prompts: session ? await readNativePromptViews(session, parent.binding.cwd) : [] };
       }));
       signal?.throwIfAborted(); options.signal.throwIfAborted();
       // Preserve an older-load boundary across retries rather than expanding twice.

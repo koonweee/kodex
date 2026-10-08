@@ -4,9 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test, type TestContext } from 'node:test';
 import { ORPCError } from '@orpc/server';
+import { getLocalPlansDir } from '@mastra/code-sdk/utils/plans';
 import { createTool } from '@mastra/core/tools';
 import { abortNativeChat } from '../src/chat-archive.js';
-import { readNativePrompts, respondNativePrompt, type NativePrompt } from '../src/chat-prompts.js';
+import { readNativePrompts, readNativePromptViews, respondNativePrompt, type NativePrompt } from '../src/chat-prompts.js';
 import { activateProfile, resolveProfile, type SpikeProfile } from '../src/profile.js';
 import { createProjectRuntime } from '../src/runtime.js';
 import { startModelFixture } from './fixtures/model-server.js';
@@ -26,7 +27,9 @@ const options = [{ label: 'First', description: 'Use first evidence' }, { label:
 async function setup(t: TestContext, name: string, kind: 'question' | 'multi' | 'approval' | 'plan' | 'unsupported') {
   const projectPath = join(root, name); await mkdir(projectPath);
   await writeFile(join(projectPath, 'evidence.txt'), 'PROMPT_NATIVE_FILE_EVIDENCE');
-  await writeFile(join(projectPath, 'plan.md'), '# A native plan\nRead evidence.txt.');
+  const planPath = join(getLocalPlansDir(projectPath), 'plan.md');
+  await mkdir(getLocalPlansDir(projectPath), { recursive: true });
+  await writeFile(planPath, '# A native plan\nRead evidence.txt.');
   const suspended = new Set<string>(), executions: Promise<unknown>[] = [], responses: Promise<void>[] = [], producers = new Map<string, ReturnType<typeof deferred>>();
   const resumeGate = { reached: deferred(), release: deferred() };
   let holdResume = false;
@@ -44,7 +47,7 @@ async function setup(t: TestContext, name: string, kind: 'question' | 'multi' | 
     }
     const toolName = kind === 'approval' ? 'prompt_approval' : kind === 'plan' ? 'submit_plan' : kind === 'unsupported' ? 'unknown_prompt' : 'ask_user';
     return { toolCalls: [{ name: toolName, id: 'reused-native-prompt', arguments: kind === 'approval' ? { path: 'evidence.txt' }
-      : kind === 'plan' ? { path: 'plan.md' }
+      : kind === 'plan' ? { path: planPath }
       : kind === 'unsupported' ? {} : { question: 'Which evidence?', options,
         selectionMode: kind === 'multi' ? 'multi_select' : 'single_select' } }] };
   });
@@ -135,7 +138,7 @@ async function setup(t: TestContext, name: string, kind: 'question' | 'multi' | 
   void started.catch(() => {});
   await pending.promise;
   if (kind !== 'approval') { await started; await Promise.allSettled(executions); }
-  return { runtime, session, fixture, started, ends, toolResults, joinProducers,
+  return { runtime, session, fixture, started, ends, toolResults, joinProducers, projectPath, planPath,
     get approvedExecutions() { return approvedExecutions; },
     get terminal() { return terminal.promise; },
     holdResume() { holdResume = true; return { reached: resumeGate.reached.promise, release: resumeGate.release.resolve }; } };
@@ -243,9 +246,10 @@ for (const decision of ['approve', 'decline', 'always_allow_category'] as const)
 for (const action of ['approved', 'rejected'] as const) {
   test(`native plan ${action} resumes with decision and optional feedback`, { timeout: 30_000 }, async t => {
     const env = await setup(t, `plan-${action}`, 'plan');
-    const prompt = knownPrompt(readNativePrompts(env.session), 'plan');
-    assert.equal(prompt.path, 'plan.md'); assert.equal(prompt.plan, undefined, 'helper performs no file read');
-    await respondNativePrompt(env.session, { kind: 'plan', target: prompt.target, action, ...(action === 'rejected' && { feedback: 'Use second evidence' }) });
+    const prompt = knownPrompt(await readNativePromptViews(env.session, env.projectPath), 'plan');
+    assert.equal(prompt.path, env.planPath); assert.equal(prompt.plan, 'Read evidence.txt.');
+    assert.equal(prompt.title, 'A native plan'); assert.ok(prompt.previewVersion);
+    await respondNativePrompt(env.session, { kind: 'plan', target: prompt.target, action, previewVersion: prompt.previewVersion, ...(action === 'rejected' && { feedback: 'Use second evidence' }) }, env.projectPath);
     if (action === 'approved') await env.terminal;
     await env.joinProducers();
     assert.equal(readNativePrompts(env.session).length, 0);
@@ -271,4 +275,19 @@ test('unknown suspension and detached approval remain visible and non-actionable
   assert.equal(env.session.approval.isArmed({ toolCallId: 'detached-approval' }), true);
   env.session.respondToToolApproval({ toolCallId: 'detached-approval', decision: 'decline' }); await detachedGate;
   assert.equal(env.fixture.requests.length, 1);
+});
+
+
+test('plan approval rejects changed reviewed contents without consuming the native prompt', { timeout: 30_000 }, async t => {
+  const env = await setup(t, 'plan-changed', 'plan');
+  const original = knownPrompt(await readNativePromptViews(env.session, env.projectPath), 'plan');
+  await assert.rejects(respondNativePrompt(env.session, { kind: 'plan', target: original.target, action: 'approved' }, env.projectPath), badRequest);
+  await writeFile(env.planPath, '# Revised native plan\nInspect second evidence.');
+  await assert.rejects(respondNativePrompt(env.session, { kind: 'plan', target: original.target, action: 'approved', previewVersion: original.previewVersion }, env.projectPath), conflict);
+  assert.equal(env.fixture.requests.length, 1); assert.equal(readNativePrompts(env.session).length, 1);
+  const revised = knownPrompt(await readNativePromptViews(env.session, env.projectPath), 'plan');
+  assert.notEqual(revised.previewVersion, original.previewVersion); assert.equal(revised.plan, 'Inspect second evidence.');
+  await respondNativePrompt(env.session, { kind: 'plan', target: revised.target, action: 'approved', previewVersion: revised.previewVersion }, env.projectPath);
+  await env.terminal; await env.joinProducers();
+  assert.match(JSON.stringify(await env.session.thread.listActiveMessages()), /Inspect second evidence/);
 });

@@ -39,8 +39,8 @@ const promptResponseInput = inputSchema<ChatPromptResponse>(value => {
     && (string(value.answer, 100_000) || Array.isArray(value.answer) && value.answer.length > 0 && value.answer.every(answer => string(answer, 100_000)));
   if (value.kind === 'approval') return only(value, ['chatId', 'target', 'kind', 'decision'])
     && ['approve', 'decline', 'always_allow_category'].includes(value.decision as string);
-  return value.kind === 'plan' && only(value, ['chatId', 'target', 'kind', 'action', 'feedback'])
-    && (value.action === 'approved' || value.action === 'rejected') && (value.feedback === undefined || typeof value.feedback === 'string' && value.feedback.length <= 100_000);
+  return value.kind === 'plan' && only(value, ['chatId', 'target', 'kind', 'action', 'feedback', 'previewVersion'])
+    && (value.action === 'approved' || value.action === 'rejected') && (value.previewVersion === undefined || string(value.previewVersion, 128)) && (value.feedback === undefined || typeof value.feedback === 'string' && value.feedback.length <= 100_000);
 });
 const questionReplyInput = inputSchema<{ chatId: string; text: string; clientId: string }>(value => object(value) && only(value, ['chatId', 'text', 'clientId']) && string(value.chatId) && string(value.text, 100_000) && string(value.clientId, 4096));
 const messageInput = objectInput<{ chatId: string; text: string }>(['chatId', 'text']);

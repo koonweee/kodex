@@ -1,4 +1,4 @@
-import { readNativePrompts, respondNativePrompt, type NativePrompt, type PromptResponse } from './chat-prompts.js';
+import { readNativePromptViews, respondNativePrompt, type NativePrompt, type PromptResponse } from './chat-prompts.js';
 import { readChatDescendants } from './chat-descendants.js';
 import { randomUUID } from 'node:crypto';
 import { pinUnnamedChat, renameNativeChat } from './chat-titles.js';
@@ -143,7 +143,10 @@ export function createChatService(options: ChatServiceOptions) {
       if (current.revision !== handle.revision) continue;
       const goal = await goals.read(handle.session);
       if (current.revision !== handle.revision) continue;
-      return { ...current, chat, error: handle.error, settings: publicSettings, queue: handle.queue.snapshot(), goal, prompts: readNativePrompts(handle.session) };
+      const prompts = await readNativePromptViews(handle.session, handle.binding.cwd);
+      signal?.throwIfAborted(); lifetime.signal.throwIfAborted();
+      if (current.revision !== handle.revision) continue;
+      return { ...current, chat, error: handle.error, settings: publicSettings, queue: handle.queue.snapshot(), goal, prompts };
     }
   }
   async function catalogSnapshot(signal?: AbortSignal): Promise<CatalogSnapshot> {
@@ -324,7 +327,7 @@ export function createChatService(options: ChatServiceOptions) {
       if (!session || session.identity.getId() !== input.target.sessionId || session.thread.getId() !== targetThread.id) {
         throw new ORPCError('CONFLICT', { message: 'This native prompt is no longer available.' });
       }
-      return respondNativePrompt(session, input);
+      return respondNativePrompt(session, input, binding.cwd);
     },
     // Match main's nonblocking cards: replies are ordinary native user input,
     // with persisted correlation only (not an idempotency or prompt-state key).

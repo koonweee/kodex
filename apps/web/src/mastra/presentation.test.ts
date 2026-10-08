@@ -16,6 +16,19 @@ function snapshot(): ChatSnapshot {
     ] };
 }
 describe('native chat presentation', () => {
+  it('uses an exact current native prompt to show a suspended tool as waiting instead of failed', () => {
+    const value = snapshot();
+    value.messages[1].content.parts = [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'plan-call', toolName: 'submit_plan', state: 'result', args: { path: 'plan.md' }, isError: true } }];
+    value.display.activeTools.set('plan-call', { name: 'submit_plan', args: { path: 'plan.md' }, status: 'error', isError: true });
+    const item = () => timelinePresentation(value).rows.flatMap(row => row.type === 'item' && row.item.id === 'plan-call' ? [row.item] : [])[0];
+    const target = { sessionId: 'session', threadId: 'chat', resourceId: 'resource', runId: 'run', toolCallId: 'plan-call' };
+    value.prompts = [{ kind: 'plan', target, path: 'plan.md' }];
+    expect(item().status).toBe('approval_required');
+    value.prompts = [{ kind: 'question', target, question: 'Different native tool' }];
+    expect(item().status).toBe('failed');
+    value.prompts = [];
+    expect(item().status).toBe('failed');
+  });
   it('maps persisted read-only history without requiring active session display state', () => {
     const value = snapshot();
     value.messages[1].content.parts = [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'saved', toolName: 'write_file', state: 'result', args: { path: 'notes.txt', content: 'saved' }, result: 'Wrote 5 bytes to notes.txt' } }];
