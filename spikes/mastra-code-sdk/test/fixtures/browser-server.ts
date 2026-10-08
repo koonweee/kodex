@@ -18,6 +18,9 @@ const projectPath = join(directoryHome, 'project');
 await mkdir(projectPath, { recursive: true });
 await writeFile(join(projectPath, 'marker.txt'), 'BROWSER_TOOL_MARKER');
 await writeFile(join(directoryHome, 'marker.txt'), 'BROWSER_TOOL_MARKER');
+const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+await writeFile(join(projectPath, 'pixel.png'), png);
+await writeFile(join(directoryHome, 'pixel.png'), png);
 await mkdir(join(directoryHome, 'added-project'), { recursive: true });
 await mkdir(join(directoryHome, 'changed-root'), { recursive: true });
 const model = await startModelFixture(request => {
@@ -25,6 +28,7 @@ const model = await startModelFixture(request => {
   if (!request.stream) return { text: 'Browser test chat' };
   const user = lastUserText(request);
   if (JSON.stringify(request.messages).includes('HISTORY_NEW_ARRIVAL')) return { text: 'HISTORY_REPLY' };
+  if (user.includes('READ_IMAGE') && request.messages.at(-1)?.role !== 'tool') return { toolCalls: [{ name: 'view', arguments: { path: 'pixel.png' } }] };
   if (user.includes('READ_MARKER') && request.messages.at(-1)?.role !== 'tool') {
     const tool = request.tools?.find(tool => tool.function.name === 'view');
     if (!tool) throw new Error('Native view tool missing');

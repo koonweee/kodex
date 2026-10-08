@@ -449,3 +449,35 @@ test('native history loads older rows independently and retains them after peer 
     expect(errors).toEqual([]);
   } finally { if (backend) await stopBackend(backend); await rm(root, { recursive: true, force: true }); }
 });
+
+
+test('native image tool results open the shared viewer and survive peer reload and restart', async ({ context, page }) => {
+  const root = await mkdtemp(join(tmpdir(), 'kodex-image-browser-'));
+  let backend: ChildProcessWithoutNullStreams | undefined;
+  const legacyPreviews: string[] = [];
+  const errors: string[] = [];
+  context.on('request', request => { if (new URL(request.url()).pathname.includes('/files/preview')) legacyPreviews.push(request.url()); });
+  page.on('pageerror', error => errors.push(error.message));
+  const imageButton = (tab: Page) => pane(tab).getByRole('button', { name: 'Open pixel.png', exact: true });
+  const imageLoaded = async (tab: Page) => {
+    await expect(imageButton(tab)).toBeVisible();
+    await expect.poll(() => imageButton(tab).locator('img').evaluate(image => (image as HTMLImageElement).naturalWidth)).toBe(1);
+  };
+  try {
+    backend = await startBackend(root);
+    await page.goto('/'); await send(page, 'READ_IMAGE');
+    await expect(pane(page).getByText('fixture:READ_IMAGE', { exact: true })).toBeVisible();
+    await imageLoaded(page);
+    const second = await context.newPage(); second.on('pageerror', error => errors.push(error.message));
+    await second.goto(page.url()); await imageLoaded(second);
+    await imageButton(page).click();
+    await expect(page.getByRole('dialog').locator('img')).toHaveAttribute('src', /^data:image\/png;base64,/);
+    await page.getByRole('button', { name: 'Close image preview', exact: true }).click();
+    await second.reload(); await imageLoaded(second);
+    await stopBackend(backend, true); backend = await startBackend(root);
+    await second.reload(); await imageLoaded(second);
+    await imageButton(second).click();
+    await expect(second.getByRole('dialog').locator('img')).toHaveAttribute('src', /^data:image\/png;base64,/);
+    expect(legacyPreviews).toEqual([]); expect(errors).toEqual([]);
+  } finally { if (backend) await stopBackend(backend); await rm(root, { recursive: true, force: true }); }
+});

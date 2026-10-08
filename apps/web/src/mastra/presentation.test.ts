@@ -1,7 +1,7 @@
 import { nativeQueueFixture, nativeSettingsFixture } from './testBuilders';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { TimelineItemRenderer } from '../timeline/renderers';
 import { defaultDisplayState } from '../../../../spikes/mastra-code-sdk/node_modules/@mastra/core/dist/agent-controller/index.js';
@@ -90,6 +90,55 @@ describe('native chat presentation', () => {
     value.display.activeTools.clear();
     value.messages[1].content.parts = [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'stored', toolName: 'custom_tool', state: 'result', args: {}, result: null } }];
     expect(toolItem().resultSummary).toBe('null');
+  });
+  it('opens actual native image data through the existing viewer in live and saved history', () => {
+    const value = snapshot();
+    const result = { __workspaceMedia: true, text: 'Read native image', mediaType: 'image/png', data: 'iVBORw0KGgo=' };
+    value.messages[1].content.parts = [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'image', toolName: 'view', state: 'result', args: { path: 'picture.bin' }, result } }];
+    const item = () => timelinePresentation(value).rows.flatMap(row => row.type === 'item' && row.item.id === 'image' ? [row.item] : [])[0];
+    expect(item().kind).toBe('image_view');
+    const open = vi.fn();
+    const rendered = render(createElement(MantineProvider, null, createElement(TimelineItemRenderer, { item: item(), threadId: 'chat', onImageOpen: open })));
+    const image = rendered.container.querySelector('img');
+    expect(image).toHaveAttribute('src', `data:image/png;base64,${result.data}`);
+    fireEvent.click(screen.getByRole('button', { name: 'Open picture.bin' }));
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({ src: `data:image/png;base64,${result.data}`, title: 'picture.bin' }));
+    expect(screen.queryByText(/Prompt:/)).not.toBeInTheDocument();
+    value.display.activeTools.set('image', { name: 'view', args: { path: 'picture.bin' }, status: 'completed', result });
+    expect(item().imageSrc).toBe(`data:image/png;base64,${result.data}`);
+    value.display.activeTools.get('image')!.result = { ...result, mediaType: 'IMAGE/PNG' };
+    expect(item().imageSrc).toBe(`data:image/png;base64,${result.data}`);
+    value.display.activeTools.get('image')!.result = undefined;
+    expect(item().imageSrc).toBe(`data:image/png;base64,${result.data}`);
+    value.display.activeTools.clear();
+    expect(item().imageSrc).toBe(`data:image/png;base64,${result.data}`);
+  });
+  it('does not invent image previews from filenames, non-image media or failed tools', () => {
+    for (const [result, isError] of [
+      ['File not found: picture.png', false],
+      [{ __workspaceMedia: true, text: 'PDF file', mediaType: 'application/pdf', data: 'PDF_BYTES' }, false],
+      [{ __workspaceMedia: true, text: 'Image failure', mediaType: 'image/png', data: 'IMAGE_BYTES' }, true],
+    ] as const) {
+      const value = snapshot();
+      value.display.activeTools.set('view', { name: 'view', args: { path: 'picture.png' }, status: isError ? 'error' : 'completed', result, isError });
+      const item = timelinePresentation(value).rows.flatMap(row => row.type === 'item' && row.item.id === 'view' ? [row.item] : [])[0];
+      expect(item.kind).toBe('dynamic_tool_call');
+      expect(item.imageSrc).toBeUndefined();
+    }
+  });
+  it.each([
+    { result: null, isError: false },
+    { result: 'No image returned', isError: false },
+    { result: undefined, isError: true },
+  ])('clears a saved image when live output replaces it: %j', ({ result, isError }) => {
+    const value = snapshot();
+    value.messages[1].content.parts = [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'image', toolName: 'view', state: 'result', args: { path: '/project/picture.png' }, result: { __workspaceMedia: true, text: 'Read image', mediaType: 'image/png', data: 'iVBORw0KGgo=' } } }];
+    value.display.activeTools.set('image', { name: 'view', args: { path: '/project/picture.png' }, status: isError ? 'error' : 'completed', result, isError });
+    const item = timelinePresentation(value).rows.flatMap(row => row.type === 'item' && row.item.id === 'image' ? [row.item] : [])[0];
+    expect(item.kind).toBe('dynamic_tool_call');
+    expect(item.imageSrc).toBeUndefined();
+    expect(item.path).toBeUndefined();
+    expect(item.status).toBe(isError ? 'failed' : 'completed');
   });
   it('rejects stale snapshots within an epoch and accepts restarted sessions', () => {
     expect(acceptsSnapshot({ epoch: 'a', revision: 7 }, { epoch: 'a', revision: 6 })).toBe(false);

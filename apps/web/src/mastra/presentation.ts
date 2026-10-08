@@ -1,4 +1,5 @@
 import type { Chat, ChatSnapshot } from './client';
+import { nativeImageFields } from './nativeImages';
 import type { TimelineItem, TimelineRow } from '../timeline/state';
 import type { TimelinePresentation } from '../timeline/TimelineView';
 import type { ThreadListEntry } from '../threads/viewTypes';
@@ -42,7 +43,7 @@ export function timelinePresentation(snapshot: ChatSnapshot, isLoadingOlderHisto
         const tool = part.toolInvocation;
         toolIndexes.set(tool.toolCallId, items.length);
         const output = toolResultText(tool.result !== undefined ? tool.result : tool.errorText);
-        append({ id: tool.toolCallId, kind: 'dynamic_tool_call', text: '', status: tool.isError || tool.state === 'output-error' || tool.state === 'output-denied' ? 'failed' : tool.state === 'result' ? 'completed' : tool.state === 'approval-requested' ? 'approval_required' : 'running', toolName: tool.toolName, argsSummary: printable(tool.args), output, resultSummary: output, payload: part, timestampMs });
+        append({ id: tool.toolCallId, kind: 'dynamic_tool_call', text: '', status: tool.isError || tool.state === 'output-error' || tool.state === 'output-denied' ? 'failed' : tool.state === 'result' ? 'completed' : tool.state === 'approval-requested' ? 'approval_required' : 'running', toolName: tool.toolName, argsSummary: printable(tool.args), output, resultSummary: output, payload: part, timestampMs, ...nativeImageFields(tool.toolName, tool.args, tool.result, Boolean(tool.isError || tool.state === 'output-error' || tool.state === 'output-denied')) });
       } else if (part.type === 'error') append({ id, kind: 'assistant_message', text: part.error.message, status: 'failed', payload: part, timestampMs });
     });
   }
@@ -51,7 +52,11 @@ export function timelinePresentation(snapshot: ChatSnapshot, isLoadingOlderHisto
     // Streamed shell text omits native terminal annotations (for example exit
     // codes). Once available, the final native result owns the visible output.
     const output = tool.result !== undefined ? toolResultText(tool.result) : tool.shellOutput ?? (tool.partialResult !== undefined ? toolResultText(tool.partialResult) : existing === undefined ? '' : items[existing].output ?? '');
-    const item = { id, kind: 'dynamic_tool_call', text: '', status: tool.isError || tool.status === 'error' ? 'failed' as const : tool.status === 'completed' ? 'completed' as const : 'running' as const, toolName: tool.name, argsSummary: printable(tool.args), output, resultSummary: output, payload: tool };
+    const previous = existing === undefined ? undefined : items[existing];
+    const image = tool.result === undefined && !tool.isError && tool.status !== 'error' && previous?.kind === 'image_view'
+      ? { kind: previous.kind, path: previous.path, imageSrc: previous.imageSrc, resultSummary: undefined }
+      : nativeImageFields(tool.name, tool.args, tool.result, Boolean(tool.isError || tool.status === 'error'));
+    const item = { id, kind: 'dynamic_tool_call', text: '', status: tool.isError || tool.status === 'error' ? 'failed' as const : tool.status === 'completed' ? 'completed' as const : 'running' as const, toolName: tool.name, argsSummary: printable(tool.args), output, resultSummary: output, payload: tool, imageSrc: undefined, path: undefined, ...image };
     if (existing === undefined) append(item);
     else items[existing] = { ...items[existing], ...item };
   }
