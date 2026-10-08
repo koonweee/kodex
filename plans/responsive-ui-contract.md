@@ -2,7 +2,7 @@
 
 ## Status
 
-Initial contract and idle compact composer complete and deployed. Compact radius/loading refinements are validated; authorized frontend-only deployment pending. Created 2026-10-08.
+Complete. Initial contract, idle compact composer and compact radius/loading refinements are validated and deployed. Created 2026-10-08.
 
 ## Objective
 
@@ -228,4 +228,6 @@ Alignment refinement deployment verified: frontend snapshot `b044ec1` was deploy
 
 Compact-row radius refinement (2026-10-08): the user requested 32px only for the idle compact composer. A dedicated shared corner token applies at that mode selector; active inline composers retain 24px and fullscreen styling retains its existing policy. This supersedes the earlier equal-radius assertion across idle/active transitions, so that obsolete styling assertion is removed while geometry, activation, input identity and menu coverage remain. Frontend-only deployment is authorized.
 
-Compact loading refinement (2026-10-08): empty inactive existing-chat panes retain the idle row during native attachment and settings reads/updates. Drafts, attachments, active editing, errors and submission retain normal presentation. Only the visual predicate changes; native submission/settings ownership, readiness attributes, input identity and disabled controls remain unchanged. Three focused loading regressions failed before implementation. All 32 composer component tests and 16 bundled-Chromium idle/fullscreen cases pass, including held initial attachment/settings responses for fine pointer and touch. Build/typecheck, frontend trim and all 11 responsive ownership fixtures pass. Independent review found no blockers. The authorized frontend deployment remains pending.
+Compact loading refinement (2026-10-08): empty inactive existing-chat panes retain the idle row during native attachment and settings reads/updates. Drafts, attachments, active editing, errors and submission retain normal presentation. Only the visual predicate changes; native submission/settings ownership, readiness attributes, input identity and disabled controls remain unchanged. Three focused loading regressions failed before implementation. All 32 composer component tests and 16 bundled-Chromium idle/fullscreen cases pass, including held initial attachment/settings responses for fine pointer and touch. Build/typecheck, frontend trim and all 11 responsive ownership fixtures pass. Independent review found no blockers. The authorized frontend deployment is verified below.
+
+Radius/loading refinement deployment verified: clean snapshot `17cbe82` deployed frontend-only onto release `20261008-024630-3ef10fff`. Gateway PID `45933` is unchanged and `/readyz` reports ready. Served HTML and entry JavaScript/CSS match the installed assets and tested build byte for byte; index SHA256 `e61daf0c2b974af57d10bd335c82a36376949755a1aa6a0d0b9e87716a2aac29`. Loading and ready compact-row screenshots were reviewed for fine pointer and touch. Initial browser holds were corrected to gate replacement requests from Strict Mode; all loading cases pass with explicit readiness and disabled-control assertions. Backend code and shared submission/lifecycle ownership are unchanged.
