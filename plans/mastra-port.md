@@ -1,6 +1,6 @@
 # Kodex Mastra port — running implementation log
 
-Updated: 2026-10-07. Status: Active. This is the running status document for the port; update it at every implementation boundary, including blockers, validation and the next concrete step.
+Updated: 2026-10-08. Status: Active. This is the running status document for the port; update it at every implementation boundary, including blockers, validation and the next concrete step.
 
 ## Workspace
 
@@ -8,6 +8,12 @@ Updated: 2026-10-07. Status: Active. This is the running status document for the
 - Branch: `codex/mastra-sdk-spike`.
 - Main checkout: `/Users/jtkw/Projects/kodex`, still on `main`, with unrelated ongoing changes. Do not modify or merge those changes implicitly.
 - No deployment, service restart or push authorized by this port task. Existing production remains intact.
+
+### Implementation reference: Mastra Factory
+
+Use [Mastra Factory](https://github.com/mastra-ai/softwarefactory-template) as a primary reference for composing Mastra primitives into a coding-agent product. Before adding Kodex-owned orchestration, inspect how Factory uses native sessions, signals, background work and lifecycle handling. Reuse supported public SDK APIs; Factory's product-specific coordination is an example, not automatically a reusable SDK contract or a requirement to copy its architecture. Compare any remaining limitation with current app-server behavior.
+
+Verified source reference: official Mastra commit `2f14b267b06da7255ef7c131f1138993c39bd733` (2026-10-08). Its [session creation](https://github.com/mastra-ai/mastra/blob/2f14b267b06da7255ef7c131f1138993c39bd733/mastracode/factory/src/rules/start-coordinator.ts#L217), [supervisor session messaging](https://github.com/mastra-ai/mastra/blob/2f14b267b06da7255ef7c131f1138993c39bd733/mastracode/factory/src/supervisor/session-messaging.ts#L22), and [model-facing messaging tool](https://github.com/mastra-ai/mastra/blob/2f14b267b06da7255ef7c131f1138993c39bd733/mastracode/factory/src/supervisor/write-tools.ts#L206) demonstrate addressable worker sessions and native send/queue operations. Factory's supervisor helpers are not exported by its public package index. The inspected Factory source does not implement the child-session background-adoption composition being tested here; do not claim Factory proves that experiment.
 
 ## Governing decisions
 
@@ -206,3 +212,11 @@ History checkpoint is `681691f`. New actual-SDK subagent characterization passes
 ### 2026-10-08 — native tool result visibility
 
 Subagent capability proof committed as `8ab3924`; viewer choice remains unanswered. Continued independent work: native generic tool results now render through main's existing resultSummary field, final shell results retain exit/error text instead of being hidden by streamed output, and native media descriptions avoid base64 prose. Failing regression evidence, final10/10 render tests, build/trim, actual SDK two-tab/reload browser3/3 and independent review all pass. No outcome inferred from native completed status; specialized command/file/image rendering is still work remaining.
+
+- 2026-10-08: user accepts native ordinary-subagent live activity plus saved final results, with full inspection for native forked history. No forced forks or duplicate transcript store. Pinned native tool source shows no parent-facing child steering/resume API; explaining this additional limitation before implementing custom behavior. See parity plan.
+
+### 2026-10-08 — steerable child-session capability proof
+
+User requests testing native background delegation plus addressable CodeSDK child sessions, and explicitly identifies Mastra Factory as a reference. Factory's verified session/send/queue composition is recorded near the front of this log. Actual native test proves fresh context, parent-generated live guidance, parent concurrency, background-adopted completion/native parent synthesis, persisted child history/restart and same-child follow-up. Native cancellation reaches the child and fences late output. Author and independent root runs pass2/2, typecheck passes, source/claim reviews pass. This is a fixture-only composition with two host tools, not a product implementation or Core patch.
+
+Retirement limitation is reproduced and retained: cancelling then closing the runtime can log a late execution-workflow prepare-memory CLIENT_CLOSED despite clearing pending signals and draining observed agentic-loop producers. No claim of clean shutdown or data loss. Positive soft steering is established; hard interrupt/restart steering, crash recovery and full lifecycle integration remain unproven. Evidence: /tmp/kodex-child-session-root-review.log and /tmp/kodex-child-session-root-check.log. Next investigate native cancellation/retirement before promoting the composition.
