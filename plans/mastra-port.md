@@ -733,3 +733,34 @@ Test cleanup correction: abort can replay agent_start for a previously known sus
 Affected20/20, final interaction/reuse3/3, complete backend337/337, backend typecheck/build, frontend build and independent review pass. Evidence: /tmp/kodex-retained-child-result-red.log, /tmp/kodex-retained-child-accepted.log, /tmp/kodex-retained-child-reuse.log, /tmp/kodex-retained-child-check-final.log, /tmp/kodex-retained-child-full-backend.log, /tmp/kodex-retained-child-build.log, /tmp/kodex-native-control-child-frontend-build.log. No frontend behavior was changed by this backend prerequisite.
 
 Next direct/pinned-child integration must fence startup readiness: a registered Session is visible before policy/model/title setup and initial submission finish. Also prove selected-child Stop while parked: Session.abort can clear its question without settling the adopted logical operation, so compose the native background-task cancellation primitive where needed. Reuse short accepted-input/queue/prompt claims and ancestor retirement admission; never wait on a whole child task inside those leases. Parent archive must retire child observers/queues/handles along with native bindings. These are integration work, not finished direct-pane parity or a requested workflow reduction. Completion-marker alignment remains unanswered. Full goal active; no Core patch, deployment or moving-main merge.
+
+
+### Direct-child startup and pin prerequisites in progress (2026-10-08)
+
+Previous goal turn made verified progress (automation Control e277f7d and retained child ownership d3d8f6a). New actual native Stop tests correct the remaining concern: on a retained native subscription, parked and reparked Session.abort emits a later aborted terminal and settles the delegated operation. Stopping an independent later parked run does not cancel the original task's held result. No manager-cancellation layer or abort watcher is needed on this evidence.
+
+Startup now shares the runtime's pending creation promise by explicit resource/scope. An optional initializer awaits native configuration and first input acceptance, never an entire model response. It propagates failure and completes cleanup before exposing the binding; captured Session/thread/abort identity fences interrupted setup. Disposal can still see and quiesce the initializing Session. Native blocking created listeners were considered but swallow failures, so they cannot supply this correctness boundary. This reuses existing host creation tracking; raw controller lookups remain read-only/active-only paths and do not gain this host guarantee. All product callers already name resources explicitly; the dedicated native-default configuration proof now uses and retires its native controller probe directly.
+
+Delegate setup is moving behind that initializer using native sendSignal acceptance and the existing logical terminal listener. Initializer cleanup replaces the tool's separate incomplete-setup finalizer. Actual host initialization6/6 and affected child23/23 currently pass; broader retirement/identity checks and independent review remain. Public direct routes are not yet enabled.
+
+Separately, pin mutations accept validated descendant ancestry through the existing product registry. Catalog pinnedDescendants is distinct from ordinary chats and shares pinnedChatIds ordering. Native metadata12/12 and independent review pass; frontend typed fixtures are being updated for the inferred field. No ordinary project/chat inventory pollution, Session activation, new store or implied direct-input capability. Frontend sidebar/pane and ancestor admission wiring remain next. Completion-marker alignment is still unanswered; full goal active, no deployment.
+
+
+### Native-only completion behavior accepted (2026-10-08)
+
+User explicitly chose native-only unread/completion behavior and accepted its recovery limitation. Do not add the proposed Kodex durable completion head/seen marker to compensate for missing native terminal records. Saved native messages remain available, but interrupted/failed terminal outcomes cannot be reliably reconstructed after restart; do not infer those outcomes from message order, IDs or timestamps. The earlier completion-marker alignment gate is resolved. Native-only UI/read-state behavior still needs implementation and validation; this decision does not declare unread parity complete.
+
+
+### Child startup, native Stop and descendant pin prerequisites validated (2026-10-08)
+
+Host creation now shares pending setup by resource/scope, awaits configuration plus native input acceptance, and fences abort/release/disposal before exposing the binding. Concurrent requests for another thread preserve native selection after setup; independent scopes remain usable. Failed setup releases its binding before rejecting waiters. Delegation uses this seam and retains existing native message-ID result ownership. No whole model/task wait or extra binding registry was introduced.
+
+Correction to the earlier parked-Stop concern: retained native subscriptions receive the later aborted terminal after suspension cancellation. Plain Session.abort already fails the adopted operation, clears gates and permits fresh input; a Kodex background-task cancellation wrapper is unnecessary. Stop on a later independent run preserves the original task result.
+
+Native pin/reorder/unpin accepts validated descendants and exposes separate pinnedDescendants metadata with shared ordering. Ordinary chat/project membership remains unchanged. Two-client reads, restart, archived ancestry and overlapping title reads are covered. Frontend inferred-contract fixtures are updated; sidebar and editable descendant panes are not wired yet.
+
+Validation: affected backend31/31, exact native child exposure5/5, frontend contract46/46, backend check/build and frontend build pass. Exposure proof independently holds configuration, native acceptance and actual model response, proving only the first two delay host lookup. Evidence: /tmp/kodex-startup-pins-regression.log, /tmp/kodex-child-setup-exposure-native.log, /tmp/kodex-startup-pins-check.log, /tmp/kodex-startup-pins-build.log, /tmp/kodex-pins-contract-frontend-tests.log, /tmp/kodex-descendant-catalog-frontend-build-final.log. Existing jsdom canvas diagnostics remain; this is not new browser evidence.
+
+Next: validated ancestor command admission, descendant handle/observer/queue retirement, then direct/pinned frontend pane wiring and actual two-tab browser proof. Native-only completion alignment is resolved as recorded above. Full goal remains active; no deployment or upstream patch.
+
+Independent final startup review and earlier descendant-pin/Stop reviews accepted without blockers. Raw native controller lookups remain outside the host readiness seam; direct editable integration must use runtime.createSession.

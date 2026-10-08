@@ -219,7 +219,7 @@ it('ignores a late rename failure after the pane changes chats', async () => {
 it('stops watching only after explicit authoritative archive state arrives', () => {
   native.useWorkspace.mockImplementation(() => useContext(context));
   native.snapshot = null;
-  const catalog = { epoch: 'epoch', revision: 1, projects: [], chats: [], pinnedChatIds: [], archivedChatIds: [] as string[] };
+  const catalog = { epoch: 'epoch', revision: 1, projects: [], chats: [], pinnedDescendants: [], pinnedChatIds: [], archivedChatIds: [] as string[] };
   const view = render(<NativeCatalogProvider snapshot={catalog}><Harness /></NativeCatalogProvider>);
   expect(native.watched).toHaveBeenLastCalledWith('chat');
   expect(native.close).not.toHaveBeenCalled(); // Absence from inventory is not archive.

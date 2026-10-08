@@ -47,9 +47,10 @@ async function inspectResourceIdentity(root: string, source: OverrideSource) {
       runtimes.push(runtime);
       // Exercise the actual mounted controller default, rather than merely
       // calling the discovery helper: this proves the override was applied.
-      const defaultSession = await runtime.createSession({ threadId: `default-${projectIndex}` });
+      const defaultSession = await runtime.controller.createSession({ threadId: `default-${projectIndex}` });
       assert.equal(defaultSession.identity.getResourceId(), sharedResource(source));
       assert.equal(defaultSession.identity.getDefaultResourceId(), sharedResource(source));
+      await runtime.controller.deleteSession({ resourceId: defaultSession.identity.getResourceId() });
       return runtime;
     };
     const [a, b] = await Promise.all([mount(0), mount(1)]);

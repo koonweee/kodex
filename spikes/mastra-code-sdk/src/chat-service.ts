@@ -13,7 +13,7 @@ import { randomUUID } from 'node:crypto';
 import { pinUnnamedChat, renameNativeChat } from './chat-titles.js';
 import { EventPublisher, ORPCError } from '@orpc/server';
 import type { NativeSession, ProjectRuntime } from './runtime.js';
-import { createChatProjects, ownsThread, type Chat, type ChatProjectOptions } from './chat-projects.js';
+import { createChatProjects, ownsThread, type Chat, type ChatProjectOptions, type PinnedDescendant } from './chat-projects.js';
 import type { ProductProject, ProjectPatch, RuntimeBinding } from './product-registry.js';
 import { assertProfileActive, type SpikeProfile } from './profile.js';
 import { createAccountService } from './account-service.js';
@@ -27,7 +27,7 @@ import { createChatGoals, type NativeGoal, type GoalPatch } from './chat-goals.j
 import { createNativeChatSettings, type ChatSettings, type ChatSettingsPatch } from './chat-settings.js';
 import { createSessionProjection, type SessionSnapshot } from './transport.js';
 
-export interface CatalogSnapshot { epoch: string; revision: number; projects: ProductProject[]; chats: CatalogChat[]; pinnedChatIds: string[]; archivedChatIds: string[] }
+export interface CatalogSnapshot { epoch: string; revision: number; projects: ProductProject[]; chats: CatalogChat[]; pinnedChatIds: string[]; pinnedDescendants: PinnedDescendant[]; archivedChatIds: string[] }
 export interface ChatSnapshot extends SessionSnapshot { prompts: NativePrompt[]; chat: Chat; error: string | null; settings: ChatSettings; queue: ChatQueueSnapshot; goal: NativeGoal | null }
 export type ChatPromptResponse = PromptResponse & { chatId: string };
 export interface QueuedSelection { chatId: string; epoch: string; revision: number; id: string }

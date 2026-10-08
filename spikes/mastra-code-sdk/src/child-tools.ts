@@ -39,7 +39,7 @@ export function createChildTools({ getRuntime }: { getRuntime: () => ProjectRunt
     execute: async (input, context) => {
       if (!context.background) throw new Error('delegate_child requires native background execution');
       const runtime = getRuntime(), taskId = context.background.taskId;
-      let child: NativeSession | undefined, stoppedChild: NativeSession | undefined, cancelled = false, operationEnded = false, executionStarted = false;
+      let child: NativeSession | undefined, stoppedChild: NativeSession | undefined, cancelled = false, operationEnded = false;
       let finish!: () => void, fail!: (error: unknown) => void;
       const terminal = new Promise<void>((resolve, reject) => { finish = resolve; fail = reject; });
       // Setup can fail or native cancellation can arrive before the operation
@@ -71,35 +71,38 @@ export function createChildTools({ getRuntime }: { getRuntime: () => ProjectRunt
         if (await runtime.controller.queryThreadById({ threadId: target.threadId })) {
           throw new Error('A delegated child task cannot reopen an existing child thread');
         }
-        child = await runtime.createSession({ ...target,
-          tags: { [KODEX_CHILD_TAG]: KODEX_CHILD_VERSION, ...relation } });
-        if (cancelled) { stop(); throw new Error('Child task cancelled during launch'); }
-        await applyChildSessionPolicy(child);
-        await child.mode.switch({ modeId: parent.mode.get() });
-        await child.model.switch(parent.model.get());
-        await child.thread.rename({ title: (input as { task: string }).task.slice(0, 120), pin: true });
-        if (cancelled) { stop(); throw new Error('Child task cancelled before execution'); }
         const messageIds = new Set<string>();
         let resultMessageIds: ReadonlySet<string> = messageIds;
         let off = () => {};
-        off = child.subscribe(event => {
-          if (event.type === 'message_start' && event.message.role === 'assistant') messageIds.add(event.message.id);
-          if (event.type === 'error') { fail(event.error); off(); stop(); operationEnded = true; return; }
-          if (event.type !== 'agent_end' || event.reason === 'suspended') return;
-          // Freeze ownership synchronously before queued or direct work can
-          // begin. Only IDs are captured; the result stays native history.
-          operationEnded = true;
-          resultMessageIds = new Set(messageIds);
-          off();
-          if (event.reason === 'complete') finish();
-          else fail(new Error(`Child task ended without completion: ${event.reason}`));
-        });
         try {
-          // sendMessage settles at a suspended boundary. Public native terminal
-          // events keep the same operation owned through any question resumes.
-          // Nested/background model work remains disabled on those resume paths.
-          executionStarted = true;
-          await child.sendMessage({ content: (input as { task: string }).task, untilIdle: false });
+          child = await runtime.createSession({ ...target,
+            tags: { [KODEX_CHILD_TAG]: KODEX_CHILD_VERSION, ...relation } }, async (session, assertActive) => {
+            child = session;
+            if (cancelled) { stop(); throw new Error('Child task cancelled during launch'); }
+            await applyChildSessionPolicy(child);
+            await child.mode.switch({ modeId: parent.mode.get() });
+            await child.model.switch(parent.model.get());
+            await child.thread.rename({ title: (input as { task: string }).task.slice(0, 120), pin: true });
+            if (cancelled) { stop(); throw new Error('Child task cancelled before execution'); }
+            assertActive();
+            off = child.subscribe(event => {
+              if (event.type === 'message_start' && event.message.role === 'assistant') messageIds.add(event.message.id);
+              if (event.type === 'error') { fail(event.error); off(); stop(); operationEnded = true; return; }
+              if (event.type !== 'agent_end' || event.reason === 'suspended') return;
+              // Freeze ownership synchronously before queued or direct work can
+              // begin. Only IDs are captured; the result stays native history.
+              operationEnded = true;
+              resultMessageIds = new Set(messageIds);
+              off();
+              if (event.reason === 'complete') finish();
+              else fail(new Error(`Child task ended without completion: ${event.reason}`));
+            });
+            // Exposure waits for native acceptance, not the response or a
+            // parked question. The listener owns the logical task through resumes.
+            const accepted = await child.sendSignal({ type: 'user', contents: (input as { task: string }).task },
+              { untilIdle: false, requireDelivery: true }).accepted;
+            if (accepted.action !== 'wake' && accepted.action !== 'deliver') throw new Error('Child input was not accepted');
+          });
           await terminal;
           if (cancelled) throw new Error('Child task cancelled');
           return { taskId, childThreadId: child.thread.requireId(), result: await canonicalResult(child, resultMessageIds) };
@@ -109,10 +112,6 @@ export function createChildTools({ getRuntime }: { getRuntime: () => ProjectRunt
         // rejects after execute returns. Retract owned parked gates ourselves.
         stop();
         throw error;
-      }).finally(async () => {
-        // Cancelled setup never exposes a fully configured binding. Retire a
-        // late creation that archive could not yet find in native ancestry.
-        if (child && cancelled && !executionStarted) await runtime.releaseSession({ resourceId: child.identity.getResourceId() });
       });
       // Like ordinary chats, the binding remains available for later native
       // input. Archive and runtime disposal own its eventual retirement.

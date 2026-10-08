@@ -11,6 +11,7 @@ import type { SpikeProfile } from './profile.js';
 
 export type NativeThread = NonNullable<Awaited<ReturnType<ProjectRuntime['controller']['queryThreadById']>>>;
 export interface Chat { id: string; projectId: string | null; title: string; name: string | null; cwd: string; pinned: boolean; notificationsEnabled: boolean }
+export interface PinnedDescendant extends Chat { kind: 'child' | 'fork'; rootChatId: string; parentThreadId: string }
 export interface ChatProjectOptions {
   profile: SpikeProfile;
   projects?: ProjectSeed[];
@@ -79,11 +80,14 @@ export function createChatProjects(options: ChatProjectOptions, assertActive: ()
       const byIdentity = new Map(metadata.entries.map(entry => [JSON.stringify([entry.bindingId, entry.threadId]), entry]));
       const bindings = await listBindings();
       const chats: Chat[] = [];
+      const pinnedDescendants: PinnedDescendant[] = [];
+      const catalogs: Array<{ binding: RuntimeBinding; runtime: ProjectRuntime; threads: NativeThread[] }> = [];
       const archivedChatIds: string[] = [];
       const nativeIdentities = new Set<string>();
       for (const binding of bindings) {
         const runtime = await runtimeFor(binding);
-        const threads = await runtime.controller.queryThreads({ metadata: { projectPath: binding.cwd } });
+        const threads = await runtime.controller.queryThreads({ includeForkedSubagents: true });
+        catalogs.push({ binding, runtime, threads });
         for (const thread of threads) if (ownsThread(binding, thread)) {
           const identity = JSON.stringify([binding.id, thread.id]);
           if (byIdentity.get(identity)?.archived) { archivedChatIds.push(thread.id); continue; }
@@ -91,10 +95,29 @@ export function createChatProjects(options: ChatProjectOptions, assertActive: ()
           chats.push(describeChat(binding, thread, await readChatTitle(runtime, thread), byIdentity.get(identity)));
         }
       }
+      // Only pinned descendant rows need additional projection. Resolve against
+      // the same native catalog read, including cross-binding ambiguity, rather
+      // than adding descendants to ordinary project/chat membership.
+      for (const entry of metadata.entries) if (entry.pinPosition !== null && !entry.archived) {
+        const matches = catalogs.flatMap(catalog => {
+          const route = resolveChatThreadRoute(catalog.binding, catalog.threads, entry.threadId);
+          return route ? [{ ...catalog, route }] : [];
+        });
+        const match = matches[0];
+        if (matches.length !== 1 || !match || match.binding.id !== entry.bindingId) continue;
+        const { route, binding, runtime } = match;
+        if (route.kind === 'ordinary') continue;
+        const ancestry = [...route.ancestors, route.thread];
+        if (ancestry.some(thread => byIdentity.get(JSON.stringify([binding.id, thread.id]))?.archived)) continue;
+        pinnedDescendants.push({ ...describeChat(binding, route.thread, await readChatTitle(runtime, route.thread), entry),
+          kind: route.kind, rootChatId: route.root.id, parentThreadId: route.ancestors.at(-1)!.id });
+        nativeIdentities.add(JSON.stringify([binding.id, route.thread.id]));
+      }
       assertActive();
       if ((await registryCall(store => store.snapshot())).revision === snapshot.revision) {
         const pinnedChatIds = metadata.entries.filter(entry => entry.pinPosition !== null && nativeIdentities.has(JSON.stringify([entry.bindingId, entry.threadId]))).sort((left, right) => left.pinPosition! - right.pinPosition!).map(entry => entry.threadId);
-        return { projects: snapshot.projects, chats, pinnedChatIds, archivedChatIds };
+        const byId = new Map(pinnedDescendants.map(chat => [chat.id, chat]));
+        return { projects: snapshot.projects, chats, pinnedDescendants: pinnedChatIds.flatMap(id => byId.has(id) ? [byId.get(id)!] : []), pinnedChatIds, archivedChatIds };
       }
     }
   }
@@ -160,13 +183,20 @@ export function createChatProjects(options: ChatProjectOptions, assertActive: ()
     },
     async setChatPinned(input: { chatId: string; pinned: boolean; beforeChatId?: string | null }) {
       if (!input.pinned && Object.hasOwn(input, 'beforeChatId')) throw new ORPCError('BAD_REQUEST', { message: 'Unpin does not accept a target chat.' });
-      const current = await findThread(input.chatId);
-      let before: { bindingId: string; threadId: string } | null | undefined;
-      if (input.beforeChatId !== undefined && input.beforeChatId !== null) {
-        const target = await findThread(input.beforeChatId);
-        before = { bindingId: target.binding.id, threadId: target.thread.id };
-      } else if (input.beforeChatId === null) before = null;
-      await registryCall(store => store.setChatPinned({ bindingId: current.binding.id, threadId: current.thread.id, pinned: input.pinned, ...(before !== undefined ? { before } : {}) }));
+      for (;;) {
+        const revision = (await registryCall(store => store.snapshot())).revision;
+        const current = await resolveThreadRoute(input.chatId);
+        let before: { bindingId: string; threadId: string } | null | undefined;
+        if (input.beforeChatId !== undefined && input.beforeChatId !== null) {
+          const target = await resolveThreadRoute(input.beforeChatId);
+          before = { bindingId: target.binding.id, threadId: target.thread.id };
+        } else if (input.beforeChatId === null) before = null;
+        // An ancestor may be archived while resolving the other reorder target.
+        // Fence the combined reads before the existing atomic registry write.
+        if ((await registryCall(store => store.snapshot())).revision !== revision) continue;
+        await registryCall(store => store.setChatPinned({ bindingId: current.binding.id, threadId: current.thread.id, pinned: input.pinned, ...(before !== undefined ? { before } : {}) }));
+        return;
+      }
     },
     async setChatNotifications(input: { chatId: string; enabled: boolean }) {
       const current = await findThread(input.chatId);

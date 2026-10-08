@@ -21,7 +21,8 @@ export interface ProjectRuntimeOptions {
   workflows?: NonNullable<ConstructorParameters<typeof Mastra>[0]>['workflows'];
 }
 
-export type SessionOptions = NonNullable<Parameters<MountedMastraCode['controller']['createSession']>[0]>;
+// Host callers name their resource explicitly so concurrent setup has one owner.
+export type SessionOptions = NonNullable<Parameters<MountedMastraCode['controller']['createSession']>[0]> & { resourceId: string };
 export type NativeSession = Session<MastraCodeState>;
 
 /** One native CodeSDK controller per project, sharing the process-start profile. */
@@ -79,7 +80,7 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
   await prepared.finalize();
   const base = { ...prepared.base, mastra };
   const sessions = new Map<string, { resourceId: string; scope?: string; session: NativeSession; releasingThreadId?: string | null }>();
-  const creatingSessions = new Set<Promise<NativeSession>>();
+  const creatingSessions = new Map<string, Promise<NativeSession>>();
   const releasingSessions = new Map<string, Promise<void>>();
   let disposed = false;
   let disposal: Promise<void> | undefined;
@@ -92,37 +93,58 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
     session.abort();
   }
 
-  return {
-    ...base,
-    projectPath,
-    runtimeRoot,
-    async createSession(input: SessionOptions): Promise<NativeSession> {
+  async function createSession(input: SessionOptions, initialize?: (session: NativeSession, assertActive: () => void) => Promise<void>): Promise<NativeSession> {
+    if (disposed) throw retired();
+    const scope = input.scope, key = JSON.stringify([input.resourceId, scope ?? null]);
+    const pending = creatingSessions.get(key);
+    if (pending) {
+      const session = await pending;
       if (disposed) throw retired();
-      const scope = input.scope;
-      const creating = (async () => {
-        const session = await base.controller.createSession({
-          ...input,
-          tags: { ...input.tags, projectPath },
-        });
-        const resourceId = session.identity.getResourceId();
-        sessions.set(JSON.stringify([resourceId, scope ?? null]), { resourceId, scope, session });
-        if (disposed) { quiesce(session); throw retired(); }
+      const releasing = releasingSessions.get(key);
+      if (releasing) {
+        await releasing;
+        return createSession(input, initialize);
+      }
+      // Native createSession can select another thread on the same resource.
+      // Preserve that behavior after setup; never return the wrong binding.
+      if (input.threadId && session.thread.getId() !== input.threadId) return createSession(input, initialize);
+      return session;
+    }
+    const creating = (async () => {
+      const session = await base.controller.createSession({ ...input, tags: { ...input.tags, projectPath } });
+      const tracked = { resourceId: session.identity.getResourceId(), scope, session };
+      sessions.set(key, tracked);
+      if (disposed) { quiesce(session); throw retired(); }
+      const threadId = session.thread.getId(), abortGeneration = session.run.getAbortGeneration();
+      const assertActive = () => {
+        if (disposed || sessions.get(key) !== tracked || releasingSessions.has(key)
+          || session.thread.getId() !== threadId || session.run.getAbortGeneration() !== abortGeneration) {
+          throw new Error('Session setup was interrupted');
+        }
+      };
+      try {
+        // Initializers await configuration and input acceptance, never a model
+        // run. They must recheck before initiating work after an awaited step.
+        assertActive();
+        if (initialize) await initialize(session, assertActive);
+        assertActive();
         return session;
-      })();
-      creatingSessions.add(creating);
-      try { return await creating; }
-      finally { creatingSessions.delete(creating); }
-    },
-    // Enumerate only bindings admitted through this runtime. Native controller
-    // lookups need a known scope; no scope naming convention is assumed here.
-    sessionsForThread(input: { resourceId: string; threadId: string }) {
-      return [...sessions.entries()].filter(([key, tracked]) => {
-        if (tracked.resourceId !== input.resourceId || tracked.session.identity.getResourceId() !== input.resourceId) return false;
-        const threadId = tracked.session.thread.getId();
-        return threadId === input.threadId || threadId === null && releasingSessions.has(key) && tracked.releasingThreadId === input.threadId;
-      }).map(([, tracked]) => ({ resourceId: tracked.resourceId, scope: tracked.scope, session: tracked.session }));
-    },
-    async releaseSession(input: { resourceId: string; scope?: string }): Promise<void> {
+      } catch (error) {
+        // Keep failed setup hidden until native cleanup finishes. Retirement
+        // may already own this binding; never delete a replacement Session.
+        if (initialize && !disposed && sessions.get(key) === tracked && session.thread.getId() === threadId) {
+          quiesce(session);
+          await releaseSession({ resourceId: tracked.resourceId, scope });
+        }
+        throw error;
+      }
+    })();
+    creatingSessions.set(key, creating);
+    try { return await creating; }
+    finally { if (creatingSessions.get(key) === creating) creatingSessions.delete(key); }
+  }
+
+  async function releaseSession(input: { resourceId: string; scope?: string }): Promise<void> {
       // Retirement owns all remaining bindings once admissions close. Native
       // deleteSession does not join another deletion of the same resource.
       if (disposed) return;
@@ -142,7 +164,23 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
       releasingSessions.set(key, releasing);
       try { await releasing; }
       finally { if (releasingSessions.get(key) === releasing) releasingSessions.delete(key); }
+    }
+
+  return {
+    ...base,
+    projectPath,
+    runtimeRoot,
+    createSession,
+    // Enumerate only bindings admitted through this runtime. Native controller
+    // lookups need a known scope; no scope naming convention is assumed here.
+    sessionsForThread(input: { resourceId: string; threadId: string }) {
+      return [...sessions.entries()].filter(([key, tracked]) => {
+        if (tracked.resourceId !== input.resourceId || tracked.session.identity.getResourceId() !== input.resourceId) return false;
+        const threadId = tracked.session.thread.getId();
+        return threadId === input.threadId || threadId === null && releasingSessions.has(key) && tracked.releasingThreadId === input.threadId;
+      }).map(([, tracked]) => ({ resourceId: tracked.resourceId, scope: tracked.scope, session: tracked.session }));
     },
+    releaseSession,
     // Stop every parent wrapper before any child cancellation can wake it. This
     // prevents newly triggered preparation; native APIs provide no general join
     // for preparation already underway or detached title/snapshot writes.
@@ -157,7 +195,7 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
         base.stopPluginSignalProviders();
         // Admissions were closed above. Late native creations are tracked and
         // quiesced before rejecting; failures do not skip existing-session cleanup.
-        await Promise.allSettled([...creatingSessions]);
+        await Promise.allSettled([...creatingSessions.values()]);
         for (const input of sessions.values()) quiesce(input.session);
         // Cancel native background work before retirement deletes remaining bindings.
         await base.mastra.backgroundTaskManager?.shutdown();

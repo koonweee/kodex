@@ -30,7 +30,7 @@ it('routes rename through native RPC and waits for canonical catalog updates', a
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><MantineProvider env="test"><NativeShell colorSchemeId="oled-black" appearance={DEFAULT_APPEARANCE_PREFERENCES} onAppearanceModeChange={vi.fn()} onThemeChange={vi.fn()} /></MantineProvider></QueryClientProvider>);
   await waitFor(() => expect(rpc.watchCatalog).toHaveBeenCalledOnce());
-  const catalog: CatalogSnapshot = { epoch: 'epoch', revision: 1, projects: [], archivedChatIds: [], pinnedChatIds: [], chats: [{ id: 'chat', projectId: null, cwd: '/retained', title: 'Preview', name: null, pinned: false, notificationsEnabled: true, isRunning: false }] };
+  const catalog: CatalogSnapshot = { epoch: 'epoch', revision: 1, projects: [], archivedChatIds: [], pinnedDescendants: [], pinnedChatIds: [], chats: [{ id: 'chat', projectId: null, cwd: '/retained', title: 'Preview', name: null, pinned: false, notificationsEnabled: true, isRunning: false }] };
   await act(async () => next?.({ value: catalog, done: false }));
   await userEvent.click(screen.getByRole('button', { name: 'Submit rename' }));
   await waitFor(() => expect(rpc.renameChat).toHaveBeenCalledWith({ chatId: 'chat', title: 'Native name' }));

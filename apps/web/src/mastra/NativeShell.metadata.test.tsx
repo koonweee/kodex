@@ -43,7 +43,7 @@ function stream() {
     iterable: { [Symbol.asyncIterator]() { return { next: () => new Promise<IteratorResult<CatalogSnapshot>>(resolve => { next = resolve; }) }; } } };
 }
 function catalog(revision = 1, ids = ['b', 'c'], notificationsEnabled = true): CatalogSnapshot {
-  return { epoch: 'epoch', revision, projects: [], archivedChatIds: [], pinnedChatIds: ids, chats: ['a', 'b', 'c'].map(id => ({ id, title: id.toUpperCase(), name: id.toUpperCase(), projectId: null, cwd: '/retained', pinned: ids.includes(id), notificationsEnabled: id === 'a' ? notificationsEnabled : true, isRunning: false })) };
+  return { epoch: 'epoch', revision, projects: [], archivedChatIds: [], pinnedDescendants: [], pinnedChatIds: ids, chats: ['a', 'b', 'c'].map(id => ({ id, title: id.toUpperCase(), name: id.toUpperCase(), projectId: null, cwd: '/retained', pinned: ids.includes(id), notificationsEnabled: id === 'a' ? notificationsEnabled : true, isRunning: false })) };
 }
 function shell() {
   return <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MantineProvider env="test"><NativeShell colorSchemeId="oled-black" appearance={DEFAULT_APPEARANCE_PREFERENCES} onAppearanceModeChange={vi.fn()} onThemeChange={vi.fn()} /></MantineProvider></QueryClientProvider>;

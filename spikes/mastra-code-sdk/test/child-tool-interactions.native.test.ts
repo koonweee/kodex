@@ -25,7 +25,7 @@ async function settled(session: NativeSession) {
   await memory.settled();
 }
 
-async function setup(t: TestContext, kind: 'reply' | 'cancel' | 'timeout') {
+async function setup(t: TestContext, kind: 'reply' | 'cancel' | 'timeout' | 'stop' | 'repark') {
   const root = await mkdtemp(join(tmpdir(), `kodex-production-child-interaction-${kind}-`));
   const projectPath = join(root, 'project'); await mkdir(projectPath);
   const trace: unknown[] = [];
@@ -53,6 +53,7 @@ async function setup(t: TestContext, kind: 'reply' | 'cancel' | 'timeout') {
         assert.ok(request.tools?.some(tool => tool.function.name === 'ask_user'));
         return { toolCalls: [{ name: 'ask_user', arguments: { question: 'Which evidence should I use?' }, id: 'proof-child-question' }] };
       }
+      if (kind === 'repark') return { toolCalls: [{ name: 'ask_user', arguments: { question: 'Second evidence question?' }, id: 'proof-child-second-question' }] };
       assert.equal(kind, 'reply', 'cancelled or expired children never reach a resumed model request');
       assert.ok(!serialized.includes('LOSING_NATIVE_ANSWER'));
       assert.ok(!serialized.includes('PARKED_GUIDANCE_NOT_AN_ANSWER'), 'parked guidance does not resume or answer the question');
@@ -250,4 +251,62 @@ test('native background timeout bounds an adopted operation parked on a child qu
   assert.equal(env.childModelRequests, 1);
   await env.runtime.releaseSession({ resourceId: env.child.identity.getResourceId() });
   await env.joinProducers();
+});
+
+
+test('selected native Stop settles a delegated child parked on a question and permits fresh input on its retained binding', { timeout: 30_000 }, async t => {
+  const env = await setup(t, 'stop');
+  env.parent.machinery.getAgent().abortThreadStream({ threadId: env.parent.thread.requireId(), resourceId: env.parent.identity.getResourceId(), clearPendingSignals: true });
+  env.parent.abort();
+  const requestsBeforeStop = env.fixture.requests.length;
+  env.child.abort();
+  assert.equal(env.child.suspensions.hasPending(), false);
+  assert.equal(env.child.displayState.get().pendingSuspensions.size, 0);
+  const task = await env.manager.waitForNextTask([env.taskId], { timeoutMs: 1_000 });
+  assert.equal(task.status, 'failed'); assert.equal(task.result, undefined);
+  assert.ok(task.error?.message.includes('aborted'));
+  assert.deepEqual(env.child.claimToolSuspension('proof-child-question'), { accepted: false, reason: 'no_pending_suspension' });
+  await env.child.respondToToolSuspension({ toolCallId: 'proof-child-question', resumeData: 'LOSING_NATIVE_ANSWER' });
+  assert.equal(env.fixture.requests.length, requestsBeforeStop);
+  const freshEnded = deferred();
+  const off = env.child.subscribe(event => { if (event.type === 'agent_end' && event.reason === 'complete') freshEnded.resolve(); }); t.after(off);
+  const fresh = await env.child.sendSignal({ type: 'user', contents: 'RETAINED_CHILD_AFTER_CANCEL' }, { requireDelivery: true }).accepted;
+  assert.equal(fresh.action, 'wake'); await freshEnded.promise; await settled(env.child);
+  assert.ok(JSON.stringify(await env.child.thread.listActiveMessages()).includes('RETAINED_CHILD_FRESH_RESULT'));
+  assert.equal(env.fixture.requests.filter(request => request.stream && lastUserText(request) === 'RETAINED_CHILD_AFTER_CANCEL').length, 1);
+  assert.equal((await env.manager.getTask(env.taskId))?.status, 'failed');
+  assert.equal(await env.runtime.controller.getSessionByResource(env.child.identity.getResourceId()), env.child);
+  await env.runtime.releaseSession({ resourceId: env.child.identity.getResourceId() }); await env.joinProducers();
+});
+
+
+test('selected native Stop also settles the same delegated operation after an answered child question reparks', { timeout: 30_000 }, async t => {
+  const env = await setup(t, 'repark');
+  env.parent.machinery.getAgent().abortThreadStream({ threadId: env.parent.thread.requireId(), resourceId: env.parent.identity.getResourceId(), clearPendingSignals: true });
+  env.parent.abort();
+  const original = env.child.suspensions.get({ toolCallId: 'proof-child-question' }); assert.ok(original);
+  const parkedAgain = deferred(); let secondQuestionSeen = false;
+  const off = env.child.subscribe(event => {
+    if (event.type === 'tool_suspended' && event.toolCallId === 'proof-child-second-question') secondQuestionSeen = true;
+    if (secondQuestionSeen && event.type === 'agent_end' && event.reason === 'suspended') parkedAgain.resolve();
+  }); t.after(off);
+  const claim = env.child.claimToolSuspension('proof-child-question'); assert.ok(claim.accepted);
+  const resume = env.child.respondToToolSuspension({ toolCallId: claim.toolCallId, resumeData: 'VERIFIED_NATIVE_ANSWER' })
+    .finally(() => env.child.releaseToolResponse(claim.toolCallId));
+  await parkedAgain.promise; await resume;
+  assert.equal(env.childModelRequests, 2);
+  const second = env.child.suspensions.get({ toolCallId: 'proof-child-second-question' }); assert.ok(second);
+  assert.equal(second.runId, original.runId, 'resume and repark remain the same native delegated run');
+  assert.equal((await env.manager.getTask(env.taskId))?.status, 'running');
+  env.child.abort();
+  const task = await env.manager.waitForNextTask([env.taskId], { timeoutMs: 1_000 });
+  assert.equal(task.status, 'failed'); assert.equal(task.result, undefined);
+  assert.ok(task.error?.message.includes('aborted'));
+  assert.equal(env.child.suspensions.hasPending(), false);
+  assert.equal(env.child.displayState.get().pendingSuspensions.size, 0);
+  assert.deepEqual(env.child.claimToolSuspension('proof-child-second-question'), { accepted: false, reason: 'no_pending_suspension' });
+  await env.child.respondToToolSuspension({ toolCallId: 'proof-child-second-question', resumeData: 'LOSING_NATIVE_ANSWER' });
+  assert.equal(env.childModelRequests, 2, 'stopped second question never resumes model work');
+  assert.equal(await env.runtime.controller.getSessionByResource(env.child.identity.getResourceId()), env.child);
+  await env.runtime.releaseSession({ resourceId: env.child.identity.getResourceId() }); await env.joinProducers();
 });

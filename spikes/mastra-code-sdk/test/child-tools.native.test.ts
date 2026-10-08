@@ -158,9 +158,9 @@ test('host child tools use native task handles, enforce parent origin, deliver l
   runtime = await createProjectRuntime({ profile, projectPath, runtimeRoot: join(root, 'runtime'),
     modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }], extraTools: tools });
   const nativeCreateSession = runtime.createSession.bind(runtime);
-  t.mock.method(runtime, 'createSession', async (input: Parameters<typeof nativeCreateSession>[0]) => {
+  t.mock.method(runtime, 'createSession', async (input: Parameters<typeof nativeCreateSession>[0], initialize: Parameters<typeof nativeCreateSession>[1]) => {
     if (input.tags?.kodexChild === '1') await allowChildCreation.reached;
-    return nativeCreateSession(input);
+    return nativeCreateSession(input, initialize);
   });
   joinProducers = observeProducers(t, runtime);
   const off = runtime.controller.onSessionCreated(session => {
@@ -381,9 +381,9 @@ test('native cancellation during child setup aborts a late-created child before 
     modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }], extraTools: tools });
   joinProducers = observeProducers(t, runtime);
   const nativeCreateSession = runtime.createSession.bind(runtime);
-  t.mock.method(runtime, 'createSession', async (input: Parameters<typeof nativeCreateSession>[0]) => {
+  t.mock.method(runtime, 'createSession', async (input: Parameters<typeof nativeCreateSession>[0], initialize: Parameters<typeof nativeCreateSession>[1]) => {
     if (input.tags?.kodexChild === '1') { creationHeld.release(); await releaseCreation.reached; }
-    return nativeCreateSession(input);
+    return nativeCreateSession(input, initialize);
   });
   const off = runtime.controller.onSessionCreated(session => {
     sessions.push(session);

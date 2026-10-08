@@ -144,9 +144,9 @@ test('archive cancels a child admitted before native creation without allowing l
   const unused = await env.service.createChat({ projectId: 'late' });
   assert.ok(unused.id);
   const nativeCreate = env.runtime.createSession.bind(env.runtime);
-  t.mock.method(env.runtime, 'createSession', async (input: Parameters<typeof nativeCreate>[0]) => {
+  t.mock.method(env.runtime, 'createSession', async (input: Parameters<typeof nativeCreate>[0], initialize: Parameters<typeof nativeCreate>[1]) => {
     if (input.tags?.kodexChild === '1') { launchEntered.release(); await releaseLaunch.reached; }
-    return nativeCreate(input);
+    return nativeCreate(input, initialize);
   });
   const active = await env.launch('LATE'); await launchEntered.reached;
   const manager = env.runtime.mastra.backgroundTaskManager; assert.ok(manager);

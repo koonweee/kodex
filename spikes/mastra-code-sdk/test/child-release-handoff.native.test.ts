@@ -23,6 +23,7 @@ after(async () => { await rm(profileRoot, { recursive: true, force: true }); });
 async function setup(t: TestContext, boundary: 'history' | 'history-error') {
   const root = await mkdtemp(join(tmpdir(), `kodex-child-handoff-${boundary}-`));
   const projectPath = join(root, 'project'); await mkdir(projectPath);
+  const parkedRuns = new Set<string>();
   const sessions: NativeSession[] = [], producers = new Map<string, ReturnType<typeof gate>>();
   const reached = gate(), resume = gate(), childEnded = gate();
   const trace: unknown[] = [];
@@ -31,6 +32,7 @@ async function setup(t: TestContext, boundary: 'history' | 'history-error') {
     // SDK title generation uses the same local fixture, never a real provider.
     if (!request.stream) return { text: 'Handoff fixture' };
     const last = lastUserText(request), content = JSON.stringify(request.messages);
+    if (last === 'INDEPENDENT_PARKED_AFTER_TERMINAL') return { toolCalls: [{ name: 'ask_user', arguments: { question: 'Independent follow-up question?' }, id: 'independent-after-terminal-question' }] };
     if (last.includes('NAIVE_DIRECT') || last.includes('SAFE_DIRECT')) return { text: `DIRECT_RESULT:${last}` };
     if (last.includes('HANDOFF_CHILD')) {
       assert.ok(!content.includes('PARENT_PRIVATE_HANDOFF'));
@@ -55,6 +57,10 @@ async function setup(t: TestContext, boundary: 'history' | 'history-error') {
     child = session;
     session.subscribe(event => {
       trace.push({ event });
+      if (event.type === 'tool_suspended') {
+        const suspension = session.suspensions.get({ toolCallId: event.toolCallId });
+        if (suspension) parkedRuns.add(suspension.runId);
+      }
       if (event.type === 'agent_end' && event.reason === 'complete' && !initialEnded) {
         initialEnded = true; childEnded.release();
       }
@@ -82,7 +88,7 @@ async function setup(t: TestContext, boundary: 'history' | 'history-error') {
   });
   async function joinProducers() {
     let joined = -1;
-    while (joined !== producers.size) { joined = producers.size; await Promise.all([...producers.values()].map(done => done.promise)); }
+    while (joined !== producers.size) { joined = producers.size; await Promise.all([...producers].map(([runId, done]) => parkedRuns.has(runId) ? undefined : done.promise)); }
   }
   t.diagnostic(`Child handoff trace: ${join(root, 'trace.json')}`);
   t.after(async () => {
@@ -189,3 +195,25 @@ for (const lateOutcome of ['cancel', 'history-error'] as const) {
     assert.equal(await env.runtime.controller.getSessionByResource(env.target.resourceId), env.child);
   });
 }
+
+
+test('Stop on a later independent parked run cannot reject the original delegated result while its canonical read is held', { timeout: 30_000 }, async t => {
+  const env = await setup(t, 'history');
+  env.initial.release(); await env.childEnded.promise; await env.reached.promise;
+  const parked = gate();
+  const off = env.child.subscribe(event => { if (event.type === 'agent_end' && event.reason === 'suspended') parked.release(); }); t.after(off);
+  await env.child.sendSignal({ type: 'user', contents: 'INDEPENDENT_PARKED_AFTER_TERMINAL' }, { requireDelivery: true }).accepted;
+  await parked.promise;
+  const suspension = env.child.suspensions.get({ toolCallId: 'independent-after-terminal-question' }); assert.ok(suspension);
+  assert.equal((await env.manager.getTask(env.taskId))?.status, 'running', 'result read keeps original native task nonterminal');
+  env.child.abort();
+  assert.equal(env.child.suspensions.hasPending(), false);
+  assert.deepEqual(env.child.claimToolSuspension('independent-after-terminal-question'), { accepted: false, reason: 'no_pending_suspension' });
+  env.resume.release();
+  const task = await env.manager.waitForNextTask([env.taskId], { timeoutMs: 5_000 });
+  assert.equal(task.status, 'completed');
+  assert.ok(JSON.stringify(task.result).includes('started:HANDOFF_CHILD'));
+  assert.ok(!JSON.stringify(task.result).includes('Independent follow-up'));
+  assert.equal(env.fixture.requests.filter(request => request.stream && lastUserText(request) === 'INDEPENDENT_PARKED_AFTER_TERMINAL').length, 1);
+  assert.equal(await env.runtime.controller.getSessionByResource(env.target.resourceId), env.child);
+});

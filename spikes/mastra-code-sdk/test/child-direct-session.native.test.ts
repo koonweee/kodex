@@ -28,7 +28,7 @@ async function memorySettled(session: NativeSession) {
 
 /** Actual SDK composition only. Internal producer observation is fixture cleanup,
  * not a proposed host shutdown/join mechanism or a public memory drain claim. */
-async function setup(t: TestContext, kind: 'reopen' | 'steer' | 'fork') {
+async function setup(t: TestContext, kind: 'reopen' | 'steer' | 'fork', onChild?: (session: NativeSession) => void) {
   const root = await mkdtemp(join(tmpdir(), `kodex-direct-child-${kind}-`));
   const projectPath = join(root, 'project'); await mkdir(projectPath);
   await writeFile(join(projectPath, 'evidence.txt'), 'DIRECT_CHILD_EVIDENCE: persisted native workspace result');
@@ -74,7 +74,7 @@ async function setup(t: TestContext, kind: 'reopen' | 'steer' | 'fork') {
   function instrument(mounted: ProjectRuntime) {
     mounted.controller.onSessionCreated(session => {
       sessions.add(session);
-      if (session.getTags().kodexChild === '1') child = session;
+      if (session.getTags().kodexChild === '1') { child = session; onChild?.(session); }
       session.subscribe(event => {
         trace.push({ session: session.identity.getId(), threadId: session.thread.getId(), event });
         if (session.identity.getResourceId() === 'direct-parent-resource' && parentFinalRequested && event.type === 'agent_end' && event.reason === 'complete') parentFinal.resolve();
@@ -136,6 +136,62 @@ async function delegate(env: Awaited<ReturnType<typeof setup>>) {
   assert.equal((await manager.getTask(relation.parentTaskId))?.status, 'running');
   return { parent, child, row, relation, manager, hold };
 }
+
+test('host child lookup waits for native configuration and input acceptance, then exposes the configured binding before model completion', { timeout: 40_000 }, async t => {
+  const configEntered = gate(), releaseConfig = gate(), acceptedReached = gate(), releaseAcceptance = gate();
+  const env = await setup(t, 'reopen', session => {
+    // Hold the real native calls, rather than fabricate configuration or an
+    // acknowledgment. These gates characterize the host exposure boundary.
+    const switchModel = session.model.switch.bind(session.model);
+    t.mock.method(session.model, 'switch', async (...args: Parameters<typeof switchModel>) => {
+      configEntered.resolve(); await releaseConfig.promise; return switchModel(...args);
+    });
+    const sendSignal = session.sendSignal.bind(session);
+    t.mock.method(session, 'sendSignal', (...args: Parameters<typeof sendSignal>) => {
+      const result = sendSignal(...args);
+      return { ...result, accepted: result.accepted.then(async accepted => {
+        acceptedReached.resolve(); await releaseAcceptance.promise; return accepted;
+      }) };
+    });
+  });
+  env.releaseOnCleanup(() => releaseConfig.resolve());
+  env.releaseOnCleanup(() => releaseAcceptance.resolve());
+  const parent = await env.runtime.createSession({ threadId: 'direct-parent-thread', resourceId: 'direct-parent-resource' });
+  const hold = env.hold('CHILD_DIRECT_TASK');
+  const parentRun = parent.sendMessage({ content: 'PARENT_PRIVATE_TASK', untilIdle: true }); void parentRun.catch(() => {});
+  await configEntered.promise;
+  const child = env.child; assert.ok(child);
+  const target = { resourceId: child.identity.getResourceId(), threadId: child.thread.requireId() };
+  let exposed = false;
+  const lookup = env.runtime.createSession(target).then(session => { exposed = true; return session; }); void lookup.catch(() => {});
+  // An unrelated native creation supplies a finite async witness while the
+  // same-key lookup remains pending; there are no timer-based race assertions.
+  await env.runtime.createSession({ resourceId: 'setup-witness-resource', threadId: 'setup-witness-thread' });
+  assert.equal(exposed, false, 'a registered child is not exposed while native configuration is pending');
+  assert.equal(env.fixture.requests.filter(request => serialized(request).includes('CHILD_DIRECT_TASK') && !serialized(request).includes('PARENT_PRIVATE_TASK')).length, 0);
+  releaseConfig.resolve();
+  await acceptedReached.promise; await hold.reached;
+  assert.equal(exposed, false, 'host lookup also waits for the actual native input acknowledgment');
+  releaseAcceptance.resolve();
+  const alias = await lookup;
+  assert.equal(alias, child);
+  assert.equal(alias.mode.get(), parent.mode.get()); assert.deepEqual(alias.model.get(), parent.model.get());
+  assert.equal(alias.resolveToolApproval('delegate_child'), 'deny'); assert.equal(alias.resolveToolApproval('subagent'), 'deny');
+  assert.equal((await alias.machinery.buildStreamOptions({})).disableBackgroundTasks, true);
+  const row = await env.runtime.controller.queryThreadById({ threadId: target.threadId }); assert.ok(row);
+  assert.equal(row.title, 'CHILD_DIRECT_TASK: view evidence.txt and report');
+  const relation = readChildRelation(row.metadata); assert.ok(relation);
+  const manager = env.runtime.mastra.backgroundTaskManager; assert.ok(manager);
+  assert.equal((await manager.getTask(relation.parentTaskId))?.status, 'running');
+  assert.equal(alias.displayState.get().isRunning, true, 'exposure does not await the held model turn');
+  assert.ok(alias.getCurrentRunId());
+  await parentRun;
+  await alias.sendMessage({ content: 'DIRECT_USER_GUIDANCE: retain verified evidence' });
+  hold.release();
+  assert.equal(await env.completion.promise, 'completed'); await env.parentFinal.promise; await env.joinProducers(); await memorySettled(parent);
+  assert.ok(JSON.stringify((await manager.getTask(relation.parentTaskId))?.result).includes('CHILD_DIRECT_RESULT'));
+  assert.equal(await env.runtime.createSession(target), alias, 'completion retains the configured binding');
+});
 
 test('public direct child binding aliases the live adopted Session and native user delivery preserves its owner, then stored history reopens after completion and restart', { timeout: 40_000 }, async t => {
   const env = await setup(t, 'reopen');
