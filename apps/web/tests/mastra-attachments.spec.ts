@@ -1,11 +1,12 @@
 import { test, expect, type Page } from '@playwright/test';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pane, send, startBackend, stopBackend } from './fixtures/mastra';
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+const markdown = '# Native attachment review\n\nRead **native** file bytes.\n';
 const image = (name: string) => ({ name, mimeType: 'image/png', buffer: png });
 const attach = async (page: Page, file: { name: string; mimeType: string; buffer: Buffer }) => {
   const input = pane(page).locator('input[type="file"]');
@@ -19,7 +20,37 @@ const expectHealthy = async (page: Page) => {
   await expect(page.getByRole('alert').filter({ hasText: /AsyncIdQueue/ })).toHaveCount(0);
 };
 
-test('native browser uploads, validation retry and edited queued images converge across peers and restart', async ({ context, page }) => {
+const verifyFileCards = async (page: Page) => {
+  await expect(pane(page).getByRole('link', { name: 'Download notes.txt', exact: true })).toBeVisible();
+  await expect(pane(page).getByRole('button', { name: 'Preview review.md', exact: true })).toBeVisible();
+  await expect(pane(page).locator('.kodex-user-message-bubble').filter({ hasText: /kodex-attachments|\.kodex\/uploads\// })).toHaveCount(0);
+};
+const downloadNotes = async (page: Page) => {
+  const pending = page.waitForEvent('download');
+  await pane(page).getByRole('link', { name: 'Download notes.txt', exact: true }).click();
+  const download = await pending;
+  expect(download.suggestedFilename()).toBe('notes.txt');
+  const path = await download.path(); expect(path).not.toBeNull();
+  expect(await readFile(path!, 'utf8')).toBe('BROWSER_GENERIC_FILE_BYTES');
+};
+const previewMarkdown = async (page: Page) => {
+  await pane(page).getByRole('button', { name: 'Preview review.md', exact: true }).click();
+  const preview = page.getByRole('dialog', { name: 'review.md', exact: true });
+  await expect(preview.getByRole('heading', { name: 'Native attachment review', exact: true })).toBeVisible();
+  await expect(preview.getByText('native', { exact: true })).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath('native-markdown-preview.png'), fullPage: true });
+  await preview.getByText('Source', { exact: true }).click();
+  await expect(preview.getByRole('radio', { name: 'Source', exact: true })).toBeChecked();
+  const source = preview.getByRole('region', { name: 'Markdown source', exact: true });
+  await expect(source.getByText('# Native attachment review', { exact: true })).toBeVisible();
+  await expect(source.getByText('Read **native** file bytes.', { exact: true })).toBeVisible();
+  await preview.getByText('Preview', { exact: true }).click();
+  await expect(preview.getByRole('radio', { name: 'Preview', exact: true })).toBeChecked();
+  await expect(preview.getByRole('heading', { name: 'Native attachment review', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape'); await expect(preview).toHaveCount(0);
+};
+
+test('native uploads, file previews and edited queued images converge across peers and restart', async ({ context, page }) => {
   const root = await mkdtemp(join(tmpdir(), 'kodex-attachments-browser-'));
   let backend: ChildProcessWithoutNullStreams | undefined;
   const errors: string[] = [], legacy: string[] = [];
@@ -32,7 +63,12 @@ test('native browser uploads, validation retry and edited queued images converge
     });
   };
   observe(page); context.on('page', observe);
-  context.on('request', request => { if (new URL(request.url()).pathname.startsWith('/v1/')) legacy.push(request.url()); });
+  context.on('request', request => {
+    const url = new URL(request.url());
+    const nativePreview = request.method() === 'GET' && /^\/v1\/threads\/[^/]+\/files\/preview$/.test(url.pathname)
+      && url.searchParams.has('path') && [...url.searchParams.keys()].every(key => key === 'path');
+    if (url.pathname.startsWith('/v1/') && !nativePreview) legacy.push(request.url());
+  });
   context.on('response', response => {
     const route = new URL(response.url()).pathname;
     if (/\/rpc\/upload(Image|File)$/.test(route)) uploads.push({ route, status: response.status() });
@@ -52,7 +88,16 @@ test('native browser uploads, validation retry and edited queued images converge
     await attach(page, { name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('BROWSER_GENERIC_FILE_BYTES') });
     await send(page, 'BROWSER_FILE_SEND');
     for (const tab of [page, peer]) await expect(pane(tab).getByText('BROWSER_FILE_REFERENCE_RECEIVED', { exact: true })).toBeVisible();
-    await expect(pane(page).getByText(/\.kodex\/uploads\/.*\/notes\.txt/)).toBeVisible();
+    for (const tab of [page, peer]) await expect(pane(tab).getByRole('link', { name: 'Download notes.txt', exact: true })).toBeVisible();
+    await downloadNotes(page);
+    await attach(page, { name: 'review.md', mimeType: 'text/markdown', buffer: Buffer.from(markdown) });
+    await send(page, 'BROWSER_MARKDOWN_SEND');
+    for (const tab of [page, peer]) {
+      await expect(pane(tab).getByText('BROWSER_MARKDOWN_REFERENCE_RECEIVED', { exact: true })).toBeVisible();
+      await verifyFileCards(tab);
+    }
+    await page.screenshot({ path: test.info().outputPath('native-file-cards.png'), fullPage: true });
+    await previewMarkdown(page);
 
     await attach(page, { name: 'retry.png', mimeType: 'image/png', buffer: Buffer.from('invalid PNG') });
     await send(page, 'BROWSER_RETRY_IMAGE');
@@ -93,6 +138,7 @@ test('native browser uploads, validation retry and edited queued images converge
         await expect.poll(() => thumbnail(tab, name).locator('img').evaluate(element => (element as HTMLImageElement).naturalWidth)).toBe(1);
       }
       await expect(pane(tab).getByText('BROWSER_FILE_REFERENCE_RECEIVED', { exact: true })).toBeVisible();
+      await verifyFileCards(tab);
       await expectHealthy(tab);
     };
     for (const tab of [page, peer]) await expectHealthy(tab);
@@ -101,10 +147,11 @@ test('native browser uploads, validation retry and edited queued images converge
     const urls = [page.url(), peer.url()]; await Promise.all([page.goto('about:blank'), peer.goto('about:blank')]);
     await stopBackend(backend, true); backend = await startBackend(root, 'attachments');
     for (const [index, tab] of [page, peer].entries()) { await tab.goto(urls[index]); await verify(tab); }
+    await previewMarkdown(peer); await downloadNotes(peer);
     await thumbnail(peer, 'submitted.png').click(); await expect(peer.getByRole('dialog').locator('img')).toHaveAttribute('src', /^data:image\/png;base64,/);
     await peer.getByRole('button', { name: 'Close image preview', exact: true }).click();
     expect(uploads.filter(value => value.route.endsWith('/uploadImage') && value.status === 200)).toHaveLength(3);
-    expect(uploads.filter(value => value.route.endsWith('/uploadFile') && value.status === 200)).toHaveLength(1);
+    expect(uploads.filter(value => value.route.endsWith('/uploadFile') && value.status === 200)).toHaveLength(2);
     expect(uploads.filter(value => value.route.endsWith('/uploadImage') && value.status === 400)).toHaveLength(1);
     expect(legacy).toEqual([]); expect(errors).toEqual([]);
   } finally { if (backend) await stopBackend(backend); await rm(root, { recursive: true, force: true }); }

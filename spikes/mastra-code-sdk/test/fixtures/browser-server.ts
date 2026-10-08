@@ -47,15 +47,19 @@ const model = await startModelFixture(async request => {
       if (imageUrls.length !== 1 || imageUrls[0] !== `data:image/png;base64,${png.toString('base64')}`) throw new Error('Browser attachment image bytes did not reach the provider');
       return { text: `BROWSER_UPLOADED_IMAGE_RECEIVED:${user.trim() || 'image-only'}` };
     }
-    if (user.includes('BROWSER_FILE_SEND')) {
-      const reference = /- (\.kodex\/uploads\/[^\n]+\/notes\.txt)/.exec(user)?.[1];
-      if (!reference) throw new Error('Browser generic file reference did not reach the provider');
+    const attachment = user.includes('BROWSER_MARKDOWN_SEND')
+      ? { name: 'review.md', contents: '# Native attachment review\n\nRead **native** file bytes.\n', result: 'BROWSER_MARKDOWN_REFERENCE_RECEIVED' }
+      : user.includes('BROWSER_FILE_SEND')
+        ? { name: 'notes.txt', contents: 'BROWSER_GENERIC_FILE_BYTES', result: 'BROWSER_FILE_REFERENCE_RECEIVED' } : null;
+    if (attachment) {
+      const reference = /- (\.kodex\/uploads\/[^\n]+)/.exec(user)?.[1];
+      if (!reference?.endsWith(`/${attachment.name}`)) throw new Error('Browser generic file reference did not reach the provider');
       let contents: string | undefined;
       for (const cwd of [projectPath, directoryHome]) {
         try { contents = await readFile(join(cwd, reference), 'utf8'); break; } catch {}
       }
-      if (contents !== 'BROWSER_GENERIC_FILE_BYTES') throw new Error('Browser generic file bytes were not saved in the bound working directory');
-      return { text: 'BROWSER_FILE_REFERENCE_RECEIVED' };
+      if (contents !== attachment.contents) throw new Error('Browser generic file bytes were not saved in the bound working directory');
+      return { text: attachment.result };
     }
   }
   if (serialized.includes('BROWSER_DELEGATE_QUESTION') && serialized.includes('BROWSER_INTERACTIVE_CHILD_RESULT')) return { text: 'BROWSER_PARENT_INTERACTION_RESULT' };
@@ -200,7 +204,7 @@ if (process.argv[4] === 'input-images' && !(await service.listChats()).chats.len
       metadata: { signal: { id: 'input-images-only', type: 'user', metadata: { clientId: 'input-image-only-correlation' } } } } },
   ] });
 }
-const server = await serveRouter(createChatRouter(service), port);
+const server = await serveRouter(createChatRouter(service), port, service);
 console.log(`BROWSER_FIXTURE_READY ${server.url}`);
 let stopping = false;
 const stop = () => {

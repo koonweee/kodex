@@ -384,7 +384,12 @@ test('native file upload resolves the retained chat root without activating dorm
   const thread = await runtime.controller.queryThreadById({ threadId: chat.id }); assert.ok(thread);
   assert.equal(await runtime.controller.getSessionByResource(thread.resourceId), undefined);
   await assert.rejects(client.uploadFile({ chatId: 'missing', file: new File(['content'], 'notes.txt') }), { code: 'NOT_FOUND' });
+  const preview = await service.previewFile({ chatId: chat.id, path: saved.relativePath });
+  assert.deepEqual(preview.bytes, Buffer.from(bytes));
+  await assert.rejects(service.previewFile({ chatId: 'missing', path: saved.relativePath }), { code: 'NOT_FOUND' });
   await service.archiveChat({ chatId: chat.id });
+  assert.deepEqual((await service.previewFile({ chatId: chat.id, path: saved.relativePath })).bytes, Buffer.from(bytes));
+  assert.equal(await runtime.controller.getSessionByResource(thread.resourceId), undefined, 'archived previews stay dormant');
   await assert.rejects(client.uploadFile({ chatId: chat.id, file: new File(['content'], 'notes.txt') }), { code: 'CONFLICT' });
 });
 

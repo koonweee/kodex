@@ -42,7 +42,7 @@ const service = createChatService({
     return runtime;
   },
 });
-const server = await serveRouter(createChatRouter(service), port);
+const server = await serveRouter(createChatRouter(service), port, service);
 console.log(`Kodex Mastra spike: ${server.url} (localhost only)`);
 console.log(`Profile: ${profile.root}; projects: ${config.projects.map(project => project.path).join(', ')}`);
 let stopping = false;

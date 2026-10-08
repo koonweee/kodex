@@ -1,3 +1,5 @@
+import { handleFilePreview } from './file-preview-http.js';
+import type { ChatService } from './chat-service.js';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
 import type { AnyRouter } from '@orpc/server';
@@ -6,7 +8,7 @@ import { RPCHandler as WebsocketHandler } from '@orpc/server/websocket';
 import { WebSocketServer } from 'ws';
 
 /** Dedicated localhost backend. Unported routes fail here; no upstream fallback. */
-export async function serveRouter(router: AnyRouter, port = 8789) {
+export async function serveRouter(router: AnyRouter, port = 8789, files?: Pick<ChatService, 'previewFile'>) {
   const websocketHandler = new WebsocketHandler(router);
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 1_048_576 });
   const messages = new Set<Promise<void>>();
@@ -17,16 +19,20 @@ export async function serveRouter(router: AnyRouter, port = 8789) {
   const uploadHandler = new RPCHandler(router, { plugins: [new BodyLimitPlugin({ maxBodySize: 26 * 1024 * 1024 })] });
   const server = createServer((request, response) => {
     const selectedHandler = ['/rpc/uploadFile', '/rpc/uploadImage'].includes(request.url?.split('?')[0] ?? '') ? uploadHandler : handler;
-    void selectedHandler.handle(request, response, { prefix: '/rpc', context: {} }).then(({ matched }) => {
+    const pending = (async () => {
+      if (files && await handleFilePreview(request, response, files)) return;
+      const { matched } = await selectedHandler.handle(request, response, { prefix: '/rpc', context: {} });
       if (!matched) {
         response.writeHead(404, { 'content-type': 'application/json' });
         response.end(JSON.stringify({ error: { message: 'Route not found on the Mastra backend.' } }));
       }
-    }).catch(() => {
+    })().catch(() => {
       // Native errors can contain provider credentials; never log their raw bodies.
       if (!response.headersSent) response.writeHead(500);
       response.end();
     });
+    messages.add(pending);
+    void pending.finally(() => messages.delete(pending));
   });
   server.on('upgrade', (request, socket, head) => {
     let allowedOrigin = !request.headers.origin;

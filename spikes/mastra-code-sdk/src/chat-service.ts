@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { prepareChatInput, type ChatInput } from './chat-input.js';
 import { uploadChatImage } from './chat-image-uploads.js';
+import { readChatFilePreview } from './chat-file-previews.js';
 import { uploadChatFile } from './chat-uploads.js';
 import { readNativePromptViews, respondNativePrompt, type NativePrompt, type PromptResponse } from './chat-prompts.js';
 import { readChatDescendants } from './chat-descendants.js';
@@ -313,6 +314,12 @@ export function createChatService(options: ChatServiceOptions) {
           yield last;
         }
       } finally { await changes.return(); }
+    },
+    async previewFile({ chatId, path }: { chatId: string; path: string }) {
+      assertActive();
+      const { binding } = await projects.findThread(chatId, true);
+      assertActive();
+      return readChatFilePreview({ cwd: binding.cwd, path });
     },
     async uploadFile({ chatId, file }: { chatId: string; file: File }) {
       const { binding } = await projects.findThread(chatId);

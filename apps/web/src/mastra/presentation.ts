@@ -1,6 +1,7 @@
 import type { Chat, ChatSnapshot } from './client';
 import { nativeImageFields, nativeInputImages } from './nativeImages';
 import { nativeFileFields } from './nativeFiles';
+import { nativeInputFiles, nativeInputFileText } from './nativeInputFiles';
 import { nativeQuestionFields, nativeQuestionReplyClientId } from './nativeQuestions';
 import type { TimelineItem, TimelineRow } from '../timeline/state';
 import type { TimelinePresentation } from '../timeline/TimelineView';
@@ -51,12 +52,14 @@ export function timelinePresentation(snapshot: PresentationSnapshot, isLoadingOl
     if (!userAuthored && message.role !== 'assistant') continue;
     const status = current?.id === message.id && snapshot.display?.isRunning ? 'running' : 'completed';
     const images = userAuthored ? nativeInputImages(message.content.parts) : [];
+    const files = userAuthored ? nativeInputFiles(message.content.metadata) : [];
+    const attachmentFields = { ...(images.length && { images }), ...(files.length && { fileAttachments: files }) };
     const firstText = message.content.parts.findIndex(part => part.type === 'text');
-    if (images.length && firstText === -1) append({ id: `${message.id}:images`, kind: 'user_message', text: '', images, status, payload: message.content.parts, timestampMs: new Date(message.createdAt).getTime(), clientId: nativeQuestionReplyClientId(message.content.metadata) });
+    if ((images.length || files.length) && firstText === -1) append({ id: `${message.id}:${images.length ? 'images' : 'attachments'}`, kind: 'user_message', text: '', ...attachmentFields, status, payload: message.content.parts, timestampMs: new Date(message.createdAt).getTime(), clientId: nativeQuestionReplyClientId(message.content.metadata) });
     message.content.parts.forEach((part, index) => {
       const id = `${message.id}:${index}`;
       const timestampMs = new Date(message.createdAt).getTime();
-      if (part.type === 'text') append({ id, kind: userAuthored ? 'user_message' : 'assistant_message', text: part.text, status, payload: part, timestampMs, ...(userAuthored && { clientId: nativeQuestionReplyClientId(message.content.metadata), ...(index === firstText && images.length && { images }) }) });
+      if (part.type === 'text') append({ id, kind: userAuthored ? 'user_message' : 'assistant_message', text: userAuthored && index === firstText ? nativeInputFileText(part.text, files) : part.text, status, payload: part, timestampMs, ...(userAuthored && { clientId: nativeQuestionReplyClientId(message.content.metadata), ...(index === firstText && attachmentFields) }) });
       else if (part.type === 'reasoning') append({ id, kind: 'reasoning', text: part.reasoning, status, payload: part, timestampMs });
       else if (part.type === 'tool-invocation') {
         const tool = part.toolInvocation;
