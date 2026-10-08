@@ -1,4 +1,4 @@
-import { projectChatActivity, type CatalogChat } from './chat-activity.js';
+import { createChatActivity, type CatalogChat } from './chat-activity.js';
 import { createAutomationService } from './automation-service.js';
 import { AUTOMATION_WORKFLOW_ID, createAutomationWorkflow } from './automation-workflow.js';
 import { join } from 'node:path';
@@ -28,7 +28,7 @@ import { createChatGoals, type NativeGoal, type GoalPatch } from './chat-goals.j
 import { createNativeChatSettings, type ChatSettings, type ChatSettingsPatch } from './chat-settings.js';
 import { createSessionProjection, type SessionSnapshot } from './transport.js';
 
-export interface CatalogSnapshot { epoch: string; revision: number; projects: ProductProject[]; chats: CatalogChat[]; pinnedChatIds: string[]; pinnedDescendants: PinnedDescendant[]; archivedChatIds: string[] }
+export interface CatalogSnapshot { epoch: string; revision: number; projects: ProductProject[]; chats: CatalogChat[]; pinnedChatIds: string[]; pinnedDescendants: Array<PinnedDescendant & { isRunning: boolean }>; archivedChatIds: string[] }
 export interface ChatSnapshot extends SessionSnapshot { prompts: NativePrompt[]; chat: Chat; error: string | null; settings: ChatSettings; queue: ChatQueueSnapshot; goal: NativeGoal | null }
 export type ChatPromptResponse = PromptResponse & { chatId: string };
 export interface QueuedSelection { chatId: string; epoch: string; revision: number; id: string }
@@ -82,6 +82,7 @@ export function createChatService(options: ChatServiceOptions) {
     if (disposed) throw new ORPCError('SERVICE_UNAVAILABLE', { message: 'The chat service is shutting down.' });
   };
   const invalidateCatalog = () => { catalog.publish('changed', ++catalogRevision); };
+  const activity = createChatActivity(invalidateCatalog);
   const projects = createChatProjects(options, assertActive, () => ({
     [AUTOMATION_WORKFLOW_ID]: createAutomationWorkflow(input => lifecycle.admit(input.targetThreadId, async () => {
       const target = await projects.findThread(input.targetThreadId);
@@ -90,7 +91,7 @@ export function createChatService(options: ChatServiceOptions) {
       if (!result.accepted) throw new Error('Scheduled input was not accepted.');
       return accepted();
     })),
-  }));
+  }), activity.observeRuntime);
   const subagents = createChatSubagents({ signal: lifetime.signal, async resolveParent(chatId) {
     const parent = await projects.resolveThreadRoute(chatId, true);
     const handle = await handles.get(`${parent.binding.id}:${chatId}`);
@@ -113,15 +114,12 @@ export function createChatService(options: ChatServiceOptions) {
       session.emit({ type: 'display_state_changed', displayState: session.displayState.get() });
     } });
     const handle: Handle = { binding, runtime, session, projection, queue, revision: 0, error: null, unsubscribe: () => {}, observers: new AbortController() };
-    let wasRunning = session.displayState.get().isRunning;
     handle.unsubscribe = session.subscribe(event => {
-      const isRunning = session.displayState.get().isRunning, activityChanged = isRunning !== wasRunning;
-      wasRunning = isRunning;
       handle.revision++;
       subagents.invalidate(parentChatId, event.type === 'display_state_changed');
       if (event.type === 'agent_start') handle.error = null;
       if (event.type === 'error') handle.error = 'The model run failed. Please try again.';
-      if (activityChanged || event.type === 'thread_created' || event.type === 'thread_changed' || event.type === 'thread_title_updated' || event.type === 'agent_end' || event.type === 'message_end') invalidateCatalog();
+      if (event.type === 'thread_created' || event.type === 'thread_changed' || event.type === 'thread_title_updated' || event.type === 'agent_end' || event.type === 'message_end') invalidateCatalog();
     });
     subagents.invalidate(parentChatId);
     return handle;
@@ -189,10 +187,11 @@ export function createChatService(options: ChatServiceOptions) {
       lifetime.signal.throwIfAborted();
       const revision = catalogRevision;
       const inventory = await projects.inventory();
-      const chats = await projectChatActivity(inventory.chats, handles.values());
+      const chats = activity.project(inventory.chats);
+      const pinnedDescendants = activity.project(inventory.pinnedDescendants);
       signal?.throwIfAborted();
       lifetime.signal.throwIfAborted();
-      if (revision === catalogRevision) return { epoch, revision, ...inventory, chats };
+      if (revision === catalogRevision) return { epoch, revision, ...inventory, chats, pinnedDescendants };
     }
   }
   async function sendNative(handle: Handle, input: ChatInput, clientId?: string) {
@@ -452,6 +451,7 @@ export function createChatService(options: ChatServiceOptions) {
       if (disposal) return disposal;
       disposed = true;
       lifetime.abort();
+      activity.dispose();
       disposal = (async () => {
         if (accountService) await accountService.then(service => service.dispose(), () => {});
         const loadedHandles = await Promise.allSettled(handles.values());

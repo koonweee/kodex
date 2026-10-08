@@ -25,7 +25,7 @@ const describeChat = (binding: RuntimeBinding, thread: NativeThread, title: stri
 /** Product membership is read from the registry. Native runtimes remain attached
  * to immutable binding identities and cwd, including detached standalone chats.
  */
-export function createChatProjects(options: ChatProjectOptions, assertActive: () => void, workflows?: () => ProjectRuntimeOptions['workflows']) {
+export function createChatProjects(options: ChatProjectOptions, assertActive: () => void, workflows?: () => ProjectRuntimeOptions['workflows'], observeRuntime?: (runtime: ProjectRuntime) => void) {
   const runtimes = new Map<string, Promise<ProjectRuntime>>();
   let pendingRegistry: Promise<ProductRegistry> | undefined;
   const home = options.directoryHome ?? homedir();
@@ -57,7 +57,7 @@ export function createChatProjects(options: ChatProjectOptions, assertActive: ()
     assertActive();
     let pending = runtimes.get(binding.id);
     if (!pending) {
-      pending = (options.runtimeFactory ?? createProjectRuntime)({ projectPath: binding.cwd, runtimeRoot: binding.runtimeRoot, profile: options.profile, ...(workflows && { workflows: workflows() }) });
+      pending = (options.runtimeFactory ?? createProjectRuntime)({ projectPath: binding.cwd, runtimeRoot: binding.runtimeRoot, profile: options.profile, ...(workflows && { workflows: workflows() }) }).then(runtime => { observeRuntime?.(runtime); return runtime; });
       runtimes.set(binding.id, pending);
       void pending.catch(() => { if (runtimes.get(binding.id) === pending) runtimes.delete(binding.id); });
     }

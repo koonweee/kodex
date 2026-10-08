@@ -49,6 +49,7 @@ test('native child and fork direct routes retain editable history, shared pins a
   context.on('request', request => { if (new URL(request.url()).pathname.startsWith('/v1/')) legacy.push(request.url()); });
   try {
     const project = (await api.listChats()).projects[0]!;
+    await api.updateProject({ projectId: project.id, patch: { name: 'Descendant workspace' } });
     const parent = await api.createChat({ projectId: project.id });
     await api.renameChat({ chatId: parent.id, title: 'Delegation parent' });
     await page.goto(`/threads/${parent.id}`); await send(page, 'BROWSER_DELEGATE');
@@ -56,6 +57,12 @@ test('native child and fork direct routes retain editable history, shared pins a
     await expect.poll(async () => (await api.listSubagents({ chatId: parent.id })).children.length).toBe(1);
     const child = (await api.listSubagents({ chatId: parent.id })).children[0]!;
     await api.renameChat({ chatId: child.id, title: 'Direct child' });
+    await page.goto(`/threads/${child.id}`);
+    await expect(pane(page)).toHaveAttribute('aria-label', 'Direct child');
+    await showSidebar(page);
+    await expect(page.getByRole('group', { name: 'Descendant workspace', exact: true }).getByRole('button', { name: 'New thread', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Create thread in Descendant workspace', exact: true })).toHaveCount(0);
+    expect((await api.listChats()).pinnedDescendants).toEqual([]);
     await api.setChatPinned({ chatId: parent.id, pinned: true });
     await api.setChatPinned({ chatId: child.id, pinned: true });
 
@@ -110,6 +117,13 @@ test('native child and fork direct routes retain editable history, shared pins a
     await selectPinned(page, 'Child renamed across tabs', child.id);
     await send(page, 'HOLD_STOP');
     await expect(pane(page).getByRole('button', { name: 'Stop turn', exact: true })).toBeVisible();
+    for (const tab of [page, peer]) {
+      await showSidebar(tab);
+      await expect(pinnedRows(tab).filter({ hasText: 'Child renamed across tabs' }).getByRole('status', { name: 'Thread in progress', exact: true })).toBeVisible();
+      await expect(pinnedRows(tab).filter({ hasText: 'Direct fork' }).getByRole('status', { name: 'Thread in progress', exact: true })).toHaveCount(0);
+      const showThread = tab.getByRole('button', { name: 'Show thread', exact: true });
+      if (await showThread.isVisible()) await showThread.click();
+    }
     await api.archiveChat({ chatId: parent.id });
     await expect(page.locator(`.kodex-thread-pane[data-thread-id="${child.id}"]`)).toHaveCount(0);
     await expect.poll(async () => (await api.listChats()).archivedChatIds.includes(child.id)).toBe(true);

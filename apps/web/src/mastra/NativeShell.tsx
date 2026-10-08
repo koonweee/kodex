@@ -1,6 +1,6 @@
 import { Alert, Group } from '@mantine/core';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { KodexShellView, useNarrowThreadWorkspace } from '../shell/KodexShellView';
+import { useNarrowThreadWorkspace } from '../shell/KodexShellView';
 import { currentKodexRoute, pushKodexRoute, replaceKodexRoute } from '../shell/browserRouting';
 import { useSidebarResize } from '../shell/useSidebarResize';
 import type { AppearancePreferences } from '../theme/appearancePreferences';
@@ -27,6 +27,7 @@ import { nativeTerminalApi } from './nativeTerminalApi';
 import { useNativeAutomations } from './useNativeAutomations';
 import { NativeAutomationRuns } from './NativeAutomationRuns';
 import { NativeCatalogProvider } from './NativeCatalogContext';
+import { NativeWorkspaceShellView } from './NativeWorkspaceShellView';
 import type { DirectoryLoader, ProjectCreationFields, ProjectFormPatch } from '../projects/controls';
 
 const MarkdownPreviewPane = lazy(() => import('../files/MarkdownPreviewPane').then(module => ({ default: module.MarkdownPreviewPane })));
@@ -71,7 +72,7 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
   const pinned = (catalog.snapshot?.pinnedChatIds ?? []).flatMap(id => {
     const chat = chatsById.get(id);
     if (!chat) return [];
-    return ['isRunning' in chat ? chatListEntry(chat) : { id: chat.id, name: chat.title, projectId: chat.projectId, pinned: chat.pinned }];
+    return [chatListEntry(chat)];
   });
   const threadsByProjectId = Object.fromEntries(projects.map(project => [project.id, chats.filter(chat => chat.projectId === project.id).map(chatListEntry)]));
   const standalone = chats.filter(chat => !projects.some(project => project.id === chat.projectId)).map(chatListEntry);
@@ -128,7 +129,7 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
       }} showDebugEvents={showDebugEvents}>
       {catalog.snapshot && catalog.snapshot.archivedChatIds.length > 0 ? <NativeArchiveReconciliation archivedChatIds={catalog.snapshot.archivedChatIds} /> : null}
       {mainPane !== 'thread' && displayError ? <Alert color="red" role="alert">{displayError}</Alert> : null}
-      <KodexShellView isDraftThreadSelected={!route.threadId} isSidebarResizing={resize.isSidebarResizing}
+      <NativeWorkspaceShellView isDraftThreadSelected={!route.threadId} isSidebarResizing={resize.isSidebarResizing}
         mainPane={mainPane} mobilePanel={mobilePanel} sidebarCollapsed={resize.sidebarCollapsed} useSingleThreadWorkspace={singlePane}
         workspaceSelectedThreadPaneId={mainPane === 'thread' ? routeThreadPaneId : null}
         preferencesProps={{ executionPanel: <NativeExecutionPreferencesPanel />, opened: preferencesOpen, activeSection: preferencesSection, resolvedSchemeId: colorSchemeId, preferences: appearance, onClose: () => setPreferencesOpen(false), onSectionChange: setPreferencesSection, onModeChange: onAppearanceModeChange, onThemeChange }}
