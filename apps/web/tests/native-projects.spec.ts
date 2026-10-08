@@ -50,6 +50,15 @@ for (const shape of shapes) {
         fixture.state.projects.find((entry) => entry.id === "created-1")!.metadata = { owner: "another-native-client" };
         fixture.emit("project.changed", { projectId: "created-1", changeType: "updated" });
         await openProjectSettings(first, "Research", shape.hasTouch);
+        if (shape.width < 900) {
+          const showSidebar = first.getByRole("button", { name: "Show sidebar", exact: true });
+          await expect(showSidebar).toBeVisible();
+          await expect(showSidebar.locator("svg")).toBeVisible();
+          await expect.poll(async () => {
+            const bounds = await showSidebar.boundingBox();
+            return bounds ? Math.min(bounds.width, bounds.height) : 0;
+          }).toBeGreaterThanOrEqual(shape.hasTouch ? 44 : 32);
+        }
         await first.getByRole("textbox", { name: "Project name", exact: true }).fill("Renamed research");
         await first.getByRole("button", { name: "Save project", exact: true }).click();
         await expect(first.getByRole("heading", { name: "Renamed research", exact: true })).toBeVisible();
