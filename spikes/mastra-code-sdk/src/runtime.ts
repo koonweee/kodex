@@ -78,7 +78,7 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
   });
   await prepared.finalize();
   const base = { ...prepared.base, mastra };
-  const sessions = new Map<string, { resourceId: string; scope?: string; session: NativeSession }>();
+  const sessions = new Map<string, { resourceId: string; scope?: string; session: NativeSession; releasingThreadId?: string | null }>();
   const creatingSessions = new Set<Promise<NativeSession>>();
   const releasingSessions = new Map<string, Promise<void>>();
   let disposed = false;
@@ -113,6 +113,15 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
       try { return await creating; }
       finally { creatingSessions.delete(creating); }
     },
+    // Enumerate only bindings admitted through this runtime. Native controller
+    // lookups need a known scope; no scope naming convention is assumed here.
+    sessionsForThread(input: { resourceId: string; threadId: string }) {
+      return [...sessions.entries()].filter(([key, tracked]) => {
+        if (tracked.resourceId !== input.resourceId || tracked.session.identity.getResourceId() !== input.resourceId) return false;
+        const threadId = tracked.session.thread.getId();
+        return threadId === input.threadId || threadId === null && releasingSessions.has(key) && tracked.releasingThreadId === input.threadId;
+      }).map(([, tracked]) => ({ resourceId: tracked.resourceId, scope: tracked.scope, session: tracked.session }));
+    },
     async releaseSession(input: { resourceId: string; scope?: string }): Promise<void> {
       // Retirement owns all remaining bindings once admissions close. Native
       // deleteSession does not join another deletion of the same resource.
@@ -121,6 +130,7 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
       const existing = releasingSessions.get(key);
       if (existing) return existing;
       const tracked = sessions.get(key);
+      if (tracked) tracked.releasingThreadId = tracked.session.thread.getId();
       const releasing = (async () => {
         try { await base.controller.deleteSession(input); }
         finally {

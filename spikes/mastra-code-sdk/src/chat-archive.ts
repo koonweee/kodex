@@ -32,11 +32,17 @@ export async function retireChatDescendants(runtime: ProjectRuntime, parent: Nat
   const manager = runtime.mastra.backgroundTaskManager;
   for (const owner of [parent, ...descendants.map(row => row.thread)]) {
     if (owner.id !== parent.id) {
-      const session = await runtime.controller.getSessionByResource(owner.resourceId);
-      const mountedThread = session?.thread.getId();
-      if (!mountedThread || mountedThread === owner.id) {
-        if (session) await abortNativeChat(session);
-        // Also join a task finalizer that already removed its registration.
+      const bindings = runtime.sessionsForThread({ resourceId: owner.resourceId, threadId: owner.id });
+      const unscoped = await runtime.controller.getSessionByResource(owner.resourceId);
+      const mountedThread = unscoped?.thread.getId();
+      const releaseUnscoped = !mountedThread || mountedThread === owner.id;
+      if (unscoped && releaseUnscoped && !bindings.some(binding => binding.session === unscoped)) bindings.push({ resourceId: owner.resourceId, scope: undefined, session: unscoped });
+      // Start every matching scope's abort before yielding. Preserve unrelated
+      // bindings on this resource, then cancel only this native thread's tasks.
+      await Promise.all(bindings.map(binding => abortNativeChat(binding.session)));
+      for (const binding of bindings) await runtime.releaseSession({ resourceId: binding.resourceId, scope: binding.scope });
+      if (releaseUnscoped && !bindings.some(binding => binding.scope === undefined)) {
+        // Join unscoped task finalizers/non-host bindings even after registration clears.
         await runtime.releaseSession({ resourceId: owner.resourceId });
       }
     }

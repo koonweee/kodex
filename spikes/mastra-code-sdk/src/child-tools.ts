@@ -1,10 +1,10 @@
+import { applyChildSessionPolicy } from './child-policy.js';
 import type { AgentControllerRequestContext } from '@mastra/core/agent-controller';
 import type { MastraCodeState } from '@mastra/code-sdk/schema';
 import { createTool, type ToolExecutionContext } from '@mastra/core/tools';
 import { KODEX_CHILD_TAG, KODEX_CHILD_VERSION, readChildRelation, type ChildRelation } from './child-relation.js';
 import type { NativeSession, ProjectRuntime } from './runtime.js';
 
-const NESTED_OPERATION_TOOLS = ['delegate_child', 'message_child', 'subagent', 'create-workflow', 'run-workflow', 'create_thread'];
 function childTarget(taskId: string) {
   // Native task identity generates the child identity; the model names only taskId.
   const id = `kodex-child:${taskId}`;
@@ -20,20 +20,6 @@ async function invokingParent(runtime: ProjectRuntime, context: ToolExecutionCon
     throw new Error('Child tools require the original live parent session');
   }
   return { parent, origin };
-}
-/**
- * Scope the owned child's Session paths to one native model operation.
- * The shared agent remains background-enabled for its parent. Global external
- * notification wakes bypass this Session seam and are outside this tool contract.
- * Native shell background processes retain their separate SDK semantics.
- */
-async function configureChild(child: NativeSession) {
-  const original = child.machinery;
-  child.setMachinery({ ...original,
-    buildStreamOptions: async input => ({ ...await original.buildStreamOptions(input), disableBackgroundTasks: true }),
-    buildSharedRunOptions: () => ({ ...original.buildSharedRunOptions(), disableBackgroundTasks: true }),
-  });
-  for (const toolName of NESTED_OPERATION_TOOLS) await child.permissions.setForTool({ toolName, policy: 'deny' });
 }
 async function canonicalResult(child: NativeSession) {
   const memory = await child.machinery.getAgent().getMemory({ requestContext: await child.machinery.buildRequestContext() });
@@ -85,7 +71,7 @@ export function createChildTools({ getRuntime }: { getRuntime: () => ProjectRunt
         child = await runtime.createSession({ ...target,
           tags: { [KODEX_CHILD_TAG]: KODEX_CHILD_VERSION, ...relation } });
         if (cancelled) { stop(); throw new Error('Child task cancelled during launch'); }
-        await configureChild(child);
+        await applyChildSessionPolicy(child);
         await child.mode.switch({ modeId: parent.mode.get() });
         await child.model.switch(parent.model.get());
         await child.thread.rename({ title: (input as { task: string }).task.slice(0, 120), pin: true });

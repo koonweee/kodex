@@ -33,7 +33,7 @@ async function setup(t: TestContext, kind: 'reopen' | 'steer' | 'fork') {
   const projectPath = join(root, 'project'); await mkdir(projectPath);
   await writeFile(join(projectPath, 'evidence.txt'), 'DIRECT_CHILD_EVIDENCE: persisted native workspace result');
   const sessions = new Set<NativeSession>(), producers = new Map<string, ReturnType<typeof gate>>();
-  const holds: Array<ReturnType<Awaited<ReturnType<typeof startModelFixture>>['holdNext']>> = [];
+  const holds: Array<{ release: () => void }> = [];
   const trace: unknown[] = [], completion = gate<string>(), parentFinal = gate();
   let runtime!: ProjectRuntime, child: NativeSession | undefined, parentFinalRequested = false;
   const fixture = await startModelFixture(request => {
@@ -120,6 +120,7 @@ async function setup(t: TestContext, kind: 'reopen' | 'steer' | 'fork') {
   await mount();
   return { get runtime() { return runtime; }, get child() { return child; }, fixture, projectPath, completion, parentFinal, joinProducers,
     hold(marker: string) { const hold = fixture.holdNext(marker); holds.push(hold); return hold; },
+    releaseOnCleanup(release: () => void) { holds.push({ release }); },
     async restart() { await joinProducers(); await runtime.dispose(); await mount(); },
   };
 }
@@ -221,7 +222,7 @@ test('native hard steering an adopted child aborts its original logical operatio
   t.diagnostic(`Hard-steer outcome: ${outcome[0]?.status}; child requests ${env.fixture.requests.filter(request => lastUserText(request).includes('HARD_STEER')).length}`);
 });
 
-test('a stored native fork needs a distinct scope to avoid parent aliasing; public Stop isolates it, while current unscoped descendant retirement does not join its binding', { timeout: 40_000 }, async t => {
+test('a stored native fork uses a distinct scope, and descendant retirement stops it without interrupting another binding on the same resource', { timeout: 40_000 }, async t => {
   const env = await setup(t, 'fork');
   const parentTarget = { resourceId: 'fork-parent-resource', threadId: 'fork-parent-thread' };
   const parent = await env.runtime.createSession(parentTarget);
@@ -242,15 +243,64 @@ test('a stored native fork needs a distinct scope to avoid parent aliasing; publ
   assert.equal(parent.thread.getId(), parentTarget.threadId);
   forkHeld.release(); parentHeld.release(); await Promise.allSettled([parentRun, forkRun]); await env.joinProducers();
 
+  const peerScope = 'unrelated/arbitrary-scope';
+  const peer = await env.runtime.createSession({ resourceId: fork.resourceId, scope: peerScope, threadId: 'unrelated-same-resource-thread' });
+  const peerHold = env.hold('PEER_HOLD');
+  const peerRun = peer.sendMessage({ content: 'PEER_HOLD' }); await peerHold.reached;
+  const peerRunId = peer.getCurrentRunId(); assert.ok(peerRunId);
   const archiveHold = env.hold('FORK_ARCHIVE');
   const laterRun = scoped.sendMessage({ content: 'FORK_ARCHIVE' }); void laterRun.catch(() => {}); await archiveHold.reached;
   const parentRow = await env.runtime.controller.queryThreadById({ threadId: parentTarget.threadId }); assert.ok(parentRow);
   await abortNativeChat(parent); await env.runtime.releaseSession({ resourceId: parentTarget.resourceId });
   assert.deepEqual(await retireChatDescendants(env.runtime, parentRow, env.projectPath), [fork.id]);
-  assert.equal(scoped.displayState.get().isRunning, true, 'current retirement resolves only unscoped descendants and does not own a newly scoped direct fork run');
-  assert.equal(await env.runtime.controller.getSessionByResource(fork.resourceId, scope), scoped);
-  await abortNativeChat(scoped); await env.runtime.releaseSession({ resourceId: fork.resourceId, scope });
-  archiveHold.release(); await Promise.allSettled([laterRun]); await env.joinProducers();
+  assert.equal(scoped.displayState.get().isRunning, false, 'validated descendant retirement stops the exact scoped fork');
+  assert.equal(await env.runtime.controller.getSessionByResource(fork.resourceId, scope), undefined);
+  assert.equal(await env.runtime.controller.getSessionByResource(fork.resourceId, peerScope), peer);
+  assert.equal(peer.getCurrentRunId(), peerRunId, 'same-resource unrelated scoped work keeps its original native run');
+  assert.equal(peer.displayState.get().isRunning, true);
+  archiveHold.release(); peerHold.release(); await Promise.allSettled([laterRun, peerRun]); await env.joinProducers();
   assert.equal(await env.runtime.controller.getSessionByResource(fork.resourceId, scope), undefined);
   assert.ok(JSON.stringify((await env.runtime.controller.queryThreadMessages({ threadId: fork.id, resourceId: fork.resourceId, perPage: false })).messages).includes('DIRECT_RESULT:FORK_DIRECT'));
+});
+
+
+test('scoped descendant retirement joins an admitted native release after its thread binding clears', { timeout: 35_000 }, async t => {
+  const env = await setup(t, 'fork');
+  const parent = await env.runtime.createSession({ resourceId: 'release-resource', threadId: 'release-parent' });
+  const parentRow = await env.runtime.controller.queryThreadById({ threadId: parent.thread.requireId() }); assert.ok(parentRow);
+  const memory = await env.runtime.storage.getStore('memory'); assert.ok(memory);
+  const row = { id: 'release-fork', resourceId: parentRow.resourceId, title: 'Fork', createdAt: new Date(), updatedAt: new Date(), metadata: { forkedSubagent: true, parentThreadId: parentRow.id } };
+  await memory.saveThread({ thread: row });
+  const identity = { resourceId: row.resourceId, scope: 'scope-not-derived-from-id' };
+  const scoped = await env.runtime.createSession({ ...identity, threadId: row.id });
+  const hold = env.hold('FORK_ARCHIVE');
+  const run = scoped.sendMessage({ content: 'FORK_ARCHIVE' }); void run.catch(() => {}); await hold.reached;
+  const cleared = gate(), releaseLock = gate(), joiningRelease = gate();
+  env.releaseOnCleanup(() => releaseLock.resolve());
+  const clear = scoped.thread.clearAndReleaseLock.bind(scoped.thread);
+  t.mock.method(scoped.thread, 'clearAndReleaseLock', async () => { await clear(); cleared.resolve(); await releaseLock.promise; });
+  const release = env.runtime.releaseSession.bind(env.runtime); let scopedReleases = 0;
+  t.mock.method(env.runtime, 'releaseSession', (input: Parameters<typeof release>[0]) => {
+    const pending = release(input);
+    if (input.resourceId === identity.resourceId && input.scope === identity.scope && ++scopedReleases === 2) joiningRelease.resolve();
+    return pending;
+  });
+  let retirement: Promise<string[]> | undefined;
+  const admitted = env.runtime.releaseSession(identity); void admitted.catch(() => {});
+  t.after(async () => { releaseLock.resolve(); hold.release(); await Promise.allSettled([admitted, ...(retirement ? [retirement] : [])]); });
+  await cleared.promise;
+  assert.equal(scoped.thread.getId(), null);
+  assert.equal(await env.runtime.controller.getSessionByResource(identity.resourceId, identity.scope), scoped, 'native scope registration remains until the held deletion finishes');
+  assert.deepEqual(env.runtime.sessionsForThread({ resourceId: row.resourceId, threadId: row.id }).map(binding => ({ resourceId: binding.resourceId, scope: binding.scope })), [identity]);
+  await abortNativeChat(parent); await env.runtime.releaseSession({ resourceId: parentRow.resourceId });
+  let acknowledged = false;
+  retirement = retireChatDescendants(env.runtime, parentRow, env.projectPath);
+  void retirement.then(() => { acknowledged = true; }, () => { acknowledged = true; });
+  await joiningRelease.promise;
+  assert.equal(acknowledged, false, 'retirement joins the exact scoped release already underway');
+  releaseLock.resolve(); assert.deepEqual(await retirement, [row.id]); await admitted;
+  hold.release(); await Promise.allSettled([run]); await env.joinProducers();
+  assert.equal(scopedReleases, 2); assert.equal((await env.runtime.controller.queryThreadById({ threadId: row.id }))?.id, row.id);
+  assert.equal(await env.runtime.controller.getSessionByResource(identity.resourceId, identity.scope), undefined);
+  assert.deepEqual(env.runtime.sessionsForThread({ resourceId: row.resourceId, threadId: row.id }), [], 'completed release identity is no longer eligible for retirement');
 });
