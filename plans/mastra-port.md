@@ -224,3 +224,7 @@ Retirement limitation is reproduced and retained: cancelling then closing the ru
 ### 2026-10-08 — native image previews
 
 Tagged native view-image output now uses main's existing thumbnail/lightbox from saved bytes. Real SDK persistence survives restart and original-file deletion; browser decode, viewer, two-tab reload and restart pass all3layouts without legacy preview requests. Final renderer checks18/18, actual SDK1/1, Mastra build/trim and backend check pass. Independent review requested final MIME normalization and stale-image clearing coverage; both are present. No new asset/transcript store or product deployment. Uploads and other file previews remain separate work.
+
+### 2026-10-08 — child retirement ordering characterized
+
+Public stream observation traces the late DB read to parent continuation on native child cancellation. Cancel-first and task-manager-shutdown-after-cancel reproduce the read; stopping the parent with public abortThreadStream before cancellation prevents it. Author and independent root characterization4/4 pass, with expected baseline failures retained. Native signal wake defaults to untilIdle without an explicit session-send option. No production change: already-started preparation still lacks a proved public drain. Apply any future ordering only to runtime retirement, not ordinary child cancellation. See parity plan for scope and evidence.
