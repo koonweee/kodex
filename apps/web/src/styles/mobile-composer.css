@@ -91,6 +91,14 @@
   }
 }
 
+/* Retained Dockview panes normally contain and transform their render surface.
+   Let the mounted fullscreen composer use the viewport instead of that surface. */
+.kodex-workspace-dock .dv-render-overlay:has(.kodex-mobile-composer-expanded) {
+  contain: none;
+  transform: none;
+  will-change: auto;
+}
+
 .kodex-mobile-composer-keyboard-mask {
   position: fixed;
   inset: 0;

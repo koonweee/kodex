@@ -35,7 +35,11 @@ for (const shape of [
         await expect(dialog).toHaveCount(expandsOnTouch ? 1 : 0);
         if (expandsOnTouch) {
           const dialogBounds = await dialog.boundingBox();
-          expect(dialogBounds!.y).toBeLessThan(64);
+          expect(dialogBounds!.y).toBeCloseTo(await page.evaluate(() => visualViewport?.offsetTop ?? 0), 0);
+          expect(await dialog.evaluate(el => {
+            const bounds = el.getBoundingClientRect();
+            return el.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + 10));
+          })).toBe(true);
           expect(dialogBounds!.height).toBeGreaterThan(750);
         }
         await textarea.fill("A draft that survives viewport changes");
@@ -77,6 +81,12 @@ for (const shape of [
           await expect(dialog).toHaveCount(1);
           await pane.getByRole("button", { name: "Collapse composer", exact: true }).tap();
           await expect(pane.getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
+          const switcher = page.getByRole("button", { name: "Switch workspace pane", exact: true });
+          await expect(switcher).toBeInViewport();
+          expect(await switcher.evaluate(el => {
+            const bounds = el.getBoundingClientRect();
+            return el.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2));
+          })).toBe(true);
           expect(await originalTextarea!.evaluate((element) => element.isConnected)).toBe(true);
           await expect(textarea).toHaveValue("A draft that survives viewport changes");
         }
