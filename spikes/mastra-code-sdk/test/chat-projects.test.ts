@@ -145,3 +145,37 @@ test('standalone creation and default settings work without projects; directory 
   assert.equal((await server.second.listChats()).chats.find(row => row.id === chat.id)!.projectId, null);
   await assert.rejects(server.first.listModels({ projectId: null, chatId: chat.id } as never), { code: 'BAD_REQUEST' });
 });
+
+test('native delegated child threads stay out of ordinary chat inventory and command admission after restart', { timeout: 60_000 }, async t => {
+  const env = await setup('child-admission');
+  let service = env.makeService();
+  let server = await serve(service);
+  t.after(async () => { await server.close(); await service.dispose(); });
+  const parent = await server.first.createChat({ projectId: 'cli-seed' });
+  const runtime = env.runtimes.find(candidate => candidate.projectPath === env.old)!;
+  const parentThread = await runtime.controller.queryThreadById({ threadId: parent.id });
+  assert.ok(parentThread);
+  const child = await runtime.createSession({ resourceId: 'child-catalog-resource', threadId: 'child-catalog-thread', tags: {
+    kodexChild: '1', parentThreadId: parent.id, parentResourceId: parentThread.resourceId,
+    parentSessionScope: '', parentTaskId: 'native-task-catalog',
+  } });
+  const childId = child.thread.requireId();
+  // Partial relations must not turn internal children into editable chats.
+  const incomplete = await runtime.createSession({ resourceId: 'partial-child-resource', threadId: 'partial-child-thread', tags: { kodexChild: '1' } });
+  const internalIds = [childId, incomplete.thread.requireId()];
+  async function assertAdmission() {
+    for (const client of [server.first, server.second]) {
+      const { chats } = await client.listChats();
+      assert.ok(chats.some(chat => chat.id === parent.id));
+      for (const chatId of internalIds) {
+        assert.equal(chats.some(chat => chat.id === chatId), false, 'child is not a standalone sidebar chat');
+        await assert.rejects(client.openChat({ chatId }), { code: 'NOT_FOUND' });
+        await assert.rejects(client.send({ chatId, text: 'must not create a second child run' }), { code: 'NOT_FOUND' });
+      }
+    }
+  }
+  await assertAdmission();
+  await server.close(); await service.dispose();
+  service = env.makeService(); server = await serve(service);
+  await assertAdmission();
+});

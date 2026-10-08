@@ -1,4 +1,5 @@
 import { basename } from 'node:path';
+import { isChildThread } from './child-relation.js';
 import { readChatName, readChatTitle } from './chat-titles.js';
 import { homedir } from 'node:os';
 import { ORPCError } from '@orpc/server';
@@ -17,7 +18,7 @@ export interface ChatProjectOptions {
   runtimeFactory?: typeof createProjectRuntime;
 }
 const missing = () => new ORPCError('NOT_FOUND', { message: 'Chat or project not found.' });
-export const ownsThread = (binding: RuntimeBinding, thread: NativeThread) => thread.metadata?.projectPath === binding.cwd && thread.metadata?.forkedSubagent !== true;
+export const ownsThread = (binding: RuntimeBinding, thread: NativeThread) => thread.metadata?.projectPath === binding.cwd && thread.metadata?.forkedSubagent !== true && !isChildThread(thread.metadata);
 const describeChat = (binding: RuntimeBinding, thread: NativeThread, title: string, metadata?: ChatMetadata): Chat => ({ id: thread.id, projectId: binding.projectId, title, name: readChatName(thread), cwd: binding.cwd, pinned: metadata?.pinPosition !== undefined && metadata.pinPosition !== null, notificationsEnabled: metadata?.notificationsEnabled ?? true });
 
 /** Product membership is read from the registry. Native runtimes remain attached
