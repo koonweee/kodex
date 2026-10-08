@@ -133,7 +133,6 @@ export function McpPreferencesPanel() {
     {!serversQuery.isLoading && !configuredQuery.isLoading && !serversQuery.error && !configuredQuery.error && mergedServers.length === 0 ? <Box className="kodex-empty">
       <Box aria-hidden="true" className="kodex-empty-icon"><Server size={18} /></Box>
       <Text fw={650} size="sm">No MCP servers configured</Text>
-      <Text c="dimmed" size="xs">Runtime inventory appears here after Codex loads MCP servers.</Text>
     </Box> : null}
     {mergedServers.length ? <Box className="kodex-mcp-layout">
       <McpServerList onSelect={selectServer} selectedName={selectedServer?.name} servers={mergedServers} />

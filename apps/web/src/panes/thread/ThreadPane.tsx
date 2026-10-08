@@ -550,7 +550,6 @@ function ExistingThreadPane({
           <TextInput
             autoFocus
             data-autofocus
-            description="Type a name and press Enter."
             disabled={renamePending}
             error={renameError}
             label="Thread name"

@@ -61,7 +61,6 @@ export function AppearancePreferencesPanel({ preferences, resolvedSchemeId, onMo
           label="Open composer fullscreen when using touch"
           onChange={(event) => setFullscreenComposerOnTouch(event.currentTarget.checked)}
         />
-        <Text c="dimmed" size="xs">Mouse and keyboard activation always stays inline.</Text>
       </Stack>
       <Stack className="kodex-preferences-setting" gap={8}>
         <Group className="kodex-appearance-browse-header" justify="space-between" gap={8}>
@@ -74,7 +73,7 @@ export function AppearancePreferencesPanel({ preferences, resolvedSchemeId, onMo
             value={browseMode}
           />
         </Group>
-        <Text c="dimmed" size="xs">Choose a theme for each appearance. Browsing or selecting a theme keeps your mode.</Text>
+        <Text c="dimmed" size="xs">Browsing or selecting a theme keeps your mode.</Text>
         <Box aria-label={themeLabel} className="kodex-scheme-list" role="radiogroup">
           {schemes.map((scheme, index) => {
             const selected = scheme.id === selectedId;
