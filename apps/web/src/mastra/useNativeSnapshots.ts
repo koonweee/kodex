@@ -61,7 +61,10 @@ export function useNativeCatalog() {
   const watch = useCallback((signal: AbortSignal) => mastraClient.watchCatalog(undefined, { signal }), []);
   return useNativeSnapshots<CatalogSnapshot>('catalog', watch);
 }
-export function useNativeChat(chatId: string | null) {
+type NativeHistory = NonNullable<Parameters<import('./client').ChatClient['watchChat']>[0]['history']>;
+type HistorySnapshot = Pick<ChatSnapshot, 'epoch' | 'revision' | 'history'>;
+export function useNativeHistorySnapshots<T extends HistorySnapshot>(chatId: string | null,
+  read: (history: NativeHistory | undefined, signal: AbortSignal) => Promise<AsyncIterable<T>>) {
   // History depth belongs to this pane's presentation; canonical snapshots own
   // every transcript row. A target change starts again at the native recent page.
   const historyRef = useRef({ chatId, earliest: null as string | null, older: false, loading: false });
@@ -71,16 +74,16 @@ export function useNativeChat(chatId: string | null) {
   const watch = useCallback((signal: AbortSignal) => {
     history.loading = history.older;
     setLoadingChat(history.loading ? chatId : null);
-    return mastraClient.watchChat({ chatId: chatId!, ...(history.earliest !== null ? { history: { earliest: history.earliest, ...(history.older ? { older: true } : {}) } } : {}) }, { signal });
-  }, [chatId, history]);
-  const onAccepted = useCallback((snapshot: ChatSnapshot) => {
+    return read(history.earliest !== null ? { earliest: history.earliest, ...(history.older ? { older: true } : {}) } : undefined, signal);
+  }, [chatId, history, read]);
+  const onAccepted = useCallback((snapshot: T) => {
     history.earliest = snapshot.history.earliest;
     history.older = false;
     history.loading = false;
     setLoadingChat(null);
   }, [history]);
   const onFailure = useCallback(() => { history.loading = false; setLoadingChat(null); }, [history]);
-  const result = useNativeSnapshots<ChatSnapshot>(chatId, watch, onAccepted, onFailure);
+  const result = useNativeSnapshots<T>(chatId, watch, onAccepted, onFailure);
   const loadOlderHistory = useCallback(() => {
     if (!chatId || history.loading || !result.snapshot?.history.hasOlder || history.earliest === null) return;
     history.older = true;
@@ -89,4 +92,9 @@ export function useNativeChat(chatId: string | null) {
     result.retry();
   }, [chatId, history, result.snapshot, result.retry]);
   return { ...result, loadOlderHistory, isLoadingOlderHistory: chatId !== null && loadingChat === chatId };
+}
+
+export function useNativeChat(chatId: string | null) {
+  const read = useCallback((history: NativeHistory | undefined, signal: AbortSignal) => mastraClient.watchChat({ chatId: chatId!, ...(history ? { history } : {}) }, { signal }), [chatId]);
+  return useNativeHistorySnapshots<ChatSnapshot>(chatId, read);
 }

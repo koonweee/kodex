@@ -5,13 +5,23 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import { afterEach, expect, it, vi } from 'vitest';
 import { defaultDisplayState } from '../../../../spikes/mastra-code-sdk/node_modules/@mastra/core/dist/agent-controller/index.js';
 import type { ChatSnapshot } from './client';
+import type { NativeSubagentList } from './useNativeSubagents';
 import { NativeCatalogProvider } from './NativeCatalogContext';
 import type { ComposerDraftStore } from '../composer/useComposerDraftState';
 import type { WorkspacePane } from '../workspace/paneTypes';
 import { NativeThreadPane } from './NativeThreadPane';
 
-const native = vi.hoisted(() => ({ snapshot: null as ChatSnapshot | null, error: null as string | null, isLoadingOlderHistory: false, loadOlderHistory: vi.fn(), useWorkspace: vi.fn(), rename: vi.fn(), legacyRename: vi.fn(), registrations: vi.fn(), duplicate: vi.fn(), close: vi.fn(), watched: vi.fn() }));
+const native = vi.hoisted(() => ({ subagentError: null as string | null, retrySubagents: vi.fn(), subagents: null as NativeSubagentList | null, snapshot: null as ChatSnapshot | null, error: null as string | null, isLoadingOlderHistory: false, loadOlderHistory: vi.fn(), useWorkspace: vi.fn(), rename: vi.fn(), legacyRename: vi.fn(), registrations: vi.fn(), duplicate: vi.fn(), close: vi.fn(), watched: vi.fn() }));
 vi.mock('./useNativeSnapshots', () => ({ useNativeChat: (id: string | null) => { native.watched(id); return { snapshot: id ? native.snapshot : null, error: native.error, isLoadingOlderHistory: native.isLoadingOlderHistory, loadOlderHistory: native.loadOlderHistory }; } }));
+vi.mock('./useNativeSubagents', async importOriginal => ({
+  ...await importOriginal<typeof import('./useNativeSubagents')>(),
+  useNativeSubagents: () => {
+    const [open, setOpen] = useState(false);
+    const toggle = useCallback(() => setOpen(value => !value), []);
+    return { snapshot: native.subagents, error: native.subagentError, open, toggle, selectedId: null, select: () => {}, retry: native.retrySubagents, isLoadingOlderHistory: false, loadOlderHistory: () => {} };
+  },
+  useNativeFork: () => ({ snapshot: null, error: null, retry: () => {}, isLoadingOlderHistory: false, loadOlderHistory: () => {} }),
+}));
 vi.mock('../workspace/WorkspaceProvider', () => ({ useWorkspace: () => native.useWorkspace() }));
 vi.mock('../api/client', () => ({ renameThread: (...args: unknown[]) => native.legacyRename(...args) }));
 vi.mock('./NativeComposer', () => ({ NativeComposer: () => <div>Composer</div> }));
@@ -186,4 +196,32 @@ it('stops watching only after explicit authoritative archive state arrives', () 
   view.rerender(<NativeCatalogProvider snapshot={{ ...catalog, revision: 3, archivedChatIds: ['chat'] }}><Harness /></NativeCatalogProvider>);
   expect(native.watched).toHaveBeenLastCalledWith(null);
   expect(native.close).not.toHaveBeenCalled(); // Workspace owner closes mounted and unmounted panes together.
+});
+
+it('opens main subagent viewer from the pane header and preserves the parent composer', async () => {
+  native.useWorkspace.mockImplementation(() => useContext(context));
+  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: null, cwd: '/project', title: 'Parent', name: 'Parent', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
+  native.subagents = { epoch: 'epoch', revision: 1, chatId: 'chat', invocations: [{ id: 'child-call', agentType: 'explore', task: 'Inspect', modelId: null, forked: false, status: 'completed', result: 'Native child findings', activity: null }], forks: [], history: { earliest: null, hasOlder: false } };
+  try {
+    render(<Harness />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Show subagents' }));
+    const viewer = await screen.findByRole('complementary', { name: 'Subagent thread viewer' });
+    expect(await within(viewer).findByText('Native child findings')).toBeVisible();
+    expect(screen.getByText('Composer')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Hide subagents' }));
+    expect(screen.queryByRole('complementary', { name: 'Subagent thread viewer' })).not.toBeInTheDocument();
+  } finally { native.subagents = null; }
+});
+
+it('keeps the shared error viewer and reload action reachable when initial subagent discovery fails', async () => {
+  native.useWorkspace.mockImplementation(() => useContext(context));
+  native.subagents = null; native.subagentError = 'Native child inventory unavailable';
+  try {
+    render(<Harness />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Show subagents' }));
+    const viewer = await screen.findByRole('complementary', { name: 'Subagent thread viewer' });
+    expect(within(viewer).getByText('Native child inventory unavailable')).toBeVisible();
+    fireEvent.click(within(viewer).getByRole('button', { name: 'Reload subagents' }));
+    expect(native.retrySubagents).toHaveBeenCalledOnce();
+  } finally { native.subagentError = null; }
 });

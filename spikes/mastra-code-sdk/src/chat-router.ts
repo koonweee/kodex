@@ -1,5 +1,6 @@
 import { eventIterator, os, type as schemaType } from '@orpc/server';
 import type { HistoryRequest } from './chat-history.js';
+import type { SubagentList, SubagentSelection, SubagentSnapshot } from './chat-subagents.js';
 import type { GoalPatch } from './chat-goals.js';
 import type { ProjectPatch } from './product-registry.js';
 import type { AccountSnapshot } from './account-service.js';
@@ -44,7 +45,9 @@ const chatSettingsInput = inputSchema<{ chatId: string; patch: ChatSettingsPatch
 const goalInput = inputSchema<{ chatId: string; patch: GoalPatch }>(value => object(value) && only(value, ['chatId', 'patch']) && string(value.chatId) && object(value.patch) && only(value.patch, ['objective', 'status']) && Object.keys(value.patch).length > 0 && (!('objective' in value.patch) || string(value.patch.objective, 100_000)) && (!('status' in value.patch) || value.patch.status === 'active' || value.patch.status === 'paused'));
 const defaultsInput = inputSchema<{ version: string; patch: ChatSettingsPatch }>(value => object(value) && only(value, ['version', 'patch']) && string(value.version) && validSettingsPatch(value.patch, false));
 
-const historyInput = inputSchema<{ chatId: string; history?: HistoryRequest }>(value => object(value) && only(value, ['chatId', 'history']) && string(value.chatId) && (value.history === undefined || (object(value.history) && only(value.history, ['earliest', 'older']) && (value.history.earliest === undefined || (typeof value.history.earliest === 'string' && value.history.earliest.length <= 32 && Number.isFinite(Date.parse(value.history.earliest)))) && (value.history.older === undefined || typeof value.history.older === 'boolean'))));
+const validHistory = (value: unknown) => value === undefined || (object(value) && only(value, ['earliest', 'older']) && (value.earliest === undefined || (typeof value.earliest === 'string' && value.earliest.length <= 32 && Number.isFinite(Date.parse(value.earliest)))) && (value.older === undefined || typeof value.older === 'boolean'));
+const historyInput = inputSchema<{ chatId: string; history?: HistoryRequest }>(value => object(value) && only(value, ['chatId', 'history']) && string(value.chatId) && validHistory(value.history));
+const subagentInput = inputSchema<SubagentSelection>(value => object(value) && only(value, ['chatId', 'kind', 'id', 'history']) && string(value.chatId) && string(value.id) && (value.kind === 'invocation' || value.kind === 'fork') && validHistory(value.history));
 
 export function createChatRouter(service: ChatService) {
   return {
@@ -54,6 +57,10 @@ export function createChatRouter(service: ChatService) {
     getAccountUsage: os.handler(({ signal }) => service.getAccountUsage(signal)),
     watchAccount: os.output(eventIterator(schemaType<AccountSnapshot>())).handler(({ signal }) => service.watchAccount(signal)),
     listChats: os.handler(() => service.listChats()),
+    listSubagents: os.input(historyInput).handler(({ input, signal }) => service.listSubagents(input, signal)),
+    watchSubagents: os.input(historyInput).output(eventIterator(schemaType<SubagentList>())).handler(({ input, signal }) => service.watchSubagents(input, signal)),
+    openSubagent: os.input(subagentInput).handler(({ input, signal }) => service.openSubagent(input, signal)),
+    watchSubagent: os.input(subagentInput).output(eventIterator(schemaType<SubagentSnapshot>())).handler(({ input, signal }) => service.watchSubagent(input, signal)),
     listModels: os.input(modelsInput).handler(({ input }) => service.listModels(input)),
     listDirectories: os.input(directoryInput).handler(({ input }) => service.listDirectories(input)),
     createProject: os.input(projectCreateInput).handler(({ input }) => service.createProject(input)),

@@ -27,6 +27,16 @@ const model = await startModelFixture(request => {
   if (request.model === 'judge') return { text: JSON.stringify({ decision: 'done', reason: 'Browser goal complete' }) };
   if (!request.stream) return { text: 'Browser test chat' };
   const user = lastUserText(request);
+  if (user.includes('BROWSER_CHILD_')) {
+    const mode = user.includes('FORKED') ? 'FORKED' : 'DEFAULT';
+    if (JSON.stringify(request.messages).includes('BROWSER_TOOL_MARKER')) return { text: `BROWSER_CHILD_RESULT_${mode}` };
+    return { toolCalls: [{ name: 'view', arguments: { path: 'marker.txt' }, id: `child-view-${mode}` }] };
+  }
+  if (user.includes('BROWSER_PARENT_')) {
+    const mode = user.includes('FORKED') ? 'FORKED' : 'DEFAULT';
+    if (JSON.stringify(request.messages).includes(`BROWSER_CHILD_RESULT_${mode}`)) return { text: `BROWSER_PARENT_RESULT_${mode}` };
+    return { toolCalls: [{ name: 'subagent', arguments: { agentType: 'explore', task: `BROWSER_CHILD_${mode}: inspect marker.txt.`, ...(mode === 'FORKED' ? { forked: true } : {}) }, id: `parent-child-${mode}` }] };
+  }
   if (JSON.stringify(request.messages).includes('HISTORY_NEW_ARRIVAL')) return { text: 'HISTORY_REPLY' };
   if ((user.includes('REPLACE_MARKER') || user.includes('REPLACE_MISSING')) && request.messages.at(-1)?.role !== 'tool') {
     return { toolCalls: [{ name: 'string_replace_lsp', arguments: { path: 'marker.txt', old_string: user.includes('REPLACE_MISSING') ? 'ABSENT_STRING' : 'BROWSER_TOOL_MARKER', new_string: 'BROWSER_EDITED_MARKER' } }] };
@@ -48,7 +58,7 @@ model.holdNext('HOLD_STOP', 'chat');
 model.holdNext('HOLD_RESTART', 'chat');
 await writeFile(profile.settingsPath, JSON.stringify({
   lsp: false,
-  models: { observerModelOverride: 'fixture/chat', reflectorModelOverride: 'fixture/chat', goalJudgeModel: 'fixture/judge' },
+  models: { subagentModels: { default: 'fixture/chat' }, observerModelOverride: 'fixture/chat', reflectorModelOverride: 'fixture/chat', goalJudgeModel: 'fixture/judge' },
   customProviders: [{ name: 'fixture', url: model.url, apiKey: 'fixture', models: ['chat', 'judge'] }],
   observability: { enabled: false },
 }));

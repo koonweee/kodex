@@ -11,6 +11,7 @@ import { createChatQueue, type ChatQueueInput, type ChatQueueSnapshot, type Chat
 import { abortNativeChat } from './chat-archive.js';
 import { createChatLifecycle } from './chat-lifecycle.js';
 import { readChatHistory, type HistoryRequest } from './chat-history.js';
+import { createChatSubagents, type SubagentSelection } from './chat-subagents.js';
 import { createChatGoals, type NativeGoal, type GoalPatch } from './chat-goals.js';
 import { createNativeChatSettings, type ChatSettings, type ChatSettingsPatch } from './chat-settings.js';
 import { createSessionProjection, type SessionSnapshot } from './transport.js';
@@ -68,6 +69,11 @@ export function createChatService(options: ChatServiceOptions) {
   };
   const invalidateCatalog = () => { catalog.publish('changed', ++catalogRevision); };
   const projects = createChatProjects(options, assertActive);
+  const subagents = createChatSubagents({ signal: lifetime.signal, async resolveParent(chatId) {
+    const parent = await projects.findThread(chatId, true);
+    const handle = await handles.get(`${parent.binding.id}:${chatId}`);
+    return { ...parent, ...(handle && !handle.observers.signal.aborted && { session: handle.session }) };
+  } });
   function invalidateProjects() {
     invalidateCatalog();
     for (const pending of handles.values()) void pending.then(handle => {
@@ -79,6 +85,7 @@ export function createChatService(options: ChatServiceOptions) {
     // Bind the native count before projection listeners start: raw extension
     // queue submissions must also participate in existing-chat Send routing.
     session.ensureFollowUpBinding(session.machinery.getAgent(), session.identity.getResourceId(), session.thread.requireId());
+    const parentChatId = session.thread.requireId();
     const projection = createSessionProjection(session, (request, signal) => readChatHistory(runtime.controller, { threadId: session.thread.requireId(), resourceId: session.identity.getResourceId() }, request, signal));
     const queue = createChatQueue(session, { epoch, onChanged: () => {
       session.emit({ type: 'display_state_changed', displayState: session.displayState.get() });
@@ -86,10 +93,12 @@ export function createChatService(options: ChatServiceOptions) {
     const handle: Handle = { binding, runtime, session, projection, queue, revision: 0, error: null, unsubscribe: () => {}, observers: new AbortController() };
     handle.unsubscribe = session.subscribe(event => {
       handle.revision++;
+      subagents.invalidate(parentChatId, event.type === 'display_state_changed');
       if (event.type === 'agent_start') handle.error = null;
       if (event.type === 'error') handle.error = 'The model run failed. Please try again.';
       if (event.type === 'thread_created' || event.type === 'thread_changed' || event.type === 'thread_title_updated' || event.type === 'agent_end' || event.type === 'message_end') invalidateCatalog();
     });
+    subagents.invalidate(parentChatId);
     return handle;
   }
   function cacheHandle(key: string, create: () => Promise<Handle>) {
@@ -245,6 +254,10 @@ export function createChatService(options: ChatServiceOptions) {
       return { instanceId: options.instanceId };
     },
     async listChats() { return catalogSnapshot(); },
+    listSubagents(input: { chatId: string; history?: HistoryRequest }, signal?: AbortSignal) { return subagents.list(input, signal); },
+    watchSubagents(input: { chatId: string; history?: HistoryRequest }, signal?: AbortSignal) { return subagents.watchList(input, signal); },
+    openSubagent(input: SubagentSelection, signal?: AbortSignal) { return subagents.open(input, signal); },
+    watchSubagent(input: SubagentSelection, signal?: AbortSignal) { return subagents.watch(input, signal); },
     async createChat({ projectId = null, settings: draft }: { projectId?: string | null; settings?: ChatSettingsPatch }) {
       assertActive();
       const binding = await projects.executionBinding(projectId);
@@ -322,6 +335,7 @@ export function createChatService(options: ChatServiceOptions) {
         if (session) await runtime.releaseSession({ resourceId: thread.resourceId });
         await projects.archiveChat(binding.id, thread.id);
         invalidateCatalog();
+        subagents.invalidate(chatId);
       });
       return accepted();
     },

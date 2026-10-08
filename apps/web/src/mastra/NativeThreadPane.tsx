@@ -11,6 +11,9 @@ import { useNativeChat } from './useNativeSnapshots';
 import { useNativeCatalogSnapshot } from './NativeCatalogContext';
 import { timelinePresentation } from './presentation';
 import { NativeComposer } from './NativeComposer';
+import { SubagentPaneToggle } from '../threads/SubagentPaneToggle';
+import { useNativeSubagents } from './useNativeSubagents';
+import { NativeSubagentViewer } from './NativeSubagentViewer';
 
 export function NativeThreadPane({ pane, draftStore, onError }: { pane: WorkspacePane; draftStore: ComposerDraftStore; onError: (error: unknown) => void }) {
   const { workspace, errorMessage, setPaneThreadContext, setPaneHeaderActions, updatePane, duplicatePane, onImageOpen, onMarkdownOpen, threadActions, showDebugEvents } = useWorkspace();
@@ -19,6 +22,9 @@ export function NativeThreadPane({ pane, draftStore, onError }: { pane: Workspac
   const catalog = useNativeCatalogSnapshot();
   const archived = chatId !== null && Boolean(catalog?.archivedChatIds.includes(chatId));
   const { snapshot, error, retry, loadOlderHistory, isLoadingOlderHistory } = useNativeChat(archived ? null : chatId);
+  const subagents = useNativeSubagents(archived ? null : chatId);
+  const { open: subagentsOpen, toggle: toggleSubagents } = subagents;
+  const hasSubagents = Boolean(subagents.error || subagents.snapshot?.invocations.length || subagents.snapshot?.forks.length || subagents.snapshot?.history.hasOlder);
   const isActive = workspace.activePaneId === pane.id;
   const timeline = useMemo(() => snapshot ? timelinePresentation(snapshot, isLoadingOlderHistory) : null, [snapshot, isLoadingOlderHistory]);
   const [scrollParent, setScrollParent] = useState<HTMLDivElement | null>(null);
@@ -50,12 +56,13 @@ export function NativeThreadPane({ pane, draftStore, onError }: { pane: Workspac
   // Only header inputs belong here; live message snapshots must not re-register chrome.
   const paneHeaderActions = useMemo(() => chatId ? (
     <Group className="kodex-thread-pane-actions" gap={4} wrap="nowrap">
+      <SubagentPaneToggle visible={hasSubagents} open={subagentsOpen} onToggle={toggleSubagents} />
       <ThreadActionsMenu thread={menuThread} threadId={chatId} pinPending={pinPending}
         onDuplicatePane={handleDuplicatePane} onRenameThread={handleRename}
         onArchiveThread={onArchiveThread} onPinThread={onPinThread}
         onUnpinThread={onUnpinThread} onSetThreadNotificationsEnabled={onSetThreadNotificationsEnabled} />
     </Group>
-  ) : null, [chatId, menuThread, handleDuplicatePane, handleRename, onArchiveThread, onPinThread, onUnpinThread, onSetThreadNotificationsEnabled, pinPending]);
+  ) : null, [chatId, menuThread, handleDuplicatePane, handleRename, onArchiveThread, onPinThread, onUnpinThread, onSetThreadNotificationsEnabled, pinPending, hasSubagents, subagentsOpen, toggleSubagents]);
   useEffect(() => {
     setPaneHeaderActions(pane.id, paneHeaderActions);
     return () => setPaneHeaderActions(pane.id, null);
@@ -84,10 +91,14 @@ export function NativeThreadPane({ pane, draftStore, onError }: { pane: Workspac
     <RenameThreadDialog opened={renameOpen && Boolean(nativeChatId)} title={title} name={name} pending={renamePending}
       error={renameError} onClose={closeRename} onSubmit={submitRename}
       onChange={value => { setName(value); if (renameError) setRenameError(null); }} />
-    <div className="kodex-thread-pane-status">{isActive && errorMessage ? <Alert color="red" role="alert">{errorMessage}</Alert> : null}{error || snapshot?.error ? <Alert color="red" role="alert">{error ?? snapshot?.error}</Alert> : null}</div>
-    <Box className="kodex-thread-content"><div className="kodex-thread-scroll-frame"><div className="kodex-thread-pane-scroll kodex-timeline-scroll" ref={setScrollParent}>
+    <div className="kodex-thread-pane-status">{isActive && errorMessage ? <Alert color="red" role="alert">{errorMessage}</Alert> : null}{subagents.error ? <Alert color="red" role="alert">{subagents.error}</Alert> : null}{error || snapshot?.error ? <Alert color="red" role="alert">{error ?? snapshot?.error}</Alert> : null}</div>
+    <Box className="kodex-thread-content" data-subagent-sidebar={subagentsOpen ? "open" : "closed"}><div className="kodex-thread-scroll-frame"><div className="kodex-thread-pane-scroll kodex-timeline-scroll" ref={setScrollParent}>
       {chatId && !timeline ? <Loader aria-label="Loading chat" /> : timeline ? <TimelineView approvals={[]} imagePreviewUrlsByPath={{}} onApprovalDecision={() => {}} onImageOpen={onImageOpen} onLoadOlderHistory={loadOlderHistory} onMarkdownOpen={onMarkdownOpen} onReady={() => {}} scrollParentElement={scrollParent} showDebug={showDebugEvents} threadId={chatId ?? undefined} timeline={timeline} /> : null}
-    </div></div></Box>
+    </div></div>
+      {subagentsOpen && chatId ? <NativeSubagentViewer chatId={chatId} inventory={subagents.snapshot} selectedId={subagents.selectedId} onSelect={subagents.select}
+        error={subagents.error} onReload={subagents.retry} loadingMore={subagents.isLoadingOlderHistory} onLoadMore={subagents.loadOlderHistory}
+        onImageOpen={onImageOpen} onMarkdownOpen={onMarkdownOpen} showDebug={showDebugEvents} /> : null}
+    </Box>
     <NativeComposer pane={pane} snapshot={snapshot} ready={!chatId || Boolean(snapshot)} isActive={isActive} draftStore={draftStore} onError={onError} onQueueReload={retry} />
   </section>;
 }

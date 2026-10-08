@@ -512,6 +512,43 @@ test('native shell output uses main command rendering without an invented succes
 });
 
 
+test('native subagent inspection reuses main viewer across peers and restart', async ({ context, page }) => {
+  const root = await mkdtemp(join(tmpdir(), 'kodex-subagents-browser-'));
+  let backend: ChildProcessWithoutNullStreams | undefined;
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const show = async (tab: Page) => {
+    await tab.getByRole('button', { name: 'Show subagents', exact: true }).click();
+    const viewer = tab.getByRole('complementary', { name: 'Subagent thread viewer' });
+    await expect(viewer).toBeVisible();
+    return viewer;
+  };
+  try {
+    backend = await startBackend(root);
+    await page.goto('/'); await send(page, 'BROWSER_PARENT_DEFAULT');
+    await expect(pane(page).getByText('BROWSER_PARENT_RESULT_DEFAULT', { exact: true })).toBeVisible();
+    let viewer = await show(page);
+    await expect(viewer.getByText('BROWSER_CHILD_RESULT_DEFAULT', { exact: true })).toBeVisible();
+    await expect(viewer.getByText('Read-only', { exact: true })).toBeVisible();
+    const peer = await context.newPage(); peer.on('pageerror', error => errors.push(error.message));
+    await peer.goto(page.url());
+    await expect((await show(peer)).getByText('BROWSER_CHILD_RESULT_DEFAULT', { exact: true })).toBeVisible();
+    await stopBackend(backend, true); backend = await startBackend(root);
+    await peer.reload();
+    await expect((await show(peer)).getByText('BROWSER_CHILD_RESULT_DEFAULT', { exact: true })).toBeVisible();
+    await page.reload(); await send(page, 'BROWSER_PARENT_FORKED');
+    await expect(pane(page).getByText('BROWSER_PARENT_RESULT_FORKED', { exact: true })).toBeVisible();
+    viewer = await show(page);
+    await viewer.getByRole('textbox', { name: 'Subagent', exact: true }).click();
+    await page.getByRole('option', { name: /Fork history/ }).click();
+    await expect(viewer.getByText('BROWSER_CHILD_RESULT_FORKED', { exact: true })).toBeVisible();
+    await expect(viewer.getByText('BROWSER_TOOL_MARKER', { exact: false }).first()).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath('native-subagent-viewer.png') });
+    expect(errors).toEqual([]);
+  } finally { if (backend) await stopBackend(backend); await rm(root, { recursive: true, force: true }); }
+});
+
+
 test('native file summaries preserve real replacement failures across peers and restart', async ({ context, page }) => {
   const root = await mkdtemp(join(tmpdir(), 'kodex-file-operation-browser-'));
   let backend: ChildProcessWithoutNullStreams | undefined;
