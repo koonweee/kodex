@@ -157,10 +157,13 @@ test('public direct child binding aliases the live adopted Session and native us
   assert.equal(aborted, 0, 'direct user delivery does not abort the adopted run');
   assert.ok(JSON.stringify((await manager.getTask(relation.parentTaskId))?.result).includes('CHILD_DIRECT_RESULT'));
   assert.ok(JSON.stringify(await parent.thread.listActiveMessages()).includes('PARENT_FINAL_RESULT'));
-  assert.equal(await env.runtime.controller.getSessionByResource(row.resourceId), undefined);
-  assert.equal(alias.thread.getId(), null, 'all aliases observe native finalizer release');
+  assert.equal(await env.runtime.controller.getSessionByResource(row.resourceId), child);
+  assert.equal(alias.thread.getId(), row.id, 'completion keeps aliases available on the retained native binding');
   const saved = await env.runtime.controller.queryThreadMessages({ ...target, perPage: false });
   assert.ok(JSON.stringify(saved.messages).includes('DIRECT_USER_GUIDANCE'));
+  // Explicit host retirement still permits native recreation; completion no
+  // longer retires bindings automatically.
+  await env.runtime.releaseSession({ resourceId: target.resourceId });
   const reopened = await env.runtime.createSession(target);
   assert.notEqual(reopened, child);
   assert.deepEqual(reopened.permissions.getRules(), { tools: {}, categories: {} }, 'the previous child deny rules are not loaded from persisted thread metadata');
@@ -218,7 +221,7 @@ test('native hard steering an adopted child aborts its original logical operatio
   const outcome = await Promise.allSettled([steering]); await env.parentFinal.promise; await env.joinProducers();
   const task = await manager.getTask(relation.parentTaskId);
   assert.equal(task?.status, 'failed'); assert.equal(task.result, undefined);
-  assert.equal(await env.runtime.controller.getSessionByResource(row.resourceId), undefined);
+  assert.equal(await env.runtime.controller.getSessionByResource(row.resourceId), child);
   t.diagnostic(`Hard-steer outcome: ${outcome[0]?.status}; child requests ${env.fixture.requests.filter(request => lastUserText(request).includes('HARD_STEER')).length}`);
 });
 

@@ -29,7 +29,7 @@ async function setup(t: TestContext, kind: 'reply' | 'cancel' | 'timeout') {
   const root = await mkdtemp(join(tmpdir(), `kodex-production-child-interaction-${kind}-`));
   const projectPath = join(root, 'project'); await mkdir(projectPath);
   const trace: unknown[] = [];
-  const parked = deferred(), firstTurn = deferred(), parentContinued = deferred(), finalParent = deferred(), childDeleted = deferred();
+  const parked = deferred(), firstTurn = deferred(), parentContinued = deferred(), finalParent = deferred();
   const sessions: NativeSession[] = [];
   const retainedSuspendedRuns = new Set<string>();
   const producers = new Map<string, ReturnType<typeof deferred>>();
@@ -40,6 +40,10 @@ async function setup(t: TestContext, kind: 'reply' | 'cancel' | 'timeout') {
   let resumeHold: { reached: ReturnType<typeof deferred<void>>; release: ReturnType<typeof deferred<void>> } | undefined;
   const fixture = await startModelFixture(async request => {
     const last = lastUserText(request), serialized = JSON.stringify(request.messages);
+    if (last === 'RETAINED_CHILD_AFTER_CANCEL') {
+      assert.ok(!serialized.includes('LOSING_NATIVE_ANSWER'));
+      return { text: 'RETAINED_CHILD_FRESH_RESULT' };
+    }
     if (last.includes('INTERACTIVE_CHILD')) {
       childModelRequests++;
       assert.ok(!serialized.includes('PARENT_PRIVATE_CONTEXT'), 'interactive child starts fresh');
@@ -88,16 +92,22 @@ async function setup(t: TestContext, kind: 'reply' | 'cancel' | 'timeout') {
     session.subscribe(event => {
       trace.push({ child: event });
       const runId = session.getCurrentRunId();
-      if (event.type === 'agent_start' && runId) retainedSuspendedRuns.delete(runId);
+      // A retained subscription can replay agent_start for an aborted parked
+      // run without an active producer. Only the reply fixture actually resumes.
+      if (kind === 'reply' && event.type === 'agent_start' && runId) retainedSuspendedRuns.delete(runId);
       if (event.type === 'tool_suspended') {
         if (runId) retainedSuspendedRuns.add(runId);
         parked.resolve();
       }
-      if (event.type === 'agent_end' && event.reason === 'suspended') firstTurn.resolve();
+      if (event.type === 'agent_end' && event.reason === 'suspended') {
+        // Public suspension identity names the originating durable workflow.
+        const suspension = session.suspensions.get({ toolCallId: 'proof-child-question' });
+        if (suspension) retainedSuspendedRuns.add(suspension.runId);
+        firstTurn.resolve();
+      }
     });
   });
-  runtime.controller.onSessionDeleted(session => { if (session.getTags().kodexChild === '1') childDeleted.resolve(); });
-  // Established test-only finalizer join, never used by the proof composition.
+  // Established fixture-only producer join, never used by product composition.
   const register = runtime.mastra.__registerInternalWorkflow.bind(runtime.mastra);
   t.mock.method(runtime.mastra, '__registerInternalWorkflow', (...args: Parameters<typeof register>) => {
     const result = register(...args);
@@ -125,6 +135,11 @@ async function setup(t: TestContext, kind: 'reply' | 'cancel' | 'timeout') {
     }
     releaseHeldResume?.();
     if (taskId) await runtime.mastra.backgroundTaskManager?.cancel(taskId);
+    // Native cancelled workflow registrations can remain parked after abort.
+    // Retire bindings after assertions; parked registrations are not live drains.
+    for (const session of sessions) {
+      if (session.thread.getId()) await runtime.releaseSession({ resourceId: session.identity.getResourceId() });
+    }
     await joinProducers(); await runtime.dispose(); await fixture.close();
     await writeFile(join(root, 'trace.json'), JSON.stringify({ taskId, trace, requests: fixture.requests }, null, 2));
     for (const directory of ['project', 'runtime']) await rm(join(root, directory), { recursive: true, force: true });
@@ -146,7 +161,7 @@ async function setup(t: TestContext, kind: 'reply' | 'cancel' | 'timeout') {
   assert.equal(child.suspensions.hasPending(), true);
   assert.equal(child.displayState.get().pendingSuspensions.size, 1);
   assert.ok(JSON.stringify(child.displayState.get().pendingSuspensions.get('proof-child-question')).includes('Which evidence should I use?'));
-  return { runtime, parent, child, manager, taskId, fixture, parked, finalParent, childDeleted, joinProducers,
+  return { runtime, parent, child, manager, taskId, fixture, parked, finalParent, joinProducers,
     get childModelRequests() { return childModelRequests; },
     holdResume() {
       resumeHold = { reached: deferred(), release: deferred() };
@@ -172,24 +187,24 @@ test('production delegate_child remains pending across native suspension and pub
   assert.equal(env.child.suspensions.hasPending(), false);
   const stale = env.child.claimToolSuspension('proof-child-question');
   assert.deepEqual(stale, { accepted: false, reason: 'no_pending_suspension' });
-  held.release(); await reply; await env.finalParent.promise; await env.childDeleted.promise; await env.joinProducers(); await settled(env.parent);
+  held.release(); await reply; await env.finalParent.promise; await env.joinProducers(); await settled(env.parent);
   const task = await env.manager.getTask(env.taskId); assert.equal(task?.status, 'completed');
   assert.ok(JSON.stringify(task.result).includes('INTERACTIVE_CHILD_CANONICAL_RESULT: VERIFIED_NATIVE_ANSWER'));
   assert.ok(JSON.stringify(await env.parent.thread.listActiveMessages()).includes('PARENT_NATIVE_INTERACTION_RESULT_ACK'));
-  assert.equal(await env.runtime.controller.getSessionByResource(`kodex-child:${env.taskId}`), undefined);
+  assert.equal(await env.runtime.controller.getSessionByResource(`kodex-child:${env.taskId}`), env.child);
   const history = await env.runtime.controller.queryThreadMessages({ threadId: `kodex-child:${env.taskId}`, resourceId: `kodex-child:${env.taskId}` });
   assert.ok(JSON.stringify(history.messages).includes('User answered: VERIFIED_NATIVE_ANSWER'));
   assert.ok(JSON.stringify(history.messages).includes('INTERACTIVE_CHILD_CANONICAL_RESULT'));
   assert.equal((await env.manager.listTasks({})).tasks.length, 1, 'resumed child dispatch creates no nested native background tasks');
 });
 
-test('archive-like parent retirement then native task cancellation clears a parked child question without continuation', { timeout: 30_000 }, async t => {
+test('parked cancellation rejects stale answers and retains its child binding for fresh native input', { timeout: 30_000 }, async t => {
   const env = await setup(t, 'cancel');
   const parentThread = env.parent.thread.requireId(), parentResource = env.parent.identity.getResourceId();
   env.parent.machinery.getAgent().abortThreadStream({ threadId: parentThread, resourceId: parentResource, clearPendingSignals: true });
   env.parent.abort(); await env.runtime.releaseSession({ resourceId: parentResource });
   const requestsBeforeCancel = env.fixture.requests.length;
-  await env.manager.cancel(env.taskId); await env.childDeleted.promise; await env.joinProducers();
+  await env.manager.cancel(env.taskId);
   const task = await env.manager.getTask(env.taskId); assert.equal(task?.status, 'cancelled');
   assert.equal(task.result, undefined);
   assert.equal(env.child.suspensions.hasPending(), false);
@@ -198,8 +213,22 @@ test('archive-like parent retirement then native task cancellation clears a park
   await env.child.respondToToolSuspension({ toolCallId: 'proof-child-question', resumeData: 'LOSING_NATIVE_ANSWER' });
   assert.equal(env.fixture.requests.length, requestsBeforeCancel, 'stale response cannot resume the cancelled child or retired parent');
   assert.equal(env.childModelRequests, 1);
-  assert.equal(await env.runtime.controller.getSessionByResource(`kodex-child:${env.taskId}`), undefined);
+  assert.equal(await env.runtime.controller.getSessionByResource(`kodex-child:${env.taskId}`), env.child);
   assert.equal(await env.runtime.controller.getSessionByResource(parentResource), undefined);
+  assert.equal(env.child.machinery.getAgent().getActiveThreadRunId({ threadId: env.child.thread.requireId(), resourceId: env.child.identity.getResourceId() }), undefined);
+  const freshEnded = deferred();
+  const off = env.child.subscribe(event => { if (event.type === 'agent_end' && event.reason === 'complete') freshEnded.resolve(); }); t.after(off);
+  const fresh = await env.child.sendSignal({ type: 'user', contents: 'RETAINED_CHILD_AFTER_CANCEL' }, { requireDelivery: true }).accepted;
+  assert.equal(fresh.action, 'wake');
+  await freshEnded.promise; await settled(env.child);
+  const history = await env.child.thread.listActiveMessages();
+  assert.ok(JSON.stringify(history).includes('RETAINED_CHILD_FRESH_RESULT'));
+  assert.ok(!JSON.stringify(history).includes('LOSING_NATIVE_ANSWER'));
+  assert.equal(env.fixture.requests.filter(request => request.stream && lastUserText(request) === 'RETAINED_CHILD_AFTER_CANCEL').length, 1);
+  assert.equal((await env.manager.getTask(env.taskId))?.status, 'cancelled', 'independent input cannot revive the original task');
+  assert.equal(await env.runtime.controller.getSessionByResource(env.child.identity.getResourceId()), env.child);
+  await env.runtime.releaseSession({ resourceId: env.child.identity.getResourceId() });
+  await env.joinProducers();
 });
 
 test('native background timeout bounds an adopted operation parked on a child question', { timeout: 30_000 }, async t => {
@@ -209,11 +238,16 @@ test('native background timeout bounds an adopted operation parked on a child qu
   env.parent.machinery.getAgent().abortThreadStream({ threadId: env.parent.thread.requireId(), resourceId: env.parent.identity.getResourceId(), clearPendingSignals: true });
   env.parent.abort();
   const task = await env.manager.waitForNextTask([env.taskId], { timeoutMs: 10_000 });
-  await env.childDeleted.promise; await env.joinProducers();
   assert.equal(task.status, 'timed_out'); assert.equal(task.result, undefined);
   assert.ok(task.error?.message.includes('Task timed out after 5000ms'));
-  assert.equal(await env.runtime.controller.getSessionByResource(`kodex-child:${env.taskId}`), undefined, 'native timeout releases the parked child binding');
+  assert.equal(await env.runtime.controller.getSessionByResource(`kodex-child:${env.taskId}`), env.child, 'native timeout leaves the retained child quiescent');
   assert.equal(env.child.suspensions.hasPending(), false);
   assert.equal(env.child.displayState.get().pendingSuspensions.size, 0);
   assert.equal(env.childModelRequests, 1);
+  assert.equal(env.child.machinery.getAgent().getActiveThreadRunId({ threadId: env.child.thread.requireId(), resourceId: env.child.identity.getResourceId() }), undefined);
+  assert.deepEqual(env.child.claimToolSuspension('proof-child-question'), { accepted: false, reason: 'no_pending_suspension' });
+  await env.child.respondToToolSuspension({ toolCallId: 'proof-child-question', resumeData: 'LOSING_TIMEOUT_ANSWER' });
+  assert.equal(env.childModelRequests, 1);
+  await env.runtime.releaseSession({ resourceId: env.child.identity.getResourceId() });
+  await env.joinProducers();
 });

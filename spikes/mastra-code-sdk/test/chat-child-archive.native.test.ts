@@ -168,7 +168,7 @@ test('archive cancels a child admitted before native creation without allowing l
   assert.equal(env.fixture.requests.filter(request => lastUserText(request).includes('CHILD_LATE')).length, 0);
 });
 
-test('archive joins a child finalizer whose native binding is already cleared before acknowledging retirement', { timeout: 30_000 }, async t => {
+test('archive joins an admitted child release whose native binding is already cleared before acknowledging retirement', { timeout: 30_000 }, async t => {
   const env = await setup(t, 'release-overlap');
   const activeHeld = env.hold('ACTIVE'), otherHeld = env.hold('OTHER');
   const active = await env.launch('ACTIVE'); await activeHeld.reached;
@@ -176,7 +176,11 @@ test('archive joins a child finalizer whose native binding is already cleared be
   const activeChild = await env.child(active.taskId), otherChild = await env.child(other.taskId);
   const manager = env.runtime.mastra.backgroundTaskManager; assert.ok(manager);
   const otherRunId = otherChild.child.getCurrentRunId(); assert.ok(otherRunId);
-  const cleared = gate(), releaseLock = gate(), joiningFinalizer = gate();
+  activeHeld.release();
+  const completed = await manager.waitForNextTask([active.taskId], { timeoutMs: 5_000 });
+  assert.equal(completed.status, 'completed');
+  assert.equal(await env.runtime.controller.getSessionByResource(activeChild.row.resourceId), activeChild.child);
+  const cleared = gate(), releaseLock = gate(), joiningRelease = gate();
   env.releaseOnCleanup(releaseLock);
   const clear = activeChild.child.thread.clearAndReleaseLock.bind(activeChild.child.thread);
   t.mock.method(activeChild.child.thread, 'clearAndReleaseLock', async () => {
@@ -186,29 +190,25 @@ test('archive joins a child finalizer whose native binding is already cleared be
   let childReleases = 0;
   t.mock.method(env.runtime, 'releaseSession', (input: Parameters<typeof release>[0]) => {
     const result = release(input);
-    if (input.resourceId === activeChild.row.resourceId && ++childReleases === 2) joiningFinalizer.release();
+    if (input.resourceId === activeChild.row.resourceId && ++childReleases === 2) joiningRelease.release();
     return result;
   });
-  const cancel = manager.cancel.bind(manager);
-  t.mock.method(manager, 'cancel', async (taskId: string) => {
-    await cancel(taskId);
-    // Hold the public cancellation return after its real native side effects,
-    // letting the adopted completion reach native clear before descendant lookup.
-    if (taskId === active.taskId) await cleared.reached;
-  });
+  const retiring = env.runtime.releaseSession({ resourceId: activeChild.row.resourceId });
+  void retiring.catch(() => {});
+  await cleared.reached;
   let archiveSettled = false;
   const archive = env.service.archiveChat({ chatId: active.chat.id });
   void archive.then(() => { archiveSettled = true; }, () => { archiveSettled = true; });
   t.after(async () => { releaseLock.release(); await archive.catch(() => {}); });
-  await cleared.reached; await joiningFinalizer.reached;
-  assert.equal(activeChild.child.thread.getId(), null, 'native finalizer has already cleared its child binding');
+  await cleared.reached; await joiningRelease.reached;
+  assert.equal(activeChild.child.thread.getId(), null, 'native admitted release has already cleared its child binding');
   assert.equal(archiveSettled, false, 'archive waits for the admitted native release after the binding clears');
-  assert.equal((await manager.getTask(active.taskId))?.status, 'cancelled');
+  assert.equal((await manager.getTask(active.taskId))?.status, 'completed');
   assert.equal((await manager.getTask(other.taskId))?.status, 'running');
   assert.equal(otherChild.child.getCurrentRunId(), otherRunId);
-  releaseLock.release();
+  releaseLock.release(); await retiring;
   assert.deepEqual(await archive, { accepted: true });
-  assert.equal(childReleases, 2, 'task finalizer and archive join one owned release');
+  assert.equal(childReleases, 2, 'explicit retirement and archive join one owned release');
   assert.equal(await env.runtime.controller.getSessionByResource(activeChild.row.resourceId), undefined);
   const saved = await env.runtime.controller.queryThreadById({ threadId: activeChild.row.id });
   assert.equal(saved?.id, activeChild.row.id, 'joined live-binding deletion preserves the native child thread');

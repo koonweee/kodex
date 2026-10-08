@@ -116,5 +116,5 @@ for (const yolo of [true, false]) test(`native service child completion after pa
   const memory = await parent.machinery.getAgent().getMemory({ requestContext: await parent.machinery.buildRequestContext() });
   assert.ok(memory && 'settled' in memory && typeof memory.settled === 'function'); await memory.settled();
   assert.ok(JSON.stringify(await parent.thread.listActiveMessages()).includes('CHILD_AFTER_QUESTION_RESULT'), 'the parent native transcript receives the canonical result in both modes');
-  assert.equal(await runtime.controller.getSessionByResource(child.identity.getResourceId()), undefined, 'completed child binding is released in both modes');
+  assert.equal(await runtime.controller.getSessionByResource(child.identity.getResourceId()), child, 'completed child binding is retained in both modes');
 });

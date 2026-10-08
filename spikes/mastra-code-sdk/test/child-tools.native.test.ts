@@ -208,7 +208,7 @@ test('host child tools use native task handles, enforce parent origin, deliver l
   const completed = await manager.getTask(taskId); assert.equal(completed?.status, 'completed');
   assert.ok(JSON.stringify(completed?.result).includes('CHILD_CANONICAL_RESULT'));
   assert.ok(JSON.stringify(await parent.thread.listActiveMessages()).includes('PARENT_FINAL_ACK'));
-  assert.equal(await runtime.controller.getSessionByResource(row.resourceId), undefined, 'completed child binding is released');
+  assert.equal(await runtime.controller.getSessionByResource(row.resourceId), child, 'completed child binding remains available for later native input');
   const savedChild = await runtime.controller.queryThreadMessages({ threadId: row.id, resourceId: row.resourceId, perPage: 40, orderBy: { field: 'createdAt', direction: 'ASC' } });
   assert.ok(JSON.stringify(savedChild.messages).includes('CHILD_CANONICAL_RESULT'), 'released child history remains readable without reactivation');
   const tasks = await manager.listTasks({});
@@ -218,7 +218,7 @@ test('host child tools use native task handles, enforce parent origin, deliver l
 });
 
 for (const maxRetries of [0, 1]) test(maxRetries === 0
-  ? 'a native child model error fails its task and releases the owned session'
+  ? 'a native child model error fails its task and retains its quiescent binding'
   : 'a native model retry override cannot reopen the saved fresh child thread', { timeout: 30_000 }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'kodex-child-error-'));
   let runtime: ProjectRuntime | undefined, child: NativeSession | undefined;
@@ -330,7 +330,7 @@ for (const maxRetries of [0, 1]) test(maxRetries === 0
   assert.equal(task.result, undefined, 'a native model error never becomes a successful child result');
   assert.equal(child.suspensions.hasPending(), false, 'failed task leaves no parked child question');
   assert.equal(child.displayState.get().pendingSuspensions.size, 0, 'read-only child has no unreachable live question');
-  assert.equal(await runtime.controller.getSessionByResource(child.identity.getResourceId()), undefined, 'failed child binding is released');
+  assert.equal(await runtime.controller.getSessionByResource(child.identity.getResourceId()), child, 'failed child binding is retained without reviving its native task');
   const saved = await runtime.controller.queryThreads({ metadata: { parentTaskId: task.id } });
   assert.equal(saved.length, 1, 'failed child relation and native history remain persisted');
   const history = await runtime.controller.queryThreadMessages({ threadId: saved[0]!.id, resourceId: saved[0]!.resourceId, perPage: 40, orderBy: { field: 'createdAt', direction: 'ASC' } });
