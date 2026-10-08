@@ -8,6 +8,7 @@ import { DEFAULT_APPEARANCE_PREFERENCES } from '../theme/appearancePreferences';
 import { createMemoryWorkspacePaneStore } from '../workspace/paneStore';
 import { useWorkspace } from '../workspace/WorkspaceProvider';
 import type { WorkspaceSidebar } from '../threads/WorkspaceSidebar';
+import { NARROW_WORKSPACE_QUERY } from '../shared/layoutBreakpoints';
 
 const archive = vi.hoisted(() => ({ ids: [] as string[], command: vi.fn() }));
 vi.mock('./client', () => ({ mastraClient: { archiveChat: archive.command } }));
@@ -26,12 +27,15 @@ vi.mock('../threads/WorkspaceSidebar', () => ({
     <output aria-label="Selected sidebar chat">{props.selectedThreadId}</output>
     <button onClick={() => props.onSelectChatThread('b')}>Select chat B</button>
     <button onClick={() => props.onSelectProjectSettings('project')}>Open project settings</button>
+    <button onClick={props.onShowThread}>Show thread</button>
   </>,
 }));
 vi.mock('../workspace/WorkspaceShell', () => ({ WorkspaceShell: WorkspaceProbe }));
+vi.mock('../workspace/WorkspaceSinglePaneShell', () => ({ WorkspaceSinglePaneShell: WorkspaceProbe }));
 function WorkspaceProbe() {
-  const { workspace, focusPane, threadActions, errorMessage } = useWorkspace();
+  const { workspace, focusPane, threadActions, errorMessage, onShowMobileSidebar } = useWorkspace();
   return <>
+    <button onClick={onShowMobileSidebar}>Browse threads</button>
     <button onClick={() => threadActions.onArchiveThread?.('a')}>Archive A</button><output aria-label="Workspace error">{errorMessage}</output>
     <output aria-label="Active workspace pane">{workspace.activePaneId}</output>
     <button onClick={() => focusPane('pane-a')}>Focus pane A</button>
@@ -142,3 +146,39 @@ it('keeps panes on rejected native archive and closes only after explicit archiv
 // Shell workflow fixtures do not exercise platform presence/badges.
 vi.mock('./nativePresenceTransport', () => ({ nativePresenceTransport: { replace: async () => ({ accepted: true }), sendOnExit: () => true } }));
 vi.mock('./useNativeUnreadBadge', () => ({ useNativeUnreadBadge: vi.fn() }));
+
+
+it('persists explicit panel navigation through remount and browser back/forward without losing the native thread', async () => {
+  const matchMedia = window.matchMedia.bind(window);
+  vi.spyOn(window, 'matchMedia').mockImplementation(query => ({ ...matchMedia(query), matches: query === NARROW_WORKSPACE_QUERY }));
+  window.history.replaceState(null, '', '/threads/a');
+  const first = shell('pane-a');
+  await waitFor(() => expect(first.store.getState().activePaneId).toBe('pane-a'));
+  const push = vi.spyOn(window.history, 'pushState');
+  fireEvent.click(screen.getByRole('button', { name: 'Browse threads' }));
+  await waitFor(() => expect(window.location.pathname + window.location.search).toBe('/threads/a?panel=threads'));
+  expect(document.querySelector('[data-mobile-panel]')).toHaveAttribute('data-mobile-panel', 'threads');
+  expect(push).toHaveBeenCalledOnce();
+  first.view.unmount();
+  const reloaded = shell('pane-b');
+  await waitFor(() => expect(reloaded.store.getState().activePaneId).toBe('pane-a'));
+  expect(window.location.pathname + window.location.search).toBe('/threads/a?panel=threads');
+  expect(document.querySelector('[data-mobile-panel]')).toHaveAttribute('data-mobile-panel', 'threads');
+  expect(screen.getByLabelText('Selected sidebar chat')).toHaveTextContent('a');
+  fireEvent.click(screen.getByRole('button', { name: 'Show thread' }));
+  await waitFor(() => expect(window.location.pathname + window.location.search).toBe('/threads/a'));
+  expect(document.querySelector('[data-mobile-panel]')).toHaveAttribute('data-mobile-panel', 'chat');
+  await act(async () => {
+    window.history.replaceState(null, '', '/threads/a?panel=threads');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  expect(document.querySelector('[data-mobile-panel]')).toHaveAttribute('data-mobile-panel', 'threads');
+  expect(reloaded.store.getState().activePaneId).toBe('pane-a');
+  await act(async () => {
+    window.history.replaceState(null, '', '/threads/a');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  expect(document.querySelector('[data-mobile-panel]')).toHaveAttribute('data-mobile-panel', 'chat');
+  expect(screen.getByLabelText('Selected sidebar chat')).toHaveTextContent('a');
+  expect(reloaded.store.getState().panes).toHaveLength(2);
+});

@@ -1,6 +1,7 @@
 import { AsyncQuestionReplyProvider } from '../composer/AsyncQuestionReplyProvider';
 import { mastraClient } from './client';
-import { Alert, Box, Group, Loader, Title } from '@mantine/core';
+import { Alert, Badge, Box, Group, Loader, Title } from '@mantine/core';
+import { AlertCircle } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { ComposerDraftStore } from '../composer/useComposerDraftState';
 import { RenameThreadDialog } from '../panes/thread/RenameThreadDialog';
@@ -113,6 +114,13 @@ export function NativeThreadPane({ pane, draftStore, onError }: { pane: Workspac
       if (renameGeneration.current === generation) setRenamePending(false);
     }
   }
+  if (!chatId) return <section className="kodex-thread-pane kodex-thread-pane-empty" data-workspace-pane-active={isActive ? "true" : undefined}>
+    <Title className="kodex-thread-pane-accessible-title" order={3} size="h5">Draft thread</Title>
+    <div className="kodex-thread-pane-empty-body">
+      {isActive && errorMessage ? <Badge className="kodex-thread-column kodex-thread-pane-error" color="red" data-tone="danger" leftSection={<AlertCircle size={12} />} role="alert" variant="light">{errorMessage}</Badge> : null}
+      <NativeComposer pane={pane} snapshot={null} ready isActive={isActive} draftStore={draftStore} onError={onError} onQueueReload={retry} />
+    </div>
+  </section>;
   return <section className="kodex-thread-pane kodex-thread-pane-existing" data-workspace-pane-active={isActive ? "true" : undefined} data-thread-id={chatId ?? undefined} aria-label={title}>
     <Title className="kodex-thread-pane-accessible-title" order={3} size="h5" title={title}>{title}</Title>
     <RenameThreadDialog opened={renameOpen && Boolean(nativeChatId)} title={title} name={name} pending={renamePending}

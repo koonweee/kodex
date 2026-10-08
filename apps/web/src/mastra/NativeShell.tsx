@@ -92,17 +92,21 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
     const popstate = () => { const next = currentKodexRoute(); setRoute(next); setRouteThreadPaneId(next.threadId); setMobilePanel(next.panel ?? 'chat'); };
     window.addEventListener('popstate', popstate); return () => window.removeEventListener('popstate', popstate);
   }, []);
-  const navigate = useCallback((next: Parameters<typeof pushKodexRoute>[0]) => { pushKodexRoute(next); setRoute(next); setMobilePanel('chat'); }, []);
+  const navigate = useCallback((next: Parameters<typeof pushKodexRoute>[0]) => { pushKodexRoute(next); setRoute(next); setMobilePanel(next.panel ?? 'chat'); }, []);
+  const showMobileSidebar = useCallback(() => navigate({ ...route, panel: 'threads' }), [navigate, route]);
+  const showThread = useCallback(() => navigate({ ...route, panel: null }), [navigate, route]);
   const selectThread = useCallback((id: string) => { setRouteThreadPaneId(null); navigate({ threadId: id, view: 'thread', panel: null }); }, [navigate]);
   const reportWorkspaceFocus = useCallback((id: string) => {
-    if (mainPane !== 'thread') return;
+    const current = currentKodexRoute();
+    // Hidden restored focus is not a request to leave the sidebar route.
+    if (mainPane !== 'thread' || (singlePane && current.panel === 'threads')) return;
     setRouteThreadPaneId(null);
-    const next = { threadId: id, view: 'thread', panel: null } as const;
+    const next = { threadId: id, view: 'thread', panel: current.threadId === id ? current.panel : null } as const;
     // Workspace focus reports selection; it does not create a navigation entry.
     replaceKodexRoute(next);
     setRoute(next);
-    setMobilePanel('chat');
-  }, [mainPane]);
+    setMobilePanel(next.panel ?? 'chat');
+  }, [mainPane, singlePane]);
   const createDraft = useCallback((projectId?: string) => navigate({ threadId: null, projectId: projectId ?? null, view: 'thread', panel: null }), [navigate]);
   useEffect(() => {
     if (!route.threadId || !catalog.snapshot?.archivedChatIds.includes(route.threadId)) return;
@@ -129,7 +133,7 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
   return <NativeCatalogProvider snapshot={catalog.snapshot}>
     <WorkspaceProvider liveTransport="external" terminalSessionApi={nativeTerminalApi} paneStore={workspacePaneStore} errorMessage={displayError}
       onVisibleThreadIdsChange={setVisibleThreadIds} isVisible={mainPane === 'thread' && (!singlePane || mobilePanel === 'chat')} onFocusThreadPane={reportWorkspaceFocus}
-      onShowMobileSidebar={() => setMobilePanel('threads')} onImageOpen={setLightbox}
+      onShowMobileSidebar={showMobileSidebar} onImageOpen={setLightbox}
       onMarkdownOpen={setMarkdownPreview}
       renderThreadPane={pane => <NativeThreadPane pane={pane} draftStore={drafts.current} onError={reportError} />}
       threadActions={{
@@ -143,10 +147,10 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
         mainPane={mainPane} mobilePanel={mobilePanel} sidebarCollapsed={resize.sidebarCollapsed} useSingleThreadWorkspace={singlePane}
         workspaceSelectedThreadPaneId={mainPane === 'thread' ? routeThreadPaneId : null}
         preferencesProps={{ notificationsPanel, executionPanel: <NativeExecutionPreferencesPanel />, mcpPanel: <NativeMcpPreferencesPanel />, pluginsPanel: <NativePluginsPreferencesPanel />, opened: preferencesOpen, activeSection: preferencesSection, resolvedSchemeId: colorSchemeId, preferences: appearance, onClose: () => setPreferencesOpen(false), onSectionChange: setPreferencesSection, onModeChange: onAppearanceModeChange, onThemeChange }}
-        projectPaneProps={{ project: projects.find(project => project.id === route.projectId) ?? null, onDeleted: () => createDraft(), actions: projectActions, onShowMobileSidebar: () => setMobilePanel('threads') }}
+        projectPaneProps={{ project: projects.find(project => project.id === route.projectId) ?? null, onDeleted: () => createDraft(), actions: projectActions, onShowMobileSidebar: showMobileSidebar }}
         automationsPaneProps={{ mode: 'calendar', targetReadOnly: false, renderRuns: id => <NativeAutomationRuns automationId={id} />, automations: automations.rows, defaultThreadId: route.threadId, isLoading: automations.isLoading,
           onCreateAutomation: automations.create, onDeleteAutomation: automations.remove, onPauseAutomation: automations.pause, onResumeAutomation: automations.resume, onUpdateAutomation: automations.update,
-          onShowMobileSidebar: () => setMobilePanel('threads'), threadOptions: entries.map(chat => ({ value: chat.id, label: chat.name ?? 'New thread' })) }}
+          onShowMobileSidebar: showMobileSidebar, threadOptions: entries.map(chat => ({ value: chat.id, label: chat.name ?? 'New thread' })) }}
         workspaceSidebarProps={{ account: null, accountMenu: <NativeAccountMenu state={account}
           onSelectAutomations={() => navigate({ threadId: null, view: 'automations', panel: null })}
           onOpenPreferences={() => setPreferencesOpen(true)} onShowDebugEventsChange={setShowDebugEvents} showDebugEvents={showDebugEvents} />, approvals: [], chatThreads: standalone, projects, threadsByProjectId,
@@ -160,7 +164,7 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
           onSelectAutomations: () => navigate({ threadId: null, view: 'automations', panel: null }),
           onArchiveThread: id => perform(mastraClient.archiveChat({ chatId: id })), onPinThread: metadata.pin, onUnpinThread: metadata.unpin,
           onMoveProject: (id, beforeId) => perform(mastraClient.moveProjectBefore({ projectId: id, beforeId })), onLogout: account.logout,
-          onOpenPreferences: () => setPreferencesOpen(true), onOpenTerminal: () => navigate({ ...route, view: 'thread', panel: null }), onShowThread: () => setMobilePanel('chat'),
+          onOpenPreferences: () => setPreferencesOpen(true), onOpenTerminal: () => navigate({ ...route, view: 'thread', panel: null }), onShowThread: showThread,
           onShowDebugEventsChange: setShowDebugEvents, showDebugEvents, sidebarWidth: resize.sidebarWidth,
           onSidebarCollapseClick: resize.handleSidebarCollapseClick, onSidebarExpandClick: resize.handleSidebarExpandClick, onThreadActionHoverChange: setHoveredThreadActionId,
         }} />

@@ -30,11 +30,11 @@ const context = createContext<Record<string, unknown>>({});
 const stableActions = { onRenameThread: native.rename, onArchiveThread: vi.fn(), onPinThread: vi.fn(), onUnpinThread: vi.fn(), onSetThreadNotificationsEnabled: vi.fn() };
 const stable = { visiblePaneIds: [], closePane: native.close, errorMessage: null, setPaneThreadContext: vi.fn(), setPaneHeaderAdornment: vi.fn(), updatePane: vi.fn().mockResolvedValue(undefined), duplicatePane: native.duplicate, onShowMobileSidebar: vi.fn(), onImageOpen: vi.fn(), onMarkdownOpen: vi.fn(), threadActions: stableActions, showDebugEvents: false };
 const onError = vi.fn();
-function Harness({ children }: { children?: ReactNode }) {
+function Harness({ children, errorMessage = null }: { children?: ReactNode; errorMessage?: string | null }) {
   const [header, setHeader] = useState<ReactNode>(null);
   const setPaneHeaderActions = useCallback((id: string, actions: ReactNode | null) => { native.registrations(id, actions); setHeader(actions); }, []);
   // Header registration changes provider identity, just as the real workspace does.
-  const value = useMemo(() => ({ ...stable, workspace: { activePaneId: 'pane' }, setPaneHeaderActions, header }), [header, setPaneHeaderActions]);
+  const value = useMemo(() => ({ ...stable, errorMessage, workspace: { activePaneId: 'pane' }, setPaneHeaderActions, header }), [errorMessage, header, setPaneHeaderActions]);
   return <MantineProvider env="test"><context.Provider value={value}><div aria-label="Workspace header">{header}</div>{children ?? <NativeThreadPane pane={pane} draftStore={{} as ComposerDraftStore} onError={onError} />}</context.Provider></MantineProvider>;
 }
 afterEach(() => { cleanup(); vi.clearAllMocks(); native.error = null; native.subagentError = null; native.isLoadingOlderHistory = false; });
@@ -286,4 +286,28 @@ it('updates an inactive pane tab activity from its own native display and ignore
   native.snapshot = { ...native.snapshot, revision: 3, chat: { ...native.snapshot.chat, id: 'other-chat' }, display: { ...native.snapshot.display, isRunning: true } };
   await act(async () => view.rerender(node('other-chat')));
   expect(stable.setPaneThreadContext).toHaveBeenLastCalledWith('inactive-pane', { id: 'other-chat', projectId: null, cwd: '/project', indicatorState: 'running' });
+});
+
+
+it('renders a draft without existing-thread history/chrome and scopes creation failures to its active pane', async () => {
+  native.useWorkspace.mockImplementation(() => useContext(context));
+  native.snapshot = null; native.error = 'Stale native thread failure'; native.subagentError = 'Stale child failure';
+  const draft: WorkspacePane = { id: 'pane', kind: 'thread', title: 'New thread', target: { mode: 'draft', projectId: null } };
+  const content = (active: boolean) => <Harness errorMessage="Chat creation failed">
+    <NativeThreadPane pane={active ? draft : { ...draft, id: 'inactive' }} draftStore={{} as ComposerDraftStore} onError={onError} />
+  </Harness>;
+  const view = render(content(true));
+  expect(screen.getByRole('heading', { name: 'Draft thread' })).toBeInTheDocument();
+  expect(screen.getByText('Composer')).toBeInTheDocument();
+  expect(screen.getAllByRole('alert')).toHaveLength(1);
+  expect(screen.getByRole('alert')).toHaveTextContent('Chat creation failed');
+  expect(screen.queryByText('Stale native thread failure')).not.toBeInTheDocument();
+  expect(screen.queryByText('Stale child failure')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Thread actions' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Load older history' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('status', { name: 'Loading thread timeline' })).not.toBeInTheDocument();
+  expect(native.watched.mock.calls.every(([id]) => id === null)).toBe(true);
+  await act(async () => view.rerender(content(false)));
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(screen.getByText('Composer')).toBeInTheDocument();
 });
