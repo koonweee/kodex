@@ -1,3 +1,4 @@
+import { createChatNotifications } from './chat-notifications.js';
 import { createChatReadState } from './chat-read-state.js';
 import { createMcpService } from './mcp-service.js';
 import { createChatActivity } from './chat-activity.js';
@@ -30,6 +31,8 @@ import { createChatGoals, type GoalPatch } from './chat-goals.js';
 import { createNativeChatSettings, type ChatSettingsPatch } from './chat-settings.js';
 import { createSessionProjection, type SessionSnapshot } from './transport.js';
 
+export type { ChatPresenceSelection } from './chat-presence.js';
+export type { UnreadBadge } from './chat-notifications.js';
 export type { CatalogSnapshot, ChatSnapshot, ChatPromptResponse, ChatSeenSelection, QueuedSelection, QueuedEdit, QueuedOrder, ChatServiceOptions } from './chat-service-types.js';
 import type { CatalogSnapshot, ChatSnapshot, ChatPromptResponse, ChatSeenSelection, QueuedSelection, QueuedEdit, QueuedOrder, ChatServiceOptions } from './chat-service-types.js';
 interface Handle {
@@ -150,7 +153,7 @@ export function createChatService(options: ChatServiceOptions) {
     });
   }
   const retireChat = createChatRetirement({ projects, lifecycle, handles,
-    changed(chatId, bindingId, retiredIds) { reads.forget(bindingId, retiredIds); invalidateCatalog(); subagents.invalidate(chatId); },
+    changed(chatId, bindingId, retiredIds) { reads.forget(bindingId, retiredIds); notifications.forget(bindingId, retiredIds); invalidateCatalog(); subagents.invalidate(chatId); },
   });
 
   async function snapshot(handle: Handle, signal?: AbortSignal, initial?: SessionSnapshot, request: HistoryRequest = {}): Promise<ChatSnapshot> {
@@ -183,19 +186,16 @@ export function createChatService(options: ChatServiceOptions) {
       return { ...current, chat, error: handle.error, settings: publicSettings, queue: handle.queue.snapshot(), goal, prompts, readState };
     }
   }
-  async function catalogSnapshot(signal?: AbortSignal): Promise<CatalogSnapshot> {
-    for (;;) {
-      signal?.throwIfAborted();
-      lifetime.signal.throwIfAborted();
-      const revision = catalogRevision;
-      const inventory = await projects.inventory();
-      const chats = activity.project(inventory.chats).map(chat => ({ ...chat, readState: reads.read(chat.bindingId, chat.id) }));
-      const pinnedDescendants = activity.project(inventory.pinnedDescendants).map(chat => ({ ...chat, readState: reads.read(chat.bindingId, chat.id) }));
-      signal?.throwIfAborted();
-      lifetime.signal.throwIfAborted();
-      if (revision === catalogRevision) return { epoch, revision, ...inventory, chats, pinnedDescendants };
-    }
-  }
+  const notifications = createChatNotifications({ epoch, revision: () => catalogRevision,
+    inventory: projects.inventory, projectActivity: activity.project, readState: reads.read, signal: lifetime.signal, assertActive,
+    async resolveVisible(ids, apply) {
+      const routes = await Promise.all(ids.map(id => projects.resolveThreadRoute(id)));
+      await lifecycle.admitMany(routes.flatMap(route => [...route.ancestors.map(row => row.id), route.thread.id]), async () => {
+        assertActive(); apply(routes.map(route => ({ bindingId: route.binding.id, threadId: route.thread.id })));
+      });
+    },
+  });
+  const catalogSnapshot = notifications.catalogSnapshot;
   async function sendNative(handle: Handle, input: ChatInput, clientId?: string) {
     try {
       const requestContext = await captureChatFastRequestContext(handle.session);
@@ -309,6 +309,8 @@ export function createChatService(options: ChatServiceOptions) {
       return { instanceId: options.instanceId };
     },
     async listChats() { return catalogSnapshot(); },
+    replaceChatPresence: notifications.replaceChatPresence,
+    getUnreadBadge: notifications.getUnreadBadge,
     async markChatSeen({ chatId, ...selection }: ChatSeenSelection) {
       const { binding } = await projects.resolveThreadRoute(chatId);
       assertActive();
@@ -458,7 +460,7 @@ export function createChatService(options: ChatServiceOptions) {
       if (disposal) return disposal;
       disposed = true;
       lifetime.abort();
-      activity.dispose(); reads.dispose();
+      activity.dispose(); reads.dispose(); notifications.dispose();
       disposal = (async () => {
         if (accountService) await accountService.then(service => service.dispose(), () => {});
         const loadedHandles = await Promise.allSettled(handles.values());

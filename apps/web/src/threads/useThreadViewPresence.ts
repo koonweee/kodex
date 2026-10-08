@@ -10,15 +10,25 @@ const THREAD_VIEW_PRESENCE_CLIENT_ID_KEY = "kodex.threadViewPresenceClientId";
 const DEFAULT_THREAD_VIEW_PRESENCE_HEARTBEAT_MS = 10_000;
 
 let fallbackClientId: string | null = null;
+export type ThreadViewPresenceTransport = {
+  replace: (request: ThreadViewPresenceSnapshotRequest) => Promise<unknown>;
+  sendOnExit: (request: ThreadViewPresenceSnapshotRequest) => boolean;
+};
+const defaultTransport: ThreadViewPresenceTransport = {
+  replace: replaceThreadViewPresence,
+  sendOnExit: sendThreadViewPresenceSnapshotBeacon,
+};
 
 export function useThreadViewPresence({
   enabled,
   heartbeatMs = DEFAULT_THREAD_VIEW_PRESENCE_HEARTBEAT_MS,
   threadIds,
+  transport = defaultTransport,
 }: {
   enabled: boolean;
   heartbeatMs?: number;
   threadIds: string[];
+  transport?: ThreadViewPresenceTransport;
 }) {
   const visibleThreadIds = useMemo(() => normalizedThreadIds(threadIds), [threadIds]);
   const visibleThreadIdsKey = visibleThreadIds.join("\n");
@@ -36,7 +46,7 @@ export function useThreadViewPresence({
     if (document.visibilityState === "visible") {
       reportLatestVisibleThreads();
     }
-  }, [enabled, visibleThreadIdsKey]);
+  }, [enabled, visibleThreadIdsKey, transport]);
 
   useEffect(() => {
     if (!enabled || typeof document === "undefined") {
@@ -47,14 +57,14 @@ export function useThreadViewPresence({
 
     function report(threadIds: string[]) {
       lastReportedVisibleThreadIdsKeyRef.current = threadIds.join("\n");
-      void replaceThreadViewPresence(presenceRequest(ensureClientId(), threadIds)).catch(() => {
+      void transport.replace(presenceRequest(ensureClientId(), threadIds)).catch(() => {
         // Presence is ephemeral. Missed heartbeats expire in the gateway.
       });
     }
 
     function reportWithBeacon(threadIds: string[]): boolean {
       lastReportedVisibleThreadIdsKeyRef.current = threadIds.join("\n");
-      return sendThreadViewPresenceSnapshotBeacon(presenceRequest(ensureClientId(), threadIds));
+      return transport.sendOnExit(presenceRequest(ensureClientId(), threadIds));
     }
 
     function clearHeartbeat() {
@@ -117,7 +127,7 @@ export function useThreadViewPresence({
         clearPresence();
       }
     };
-  }, [enabled, heartbeatMs]);
+  }, [enabled, heartbeatMs, transport]);
 
   function ensureClientId(): string {
     clientIdRef.current ??= threadViewPresenceClientId();
@@ -126,7 +136,7 @@ export function useThreadViewPresence({
 
   function reportLatestVisibleThreads() {
     lastReportedVisibleThreadIdsKeyRef.current = latestVisibleThreadIdsRef.current.join("\n");
-    void replaceThreadViewPresence(
+    void transport.replace(
       presenceRequest(ensureClientId(), latestVisibleThreadIdsRef.current),
     ).catch(() => {
       // Presence is ephemeral. Missed heartbeats expire in the gateway.

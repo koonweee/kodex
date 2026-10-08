@@ -151,3 +151,7 @@ it('renders and clears pinned descendant activity from canonical catalog revisio
   expect(screen.queryByRole('status', { name: 'Thread in progress' })).not.toBeInTheDocument();
   expect(pinnedTitles()).toEqual(['Fork preview', 'Parent', 'Child preview']);
 });
+
+// Shell workflow fixtures do not exercise platform presence/badges.
+vi.mock('./nativePresenceTransport', () => ({ nativePresenceTransport: { replace: async () => ({ accepted: true }), sendOnExit: () => true } }));
+vi.mock('./useNativeUnreadBadge', () => ({ useNativeUnreadBadge: vi.fn() }));

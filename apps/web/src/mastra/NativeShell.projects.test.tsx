@@ -105,3 +105,7 @@ it('converges two clients through canonical sparse edits, order changes, and det
   expect(updateProject).not.toHaveBeenCalled(); expect(moveProject).not.toHaveBeenCalled(); expect(deleteProject).not.toHaveBeenCalled();
   expect(rpc.watchCatalog).toHaveBeenCalledTimes(2);
 });
+
+// Shell workflow fixtures do not exercise platform presence/badges.
+vi.mock('./nativePresenceTransport', () => ({ nativePresenceTransport: { replace: async () => ({ accepted: true }), sendOnExit: () => true } }));
+vi.mock('./useNativeUnreadBadge', () => ({ useNativeUnreadBadge: vi.fn() }));

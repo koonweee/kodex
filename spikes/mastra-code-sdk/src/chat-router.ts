@@ -1,3 +1,4 @@
+import { validChatPresence, type ChatPresenceSelection } from './chat-presence.js';
 import { validChatInput, type ChatInput } from './chat-input.js';
 import type { ChatPromptResponse, ChatSeenSelection } from './chat-service.js';
 import { eventIterator, os, type as schemaType } from '@orpc/server';
@@ -17,6 +18,7 @@ const only = (value: Record<string, unknown>, keys: string[]) => Object.keys(val
 function objectInput<T extends Record<string, string>>(keys: (keyof T & string)[]) {
   return inputSchema<T>(value => object(value) && only(value, keys) && keys.every(key => string(value[key], key === 'text' ? 100_000 : 256)));
 }
+const presenceInput = inputSchema<ChatPresenceSelection>(validChatPresence);
 const chatInput = objectInput<{ chatId: string }>(['chatId']);
 const uploadInput = inputSchema<{ chatId: string; file: File }>(value => object(value) && only(value, ['chatId', 'file']) && string(value.chatId) && value.file instanceof File);
 const pinInput = inputSchema<{ chatId: string; pinned: boolean; beforeChatId?: string | null }>(value => object(value) && only(value, ['chatId', 'pinned', 'beforeChatId']) && string(value.chatId) && typeof value.pinned === 'boolean' && (!('beforeChatId' in value) || value.pinned && (value.beforeChatId === null || string(value.beforeChatId))));
@@ -66,6 +68,8 @@ export function createChatRouter(service: ChatService) {
     getAccountUsage: os.handler(({ signal }) => service.getAccountUsage(signal)),
     watchAccount: os.output(eventIterator(schemaType<AccountSnapshot>())).handler(({ signal }) => service.watchAccount(signal)),
     listChats: os.handler(() => service.listChats()),
+    getUnreadBadge: os.handler(({ signal }) => service.getUnreadBadge(signal)),
+    replaceChatPresence: os.input(presenceInput).handler(({ input }) => service.replaceChatPresence(input)),
     markChatSeen: os.input(seenInput).handler(({ input }) => service.markChatSeen(input)),
     readChatRoute: os.input(chatInput).handler(({ input }) => service.readChatRoute(input)),
     listSubagents: os.input(historyInput).handler(({ input, signal }) => service.listSubagents(input, signal)),

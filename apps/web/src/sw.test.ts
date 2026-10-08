@@ -6,6 +6,7 @@ afterEach(() => {
   vi.resetModules();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   Object.defineProperty(globalThis, "self", { configurable: true, value: originalSelf });
 });
 
@@ -98,6 +99,36 @@ describe("service worker push handling", () => {
     await Promise.all(pending);
     expect(setAppBadge).not.toHaveBeenCalled();
     expect(showNotification).toHaveBeenCalledWith("Answer", expect.any(Object));
+  });
+
+  it.each(["unknown", "failure", "zero"] as const)("uses native HTTP badge authority and keeps Push independent of %s inventory", async outcome => {
+    const nativeBadge = outcome === "failure" ? vi.fn().mockRejectedValue(new Error("Unavailable")) : vi.fn().mockResolvedValue({ epoch: "native", revision: 1, count: outcome === "zero" ? 0 : null });
+    const fetchBadge = vi.fn();
+    const { listeners, setAppBadge, showNotification } = await installServiceWorker({ backend: "mastra", nativeBadge, fetchBadge });
+    const pending: Array<Promise<unknown>> = [];
+    listeners.get("push")?.({ data: { json: () => ({ kind: "unreadAgentMessage", title: "Native answer", badgeCount: 999 }) }, waitUntil: (promise: Promise<unknown>) => pending.push(promise) });
+    await Promise.all(pending);
+    expect(nativeBadge).toHaveBeenCalledWith(undefined, { signal: expect.any(AbortSignal) });
+    expect(fetchBadge).not.toHaveBeenCalled();
+    if (outcome === "zero") expect(setAppBadge).toHaveBeenCalledWith(0);
+    else expect(setAppBadge).not.toHaveBeenCalled();
+    expect(showNotification).toHaveBeenCalledWith("Native answer", expect.any(Object));
+  });
+
+  it("applies the latest native worker badge read and never opens a WebSocket", async () => {
+    let finish!: (value: unknown) => void;
+    const nativeBadge = vi.fn().mockImplementationOnce(() => new Promise(resolve => { finish = resolve; })).mockResolvedValueOnce({ epoch: "native", revision: 2, count: 0 });
+    const websocket = vi.fn(() => { throw new Error("No worker WebSocket"); });
+    vi.stubGlobal("WebSocket", websocket);
+    const { listeners, setAppBadge } = await installServiceWorker({ backend: "mastra", nativeBadge });
+    const pending: Array<Promise<unknown>> = [];
+    const refresh = () => listeners.get("message")?.({ data: { type: "REFRESH_BADGE" }, waitUntil: (promise: Promise<unknown>) => pending.push(promise) });
+    refresh(); refresh(); await pending[1];
+    expect(nativeBadge.mock.calls[0][1].signal.aborted).toBe(true);
+    expect(setAppBadge).toHaveBeenCalledWith(0);
+    finish({ epoch: "native", revision: 10, count: 9 }); await Promise.all(pending);
+    expect(setAppBadge).toHaveBeenCalledOnce();
+    expect(websocket).not.toHaveBeenCalled();
   });
 
   it("shows test notification payloads with a stable route and tag", async () => {
@@ -198,10 +229,14 @@ describe("service worker push handling", () => {
 });
 
 async function installServiceWorker({
+  backend = "",
+  nativeBadge = vi.fn().mockResolvedValue({ epoch: "native", revision: 0, count: 0 }),
   clients = [],
   openWindow = vi.fn().mockResolvedValue(undefined),
   fetchBadge = vi.fn().mockResolvedValue(Response.json({ count: 0, readRevision: 20 })),
 }: {
+  backend?: string;
+  nativeBadge?: ReturnType<typeof vi.fn>;
   fetchBadge?: ReturnType<typeof vi.fn>;
   clients?: Array<{ focus?: () => Promise<unknown> | unknown; navigate?: (url: string) => Promise<unknown> | unknown; url: string }>;
   openWindow?: (url?: string | URL) => Promise<unknown>;
@@ -211,6 +246,8 @@ async function installServiceWorker({
     precacheAndRoute: vi.fn(),
   }));
 
+  vi.stubEnv("VITE_KODEX_BACKEND", backend);
+  vi.doMock("./mastra/nativePresenceBadgeClient", async original => ({ ...await original<typeof import("./mastra/nativePresenceBadgeClient")>(), createNativePresenceBadgeClient: () => ({ getUnreadBadge: nativeBadge }) }));
   vi.stubGlobal("fetch", fetchBadge);
   const listeners = new Map<string, (event: unknown) => void>();
   const showNotification = vi.fn().mockResolvedValue(undefined);

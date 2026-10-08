@@ -154,6 +154,22 @@ describe("useThreadViewPresence", () => {
     expect(body).toEqual(expect.any(Blob));
   });
 
+  it("uses an injected transport for heartbeat, changes and exit cleanup without legacy requests", async () => {
+    const replace = vi.fn().mockResolvedValue({ accepted: true });
+    const sendOnExit = vi.fn().mockReturnValue(true);
+    const transport = { replace, sendOnExit };
+    const view = renderHook(({ threadIds }) => useThreadViewPresence({ enabled: true, heartbeatMs: HEARTBEAT_MS, threadIds, transport }), { initialProps: { threadIds: ["native-b", "native-a", "native-b"] } });
+    await flushEffects();
+    expect(replace).toHaveBeenCalledWith({ clientId: expect.any(String), visibleThreadIds: ["native-a", "native-b"] });
+    expect(fetchMock).not.toHaveBeenCalled();
+    view.rerender({ threadIds: ["native-b"] });
+    await flushEffects();
+    expect(replace).toHaveBeenLastCalledWith({ clientId: expect.any(String), visibleThreadIds: ["native-b"] });
+    act(() => { window.dispatchEvent(new Event("pagehide")); });
+    expect(sendOnExit).toHaveBeenCalledWith({ clientId: expect.any(String), visibleThreadIds: [] });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("falls back to an in-memory client id when sessionStorage is unavailable", async () => {
     Object.defineProperty(window, "sessionStorage", {
       configurable: true,

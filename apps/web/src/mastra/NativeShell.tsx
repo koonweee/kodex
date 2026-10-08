@@ -15,6 +15,9 @@ import { WorkspaceProjectCreateDialog } from '../projects/ProjectCreateDialog';
 import { errorMessageFrom } from '../shared/values';
 import { useNativeHost } from './NativeHostBoundary';
 import { useNativeCatalog } from './useNativeSnapshots';
+import { useThreadViewPresence } from '../threads/useThreadViewPresence';
+import { nativePresenceTransport } from './nativePresenceTransport';
+import { useNativeUnreadBadge } from './useNativeUnreadBadge';
 import { chatListEntry } from './presentation';
 import { NativeArchiveReconciliation } from './NativeArchiveReconciliation';
 import { NativeThreadPane } from './NativeThreadPane';
@@ -42,6 +45,9 @@ export type NativeShellProps = {
 export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange, onThemeChange, workspacePaneStore }: NativeShellProps) {
   const info = useNativeHost();
   const catalog = useNativeCatalog();
+  const [visibleThreadIds, setVisibleThreadIds] = useState<string[]>([]);
+  useThreadViewPresence({ enabled: true, threadIds: visibleThreadIds, transport: nativePresenceTransport });
+  useNativeUnreadBadge(catalog.snapshot);
   const [route, setRoute] = useState(currentKodexRoute);
   // A URL requests a pane once. Workspace focus reports must not seed another
   // pane, especially when persisted focus differs from a tab's deep link.
@@ -120,7 +126,7 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
   }, []);
   return <NativeCatalogProvider snapshot={catalog.snapshot}>
     <WorkspaceProvider liveTransport="external" terminalSessionApi={nativeTerminalApi} paneStore={workspacePaneStore} errorMessage={displayError}
-      isVisible={mainPane === 'thread' && (!singlePane || mobilePanel === 'chat')} onFocusThreadPane={reportWorkspaceFocus}
+      onVisibleThreadIdsChange={setVisibleThreadIds} isVisible={mainPane === 'thread' && (!singlePane || mobilePanel === 'chat')} onFocusThreadPane={reportWorkspaceFocus}
       onShowMobileSidebar={() => setMobilePanel('threads')} onImageOpen={setLightbox}
       onMarkdownOpen={setMarkdownPreview}
       renderThreadPane={pane => <NativeThreadPane pane={pane} draftStore={drafts.current} onError={reportError} />}

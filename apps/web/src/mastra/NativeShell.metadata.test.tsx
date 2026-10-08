@@ -121,3 +121,7 @@ it('archives through the native command and lets canonical inventory remove the 
   await act(async () => source.publish(updated));
   expect(rowTitles(within(document.body))).toEqual(['B']);
 });
+
+// Shell workflow fixtures do not exercise platform presence/badges.
+vi.mock('./nativePresenceTransport', () => ({ nativePresenceTransport: { replace: async () => ({ accepted: true }), sendOnExit: () => true } }));
+vi.mock('./useNativeUnreadBadge', () => ({ useNativeUnreadBadge: vi.fn() }));

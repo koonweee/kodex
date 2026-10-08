@@ -40,3 +40,7 @@ it('routes rename through native RPC and waits for canonical catalog updates', a
   expect(screen.getByLabelText('Saved chat title')).toHaveTextContent('Other client name');
   expect(renameThread).not.toHaveBeenCalled(); expect(rpc.watchCatalog).toHaveBeenCalledOnce();
 });
+
+// Shell workflow fixtures do not exercise platform presence/badges.
+vi.mock('./nativePresenceTransport', () => ({ nativePresenceTransport: { replace: async () => ({ accepted: true }), sendOnExit: () => true } }));
+vi.mock('./useNativeUnreadBadge', () => ({ useNativeUnreadBadge: vi.fn() }));

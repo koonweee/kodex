@@ -2,6 +2,7 @@
 
 import { cleanupOutdatedCaches, precacheAndRoute } from "workbox-precaching";
 
+import { createNativePresenceBadgeClient, validNativeUnreadBadge } from "./mastra/nativePresenceBadgeClient";
 import type { UnreadBadgeResponse } from "./api/client";
 import type { KodexNotificationPayload } from "./notifications/notificationTypes";
 
@@ -89,6 +90,8 @@ async function focusOrOpenKodex(route: string) {
   return self.clients.openWindow(url);
 }
 
+const nativeBadgeClient = import.meta.env.VITE_KODEX_BACKEND === "mastra"
+  ? createNativePresenceBadgeClient(() => new URL("/rpc", self.location.origin).href) : null;
 let badgeRequest: AbortController | null = null;
 
 async function refreshWorkerBadge() {
@@ -96,15 +99,23 @@ async function refreshWorkerBadge() {
   const controller = new AbortController();
   badgeRequest = controller;
   try {
-    const response = await fetch(new URL("/v1/threads/unread-badge", self.location.origin), {
-      signal: controller.signal, cache: "no-store",
-    });
-    if (!response.ok) return;
-    const snapshot = await response.json() as UnreadBadgeResponse;
-    if (controller.signal.aborted || badgeRequest !== controller ||
-      !Number.isSafeInteger(snapshot.count) || snapshot.count < 0 || !Number.isSafeInteger(snapshot.readRevision)) return;
+    let count: number | null;
+    if (nativeBadgeClient) {
+      const snapshot = await nativeBadgeClient.getUnreadBadge(undefined, { signal: controller.signal });
+      if (!validNativeUnreadBadge(snapshot)) return;
+      count = snapshot.count;
+    } else {
+      const response = await fetch(new URL("/v1/threads/unread-badge", self.location.origin), {
+        signal: controller.signal, cache: "no-store",
+      });
+      if (!response.ok) return;
+      const snapshot = await response.json() as UnreadBadgeResponse;
+      if (!Number.isSafeInteger(snapshot.count) || snapshot.count < 0 || !Number.isSafeInteger(snapshot.readRevision)) return;
+      count = snapshot.count;
+    }
+    if (controller.signal.aborted || badgeRequest !== controller || count === null) return;
     const navigator = self.navigator as WorkerNavigator & { setAppBadge?: (count: number) => Promise<void> };
-    await navigator.setAppBadge?.(snapshot.count);
+    await navigator.setAppBadge?.(count);
   } catch {
     // Unknown inventory or a replaced request preserves the badge. Push itself
     // still displays; old payload counts are never an unread authority.

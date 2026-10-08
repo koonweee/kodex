@@ -21,7 +21,7 @@ vi.mock('./useNativeSnapshots', async original => ({ ...await original<typeof im
   snapshot: { epoch: 'catalog', revision: 1, projects: [], archivedChatIds: [], pinnedChatIds: [],
     chats: [{ id: 'native-chat', title: 'Native chat', projectId: null, cwd: '/project', pinned: false, notificationsEnabled: true }] }, error: null, retry: vi.fn(),
 }) }));
-vi.mock('../workspace/WorkspaceProvider', () => ({ WorkspaceProvider: ({ children }: { children: ReactNode }) => children }));
+vi.mock('../workspace/WorkspaceProvider', () => ({ useWorkspace: () => ({ workspace: { panes: [], activePaneId: null }, paneThreadContextsById: {} }), WorkspaceProvider: ({ children }: { children: ReactNode }) => children }));
 vi.mock('../api/client', async original => ({ ...await original<typeof import('../api/client')>(), listAutomations: vi.fn().mockResolvedValue([]), listAutomationRuns: vi.fn(), updateAutomation: vi.fn() }));
 vi.mock('../shell/KodexShellView', () => ({ useNarrowThreadWorkspace: () => false,
   KodexShellView: ({ automationsPaneProps }: ComponentProps<typeof KodexShellView>) => <AutomationsPane {...automationsPaneProps} />,
@@ -63,3 +63,7 @@ it('wires the shared calendar editor and native run history, refilling sparse wr
   expect(screen.getByRole('row', { name: /Canonical calendar name/ })).toBeInTheDocument();
   expect(listAutomations).not.toHaveBeenCalled(); expect(listAutomationRuns).not.toHaveBeenCalled(); expect(updateAutomation).not.toHaveBeenCalled();
 });
+
+// Shell workflow fixtures do not exercise platform presence/badges.
+vi.mock('./nativePresenceTransport', () => ({ nativePresenceTransport: { replace: async () => ({ accepted: true }), sendOnExit: () => true } }));
+vi.mock('./useNativeUnreadBadge', () => ({ useNativeUnreadBadge: vi.fn() }));

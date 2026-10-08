@@ -138,3 +138,7 @@ it('keeps panes on rejected native archive and closes only after explicit archiv
   await waitFor(() => expect(store.getState().panes.map(pane => pane.id)).toEqual(['pane-b']));
   expect(window.location.pathname).toBe('/threads/b');
 });
+
+// Shell workflow fixtures do not exercise platform presence/badges.
+vi.mock('./nativePresenceTransport', () => ({ nativePresenceTransport: { replace: async () => ({ accepted: true }), sendOnExit: () => true } }));
+vi.mock('./useNativeUnreadBadge', () => ({ useNativeUnreadBadge: vi.fn() }));
