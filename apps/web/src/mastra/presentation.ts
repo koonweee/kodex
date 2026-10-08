@@ -1,5 +1,6 @@
 import type { Chat, ChatSnapshot } from './client';
 import { nativeImageFields } from './nativeImages';
+import { nativeFileFields } from './nativeFiles';
 import type { TimelineItem, TimelineRow } from '../timeline/state';
 import type { TimelinePresentation } from '../timeline/TimelineView';
 import type { ThreadListEntry } from '../threads/viewTypes';
@@ -25,12 +26,19 @@ function nativeCommandFields(name: string, args: unknown) {
   // Preserve that output without interpreting prose as a structured exit status.
   return { kind: 'command_execution', command: args.command, commandOutcomeKnown: false };
 }
-export function timelinePresentation(snapshot: ChatSnapshot, isLoadingOlderHistory = false): TimelinePresentation {
-  const current = snapshot.display.currentMessage;
+function nativeToolFields(name: string, args: unknown, result: unknown, failed: boolean) {
+  return nativeImageFields(name, args, result, failed) ?? nativeFileFields(name, args) ?? nativeCommandFields(name, args);
+}
+type PresentationSnapshot = Pick<ChatSnapshot, 'messages' | 'history' | 'revision'> & {
+  display?: Pick<ChatSnapshot['display'], 'currentMessage' | 'isRunning' | 'activeTools'>;
+};
+export function timelinePresentation(snapshot: PresentationSnapshot, isLoadingOlderHistory = false): TimelinePresentation {
+  const current = snapshot.display?.currentMessage;
   const messages = snapshot.messages.map(message => message.id === current?.id ? current : message);
   if (current && !messages.some(message => message.id === current.id)) messages.push(current);
   const items: TimelineItem[] = [];
   const toolIndexes = new Map<string, number>();
+  const savedToolArgs = new Map<string, { name: string; args: unknown }>();
   function append(item: Omit<TimelineItem, 'displayOrder' | 'turnId' | 'debugEvents'>) {
     items.push({ ...item, displayOrder: items.length, turnId: null, debugEvents: [] });
   }
@@ -39,7 +47,7 @@ export function timelinePresentation(snapshot: ChatSnapshot, isLoadingOlderHisto
     const signal = message.content.metadata?.signal;
     const userAuthored = message.role === 'user' || (message.role === 'signal' && typeof signal === 'object' && signal !== null && 'type' in signal && (signal.type === 'user' || signal.type === 'user-message'));
     if (!userAuthored && message.role !== 'assistant') continue;
-    const status = current?.id === message.id && snapshot.display.isRunning ? 'running' : 'completed';
+    const status = current?.id === message.id && snapshot.display?.isRunning ? 'running' : 'completed';
     message.content.parts.forEach((part, index) => {
       const id = `${message.id}:${index}`;
       const timestampMs = new Date(message.createdAt).getTime();
@@ -48,21 +56,25 @@ export function timelinePresentation(snapshot: ChatSnapshot, isLoadingOlderHisto
       else if (part.type === 'tool-invocation') {
         const tool = part.toolInvocation;
         toolIndexes.set(tool.toolCallId, items.length);
+        savedToolArgs.set(tool.toolCallId, { name: tool.toolName, args: tool.args });
         const output = toolResultText(tool.result !== undefined ? tool.result : tool.errorText);
-        append({ id: tool.toolCallId, kind: 'dynamic_tool_call', text: '', status: tool.isError || tool.state === 'output-error' || tool.state === 'output-denied' ? 'failed' : tool.state === 'result' ? 'completed' : tool.state === 'approval-requested' ? 'approval_required' : 'running', toolName: tool.toolName, argsSummary: printable(tool.args), output, resultSummary: output, payload: part, timestampMs, ...nativeCommandFields(tool.toolName, tool.args), ...nativeImageFields(tool.toolName, tool.args, tool.result, Boolean(tool.isError || tool.state === 'output-error' || tool.state === 'output-denied')) });
+        append({ id: tool.toolCallId, kind: 'dynamic_tool_call', text: '', status: tool.isError || tool.state === 'output-error' || tool.state === 'output-denied' ? 'failed' : tool.state === 'result' ? 'completed' : tool.state === 'approval-requested' ? 'approval_required' : 'running', toolName: tool.toolName, argsSummary: printable(tool.args), output, resultSummary: output, payload: part, timestampMs, ...nativeToolFields(tool.toolName, tool.args, tool.result, Boolean(tool.isError || tool.state === 'output-error' || tool.state === 'output-denied')) });
       } else if (part.type === 'error') append({ id, kind: 'assistant_message', text: part.error.message, status: 'failed', payload: part, timestampMs });
     });
   }
-  for (const [id, tool] of snapshot.display.activeTools) {
+  for (const [id, tool] of snapshot.display?.activeTools ?? []) {
     const existing = toolIndexes.get(id);
+    const previous = existing === undefined ? undefined : items[existing];
+    const saved = savedToolArgs.get(id);
+    const args = tool.args === undefined && saved?.name === tool.name ? saved.args : tool.args;
+    const file = nativeFileFields(tool.name, args);
     // Streamed shell text omits native terminal annotations (for example exit
     // codes). Once available, the final native result owns the visible output.
-    const output = tool.result !== undefined ? toolResultText(tool.result) : tool.shellOutput ?? (tool.partialResult !== undefined ? toolResultText(tool.partialResult) : existing === undefined ? '' : items[existing].output ?? '');
-    const previous = existing === undefined ? undefined : items[existing];
-    const image = tool.result === undefined && !tool.isError && tool.status !== 'error' && previous?.kind === 'image_view'
+    const output = tool.result !== undefined ? toolResultText(tool.result) : tool.shellOutput ?? (tool.partialResult !== undefined ? toolResultText(tool.partialResult) : previous?.toolName === tool.name ? previous.output ?? '' : '');
+    const image = tool.name === 'view' && tool.result === undefined && tool.partialResult === undefined && !tool.isError && tool.status !== 'error' && previous?.kind === 'image_view' && (tool.args === undefined || file?.path === previous.path)
       ? { kind: previous.kind, path: previous.path, imageSrc: previous.imageSrc, resultSummary: undefined }
-      : nativeImageFields(tool.name, tool.args, tool.result, Boolean(tool.isError || tool.status === 'error'));
-    const item = { id, kind: 'dynamic_tool_call', text: '', status: tool.isError || tool.status === 'error' ? 'failed' as const : tool.status === 'completed' ? 'completed' as const : 'running' as const, toolName: tool.name, argsSummary: printable(tool.args), output, resultSummary: output, payload: tool, imageSrc: undefined, path: undefined, command: undefined, commandOutcomeKnown: undefined, ...nativeCommandFields(tool.name, tool.args), ...image };
+      : nativeImageFields(tool.name, args, tool.result, Boolean(tool.isError || tool.status === 'error'));
+    const item = { id, kind: 'dynamic_tool_call', text: '', status: tool.isError || tool.status === 'error' ? 'failed' as const : tool.status === 'completed' ? 'completed' as const : 'running' as const, toolName: tool.name, argsSummary: printable(args), output, resultSummary: output, payload: tool, imageSrc: undefined, path: undefined, action: undefined, fileChangeOutcomeKnown: undefined, command: undefined, commandOutcomeKnown: undefined, ...(image ?? file ?? nativeCommandFields(tool.name, args)) };
     if (existing === undefined) append(item);
     else items[existing] = { ...items[existing], ...item };
   }

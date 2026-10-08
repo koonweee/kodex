@@ -129,7 +129,7 @@ function TimelineItemRendererImpl({
   toolbarTimestampMs,
 }: TimelineItemRendererProps) {
   const render = rendererRegistry[item.kind] ?? unknownRenderer;
-  const label = timelineItemLabels[item.kind] ?? "Unsupported item";
+  const label = item.kind === "file_change" && item.fileChangeOutcomeKnown === false ? "File operation" : timelineItemLabels[item.kind] ?? "Unsupported item";
   const isMessage = isTimelineMessage(item.kind);
   const isHeaderlessMarker = item.kind === "context_compaction";
   const showStatus = !isMessage && !isHeaderlessMarker && item.status !== "completed";

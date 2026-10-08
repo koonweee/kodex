@@ -510,3 +510,33 @@ test('native shell output uses main command rendering without an invented succes
     expect(errors).toEqual([]);
   } finally { if (backend) await stopBackend(backend); await rm(root, { recursive: true, force: true }); }
 });
+
+
+test('native file summaries preserve real replacement failures across peers and restart', async ({ context, page }) => {
+  const root = await mkdtemp(join(tmpdir(), 'kodex-file-operation-browser-'));
+  let backend: ChildProcessWithoutNullStreams | undefined;
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const verify = async (tab: Page) => {
+    const operations = pane(tab).locator('.kodex-file-change-block');
+    await expect(operations).toHaveCount(2);
+    await expect(operations.first()).toContainText('marker.txt');
+    await expect(operations.first()).toContainText('Replaced 1 occurrence in marker.txt');
+    await expect(operations.last()).toContainText('The specified text was not found.');
+    await expect(pane(tab).getByText('Modified', { exact: true })).toHaveCount(0);
+    await expect(pane(tab).getByText(/^[0-9]+ files? changed$/)).toHaveCount(0);
+    await expect(pane(tab).locator('.kodex-file-change-diff')).toHaveCount(0);
+  };
+  try {
+    backend = await startBackend(root); await page.goto('/');
+    await send(page, 'REPLACE_MARKER'); await expect(pane(page).getByText('fixture:REPLACE_MARKER', { exact: true })).toBeVisible();
+    await send(page, 'REPLACE_MISSING'); await expect(pane(page).getByText('fixture:REPLACE_MISSING', { exact: true })).toBeVisible();
+    await verify(page);
+    const peer = await context.newPage(); peer.on('pageerror', error => errors.push(error.message));
+    await peer.goto(page.url()); await verify(peer); await peer.reload(); await verify(peer);
+    await stopBackend(backend, true); backend = await startBackend(root);
+    await peer.reload(); await verify(peer);
+    await peer.screenshot({ path: test.info().outputPath('native-file-summaries.png') });
+    expect(errors).toEqual([]);
+  } finally { if (backend) await stopBackend(backend); await rm(root, { recursive: true, force: true }); }
+});

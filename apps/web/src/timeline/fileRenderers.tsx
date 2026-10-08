@@ -73,6 +73,14 @@ TimelineFileChangesRenderer.displayName = "TimelineFileChangesRenderer";
 
 export function FileChangeBlock({ item }: { item: TimelineItem }) {
   const path = item.path || payloadValue(item.payload, "path");
+  if (item.fileChangeOutcomeKnown === false) {
+    return (
+      <Stack gap={6} className="kodex-file-change-block">
+        <Text size="sm">{fileChangeItemSummary(item)}</Text>
+        {item.output ? <Code block className="kodex-timeline-output">{item.output}</Code> : null}
+      </Stack>
+    );
+  }
   if (item.output && fileChangeActionIsModified(item.action)) {
     return (
       <Suspense fallback={<FileDiffFallback diff={item.output} />}>
@@ -147,8 +155,9 @@ function FileChangeEntrySummary({ entry }: { entry: FileChangeEntry }) {
   );
 }
 
-function fileChangeItemSummary(item: TimelineItem): string {
+export function fileChangeItemSummary(item: TimelineItem): string {
   const path = item.path || payloadValue(item.payload, "path");
+  if (item.fileChangeOutcomeKnown === false) return path ? `${item.action || "File operation"} ${path}` : item.action || "File operation";
   const action = fileChangeActionIsModified(item.action) ? "Modified" : item.action || "Modified";
   return path ? `${action} ${path}` : `${action} files`;
 }

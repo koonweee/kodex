@@ -234,3 +234,11 @@ Public stream observation traces the late DB read to parent continuation on nati
 Native commands now reuse main's command panel with real output and neutral Finished when the SDK lacks a structured process outcome; explicit tool errors remain Failed and app-server Success is unchanged. Reviewed regression29/29, build/trim/typecheck and actual nonzero-command browser3/3 pass. Browser proof covers both clients, reload, backend restart and all three layouts; screenshot inspected. Child-retirement characterization is separately committed as c747751. Full port remains active; no deployment.
 
 Retirement source follow-up: child-specific production ordering is deferred until the host child tools are integrated; current serve does not install them. Public all-session quiescence before cancellation is the narrow future change. No general preparation join or stronger-than-app-server retirement guarantee is imposed. Shell checkpoint afc76c8 leaves a clean tested worktree; file/diff payload audit is next.
+
+### 2026-10-08 — native file summaries accepted
+
+User chooses native summaries instead of custom historical edit-diff capture. Source audit confirms edit tools emit summaries/diagnostics and some normal-return failure/no-op prose, not real patches; modifiedFiles alone cannot prove success. Neutral path-aware operations are being implemented, preserving raw native results. Subagent read-only APIs and reuse of main's viewer are progressing in parallel. No change to the accepted fresh-child steering direction; host tool integration remains a separate slice.
+
+### 2026-10-08 — native file summaries validated
+
+Implemented the user's accepted native-summary presentation through main's shared file renderer. Real native successful edits, normal-return failures/noops and thrown errors retain their actual output; no inferred changed-file counts or historical patches. Native proof1/1 independently rerun within combined5/5, frontend domain146/146, browser file3/3 (combined subagent+file6/6), build/trim/check pass. Root source and screenshot review accepted the scoped change. Shared renderer summaries are extracted to a focused module; activityRenderers is now453lines. Focused45/45 and final post-extraction build/trim pass. Broader file previews/uploads remain open.

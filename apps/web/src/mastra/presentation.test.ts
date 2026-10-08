@@ -16,6 +16,60 @@ function snapshot(): ChatSnapshot {
     ] };
 }
 describe('native chat presentation', () => {
+  it('maps persisted read-only history without requiring active session display state', () => {
+    const value = snapshot();
+    value.messages[1].content.parts = [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'saved', toolName: 'write_file', state: 'result', args: { path: 'notes.txt', content: 'saved' }, result: 'Wrote 5 bytes to notes.txt' } }];
+    const result = timelinePresentation({ messages: value.messages, history: value.history, revision: value.revision });
+    const saved = result.rows.flatMap(row => row.type === 'item' && row.item.id === 'saved' ? [row.item] : []);
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ kind: 'file_change', action: 'Write', path: 'notes.txt', status: 'completed', fileChangeOutcomeKnown: false, output: 'Wrote 5 bytes to notes.txt' });
+    expect(result.hasOlderHistory).toBe(true);
+  });
+  it('converges sparse live file summaries with saved arguments/results and clears fields when the native type changes', () => {
+    const value = snapshot();
+    value.messages[1].content.parts = [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'file', toolName: 'write_file', state: 'result', args: { path: 'notes.txt' }, result: 'Native saved write result' } }];
+    const item = () => timelinePresentation(value).rows.flatMap(row => row.type === 'item' && row.item.id === 'file' ? [row.item] : []);
+    value.display.activeTools.set('file', { name: 'write_file', args: undefined, status: 'completed' });
+    expect(item()).toHaveLength(1);
+    expect(item()[0]).toMatchObject({ kind: 'file_change', action: 'Write', path: 'notes.txt', output: 'Native saved write result', fileChangeOutcomeKnown: false });
+    value.display.activeTools.get('file')!.result = 'Native live refusal';
+    expect(item()[0].output).toBe('Native live refusal');
+    value.display.activeTools.clear();
+    expect(item()[0].output).toBe('Native saved write result');
+    value.display.activeTools.set('file', { name: 'execute_command', args: { command: 'pwd' }, status: 'completed', result: '/project' });
+    expect(item()[0]).toMatchObject({ kind: 'command_execution', command: 'pwd', commandOutcomeKnown: false });
+    expect(item()[0].action).toBeUndefined();
+    expect(item()[0].fileChangeOutcomeKnown).toBeUndefined();
+    expect(item()[0].path).toBeUndefined();
+    value.messages[1].content.parts = [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'file', toolName: 'execute_command', state: 'result', args: { command: 'pwd' }, result: '/project' } }];
+    value.display.activeTools.set('file', { name: 'view', args: { path: 'notes.txt' }, status: 'completed', result: 'Native read content' });
+    expect(item()[0]).toMatchObject({ kind: 'file_change', action: 'Read', path: 'notes.txt' });
+    expect(item()[0].command).toBeUndefined();
+    expect(item()[0].commandOutcomeKnown).toBeUndefined();
+    value.display.activeTools.set('file', { name: 'custom_tool', args: {}, status: 'running' });
+    expect(item()[0].kind).toBe('dynamic_tool_call');
+    expect(item()[0].output).toBe('');
+    expect(item()[0].path).toBeUndefined();
+    expect(item()[0].fileChangeOutcomeKnown).toBeUndefined();
+  });
+  it('replaces saved image presentation with live text file output without keeping stale image fields', () => {
+    const value = snapshot();
+    value.messages[1].content.parts = [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'read', toolName: 'view', state: 'result', args: { path: 'picture.png' }, result: { __workspaceMedia: true, text: 'Saved image', mediaType: 'image/png', data: 'iVBORw0KGgo=' } } }];
+    value.display.activeTools.set('read', { name: 'view', args: { path: 'notes.txt' }, status: 'running', partialResult: 'Native text read' });
+    const item = timelinePresentation(value).rows.flatMap(row => row.type === 'item' && row.item.id === 'read' ? [row.item] : [])[0];
+    expect(item).toMatchObject({ kind: 'file_change', action: 'Read', path: 'notes.txt', output: 'Native text read', fileChangeOutcomeKnown: false });
+    expect(item.imageSrc).toBeUndefined();
+  });
+  it('shows a native replacement failure as a requested file operation with its complete result', () => {
+    const value = snapshot();
+    value.messages[1].content.parts = [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'replace', toolName: 'string_replace_lsp', state: 'result', args: { path: 'README.md', old_string: 'absent', new_string: 'new' }, result: 'String not found in file\nNative diagnostic detail' } }];
+    const item = timelinePresentation(value).rows.flatMap(row => row.type === 'item' && row.item.id === 'replace' ? [row.item] : [])[0];
+    render(createElement(MantineProvider, null, createElement(TimelineItemRenderer, { item })));
+    expect(screen.getByText('Replace README.md')).toBeVisible();
+    expect(screen.getByText(/String not found in file/)).toHaveTextContent('Native diagnostic detail');
+    expect(screen.queryByText(/Modified|files? changed|Success/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/File diff/)).not.toBeInTheDocument();
+  });
   it('uses canonical history availability and the pane loading state', () => {
     const value = snapshot();
     expect(timelinePresentation(value).hasOlderHistory).toBe(true);
@@ -122,7 +176,8 @@ describe('native chat presentation', () => {
       const value = snapshot();
       value.display.activeTools.set('view', { name: 'view', args: { path: 'picture.png' }, status: isError ? 'error' : 'completed', result, isError });
       const item = timelinePresentation(value).rows.flatMap(row => row.type === 'item' && row.item.id === 'view' ? [row.item] : [])[0];
-      expect(item.kind).toBe('dynamic_tool_call');
+      expect(item.kind).toBe('file_change');
+      expect(item.fileChangeOutcomeKnown).toBe(false);
       expect(item.imageSrc).toBeUndefined();
     }
   });
@@ -135,9 +190,9 @@ describe('native chat presentation', () => {
     value.messages[1].content.parts = [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'image', toolName: 'view', state: 'result', args: { path: '/project/picture.png' }, result: { __workspaceMedia: true, text: 'Read image', mediaType: 'image/png', data: 'iVBORw0KGgo=' } } }];
     value.display.activeTools.set('image', { name: 'view', args: { path: '/project/picture.png' }, status: isError ? 'error' : 'completed', result, isError });
     const item = timelinePresentation(value).rows.flatMap(row => row.type === 'item' && row.item.id === 'image' ? [row.item] : [])[0];
-    expect(item.kind).toBe('dynamic_tool_call');
+    expect(item.kind).toBe('file_change');
     expect(item.imageSrc).toBeUndefined();
-    expect(item.path).toBeUndefined();
+    expect(item.path).toBe('/project/picture.png');
     expect(item.status).toBe(isError ? 'failed' : 'completed');
   });
   it('renders native shell output without treating tool completion as command success', () => {

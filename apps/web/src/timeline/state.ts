@@ -50,6 +50,8 @@ export type TimelineItem = {
   command?: string;
   /** False when tool completion does not establish the command exit outcome. */
   commandOutcomeKnown?: boolean;
+  /** False when a file tool reports only its requested operation and native text. */
+  fileChangeOutcomeKnown?: boolean;
   cwd?: string;
   output?: string;
   path?: string;
