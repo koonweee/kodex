@@ -8,6 +8,7 @@ import { errorMessageFrom } from '../shared/values';
 import { TimelineView } from '../timeline/TimelineView';
 import { ThreadActionsMenu } from '../panes/thread/ThreadActionsMenu';
 import { ThreadUnavailablePane } from '../panes/thread/ThreadUnavailablePane';
+import { TimelineLoadingSkeleton } from '../panes/thread/TimelineLoadingSkeleton';
 import { useWorkspace } from '../workspace/WorkspaceProvider';
 import { paneTargetRecord, type WorkspacePane } from '../workspace/paneTypes';
 import { useNativeChat } from './useNativeSnapshots';
@@ -23,13 +24,14 @@ import { NativeSubagentViewer } from './NativeSubagentViewer';
 const submitQuestionReply = ({ threadId, text, clientId }: { threadId: string; text: string; clientId: string }) => mastraClient.replyToQuestion({ chatId: threadId, text, clientId });
 
 export function NativeThreadPane({ pane, draftStore, onError }: { pane: WorkspacePane; draftStore: ComposerDraftStore; onError: (error: unknown) => void }) {
-  const { workspace, errorMessage, setPaneThreadContext, setPaneHeaderActions, updatePane, duplicatePane, onImageOpen, onMarkdownOpen, onShowMobileSidebar, threadActions, showDebugEvents } = useWorkspace();
+  const { workspace, errorMessage, setPaneThreadContext, setPaneHeaderActions, setPaneHeaderAdornment, updatePane, duplicatePane, onImageOpen, onMarkdownOpen, onShowMobileSidebar, threadActions, showDebugEvents } = useWorkspace();
   const target = paneTargetRecord(pane);
   const chatId = target.mode === 'existing' && typeof target.threadId === 'string' ? target.threadId : null;
   const catalog = useNativeCatalogSnapshot();
   const archived = chatId !== null && Boolean(catalog?.archivedChatIds.includes(chatId));
   const { snapshot, error, retry, loadOlderHistory, isLoadingOlderHistory } = useNativeChat(archived ? null : chatId);
   const isUnavailable = chatId !== null && !snapshot && Boolean(error);
+  const isInitialLoading = chatId !== null && !snapshot && !error && !archived;
   const subagents = useNativeSubagents(archived ? null : chatId);
   const { open: subagentsOpen, toggle: toggleSubagents } = subagents;
   const hasSubagents = Boolean(subagents.error || subagents.snapshot?.invocations.length || subagents.snapshot?.forks.length || subagents.snapshot?.children.length || subagents.snapshot?.history.hasOlder);
@@ -40,6 +42,14 @@ export function NativeThreadPane({ pane, draftStore, onError }: { pane: Workspac
     ...(snapshot?.prompts ?? []).map(prompt => ({ prompt })), ...(subagents.snapshot?.childPrompts ?? []),
   ], [snapshot?.prompts, subagents.snapshot?.childPrompts]);
   const [scrollParent, setScrollParent] = useState<HTMLDivElement | null>(null);
+  const [overflowAbove, setOverflowAbove] = useState(false);
+  const [overflowBelow, setOverflowBelow] = useState(false);
+  useEffect(() => { setOverflowAbove(false); setOverflowBelow(false); }, [chatId]);
+  const headerAdornment = useMemo(() => isInitialLoading ? <Loader aria-hidden="true" className="kodex-thread-pane-title-spinner" size={12} /> : null, [isInitialLoading]);
+  useEffect(() => {
+    setPaneHeaderAdornment(pane.id, headerAdornment);
+    return () => setPaneHeaderAdornment(pane.id, null);
+  }, [pane.id, headerAdornment, setPaneHeaderAdornment]);
   const [renameOpen, setRenameOpen] = useState(false);
   const [name, setName] = useState('');
   const [renamePending, setRenamePending] = useState(false);
@@ -104,8 +114,8 @@ export function NativeThreadPane({ pane, draftStore, onError }: { pane: Workspac
       error={renameError} onClose={closeRename} onSubmit={submitRename}
       onChange={value => { setName(value); if (renameError) setRenameError(null); }} />
     {!isUnavailable && <div className="kodex-thread-pane-status">{isActive && errorMessage ? <Alert color="red" role="alert">{errorMessage}</Alert> : null}{subagents.error ? <Alert color="red" role="alert">{subagents.error}</Alert> : null}{error || snapshot?.error ? <Alert color="red" role="alert">{error ?? snapshot?.error}</Alert> : null}</div>}
-    {isUnavailable ? <ThreadUnavailablePane paneId={pane.id} onBrowseThreads={onShowMobileSidebar} /> : <Box className="kodex-thread-content" data-subagent-sidebar={subagentsOpen ? "open" : "closed"}><div className="kodex-thread-scroll-frame"><div className="kodex-thread-pane-scroll kodex-timeline-scroll" ref={setScrollParent}>
-      {chatId && !timeline ? <Loader aria-label="Loading chat" /> : timeline ? <AsyncQuestionReplyProvider key={chatId} threadId={chatId!} enabled={!archived} items={questionItems} submitReply={submitQuestionReply}><TimelineView approvals={[]} imagePreviewUrlsByPath={{}} onApprovalDecision={() => {}} onImageOpen={onImageOpen} onLoadOlderHistory={loadOlderHistory} onMarkdownOpen={onMarkdownOpen} onReady={() => {}} scrollParentElement={scrollParent} showDebug={showDebugEvents} threadId={chatId ?? undefined} timeline={timeline} /></AsyncQuestionReplyProvider> : null}
+    {isUnavailable ? <ThreadUnavailablePane paneId={pane.id} onBrowseThreads={onShowMobileSidebar} /> : <Box className="kodex-thread-content" data-subagent-sidebar={subagentsOpen ? "open" : "closed"}><div className="kodex-thread-scroll-frame" data-overflow-above={overflowAbove ? "true" : undefined} data-overflow-below={overflowBelow ? "true" : undefined}><div className="kodex-thread-pane-scroll kodex-timeline-scroll" ref={setScrollParent}>
+      {isInitialLoading ? <TimelineLoadingSkeleton /> : timeline ? <AsyncQuestionReplyProvider key={chatId} threadId={chatId!} enabled={!archived} items={questionItems} submitReply={submitQuestionReply}><TimelineView approvals={[]} imagePreviewUrlsByPath={{}} onApprovalDecision={() => {}} onImageOpen={onImageOpen} onLoadOlderHistory={loadOlderHistory} onMarkdownOpen={onMarkdownOpen} onOverflowAboveChange={setOverflowAbove} onOverflowBelowChange={setOverflowBelow} onReady={() => {}} scrollParentElement={scrollParent} showDebug={showDebugEvents} threadId={chatId ?? undefined} timeline={timeline} /></AsyncQuestionReplyProvider> : null}
       {chatId && nativePrompts.length ? <NativePromptStack prompts={nativePrompts} onRefresh={() => { retry(); subagents.retry(); }} onRespond={response => mastraClient.respondPrompt({ chatId, ...response })} /> : null}
     </div></div>
       {subagentsOpen && chatId ? <NativeSubagentViewer chatId={chatId} inventory={subagents.snapshot} selectedId={subagents.selectedId} onSelect={subagents.select}

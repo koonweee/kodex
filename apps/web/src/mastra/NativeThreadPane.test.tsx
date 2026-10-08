@@ -28,7 +28,7 @@ vi.mock('./NativeComposer', () => ({ NativeComposer: () => <div>Composer</div> }
 const pane: WorkspacePane = { id: 'pane', kind: 'thread', title: 'Chat title', target: { mode: 'existing', threadId: 'chat' } };
 const context = createContext<Record<string, unknown>>({});
 const stableActions = { onRenameThread: native.rename, onArchiveThread: vi.fn(), onPinThread: vi.fn(), onUnpinThread: vi.fn(), onSetThreadNotificationsEnabled: vi.fn() };
-const stable = { closePane: native.close, errorMessage: null, setPaneThreadContext: vi.fn(), updatePane: vi.fn().mockResolvedValue(undefined), duplicatePane: native.duplicate, onShowMobileSidebar: vi.fn(), onImageOpen: vi.fn(), onMarkdownOpen: vi.fn(), threadActions: stableActions, showDebugEvents: false };
+const stable = { closePane: native.close, errorMessage: null, setPaneThreadContext: vi.fn(), setPaneHeaderAdornment: vi.fn(), updatePane: vi.fn().mockResolvedValue(undefined), duplicatePane: native.duplicate, onShowMobileSidebar: vi.fn(), onImageOpen: vi.fn(), onMarkdownOpen: vi.fn(), threadActions: stableActions, showDebugEvents: false };
 const onError = vi.fn();
 function Harness({ children }: { children?: ReactNode }) {
   const [header, setHeader] = useState<ReactNode>(null);
@@ -54,7 +54,7 @@ it('loads older native history, disables the pending action, and surfaces failur
   await act(async () => view.rerender(<Harness />));
   expect(screen.getByRole('alert')).toHaveTextContent('History unavailable');
   expect(screen.getByRole('button', { name: 'Load older history' })).toBeEnabled();
-  expect(screen.queryByLabelText('Loading chat')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Loading thread timeline')).not.toBeInTheDocument();
   expect(screen.getByText('Composer')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Thread actions' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Browse threads' })).not.toBeInTheDocument();
@@ -67,14 +67,14 @@ it('reuses main unavailable-thread recovery controls after an initial failure an
   native.useWorkspace.mockImplementation(() => useContext(context));
   native.snapshot = null;
   const view = render(<Harness />);
-  expect(screen.getByLabelText('Loading chat')).toBeInTheDocument();
+  expect(screen.getByLabelText('Loading thread timeline')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Browse threads' })).not.toBeInTheDocument();
   native.error = 'Native chat not found';
   native.subagentError = 'Native chat not found';
   await act(async () => view.rerender(<Harness />));
   expect(screen.getByRole('button', { name: 'Browse threads' })).toBeInTheDocument();
   expect(screen.getByText('This thread could not be loaded. It may have been archived, deleted, or unavailable from this gateway.')).toBeInTheDocument();
-  expect(screen.queryByLabelText('Loading chat')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Loading thread timeline')).not.toBeInTheDocument();
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   expect(screen.queryByText('Composer')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Thread actions' })).not.toBeInTheDocument();

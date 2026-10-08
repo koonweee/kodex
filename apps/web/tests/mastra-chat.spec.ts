@@ -389,7 +389,17 @@ test('native history loads older rows independently and retains them after peer 
     await expect(pane(page).getByText('HISTORY_ROW_99', { exact: true })).toBeVisible();
     const second = await context.newPage(); second.on('pageerror', error => errors.push(error.message));
     await second.goto(page.url()); await expect(pane(second).getByText('HISTORY_ROW_99', { exact: true })).toBeVisible();
+    const frame = (tab: Page) => pane(tab).locator('.kodex-thread-scroll-frame');
+    for (const tab of [page, second]) {
+      await expect(frame(tab)).toHaveAttribute('data-overflow-above', 'true');
+      await expect(frame(tab)).not.toHaveAttribute('data-overflow-below', 'true');
+    }
     await scrollTop(page);
+    await expect(frame(page)).not.toHaveAttribute('data-overflow-above', 'true');
+    await expect(frame(page)).toHaveAttribute('data-overflow-below', 'true');
+    await expect(frame(second)).toHaveAttribute('data-overflow-above', 'true');
+    await expect(frame(second)).not.toHaveAttribute('data-overflow-below', 'true');
+    await page.screenshot({ path: test.info().outputPath('native-history-overflow-top.png'), fullPage: true, animations: 'disabled' });
     await pane(page).getByRole('button', { name: 'Load older history', exact: true }).click();
     await expect(pane(page).getByRole('button', { name: 'Loading older history', exact: true })).toHaveCount(0);
     await scrollTop(page);
