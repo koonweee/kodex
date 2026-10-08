@@ -28,7 +28,7 @@ import { NativeQueuePanel } from "../queuedInputs/NativeQueuePanel";
 import type { QueueController } from "../queuedInputs/controller";
 import { useNativeQueue } from "../queuedInputs/useNativeQueue";
 import { useComposerDraftState, type ComposerDraftStore } from "./useComposerDraftState";
-import { useSkillCatalog } from "./useSkillCatalog";
+import { useSkillCatalog, type SkillCatalogState } from "./useSkillCatalog";
 import { AssistantSelectionAction } from "../timeline/AssistantSelectionAction";
 import { useThreadGoal } from "../goals/useThreadGoal";
 import { GoalModal } from "../goals/GoalModal";
@@ -78,6 +78,7 @@ export type ComposerPanelProps = {
   isComposerSubmitting: boolean;
   isSelectedTimelineReady: boolean;
   skillsInvalidationGeneration?: number;
+  skillCatalog?: SkillCatalogState;
   models: ComposerModelChoice[];
   onAttachmentInputChange: (event: ReactChangeEvent<HTMLInputElement>) => void;
   onComposerDragLeave: (event: ReactDragEvent<HTMLElement>) => void;
@@ -129,6 +130,7 @@ export function ComposerPanel({
   isComposerSubmitting,
   isSelectedTimelineReady,
   skillsInvalidationGeneration = 0,
+  skillCatalog: providedSkillCatalog,
   models,
   onAttachmentInputChange,
   onComposerDragLeave,
@@ -200,11 +202,12 @@ export function ComposerPanel({
   const skillPopupOpen = !isComposerControlsDisabled && draftState.skillToken !== null;
   const slashPopupOpen = !isComposerControlsDisabled && draftState.slashToken !== null;
   const triggerPopupOpen = skillPopupOpen || slashPopupOpen;
-  const skillCatalog = useSkillCatalog({
+  const defaultSkillCatalog = useSkillCatalog({
     cwd: composerCwd,
-    enabled: skillPopupOpen,
+    enabled: skillPopupOpen && !providedSkillCatalog,
     invalidationGeneration: skillsInvalidationGeneration,
   });
+  const skillCatalog = providedSkillCatalog ?? defaultSkillCatalog;
   const filteredSkills = useMemo(
     () => filterSkillsForQuery(skillCatalog.skills, draftState.skillToken?.query ?? ""),
     [skillCatalog.skills, draftState.skillToken?.query],

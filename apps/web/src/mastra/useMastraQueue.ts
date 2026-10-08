@@ -6,6 +6,7 @@ import { mastraClient, type ChatSnapshot } from './client';
 type Snapshot = ChatSnapshot['queue'];
 function queueInputView(input: Snapshot['rows'][number]['input']): unknown[] {
   return [{ type: 'text', text: input.text },
+    ...(input.skills ?? []).map(skill => ({ type: 'skill', name: skill.name, path: skill.path })),
     ...(input.images ?? []).map(image => ({ type: 'localImage', path: image.path })),
     ...(input.files ?? []).map(file => ({ type: 'file', path: file.relativePath }))];
 }

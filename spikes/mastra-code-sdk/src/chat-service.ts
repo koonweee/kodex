@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { prepareChatInput, type ChatInput } from './chat-input.js';
 import { uploadChatImage } from './chat-image-uploads.js';
+import { prepareNativeSkills, readNativeSkills } from './chat-skills.js';
 import { readChatFilePreview } from './chat-file-previews.js';
 import { uploadChatFile } from './chat-uploads.js';
 import { readNativePromptViews, respondNativePrompt, type NativePrompt, type PromptResponse } from './chat-prompts.js';
@@ -96,7 +97,7 @@ export function createChatService(options: ChatServiceOptions) {
     session.ensureFollowUpBinding(session.machinery.getAgent(), session.identity.getResourceId(), session.thread.requireId());
     const parentChatId = session.thread.requireId();
     const projection = createSessionProjection(session, (request, signal) => readChatHistory(runtime.controller, { threadId: session.thread.requireId(), resourceId: session.identity.getResourceId() }, request, signal));
-    const queue = createChatQueue(session, { epoch, prepareInput: input => prepareChatInput({ chatId: parentChatId, imageRoot, input }), onChanged: () => {
+    const queue = createChatQueue(session, { epoch, prepareInput: input => prepareChatInput({ chatId: parentChatId, imageRoot, input, prepareSkills: refs => prepareNativeSkills(session, refs) }), onChanged: () => {
       session.emit({ type: 'display_state_changed', displayState: session.displayState.get() });
     } });
     const handle: Handle = { binding, runtime, session, projection, queue, revision: 0, error: null, unsubscribe: () => {}, observers: new AbortController() };
@@ -170,7 +171,7 @@ export function createChatService(options: ChatServiceOptions) {
     try {
       const requestContext = await captureChatFastRequestContext(handle.session);
       assertActive();
-      const prepared = await prepareChatInput({ chatId: handle.session.thread.requireId(), imageRoot, input });
+      const prepared = await prepareChatInput({ chatId: handle.session.thread.requireId(), imageRoot, input, prepareSkills: refs => prepareNativeSkills(handle.session, refs) });
       assertActive();
       const submission = handle.session.sendSignal({ type: 'user', ...prepared,
         ...(clientId !== undefined && { metadata: { ...prepared.metadata, clientId } }),
@@ -211,6 +212,12 @@ export function createChatService(options: ChatServiceOptions) {
     async listModels(input: { chatId?: string; projectId?: string | null }) {
       const runtime = input.chatId ? (await handleFor(input.chatId)).runtime : await projects.runtimeFor(await projects.executionBinding(input.projectId ?? null));
       return settings.listModels(runtime);
+    },
+    async listSkills(input: { chatId?: string; projectId?: string | null }) {
+      assertActive();
+      const binding = input.chatId ? (await projects.findThread(input.chatId)).binding : await projects.executionBinding(input.projectId ?? null);
+      try { return { skills: await readNativeSkills(binding.cwd, options.profile.homeDir) }; }
+      catch { throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Skills could not be read.' }); }
     },
     async listDirectories(input: { path?: string }) { assertActive(); return projects.listDirectories(input); },
     async createProject(input: { createKey: string; path: string }) { const value = await projects.createProject(input); invalidateProjects(); return value; },

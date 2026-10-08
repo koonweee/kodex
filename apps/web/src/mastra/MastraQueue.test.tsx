@@ -172,3 +172,13 @@ it('edits only queued text while preserving attachment identity in the authorita
   await userEvent.click(screen.getByRole('button', { name: 'Save queued message' }));
   await waitFor(() => expect(rpc.editQueued).toHaveBeenCalledWith({ chatId: 'chat', epoch: 'epoch', revision: 1, id: 'row', input: { text: 'Edited with image' } }));
 });
+
+it('preserves selected skill identity in recovery instead of restoring only its display text', async () => {
+  const value = queued(); value.rows[0].status = 'uncertain'; value.nativeCount = 0;
+  value.rows[0].input.skills = [{ name: 'review', path: '/native/skills/review' }];
+  render(wrap(<Panel snapshot={value} />));
+  expect(screen.getByRole('button', { name: 'Restore to composer' })).toBeDisabled();
+  await userEvent.click(screen.getByRole('button', { name: 'Saved input' }));
+  expect(screen.getByLabelText('Saved native input JSON')).toHaveValue(JSON.stringify(value.rows[0].input, null, 2));
+  expect(restore).not.toHaveBeenCalled();
+});

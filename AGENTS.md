@@ -53,6 +53,7 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 - Start the Vite dev server with `cd apps/web && npm run dev`; it proxies `/v1` and `/openapi.json` to `127.0.0.1:8787` unless `VITE_KODEX_API_BASE_URL` is set.
 - Run frontend unit/component tests with `cd apps/web && npm test`.
 - Run frontend Playwright flows with `cd apps/web && npm run test:e2e`.
+- Run native Playwright/Vite browser validation after Vitest finishes, not concurrently against the same frontend dependency cache. Concurrent optimization can invalidate lazy-module URLs with `504 Outdated Optimize Dep` errors.
 - Build frontend assets with `cd apps/web && npm run build`.
 - Check frontend unused files, exports, dependencies, locals, and parameters with `./tools/trim-frontend.sh` from the repo root, or `cd apps/web && npm run trim`.
 - Regenerate frontend OpenAPI types from the checkout’s Rust exporter (no running gateway required): `cd apps/web && npm run generate:api`.

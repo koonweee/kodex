@@ -44,8 +44,8 @@ type UseComposerOrchestrationParams = {
   activeSelectedTurnId: string | null;
   isRunning?: boolean;
   commands?: {
-    send: (threadId: string, input: UserInput[], attachments: TimelineFileAttachment[], images: ImageUpload[]) => Promise<unknown>;
-    queue: (threadId: string, input: UserInput[], attachments: TimelineFileAttachment[], images: ImageUpload[]) => Promise<unknown>;
+    send: (threadId: string, input: UserInput[], attachments: TimelineFileAttachment[], images: ImageUpload[], skillMentions: TimelineSkillMention[]) => Promise<unknown>;
+    queue: (threadId: string, input: UserInput[], attachments: TimelineFileAttachment[], images: ImageUpload[], skillMentions: TimelineSkillMention[]) => Promise<unknown>;
     stop: (threadId: string) => Promise<unknown>;
     compact: (threadId: string) => Promise<unknown>;
     uploads: ComposerUploads;
@@ -206,7 +206,7 @@ export function useComposerOrchestration({
         });
         if (queueRequested) {
           try {
-            if (commands) await commands.queue(selectedThreadId, payload.input, payload.attachments, payload.images);
+            if (commands) await commands.queue(selectedThreadId, payload.input, payload.attachments, payload.images, skillMentions);
             else await createQueuedInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId);
           } finally {
             if (!commands) void refreshQueuedInputs(queryClient, selectedThreadId);
@@ -226,7 +226,7 @@ export function useComposerOrchestration({
           });
         }
         if (commands) {
-          await commands.send(selectedThreadId, payload.input, payload.attachments, payload.images);
+          await commands.send(selectedThreadId, payload.input, payload.attachments, payload.images, skillMentions);
         } else {
           const result = await submitThreadInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId, true);
           if (result.disposition === "queued") {
@@ -276,7 +276,7 @@ export function useComposerOrchestration({
         threadId, text, attachments, skillInputs, skillTextElements,
         updateAttachments, rememberImagePreviewUrls,
       });
-      if (commands) await commands.send(threadId, payload.input, payload.attachments, payload.images);
+      if (commands) await commands.send(threadId, payload.input, payload.attachments, payload.images, skillMentions);
       else await submitThreadInput(threadId, payload.input, payload.attachments, clientUserMessageId);
       onThreadMaterialized(threadId);
       clearPendingAttachments();

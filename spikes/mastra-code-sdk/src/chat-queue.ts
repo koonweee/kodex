@@ -68,6 +68,8 @@ export function createChatQueue(session: NativeSession, options: { epoch: string
     return { text: value.text,
       ...(value.images && { images: value.images.map(image => ({ id: image.id, fileName: image.fileName, mimeType: image.mimeType, sizeBytes: image.sizeBytes, path: image.path })) }),
       ...(value.files && { files: value.files.map(file => ({ id: file.id, fileName: file.fileName, extension: file.extension, relativePath: file.relativePath, absolutePath: typeof file.absolutePath === 'string' ? file.absolutePath : '', mimeType: file.mimeType, sizeBytes: file.sizeBytes })) }),
+      ...(value.skills && { skills: value.skills.map(skill => ({ name: skill.name, path: skill.path })) }),
+      ...(value.skillMentions && { skillMentions: value.skillMentions.map(mention => ({ name: mention.name, path: mention.path, start: mention.start, end: mention.end })) }),
     };
   }
   function find(id: string) { return records.find(record => record.row.id === id); }
@@ -96,7 +98,7 @@ export function createChatQueue(session: NativeSession, options: { epoch: string
   });
   async function prepare(value?: ChatQueueInput): Promise<Prepared> {
     try {
-      if (value && (value.images?.length || value.files?.length) && !options.prepareInput) throw new Error('Attachments require native preparation.');
+      if (value && (value.images?.length || value.files?.length || value.skills?.length) && !options.prepareInput) throw new Error('Attachments and skills require native preparation.');
       const message = value ? structuredClone(options.prepareInput ? await options.prepareInput(structuredClone(value)) : value.text) : '';
       const context = await captureChatFastRequestContext(session);
       const agent = session.machinery.getAgent();
@@ -242,8 +244,12 @@ export function createChatQueue(session: NativeSession, options: { epoch: string
         if (selection.revision !== revision || partial() || !editable(chosen)) return result('conflict');
         const suffix = records.slice(records.indexOf(chosen));
         if (!suffix.every(editable)) return result('conflict');
-        const nextInput = input({ ...structuredClone(chosen.row.input), text: nextText });
-        if (chosen.row.input.text === nextInput.text) return result();
+        if (chosen.row.input.text === nextText) return result();
+        // Keep explicit native skill selection when text changes, as in main's
+        // queue. Original spans cannot describe edited text; do not rebind names.
+        const nextInput = input({ ...structuredClone(chosen.row.input), text: nextText,
+          ...(chosen.row.input.skillMentions !== undefined && { skillMentions: [] }),
+        });
         const prepared = await prepare(nextInput);
         if (selection.revision !== revision || partial()) return result('conflict');
         return replace(suffix, suffix.map(record => ({ record, input: record === chosen ? nextInput : structuredClone(record.row.input), prepared: record === chosen ? prepared : record.prepared! })), selection.revision);

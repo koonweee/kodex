@@ -45,8 +45,8 @@ const promptResponseInput = inputSchema<ChatPromptResponse>(value => {
     && (value.action === 'approved' || value.action === 'rejected') && (value.previewVersion === undefined || string(value.previewVersion, 128)) && (value.feedback === undefined || typeof value.feedback === 'string' && value.feedback.length <= 100_000);
 });
 const questionReplyInput = inputSchema<{ chatId: string; text: string; clientId: string }>(value => object(value) && only(value, ['chatId', 'text', 'clientId']) && string(value.chatId) && string(value.text, 100_000) && string(value.clientId, 4096));
-const messageInput = inputSchema<ChatInput & { chatId: string }>(value => object(value) && only(value, ['chatId', 'text', 'images', 'files']) && string(value.chatId) && validChatInput(value));
-const sendInput = inputSchema<ChatInput & { chatId: string; queueIfPending?: boolean }>(value => object(value) && only(value, ['chatId', 'text', 'images', 'files', 'queueIfPending']) && string(value.chatId) && validChatInput(value) && (!('queueIfPending' in value) || typeof value.queueIfPending === 'boolean'));
+const messageInput = inputSchema<ChatInput & { chatId: string }>(value => object(value) && only(value, ['chatId', 'text', 'images', 'files', 'skills', 'skillMentions']) && string(value.chatId) && validChatInput(value));
+const sendInput = inputSchema<ChatInput & { chatId: string; queueIfPending?: boolean }>(value => object(value) && only(value, ['chatId', 'text', 'images', 'files', 'skills', 'skillMentions', 'queueIfPending']) && string(value.chatId) && validChatInput(value) && (!('queueIfPending' in value) || typeof value.queueIfPending === 'boolean'));
 const queueVersion = (value: Record<string, unknown>) => string(value.chatId) && string(value.epoch) && Number.isSafeInteger(value.revision) && (value.revision as number) >= 0;
 const queuedInput = inputSchema<QueuedSelection>(value => object(value) && only(value, ['chatId', 'epoch', 'revision', 'id']) && queueVersion(value) && string(value.id));
 const queuedEdit = inputSchema<QueuedEdit>(value => object(value) && only(value, ['chatId', 'epoch', 'revision', 'id', 'input']) && queueVersion(value) && string(value.id) && object(value.input) && only(value.input, ['text']) && typeof value.input.text === 'string' && value.input.text.length <= 100_000);
@@ -78,6 +78,7 @@ export function createChatRouter(service: ChatService) {
     watchSubagents: os.input(historyInput).output(eventIterator(schemaType<SubagentList>())).handler(({ input, signal }) => service.watchSubagents(input, signal)),
     openSubagent: os.input(subagentInput).handler(({ input, signal }) => service.openSubagent(input, signal)),
     watchSubagent: os.input(subagentInput).output(eventIterator(schemaType<SubagentSnapshot>())).handler(({ input, signal }) => service.watchSubagent(input, signal)),
+    listSkills: os.input(modelsInput).handler(({ input }) => service.listSkills(input)),
     listModels: os.input(modelsInput).handler(({ input }) => service.listModels(input)),
     listDirectories: os.input(directoryInput).handler(({ input }) => service.listDirectories(input)),
     createProject: os.input(projectCreateInput).handler(({ input }) => service.createProject(input)),

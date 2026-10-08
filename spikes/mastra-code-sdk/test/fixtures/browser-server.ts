@@ -34,11 +34,27 @@ if (process.argv[4] === 'plans') {
   for (const path of planPaths) await writeFile(path, '# Browser review\nInspect **native** evidence.');
   await writeFile(join(root, 'fixture-plan-paths.json'), JSON.stringify(planPaths));
 }
+const browserSkillName = 'browser-review';
+const browserSkillBody = '# Native browser skill\nBROWSER_SKILL_INSTRUCTIONS_KEEP_NATIVE\nPreserve the exact selected skill instructions.';
+const browserSkillActivation = `<skill name="${browserSkillName}">\n${browserSkillBody}\n\n## References\n- references/notes.md\n</skill>`;
+if (process.argv[4] === 'skills') {
+  for (const base of [directoryHome, projectPath]) {
+    const skillPath = join(base, '.agents', 'skills', browserSkillName);
+    await mkdir(join(skillPath, 'references'), { recursive: true });
+    await writeFile(join(skillPath, 'SKILL.md'), `---\nname: ${browserSkillName}\ndescription: Inspect native browser evidence.\n---\n\n${browserSkillBody}\n`);
+    await writeFile(join(skillPath, 'references', 'notes.md'), 'Native browser reference.');
+  }
+}
 const model = await startModelFixture(async request => {
   if (request.model === 'judge') return { text: JSON.stringify({ decision: 'done', reason: 'Browser goal complete' }) };
   if (!request.stream) return { text: 'Browser test chat' };
   const user = lastUserText(request);
   const serialized = JSON.stringify(request.messages);
+  if (process.argv[4] === 'skills' && (user.includes('BROWSER_SKILL_SEND') || user.includes('BROWSER_SKILL_QUEUE_EDITED'))) {
+    const original = user.includes('BROWSER_SKILL_QUEUE_EDITED') ? 'BROWSER_SKILL_QUEUE_EDITED without the token' : 'BROWSER_SKILL_SEND 🧪 $browser-review';
+    if (user !== `${original}\n\n${browserSkillActivation}`) throw new Error('Exact formatted native skill instructions did not reach the provider');
+    return { text: original.startsWith('BROWSER_SKILL_QUEUE_EDITED') ? 'BROWSER_SKILL_QUEUE_INSTRUCTIONS_RECEIVED' : 'BROWSER_SKILL_SEND_INSTRUCTIONS_RECEIVED' };
+  }
   if (process.argv[4] === 'attachments') {
     const latest = request.messages.findLast(message => message.role === 'user');
     const imageUrls = Array.isArray(latest?.content) ? latest.content.flatMap(part =>

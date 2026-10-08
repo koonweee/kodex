@@ -1,3 +1,4 @@
+import { nativeComposerInput } from './nativeComposerInput';
 import { Alert } from '@mantine/core';
 import { ORPCError } from '@orpc/client';
 import { useEffect, useRef } from 'react';
@@ -12,6 +13,7 @@ import { DEFAULT_COMPOSER_SETTINGS } from '../composer/settings';
 import { useNativeComposerSettings } from './useNativeComposerSettings';
 import { useMastraQueue } from './useMastraQueue';
 import { useMastraGoal } from './useMastraGoal';
+import { useNativeSkills } from './useNativeSkills';
 
 export function NativeComposer({ pane, snapshot, ready, isActive, draftStore, onError, onQueueReload }: { pane: WorkspacePane; snapshot: ChatSnapshot | null; ready: boolean; isActive: boolean; draftStore: ComposerDraftStore; onError: (error: unknown) => void; onQueueReload?: () => void }) {
   const catalog = useNativeCatalogSnapshot();
@@ -26,6 +28,8 @@ export function NativeComposer({ pane, snapshot, ready, isActive, draftStore, on
   useEffect(() => { if (createdProject.current !== projectId) { created.current = null; createdProject.current = projectId; } }, [projectId]);
   const validDraftProject = projectId === null || project?.roots.length === 1;
   const canCompose = chatId ? ready : Boolean(catalog) && validDraftProject;
+  const composerCwd = snapshot?.chat.cwd ?? (project?.roots.length === 1 ? project.roots[0] : undefined);
+  const skillCatalog = useNativeSkills({ chatId, projectId, epoch: chatId ? snapshot?.epoch : catalog?.epoch, cwd: composerCwd, enabled: canCompose });
   const settings = useNativeComposerSettings({ chatId, projectId, snapshot, onError,
     modelsEnabled: Boolean(chatId) || Boolean(catalog) && validDraftProject,
     modelScope: chatId ? undefined : JSON.stringify([catalog?.epoch, project?.roots ?? null]),
@@ -51,13 +55,13 @@ export function NativeComposer({ pane, snapshot, ready, isActive, draftStore, on
     onThreadMaterialized: id => { void updatePane(pane.id, { target: { mode: 'existing', threadId: id } }).catch(onError); },
     onThreadTurnStarted: () => {}, onThreadTurnStartFailed: () => {}, onError,
     commands: {
-      send: async (id, input, attachments, images) => {
-        if (input.some(value => !['text', 'localImage'].includes(value.type))) throw new Error('Native skill mentions are not connected yet.');
-        return submitNative(() => mastraClient.send({ chatId: id, queueIfPending: true, text: input.flatMap(value => value.type === 'text' ? [value.text] : []).join('\n'), ...(images.length && { images }), ...(attachments.length && { files: attachments.map(file => ({ ...file, absolutePath: file.absolutePath ?? '', mimeType: file.mimeType ?? null })) }) }));
+      send: async (id, input, attachments, images, mentions) => {
+        const value = nativeComposerInput(input, attachments, images, mentions);
+        return submitNative(() => mastraClient.send({ chatId: id, queueIfPending: true, ...value }));
       },
-      queue: async (id, input, attachments, images) => {
-        if (input.some(value => !['text', 'localImage'].includes(value.type))) throw new Error('Native skill mentions are not connected yet.');
-        return submitNative(() => mastraClient.queue({ chatId: id, text: input.flatMap(value => value.type === 'text' ? [value.text] : []).join('\n'), ...(images.length && { images }), ...(attachments.length && { files: attachments.map(file => ({ ...file, absolutePath: file.absolutePath ?? '', mimeType: file.mimeType ?? null })) }) }));
+      queue: async (id, input, attachments, images, mentions) => {
+        const value = nativeComposerInput(input, attachments, images, mentions);
+        return submitNative(() => mastraClient.queue({ chatId: id, ...value }));
       },
       uploads: {
         images: (chatId, files) => Promise.all(files.map(file => mastraUploadClient.uploadImage({ chatId, file }))),
@@ -77,7 +81,7 @@ export function NativeComposer({ pane, snapshot, ready, isActive, draftStore, on
       composerSettings={settings.settings} composerSettingsDisabled={settings.pending} composerSettingsError={settings.error} composerResetToken={0}
       composerDraftKey={`pane:${pane.id}:${chatId ?? 'draft'}`} composerDraftStore={draftStore}
       onDraftDisposableChange={disposable => { if (!chatId) setPaneDraftDisposable(pane.id, disposable && !created.current); }}
-      composerCwd={snapshot?.chat.cwd ?? (project?.roots.length === 1 ? project.roots[0] : undefined)} currentProjectName={project?.name}
+      composerCwd={composerCwd} currentProjectName={project?.name} skillCatalog={skillCatalog}
       draftProjectSelector={!chatId ? { value: projectId, projects, onChange: id => { void updatePane(pane.id, { target: { mode: 'draft', projectId: id } }).catch(onError); } } : undefined}
       isDraftThreadSelected={!chatId} isDraftComposerTransitioning={false} isComposerDragActive={orchestration.isComposerDragActive}
       isComposerSubmitting={orchestration.isComposerSubmitting} isSelectedTimelineReady={ready} models={settings.models}

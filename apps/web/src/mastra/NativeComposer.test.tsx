@@ -12,7 +12,7 @@ import { NativeCatalogProvider } from './NativeCatalogContext';
 import type { WorkspacePane } from '../workspace/paneTypes';
 import { baseRoutes, mockGateway } from '../test/mvpAppHarness';
 
-const rpc = vi.hoisted(() => ({ listModels: vi.fn(), watchDraftDefaults: vi.fn(), updateChatSettings: vi.fn(), updateGoal: vi.fn(), clearGoal: vi.fn(), createChat: vi.fn(), send: vi.fn(), queue: vi.fn(), stop: vi.fn(), uploadImage: vi.fn(), uploadFile: vi.fn() }));
+const rpc = vi.hoisted(() => ({ listSkills: vi.fn(), listModels: vi.fn(), watchDraftDefaults: vi.fn(), updateChatSettings: vi.fn(), updateGoal: vi.fn(), clearGoal: vi.fn(), createChat: vi.fn(), send: vi.fn(), queue: vi.fn(), stop: vi.fn(), uploadImage: vi.fn(), uploadFile: vi.fn() }));
 const workspace = vi.hoisted(() => ({ updatePane: vi.fn().mockResolvedValue(undefined), setPaneDraftDisposable: vi.fn(), onImageOpen: vi.fn() }));
 vi.mock('./client', () => ({ mastraClient: rpc, mastraUploadClient: rpc }));
 vi.mock('../workspace/WorkspaceProvider', () => ({ useWorkspace: () => workspace }));
@@ -47,6 +47,7 @@ async function pick(trigger: RegExp, submenu: 'Model' | 'Reasoning', item: strin
 function setup() {
   mockGateway(baseRoutes());
   rpc.listModels.mockResolvedValue(models);
+  rpc.listSkills.mockResolvedValue({ skills: [] });
   rpc.send.mockResolvedValue({ accepted: true });
   rpc.createChat.mockResolvedValue({ id: 'created' });
 }
@@ -427,4 +428,16 @@ it('retains a failed file upload and draft without submitting until explicit ret
   await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
   await waitFor(() => expect(rpc.send).toHaveBeenCalledWith({ chatId: 'chat', queueIfPending: true, text: 'Keep this draft', files: [file] }));
   expect(rpc.uploadFile).toHaveBeenCalledTimes(2);
+});
+
+it('uses the native catalog for shared skill selection without legacy skills requests', async () => {
+  setup(); const gateway = mockGateway(baseRoutes());
+  rpc.listSkills.mockResolvedValue({ skills: [{ name: 'native-review', description: 'Review native files', path: '/project/.kodex-mastra-spike/skills/native-review/SKILL.md' }] });
+  renderComposer({ id: 'pane', kind: 'thread', target: { mode: 'existing', threadId: 'chat' } }, snapshot());
+  const composer = screen.getByLabelText('Message composer');
+  await userEvent.type(composer, '$native');
+  expect(await screen.findByRole('option', { name: /native-review/i })).toBeVisible();
+  await userEvent.keyboard('{Enter}'); expect(composer).toHaveValue('$native-review ');
+  expect(rpc.listSkills).toHaveBeenCalledWith({ chatId: 'chat' }, { signal: expect.any(AbortSignal) });
+  expect(gateway.callsFor('GET', '/v1/skills')).toHaveLength(0);
 });

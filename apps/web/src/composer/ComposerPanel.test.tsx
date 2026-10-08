@@ -63,7 +63,7 @@ function renderComposerPanel(
   props: Partial<ComponentProps<typeof ComposerPanel>> = {},
 ) {
   const attachmentInputRef = { current: null } as RefObject<HTMLInputElement | null>;
-  return renderWithQueryProvider(
+  const element = (props: Partial<ComponentProps<typeof ComposerPanel>>) => (
     <MantineProvider>
       <ComposerPanel
         activeSelectedTurnId={null}
@@ -95,13 +95,39 @@ function renderComposerPanel(
         selectedThreadPresent
         {...props}
       />
-    </MantineProvider>,
+    </MantineProvider>
   );
+  const view = renderWithQueryProvider(element(props));
+  return { ...view, rerenderProps: (props: Partial<ComponentProps<typeof ComposerPanel>>) => view.rerender(element(props)) };
 }
 
 describe("ComposerPanel", () => {
   beforeEach(() => {
     vi.mocked(listSkills).mockReset();
+  });
+
+  it("uses a supplied skill catalog without default API reads, including invalidation changes", async () => {
+    mockSkills([skillFixture({ name: "legacy-only" })]);
+    const provided = skillFixture({ name: "native-review", description: "Native review", scope: "repo" });
+    const onSubmit = vi.fn<ComponentProps<typeof ComposerPanel>['onSubmitTurn']>(event => event.preventDefault());
+    const props = { skillCatalog: { skills: [provided], error: null, loading: false }, onSubmitTurn: onSubmit };
+    const view = renderComposerPanel(props);
+    const composer = screen.getByLabelText(/message composer/i);
+    await userEvent.type(composer, "$native");
+    expect(await screen.findByRole("option", { name: /native-review/i })).toBeVisible();
+    expect(screen.queryByRole("option", { name: /legacy-only/i })).not.toBeInTheDocument();
+    expect(listSkills).not.toHaveBeenCalled();
+    view.rerenderProps({ ...props, skillsInvalidationGeneration: 1 });
+    await userEvent.keyboard("{Enter}");
+    expect(composer).toHaveValue("$native-review ");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    expect(onSubmit.mock.calls[0]?.[3]).toEqual([{ type: "skill", name: provided.name, path: provided.path }]);
+    expect(listSkills).not.toHaveBeenCalled();
+    view.rerenderProps({ ...props, skillCatalog: { skills: [], error: "Native skills unavailable", loading: false }, skillsInvalidationGeneration: 2 });
+    await userEvent.clear(composer); await userEvent.type(composer, "$native");
+    expect(await screen.findByText("Native skills unavailable")).toBeVisible();
+    expect(screen.queryByRole("option", { name: /native-review/i })).not.toBeInTheDocument();
+    expect(listSkills).not.toHaveBeenCalled();
   });
 
   it("opens skill autocomplete from $ and submits selected skill inputs", async () => {

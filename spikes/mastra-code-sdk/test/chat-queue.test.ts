@@ -290,3 +290,65 @@ test('ignored untrusted absolute paths cannot inject object-valued private data 
   assert.equal(calls[0]!.files![0]!.absolutePath, '');
   assert.equal(JSON.stringify(result).includes('caller mutation'), false);
 });
+
+const selectedSkill = { name: 'review', path: '/skills/review/SKILL.md' };
+const selectedMention = { ...selectedSkill, start: 3, end: 10 };
+test('queued selected skills are captured scalars; unchanged text keeps mentions and changed text only clears spans', async () => {
+  const calls: ChatInput[] = [];
+  const f = fixture(async value => { calls.push(structuredClone(value)); return { contents: value.text, metadata: { selection: structuredClone(value.skills) } }; });
+  const caller = { text: '请用 $review', skills: [{ ...selectedSkill, secret: { value: 'private' } }], skillMentions: [{ ...selectedMention, secret: { value: 'private' } }] };
+  const pending = f.queue.enqueue(caller);
+  caller.skills[0]!.path = '/caller/mutation'; caller.skillMentions[0]!.start = 0;
+  const queued = await pending;
+  assert.deepEqual(calls[0]!.skills, [selectedSkill]);
+  assert.deepEqual(calls[0]!.skillMentions, [selectedMention]);
+  assert.equal(JSON.stringify(queued).includes('private'), false);
+  const publicInput = queued.snapshot.rows[0]!.input;
+  publicInput.skills![0]!.name = 'snapshot mutation'; publicInput.skillMentions![0]!.end = 0;
+  const unchanged = await f.queue.edit({ id: queued.rowId, input: text('请用 $review'), revision: f.queue.snapshot().revision });
+  assert.deepEqual(unchanged.snapshot.rows[0]!.input.skillMentions, [selectedMention]);
+  assert.equal(calls.length, 1); assert.equal(f.cancellations, 0);
+  const extended = await f.queue.edit({ id: queued.rowId, input: text('请用 $review carefully'), revision: f.queue.snapshot().revision });
+  assert.deepEqual(extended.snapshot.rows[0]!.input.skills, [selectedSkill]);
+  assert.deepEqual(extended.snapshot.rows[0]!.input.skillMentions, [], 'any changed text clears original spans, including a token still at its old offsets');
+  const edited = await f.queue.edit({ id: queued.rowId, input: text('Review without a token'), revision: f.queue.snapshot().revision });
+  assert.equal(edited.outcome, 'applied');
+  assert.deepEqual(edited.snapshot.rows[0]!.input.skills, [selectedSkill]);
+  assert.deepEqual(edited.snapshot.rows[0]!.input.skillMentions, []);
+  assert.deepEqual(calls.at(-1)!.skills, [selectedSkill]);
+  assert.deepEqual(calls.at(-1)!.skillMentions, []);
+  const blanked = await f.queue.edit({ id: queued.rowId, input: text(''), revision: f.queue.snapshot().revision });
+  assert.equal(blanked.outcome, 'applied'); assert.deepEqual(blanked.snapshot.rows[0]!.input.skills, [selectedSkill]);
+  assert.equal(f.cancellations, 3);
+});
+
+test('skill preparation is required and errors leave existing native rows untouched', async () => {
+  const missing = fixture();
+  await assert.rejects(missing.queue.enqueue({ text: '$review', skills: [selectedSkill] }), { message: 'Native queue preparation failed.' });
+  assert.equal(missing.submitted.length, 0);
+  let fail = false;
+  const f = fixture(async value => { if (fail) throw new Error('/private/skill/read-failed'); return value.text; });
+  const queued = await f.queue.enqueue({ text: '$review', skills: [selectedSkill] });
+  const before = f.queue.snapshot(); fail = true;
+  await assert.rejects(f.queue.edit({ id: queued.rowId, input: text('Changed'), revision: before.revision }), { message: 'Native queue preparation failed.' });
+  assert.deepEqual(f.queue.snapshot(), before); assert.equal(f.cancellations, 0); assert.equal(f.submitted.length, 1);
+});
+
+test('skill reorder and steer retain prepared native selection without resolving skills again', async () => {
+  const prepared = { contents: '$review', metadata: { selectedSkill: { ...selectedSkill }, originalText: '$review', skillMentions: [{ ...selectedSkill, start: 0, end: 7 }] } };
+  let reads = 0;
+  const f = fixture(async value => { reads++; return value.skills?.length ? prepared : value.text; });
+  const selected = await f.queue.enqueue({ text: '$review', skills: [selectedSkill], skillMentions: [{ ...selectedSkill, start: 0, end: 7 }] });
+  const sibling = await f.queue.enqueue(text('Sibling'));
+  const captured = structuredClone(f.submitted[0]!.text);
+  prepared.metadata.selectedSkill.path = '/changed/catalog'; prepared.metadata.skillMentions[0]!.end = 1;
+  const reordered = await f.queue.reorder({ ids: [sibling.rowId, selected.rowId], revision: f.queue.snapshot().revision });
+  assert.equal(reordered.outcome, 'applied'); assert.equal(reads, 2);
+  assert.deepEqual(f.submitted.at(-1)!.text, captured);
+  assert.deepEqual(reordered.snapshot.rows[1]!.input.skills, [selectedSkill]);
+  let finish!: () => void; f.steering = new Promise<void>(resolve => { finish = resolve; });
+  const steered = await f.queue.steer({ id: selected.rowId, revision: f.queue.snapshot().revision });
+  assert.equal(steered.outcome, 'applied'); assert.equal(reads, 2);
+  assert.deepEqual(f.steered, [{ type: 'user', ...captured as object }]);
+  finish(); await Promise.resolve(); await Promise.resolve();
+});

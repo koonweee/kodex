@@ -20,3 +20,32 @@ test('file references cannot target another chat or inject a malformed attachmen
     await assert.rejects(prepareChatInput({ chatId: 'chat', imageRoot: '/unused', input: { text: 'Read', files: [{ ...file, relativePath }] } }), { code: 'BAD_REQUEST' });
   }
 });
+
+test('explicit native skills expand model input while owned metadata preserves original display text and bindings', async () => {
+  const selected = { name: 'review', path: '/project/.agents/skills/review' };
+  const mention = { ...selected, start: 4, end: 11 };
+  const result = await prepareChatInput({ chatId: 'chat', imageRoot: '/unused', input: { text: 'Use $review', skills: [selected], skillMentions: [mention], files: [file] },
+    prepareSkills: async refs => { assert.deepEqual(refs, [selected]); return { references: [selected], activation: '<skill>Native formatted instructions</skill>' }; },
+  });
+  assert.match(String(result.contents), /Native formatted instructions/);
+  assert.match(String(result.contents), /kodex-attachments/);
+  assert.deepEqual(result.metadata?.kodexSkillInput, { text: 'Use $review', skills: [selected], mentions: [mention] });
+  assert.ok(result.metadata?.kodexAttachments);
+});
+
+test('skill preparation is required and malformed or unbound display spans reject before submission', async () => {
+  const selected = { name: 'review', path: '/project/.agents/skills/review' };
+  await assert.rejects(prepareChatInput({ chatId: 'chat', imageRoot: '/unused', input: { text: '$review', skills: [selected] } }), { code: 'BAD_REQUEST' });
+  for (const mention of [{ ...selected, start: 0, end: 100 }, { ...selected, start: 0, end: 6 }, { ...selected, start: 0, end: 7, path: '/other' }]) {
+    await assert.rejects(prepareChatInput({ chatId: 'chat', imageRoot: '/unused', input: { text: '$review', skills: [selected], skillMentions: [mention] },
+      prepareSkills: async () => ({ references: [selected], activation: 'native' }) }), { code: 'BAD_REQUEST' });
+  }
+});
+
+
+test('overlapping skill highlights cannot create native metadata that the timeline cannot project', async () => {
+  const selected = { name: 'review', path: '/project/.agents/skills/review' };
+  const mention = { ...selected, start: 0, end: 7 };
+  await assert.rejects(prepareChatInput({ chatId: 'chat', imageRoot: '/unused', input: { text: '$review', skills: [selected], skillMentions: [mention, mention] },
+    prepareSkills: async () => ({ references: [selected], activation: 'native' }) }), { code: 'BAD_REQUEST' });
+});
