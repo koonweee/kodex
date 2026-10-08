@@ -29,6 +29,15 @@
   }
 }
 
+
+/* Match the visible compact workspace header. Sidebar and fullscreen composer
+   use the shell surface, so retain the default there. */
+@media (display-mode: standalone) and (max-width: 900px) {
+  .kodex-shell[data-mobile-panel="chat"]:has(.kodex-workspace-shell[data-single-pane="true"]):not(:has(.kodex-thread-pane[data-workspace-pane-active="true"] .kodex-mobile-composer-expanded)) > .kodex-pwa-safe-area {
+    background: var(--kodex-workspace-header-bg);
+  }
+}
+
 .kodex-pwa-lifecycle {
   position: fixed;
   top: calc(env(safe-area-inset-top, 0px) + 12px);

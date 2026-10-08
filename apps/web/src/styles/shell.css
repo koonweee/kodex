@@ -1,3 +1,7 @@
+.kodex-shell {
+  --kodex-workspace-header-bg: color-mix(in srgb, var(--kodex-bg-panel) 86%, var(--kodex-bg-shell));
+}
+
 .kodex-sidebar {
   border-color: transparent;
   border-inline-end: 0;

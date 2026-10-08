@@ -50,11 +50,14 @@ for (const shape of [
         expect(bounds.width).toBe(shape.width);
         expect(bounds.height).toBeGreaterThan(10);
         expect(bounds.height).toBeGreaterThanOrEqual(shape.inset);
+        const header = page.locator(".kodex-workspace-single-pane-header");
+        await expect(surface).toHaveCSS("background-color", await header.evaluate(el => getComputedStyle(el).backgroundColor));
         const navigation = page.getByRole("button", { name: "Show sidebar", exact: true });
         expect((await navigation.boundingBox())!.y).toBeGreaterThanOrEqual(bounds.height);
         await navigation.tap();
         const sidebar = page.getByRole("navigation", { name: "Workspace", exact: true });
         await expect(sidebar).toBeVisible();
+        await expect(surface).toHaveCSS("background-color", await sidebar.evaluate(el => getComputedStyle(el).backgroundColor));
         for (const button of await sidebar.getByRole("button").all()) {
           if (await button.isVisible()) expect((await button.boundingBox())!.y).toBeGreaterThanOrEqual(bounds.height);
         }
@@ -63,6 +66,7 @@ for (const shape of [
         await textarea.tap();
         const dialog = page.getByRole("dialog", { name: "Compose", exact: true });
         await expect(dialog).toBeVisible();
+        await expect(surface).toHaveCSS("background-color", await dialog.evaluate(el => getComputedStyle(el).backgroundColor));
         expect((await dialog.boundingBox())!.y).toBeGreaterThanOrEqual(bounds.height);
         await textarea.fill("Device header check");
         await expect(textarea).toBeFocused();

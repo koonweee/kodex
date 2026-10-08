@@ -309,7 +309,7 @@
   min-height: 44px;
   border-bottom: 1px solid var(--kodex-border-subtle);
   padding: 4px 8px;
-  background: color-mix(in srgb, var(--kodex-pane-bg) 86%, var(--kodex-bg-shell));
+  background: var(--kodex-workspace-header-bg);
 }
 
 .kodex-workspace-single-pane-sidebar-button {
