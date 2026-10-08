@@ -20,7 +20,7 @@ vi.mock('./useNativeSubagents', async importOriginal => ({
     const toggle = useCallback(() => setOpen(value => !value), []);
     return { snapshot: native.subagents, error: native.subagentError, open, toggle, selectedId: null, select: () => {}, retry: native.retrySubagents, isLoadingOlderHistory: false, loadOlderHistory: () => {} };
   },
-  useNativeFork: () => ({ snapshot: null, error: null, retry: () => {}, isLoadingOlderHistory: false, loadOlderHistory: () => {} }),
+  useNativeSubagentHistory: () => ({ snapshot: null, error: null, retry: () => {}, isLoadingOlderHistory: false, loadOlderHistory: () => {} }),
 }));
 vi.mock('../workspace/WorkspaceProvider', () => ({ useWorkspace: () => native.useWorkspace() }));
 vi.mock('../api/client', () => ({ renameThread: (...args: unknown[]) => native.legacyRename(...args) }));
@@ -201,7 +201,7 @@ it('stops watching only after explicit authoritative archive state arrives', () 
 it('opens main subagent viewer from the pane header and preserves the parent composer', async () => {
   native.useWorkspace.mockImplementation(() => useContext(context));
   native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: null, cwd: '/project', title: 'Parent', name: 'Parent', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
-  native.subagents = { epoch: 'epoch', revision: 1, chatId: 'chat', invocations: [{ id: 'child-call', agentType: 'explore', task: 'Inspect', modelId: null, forked: false, status: 'completed', result: 'Native child findings', activity: null }], forks: [], history: { earliest: null, hasOlder: false } };
+  native.subagents = { epoch: 'epoch', revision: 1, chatId: 'chat', invocations: [{ id: 'child-call', agentType: 'explore', task: 'Inspect', modelId: null, forked: false, status: 'completed', result: 'Native child findings', activity: null }], forks: [], children: [], history: { earliest: null, hasOlder: false } };
   try {
     render(<Harness />);
     fireEvent.click(await screen.findByRole('button', { name: 'Show subagents' }));
@@ -224,4 +224,16 @@ it('keeps the shared error viewer and reload action reachable when initial subag
     fireEvent.click(within(viewer).getByRole('button', { name: 'Reload subagents' }));
     expect(native.retrySubagents).toHaveBeenCalledOnce();
   } finally { native.subagentError = null; }
+});
+
+it('opens the inspector when only fresh delegated children exist', async () => {
+  native.useWorkspace.mockImplementation(() => useContext(context));
+  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: null, cwd: '/project', title: 'Parent', name: 'Parent', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
+  native.subagents = { epoch: 'epoch', revision: 1, chatId: 'chat', invocations: [], forks: [], children: [{ id: 'fresh', title: 'Fresh child', active: false }], history: { earliest: null, hasOlder: false } };
+  try {
+    render(<Harness />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Show subagents' }));
+    expect(await screen.findByRole('complementary', { name: 'Subagent thread viewer' })).toBeVisible();
+    expect(screen.getByText('Composer')).toBeVisible();
+  } finally { native.subagents = null; }
 });

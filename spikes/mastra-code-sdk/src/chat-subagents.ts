@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { readChildRelation } from './child-relation.js';
 import { EventPublisher, ORPCError } from '@orpc/server';
 import type { ActiveSubagentState } from '@mastra/core/agent-controller';
 import { ownsThread, type NativeThread } from './chat-projects.js';
@@ -24,9 +25,10 @@ export interface SubagentList {
   invocations: SubagentInvocation[];
   /** Native fork metadata has no tool-call ID; these remain separate identities. */
   forks: Array<{ id: string; title: string }>;
+  children: Array<{ id: string; title: string; active: boolean }>;
   history: HistoryBoundary;
 }
-export interface SubagentSelection { chatId: string; kind: 'invocation' | 'fork'; id: string; history?: HistoryRequest }
+export interface SubagentSelection { chatId: string; kind: 'invocation' | 'fork' | 'child'; id: string; history?: HistoryRequest }
 export interface SubagentSnapshot {
   epoch: string;
   revision: number;
@@ -35,6 +37,7 @@ export interface SubagentSnapshot {
   id: string;
   invocation: SubagentInvocation | null;
   messages: NativeHistoryMessage[];
+  display?: ReturnType<NativeSession['displayState']['get']>;
   history: HistoryBoundary;
 }
 interface Parent {
@@ -46,12 +49,20 @@ interface Parent {
 const missing = () => new ORPCError('NOT_FOUND', { message: 'Subagent or parent chat not found.' });
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const text = (value: unknown) => typeof value === 'string' ? value : null;
-const isChild = (parent: Parent, child: NativeThread) => child.id !== parent.thread.id
+const isFork = (parent: Parent, child: NativeThread) => child.id !== parent.thread.id
   && child.resourceId === parent.thread.resourceId
   // Native fork clones may omit projectPath; the validated parent/runtime owns
   // their binding. An explicit conflicting child path is never accepted.
   && (child.metadata?.projectPath === undefined || child.metadata.projectPath === parent.binding.cwd)
   && child.metadata?.forkedSubagent === true && child.metadata?.parentThreadId === parent.thread.id;
+
+function isFreshChild(parent: Parent, child: NativeThread) {
+  const relation = readChildRelation(child.metadata);
+  return child.id !== parent.thread.id && child.resourceId !== parent.thread.resourceId
+    && child.metadata?.projectPath === parent.binding.cwd && child.metadata?.forkedSubagent !== true
+    && relation?.parentThreadId === parent.thread.id && relation.parentResourceId === parent.thread.resourceId
+    && relation.parentSessionScope === '';
+}
 
 /** Interpret only the supported native subagent invocation result/argument fields.
  * There is no persisted ordinary-child transcript and no invented call/fork link.
@@ -89,10 +100,46 @@ export function createChatSubagents(options: { resolveParent: (chatId: string) =
   const revisions = new Map<string, number>();
   const revisionOf = (chatId: string) => revisions.get(chatId) ?? 0;
   const publisher = new EventPublisher<Record<string, number>>({ maxBufferedEvents: 1 });
-  options.signal.addEventListener('abort', () => revisions.clear(), { once: true });
+  const installed = new Set<ProjectRuntime>();
+  const runtimeListeners: Array<() => void> = [];
+  const childListeners = new Map<NativeSession, () => void>();
+  function invalidate(chatId: string, publish = true) {
+    const revision = revisionOf(chatId) + 1; revisions.set(chatId, revision);
+    if (publish) publisher.publish(chatId, revision);
+  }
+  function observeChild(runtime: ProjectRuntime, session: NativeSession) {
+    if (childListeners.has(session) || options.signal.aborted) return;
+    const tags = session.getTags(), relation = readChildRelation(tags);
+    if (!relation || relation.parentSessionScope !== '' || tags.projectPath !== runtime.projectPath) return;
+    childListeners.set(session, session.subscribe(event => invalidate(relation.parentThreadId, event.type === 'display_state_changed')));
+    invalidate(relation.parentThreadId);
+  }
+  function observeRuntime(runtime: ProjectRuntime) {
+    if (installed.has(runtime)) return;
+    installed.add(runtime);
+    runtimeListeners.push(runtime.controller.onSessionCreated(session => observeChild(runtime, session)));
+    runtimeListeners.push(runtime.controller.onSessionDeleted(session => {
+      childListeners.get(session)?.(); childListeners.delete(session);
+      const relation = readChildRelation(session.getTags());
+      if (relation) invalidate(relation.parentThreadId);
+    }));
+  }
+  options.signal.addEventListener('abort', () => {
+    for (const off of runtimeListeners) off();
+    for (const off of childListeners.values()) off();
+    childListeners.clear(); installed.clear(); revisions.clear();
+  }, { once: true });
+  async function liveChild(parent: Parent, child: NativeThread) {
+    const session = await parent.runtime.controller.getSessionByResource(child.resourceId);
+    if (!session || session.thread.getId() !== child.id) return undefined;
+    observeChild(parent.runtime, session);
+    return session;
+  }
   async function parentFor(chatId: string, signal?: AbortSignal) {
     signal?.throwIfAborted(); options.signal.throwIfAborted();
     const parent = await options.resolveParent(chatId);
+    signal?.throwIfAborted(); options.signal.throwIfAborted();
+    observeRuntime(parent.runtime);
     if (parent.thread.id !== chatId || !ownsThread(parent.binding, parent.thread)) throw missing();
     if (parent.session && (parent.session.thread.getId() !== chatId || parent.session.identity.getResourceId() !== parent.thread.resourceId)) throw missing();
     signal?.throwIfAborted(); options.signal.throwIfAborted();
@@ -106,13 +153,16 @@ export function createChatSubagents(options: { resolveParent: (chatId: string) =
       const parent = await parentFor(input.chatId, signal);
       const live = liveOf(parent);
       const history = await readChatHistory(parent.runtime.controller, { threadId: parent.thread.id, resourceId: parent.thread.resourceId }, request, signal);
-      const children = await parent.runtime.controller.queryThreads({ resourceId: parent.thread.resourceId,
+      const children = await parent.runtime.controller.queryThreads({
         includeForkedSubagents: true, metadata: { parentThreadId: parent.thread.id } });
+      const fresh = await Promise.all(children.filter(child => isFreshChild(parent, child)).map(async child => ({
+        id: child.id, title: child.title ?? 'Delegated child', active: (await liveChild(parent, child))?.displayState.get().isRunning ?? false,
+      })));
       signal?.throwIfAborted(); options.signal.throwIfAborted();
       // Preserve an older-load boundary across retries rather than expanding twice.
       if (revisionOf(input.chatId) !== startedAt) { request = history.history.earliest ? { earliest: history.history.earliest } : request; continue; }
       return { epoch, revision: startedAt, chatId: input.chatId, invocations: invocations(history.messages, live),
-        forks: children.filter(child => isChild(parent, child)).map(child => ({ id: child.id, title: child.title ?? 'Forked subagent' })), history: history.history };
+        forks: children.filter(child => isFork(parent, child)).map(child => ({ id: child.id, title: child.title ?? 'Forked subagent' })), children: fresh, history: history.history };
     }
   }
   async function open(input: SubagentSelection, signal?: AbortSignal): Promise<SubagentSnapshot> {
@@ -123,17 +173,18 @@ export function createChatSubagents(options: { resolveParent: (chatId: string) =
       return { epoch: inventory.epoch, revision: inventory.revision, chatId: input.chatId, kind: input.kind, id: input.id,
         invocation, messages: [], history: inventory.history };
     }
-    if (input.kind !== 'fork') throw new ORPCError('BAD_REQUEST', { message: 'Invalid subagent kind.' });
+    if (input.kind !== 'fork' && input.kind !== 'child') throw new ORPCError('BAD_REQUEST', { message: 'Invalid subagent kind.' });
     let request = input.history;
     for (;;) {
       const startedAt = revisionOf(input.chatId);
       const parent = await parentFor(input.chatId, signal);
       const child = await parent.runtime.controller.queryThreadById({ threadId: input.id });
-      if (!child || !isChild(parent, child)) throw missing();
+      if (!child || !(input.kind === 'fork' ? isFork(parent, child) : isFreshChild(parent, child))) throw missing();
+      const live = input.kind === 'child' ? await liveChild(parent, child) : undefined;
       const history: ChatHistory = await readChatHistory(parent.runtime.controller, { threadId: child.id, resourceId: child.resourceId }, request, signal);
       signal?.throwIfAborted(); options.signal.throwIfAborted();
       if (revisionOf(input.chatId) !== startedAt) { request = history.history.earliest ? { earliest: history.history.earliest } : request; continue; }
-      return { epoch, revision: startedAt, chatId: input.chatId, kind: input.kind, id: input.id, invocation: null, ...history };
+      return { epoch, revision: startedAt, chatId: input.chatId, kind: input.kind, id: input.id, invocation: null, ...history, ...(live && { display: structuredClone(live.displayState.get()) }) };
     }
   }
   async function* watch<T extends { revision: number; history: HistoryBoundary }>(
@@ -151,10 +202,7 @@ export function createChatSubagents(options: { resolveParent: (chatId: string) =
     } finally { await changes.return(); }
   }
   return {
-    invalidate(chatId: string, publish = true) {
-      const revision = revisionOf(chatId) + 1; revisions.set(chatId, revision);
-      if (publish) publisher.publish(chatId, revision);
-    },
+    invalidate,
     list, open,
     watchList(input: { chatId: string; history?: HistoryRequest }, signal?: AbortSignal) {
       return watch(input.chatId, (history, combined) => list({ ...input, history }, combined), input.history, signal);

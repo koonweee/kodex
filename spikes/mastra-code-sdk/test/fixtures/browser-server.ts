@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { activateProfile, resolveProfile } from '../../src/profile.js';
 import { loadServerConfig } from '../../src/server-config.js';
 import { createProjectRuntime, type ProjectRuntime } from '../../src/runtime.js';
+import { createChildTools } from '../../src/child-tools.js';
 import { createChatService } from '../../src/chat-service.js';
 import { createChatRouter } from '../../src/chat-router.js';
 import { serveRouter } from '../../src/server.js';
@@ -27,6 +28,16 @@ const model = await startModelFixture(request => {
   if (request.model === 'judge') return { text: JSON.stringify({ decision: 'done', reason: 'Browser goal complete' }) };
   if (!request.stream) return { text: 'Browser test chat' };
   const user = lastUserText(request);
+  const serialized = JSON.stringify(request.messages);
+  if (user.includes('BROWSER_FRESH_CHILD')) {
+    if (serialized.includes('BROWSER_TOOL_MARKER')) return { text: 'BROWSER_FRESH_RESULT' };
+    return { toolCalls: [{ name: 'view', arguments: { path: 'marker.txt' }, id: 'fresh-child-view' }] };
+  }
+  if (serialized.includes('BROWSER_DELEGATE')) {
+    if (serialized.includes('BROWSER_FRESH_RESULT')) return { text: 'BROWSER_DELEGATED_PARENT_RESULT' };
+    if (request.messages.some(message => message.role === 'tool')) return { text: 'BROWSER_PARENT_WAITING' };
+    return { toolCalls: [{ name: 'delegate_child', arguments: { task: 'BROWSER_FRESH_CHILD: inspect marker.txt.' }, id: 'fresh-child-delegate' }] };
+  }
   if (user.includes('BROWSER_CHILD_')) {
     const mode = user.includes('FORKED') ? 'FORKED' : 'DEFAULT';
     if (JSON.stringify(request.messages).includes('BROWSER_TOOL_MARKER')) return { text: `BROWSER_CHILD_RESULT_${mode}` };
@@ -57,7 +68,7 @@ const model = await startModelFixture(request => {
 model.holdNext('HOLD_STOP', 'chat');
 model.holdNext('HOLD_RESTART', 'chat');
 await writeFile(profile.settingsPath, JSON.stringify({
-  lsp: false,
+  lsp: false, backgroundTools: { enabled: true },
   models: { subagentModels: { default: 'fixture/chat' }, observerModelOverride: 'fixture/chat', reflectorModelOverride: 'fixture/chat', goalJudgeModel: 'fixture/judge' },
   customProviders: [{ name: 'fixture', url: model.url, apiKey: 'fixture', models: ['chat', 'judge'] }],
   observability: { enabled: false },
@@ -65,7 +76,12 @@ await writeFile(profile.settingsPath, JSON.stringify({
 const runtimes: ProjectRuntime[] = [];
 const service = createChatService({
   profile, directoryHome, ...await loadServerConfig(profile, [projectPath]),
-  runtimeFactory: async options => { const runtime = await createProjectRuntime({ ...options, modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }] }); runtimes.push(runtime); return runtime; },
+  runtimeFactory: async options => {
+    let runtime!: ProjectRuntime;
+    runtime = await createProjectRuntime({ ...options, extraTools: createChildTools({ getRuntime: () => runtime }),
+      modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }] });
+    runtimes.push(runtime); return runtime;
+  },
 });
 if (process.argv[4] === 'history' && !(await service.listChats()).chats.length) {
   const catalog = await service.listChats();

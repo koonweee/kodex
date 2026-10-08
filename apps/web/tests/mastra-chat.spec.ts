@@ -577,3 +577,33 @@ test('native file summaries preserve real replacement failures across peers and 
     expect(errors).toEqual([]);
   } finally { if (backend) await stopBackend(backend); await rm(root, { recursive: true, force: true }); }
 });
+
+test('fresh delegated children use the main read-only viewer across peers and restart', async ({ context, page }) => {
+  const root = await mkdtemp(join(tmpdir(), 'kodex-fresh-children-browser-'));
+  let backend: ChildProcessWithoutNullStreams | undefined;
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const verify = async (tab: Page) => {
+    await tab.getByRole('button', { name: 'Show subagents', exact: true }).click();
+    const viewer = tab.getByRole('complementary', { name: 'Subagent thread viewer' });
+    await expect(viewer).toBeVisible();
+    await expect(viewer.getByText('BROWSER_FRESH_RESULT', { exact: true })).toBeVisible();
+    await expect(viewer.getByText('BROWSER_TOOL_MARKER', { exact: false }).first()).toBeVisible();
+    await expect(viewer.getByText('Read-only', { exact: true })).toBeVisible();
+    await expect(viewer.getByRole('textbox', { name: 'Subagent', exact: true })).toHaveValue(/Delegated child/);
+    await expect(viewer.getByRole('textbox', { name: /message composer/i })).toHaveCount(0);
+  };
+  try {
+    backend = await startBackend(root);
+    await page.goto('/'); await send(page, 'BROWSER_DELEGATE');
+    await expect(pane(page).getByText('BROWSER_DELEGATED_PARENT_RESULT', { exact: true })).toBeVisible();
+    await verify(page);
+    const peer = await context.newPage(); peer.on('pageerror', error => errors.push(error.message));
+    await peer.goto(page.url()); await verify(peer);
+    await peer.reload(); await verify(peer);
+    await stopBackend(backend, true); backend = await startBackend(root);
+    await peer.reload(); await verify(peer);
+    await peer.screenshot({ path: test.info().outputPath('native-fresh-child-viewer.png') });
+    expect(errors).toEqual([]);
+  } finally { if (backend) await stopBackend(backend); await rm(root, { recursive: true, force: true }); }
+});

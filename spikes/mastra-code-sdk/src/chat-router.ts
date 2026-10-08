@@ -47,7 +47,7 @@ const defaultsInput = inputSchema<{ version: string; patch: ChatSettingsPatch }>
 
 const validHistory = (value: unknown) => value === undefined || (object(value) && only(value, ['earliest', 'older']) && (value.earliest === undefined || (typeof value.earliest === 'string' && value.earliest.length <= 32 && Number.isFinite(Date.parse(value.earliest)))) && (value.older === undefined || typeof value.older === 'boolean'));
 const historyInput = inputSchema<{ chatId: string; history?: HistoryRequest }>(value => object(value) && only(value, ['chatId', 'history']) && string(value.chatId) && validHistory(value.history));
-const subagentInput = inputSchema<SubagentSelection>(value => object(value) && only(value, ['chatId', 'kind', 'id', 'history']) && string(value.chatId) && string(value.id) && (value.kind === 'invocation' || value.kind === 'fork') && validHistory(value.history));
+const subagentInput = inputSchema<SubagentSelection>(value => object(value) && only(value, ['chatId', 'kind', 'id', 'history']) && string(value.chatId) && string(value.id) && (value.kind === 'invocation' || value.kind === 'fork' || value.kind === 'child') && validHistory(value.history));
 
 export function createChatRouter(service: ChatService) {
   return {

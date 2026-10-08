@@ -1,7 +1,8 @@
 import { parseArgs } from 'node:util';
 import { activateProfile, resolveProfile } from './profile.js';
 import { requireChatGptAuth } from './auth.js';
-import { createProjectRuntime } from './runtime.js';
+import { createProjectRuntime, type ProjectRuntime } from './runtime.js';
+import { createChildTools } from './child-tools.js';
 import { loadServerConfig } from './server-config.js';
 import { createChatService } from './chat-service.js';
 import { createChatRouter } from './chat-router.js';
@@ -26,10 +27,19 @@ settings.models.observerModelOverride ??= values.model;
 settings.models.reflectorModelOverride ??= values.model;
 settings.models.goalJudgeModel ??= values.model;
 settings.models.goalMaxTurns = Number.MAX_SAFE_INTEGER;
+// Native task workers and completion delivery own fresh child delegation.
+settings.backgroundTools.enabled = true;
 saveSettings(settings, profile.settingsPath);
 const service = createChatService({
   profile, ...config,
-  runtimeFactory: options => createProjectRuntime({ ...options, modes: [{ id: 'build', defaultModelId: values.model, metadata: { default: true } }] }),
+  runtimeFactory: async options => {
+    let runtime!: ProjectRuntime;
+    runtime = await createProjectRuntime({ ...options,
+      extraTools: createChildTools({ getRuntime: () => runtime }),
+      modes: [{ id: 'build', defaultModelId: values.model, metadata: { default: true } }],
+    });
+    return runtime;
+  },
 });
 const server = await serveRouter(createChatRouter(service), port);
 console.log(`Kodex Mastra spike: ${server.url} (localhost only)`);

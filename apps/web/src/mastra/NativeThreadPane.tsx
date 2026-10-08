@@ -24,7 +24,7 @@ export function NativeThreadPane({ pane, draftStore, onError }: { pane: Workspac
   const { snapshot, error, retry, loadOlderHistory, isLoadingOlderHistory } = useNativeChat(archived ? null : chatId);
   const subagents = useNativeSubagents(archived ? null : chatId);
   const { open: subagentsOpen, toggle: toggleSubagents } = subagents;
-  const hasSubagents = Boolean(subagents.error || subagents.snapshot?.invocations.length || subagents.snapshot?.forks.length || subagents.snapshot?.history.hasOlder);
+  const hasSubagents = Boolean(subagents.error || subagents.snapshot?.invocations.length || subagents.snapshot?.forks.length || subagents.snapshot?.children.length || subagents.snapshot?.history.hasOlder);
   const isActive = workspace.activePaneId === pane.id;
   const timeline = useMemo(() => snapshot ? timelinePresentation(snapshot, isLoadingOlderHistory) : null, [snapshot, isLoadingOlderHistory]);
   const [scrollParent, setScrollParent] = useState<HTMLDivElement | null>(null);

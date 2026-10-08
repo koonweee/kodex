@@ -274,3 +274,64 @@ test('native persisted subagent errors remain inspectable without inferring succ
     assert.equal(inspected.invocation?.activity, null);
   }
 });
+
+test('fresh delegated child history is scoped, live across peers, and read-only after restart', { timeout: 30_000 }, async t => {
+  const env = await setup(t, 'fresh-child');
+  let first = env.client(), second = env.client();
+  const parent = await first.createChat({ projectId: 'fresh-child' });
+  const other = await first.createChat({ projectId: 'fresh-child' });
+  const parentThread = await env.runtime.controller.queryThreadById({ threadId: parent.id }); assert.ok(parentThread);
+  const observer = await second.watchSubagents({ chatId: parent.id }, { signal: env.abort.signal });
+  await observer.next();
+  const child = await env.runtime.createSession({ resourceId: 'fresh-inspected-resource', threadId: 'fresh-inspected-thread', tags: {
+    kodexChild: '1', parentThreadId: parent.id, parentResourceId: parentThread.resourceId,
+    parentSessionScope: '', parentTaskId: 'fresh-inspected-task',
+  } });
+  const childId = child.thread.requireId();
+  const discovered = await until(observer, value => value.children.some(row => row.id === childId));
+  assert.equal(discovered.forks.length, 0);
+  // This is a separate native resource, not a context-inheriting fork.
+  const initial = await first.openSubagent({ chatId: parent.id, kind: 'child', id: childId });
+  assert.equal(initial.messages.length, 0);
+  const store = await env.runtime.storage.getStore('memory'); assert.ok(store);
+  const childRow = await env.runtime.controller.queryThreadById({ threadId: childId }); assert.ok(childRow);
+  for (const [suffix, extra] of [
+    ['parent-resource', { parentResourceId: 'unrelated-parent-resource' }],
+    ['path', { projectPath: '/unrelated/project' }],
+    ['scope', { parentSessionScope: 'other-scope' }],
+    ['task', { parentTaskId: '' }],
+    ['version', { kodexChild: 'future' }],
+    ['fork', { forkedSubagent: true }],
+  ] as const) {
+    const id = `invalid-fresh-${suffix}`;
+    await store.saveThread({ thread: { ...childRow, id, resourceId: id, metadata: { ...childRow.metadata, ...extra } } });
+    await assert.rejects(first.openSubagent({ chatId: parent.id, kind: 'child', id }), { code: 'NOT_FOUND' });
+  }
+  assert.deepEqual((await first.listSubagents({ chatId: parent.id })).children.map(row => row.id), [childId]);
+  await assert.rejects(first.openSubagent({ chatId: other.id, kind: 'child', id: childId }), { code: 'NOT_FOUND' });
+  await assert.rejects(first.openSubagent({ chatId: parent.id, kind: 'fork', id: childId }), { code: 'NOT_FOUND' });
+  const watcher = await first.watchSubagent({ chatId: parent.id, kind: 'child', id: childId }, { signal: env.abort.signal });
+  await watcher.next();
+  const gate = { reached: deferred(), release: deferred() }; childGate = gate;
+  const operation = child.sendMessage({ content: 'CHILD_TASK_DEFAULT: inspect evidence.txt' });
+  await gate.reached.promise;
+  const live = await until(watcher, value => JSON.stringify(value.messages).includes('CHILD_FILE_EVIDENCE'));
+  assert.ok(JSON.stringify(live.messages).includes('CHILD_TASK_DEFAULT'));
+  assert.equal(live.display?.isRunning, true);
+  gate.release.resolve(); await operation;
+  const complete = await until(watcher, value => JSON.stringify(value.messages).includes('CHILD_RESULT_DEFAULT'));
+  assert.ok(JSON.stringify(complete.messages).includes('CHILD_FILE_EVIDENCE'));
+  await watcher.return(); await observer.return();
+  await env.reopen(); first = env.client(); second = env.client();
+  const requestCount = fixture.requests.length;
+  await first.listSubagents({ chatId: parent.id });
+  assert.equal(await env.runtime.controller.getSessionByResource(parentThread.resourceId), undefined);
+  assert.equal(await env.runtime.controller.getSessionByResource('fresh-inspected-resource'), undefined);
+  let activations = 0;
+  const off = env.runtime.controller.onSessionCreated(() => { activations++; }); t.after(off);
+  const saved = await second.openSubagent({ chatId: parent.id, kind: 'child', id: childId });
+  assert.ok(JSON.stringify(saved.messages).includes('CHILD_RESULT_DEFAULT'));
+  assert.equal(saved.display, undefined);
+  assert.equal(activations, 0);
+  assert.equal(fixture.requests.length, requestCount);
+});
