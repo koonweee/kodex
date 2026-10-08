@@ -123,6 +123,7 @@ export function SidebarSectionDisclosureRow({
 export function SidebarActionDisclosureRow({
   className,
   collapsed,
+  disclosureEnabled = true,
   disclosureLabel,
   label,
   leadingIcon,
@@ -133,6 +134,7 @@ export function SidebarActionDisclosureRow({
 }: {
   className?: string;
   collapsed: boolean;
+  disclosureEnabled?: boolean;
   disclosureLabel: string;
   label: string;
   leadingIcon?: ReactNode;
@@ -141,28 +143,38 @@ export function SidebarActionDisclosureRow({
   rootProps?: SidebarRowFrameProps["rootProps"];
   trailingActions?: SidebarRowAction[];
 }) {
+  const content = (
+    <>
+      <Text component="span" className="kodex-sidebar-row-label" fw={400} size="xs" lineClamp={1}>
+        {label}
+      </Text>
+      {disclosureEnabled ? <DisclosureChevron /> : null}
+    </>
+  );
+  const mainClassNames = ["kodex-sidebar-row-main kodex-sidebar-item-toggle", mainClassName]
+    .filter(Boolean)
+    .join(" ");
   return (
     <SidebarRowFrame
       className={className}
-      collapsed={collapsed}
+      collapsed={disclosureEnabled && collapsed}
       leadingIcon={leadingIcon}
       rootProps={rootProps}
       trailingActions={trailingActions}
     >
-      <button
-        aria-expanded={!collapsed}
-        aria-label={disclosureLabel}
-        className={["kodex-ui-button kodex-sidebar-row-main kodex-sidebar-item-toggle", mainClassName]
-          .filter(Boolean)
-          .join(" ")}
-        onClick={onToggle}
-        type="button"
-      >
-        <Text component="span" className="kodex-sidebar-row-label" fw={400} size="xs" lineClamp={1}>
-          {label}
-        </Text>
-        <DisclosureChevron />
-      </button>
+      {disclosureEnabled ? (
+        <button
+          aria-expanded={!collapsed}
+          aria-label={disclosureLabel}
+          className={`kodex-ui-button ${mainClassNames}`}
+          onClick={onToggle}
+          type="button"
+        >
+          {content}
+        </button>
+      ) : (
+        <span className={mainClassNames}>{content}</span>
+      )}
     </SidebarRowFrame>
   );
 }

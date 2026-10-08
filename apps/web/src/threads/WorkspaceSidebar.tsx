@@ -555,6 +555,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                             const projectCollapsed = collapsedProjectIds.has(project.id);
                             const showAllProjectThreads = expandedThreadProjectIds.has(project.id);
                             const projectThreadsHaveMore = projectThreadHasMoreById[project.id] === true;
+                            const projectHasDisclosure = projectThreads.length > 0 || projectThreadsHaveMore;
                             const projectThreadPaginationState = projectThreadPaginationStateById[project.id] ?? "idle";
                             const displayedProjectThreads = projectMatchesSearch ? projectThreads : visibleProjectThreads;
                             const collapsedProjectThreads = displayedProjectThreads.filter((thread) =>
@@ -582,10 +583,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                                 <SidebarActionDisclosureRow
                                   className="kodex-project-row"
                                   collapsed={projectCollapsed}
+                                  disclosureEnabled={projectHasDisclosure}
                                   disclosureLabel={`${projectCollapsed ? "Expand" : "Collapse"} ${project.name}`}
                                   label={project.name}
                                   leadingIcon={
-                                    projectCollapsed ? (
+                                    projectHasDisclosure && projectCollapsed ? (
                                       <AdaptiveIcon className="kodex-project-folder-icon" data-collapsed="true">
                                         <Folder />
                                       </AdaptiveIcon>
