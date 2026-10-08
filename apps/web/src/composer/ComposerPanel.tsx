@@ -136,6 +136,7 @@ export function ComposerPanel({
 }: ComposerPanelProps) {
   const nativeQueue = useNativeQueue(queueThreadId ?? null);
   const draftState = useComposerDraftState(composerResetToken, composerDraftKey, composerDraftStore);
+  const [annotationTouchOpenRevision, setAnnotationTouchOpenRevision] = useState(0);
   const draftDisposable = draftState.composerText.length === 0 && draftState.annotations.length === 0 &&
     pendingAttachments.length === 0 && !isComposerSubmitting && !isDraftComposerTransitioning;
   useLayoutEffect(() => {
@@ -421,8 +422,11 @@ export function ComposerPanel({
     {goalCommand.error ? <Alert color="red" role="alert">{goalCommand.error}</Alert> : null}
     <AssistantSelectionAction composerShellRef={internalComposerShellRef}
       disabled={isComposerControlsDisabled || !selectedThreadPresent} draftKey={composerDraftKey}
-      onAdd={draftState.addAnnotation} />
-    <ExpandedComposerPanel {...representationProps} />
+      onAdd={(text, pointerType) => {
+        draftState.addAnnotation(text);
+        if (pointerType === "touch") setAnnotationTouchOpenRevision((revision) => revision + 1);
+      }} />
+    <ExpandedComposerPanel {...representationProps} annotationTouchOpenRevision={annotationTouchOpenRevision} />
     {goalThreadId && goalEditorThreadId === goalThreadId ? (
       <GoalModal key={goalThreadId} goal={threadGoal.goal} pending={threadGoal.pending} error={threadGoal.error}
         ready={threadGoal.ready} onReload={threadGoal.reload} onClose={() => setGoalEditorThreadId((current) => current === goalThreadId ? null : current)}

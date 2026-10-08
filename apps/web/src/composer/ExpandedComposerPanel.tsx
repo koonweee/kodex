@@ -1,6 +1,6 @@
 import { Box, Text } from "@mantine/core";
 import { Minimize2 } from "lucide-react";
-import { useCallback, useLayoutEffect, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from "react";
 
 import { usePaneLayout } from "../shared/PaneLayout";
@@ -24,6 +24,7 @@ const EXPANDED_COMPOSER_TEXT = {
 };
 
 type ExpandedComposerPanelProps = ComposerPanelProps & {
+  annotationTouchOpenRevision: number;
   goalControls?: GoalControls;
   queuePanel?: ReactNode;
   queueOnSubmit?: boolean;
@@ -47,6 +48,7 @@ type ExpandedComposerPanelProps = ComposerPanelProps & {
 };
 
 export function ExpandedComposerPanel({
+  annotationTouchOpenRevision,
   attachmentInputRef,
   canCompose,
   canSubmitComposer,
@@ -86,12 +88,18 @@ export function ExpandedComposerPanel({
   const { compact } = usePaneLayout();
   const narrowWorkspace = useNarrowWorkspace();
   const [expansionRequested, setIsExpanded] = useState(false);
+  const handledAnnotationTouchOpenRevision = useRef(0);
   const [focusSessionActive, setFocusSessionActive] = useState(false);
   const [composerShellNode, setLocalComposerShellNode] = useState<HTMLDivElement | null>(null);
   const isExpanded = expansionRequested && narrowWorkspace;
   useLayoutEffect(() => {
     if (!narrowWorkspace) setIsExpanded(false);
   }, [narrowWorkspace]);
+  useLayoutEffect(() => {
+    if (!annotationTouchOpenRevision || handledAnnotationTouchOpenRevision.current === annotationTouchOpenRevision) return;
+    handledAnnotationTouchOpenRevision.current = annotationTouchOpenRevision;
+    if (narrowWorkspace) setIsExpanded(true);
+  }, [annotationTouchOpenRevision, narrowWorkspace]);
   const keyboardViewport = useComposerKeyboardViewport(isExpanded || focusSessionActive, composerShellNode);
   const keyboardViewportStyle = {
     "--kodex-mobile-keyboard-inset": `${keyboardViewport.keyboardInset}px`,

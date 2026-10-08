@@ -1,5 +1,6 @@
-// Expansion is initiated by the editable field's own event, never a capability
-// flag or focus signal. A compact pane in a wide workspace remains inline.
+// Expansion is initiated by the touch event that starts editing, either on an
+// editable field or an action that creates one. Capability and focus signals
+// alone never expand it. A compact pane in a wide workspace remains inline.
 export function shouldExpandComposerOnTouch(narrowWorkspace: boolean, pointerType: string) {
   return narrowWorkspace && pointerType === "touch";
 }

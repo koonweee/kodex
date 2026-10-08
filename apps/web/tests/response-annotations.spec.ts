@@ -56,9 +56,10 @@ for (const shape of [
         await comment.press("Backspace");
         await expect(comment).toBeFocused();
         await first.screenshot({ path: test.info().outputPath("annotation-comment-focused.png") });
+        const composeDialog = activePane(first).getByRole("dialog", { name: "Compose", exact: true });
         if (shape.hasTouch) {
           const originalComment = await comment.elementHandle();
-          await expect(activePane(first).getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
+          await expect(composeDialog).toBeVisible();
           await expect(comment).toBeFocused();
           await expect(comment).toHaveValue(firstComment);
           const visualBottom = await first.evaluate(() =>
@@ -76,6 +77,8 @@ for (const shape of [
           await first.screenshot({ path: test.info().outputPath("annotation-keyboard-viewport.png") });
           await setVisualViewport(first, layoutViewportHeight);
           await collapseTouchComposer(first, shape.hasTouch);
+        } else {
+          await expect(composeDialog).toHaveCount(0);
         }
 
         await click(annotationToggle, shape.hasTouch);
@@ -273,6 +276,56 @@ for (const shape of [
     });
   });
 }
+
+test.describe("annotation composer activation policy", () => {
+  test.use({ viewport: { width: 1024, height: 844 }, hasTouch: true, isMobile: true });
+
+  test("uses the opening pointer instead of touch capability or later resize", async ({ context }) => {
+    const fixture = await nativeSettingsFixture(context);
+    fixture.detail.timeline = {
+      ...fixture.detail.timeline,
+      rows: [assistantRow()],
+      turns: [{ id: "turn-answer", status: "completed" }],
+    };
+    try {
+      const page = await fixture.page("activation-policy");
+      await expect(answer(page)).toContainText(firstQuote);
+
+      await selectExcerpt(page, firstQuote, true);
+      await page.getByRole("button", { name: "Add to chat", exact: true }).tap();
+      const firstCommentInput = activePane(page).getByRole("textbox", { name: "Annotation 1 comment", exact: true });
+      const firstCommentNode = await firstCommentInput.elementHandle();
+      await expect(firstCommentInput).toBeFocused();
+      await expect(activePane(page).getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
+
+      await page.setViewportSize({ width: 390, height: 844 });
+      await expect(activePane(page)).toHaveAttribute("data-pane-width", "compact");
+      await expect(activePane(page).getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
+      await firstCommentInput.tap();
+      await expect(activePane(page).getByRole("dialog", { name: "Compose", exact: true })).toBeVisible();
+      expect(await firstCommentNode!.evaluate((element) => element.isConnected && element === document.activeElement)).toBe(true);
+      await collapseTouchComposer(page, true);
+      await activePane(page).getByRole("button", { name: "Remove annotation 1", exact: true }).tap();
+
+      await selectExcerpt(page, secondQuote, true);
+      const keyboardAdd = page.getByRole("button", { name: "Add to chat", exact: true });
+      await keyboardAdd.focus();
+      await keyboardAdd.press("Enter");
+      await expect(activePane(page).getByRole("textbox", { name: "Annotation 1 comment", exact: true })).toBeFocused();
+      await expect(activePane(page).getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
+      await activePane(page).getByRole("button", { name: "Remove annotation 1", exact: true }).tap();
+
+      await selectExcerpt(page, discardedQuote, true);
+      await page.getByRole("button", { name: "Add to chat", exact: true }).click();
+      await expect(activePane(page).getByRole("textbox", { name: "Annotation 1 comment", exact: true })).toBeFocused();
+      await expect(activePane(page).getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
+    } finally {
+      await fixture.close();
+    }
+    expect(fixture.unexpected).toEqual([]);
+    expect(fixture.errors).toEqual([]);
+  });
+});
 
 function activePane(page: Page) { return page.locator('.kodex-thread-pane[data-workspace-pane-active="true"]'); }
 function answer(page: Page) { return activePane(page).locator(".kodex-assistant-markdown"); }

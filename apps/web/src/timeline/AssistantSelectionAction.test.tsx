@@ -70,7 +70,7 @@ describe("AssistantSelectionAction", () => {
       document.dispatchEvent(new Event("selectionchange"));
     });
     fireEvent.click(button);
-    expect(onAdd).toHaveBeenCalledWith("  Selected literal text.  ");
+    expect(onAdd).toHaveBeenCalledWith("  Selected literal text.  ", null);
     expect(screen.queryByRole("button", { name: "Add to chat" })).not.toBeInTheDocument();
   });
 
@@ -106,7 +106,7 @@ describe("AssistantSelectionAction", () => {
     });
     fireEvent.pointerUp(button, { pointerType: "touch" });
     fireEvent.click(button);
-    expect(onAdd).toHaveBeenCalledWith("Second reply");
+    expect(onAdd).toHaveBeenCalledWith("Second reply", "touch");
   });
 
   it("hides when selection is cleared", async () => {
