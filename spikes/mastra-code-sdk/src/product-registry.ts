@@ -130,14 +130,20 @@ export async function openProductRegistry(profile: SpikeProfile, options: { stan
         return { revision, entries };
       });
     },
-    async archiveChat(input: ChatIdentity): Promise<void> {
+    async archiveChat(input: ChatIdentity & { descendantThreadIds?: string[] }): Promise<void> {
+      if (input.descendantThreadIds !== undefined && !Array.isArray(input.descendantThreadIds)) throw invalid();
       await transaction('write', async tx => {
-        const { bindingId, threadId } = await validChatIdentity(tx, input);
-        const current = (await tx.execute({ sql: 'SELECT archived FROM chat_metadata WHERE binding_id = ? AND thread_id = ?', args: [bindingId, threadId] })).rows[0];
-        if (current && Number(current.archived) !== 0) return;
-        await tx.execute({ sql: `INSERT INTO chat_metadata (binding_id, thread_id, archived) VALUES (?, ?, 1)
-          ON CONFLICT (binding_id, thread_id) DO UPDATE SET archived = 1`, args: [bindingId, threadId] });
-        await changed(tx);
+        const identity = await validChatIdentity(tx, input);
+        const threadIds = new Set([identity.threadId, ...(input.descendantThreadIds ?? [])].map(text));
+        let updated = false;
+        for (const threadId of threadIds) {
+          const current = (await tx.execute({ sql: 'SELECT archived FROM chat_metadata WHERE binding_id = ? AND thread_id = ?', args: [identity.bindingId, threadId] })).rows[0];
+          if (current && Number(current.archived) !== 0) continue;
+          await tx.execute({ sql: `INSERT INTO chat_metadata (binding_id, thread_id, archived) VALUES (?, ?, 1)
+            ON CONFLICT (binding_id, thread_id) DO UPDATE SET archived = 1`, args: [identity.bindingId, threadId] });
+          updated = true;
+        }
+        if (updated) await changed(tx);
       });
     },
     async setChatNotifications(input: ChatIdentity & { enabled: boolean }): Promise<void> {

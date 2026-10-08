@@ -76,7 +76,7 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
   const base = { ...prepared.base, mastra };
   const sessions = new Map<string, { resourceId: string; scope?: string; session: NativeSession }>();
   const creatingSessions = new Set<Promise<NativeSession>>();
-  const releasingSessions = new Set<Promise<void>>();
+  const releasingSessions = new Map<string, Promise<void>>();
   let disposed = false;
   let disposal: Promise<void> | undefined;
   const retired = () => new Error('Project runtime is disposed');
@@ -114,6 +114,8 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
       // deleteSession does not join another deletion of the same resource.
       if (disposed) return;
       const key = JSON.stringify([input.resourceId, input.scope ?? null]);
+      const existing = releasingSessions.get(key);
+      if (existing) return existing;
       const tracked = sessions.get(key);
       const releasing = (async () => {
         try { await base.controller.deleteSession(input); }
@@ -123,9 +125,9 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
           if (sessions.get(key) === tracked && await base.controller.getSessionByResource(input.resourceId, input.scope) !== tracked?.session) sessions.delete(key);
         }
       })();
-      releasingSessions.add(releasing);
+      releasingSessions.set(key, releasing);
       try { await releasing; }
-      finally { releasingSessions.delete(releasing); }
+      finally { if (releasingSessions.get(key) === releasing) releasingSessions.delete(key); }
     },
     // Stop every parent wrapper before any child cancellation can wake it. This
     // prevents newly triggered preparation; native APIs provide no general join
@@ -147,7 +149,7 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
         await base.mastra.backgroundTaskManager?.shutdown();
         // A native duplicate delete returns immediately, so retirement must
         // join releases admitted before it took ownership of the bindings.
-        await Promise.allSettled([...releasingSessions]);
+        await Promise.allSettled([...releasingSessions.values()]);
         for (const input of sessions.values()) {
           const memory = await input.session.machinery.getAgent().getMemory({ requestContext: await input.session.machinery.buildRequestContext() });
           if (memory && 'settled' in memory && typeof memory.settled === 'function') await memory.settled();

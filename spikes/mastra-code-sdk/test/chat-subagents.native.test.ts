@@ -335,3 +335,66 @@ test('fresh delegated child history is scoped, live across peers, and read-only 
   assert.equal(activations, 0);
   assert.equal(fixture.requests.length, requestCount);
 });
+
+
+test('root observers inspect transitive native fork and fresh history without activation', { timeout: 30_000 }, async t => {
+  const env = await setup(t, 'nested-history');
+  let first = env.client(), second = env.client();
+  const parent = await first.createChat({ projectId: 'nested-history' });
+  const other = await first.createChat({ projectId: 'nested-history' });
+  const rootThread = await env.runtime.controller.queryThreadById({ threadId: parent.id }); assert.ok(rootThread);
+  const store = await env.runtime.storage.getStore('memory'); assert.ok(store);
+  const now = new Date();
+  const freshMetadata = (parentThreadId: string, parentResourceId: string, task: string) => ({
+    kodexChild: '1', parentThreadId, parentResourceId, parentSessionScope: '', parentTaskId: task, projectPath: env.runtime.projectPath,
+  });
+  const rows = [
+    { id: 'nested-fresh', resourceId: 'nested-fresh-resource', metadata: freshMetadata(parent.id, rootThread.resourceId, 'nested-task') },
+    { id: 'nested-fork', resourceId: 'nested-fresh-resource', metadata: { forkedSubagent: true, parentThreadId: 'nested-fresh' } },
+    { id: 'nested-grandchild', resourceId: 'nested-grandchild-resource', metadata: freshMetadata('nested-fork', 'nested-fresh-resource', 'grandchild-task') },
+    { id: 'ordinary-fork', resourceId: rootThread.resourceId, metadata: { parentThreadId: parent.id } },
+    { id: 'invalid-bridge', resourceId: 'wrong-fork-resource', metadata: { forkedSubagent: true, parentThreadId: 'nested-fresh' } },
+    { id: 'invalid-descendant', resourceId: 'invalid-descendant-resource', metadata: freshMetadata('invalid-bridge', 'wrong-fork-resource', 'invalid-task') },
+  ];
+  for (const row of rows) await store.saveThread({ thread: { ...row, title: row.id, createdAt: now, updatedAt: now } });
+  await store.saveMessages({ messages: ['nested-fork', 'nested-grandchild'].map(id => ({ id: `${id}-message`, threadId: id,
+    resourceId: rows.find(row => row.id === id)!.resourceId, role: 'assistant' as const, createdAt: now,
+    content: { format: 2 as const, parts: [{ type: 'text' as const, text: `SAVED_${id}` }] } })) });
+  const requestCount = fixture.requests.length;
+  let activations = 0;
+  const off = env.runtime.controller.onSessionCreated(() => { activations++; }); t.after(off);
+  const inventory = await first.listSubagents({ chatId: parent.id });
+  assert.deepEqual(inventory.forks.map(row => row.id), ['nested-fork']);
+  assert.deepEqual(inventory.children.map(row => row.id).sort(), ['nested-fresh', 'nested-grandchild']);
+  for (const [kind, id] of [['fork', 'nested-fork'], ['child', 'nested-grandchild']] as const) {
+    const saved = await second.openSubagent({ chatId: parent.id, kind, id });
+    assert.ok(JSON.stringify(saved.messages).includes(`SAVED_${id}`));
+    await assert.rejects(first.openSubagent({ chatId: other.id, kind, id }), { code: 'NOT_FOUND' });
+  }
+  for (const id of ['ordinary-fork', 'invalid-bridge', 'invalid-descendant']) {
+    await assert.rejects(first.openSubagent({ chatId: parent.id, kind: id === 'invalid-descendant' ? 'child' : 'fork', id }), { code: 'NOT_FOUND' });
+  }
+  assert.equal(activations, 0, 'transitive inspection never constructs a native Session');
+  assert.equal(fixture.requests.length, requestCount);
+  off();
+  const observer = await second.watchSubagents({ chatId: parent.id }, { signal: env.abort.signal }); await observer.next();
+  const live = await env.runtime.createSession({ threadId: 'nested-new-child', resourceId: 'nested-new-resource',
+    tags: freshMetadata('nested-grandchild', 'nested-grandchild-resource', 'nested-new-task') });
+  const discovered = await until(observer, value => value.children.some(row => row.id === 'nested-new-child'));
+  assert.equal(discovered.children.length, 3, 'new nested child creation invalidates the observed root inventory');
+  const watcher = await first.watchSubagent({ chatId: parent.id, kind: 'child', id: 'nested-new-child' }, { signal: env.abort.signal }); await watcher.next();
+  await store.saveMessages({ messages: [{ id: 'nested-live-message', threadId: 'nested-new-child', resourceId: 'nested-new-resource', role: 'assistant', createdAt: now,
+    content: { format: 2, parts: [{ type: 'text', text: 'NESTED_LIVE_EVIDENCE' }] } }] });
+  live.emit({ type: 'display_state_changed', displayState: live.displayState.get() });
+  const updated = await until(watcher, value => JSON.stringify(value.messages).includes('NESTED_LIVE_EVIDENCE'));
+  assert.ok(updated.display);
+  await watcher.return(); await observer.return();
+  await env.reopen(); first = env.client(); second = env.client();
+  const resumed = await first.listSubagents({ chatId: parent.id });
+  assert.equal(resumed.children.length, 3);
+  const dormant = await second.openSubagent({ chatId: parent.id, kind: 'child', id: 'nested-new-child' });
+  assert.ok(JSON.stringify(dormant.messages).includes('NESTED_LIVE_EVIDENCE'));
+  assert.equal(dormant.display, undefined);
+  assert.equal(await env.runtime.controller.getSessionByResource('nested-new-resource'), undefined);
+  assert.equal(fixture.requests.length, requestCount);
+});

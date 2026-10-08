@@ -280,3 +280,43 @@ for (const rejectNativeRelease of [false, true]) {
     for (const resourceId of ['releasing-child', 'remaining-parent']) assert.equal(await runtime.controller.getSessionByResource(resourceId), undefined);
   });
 }
+
+for (const rejectNativeRelease of [false, true]) {
+  test(`concurrent scoped releases join one ${rejectNativeRelease ? 'failing' : 'successful'} native deletion and allow a later release`, { timeout: 30_000 }, async t => {
+    const name = `joined-release-${rejectNativeRelease}`;
+    const projectPath = join(root, name); await mkdir(projectPath);
+    await writeFile(profile.settingsPath, JSON.stringify({ lsp: false, observability: { enabled: false } }));
+    const runtime = await createProjectRuntime({ profile, projectPath, runtimeRoot: join(root, `${name}-runtime`), subagents: [] });
+    const identity = { resourceId: 'shared-child', scope: 'delegated' };
+    const child = await runtime.createSession({ ...identity, threadId: 'shared-child-thread' });
+    const reached = gate(), release = gate();
+    const failure = new Error('Fixture joined native lock-release failure');
+    const clear = child.thread.clearAndReleaseLock.bind(child.thread);
+    t.mock.method(child.thread, 'clearAndReleaseLock', async () => {
+      reached.resolve(); await release.promise; await clear(); if (rejectNativeRelease) throw failure;
+    });
+    const deleted = t.mock.method(runtime.controller, 'deleteSession');
+    const first = runtime.releaseSession(identity); void first.catch(() => {});
+    let second: Promise<void> | undefined;
+    t.after(async () => { release.resolve(); await Promise.allSettled([first, ...(second ? [second] : [])]); await runtime.dispose(); });
+    await reached.promise;
+    second = runtime.releaseSession(identity);
+    let peerSettled = false;
+    void second.then(() => { peerSettled = true; }, () => { peerSettled = true; });
+    await new Promise<void>(resolve => setImmediate(resolve));
+    const underlyingCallsWhileHeld = deleted.mock.callCount();
+    const peerSettledWhileHeld = peerSettled;
+    release.resolve();
+    const outcomes = await Promise.allSettled([first, second]);
+    assert.equal(underlyingCallsWhileHeld, 1, 'concurrent callers share one admitted native deletion');
+    assert.equal(peerSettledWhileHeld, false, 'the second release waits for native lock release and untracking');
+    assert.deepEqual(outcomes.map(outcome => outcome.status), rejectNativeRelease ? ['rejected', 'rejected'] : ['fulfilled', 'fulfilled']);
+    if (rejectNativeRelease) for (const outcome of outcomes) assert.equal(outcome.status === 'rejected' ? outcome.reason : null, failure, 'both callers receive the same native failure');
+    assert.equal(await runtime.controller.getSessionByResource(identity.resourceId, identity.scope), undefined);
+    // A settled owned release cannot block cleanup of a newly bound replacement.
+    await runtime.createSession({ ...identity, threadId: 'replacement-child-thread' });
+    await runtime.releaseSession(identity);
+    assert.equal(deleted.mock.callCount(), 2, 'later release retries native deletion after either success or failure');
+    assert.equal(await runtime.controller.getSessionByResource(identity.resourceId, identity.scope), undefined);
+  });
+}

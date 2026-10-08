@@ -8,7 +8,7 @@ import { assertProfileActive, type SpikeProfile } from './profile.js';
 import { createAccountService } from './account-service.js';
 import { captureChatFastRequestContext } from './chat-fast.js';
 import { createChatQueue, type ChatQueueInput, type ChatQueueSnapshot, type ChatQueueResult } from './chat-queue.js';
-import { abortNativeChat } from './chat-archive.js';
+import { abortNativeChat, retireChatDescendants } from './chat-archive.js';
 import { createChatLifecycle } from './chat-lifecycle.js';
 import { readChatHistory, type HistoryRequest } from './chat-history.js';
 import { createChatSubagents, type SubagentSelection } from './chat-subagents.js';
@@ -333,7 +333,8 @@ export function createChatService(options: ChatServiceOptions) {
         // Native deletion can clear/drop its Session before rejecting. A retry
         // must consult native registration, never a cleared cached Session.
         if (session) await runtime.releaseSession({ resourceId: thread.resourceId });
-        await projects.archiveChat(binding.id, thread.id);
+        const descendantThreadIds = await retireChatDescendants(runtime, thread, binding.cwd);
+        await projects.archiveChat(binding.id, thread.id, descendantThreadIds);
         invalidateCatalog();
         subagents.invalidate(chatId);
       });

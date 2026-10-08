@@ -218,3 +218,49 @@ test('archive metadata is durable and idempotent while preserving pin and notifi
   assert.deepEqual(await reopened.chatMetadataSnapshot(), archived);
   await assert.rejects(reopened.archiveChat({ ...identity, bindingId: 'missing-binding' }), hasCode('NOT_FOUND'));
 });
+
+test('subtree archive is one durable revision across peers and preserves global pins and preferences', async t => {
+  const { root, open } = await fixture(t); const first = await open(), second = await open();
+  const binding = await first.executionBinding(null);
+  const project = await first.createProject({ createKey: 'other-binding', name: 'Other', roots: [join(root, 'other')] });
+  const otherBinding = await first.executionBinding(project.id);
+  const parent = { bindingId: binding.id, threadId: 'parent' };
+  const child = { bindingId: binding.id, threadId: 'pinned-child' };
+  const peer = { bindingId: binding.id, threadId: 'unrelated-peer' };
+  const foreign = { bindingId: otherBinding.id, threadId: child.threadId };
+  for (const identity of [child, peer, foreign]) await first.setChatPinned({ ...identity, pinned: true });
+  await first.setChatNotifications({ ...child, enabled: false });
+  await first.setChatNotifications({ ...foreign, enabled: false });
+  const before = await second.chatMetadataSnapshot();
+  await first.archiveChat({ ...parent, descendantThreadIds: [child.threadId, 'grandchild', child.threadId, parent.threadId] });
+  const archived = await second.chatMetadataSnapshot();
+  assert.equal(archived.revision, before.revision + 1, 'one transaction advances the revision once for the whole subtree');
+  assert.deepEqual(archived.entries.find(row => row.threadId === parent.threadId && row.bindingId === binding.id), { ...parent, pinPosition: null, notificationsEnabled: true, archived: true });
+  assert.deepEqual(archived.entries.find(row => row.threadId === 'grandchild'), { bindingId: binding.id, threadId: 'grandchild', pinPosition: null, notificationsEnabled: true, archived: true });
+  for (const original of before.entries) assert.deepEqual(archived.entries.find(row => row.threadId === original.threadId && row.bindingId === original.bindingId), { ...original, archived: original.bindingId === child.bindingId && original.threadId === child.threadId });
+  await second.archiveChat({ ...parent, descendantThreadIds: ['grandchild', child.threadId] });
+  assert.deepEqual(await first.chatMetadataSnapshot(), archived, 'repeated subtree archive has no metadata or revision effect');
+  await second.archiveChat({ ...parent, descendantThreadIds: ['later-child'] });
+  const extended = await first.chatMetadataSnapshot();
+  assert.equal(extended.revision, archived.revision + 1, 'already archived parents can still archive newly supplied descendants');
+  assert.equal(extended.entries.find(row => row.threadId === 'later-child')?.archived, true);
+  await first.close(); await second.close();
+  assert.deepEqual(await (await open()).chatMetadataSnapshot(), extended);
+});
+
+test('invalid subtree archive batches leave every flag and the registry revision unchanged', async t => {
+  const { open } = await fixture(t); const first = await open(), second = await open();
+  const binding = await first.executionBinding(null);
+  const parent = { bindingId: binding.id, threadId: 'rollback-parent' };
+  const child = { bindingId: binding.id, threadId: 'rollback-child' };
+  await first.setChatPinned({ ...parent, pinned: true });
+  await first.setChatNotifications({ ...child, enabled: false });
+  const before = await second.chatMetadataSnapshot();
+  for (const invalidId of ['', '   ', 'invalid\0thread', 42]) {
+    await assert.rejects(first.archiveChat({ ...parent, descendantThreadIds: [child.threadId, 'new-descendant', invalidId] as string[] }), hasCode('INVALID_INPUT'));
+    assert.deepEqual(await second.chatMetadataSnapshot(), before, 'invalid tail IDs cannot partially archive the parent or valid preceding descendants');
+  }
+  await assert.rejects(first.archiveChat({ ...parent, descendantThreadIds: 'not-an-array' as unknown as string[] }), hasCode('INVALID_INPUT'));
+  await assert.rejects(first.archiveChat({ ...parent, bindingId: 'missing-binding', descendantThreadIds: [child.threadId] }), hasCode('NOT_FOUND'));
+  assert.deepEqual(await second.chatMetadataSnapshot(), before);
+});

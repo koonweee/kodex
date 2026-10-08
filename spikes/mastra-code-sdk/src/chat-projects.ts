@@ -117,7 +117,7 @@ export function createChatProjects(options: ChatProjectOptions, assertActive: ()
   }
   return {
     runtimeFor, executionBinding, currentBinding, inventory, findThread,
-    async archiveChat(bindingId: string, threadId: string) { await registryCall(store => store.archiveChat({ bindingId, threadId })); },
+    async archiveChat(bindingId: string, threadId: string, descendantThreadIds?: string[]) { await registryCall(store => store.archiveChat({ bindingId, threadId, descendantThreadIds })); },
     async describe(bindingId: string, thread: NativeThread) {
       for (;;) {
         const metadata = await registryCall(store => store.chatMetadataSnapshot());
