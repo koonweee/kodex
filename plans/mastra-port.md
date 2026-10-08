@@ -202,3 +202,7 @@ History checkpoint final: backend157/157, focused frontend94/94, build/trim/type
 ### 2026-10-08 — native subagent inspection capability proved
 
 History checkpoint is `681691f`. New actual-SDK subagent characterization passes2/2 and typecheck, independently rerun/reviewed by root. Ordinary explore runs have fresh context and live activity, persist only their final result in the parent, and have no child transcript after restart. Forked runs retain a full child transcript but inherit parent context/tools/instructions. Public restarted discovery/history reads activate no sessions or models. This is a concrete difference from app-server's full child viewer; product clarification is needed before choosing the viewer behavior. No native default, UI or Core patch changed. Parallel tool-presentation audit and its concrete output/status gaps are recorded in the parity plan for subsequent implementation.
+
+### 2026-10-08 — native tool result visibility
+
+Subagent capability proof committed as `8ab3924`; viewer choice remains unanswered. Continued independent work: native generic tool results now render through main's existing resultSummary field, final shell results retain exit/error text instead of being hidden by streamed output, and native media descriptions avoid base64 prose. Failing regression evidence, final10/10 render tests, build/trim, actual SDK two-tab/reload browser3/3 and independent review all pass. No outcome inferred from native completed status; specialized command/file/image rendering is still work remaining.

@@ -120,7 +120,9 @@ test('existing Kodex UI shares native streaming, queue/stop, tool history and re
     await send(page, 'READ_MARKER');
     for (const tab of [page, second]) await expect(pane(tab).getByText('fixture:READ_MARKER', { exact: true })).toBeVisible();
     await expect(pane(page).getByText('view', { exact: true })).toBeVisible();
+    for (const tab of [page, second]) await expect(pane(tab).getByText(/BROWSER_TOOL_MARKER/)).toBeVisible();
     await second.reload();
+    await expect(pane(second).getByText(/BROWSER_TOOL_MARKER/)).toBeVisible();
     await expect(pane(second).getByText('fixture:READ_MARKER', { exact: true })).toBeVisible();
     await send(page, 'HOLD_RESTART');
     await expect(pane(second).getByText('started:HOLD_RESTART', { exact: true })).toBeVisible();
