@@ -111,13 +111,13 @@ Historical diagnostic reports predate supported runtime affinity; current runtim
 | Projects and execution directories | Kodex SQLite project membership/order; one native controller and Mastra instance per retained immutable execution binding in one Node process |
 | Multiple chats | Distinct native Session/resource identity per chat; observers share it |
 | Queue and Stop | Native `Session.followUp()` and `Session.abort()` |
-| Scheduled prompts | Native `mastra.schedules`, with a small `prepare` hook supplying the target Session context |
+| Scheduled prompts | Native `mastra.schedules` workflow schedules; one dispatch step submits normal guarded Code SDK Session input |
 | Reconnect | oRPC event iterator carrying fresh native display/history snapshots |
 | OAuth, saved credentials and refresh | Native AuthStorage/provider implementation |
 
 `Session.queueMessage()` inherited the current run's abort signal in this SDK version. `followUp()` already supplies an independent signal, so accepted follow-ups can run after Stop without a Kodex queue implementation. Pending follow-ups remain volatile across process restart.
 
-A native schedule's trigger outcome acknowledges delivery/wake; it does not prove an assistant answer completed. The tests check persisted assistant responses separately. The persistent calendar is `mastra.schedules`; the SDK's local `threadScheduler` is a different, process-local facility.
+The automation UI uses native cron/IANA-timezone calendars, preserves target editing and shows native trigger history. A workflow trigger's `published` outcome records calendar publication; successful dispatch is shown as Input accepted, not completed inference. Tests check persisted assistant responses separately, including an overdue schedule after cold process restart. The persistent calendar is `mastra.schedules`; the SDK's local `threadScheduler` is a different, process-local facility.
 
 ## Configuration ownership checks
 

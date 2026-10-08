@@ -8,7 +8,7 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { PanelLeftOpen, Plus } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import type {
   Automation,
@@ -17,13 +17,56 @@ import type {
 } from "../api/client";
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 import { EmptyPanel } from "../ui/EmptyPanel";
-import { AutomationEditorModal } from "./AutomationEditorModal";
+import { AutomationEditorModal, type CalendarAutomationEditorProps } from "./AutomationEditorModal";
 import {
   formatAutomationDate,
   formatAutomationInterval,
 } from "./schedule";
 import type { AutomationThreadOption } from "./threadOptions";
 import { threadLabelById } from "./threadOptions";
+
+import type { NativeAutomation } from "../mastra/nativeAutomationTypes";
+
+type AutomationRow = Automation | NativeAutomation;
+type CommonPaneProps = {
+  defaultThreadId: string | null;
+  isLoading: boolean;
+  onDeleteAutomation: (automationId: string) => Promise<void>;
+  onShowMobileSidebar: () => void;
+  threadOptions: AutomationThreadOption[];
+  renderRuns?: (automationId: string) => ReactNode;
+};
+type IntervalPaneProps = CommonPaneProps & {
+  mode?: "interval";
+  automations: Automation[];
+  onCreateAutomation: (request: AutomationCreateRequest) => Promise<Automation>;
+  onPauseAutomation: (automationId: string) => Promise<Automation>;
+  onResumeAutomation: (automationId: string) => Promise<Automation>;
+  onUpdateAutomation: (automationId: string, request: AutomationUpdateRequest) => Promise<Automation>;
+};
+type CalendarPaneProps = CommonPaneProps & {
+  mode: "calendar";
+  automations: NativeAutomation[];
+  targetReadOnly: boolean;
+  onCreateAutomation: CalendarAutomationEditorProps["onCreate"];
+  onPauseAutomation: (automationId: string) => Promise<NativeAutomation>;
+  onResumeAutomation: (automationId: string) => Promise<NativeAutomation>;
+  onUpdateAutomation: CalendarAutomationEditorProps["onUpdate"];
+  renderRuns: (automationId: string) => ReactNode;
+};
+
+function calendarDate(value: number | undefined) {
+  return formatAutomationDate(value === undefined ? undefined : new Date(value).toISOString());
+}
+function nextDate(row: AutomationRow) {
+  return "cron" in row ? row.status === "completed" ? "Completed" : calendarDate(row.nextFireAt) : formatAutomationDate(row.nextRunAt);
+}
+function lastDate(row: AutomationRow) {
+  return "cron" in row ? calendarDate(row.lastFireAt) : formatAutomationDate(row.lastRunAt);
+}
+function scheduleLabel(row: AutomationRow) {
+  return "cron" in row ? `${row.cron} (${row.timezone ?? "Native default"})` : formatAutomationInterval(row);
+}
 
 const AUTOMATIONS_TEXT = {
   add: "Add automation",
@@ -34,34 +77,13 @@ const AUTOMATIONS_TEXT = {
   title: "Automations",
 };
 
-export function AutomationsPane({
-  automations,
-  defaultThreadId,
-  isLoading,
-  onCreateAutomation,
-  onDeleteAutomation,
-  onPauseAutomation,
-  onResumeAutomation,
-  onShowMobileSidebar,
-  onUpdateAutomation,
-  threadOptions,
-}: {
-  automations: Automation[];
-  defaultThreadId: string | null;
-  isLoading: boolean;
-  onCreateAutomation: (request: AutomationCreateRequest) => Promise<Automation>;
-  onDeleteAutomation: (automationId: string) => Promise<void>;
-  onPauseAutomation: (automationId: string) => Promise<Automation>;
-  onResumeAutomation: (automationId: string) => Promise<Automation>;
-  onShowMobileSidebar: () => void;
-  onUpdateAutomation: (automationId: string, request: AutomationUpdateRequest) => Promise<Automation>;
-  threadOptions: AutomationThreadOption[];
-}) {
-  const [editingAutomation, setEditingAutomation] = useState<Automation | null>(null);
+export function AutomationsPane(props: IntervalPaneProps | CalendarPaneProps) {
+  const { automations, defaultThreadId, isLoading, onShowMobileSidebar, threadOptions } = props;
+  const [editingAutomation, setEditingAutomation] = useState<AutomationRow | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [sorting, setSorting] = useState<SortingState>([]);
   const defaultTargetThreadId = defaultThreadId ?? threadOptions[0]?.value ?? null;
-  const columns = useMemo<ColumnDef<Automation>[]>(
+  const columns = useMemo<ColumnDef<AutomationRow>[]>(
     () => [
       {
         accessorKey: "name",
@@ -81,10 +103,10 @@ export function AutomationsPane({
                   {row.original.status}
                 </Badge>
                 <Text c="dimmed" size="xs">
-                  {formatAutomationInterval(row.original)}
+                  {scheduleLabel(row.original)}
                 </Text>
                 <Text c="dimmed" size="xs">
-                  Next: {formatAutomationDate(row.original.nextRunAt)}
+                  Next: {nextDate(row.original)}
                 </Text>
               </Group>
             </Box>
@@ -108,45 +130,40 @@ export function AutomationsPane({
         ),
       },
       {
-        accessorFn: (row) => formatAutomationDate(row.nextRunAt),
+        accessorFn: nextDate,
         header: "Next run",
         id: "nextRunAt",
         size: 180,
       },
       {
-        accessorFn: formatAutomationInterval,
-        header: "Repeat",
+        accessorFn: scheduleLabel,
+        header: props.mode === "calendar" ? "Schedule" : "Repeat",
         id: "repeat",
         size: 120,
       },
       {
-        accessorFn: (row) => formatAutomationDate(row.lastRunAt),
+        accessorFn: lastDate,
         header: "Last run",
         id: "lastRunAt",
         size: 180,
       },
-      {
-        accessorFn: (row) => row.lastError ?? String(row.consecutiveFailureCount),
+      ...(props.mode === "calendar" ? [] : [{
+        accessorFn: (row: AutomationRow) => "schedule" in row ? row.lastError ?? String(row.consecutiveFailureCount) : "",
         header: "Failures",
         id: "failures",
         size: 170,
-        cell: ({ row }) =>
-          row.original.lastError ? (
-            <Text className="kodex-ui-text" data-tone="danger" lineClamp={1} size="xs">
-              {row.original.lastError}
-            </Text>
-          ) : (
-            <Text c="dimmed" size="sm">
-              {row.original.consecutiveFailureCount}
-            </Text>
-          ),
-      },
+        cell: ({ row }) => "schedule" in row.original ? row.original.lastError
+          ? <Text className="kodex-ui-text" data-tone="danger" lineClamp={1} size="xs">{row.original.lastError}</Text>
+          : <Text c="dimmed" size="sm">{row.original.consecutiveFailureCount}</Text> : null,
+      } satisfies ColumnDef<AutomationRow>]),
     ],
-    [threadOptions],
+    [props.mode, threadOptions],
   );
-  const table = useReactTable({
+  // Accessor values are cached on rows, including target labels from the catalog.
+  const tableRows = useMemo(() => [...automations], [automations, columns]);
+  const table = useReactTable<AutomationRow>({
     columns,
-    data: automations,
+    data: tableRows,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     onSortingChange: setSorting,
@@ -155,12 +172,20 @@ export function AutomationsPane({
     },
   });
 
+  const calendarEditing = props.mode === "calendar" && editingAutomation
+    ? props.automations.find(row => row.id === editingAutomation.id) ?? null : null;
+  useEffect(() => {
+    if (props.mode === "calendar" && editingAutomation && !calendarEditing && !isLoading) {
+      setEditingAutomation(null); setEditorOpen(false);
+    }
+  }, [props.mode, editingAutomation, calendarEditing, isLoading]);
+
   function handleAdd() {
     setEditingAutomation(null);
     setEditorOpen(true);
   }
 
-  function handleEdit(automation: Automation) {
+  function handleEdit(automation: AutomationRow) {
     setEditingAutomation(automation);
     setEditorOpen(true);
   }
@@ -200,7 +225,7 @@ export function AutomationsPane({
             <EmptyPanel
               icon={<Plus size={22} />}
               title={AUTOMATIONS_TEXT.emptyTitle}
-              text={AUTOMATIONS_TEXT.emptyText}
+              text={props.mode === "calendar" ? "Create recurring calendar prompts for a target thread." : AUTOMATIONS_TEXT.emptyText}
             />
           </Box>
         ) : (
@@ -264,24 +289,21 @@ export function AutomationsPane({
           </Paper>
         )}
       </Box>
-      <AutomationEditorModal
-        automation={editingAutomation}
-        fallbackThreadId={defaultTargetThreadId}
-        onClose={() => setEditorOpen(false)}
-        onCreate={onCreateAutomation}
-        onDelete={onDeleteAutomation}
-        onPause={async (automationId) => {
-          const automation = await onPauseAutomation(automationId);
-          setEditingAutomation(automation);
-        }}
-        onResume={async (automationId) => {
-          const automation = await onResumeAutomation(automationId);
-          setEditingAutomation(automation);
-        }}
-        onUpdate={onUpdateAutomation}
-        opened={editorOpen}
-        threadOptions={threadOptions}
-      />
+      {props.mode === "calendar" ? <AutomationEditorModal
+        mode="calendar" automation={calendarEditing} targetReadOnly={props.targetReadOnly}
+        fallbackThreadId={defaultTargetThreadId} onClose={() => setEditorOpen(false)}
+        onCreate={props.onCreateAutomation} onUpdate={props.onUpdateAutomation} onDelete={props.onDeleteAutomation}
+        onPause={async id => { await props.onPauseAutomation(id); }}
+        onResume={async id => { await props.onResumeAutomation(id); }}
+        opened={editorOpen} threadOptions={threadOptions} renderRuns={props.renderRuns}
+      /> : <AutomationEditorModal
+        automation={editingAutomation && "schedule" in editingAutomation ? editingAutomation : null}
+        fallbackThreadId={defaultTargetThreadId} onClose={() => setEditorOpen(false)}
+        onCreate={props.onCreateAutomation} onDelete={props.onDeleteAutomation}
+        onPause={async id => setEditingAutomation(await props.onPauseAutomation(id))}
+        onResume={async id => setEditingAutomation(await props.onResumeAutomation(id))}
+        onUpdate={props.onUpdateAutomation} opened={editorOpen} threadOptions={threadOptions} renderRuns={props.renderRuns}
+      />}
     </>
   );
 }

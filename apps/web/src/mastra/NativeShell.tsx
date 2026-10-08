@@ -1,7 +1,5 @@
 import { Alert, Group } from '@mantine/core';
-import { useQuery } from '@tanstack/react-query';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createAutomation, deleteAutomation, listAutomations, pauseAutomation, resumeAutomation, updateAutomation } from '../api/client';
 import { KodexShellView, useNarrowThreadWorkspace } from '../shell/KodexShellView';
 import { currentKodexRoute, pushKodexRoute, replaceKodexRoute } from '../shell/browserRouting';
 import { useSidebarResize } from '../shell/useSidebarResize';
@@ -25,6 +23,8 @@ import { useNativeAccount } from './useNativeAccount';
 import { useNativeChatMetadata } from './useNativeChatMetadata';
 import { mastraClient } from './client';
 import { nativeTerminalApi } from './nativeTerminalApi';
+import { useNativeAutomations } from './useNativeAutomations';
+import { NativeAutomationRuns } from './NativeAutomationRuns';
 import { NativeCatalogProvider } from './NativeCatalogContext';
 import type { DirectoryLoader, ProjectCreationFields, ProjectFormPatch } from '../projects/controls';
 
@@ -60,7 +60,7 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
   const perform = useCallback((operation: Promise<unknown>) => { void operation.catch(reportError); }, [reportError]);
   const account = useNativeAccount();
   const metadata = useNativeChatMetadata(catalog.snapshot?.epoch ?? null, reportError);
-  const automations = useQuery({ queryKey: ['mastra-unfinished', 'automations'], queryFn: () => listAutomations(), enabled: mainPane === 'automations', retry: false });
+  const automations = useNativeAutomations(mainPane === 'automations');
   const projects = useMemo(() => (catalog.snapshot?.projects ?? []).map(project => ({ id: project.id, name: project.name, roots: project.roots.map(path => ({ path })) })), [catalog.snapshot?.projects]);
   const chats = catalog.snapshot?.chats ?? [];
   const entries = chats.map(chatListEntry);
@@ -96,8 +96,7 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
     replaceKodexRoute(next); setRoute(next);
   }, [route.threadId, catalog.snapshot?.archivedChatIds]);
   const nativeError = catalog.error ?? account.error;
-  const unfinishedError = automations.error;
-  const displayError = error ?? nativeError ?? (unfinishedError ? errorMessageFrom(unfinishedError) : null);
+  const displayError = error ?? nativeError ?? automations.error;
   const chatDataState = catalog.error ? 'error' : catalog.snapshot ? 'loaded' : 'loading';
   const projectId = route.projectId;
   const projectActions = useMemo(() => projectId ? {
@@ -130,8 +129,8 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
         workspaceSelectedThreadPaneId={mainPane === 'thread' ? routeThreadPaneId : null}
         preferencesProps={{ opened: preferencesOpen, activeSection: preferencesSection, resolvedSchemeId: colorSchemeId, preferences: appearance, onClose: () => setPreferencesOpen(false), onSectionChange: setPreferencesSection, onModeChange: onAppearanceModeChange, onThemeChange }}
         projectPaneProps={{ project: projects.find(project => project.id === route.projectId) ?? null, onDeleted: () => createDraft(), actions: projectActions, onShowMobileSidebar: () => setMobilePanel('threads') }}
-        automationsPaneProps={{ automations: automations.data ?? [], defaultThreadId: route.threadId, isLoading: automations.isLoading,
-          onCreateAutomation: createAutomation, onDeleteAutomation: deleteAutomation, onPauseAutomation: pauseAutomation, onResumeAutomation: resumeAutomation, onUpdateAutomation: updateAutomation,
+        automationsPaneProps={{ mode: 'calendar', targetReadOnly: false, renderRuns: id => <NativeAutomationRuns automationId={id} />, automations: automations.rows, defaultThreadId: route.threadId, isLoading: automations.isLoading,
+          onCreateAutomation: automations.create, onDeleteAutomation: automations.remove, onPauseAutomation: automations.pause, onResumeAutomation: automations.resume, onUpdateAutomation: automations.update,
           onShowMobileSidebar: () => setMobilePanel('threads'), threadOptions: entries.map(chat => ({ value: chat.id, label: chat.name ?? 'New thread' })) }}
         workspaceSidebarProps={{ account: null, accountMenu: <NativeAccountMenu state={account}
           onSelectAutomations={() => navigate({ threadId: null, view: 'automations', panel: null })}

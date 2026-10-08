@@ -15,7 +15,7 @@ vi.mock('./NativeHostBoundary', () => ({ useNativeHost: () => ({ instanceId: 'ro
 vi.mock('./useNativeAccount', () => ({ useNativeAccount: () => ({ error: null, logout: () => undefined }) }));
 vi.mock('./NativeAccountMenu', () => ({ NativeAccountMenu: () => null }));
 vi.mock('./NativeThreadPane', () => ({ NativeThreadPane: () => null }));
-vi.mock('./useNativeSnapshots', () => ({ useNativeCatalog: () => ({
+vi.mock('./useNativeSnapshots', async actual => ({ ...await actual<typeof import('./useNativeSnapshots')>(), useNativeCatalog: () => ({
   snapshot: { epoch: 'routing', revision: 1, projects: [{ id: 'project', name: 'Project', roots: ['/fixture'] }], archivedChatIds: archive.ids, pinnedChatIds: [],
     chats: ['a', 'b'].map(id => ({ id, title: id.toUpperCase(), projectId: null, cwd: '/fixture', pinned: false, notificationsEnabled: true })) },
   error: null, retry: () => undefined,

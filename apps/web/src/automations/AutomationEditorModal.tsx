@@ -11,7 +11,7 @@ import {
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { AlertCircle, Pause, Play, Save, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import type {
   Automation,
@@ -29,36 +29,55 @@ import { AutomationRuns } from "./AutomationRuns";
 import { PromptMarkdownEditor } from "./PromptMarkdownEditor";
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 
+import type { NativeAutomation, NativeAutomationInput } from "../mastra/nativeAutomationTypes";
+import { nativeAutomationScheduleDraft, nativeAutomationScheduleError } from "../mastra/nativeAutomationForm";
+import { NativeAutomationScheduleFields } from "../mastra/NativeAutomationScheduleFields";
+
+type EditorCommonProps = {
+  fallbackThreadId: string | null;
+  onClose: () => void;
+  onDelete: (automationId: string) => Promise<void>;
+  onPause: (automationId: string) => Promise<void>;
+  onResume: (automationId: string) => Promise<void>;
+  opened: boolean;
+  threadOptions: AutomationThreadOption[];
+  renderRuns?: (automationId: string) => ReactNode;
+};
+export type CalendarAutomationEditorProps = EditorCommonProps & {
+  mode: "calendar";
+  automation: NativeAutomation | null;
+  targetReadOnly: boolean;
+  onCreate: (input: NativeAutomationInput) => Promise<NativeAutomation>;
+  // The caller must handle an explicit target edit; it cannot silently discard it.
+  onUpdate: (automationId: string, input: NativeAutomationInput, original: NativeAutomation) => Promise<NativeAutomation>;
+  renderRuns: (automationId: string) => ReactNode;
+};
+type IntervalAutomationEditorProps = EditorCommonProps & {
+  mode?: "interval";
+  automation: Automation | null;
+  onCreate: (request: AutomationCreateRequest) => Promise<Automation>;
+  onUpdate: (automationId: string, request: AutomationUpdateRequest) => Promise<Automation>;
+};
+type AutomationEditorProps = IntervalAutomationEditorProps | CalendarAutomationEditorProps;
+
+function editorValues(automation: Automation | NativeAutomation | null, fallbackThreadId: string | null): AutomationFormValues {
+  if (!automation || "schedule" in automation) return automationFormValues(automation, fallbackThreadId);
+  return { ...automationFormValues(null, fallbackThreadId), name: automation.name, prompt: automation.prompt, targetThreadId: automation.targetThreadId };
+}
+
 const REPEAT_UNIT_OPTIONS = [
   { label: "Seconds", value: "seconds" },
   { label: "Minutes", value: "minutes" },
   { label: "Hours", value: "hours" },
 ];
 
-export function AutomationEditorModal({
-  automation,
-  fallbackThreadId,
-  onClose,
-  onCreate,
-  onDelete,
-  onPause,
-  onResume,
-  onUpdate,
-  opened,
-  threadOptions,
-}: {
-  automation: Automation | null;
-  fallbackThreadId: string | null;
-  onClose: () => void;
-  onCreate: (request: AutomationCreateRequest) => Promise<Automation>;
-  onDelete: (automationId: string) => Promise<void>;
-  onPause: (automationId: string) => Promise<void>;
-  onResume: (automationId: string) => Promise<void>;
-  onUpdate: (automationId: string, request: AutomationUpdateRequest) => Promise<Automation>;
-  opened: boolean;
-  threadOptions: AutomationThreadOption[];
-}) {
-  const [values, setValues] = useState<AutomationFormValues>(() => automationFormValues(automation, fallbackThreadId));
+export function AutomationEditorModal(props: AutomationEditorProps) {
+  const { automation, fallbackThreadId, onClose, onDelete, onPause, onResume, opened, threadOptions, renderRuns } = props;
+  const [values, setValues] = useState<AutomationFormValues>(() => editorValues(automation, fallbackThreadId));
+  const [calendarOriginal, setCalendarOriginal] = useState<NativeAutomation | null>(() => props.mode === "calendar" ? props.automation : null);
+  const [calendar, setCalendar] = useState(() => nativeAutomationScheduleDraft(
+    automation && "cron" in automation ? { cron: automation.cron, timezone: automation.timezone ?? "" } : null,
+  ));
   const [submittingAction, setSubmittingAction] = useState<string | null>(null);
   const [deletePendingConfirmation, setDeletePendingConfirmation] = useState(false);
   const [mobileTab, setMobileTab] = useState<"details" | "prompt">("details");
@@ -76,51 +95,50 @@ export function AutomationEditorModal({
     return [{ label: values.targetThreadId, value: values.targetThreadId }, ...threadOptions];
   }, [selectedThreadExists, threadOptions, values.targetThreadId]);
 
+  const formIdentity = props.mode === "calendar" ? automation?.id : automation;
+  const formFallback = props.mode === "calendar" ? undefined : fallbackThreadId;
   useEffect(() => {
     if (opened) {
-      setValues(automationFormValues(automation, fallbackThreadId));
+      setValues(editorValues(automation, fallbackThreadId));
+      setCalendarOriginal(props.mode === "calendar" ? props.automation : null);
+      setCalendar(nativeAutomationScheduleDraft(automation && "cron" in automation ? { cron: automation.cron, timezone: automation.timezone ?? "" } : null));
       setError(null);
       setDeletePendingConfirmation(false);
       setSubmittingAction(null);
       setMobileTab("details");
     }
-  }, [automation, fallbackThreadId, opened]);
+  }, [formIdentity, formFallback, opened]);
 
   async function handleSave() {
-    const validationError = automationValidationError(values);
+    const validationError = props.mode === "calendar"
+      ? !values.name.trim() ? "Name is required." : !values.targetThreadId ? "Target thread is required."
+        : !values.prompt.trim() ? "Prompt is required." : nativeAutomationScheduleError(calendar)
+      : automationValidationError(values);
     if (validationError) {
       setError(validationError);
       return;
     }
-    const startAt = startAtIsoFromLocalInput(values.startAtLocal);
-    if (!startAt || !values.targetThreadId) {
-      return;
-    }
-
-    const schedule = {
-      startAt,
-      repeatEvery: {
-        value: values.repeatValue,
-        unit: values.repeatUnit,
-      },
-    };
+    if (!values.targetThreadId) return;
     setSubmittingAction("save");
     setError(null);
     try {
-      if (automation) {
-        await onUpdate(automation.id, {
-          name: values.name.trim(),
-          prompt: values.prompt.trim(),
-          targetThreadId: values.targetThreadId,
-          schedule,
-        });
+      if (props.mode === "calendar") {
+        const input: NativeAutomationInput = {
+          name: values.name.trim(), prompt: values.prompt, targetThreadId: values.targetThreadId,
+          cron: calendar.cron, timezone: calendar.timezone,
+        };
+        if (props.automation) {
+          if (!calendarOriginal) return;
+          await props.onUpdate(props.automation.id, input, calendarOriginal);
+        }
+        else await props.onCreate(input);
       } else {
-        await onCreate({
-          name: values.name.trim(),
-          prompt: values.prompt.trim(),
-          targetThreadId: values.targetThreadId,
-          schedule,
-        });
+        const startAt = startAtIsoFromLocalInput(values.startAtLocal);
+        if (!startAt) return;
+        const schedule = { startAt, repeatEvery: { value: values.repeatValue, unit: values.repeatUnit } };
+        const input = { name: values.name.trim(), prompt: values.prompt.trim(), targetThreadId: values.targetThreadId, schedule };
+        if (props.automation) await props.onUpdate(props.automation.id, input);
+        else await props.onCreate(input);
       }
       onClose();
     } catch (nextError) {
@@ -173,6 +191,7 @@ export function AutomationEditorModal({
         className="kodex-automation-mobile-input"
         comboboxProps={{ width: "target" }}
         data={targetThreadOptions}
+        disabled={props.mode === "calendar" && props.targetReadOnly && Boolean(automation)}
         label="Target thread"
         onChange={(value) => patchValues({ targetThreadId: value })}
         renderOption={({ option }) => (
@@ -199,6 +218,7 @@ export function AutomationEditorModal({
         }}
         value={values.targetThreadId}
       />
+      {props.mode === "calendar" ? <NativeAutomationScheduleFields value={calendar} onChange={setCalendar} /> : <>
       <TextInput
         className="kodex-automation-mobile-input"
         label="Start"
@@ -230,6 +250,7 @@ export function AutomationEditorModal({
           value={values.repeatUnit}
         />
       </div>
+      </>}
     </div>
   );
   const promptFields = (showLabel = true) => (
@@ -290,7 +311,7 @@ export function AutomationEditorModal({
             {promptFields()}
           </>
         )}
-        {automation && opened ? <AutomationRuns automationId={automation.id} /> : null}
+        {automation && opened ? renderRuns ? renderRuns(automation.id) : <AutomationRuns automationId={automation.id} /> : null}
         <Group className="kodex-automation-modal-footer" justify="space-between" wrap="nowrap">
           <Group gap="xs" wrap="nowrap">
             {automation ? (
@@ -305,7 +326,7 @@ export function AutomationEditorModal({
                 >
                   <Trash2 />
                 </AdaptiveIconButton>
-                <AdaptiveIconButton
+                {automation.status !== "completed" ? <AdaptiveIconButton
                   className="kodex-automation-status-action"
                   disabled={isSubmitting}
                   label={automation.status === "paused" ? "Resume" : "Pause"}
@@ -314,7 +335,7 @@ export function AutomationEditorModal({
 
                 >
                   {automation.status === "paused" ? <Play /> : <Pause />}
-                </AdaptiveIconButton>
+                </AdaptiveIconButton> : null}
               </>
             ) : null}
           </Group>
