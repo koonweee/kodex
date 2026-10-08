@@ -5,6 +5,7 @@ import {
   getServiceWorkerRegistration,
   registerKodexServiceWorker,
   registerPwaServiceWorker,
+  requestPwaUpdateCheck,
   resetPwaServiceWorkerStateForTests,
   setRegisterSWLoaderForTests,
   subscribeToPwaUpdates,
@@ -18,10 +19,9 @@ afterEach(() => {
 });
 
 describe("registerKodexServiceWorker", () => {
-  it("checks for updates in an open tab and when it returns to the foreground", async () => {
+  it("checks immediately when deployment signals an update without polling", async () => {
     vi.useFakeTimers();
     const original = navigator.serviceWorker;
-    const visibility = vi.spyOn(document, "visibilityState", "get");
     const update = vi.fn().mockResolvedValue(undefined);
     const registration = { scope: "/", update } as unknown as ServiceWorkerRegistration;
     Object.defineProperty(navigator, "serviceWorker", {
@@ -35,23 +35,72 @@ describe("registerKodexServiceWorker", () => {
 
     try {
       await registerPwaServiceWorker();
-      await vi.advanceTimersByTimeAsync(60_000);
+      await requestPwaUpdateCheck();
       expect(update).toHaveBeenCalledTimes(1);
-      document.dispatchEvent(new Event("visibilitychange"));
+      await vi.advanceTimersByTimeAsync(120_000);
       expect(update).toHaveBeenCalledTimes(1);
-
-      visibility.mockReturnValue("hidden");
-      await vi.advanceTimersByTimeAsync(60_000);
-      expect(update).toHaveBeenCalledTimes(1);
-
-      visibility.mockReturnValue("visible");
-      document.dispatchEvent(new Event("visibilitychange"));
-      await Promise.resolve();
-      expect(update).toHaveBeenCalledTimes(2);
     } finally {
       resetPwaServiceWorkerStateForTests();
-      visibility.mockRestore();
       vi.useRealTimers();
+      Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: original });
+    }
+  });
+
+  it("runs a trailing check when another deployment arrives during a check", async () => {
+    let finishFirst!: () => void;
+    const original = navigator.serviceWorker;
+    const update = vi.fn()
+      .mockImplementationOnce(() => new Promise<ServiceWorkerRegistration>((resolve) => {
+        finishFirst = () => resolve({} as ServiceWorkerRegistration);
+      }))
+      .mockResolvedValue({} as ServiceWorkerRegistration);
+    const registration = { scope: "/", update } as unknown as ServiceWorkerRegistration;
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: Object.assign(new EventTarget(), { getRegistration: vi.fn().mockResolvedValue(registration), controller: {} }),
+    });
+    setRegisterSWLoaderForTests(() => Promise.resolve((options) => {
+      options?.onRegisteredSW?.("/sw.js", registration);
+      return vi.fn().mockResolvedValue(undefined);
+    }));
+
+    try {
+      await registerPwaServiceWorker();
+      const first = requestPwaUpdateCheck();
+      const second = requestPwaUpdateCheck();
+      await vi.waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+      finishFirst();
+      await Promise.all([first, second]);
+      await vi.waitFor(() => expect(update).toHaveBeenCalledTimes(2));
+    } finally {
+      Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: original });
+    }
+  });
+
+  it("runs a pending deployment check after the current worker finishes installing", async () => {
+    const original = navigator.serviceWorker;
+    const installing = Object.assign(new EventTarget(), { state: "installing" });
+    const update = vi.fn().mockResolvedValue({} as ServiceWorkerRegistration);
+    const registration = { scope: "/", update, installing };
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: Object.assign(new EventTarget(), { getRegistration: vi.fn().mockResolvedValue(registration), controller: {} }),
+    });
+    setRegisterSWLoaderForTests(() => Promise.resolve((options) => {
+      options?.onRegisteredSW?.("/sw.js", registration as unknown as ServiceWorkerRegistration);
+      return vi.fn().mockResolvedValue(undefined);
+    }));
+
+    try {
+      await registerPwaServiceWorker();
+      await requestPwaUpdateCheck();
+      expect(update).not.toHaveBeenCalled();
+      // A failed install reaches redundant before the registration clears its
+      // installing pointer. This ordering must not recurse or lose the check.
+      installing.state = "redundant";
+      installing.dispatchEvent(new Event("statechange"));
+      await vi.waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    } finally {
       Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: original });
     }
   });

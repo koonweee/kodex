@@ -67,6 +67,7 @@ use crate::{
         directories::{DirectoryEntry, DirectoryListQuery, DirectoryListResponse},
         events::EventListResponse,
         file_preview::FilePreviewQuery,
+        frontend_updates::FrontendUpdateRequest,
         health::{HealthResponse, ReadyResponse},
         kodex_control_plugin::{
             KodexControlPluginInstallResponse, KodexControlPluginStatusKind,
@@ -207,6 +208,7 @@ impl AppState {
         crate::routes::health::healthz,
         crate::routes::health::readyz,
         crate::routes::capabilities::capabilities,
+        crate::routes::frontend_updates::publish_frontend_update,
         crate::routes::terminals::list_terminals,
         crate::routes::terminals::create_terminal,
         crate::routes::terminals::delete_terminal,
@@ -372,6 +374,7 @@ impl AppState {
         PermissionProfileSummary,
         EventEnvelope,
         EventListResponse,
+        FrontendUpdateRequest,
         ProjectChanged,
         ThreadProjectUpdated,
         Project,
@@ -613,6 +616,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::terminals::router())
         .merge(routes::composer_settings::router())
         .merge(routes::events::router())
+        .merge(routes::frontend_updates::router())
         .merge(routes::projects::router())
         .merge(routes::directories::router())
         .merge(routes::threads::router())

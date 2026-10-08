@@ -18,8 +18,7 @@ type PwaRegistrationOptions = {
 };
 
 const listeners = new Set<PwaUpdateListener>();
-const UPDATE_CHECK_INTERVAL_MS = 60_000;
-
+const TERMINAL_WORKER_STATES = new Set<ServiceWorkerState>(["installed", "activated", "redundant"]);
 let loadRegisterSW: () => Promise<RegisterSW> = async () => {
   const pwaModule = await import("virtual:pwa-register");
   return pwaModule.registerSW;
@@ -30,7 +29,11 @@ let registrationPromise: Promise<ServiceWorkerRegistrationResult> | null = null;
 let serviceWorkerRegistrationPromise: Promise<ServiceWorkerRegistration> | null = null;
 let needRefresh = false;
 let updateServiceWorker: (() => Promise<void>) | null = null;
-let stopUpdateChecks: (() => void) | null = null;
+let updateCheckPromise: Promise<void> | null = null;
+let updateCheckQueued = false;
+let installingWorker: ServiceWorker | null = null;
+let installingWorkerListener: (() => void) | null = null;
+let deferredUpdateCheck: ReturnType<typeof setTimeout> | null = null;
 
 export function pwaGatewayIsSameOrigin(): boolean {
   if (typeof window === "undefined") return false;
@@ -64,27 +67,59 @@ function failedRegistrationResult(error: unknown): ServiceWorkerRegistrationResu
   return { registered: false, reason: "failed", error };
 }
 
-function startUpdateChecks(registration: ServiceWorkerRegistration) {
-  stopUpdateChecks?.();
-  if (typeof registration.update !== "function") return;
+function clearInstallingWorkerListener() {
+  if (installingWorker && installingWorkerListener) {
+    installingWorker.removeEventListener("statechange", installingWorkerListener);
+  }
+  installingWorker = null;
+  installingWorkerListener = null;
+}
 
-  let checking = false;
-  let lastCheckAt = Date.now();
-  const check = () => {
-    if (checking || Date.now() - lastCheckAt < UPDATE_CHECK_INTERVAL_MS ||
-      document.visibilityState !== "visible" || !navigator.onLine || registration.installing) return;
-    checking = true;
-    lastCheckAt = Date.now();
-    void registration.update().catch(() => undefined).finally(() => { checking = false; });
+function queueCheckAfterInstall(registration: ServiceWorkerRegistration): Promise<void> {
+  updateCheckQueued = true;
+  const worker = registration.installing;
+  if (!worker || installingWorker === worker) return Promise.resolve();
+  clearInstallingWorkerListener();
+  installingWorker = worker;
+  installingWorkerListener = () => {
+    if (registration.installing === worker && !TERMINAL_WORKER_STATES.has(worker.state)) {
+      return;
+    }
+    clearInstallingWorkerListener();
+    if (!updateCheckQueued || deferredUpdateCheck) return;
+    deferredUpdateCheck = setTimeout(() => {
+      deferredUpdateCheck = null;
+      if (!updateCheckQueued) return;
+      updateCheckQueued = false;
+      void updateRegistration(registration);
+    }, 0);
   };
-  const onVisibilityChange = () => check();
-  document.addEventListener("visibilitychange", onVisibilityChange);
-  const interval = window.setInterval(check, UPDATE_CHECK_INTERVAL_MS);
-  stopUpdateChecks = () => {
-    document.removeEventListener("visibilitychange", onVisibilityChange);
-    window.clearInterval(interval);
-    stopUpdateChecks = null;
-  };
+  worker.addEventListener("statechange", installingWorkerListener);
+  installingWorkerListener();
+  return Promise.resolve();
+}
+
+function updateRegistration(registration: ServiceWorkerRegistration): Promise<void> {
+  if (typeof registration.update !== "function") {
+    return Promise.resolve();
+  }
+  if (registration.installing && !TERMINAL_WORKER_STATES.has(registration.installing.state)) {
+    return queueCheckAfterInstall(registration);
+  }
+  if (updateCheckPromise) {
+    updateCheckQueued = true;
+    return updateCheckPromise;
+  }
+  const check = Promise.resolve().then(() => registration.update()).then(() => undefined, () => undefined).finally(() => {
+    if (updateCheckPromise !== check) return;
+    updateCheckPromise = null;
+    if (updateCheckQueued) {
+      updateCheckQueued = false;
+      void updateRegistration(registration);
+    }
+  });
+  updateCheckPromise = check;
+  return check;
 }
 
 async function activeServiceWorkerRegistration(): Promise<ServiceWorkerRegistration> {
@@ -162,7 +197,6 @@ export async function registerPwaServiceWorker(
             settled = true;
             if (!result.registered) {
               registrationFailed = true;
-              stopUpdateChecks?.();
               workerContainer.removeEventListener?.("controllerchange", onControllerChange);
               registrationStarted = false;
               registrationPromise = null;
@@ -172,7 +206,6 @@ export async function registerPwaServiceWorker(
               emitUpdateState();
             } else {
               serviceWorkerRegistrationPromise = Promise.resolve(result.registration);
-              startUpdateChecks(result.registration);
             }
             resolve(result);
           };
@@ -234,7 +267,6 @@ export async function registerPwaServiceWorker(
     )
     .catch((error: unknown) => {
       registrationStarted = false;
-      stopUpdateChecks?.();
       registrationPromise = null;
       serviceWorkerRegistrationPromise = null;
       updateServiceWorker = null;
@@ -262,17 +294,28 @@ export async function getServiceWorkerRegistration(): Promise<ServiceWorkerRegis
   return serviceWorkerRegistrationPromise;
 }
 
+export async function requestPwaUpdateCheck(): Promise<void> {
+  const result = await registerPwaServiceWorker();
+  if (result.registered) {
+    await updateRegistration(result.registration);
+  }
+}
+
 export function setRegisterSWLoaderForTests(loader: () => Promise<RegisterSW>): void {
   loadRegisterSW = loader;
   resetPwaServiceWorkerStateForTests();
 }
 
 export function resetPwaServiceWorkerStateForTests(): void {
-  stopUpdateChecks?.();
+  clearInstallingWorkerListener();
+  if (deferredUpdateCheck) clearTimeout(deferredUpdateCheck);
+  deferredUpdateCheck = null;
   listeners.clear();
   registrationStarted = false;
   registrationPromise = null;
   serviceWorkerRegistrationPromise = null;
   needRefresh = false;
   updateServiceWorker = null;
+  updateCheckPromise = null;
+  updateCheckQueued = false;
 }

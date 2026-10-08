@@ -770,4 +770,30 @@ describe("event stream client", () => {
     clientA.close();
     clientB.close();
   });
+
+  it("delivers frontend update markers as named gateway events", () => {
+    const received: string[] = [];
+    const client = createEventStreamClient({
+      EventSourceCtor: FakeEventSource,
+      includeGlobal: true,
+      onEvent: (event) => received.push(event.kind),
+    });
+
+    client.connect();
+    FakeEventSource.instances[0].emitNamed("frontend.updated", {
+      id: "event-12",
+      seq: 12,
+      kind: "frontend.updated",
+      codexMethod: null,
+      itemId: null,
+      threadId: null,
+      turnId: null,
+      projectId: null,
+      payload: { revision: "build-123" },
+      receivedAt: "2026-10-09T00:00:00Z",
+    });
+
+    expect(received).toEqual(["frontend.updated"]);
+    client.close();
+  });
 });

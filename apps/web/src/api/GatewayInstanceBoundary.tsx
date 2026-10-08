@@ -14,6 +14,7 @@ import { refreshProjectState } from "../projects/cache";
 import { refreshThreadSettings } from "../composer/threadSettingsCache";
 import { refreshThreadGoals } from "../goals/goalCache";
 import { PwaLifecycle } from "../pwa/PwaLifecycle";
+import { requestPwaUpdateCheck } from "../pwa/registerServiceWorker";
 import { currentKodexRoute, isThemeWorkbenchRoute, replaceKodexRoute } from "../shell/browserRouting";
 import { getCapabilities, getProject, getThreadDetail } from "./client";
 import { createInstanceStorage, type InstanceStorage } from "./instanceStorage";
@@ -117,6 +118,7 @@ function GatewayInstanceGate({ children, queryClient }: GatewayInstanceBoundaryP
   const validateInstance = useCallback(async () => (await checkIdentity()) === confirmedId, [checkIdentity, confirmedId]);
   const handleStreamConnected = useCallback(() => {
     if (confirmedId && instanceIdRef.current === confirmedId) {
+      void requestPwaUpdateCheck().catch(() => undefined);
       void refreshAccountQueries(queryClient, { cancelInFlight: true });
       void refreshApprovalSnapshot(queryClient);
       void refreshProjectState(queryClient);

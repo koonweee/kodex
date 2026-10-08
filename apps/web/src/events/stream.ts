@@ -36,6 +36,7 @@ const GATEWAY_SSE_EVENT_TYPES = [
   "automation.item_deleted",
   "automation.item_upsert",
   "automation.run_updated",
+  "frontend.updated",
   "gateway.error",
   "gateway.warning",
   "app_surface.bridge_call",

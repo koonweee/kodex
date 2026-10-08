@@ -15,6 +15,7 @@ import { createKodexQueryClient } from "./queryClient";
 import { queryKeys } from "./queryKeys";
 
 const pwa = vi.hoisted(() => ({
+  check: vi.fn().mockResolvedValue(undefined),
   needRefresh: false,
   register: vi.fn().mockResolvedValue({ registered: false, reason: "unsupported" }),
   update: vi.fn().mockResolvedValue(undefined),
@@ -24,6 +25,7 @@ vi.mock("./client", () => ({ attachThread: vi.fn(), getCapabilities: vi.fn(), ge
 vi.mock("../pwa/registerServiceWorker", () => ({
   getPwaUpdateState: () => ({ needRefresh: pwa.needRefresh, updateServiceWorker: pwa.update }),
   registerPwaServiceWorker: pwa.register,
+  requestPwaUpdateCheck: pwa.check,
   subscribeToPwaUpdates: () => () => undefined,
 }));
 
@@ -332,6 +334,7 @@ describe("gateway instance bootstrap", () => {
     await screen.findByText("Previous account state");
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
     act(() => FakeEventSource.instances[0].onopen?.());
+    await waitFor(() => expect(pwa.check).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(queryClient.isFetching({ queryKey: queryKeys.account })).toBe(0));
     fireEvent.click(screen.getByRole("button", { name: "fresh draft" }));
     let resolve!: (value: Capabilities) => void;

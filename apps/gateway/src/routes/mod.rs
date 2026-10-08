@@ -8,6 +8,7 @@ mod config_writes;
 pub mod directories;
 pub mod events;
 pub mod file_preview;
+pub mod frontend_updates;
 pub mod health;
 pub mod kodex_control_plugin;
 pub mod mcp;

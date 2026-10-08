@@ -69,6 +69,7 @@ import type { MarkdownPreviewRequest } from "./files/types";
 import type { ImageLightboxImage } from "./images/types";
 import { useKodexNotifications } from "./notifications/useKodexNotifications";
 import { PwaLifecycle } from "./pwa/PwaLifecycle";
+import { handlePwaLiveEvent } from "./pwa/liveUpdates";
 import type { PreferenceSection } from "./PreferencesModal";
 import {
   applyKodexColorScheme,
@@ -634,6 +635,7 @@ function KodexShell({
   });
 
   const handleWorkspaceLiveEvent = useEventCallback((event: EventEnvelope) => {
+    handlePwaLiveEvent(event);
     const archivedThreadId = archivedThreadIdFromEvent(event);
     if (archivedThreadId) {
       handleArchivedThreadProjection(archivedThreadId, { clearSelection: false });
