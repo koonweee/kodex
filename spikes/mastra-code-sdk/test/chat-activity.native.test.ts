@@ -98,6 +98,7 @@ test('two clients project native running transitions, suspended semantics and do
   const chat = await first.createChat({ projectId: 'project' });
   const idle = await second.listChats();
   assert.equal(row(idle, chat.id).isRunning, false, 'a mounted idle chat must have an explicit native activity boolean');
+  assert.deepEqual(row(idle, chat.id).readState, { epoch: idle.epoch, revision: 0, head: null, seen: null });
   const thread = await runtime.controller.queryThreadById({ threadId: chat.id }); assert.ok(thread);
   const session = await runtime.controller.getSessionByResource(thread.resourceId); assert.ok(session);
   const watching = new AbortController(); cleanup.push(() => watching.abort());
@@ -130,6 +131,19 @@ test('two clients project native running transitions, suspended semantics and do
   assert.ok(finishedPeers.every((snapshot, index) => snapshot.revision > activePeers[index]!.revision));
   assert.equal(row(await client().listChats(), chat.id).isRunning, false);
 
+  const terminal = row(await first.listChats(), chat.id).readState;
+  assert.equal(terminal.head?.reason, 'complete'); assert.equal(terminal.seen, false);
+  assert.ok(terminal.head?.runId); assert.ok(terminal.head?.messageId);
+  assert.deepEqual(row(await second.listChats(), chat.id).readState, terminal);
+  const displayed = await second.openChat({ chatId: chat.id });
+  assert.deepEqual(displayed.readState, terminal);
+  assert.ok(displayed.messages.some(message => message.id === terminal.head?.messageId) || displayed.display.currentMessage?.id === terminal.head?.messageId);
+  const receipt = { chatId: chat.id, epoch: terminal.epoch, revision: terminal.revision, runId: terminal.head!.runId };
+  assert.equal((await first.markChatSeen(receipt)).outcome, 'accepted');
+  const seenPeers = await Promise.all(peers.map(peer => until(peer, snapshot => row(snapshot, chat.id).readState.seen === true)));
+  assert.ok(seenPeers.every(snapshot => row(snapshot, chat.id).readState.revision > terminal.revision));
+  assert.equal((await second.openChat({ chatId: chat.id })).readState.seen, true);
+
   const stopHold = fixture.holdNext('ACTIVITY_STOP'); cleanup.push(stopHold.release);
   await first.send({ chatId: chat.id, text: 'ACTIVITY_STOP' }); await stopHold.reached;
   const stoppingPeers = await Promise.all(peers.map(peer => until(peer, snapshot => row(snapshot, chat.id).isRunning)));
@@ -141,12 +155,20 @@ test('two clients project native running transitions, suspended semantics and do
   assert.ok(producers.size > 0, 'the teardown observer joined actual native producers');
   assert.equal(row(await first.listChats(), chat.id).isRunning, false);
 
+  const interrupted = row(await second.listChats(), chat.id).readState;
+  assert.equal(interrupted.head?.reason, 'aborted'); assert.equal(interrupted.seen, false);
+  assert.notEqual(interrupted.head?.runId, terminal.head?.runId);
+  const stale = await first.markChatSeen(receipt);
+  assert.equal(stale.outcome, 'conflict'); assert.deepEqual(stale.state, interrupted);
+  assert.equal(row(await second.listChats(), chat.id).readState.seen, false, 'a stale tab cannot consume newer work');
+
   const parked = gate();
   const offPark = session.subscribe(event => { if (event.type === 'agent_end' && event.reason === 'suspended') parked.release(); }); t.after(offPark);
   await first.send({ chatId: chat.id, text: 'ACTIVITY_QUESTION' }); await parked.promise;
   assert.ok(session.displayState.get().pendingSuspensions.size > 0);
   assert.equal(session.displayState.get().isRunning, false, 'a parked native question is suspended rather than running');
   assert.equal(row(await second.listChats(), chat.id).isRunning, false, 'catalog uses the native boolean without inventing a pending activity state');
+  assert.deepEqual(row(await first.listChats(), chat.id).readState, interrupted, 'native suspension is not a completion');
   const snapshot = await second.openChat({ chatId: chat.id });
   const question = snapshot.prompts.find(prompt => prompt.kind === 'question'); assert.ok(question);
   const answered = gate();
@@ -154,6 +176,8 @@ test('two clients project native running transitions, suspended semantics and do
   await first.respondPrompt({ chatId: chat.id, kind: 'question', target: question.target, answer: 'First' });
   await answered.promise; await settled();
   assert.equal(row(await first.listChats(), chat.id).isRunning, false);
+  const resumed = row(await second.listChats(), chat.id).readState;
+  assert.equal(resumed.head?.reason, 'complete'); assert.notEqual(resumed.head?.runId, interrupted.head?.runId);
   watching.abort(); await Promise.all(peers.map(peer => peer.return().catch(() => undefined)));
   const requestsBefore = fixture.requests.length, creationsBefore = sessionCreations;
   await server.close(); await service.dispose(); open();
@@ -161,6 +185,7 @@ test('two clients project native running transitions, suspended semantics and do
   const restarted = await client().listChats();
   assert.notEqual(restarted.epoch, idle.epoch);
   assert.equal(row(restarted, chat.id).isRunning, false);
+  assert.deepEqual(row(restarted, chat.id).readState, { epoch: restarted.epoch, revision: 0, head: null, seen: null });
   assert.equal(await runtime.controller.getSessionByResource(thread.resourceId), undefined);
   assert.equal(sessionCreations, creationsBefore, 'catalog refill after restart creates no native Session');
   assert.equal(fixture.requests.length, requestsBefore);

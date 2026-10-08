@@ -10,7 +10,7 @@ import { listProjectDirectories } from './project-directories.js';
 import type { SpikeProfile } from './profile.js';
 
 export type NativeThread = NonNullable<Awaited<ReturnType<ProjectRuntime['controller']['queryThreadById']>>>;
-export interface Chat { id: string; projectId: string | null; title: string; name: string | null; cwd: string; pinned: boolean; notificationsEnabled: boolean }
+export interface Chat { id: string; bindingId: string; projectId: string | null; title: string; name: string | null; cwd: string; pinned: boolean; notificationsEnabled: boolean }
 export interface PinnedDescendant extends Chat { kind: 'child' | 'fork'; rootChatId: string; parentThreadId: string }
 export interface ChatProjectOptions {
   profile: SpikeProfile;
@@ -20,12 +20,12 @@ export interface ChatProjectOptions {
   runtimeFactory?: typeof createProjectRuntime;
 }
 const missing = () => new ORPCError('NOT_FOUND', { message: 'Chat or project not found.' });
-const describeChat = (binding: RuntimeBinding, thread: NativeThread, title: string, metadata?: ChatMetadata): Chat => ({ id: thread.id, projectId: binding.projectId, title, name: readChatName(thread), cwd: binding.cwd, pinned: metadata?.pinPosition !== undefined && metadata.pinPosition !== null, notificationsEnabled: metadata?.notificationsEnabled ?? true });
+const describeChat = (binding: RuntimeBinding, thread: NativeThread, title: string, metadata?: ChatMetadata): Chat => ({ id: thread.id, bindingId: binding.id, projectId: binding.projectId, title, name: readChatName(thread), cwd: binding.cwd, pinned: metadata?.pinPosition !== undefined && metadata.pinPosition !== null, notificationsEnabled: metadata?.notificationsEnabled ?? true });
 
 /** Product membership is read from the registry. Native runtimes remain attached
  * to immutable binding identities and cwd, including detached standalone chats.
  */
-export function createChatProjects(options: ChatProjectOptions, assertActive: () => void, workflows?: () => ProjectRuntimeOptions['workflows'], observeRuntime?: (runtime: ProjectRuntime) => void) {
+export function createChatProjects(options: ChatProjectOptions, assertActive: () => void, workflows?: () => ProjectRuntimeOptions['workflows'], observeRuntime?: (runtime: ProjectRuntime, bindingId: string) => void) {
   const runtimes = new Map<string, Promise<ProjectRuntime>>();
   let pendingRegistry: Promise<ProductRegistry> | undefined;
   const home = options.directoryHome ?? homedir();
@@ -57,7 +57,7 @@ export function createChatProjects(options: ChatProjectOptions, assertActive: ()
     assertActive();
     let pending = runtimes.get(binding.id);
     if (!pending) {
-      pending = (options.runtimeFactory ?? createProjectRuntime)({ projectPath: binding.cwd, runtimeRoot: binding.runtimeRoot, profile: options.profile, ...(workflows && { workflows: workflows() }) }).then(runtime => { observeRuntime?.(runtime); return runtime; });
+      pending = (options.runtimeFactory ?? createProjectRuntime)({ projectPath: binding.cwd, runtimeRoot: binding.runtimeRoot, profile: options.profile, ...(workflows && { workflows: workflows() }) }).then(runtime => { observeRuntime?.(runtime, binding.id); return runtime; });
       runtimes.set(binding.id, pending);
       void pending.catch(() => { if (runtimes.get(binding.id) === pending) runtimes.delete(binding.id); });
     }

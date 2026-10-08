@@ -1,4 +1,4 @@
-import { nativeQueueFixture, nativeSettingsFixture } from './testBuilders';
+import { nativeReadStateFixture, nativeQueueFixture, nativeSettingsFixture } from './testBuilders';
 import { defaultDisplayState } from '../../../../spikes/mastra-code-sdk/node_modules/@mastra/core/dist/agent-controller/index.js';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -18,7 +18,7 @@ function stream() {
   };
 }
 function snapshot(epoch: string, revision: number, title: string): ChatSnapshot {
-  return { epoch, revision, chat: { pinned: false, notificationsEnabled: true, id: 'chat', projectId: 'project', cwd: '/project', title, name: title }, error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(),
+  return { readState: nativeReadStateFixture(), epoch, revision, chat: { bindingId: 'binding', pinned: false, notificationsEnabled: true, id: 'chat', projectId: 'project', cwd: '/project', title, name: title }, error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(),
     history: { earliest: null, hasOlder: false }, display: defaultDisplayState(), messages: [] };
 }
 afterEach(() => { rpc.watchChat.mockReset(); });
@@ -176,7 +176,7 @@ describe('native chat snapshot subscription', () => {
     hook.rerender({ id: 'other' });
     expect(hook.result.current.snapshot).toBeNull();
     await waitFor(() => expect(rpc.watchChat).toHaveBeenCalledTimes(2));
-    await act(async () => next.publish({ ...snapshot('other', 0, 'Other'), chat: { pinned: false, notificationsEnabled: true, id: 'other', title: 'Other', name: 'Other', cwd: '/project', projectId: 'project' } }));
+    await act(async () => next.publish({ ...snapshot('other', 0, 'Other'), chat: { bindingId: 'binding', pinned: false, notificationsEnabled: true, id: 'other', title: 'Other', name: 'Other', cwd: '/project', projectId: 'project' } }));
     expect(hook.result.current.snapshot?.chat.id).toBe('other');
   });
 });

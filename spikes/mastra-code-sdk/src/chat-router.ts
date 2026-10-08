@@ -1,5 +1,5 @@
 import { validChatInput, type ChatInput } from './chat-input.js';
-import type { ChatPromptResponse } from './chat-service.js';
+import type { ChatPromptResponse, ChatSeenSelection } from './chat-service.js';
 import { eventIterator, os, type as schemaType } from '@orpc/server';
 import type { HistoryRequest } from './chat-history.js';
 import type { SubagentList, SubagentSelection, SubagentSnapshot } from './chat-subagents.js';
@@ -39,6 +39,7 @@ const questionReplyInput = inputSchema<{ chatId: string; text: string; clientId:
 const messageInput = inputSchema<ChatInput & { chatId: string }>(value => object(value) && only(value, ['chatId', 'text', 'images', 'files', 'skills', 'skillMentions']) && string(value.chatId) && validChatInput(value));
 const sendInput = inputSchema<ChatInput & { chatId: string; queueIfPending?: boolean }>(value => object(value) && only(value, ['chatId', 'text', 'images', 'files', 'skills', 'skillMentions', 'queueIfPending']) && string(value.chatId) && validChatInput(value) && (!('queueIfPending' in value) || typeof value.queueIfPending === 'boolean'));
 const queueVersion = (value: Record<string, unknown>) => string(value.chatId) && string(value.epoch) && Number.isSafeInteger(value.revision) && (value.revision as number) >= 0;
+const seenInput = inputSchema<ChatSeenSelection>(value => object(value) && only(value, ['chatId', 'epoch', 'revision', 'runId']) && queueVersion(value) && string(value.runId, 4096));
 const queuedInput = inputSchema<QueuedSelection>(value => object(value) && only(value, ['chatId', 'epoch', 'revision', 'id']) && queueVersion(value) && string(value.id));
 const queuedEdit = inputSchema<QueuedEdit>(value => object(value) && only(value, ['chatId', 'epoch', 'revision', 'id', 'input']) && queueVersion(value) && string(value.id) && object(value.input) && only(value.input, ['text']) && typeof value.input.text === 'string' && value.input.text.length <= 100_000);
 const queuedOrder = inputSchema<QueuedOrder>(value => object(value) && only(value, ['chatId', 'epoch', 'revision', 'ids']) && queueVersion(value) && Array.isArray(value.ids) && value.ids.every(id => string(id)));
@@ -65,6 +66,7 @@ export function createChatRouter(service: ChatService) {
     getAccountUsage: os.handler(({ signal }) => service.getAccountUsage(signal)),
     watchAccount: os.output(eventIterator(schemaType<AccountSnapshot>())).handler(({ signal }) => service.watchAccount(signal)),
     listChats: os.handler(() => service.listChats()),
+    markChatSeen: os.input(seenInput).handler(({ input }) => service.markChatSeen(input)),
     readChatRoute: os.input(chatInput).handler(({ input }) => service.readChatRoute(input)),
     listSubagents: os.input(historyInput).handler(({ input, signal }) => service.listSubagents(input, signal)),
     watchSubagents: os.input(historyInput).output(eventIterator(schemaType<SubagentList>())).handler(({ input, signal }) => service.watchSubagents(input, signal)),

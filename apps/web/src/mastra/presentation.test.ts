@@ -1,18 +1,18 @@
-import { nativeQueueFixture, nativeSettingsFixture } from './testBuilders';
+import { nativeReadStateFixture, nativeQueueFixture, nativeSettingsFixture } from './testBuilders';
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { TimelineItemRenderer } from '../timeline/renderers';
 import { defaultDisplayState } from '../../../../spikes/mastra-code-sdk/node_modules/@mastra/core/dist/agent-controller/index.js';
-import { acceptsSnapshot, timelinePresentation } from './presentation';
-import type { ChatSnapshot } from './client';
+import { acceptsSnapshot, chatListEntry, timelinePresentation } from './presentation';
+import type { Chat, ChatSnapshot } from './client';
 function presentationItems(value: ChatSnapshot) {
   return timelinePresentation(value).rows.flatMap(row => row.type === 'activity' ? row.items : row.type === 'item' ? [row.item] : []);
 }
 
 function snapshot(): ChatSnapshot {
-  return { epoch: 'session-a', revision: 1, chat: { pinned: false, notificationsEnabled: true, id: 'chat', projectId: 'project', title: 'Chat', name: 'Chat', cwd: '/project' }, error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(),
+  return { readState: nativeReadStateFixture(), epoch: 'session-a', revision: 1, chat: { bindingId: 'binding', pinned: false, notificationsEnabled: true, id: 'chat', projectId: 'project', title: 'Chat', name: 'Chat', cwd: '/project' }, error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(),
     history: { earliest: 'user', hasOlder: true }, display: defaultDisplayState(), messages: [
       { id: 'user', role: 'user', createdAt: new Date(0), content: { format: 2, parts: [{ type: 'text', text: 'Hello' }] } },
       { id: 'assistant', role: 'assistant', createdAt: new Date(1), content: { format: 2, parts: [{ type: 'text', text: 'Old' }] } },
@@ -233,5 +233,17 @@ describe('native chat presentation', () => {
     expect(acceptsSnapshot({ epoch: 'a', revision: 7 }, { epoch: 'a', revision: 7 })).toBe(false);
     expect(acceptsSnapshot({ epoch: 'a', revision: 7 }, { epoch: 'b', revision: 0 })).toBe(true);
     expect(acceptsSnapshot(null, { epoch: 'a', revision: 0 })).toBe(true);
+  });
+});
+
+describe('native sidebar read state', () => {
+  it('projects only a known unseen native head, preserving running precedence', () => {
+    const chat = { id: 'chat', bindingId: 'binding', title: 'Chat', name: null, projectId: null, cwd: '/project', pinned: false, notificationsEnabled: true, isRunning: false,
+      readState: { epoch: 'native', revision: 1, head: { runId: 'run', messageId: 'answer', reason: 'complete' }, seen: false } } satisfies Chat;
+    expect(chatListEntry(chat).unreadCompletedAgentTurn).toBe(true);
+    expect(chatListEntry({ ...chat, readState: { ...chat.readState, seen: true } }).unreadCompletedAgentTurn).toBe(false);
+    expect(chatListEntry({ ...chat, readState: { ...chat.readState, seen: null } }).unreadCompletedAgentTurn).toBe(false);
+    expect(chatListEntry({ ...chat, readState: { ...chat.readState, head: null } }).unreadCompletedAgentTurn).toBe(false);
+    expect(chatListEntry({ ...chat, isRunning: true })).toMatchObject({ isRunning: true, unreadCompletedAgentTurn: true });
   });
 });

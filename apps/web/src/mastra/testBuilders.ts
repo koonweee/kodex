@@ -7,3 +7,7 @@ export function nativeSettingsFixture(modelId = 'openai-codex/gpt-5.4', thinking
 export function nativeQueueFixture(epoch = 'epoch'): ChatSnapshot['queue'] {
   return { epoch, revision: 0, rows: [], nativeCount: 0, partial: false };
 }
+
+export function nativeReadStateFixture(epoch = 'epoch'): ChatSnapshot['readState'] {
+  return { epoch, revision: 0, head: null, seen: null };
+}

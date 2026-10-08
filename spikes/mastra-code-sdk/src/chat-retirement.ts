@@ -16,7 +16,7 @@ export function createChatRetirement(options: {
   projects: ReturnType<typeof createChatProjects>;
   lifecycle: ReturnType<typeof createChatLifecycle>;
   handles: Map<string, Promise<RetiringHandle>>;
-  changed(chatId: string): void;
+  changed(chatId: string, bindingId: string, retiredIds: string[]): void;
 }) {
   return async (chatId: string) => {
     const route = await options.projects.resolveThreadRoute(chatId, true);
@@ -38,7 +38,7 @@ export function createChatRetirement(options: {
       await retireNativeThread(runtime, thread);
       const descendantThreadIds = await retireChatDescendants(runtime, parent, binding.cwd);
       await options.projects.archiveChat(binding.id, thread.id, descendantThreadIds);
-      options.changed(chatId);
+      options.changed(chatId, binding.id, [chatId, ...descendantThreadIds]);
     }));
   };
 }

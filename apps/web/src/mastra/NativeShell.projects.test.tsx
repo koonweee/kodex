@@ -1,3 +1,4 @@
+import { nativeReadStateFixture } from './testBuilders';
 import { MantineProvider } from '@mantine/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -13,7 +14,7 @@ import type { KodexShellView } from '../shell/KodexShellView';
 import { createProject, updateProject, deleteProject, moveProject, listDirectories } from '../api/client';
 
 const rpc = vi.hoisted(() => ({ watchCatalog: vi.fn(), listDirectories: vi.fn(), createProject: vi.fn(), updateProject: vi.fn(), deleteProject: vi.fn(), moveProjectBefore: vi.fn() }));
-const workspace = vi.hoisted(() => ({ openDraftThreadPane: vi.fn().mockResolvedValue(undefined), publishThreadPaneTimelineAction: vi.fn() }));
+const workspace = vi.hoisted(() => ({ workspace: { panes: [], activePaneId: null }, paneThreadContextsById: {}, openDraftThreadPane: vi.fn().mockResolvedValue(undefined), publishThreadPaneTimelineAction: vi.fn() }));
 vi.mock('./client', () => ({ mastraClient: rpc }));
 vi.mock('./NativeHostBoundary', () => ({ useNativeHost: () => ({ instanceId: 'instance' }) }));
 vi.mock('./useNativeAccount', () => ({ useNativeAccount: () => ({ error: null, logout: vi.fn() }) }));
@@ -42,7 +43,7 @@ function stream() {
     iterable: { [Symbol.asyncIterator]() { return { next: () => new Promise<IteratorResult<CatalogSnapshot>>(resolve => { next = resolve; }) }; } } };
 }
 const project = { id: 'project', name: 'Research', roots: ['/home/Research'] };
-const catalog = (revision = 1): CatalogSnapshot => ({ epoch: 'epoch', revision, projects: [project], archivedChatIds: [], pinnedDescendants: [], pinnedChatIds: [], chats: [{ id: 'chat', title: 'Chat', name: 'Chat', projectId: 'project', cwd: '/home/Research', pinned: false, notificationsEnabled: true, isRunning: false }] });
+const catalog = (revision = 1): CatalogSnapshot => ({ epoch: 'epoch', revision, projects: [project], archivedChatIds: [], pinnedDescendants: [], pinnedChatIds: [], chats: [{ bindingId: 'binding', readState: nativeReadStateFixture(), id: 'chat', title: 'Chat', name: 'Chat', projectId: 'project', cwd: '/home/Research', pinned: false, notificationsEnabled: true, isRunning: false }] });
 function shell() {
   return <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MantineProvider env="test"><NativeShell colorSchemeId="oled-black" appearance={DEFAULT_APPEARANCE_PREFERENCES} onAppearanceModeChange={vi.fn()} onThemeChange={vi.fn()} /></MantineProvider></QueryClientProvider>;
 }

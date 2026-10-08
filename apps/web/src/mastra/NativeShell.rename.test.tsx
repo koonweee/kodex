@@ -1,3 +1,4 @@
+import { nativeReadStateFixture } from './testBuilders';
 import { MantineProvider } from '@mantine/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen, waitFor } from '@testing-library/react';
@@ -17,7 +18,7 @@ vi.mock('./NativeHostBoundary', () => ({ useNativeHost: () => ({ instanceId: 'in
 vi.mock('./useNativeAccount', () => ({ useNativeAccount: () => ({ error: null, logout: vi.fn() }) }));
 vi.mock('./NativeAccountMenu', () => ({ NativeAccountMenu: () => null }));
 vi.mock('./NativeThreadPane', () => ({ NativeThreadPane: () => null }));
-vi.mock('../workspace/WorkspaceProvider', () => ({ WorkspaceProvider: ({ children, threadActions }: { children: ReactNode; threadActions: ComponentProps<typeof WorkspaceProvider>['threadActions'] }) => <actionsContext.Provider value={threadActions ?? {}}>{children}</actionsContext.Provider> }));
+vi.mock('../workspace/WorkspaceProvider', () => ({ useWorkspace: () => ({ workspace: { panes: [], activePaneId: null }, paneThreadContextsById: {} }), WorkspaceProvider: ({ children, threadActions }: { children: ReactNode; threadActions: ComponentProps<typeof WorkspaceProvider>['threadActions'] }) => <actionsContext.Provider value={threadActions ?? {}}>{children}</actionsContext.Provider> }));
 vi.mock('../api/client', async importOriginal => ({ ...await importOriginal<typeof import('../api/client')>(), renameThread: vi.fn() }));
 vi.mock('../shell/KodexShellView', () => ({ useNarrowThreadWorkspace: () => false, KodexShellView: () => {
   const actions = useContext(actionsContext); const catalog = useNativeCatalogSnapshot();
@@ -30,7 +31,7 @@ it('routes rename through native RPC and waits for canonical catalog updates', a
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><MantineProvider env="test"><NativeShell colorSchemeId="oled-black" appearance={DEFAULT_APPEARANCE_PREFERENCES} onAppearanceModeChange={vi.fn()} onThemeChange={vi.fn()} /></MantineProvider></QueryClientProvider>);
   await waitFor(() => expect(rpc.watchCatalog).toHaveBeenCalledOnce());
-  const catalog: CatalogSnapshot = { epoch: 'epoch', revision: 1, projects: [], archivedChatIds: [], pinnedDescendants: [], pinnedChatIds: [], chats: [{ id: 'chat', projectId: null, cwd: '/retained', title: 'Preview', name: null, pinned: false, notificationsEnabled: true, isRunning: false }] };
+  const catalog: CatalogSnapshot = { epoch: 'epoch', revision: 1, projects: [], archivedChatIds: [], pinnedDescendants: [], pinnedChatIds: [], chats: [{ bindingId: 'binding', readState: nativeReadStateFixture(), id: 'chat', projectId: null, cwd: '/retained', title: 'Preview', name: null, pinned: false, notificationsEnabled: true, isRunning: false }] };
   await act(async () => next?.({ value: catalog, done: false }));
   await userEvent.click(screen.getByRole('button', { name: 'Submit rename' }));
   await waitFor(() => expect(rpc.renameChat).toHaveBeenCalledWith({ chatId: 'chat', title: 'Native name' }));

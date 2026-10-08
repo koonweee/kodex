@@ -1,3 +1,4 @@
+import { nativeReadStateFixture } from './testBuilders';
 import { MantineProvider } from '@mantine/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -44,7 +45,7 @@ vi.mock('../workspace/WorkspaceShell', () => ({ WorkspaceShell: () => {
   </section>)}{workspace.panes.map(pane => <button key={pane.id} onClick={() => focusPane(pane.id)}>Focus {pane.id}</button>)}</>;
 } }));
 function catalog(): CatalogSnapshot {
-  const base = { projectId: 'project', cwd: '/project', pinned: true, notificationsEnabled: true, isRunning: false };
+  const base = { bindingId: 'binding', readState: nativeReadStateFixture(), projectId: 'project', cwd: '/project', pinned: true, notificationsEnabled: true, isRunning: false };
   return { epoch: 'native', revision: 1, projects: [{ id: 'project', name: 'Project', roots: ['/project'] }], archivedChatIds: [],
     chats: [{ ...base, id: 'parent', title: 'Parent', name: 'Parent' }], pinnedChatIds: ['fork', 'parent', 'child'],
     pinnedDescendants: [

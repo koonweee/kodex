@@ -1,4 +1,4 @@
-import { nativeQueueFixture, nativeSettingsFixture } from './testBuilders';
+import { nativeReadStateFixture, nativeQueueFixture, nativeSettingsFixture } from './testBuilders';
 import { MantineProvider } from '@mantine/core';
 import { ORPCError } from '@orpc/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -20,13 +20,13 @@ const onError = vi.fn();
 const levels = ['off', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 const models = [{ id: 'openai-codex/gpt-5.4', provider: 'openai-codex', modelName: 'gpt-5.4', hasApiKey: true, useCount: 0, thinkingLevels: [...levels] }, { id: 'openai-codex/gpt-5.5', provider: 'openai-codex', modelName: 'gpt-5.5', hasApiKey: true, useCount: 0, thinkingLevels: [...levels] }];
 function snapshot(modelId = models[0].id, thinkingLevel: 'high' | 'medium' | 'max' = 'medium'): ChatSnapshot {
-  return { epoch: 'epoch', revision: 1, history: { earliest: null, hasOlder: false }, prompts: [], goal: null, chat: { pinned: false, notificationsEnabled: true, id: 'chat', projectId: 'project', cwd: '/project', title: 'Chat', name: 'Chat' }, error: null, messages: [], display: defaultDisplayState(), queue: nativeQueueFixture(), settings: nativeSettingsFixture(modelId, thinkingLevel) };
+  return { readState: nativeReadStateFixture(), epoch: 'epoch', revision: 1, history: { earliest: null, hasOlder: false }, prompts: [], goal: null, chat: { bindingId: 'binding', pinned: false, notificationsEnabled: true, id: 'chat', projectId: 'project', cwd: '/project', title: 'Chat', name: 'Chat' }, error: null, messages: [], display: defaultDisplayState(), queue: nativeQueueFixture(), settings: nativeSettingsFixture(modelId, thinkingLevel) };
 }
 function defaultsStream() {
   let consumer: ((value: IteratorResult<unknown>) => void) | undefined;
   return { publish(value: unknown) { if (!consumer) throw new Error('No defaults consumer'); consumer({ value, done: false }); consumer = undefined; }, iterable: { [Symbol.asyncIterator]() { return { next: () => new Promise<IteratorResult<unknown>>(resolve => { consumer = resolve; }) }; } } };
 }
-function defaults(modelId = models[0].id, thinkingLevel = 'medium') { return { epoch: 'epoch', revision: 1, history: { earliest: null, hasOlder: false }, version: 'version', modelId, thinkingLevel, thinkingLevels: [...levels] }; }
+function defaults(modelId = models[0].id, thinkingLevel = 'medium') { return { readState: nativeReadStateFixture(), epoch: 'epoch', revision: 1, history: { earliest: null, hasOlder: false }, version: 'version', modelId, thinkingLevel, thinkingLevels: [...levels] }; }
 function renderComposer(pane: WorkspacePane, initial: ChatSnapshot | null) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const draftStore = new Map();

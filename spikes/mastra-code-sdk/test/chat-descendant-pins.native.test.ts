@@ -94,7 +94,14 @@ test('two typed clients share descendant pin/reorder/unpin, restart and parent a
   await env.restart();
   const reopened = await env.client().listChats();
   assert.deepEqual(reopened.pinnedChatIds, before.pinnedChatIds);
-  assert.deepEqual(reopened.pinnedDescendants, before.pinnedDescendants);
+  assert.deepEqual(reopened.pinnedDescendants.map(({ readState, ...row }) => row),
+    before.pinnedDescendants.map(({ readState, ...row }) => row));
+  for (const row of reopened.pinnedDescendants) {
+    const previous = before.pinnedDescendants.find(previous => previous.id === row.id)!;
+    assert.notEqual(row.readState.epoch, previous.readState.epoch);
+    assert.equal(row.readState.head, null);
+    assert.equal(row.readState.seen, null);
+  }
   const peerAbort = new AbortController(); t.after(() => peerAbort.abort());
   const peer = await env.client().watchCatalog(undefined, { signal: peerAbort.signal }); await peer.next();
   await env.client().archiveChat({ chatId: 'parent' });

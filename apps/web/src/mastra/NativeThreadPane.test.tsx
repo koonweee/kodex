@@ -1,4 +1,4 @@
-import { nativeQueueFixture, nativeSettingsFixture } from './testBuilders';
+import { nativeReadStateFixture, nativeQueueFixture, nativeSettingsFixture } from './testBuilders';
 import { MantineProvider } from '@mantine/core';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
@@ -28,7 +28,7 @@ vi.mock('./NativeComposer', () => ({ NativeComposer: () => <div>Composer</div> }
 const pane: WorkspacePane = { id: 'pane', kind: 'thread', title: 'Chat title', target: { mode: 'existing', threadId: 'chat' } };
 const context = createContext<Record<string, unknown>>({});
 const stableActions = { onRenameThread: native.rename, onArchiveThread: vi.fn(), onPinThread: vi.fn(), onUnpinThread: vi.fn(), onSetThreadNotificationsEnabled: vi.fn() };
-const stable = { closePane: native.close, errorMessage: null, setPaneThreadContext: vi.fn(), setPaneHeaderAdornment: vi.fn(), updatePane: vi.fn().mockResolvedValue(undefined), duplicatePane: native.duplicate, onShowMobileSidebar: vi.fn(), onImageOpen: vi.fn(), onMarkdownOpen: vi.fn(), threadActions: stableActions, showDebugEvents: false };
+const stable = { visiblePaneIds: [], closePane: native.close, errorMessage: null, setPaneThreadContext: vi.fn(), setPaneHeaderAdornment: vi.fn(), updatePane: vi.fn().mockResolvedValue(undefined), duplicatePane: native.duplicate, onShowMobileSidebar: vi.fn(), onImageOpen: vi.fn(), onMarkdownOpen: vi.fn(), threadActions: stableActions, showDebugEvents: false };
 const onError = vi.fn();
 function Harness({ children }: { children?: ReactNode }) {
   const [header, setHeader] = useState<ReactNode>(null);
@@ -40,7 +40,7 @@ function Harness({ children }: { children?: ReactNode }) {
 afterEach(() => { cleanup(); vi.clearAllMocks(); native.error = null; native.subagentError = null; native.isLoadingOlderHistory = false; });
 it('loads older native history, disables the pending action, and surfaces failures while preserving the timeline', async () => {
   native.useWorkspace.mockImplementation(() => useContext(context));
-  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: 'project', cwd: '/project', title: 'Chat title', name: 'Chat title', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: 'recent', hasOlder: true } };
+  native.snapshot = { readState: nativeReadStateFixture(), epoch: 'epoch', revision: 1, chat: { bindingId: 'binding', id: 'chat', projectId: 'project', cwd: '/project', title: 'Chat title', name: 'Chat title', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: 'recent', hasOlder: true } };
   const view = render(<Harness />);
   fireEvent.click(screen.getByRole('button', { name: 'Load older history' }));
   expect(native.loadOlderHistory).toHaveBeenCalledOnce();
@@ -84,7 +84,7 @@ it('reuses main unavailable-thread recovery controls after an initial failure an
   expect(native.close).toHaveBeenCalledWith('pane', null);
   expect(native.watched).toHaveBeenLastCalledWith('chat');
   native.error = null; native.subagentError = null;
-  native.snapshot = { epoch: 'epoch', revision: 2, chat: { id: 'chat', projectId: null, cwd: '/project', title: 'Recovered chat', name: 'Recovered chat', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
+  native.snapshot = { readState: nativeReadStateFixture(), epoch: 'epoch', revision: 2, chat: { bindingId: 'binding', id: 'chat', projectId: null, cwd: '/project', title: 'Recovered chat', name: 'Recovered chat', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
   await act(async () => view.rerender(<Harness />));
   expect(screen.getByRole('region', { name: 'Recovered chat' })).toBeInTheDocument();
   expect(screen.getByText('Composer')).toBeInTheDocument();
@@ -94,7 +94,7 @@ it('reuses main unavailable-thread recovery controls after an initial failure an
 });
 it('registers one workspace action menu, keeps it stable while streaming, and unregisters on removal', async () => {
   native.useWorkspace.mockImplementation(() => useContext(context));
-  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: 'project', cwd: '/project', title: 'Chat title', name: 'Chat title', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
+  native.snapshot = { readState: nativeReadStateFixture(), epoch: 'epoch', revision: 1, chat: { bindingId: 'binding', id: 'chat', projectId: 'project', cwd: '/project', title: 'Chat title', name: 'Chat title', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
   const view = render(<Harness />);
   const header = screen.getByLabelText('Workspace header');
   expect(within(header).getByRole('button', { name: 'Thread actions' })).toBeInTheDocument();
@@ -114,7 +114,7 @@ it('registers one workspace action menu, keeps it stable while streaming, and un
 });
 it('opens rename from the workspace header with the current title and preserves the command', async () => {
   native.useWorkspace.mockImplementation(() => useContext(context));
-  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: 'project', cwd: '/project', title: 'Native title', name: 'Native title', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
+  native.snapshot = { readState: nativeReadStateFixture(), epoch: 'epoch', revision: 1, chat: { bindingId: 'binding', id: 'chat', projectId: 'project', cwd: '/project', title: 'Native title', name: 'Native title', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
   native.rename.mockResolvedValue({});
   render(<Harness />);
   fireEvent.click(screen.getByRole('button', { name: 'Thread actions' }));
@@ -129,7 +129,7 @@ it('opens rename from the workspace header with the current title and preserves 
 
 it('renders pin and notification preferences only from canonical chat snapshots', async () => {
   native.useWorkspace.mockImplementation(() => useContext(context));
-  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: null, cwd: '/retained', title: 'Native title', name: 'Native title', pinned: true, notificationsEnabled: false }, display: defaultDisplayState(), messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
+  native.snapshot = { readState: nativeReadStateFixture(), epoch: 'epoch', revision: 1, chat: { bindingId: 'binding', id: 'chat', projectId: null, cwd: '/retained', title: 'Native title', name: 'Native title', pinned: true, notificationsEnabled: false }, display: defaultDisplayState(), messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
   const view = render(<Harness />);
   fireEvent.click(screen.getByRole('button', { name: 'Thread actions' }));
   expect(await screen.findByRole('menuitem', { name: 'Unpin thread' })).toBeInTheDocument();
@@ -147,7 +147,7 @@ it('renders pin and notification preferences only from canonical chat snapshots'
 
 it('keeps a rejected rename draft in the exact main form and validates blank names locally', async () => {
   native.useWorkspace.mockImplementation(() => useContext(context));
-  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: null, cwd: '/project', title: 'Original', name: 'Original', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
+  native.snapshot = { readState: nativeReadStateFixture(), epoch: 'epoch', revision: 1, chat: { bindingId: 'binding', id: 'chat', projectId: null, cwd: '/project', title: 'Original', name: 'Original', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
   native.rename.mockRejectedValue(new Error('Native rename failed'));
   render(<Harness />);
   fireEvent.click(screen.getByRole('button', { name: 'Thread actions' }));
@@ -170,7 +170,7 @@ it('keeps a rejected rename draft in the exact main form and validates blank nam
 
 it('starts an unnamed chat rename with a blank name and keeps acknowledgments separate from watched titles', async () => {
   native.useWorkspace.mockImplementation(() => useContext(context));
-  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: null, cwd: '/project', title: 'First user preview', name: null, pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
+  native.snapshot = { readState: nativeReadStateFixture(), epoch: 'epoch', revision: 1, chat: { bindingId: 'binding', id: 'chat', projectId: null, cwd: '/project', title: 'First user preview', name: null, pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
   let acknowledge!: () => void;
   native.rename.mockReturnValue(new Promise<void>(resolve => { acknowledge = resolve; }));
   const view = render(<Harness />);
@@ -196,7 +196,7 @@ it('starts an unnamed chat rename with a blank name and keeps acknowledgments se
 
 it('ignores a late rename failure after the pane changes chats', async () => {
   native.useWorkspace.mockImplementation(() => useContext(context));
-  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: null, cwd: '/project', title: 'Original', name: 'Original', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
+  native.snapshot = { readState: nativeReadStateFixture(), epoch: 'epoch', revision: 1, chat: { bindingId: 'binding', id: 'chat', projectId: null, cwd: '/project', title: 'Original', name: 'Original', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
   let reject!: (error: Error) => void;
   native.rename.mockReturnValue(new Promise((_resolve, fail) => { reject = fail; }));
   const view = render(<Harness><NativeThreadPane pane={pane} draftStore={{} as ComposerDraftStore} onError={onError} /></Harness>);
@@ -232,7 +232,7 @@ it('stops watching only after explicit authoritative archive state arrives', () 
 
 it('opens main subagent viewer from the pane header and preserves the parent composer', async () => {
   native.useWorkspace.mockImplementation(() => useContext(context));
-  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: null, cwd: '/project', title: 'Parent', name: 'Parent', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
+  native.snapshot = { readState: nativeReadStateFixture(), epoch: 'epoch', revision: 1, chat: { bindingId: 'binding', id: 'chat', projectId: null, cwd: '/project', title: 'Parent', name: 'Parent', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
   native.subagents = { epoch: 'epoch', revision: 1, chatId: 'chat', childPrompts: [], invocations: [{ id: 'child-call', agentType: 'explore', task: 'Inspect', modelId: null, forked: false, status: 'completed', result: 'Native child findings', activity: null }], forks: [], children: [], history: { earliest: null, hasOlder: false } };
   try {
     render(<Harness />);
@@ -260,7 +260,7 @@ it('keeps the shared error viewer and reload action reachable when initial subag
 
 it('opens the inspector when only fresh delegated children exist', async () => {
   native.useWorkspace.mockImplementation(() => useContext(context));
-  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: null, cwd: '/project', title: 'Parent', name: 'Parent', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
+  native.snapshot = { readState: nativeReadStateFixture(), epoch: 'epoch', revision: 1, chat: { bindingId: 'binding', id: 'chat', projectId: null, cwd: '/project', title: 'Parent', name: 'Parent', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
   native.subagents = { epoch: 'epoch', revision: 1, chatId: 'chat', childPrompts: [], invocations: [], forks: [], children: [{ id: 'fresh', title: 'Fresh child', active: false }], history: { earliest: null, hasOlder: false } };
   try {
     render(<Harness />);
@@ -272,7 +272,7 @@ it('opens the inspector when only fresh delegated children exist', async () => {
 
 it('updates an inactive pane tab activity from its own native display and ignores a different chat snapshot', async () => {
   native.useWorkspace.mockImplementation(() => useContext(context));
-  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: null, cwd: '/project', title: 'Chat', name: 'Chat', pinned: false, notificationsEnabled: true }, display: { ...defaultDisplayState(), isRunning: true }, messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
+  native.snapshot = { readState: nativeReadStateFixture(), epoch: 'epoch', revision: 1, chat: { bindingId: 'binding', id: 'chat', projectId: null, cwd: '/project', title: 'Chat', name: 'Chat', pinned: false, notificationsEnabled: true }, display: { ...defaultDisplayState(), isRunning: true }, messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
   const inactivePane = { ...pane, id: 'inactive-pane' };
   const node = (threadId = 'chat') => <Harness><NativeThreadPane pane={{ ...inactivePane, target: { mode: 'existing', threadId } }} draftStore={{} as ComposerDraftStore} onError={onError} /></Harness>;
   const view = render(node());

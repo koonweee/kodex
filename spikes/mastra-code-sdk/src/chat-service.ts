@@ -1,5 +1,6 @@
+import { createChatReadState } from './chat-read-state.js';
 import { createMcpService } from './mcp-service.js';
-import { createChatActivity, type CatalogChat } from './chat-activity.js';
+import { createChatActivity } from './chat-activity.js';
 import { createAutomationService } from './automation-service.js';
 import { AUTOMATION_WORKFLOW_ID, createAutomationWorkflow } from './automation-workflow.js';
 import { join } from 'node:path';
@@ -8,37 +9,29 @@ import { uploadChatImage } from './chat-image-uploads.js';
 import { prepareNativeSkills, readNativeSkills } from './chat-skills.js';
 import { readChatFilePreview } from './chat-file-previews.js';
 import { uploadChatFile } from './chat-uploads.js';
-import { readNativePromptViews, respondNativePrompt, type NativePrompt, type PromptResponse } from './chat-prompts.js';
+import { readNativePromptViews, respondNativePrompt } from './chat-prompts.js';
 import { readChatDescendants } from './chat-descendants.js';
 import { randomUUID } from 'node:crypto';
 import { pinUnnamedChat, renameNativeChat } from './chat-titles.js';
 import { EventPublisher, ORPCError } from '@orpc/server';
 import type { NativeSession, ProjectRuntime } from './runtime.js';
-import { createChatProjects, type Chat, type ChatProjectOptions, type PinnedDescendant } from './chat-projects.js';
-import type { ProductProject, ProjectPatch, RuntimeBinding } from './product-registry.js';
-import { assertProfileActive, type SpikeProfile } from './profile.js';
+import { createChatProjects, type Chat } from './chat-projects.js';
+import type { ProjectPatch, RuntimeBinding } from './product-registry.js';
+import { assertProfileActive } from './profile.js';
 import { createAccountService } from './account-service.js';
 import { captureChatFastRequestContext } from './chat-fast.js';
-import { createChatQueue, type ChatQueueInput, type ChatQueueSnapshot, type ChatQueueResult } from './chat-queue.js';
+import { createChatQueue, type ChatQueueResult } from './chat-queue.js';
 import { createChatRetirement } from './chat-retirement.js';
 import { applyChildSessionPolicy } from './child-policy.js';
 import { createChatLifecycle } from './chat-lifecycle.js';
 import { readChatHistory, type ChatHistory, type HistoryRequest } from './chat-history.js';
 import { createChatSubagents, type SubagentSelection } from './chat-subagents.js';
-import { createChatGoals, type NativeGoal, type GoalPatch } from './chat-goals.js';
-import { createNativeChatSettings, type ChatSettings, type ChatSettingsPatch } from './chat-settings.js';
+import { createChatGoals, type GoalPatch } from './chat-goals.js';
+import { createNativeChatSettings, type ChatSettingsPatch } from './chat-settings.js';
 import { createSessionProjection, type SessionSnapshot } from './transport.js';
 
-export interface CatalogSnapshot { epoch: string; revision: number; projects: ProductProject[]; chats: CatalogChat[]; pinnedChatIds: string[]; pinnedDescendants: Array<PinnedDescendant & { isRunning: boolean }>; archivedChatIds: string[] }
-export interface ChatSnapshot extends SessionSnapshot { prompts: NativePrompt[]; chat: Chat; error: string | null; settings: ChatSettings; queue: ChatQueueSnapshot; goal: NativeGoal | null }
-export type ChatPromptResponse = PromptResponse & { chatId: string };
-export interface QueuedSelection { chatId: string; epoch: string; revision: number; id: string }
-export interface QueuedEdit extends QueuedSelection { input: ChatQueueInput }
-export interface QueuedOrder { chatId: string; epoch: string; revision: number; ids: string[] }
-export interface ChatServiceOptions extends ChatProjectOptions {
-  profile: SpikeProfile;
-  instanceId: string;
-}
+export type { CatalogSnapshot, ChatSnapshot, ChatPromptResponse, ChatSeenSelection, QueuedSelection, QueuedEdit, QueuedOrder, ChatServiceOptions } from './chat-service-types.js';
+import type { CatalogSnapshot, ChatSnapshot, ChatPromptResponse, ChatSeenSelection, QueuedSelection, QueuedEdit, QueuedOrder, ChatServiceOptions } from './chat-service-types.js';
 interface Handle {
   binding: RuntimeBinding;
   runtime: ProjectRuntime;
@@ -84,6 +77,12 @@ export function createChatService(options: ChatServiceOptions) {
   };
   const invalidateCatalog = () => { catalog.publish('changed', ++catalogRevision); };
   const activity = createChatActivity(invalidateCatalog);
+  const reads = createChatReadState(epoch, (bindingId, threadId) => {
+    invalidateCatalog();
+    void handles.get(`${bindingId}:${threadId}`)?.then(handle => {
+      if (!disposed && !handle.observers.signal.aborted) handle.session.emit({ type: 'display_state_changed', displayState: handle.session.displayState.get() });
+    }, () => {});
+  });
   const projects = createChatProjects(options, assertActive, () => ({
     [AUTOMATION_WORKFLOW_ID]: createAutomationWorkflow(input => lifecycle.admit(input.targetThreadId, async () => {
       const target = await projects.findThread(input.targetThreadId);
@@ -92,7 +91,7 @@ export function createChatService(options: ChatServiceOptions) {
       if (!result.accepted) throw new Error('Scheduled input was not accepted.');
       return accepted();
     })),
-  }), activity.observeRuntime);
+  }), (runtime, bindingId) => { activity.observeRuntime(runtime); reads.observeRuntime(runtime, bindingId); });
   const subagents = createChatSubagents({ signal: lifetime.signal, async resolveParent(chatId) {
     const parent = await projects.resolveThreadRoute(chatId, true);
     const handle = await handles.get(`${parent.binding.id}:${chatId}`);
@@ -151,7 +150,7 @@ export function createChatService(options: ChatServiceOptions) {
     });
   }
   const retireChat = createChatRetirement({ projects, lifecycle, handles,
-    changed(chatId) { invalidateCatalog(); subagents.invalidate(chatId); },
+    changed(chatId, bindingId, retiredIds) { reads.forget(bindingId, retiredIds); invalidateCatalog(); subagents.invalidate(chatId); },
   });
 
   async function snapshot(handle: Handle, signal?: AbortSignal, initial?: SessionSnapshot, request: HistoryRequest = {}): Promise<ChatSnapshot> {
@@ -161,6 +160,7 @@ export function createChatService(options: ChatServiceOptions) {
     for (;;) {
       signal?.throwIfAborted();
       lifetime.signal.throwIfAborted();
+      const readState = reads.read(handle.binding.id, handle.session.thread.requireId());
       const current = supplied ?? await handle.projection.snapshot(signal, history);
       supplied = undefined;
       if (current.revision !== handle.revision) continue;
@@ -179,7 +179,8 @@ export function createChatService(options: ChatServiceOptions) {
       const prompts = await readNativePromptViews(handle.session, handle.binding.cwd);
       signal?.throwIfAborted(); lifetime.signal.throwIfAborted();
       if (current.revision !== handle.revision) continue;
-      return { ...current, chat, error: handle.error, settings: publicSettings, queue: handle.queue.snapshot(), goal, prompts };
+      if (readState.revision !== reads.read(handle.binding.id, chat.id).revision) continue;
+      return { ...current, chat, error: handle.error, settings: publicSettings, queue: handle.queue.snapshot(), goal, prompts, readState };
     }
   }
   async function catalogSnapshot(signal?: AbortSignal): Promise<CatalogSnapshot> {
@@ -188,8 +189,8 @@ export function createChatService(options: ChatServiceOptions) {
       lifetime.signal.throwIfAborted();
       const revision = catalogRevision;
       const inventory = await projects.inventory();
-      const chats = activity.project(inventory.chats);
-      const pinnedDescendants = activity.project(inventory.pinnedDescendants);
+      const chats = activity.project(inventory.chats).map(chat => ({ ...chat, readState: reads.read(chat.bindingId, chat.id) }));
+      const pinnedDescendants = activity.project(inventory.pinnedDescendants).map(chat => ({ ...chat, readState: reads.read(chat.bindingId, chat.id) }));
       signal?.throwIfAborted();
       lifetime.signal.throwIfAborted();
       if (revision === catalogRevision) return { epoch, revision, ...inventory, chats, pinnedDescendants };
@@ -308,6 +309,11 @@ export function createChatService(options: ChatServiceOptions) {
       return { instanceId: options.instanceId };
     },
     async listChats() { return catalogSnapshot(); },
+    async markChatSeen({ chatId, ...selection }: ChatSeenSelection) {
+      const { binding } = await projects.resolveThreadRoute(chatId);
+      assertActive();
+      return reads.acknowledge({ ...selection, bindingId: binding.id, threadId: chatId });
+    },
     listSubagents(input: { chatId: string; history?: HistoryRequest }, signal?: AbortSignal) { return subagents.list(input, signal); },
     watchSubagents(input: { chatId: string; history?: HistoryRequest }, signal?: AbortSignal) { return subagents.watchList(input, signal); },
     openSubagent(input: SubagentSelection, signal?: AbortSignal) { return subagents.open(input, signal); },
@@ -452,7 +458,7 @@ export function createChatService(options: ChatServiceOptions) {
       if (disposal) return disposal;
       disposed = true;
       lifetime.abort();
-      activity.dispose();
+      activity.dispose(); reads.dispose();
       disposal = (async () => {
         if (accountService) await accountService.then(service => service.dispose(), () => {});
         const loadedHandles = await Promise.allSettled(handles.values());
@@ -472,6 +478,7 @@ export function createChatService(options: ChatServiceOptions) {
   }
   return { ...service,
     mcp: createMcpService({ sources: projects.mcpBindings, assertActive, signal: lifetime.signal }),
+    markChatSeen: guarded(service.markChatSeen),
     updateGoal: guarded(service.updateGoal), clearGoal: guarded(service.clearGoal),
     readChatRoute: guarded(service.readChatRoute), readControlChat: guarded(service.readControlChat), readControlHistory: guarded(service.readControlHistory),
     openChat: guarded(service.openChat), getChatSettings: guarded(service.getChatSettings),
