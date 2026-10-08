@@ -174,6 +174,63 @@ test("fullscreen touch preference updates every tab on this browser", async ({ b
   expect(fixture.unexpected).toEqual([]);
 });
 
+test("fullscreen submit collapses directly to a disabled idle row", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true,
+    baseURL: test.info().project.use.baseURL });
+  const fixture = await nativeSettingsFixture(context);
+  try {
+    const client = "fullscreen-submit";
+    const page = await fixture.page(client);
+    const pane = page.locator('.kodex-thread-pane[data-workspace-pane-active="true"]');
+    const input = pane.getByLabel("Message composer", { exact: true });
+    await input.tap();
+    await input.fill("Send without an inline flash");
+    const form = input.locator("xpath=ancestor::form");
+    await form.evaluate((element) => {
+      const shell = element.closest(".kodex-composer-shell")!;
+      const testWindow = window as typeof window & {
+        __composerCollapsedIdleObserver?: MutationObserver;
+        __composerCollapsedIdleStates?: string[];
+      };
+      testWindow.__composerCollapsedIdleStates = [];
+      testWindow.__composerCollapsedIdleObserver = new MutationObserver(() => {
+        if (!shell.classList.contains("kodex-mobile-composer-expanded")) {
+          testWindow.__composerCollapsedIdleStates!.push(element.getAttribute("data-idle-compact") ?? "missing");
+        }
+      });
+      testWindow.__composerCollapsedIdleObserver.observe(shell, { attributes: true, subtree: true });
+    });
+    fixture.holdNext(client, "input", "submit");
+    await pane.getByRole("button", { name: "Send message", exact: true }).tap();
+    await expect.poll(() => fixture.isHeld(client, "input", "submit")).toBe(true);
+
+    await expect(pane.getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
+    await expect(form).toHaveAttribute("data-idle-compact", "true");
+    const collapsedIdleStates = await page.evaluate(() => {
+      const testWindow = window as typeof window & {
+        __composerCollapsedIdleObserver?: MutationObserver;
+        __composerCollapsedIdleStates?: string[];
+      };
+      testWindow.__composerCollapsedIdleObserver?.disconnect();
+      return testWindow.__composerCollapsedIdleStates ?? [];
+    });
+    expect(collapsedIdleStates.length).toBeGreaterThan(0);
+    expect(collapsedIdleStates).not.toContain("false");
+    await expect(input).toHaveValue("");
+    await expect(input).toBeDisabled();
+    await expect(pane.getByRole("button", { name: "Sending message", exact: true })).toBeDisabled();
+
+    await fixture.release(client, "input", "submit");
+    await expect(pane.getByRole("button", { name: "Stop turn", exact: true })).toBeVisible();
+    await expect(form).toHaveAttribute("data-idle-compact", "true");
+  } finally {
+    await fixture.close();
+    await context.close();
+  }
+  expect(fixture.errors).toEqual([]);
+  expect(fixture.unexpected).toEqual([]);
+});
+
 test("fullscreen keeps timeline paint out of the keyboard viewport gap", async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true,
     baseURL: test.info().project.use.baseURL });

@@ -7,6 +7,8 @@ import type { components } from "../src/api/generated/schema";
 
 import type { AppSurfaceSession, Automation, AutomationRun, Capabilities, EventEnvelope, MarkThreadSeenRequest, QueuedInput, QueueTransfer, ThreadRead, ThreadSettingsResponse, UnreadBadgeResponse, ThreadSettingsUpdateRequest, ThreadViewPatch, ThreadViewResponse } from "../src/api/client";
 
+type HeldRequestKind = "settings" | "snapshot" | "seen" | "badge" | "queue" | "runs" | "goal" | "input";
+
 export async function nativeSettingsFixture(context: BrowserContext, options: { queuedSteerClient?: string; payloadDelivery?: boolean } = {}) {
   let goal: components["schemas"]["ThreadGoal"] | null = null;
   const settings: ThreadSettingsResponse = { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null };
@@ -221,7 +223,7 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
         const queued: QueuedInput = { id: `queued-${++nextQueueId}`, threadId: detail.thread.id, input: submitted.input, clientUserMessageId: submitted.clientUserMessageId, attachments: submitted.attachments ?? [], canSteer: Boolean(detail.timeline.activeTurnId) };
         queuedInputs.push(queued);
         emit("turn_queue.changed", { threadId: detail.thread.id });
-        return respond(route, { payload: {}, disposition: "queued", queuedInput: queued });
+        return respond(route, { payload: {}, disposition: "queued", queuedInput: queued }, 200, `input:${client}`);
       }
 
       detail.thread.status = "active";
@@ -234,7 +236,7 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
       };
       emit("thread_view.patch", patch, undefined, revision);
       emit("turn_queue.changed", { threadId: detail.thread.id });
-      return respond(route, { payload: {turn: {id:"turn-1",status:"inProgress"}} });
+      return respond(route, { payload: {turn: {id:"turn-1",status:"inProgress"}} }, 200, `input:${client}`);
     }
     if (key === "POST /v1/threads/settings-chat/queued-inputs") {
       const submitted = body as { input: QueuedInput["input"]; clientUserMessageId: string };
@@ -391,10 +393,10 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
       Object.assign(settings, update);
       settingsChanged(client);
     },
-    holdNext(client: string, kind: "settings" | "snapshot" | "seen" | "badge" | "queue" | "runs" | "goal" = "settings", label = "") { holds.set(`${kind}:${client}`, `${kind}:${client}:${label}`); },
-    isHeld(client: string, kind: "settings" | "snapshot" | "seen" | "badge" | "queue" | "runs" | "goal" = "settings", label = "") { return held.has(`${kind}:${client}:${label}`); },
-    wasAborted(client: string, kind: "settings" | "snapshot" | "seen" | "badge" | "queue" | "runs" | "goal" = "settings", label = "") { return held.get(`${kind}:${client}:${label}`)?.aborted() ?? false; },
-    async release(client: string, kind: "settings" | "snapshot" | "seen" | "badge" | "queue" | "runs" | "goal" = "settings", label = "") {
+    holdNext(client: string, kind: HeldRequestKind = "settings", label = "") { holds.set(`${kind}:${client}`, `${kind}:${client}:${label}`); },
+    isHeld(client: string, kind: HeldRequestKind = "settings", label = "") { return held.has(`${kind}:${client}:${label}`); },
+    wasAborted(client: string, kind: HeldRequestKind = "settings", label = "") { return held.get(`${kind}:${client}:${label}`)?.aborted() ?? false; },
+    async release(client: string, kind: HeldRequestKind = "settings", label = "") {
       const key = `${kind}:${client}:${label}`;
       const reply = held.get(key);
       if (!reply) throw new Error(`No held ${kind} read for ${client}`);

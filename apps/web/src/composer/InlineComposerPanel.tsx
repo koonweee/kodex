@@ -129,13 +129,20 @@ export function InlineComposerPanel({
     const frame = requestAnimationFrame(() => setEditingActive(false));
     return () => cancelAnimationFrame(frame);
   }, [composerFocused, toolbarMenuOpen]);
+  useLayoutEffect(() => {
+    if (isComposerBusy) setEditingActive(false);
+  }, [isComposerBusy]);
   // Keep the empty row stable through attachment and settings loading.
   const useIdlePresentation = density === "compact" || hasTouchInput;
+  const draftContentEmpty = draftState.composerText.length === 0 && draftState.annotations.length === 0 &&
+    draftState.skillBindings.length === 0;
+  // Busy state still owns submission and disabled controls after the captured
+  // draft clears; it does not need the expanded inline presentation.
+  const busyOwnsClearedDraft = isComposerBusy && draftContentEmpty;
   const idleCompact = useIdlePresentation && selectedThreadPresent && !isDraftThreadSelected &&
-    !isDraftComposerTransitioning && !expanded && !editingActive &&
-    draftState.composerText.length === 0 && draftState.annotations.length === 0 &&
-    draftState.skillBindings.length === 0 && pendingAttachments.length === 0 &&
-    !skillPopupOpen && !slashPopupOpen && !isComposerDragActive && !isComposerBusy && !composerSettingsError;
+    !isDraftComposerTransitioning && !expanded && (!editingActive || busyOwnsClearedDraft) && draftContentEmpty &&
+    (pendingAttachments.length === 0 || busyOwnsClearedDraft) && !skillPopupOpen && !slashPopupOpen &&
+    !isComposerDragActive && !composerSettingsError;
   const inlineMotion = useIdlePresentation && selectedThreadPresent && !isDraftThreadSelected && !isDraftComposerTransitioning && !expanded;
   useInlineComposerMotion(formRef, inlineMotion, idleCompact);
   const draftHeroText = greetingForDate(new Date());

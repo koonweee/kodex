@@ -108,6 +108,9 @@ describe("Mobile composer panel", () => {
     { name: "thread settings read", props: { composerSettings: null } },
     { name: "settings update", props: { composerSettingsDisabled: true } },
     { name: "attachment and settings", props: { isSelectedTimelineReady: false, composerSettings: null, composerSettingsDisabled: true } },
+    { name: "captured submission", props: { isComposerSubmitting: true } },
+    { name: "captured attachment submission", props: { isComposerSubmitting: true,
+      pendingAttachments: [{ id: "file", file: new File(["draft"], "draft.txt"), kind: "file" as const, status: "pending" as const }] } },
   ])("keeps an empty compact composer idle through $name", ({ props: loading }) => {
     const props: Partial<ComponentProps<typeof ComposerPanel>> = { ...loading };
     const view = renderComposerPanel(props);
@@ -117,10 +120,16 @@ describe("Mobile composer panel", () => {
     if (props.isSelectedTimelineReady === false) {
       expect(screen.getByRole("button", { name: /open attachment menu/i })).toBeDisabled();
     }
+    if (props.isComposerSubmitting) {
+      expect(screen.getByRole("button", { name: /open attachment menu/i })).toBeDisabled();
+      expect(screen.getByRole("button", { name: /sending message/i })).toBeDisabled();
+    }
     if (props.composerSettingsDisabled || props.composerSettings === null) {
       expect(screen.getByRole("button", { name: /model:|loading chat settings/i })).toBeDisabled();
     }
-    Object.assign(props, { isSelectedTimelineReady: true, composerSettings, composerSettingsDisabled: false });
+    const wasSubmitting = props.isComposerSubmitting;
+    Object.assign(props, { isSelectedTimelineReady: true, composerSettings, composerSettingsDisabled: false, isComposerSubmitting: false });
+    if (wasSubmitting) props.pendingAttachments = [];
     view.refreshLayout();
     expect(form).toHaveAttribute("data-idle-compact", "true");
     expect(screen.getByLabelText(/message composer/i)).toBe(input);
@@ -161,7 +170,6 @@ describe("Mobile composer panel", () => {
 
   it.each([
     { name: "settings errors", props: { composerSettingsError: "Could not load settings" } },
-    { name: "submission", props: { isComposerSubmitting: true } },
     { name: "new conversations", props: { isDraftThreadSelected: true, selectedThreadPresent: false } },
     { name: "attachments", props: { pendingAttachments: [{ id: "file", file: new File(["draft"], "draft.txt"), kind: "file" as const, status: "pending" as const }] } },
     { name: "whitespace drafts", props: { composerDraftStore: new Map([["__default__", { composerText: " \n", skillBindings: [] }]]) } },
