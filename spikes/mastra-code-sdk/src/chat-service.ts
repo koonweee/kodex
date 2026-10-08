@@ -154,11 +154,13 @@ export function createChatService(options: ChatServiceOptions) {
       if (revision === catalogRevision) return { epoch, revision, ...inventory };
     }
   }
-  async function sendNative(handle: Handle, text: string) {
+  async function sendNative(handle: Handle, text: string, clientId?: string) {
     try {
       const requestContext = await captureChatFastRequestContext(handle.session);
       assertActive();
-      const submission = handle.session.sendSignal({ content: text, requestContext }, { requireDelivery: true });
+      const submission = clientId === undefined
+        ? handle.session.sendSignal({ content: text, requestContext }, { requireDelivery: true })
+        : handle.session.sendSignal({ type: 'user', contents: text, metadata: { clientId } }, { requestContext, requireDelivery: true });
       const decision = await submission.accepted;
       if (decision.action === 'blocked') throw new ORPCError('CONFLICT', { message: 'This chat is waiting for a tool response.' });
       if (decision.action !== 'wake' && decision.action !== 'deliver') throw new Error('Native input was not admitted to a run.');
@@ -307,6 +309,11 @@ export function createChatService(options: ChatServiceOptions) {
       if (queueIfPending && handle.session.displayState.get().queuedFollowUps > 0) return enqueueNative(handle, text);
       return sendNative(handle, text);
     },
+    // Match main's nonblocking cards: replies are ordinary native user input,
+    // with persisted correlation only (not an idempotency or prompt-state key).
+    async replyToQuestion({ chatId, text, clientId }: { chatId: string; text: string; clientId: string }) {
+      return sendNative(await handleFor(chatId), text, clientId);
+    },
     async queue({ chatId, text }: { chatId: string; text: string }) {
       return enqueueNative(await handleFor(chatId), text);
     },
@@ -371,7 +378,7 @@ export function createChatService(options: ChatServiceOptions) {
     openChat: guarded(service.openChat), getChatSettings: guarded(service.getChatSettings),
     updateChatSettings: guarded(service.updateChatSettings), renameChat: guarded(service.renameChat),
     setChatPinned: guarded(service.setChatPinned), setChatNotifications: guarded(service.setChatNotifications),
-    send: guarded(service.send), queue: guarded(service.queue), stop: guarded(service.stop),
+    send: guarded(service.send), replyToQuestion: guarded(service.replyToQuestion), queue: guarded(service.queue), stop: guarded(service.stop),
     editQueued: guarded(service.editQueued), removeQueued: guarded(service.removeQueued),
     reorderQueued: guarded(service.reorderQueued), steerQueued: guarded(service.steerQueued),
     reconcileQueued: guarded(service.reconcileQueued), dismissQueued: guarded(service.dismissQueued),

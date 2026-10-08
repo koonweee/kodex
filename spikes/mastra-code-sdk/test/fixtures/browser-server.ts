@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { activateProfile, resolveProfile } from '../../src/profile.js';
 import { loadServerConfig } from '../../src/server-config.js';
 import { createProjectRuntime, type ProjectRuntime } from '../../src/runtime.js';
+import { createAsyncQuestionTools } from '../../src/async-question-tools.js';
 import { createChildTools } from '../../src/child-tools.js';
 import { createChatService } from '../../src/chat-service.js';
 import { createChatRouter } from '../../src/chat-router.js';
@@ -29,6 +30,15 @@ const model = await startModelFixture(request => {
   if (!request.stream) return { text: 'Browser test chat' };
   const user = lastUserText(request);
   const serialized = JSON.stringify(request.messages);
+  if (user === 'Use native history') return { text: 'BROWSER_REPLY_CHOICE_RECEIVED' };
+  if (user === 'Keep <this> & "that"') return { text: 'BROWSER_REPLY_TEXT_RECEIVED' };
+  if (user.includes('BROWSER_ASK_ASYNC')) {
+    if (request.messages.some(message => message.role === 'tool')) return { text: 'BROWSER_WORK_CONTINUED' };
+    return { toolCalls: [{ name: 'request_user_input_async', arguments: { questions: [
+      { title: 'Which **history** should I use?', options: ['Use native history', 'Inspect more first'] },
+      { title: 'Any other constraints?', options: null },
+    ] }, id: 'browser-async-question' }] };
+  }
   if (user.includes('BROWSER_FRESH_CHILD')) {
     if (serialized.includes('BROWSER_TOOL_MARKER')) return { text: 'BROWSER_FRESH_RESULT' };
     return { toolCalls: [{ name: 'view', arguments: { path: 'marker.txt' }, id: 'fresh-child-view' }] };
@@ -78,7 +88,7 @@ const service = createChatService({
   profile, directoryHome, ...await loadServerConfig(profile, [projectPath]),
   runtimeFactory: async options => {
     let runtime!: ProjectRuntime;
-    runtime = await createProjectRuntime({ ...options, extraTools: createChildTools({ getRuntime: () => runtime }),
+    runtime = await createProjectRuntime({ ...options, extraTools: { ...createChildTools({ getRuntime: () => runtime }), ...createAsyncQuestionTools() },
       modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }] });
     runtimes.push(runtime); return runtime;
   },

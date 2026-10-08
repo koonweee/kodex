@@ -23,8 +23,9 @@ export function AsyncQuestionAnswersProvider({ items, children }: { items: Timel
 
 // Mounted at pane scope so virtualized rows can unmount without losing drafts.
 // Answered state is derived exclusively from native persisted messages and canonical SSE.
-export function AsyncQuestionReplyProvider({ threadId, enabled, items = [], children }: {
+export function AsyncQuestionReplyProvider({ threadId, enabled, items = [], children, submitReply }: {
   threadId: string; enabled: boolean; items?: TimelineItem[]; children: ReactNode;
+  submitReply?: (input: { threadId: string; text: string; clientId: string }) => Promise<unknown>;
 }) {
   const [states, setStates] = useState<Record<string, ReplyState>>({});
   const answers = useMemo(() => canonicalQuestionAnswers(items), [items]);
@@ -37,7 +38,9 @@ export function AsyncQuestionReplyProvider({ threadId, enabled, items = [], chil
     inFlight.current.add(key);
     update(key, { pending: true, error: undefined });
     try {
-      await submitThreadInput(threadId, [{ type: "text", text }], [], questionReplyClientId(key));
+      const clientId = questionReplyClientId(key);
+      if (submitReply) await submitReply({ threadId, text, clientId });
+      else await submitThreadInput(threadId, [{ type: "text", text }], [], clientId);
       update(key, { pending: false, ...(clearDraft ? { draft: "" } : {}) });
     } catch (error) {
       update(key, { pending: false, error: error instanceof Error ? error.message : "Could not send reply" });

@@ -21,7 +21,7 @@ export function canonicalQuestionAnswers(items: TimelineItem[]): Record<string, 
       const value: unknown = JSON.parse(item.clientId.slice(PREFIX.length));
       if (!Array.isArray(value) || value.length !== 2 || typeof value[0] !== "string" || typeof value[1] !== "string" || !value[1]) continue;
       const key: unknown = JSON.parse(value[0]);
-      if (!Array.isArray(key) || key.length !== 3 || typeof key[0] !== "string" || typeof key[1] !== "string" || !Number.isSafeInteger(key[2]) || key[2] < 0) continue;
+      if (!Array.isArray(key) || key.length !== 3 || (key[0] !== null && typeof key[0] !== "string") || typeof key[1] !== "string" || !Number.isSafeInteger(key[2]) || key[2] < 0) continue;
       if (!Object.hasOwn(answers, value[0])) answers[value[0]] = item.text;
     } catch { /* Ordinary or malformed native correlation IDs carry no question answer. */ }
   }

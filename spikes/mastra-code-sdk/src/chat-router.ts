@@ -28,6 +28,7 @@ const chatInput = objectInput<{ chatId: string }>(['chatId']);
 const pinInput = inputSchema<{ chatId: string; pinned: boolean; beforeChatId?: string | null }>(value => object(value) && only(value, ['chatId', 'pinned', 'beforeChatId']) && string(value.chatId) && typeof value.pinned === 'boolean' && (!('beforeChatId' in value) || value.pinned && (value.beforeChatId === null || string(value.beforeChatId))));
 const notificationsInput = inputSchema<{ chatId: string; enabled: boolean }>(value => object(value) && only(value, ['chatId', 'enabled']) && string(value.chatId) && typeof value.enabled === 'boolean');
 const renameInput = objectInput<{ chatId: string; title: string }>(['chatId', 'title']);
+const questionReplyInput = inputSchema<{ chatId: string; text: string; clientId: string }>(value => object(value) && only(value, ['chatId', 'text', 'clientId']) && string(value.chatId) && string(value.text, 100_000) && string(value.clientId, 4096));
 const messageInput = objectInput<{ chatId: string; text: string }>(['chatId', 'text']);
 const sendInput = inputSchema<{ chatId: string; text: string; queueIfPending?: boolean }>(value => object(value) && only(value, ['chatId', 'text', 'queueIfPending']) && string(value.chatId) && string(value.text, 100_000) && (!('queueIfPending' in value) || typeof value.queueIfPending === 'boolean'));
 const queueVersion = (value: Record<string, unknown>) => string(value.chatId) && string(value.epoch) && Number.isSafeInteger(value.revision) && (value.revision as number) >= 0;
@@ -82,6 +83,7 @@ export function createChatRouter(service: ChatService) {
     openChat: os.input(historyInput).handler(({ input, signal }) => service.openChat(input, signal)),
     watchChat: os.input(historyInput).output(eventIterator(schemaType<ChatSnapshot>())).handler(({ input, signal }) => service.watchChat(input, signal)),
     watchCatalog: os.output(eventIterator(schemaType<CatalogSnapshot>())).handler(({ signal }) => service.watchCatalog(signal)),
+    replyToQuestion: os.input(questionReplyInput).handler(({ input }) => service.replyToQuestion(input)),
     send: os.input(sendInput).handler(({ input }) => service.send(input)),
     queue: os.input(messageInput).handler(({ input }) => service.queue(input)),
     editQueued: os.input(queuedEdit).handler(({ input }) => service.editQueued(input)),

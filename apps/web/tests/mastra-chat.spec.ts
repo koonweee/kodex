@@ -607,3 +607,42 @@ test('fresh delegated children use the main read-only viewer across peers and re
     expect(errors).toEqual([]);
   } finally { if (backend) await stopBackend(backend); await rm(root, { recursive: true, force: true }); }
 });
+
+test('native async questions keep main cards and canonical replies across peers and restart', async ({ context, page }) => {
+  const root = await mkdtemp(join(tmpdir(), 'kodex-async-questions-browser-'));
+  let backend: ChildProcessWithoutNullStreams | undefined;
+  const errors: string[] = [], legacy: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  context.on('request', request => { if (/^\/v1\/threads\/[^/]+\/input$/.test(new URL(request.url()).pathname)) legacy.push(request.url()); });
+  async function verifyAnswered(tab: Page) {
+    await expect(pane(tab).getByRole('textbox', { name: /^Reply to question/ })).toHaveCount(0);
+    const questions = pane(tab).getByRole('region', { name: /^Question [12]$/ });
+    await expect(questions).toHaveCount(2);
+    for (const question of await questions.all()) {
+      const summary = question.locator('summary');
+      if (await question.locator('details').getAttribute('open') === null) await summary.click();
+    }
+    await expect(questions.nth(0).getByRole('blockquote')).toHaveText('Use native history');
+    await expect(questions.nth(1).getByRole('blockquote')).toHaveText('Keep <this> & "that"');
+  }
+  try {
+    backend = await startBackend(root); await page.goto('/');
+    await send(page, 'BROWSER_ASK_ASYNC');
+    await expect(pane(page).getByText('BROWSER_WORK_CONTINUED', { exact: true })).toBeVisible();
+    await expect(pane(page).getByRole('textbox', { name: 'Reply to question 1', exact: true })).toBeVisible();
+    const peer = await context.newPage(); peer.on('pageerror', error => errors.push(error.message));
+    await peer.goto(page.url());
+    await expect(pane(peer).getByRole('button', { name: 'Use native history', exact: true })).toBeVisible();
+    await pane(page).getByRole('button', { name: 'Use native history', exact: true }).click();
+    await expect(pane(peer).getByRole('textbox', { name: 'Reply to question 1', exact: true })).toHaveCount(0);
+    const reply = pane(peer).getByRole('textbox', { name: 'Reply to question 2', exact: true });
+    await reply.fill('Keep <this> & "that"'); await reply.press('Enter');
+    await expect(pane(page).getByText('BROWSER_REPLY_TEXT_RECEIVED', { exact: true })).toBeVisible();
+    await verifyAnswered(page); await verifyAnswered(peer);
+    await peer.reload(); await verifyAnswered(peer);
+    await stopBackend(backend, true); backend = await startBackend(root);
+    await peer.reload(); await verifyAnswered(peer);
+    await peer.screenshot({ path: test.info().outputPath('native-async-questions.png') });
+    expect(legacy).toEqual([]); expect(errors).toEqual([]);
+  } finally { if (backend) await stopBackend(backend); await rm(root, { recursive: true, force: true }); }
+});

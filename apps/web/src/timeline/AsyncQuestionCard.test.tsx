@@ -14,6 +14,20 @@ function view(enabled = true, visible = true, items: TimelineItem[] = []) {
 }
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 describe("async question card", () => {
+  it("routes an injected native reply with the existing correlation and keeps canonical answer ownership", async () => {
+    const submitReply = vi.fn().mockResolvedValue({ accepted: true });
+    const rendered = render(<MantineProvider><AsyncQuestionReplyProvider threadId="native-chat" enabled items={[item]} submitReply={submitReply}><TimelineItemRenderer item={item} /></AsyncQuestionReplyProvider></MantineProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "I’ll log in now" }));
+    await waitFor(() => expect(submitReply).toHaveBeenCalledWith({ threadId: "native-chat", text: "I’ll log in now", clientId: expect.any(String) }));
+    expect(submitThreadInput).not.toHaveBeenCalled();
+    expect(screen.getByRole("textbox")).toBeVisible();
+    const answer: TimelineItem = { ...item, id: "native-answer", kind: "user_message", text: "I’ll log in now", asyncQuestions: undefined, clientId: submitReply.mock.calls[0][0].clientId };
+    rendered.rerender(<MantineProvider><AsyncQuestionReplyProvider threadId="native-chat" enabled items={[item, answer]} submitReply={submitReply}><TimelineItemRenderer item={item} /></AsyncQuestionReplyProvider></MantineProvider>);
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("Input requested"));
+    expect(screen.getByRole("blockquote")).toHaveTextContent("I’ll log in now");
+  });
+
   it("renders a Markdown question once, always-open free text and exact choice replies", async () => {
     vi.mocked(submitThreadInput).mockResolvedValue({ payload: {} });
     render(view());

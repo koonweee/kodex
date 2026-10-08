@@ -2,6 +2,7 @@ import { parseArgs } from 'node:util';
 import { activateProfile, resolveProfile } from './profile.js';
 import { requireChatGptAuth } from './auth.js';
 import { createProjectRuntime, type ProjectRuntime } from './runtime.js';
+import { createAsyncQuestionTools } from './async-question-tools.js';
 import { createChildTools } from './child-tools.js';
 import { loadServerConfig } from './server-config.js';
 import { createChatService } from './chat-service.js';
@@ -35,7 +36,7 @@ const service = createChatService({
   runtimeFactory: async options => {
     let runtime!: ProjectRuntime;
     runtime = await createProjectRuntime({ ...options,
-      extraTools: createChildTools({ getRuntime: () => runtime }),
+      extraTools: { ...createChildTools({ getRuntime: () => runtime }), ...createAsyncQuestionTools() },
       modes: [{ id: 'build', defaultModelId: values.model, metadata: { default: true } }],
     });
     return runtime;

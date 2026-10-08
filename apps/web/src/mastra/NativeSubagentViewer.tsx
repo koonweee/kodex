@@ -1,3 +1,4 @@
+import { AsyncQuestionAnswersProvider } from '../composer/AsyncQuestionReplyProvider';
 import { Stack, Text } from '@mantine/core';
 import { useState } from 'react';
 import type { MarkdownPreviewRequest } from '../files/types';
@@ -39,8 +40,8 @@ export function NativeSubagentViewer({ chatId, inventory, selectedId, onSelect, 
       {invocation.task ? <Text size="sm">{invocation.task}</Text> : null}
       {invocation.activity?.toolCalls.map((tool, index) => <Text size="xs" key={index}>{tool.name}{tool.isError ? ' (error)' : ''}</Text>)}
       {text ? <LazyMarkdownContent fallbackText={text} text={text} onImageOpen={onImageOpen} onMarkdownOpen={onMarkdownOpen} /> : <Text size="sm" c="dimmed">{invocation.status === 'running' ? 'Waiting for native activity.' : 'No saved result is available.'}</Text>}
-    </Stack> : timeline ? <TimelineView approvals={[]} imagePreviewUrlsByPath={{}} onApprovalDecision={() => {}} onImageOpen={onImageOpen}
+    </Stack> : timeline ? <AsyncQuestionAnswersProvider items={timeline.rows.flatMap(row => row.type === 'item' ? [row.item] : [])}><TimelineView approvals={[]} imagePreviewUrlsByPath={{}} onApprovalDecision={() => {}} onImageOpen={onImageOpen}
       onMarkdownOpen={onMarkdownOpen} onLoadOlderHistory={history.loadOlderHistory} onReady={() => {}} scrollParentElement={scrollParent}
-      showDebug={showDebug} timeline={timeline} /> : null}
+      showDebug={showDebug} timeline={timeline} /></AsyncQuestionAnswersProvider> : null}
   </SubagentViewerView>;
 }

@@ -1,3 +1,5 @@
+import { AsyncQuestionReplyProvider } from '../composer/AsyncQuestionReplyProvider';
+import { mastraClient } from './client';
 import { Alert, Box, Group, Loader, Title } from '@mantine/core';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { ComposerDraftStore } from '../composer/useComposerDraftState';
@@ -15,6 +17,8 @@ import { SubagentPaneToggle } from '../threads/SubagentPaneToggle';
 import { useNativeSubagents } from './useNativeSubagents';
 import { NativeSubagentViewer } from './NativeSubagentViewer';
 
+const submitQuestionReply = ({ threadId, text, clientId }: { threadId: string; text: string; clientId: string }) => mastraClient.replyToQuestion({ chatId: threadId, text, clientId });
+
 export function NativeThreadPane({ pane, draftStore, onError }: { pane: WorkspacePane; draftStore: ComposerDraftStore; onError: (error: unknown) => void }) {
   const { workspace, errorMessage, setPaneThreadContext, setPaneHeaderActions, updatePane, duplicatePane, onImageOpen, onMarkdownOpen, threadActions, showDebugEvents } = useWorkspace();
   const target = paneTargetRecord(pane);
@@ -27,6 +31,7 @@ export function NativeThreadPane({ pane, draftStore, onError }: { pane: Workspac
   const hasSubagents = Boolean(subagents.error || subagents.snapshot?.invocations.length || subagents.snapshot?.forks.length || subagents.snapshot?.children.length || subagents.snapshot?.history.hasOlder);
   const isActive = workspace.activePaneId === pane.id;
   const timeline = useMemo(() => snapshot ? timelinePresentation(snapshot, isLoadingOlderHistory) : null, [snapshot, isLoadingOlderHistory]);
+  const questionItems = useMemo(() => timeline?.rows.flatMap(row => row.type === 'item' ? [row.item] : []) ?? [], [timeline]);
   const [scrollParent, setScrollParent] = useState<HTMLDivElement | null>(null);
   const [renameOpen, setRenameOpen] = useState(false);
   const [name, setName] = useState('');
@@ -93,7 +98,7 @@ export function NativeThreadPane({ pane, draftStore, onError }: { pane: Workspac
       onChange={value => { setName(value); if (renameError) setRenameError(null); }} />
     <div className="kodex-thread-pane-status">{isActive && errorMessage ? <Alert color="red" role="alert">{errorMessage}</Alert> : null}{subagents.error ? <Alert color="red" role="alert">{subagents.error}</Alert> : null}{error || snapshot?.error ? <Alert color="red" role="alert">{error ?? snapshot?.error}</Alert> : null}</div>
     <Box className="kodex-thread-content" data-subagent-sidebar={subagentsOpen ? "open" : "closed"}><div className="kodex-thread-scroll-frame"><div className="kodex-thread-pane-scroll kodex-timeline-scroll" ref={setScrollParent}>
-      {chatId && !timeline ? <Loader aria-label="Loading chat" /> : timeline ? <TimelineView approvals={[]} imagePreviewUrlsByPath={{}} onApprovalDecision={() => {}} onImageOpen={onImageOpen} onLoadOlderHistory={loadOlderHistory} onMarkdownOpen={onMarkdownOpen} onReady={() => {}} scrollParentElement={scrollParent} showDebug={showDebugEvents} threadId={chatId ?? undefined} timeline={timeline} /> : null}
+      {chatId && !timeline ? <Loader aria-label="Loading chat" /> : timeline ? <AsyncQuestionReplyProvider key={chatId} threadId={chatId!} enabled={!archived} items={questionItems} submitReply={submitQuestionReply}><TimelineView approvals={[]} imagePreviewUrlsByPath={{}} onApprovalDecision={() => {}} onImageOpen={onImageOpen} onLoadOlderHistory={loadOlderHistory} onMarkdownOpen={onMarkdownOpen} onReady={() => {}} scrollParentElement={scrollParent} showDebug={showDebugEvents} threadId={chatId ?? undefined} timeline={timeline} /></AsyncQuestionReplyProvider> : null}
     </div></div>
       {subagentsOpen && chatId ? <NativeSubagentViewer chatId={chatId} inventory={subagents.snapshot} selectedId={subagents.selectedId} onSelect={subagents.select}
         error={subagents.error} onReload={subagents.retry} loadingMore={subagents.isLoadingOlderHistory} onLoadMore={subagents.loadOlderHistory}
