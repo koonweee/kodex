@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { INTERFACE_PREFERENCES_STORAGE_KEY } from "./preferences/useInterfacePreferences";
 import { APPEARANCE_STORAGE_KEY } from "./theme/appearancePreferences";
 import type { ThreadSettingsResponse } from "./api/client";
 import {
@@ -156,9 +157,11 @@ describe("MVP composer settings flows", () => {
       queueIfPending: true,
       input: [{ text: "Use the selected controls", type: "text" }],
     });
-    // Theme and presence identity are browser-local; shared choices stay native.
+    // Appearance, interface, and presence identity are browser-local; shared choices stay native.
     expect(storageSpy.mock.calls.filter(([key]) =>
-      key !== APPEARANCE_STORAGE_KEY && key !== "kodex.threadViewPresenceClientId",
+      key !== APPEARANCE_STORAGE_KEY &&
+      key !== INTERFACE_PREFERENCES_STORAGE_KEY &&
+      key !== "kodex.threadViewPresenceClientId",
     )).toEqual([]);
   }, 20_000);
 
