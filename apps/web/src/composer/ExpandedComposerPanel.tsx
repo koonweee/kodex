@@ -127,7 +127,6 @@ export function ExpandedComposerPanel({
   // it and focusing a new input after the tap can dismiss the iOS keyboard.
   return (
     <>
-      {isExpanded ? <Box aria-hidden="true" className="kodex-mobile-composer-keyboard-mask" /> : null}
       <InlineComposerPanel
         {...inlineComposerProps}
         attachmentInputRef={attachmentInputRef}

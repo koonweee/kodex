@@ -36,13 +36,29 @@ for (const shape of [
         if (expandsOnTouch) {
           const dialogBounds = await dialog.boundingBox();
           expect(dialogBounds!.y).toBeCloseTo(await page.evaluate(() => visualViewport?.offsetTop ?? 0), 0);
+          await expect(page.locator(".kodex-workspace-single-pane-header")).toBeHidden();
+          await expect(dialog.locator(".kodex-mobile-composer-expanded-header")).toBeVisible();
           expect(await dialog.evaluate(el => {
             const bounds = el.getBoundingClientRect();
             return el.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + 10));
           })).toBe(true);
           expect(dialogBounds!.height).toBeGreaterThan(750);
+          const shell = page.locator(".kodex-shell");
+          await shell.evaluate(el => (el as HTMLElement).style.setProperty("--kodex-mobile-safe-area-top", "24px"));
+          await dialog.evaluate(el => el.style.setProperty("--kodex-mobile-visual-viewport-offset-top", "40px"));
+          await expect.poll(async () => (await dialog.boundingBox())!.y).toBeCloseTo(40, 0);
+          await dialog.evaluate(el => el.style.setProperty("--kodex-mobile-visual-viewport-offset-top", "0px"));
+          await shell.evaluate(el => (el as HTMLElement).style.removeProperty("--kodex-mobile-safe-area-top"));
         }
         await textarea.fill("A draft that survives viewport changes");
+        if (expandsOnTouch) {
+          const shortDraftScroll = await textarea.evaluate(el => {
+            el.scrollTop = 100;
+            return { overflow: el.scrollHeight - el.clientHeight, scrollTop: el.scrollTop };
+          });
+          expect(shortDraftScroll.overflow).toBeLessThanOrEqual(1);
+          expect(shortDraftScroll.scrollTop).toBe(0);
+        }
         await page.screenshot({ path: test.info().outputPath("composer-full-height.png") });
 
         await page.setViewportSize({ width: shape.width, height: 420 });
@@ -98,6 +114,35 @@ for (const shape of [
     });
   });
 }
+
+test("fullscreen regular pane keeps its active goal in the composer toolbar", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 768, height: 844 }, hasTouch: true,
+    baseURL: test.info().project.use.baseURL });
+  const fixture = await nativeSettingsFixture(context);
+  fixture.setGoal({ threadId: fixture.detail.thread.id, objective: "Finish the dashboard", status: "active",
+    tokenBudget: null, tokensUsed: 0, timeUsedSeconds: 0, createdAt: 1, updatedAt: 1 });
+  try {
+    const page = await fixture.page("fullscreen-goal");
+    const pane = page.locator('.kodex-thread-pane[data-workspace-pane-active="true"]');
+    const input = pane.getByLabel("Message composer", { exact: true });
+    await expect(pane.getByRole("region", { name: "Chat goal", exact: true })).toBeVisible();
+    await input.tap();
+    const dialog = pane.getByRole("dialog", { name: "Compose", exact: true });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("region", { name: "Chat goal", exact: true })).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: "Manage goal: Active", exact: true })).toBeVisible();
+    const layout = await dialog.evaluate(element => {
+      const header = element.querySelector(".kodex-mobile-composer-expanded-header")!.getBoundingClientRect();
+      const form = element.querySelector(".kodex-mobile-composer-expanded-body")!.getBoundingClientRect();
+      const dialog = element.getBoundingClientRect();
+      return { dialogBottom: dialog.bottom, formBottom: form.bottom, formTop: form.top, headerBottom: header.bottom };
+    });
+    expect(layout.formTop).toBeCloseTo(layout.headerBottom, 0);
+    expect(layout.formBottom).toBeCloseTo(layout.dialogBottom, 0);
+  } finally { await fixture.close(); await context.close(); }
+  expect(fixture.errors).toEqual([]);
+  expect(fixture.unexpected).toEqual([]);
+});
 
 
 test("compact desktop pane keeps its input and actions while a spacious sibling stays regular", async ({ context }) => {

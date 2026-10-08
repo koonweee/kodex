@@ -135,6 +135,7 @@ export function InlineComposerPanel({
   const draftProjectToolbarName =
     isDraftThreadSelected && !draftProjectSelector && currentProjectName ? currentProjectName : null;
   const hasUnderbar = isDraftThreadSelected && (draftProjectSelector !== undefined || Boolean(draftProjectToolbarName));
+  const toolbarGoalControls = expanded && goalControls ? { ...goalControls, compact: true } : goalControls;
 
   return (
     <Box
@@ -159,7 +160,7 @@ export function InlineComposerPanel({
           <Box className="kodex-composer-hero">{draftHeroText}</Box>
         </Box>
       ) : null}
-      {goalControls && !goalControls.compact ? <GoalBar controls={goalControls} /> : null}
+      {!expanded && goalControls && !goalControls.compact ? <GoalBar controls={goalControls} /> : null}
       {expanded ? null : queuePanel}
       <Box
         component="form"
@@ -273,7 +274,7 @@ export function InlineComposerPanel({
           <ComposerToolbar
             onMenuOpenChange={setToolbarMenuOpen}
             queueOnSubmit={queueOnSubmit}
-            goalControls={goalControls}
+            goalControls={toolbarGoalControls}
             formId={formId}
             attachmentInputRef={attachmentInputRef}
             canSubmitComposer={canSubmitComposer}
