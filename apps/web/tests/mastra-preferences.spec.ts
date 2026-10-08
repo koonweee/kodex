@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startBackend, stopBackend } from './fixtures/mastra';
 
-test('native Execution preferences describe the active policy without legacy requests', async ({ context, page }, testInfo) => {
+test('native Execution and Plugins preferences describe built-in behavior without legacy requests', async ({ context, page }, testInfo) => {
   const root = await mkdtemp(join(tmpdir(), 'kodex-mastra-preferences-'));
   const backend = await startBackend(root);
   const errors: string[] = [], legacy: string[] = [];
@@ -29,6 +29,16 @@ test('native Execution preferences describe the active policy without legacy req
     await expect(dialog.getByText('Ordinary tools run without per-action approval.', { exact: true })).toHaveCount(0);
     await dialog.getByRole('button', { name: 'Execution', exact: true }).click();
     await expect(dialog.getByText('Ordinary tools run without per-action approval.', { exact: true })).toBeVisible();
+    await dialog.getByRole('button', { name: 'Plugins', exact: true }).click();
+    await expect(dialog.getByText('Kodex Control', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('Built in', { exact: true })).toBeVisible();
+    await expect(dialog.getByRole('button', { name: /^(Install|Reinstall)$/ })).toHaveCount(0);
+    await expect(dialog.getByRole('alert')).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath('native-plugins-preferences.png'), fullPage: true, animations: 'disabled' });
+    await dialog.getByRole('button', { name: 'Appearance', exact: true }).click();
+    await expect(dialog.getByText('Kodex Control', { exact: true })).toHaveCount(0);
+    await dialog.getByRole('button', { name: 'Plugins', exact: true }).click();
+    await expect(dialog.getByText('Kodex Control', { exact: true })).toBeVisible();
     expect(errors).toEqual([]); expect(legacy).toEqual([]);
   } finally { await context.close(); await stopBackend(backend); await rm(root, { recursive: true, force: true }); }
 });

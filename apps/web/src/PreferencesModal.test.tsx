@@ -42,7 +42,7 @@ vi.mock("./api/client", async (importOriginal) => ({
   upsertPushSubscription: apiMocks.upsertPushSubscription,
 }));
 
-function renderPreferences(initialSection: "appearance" | "execution" | "notifications" | "plugins" | "mcp" = "plugins", mcpPanel?: ReactNode) {
+function renderPreferences(initialSection: "appearance" | "execution" | "notifications" | "plugins" | "mcp" = "plugins", mcpPanel?: ReactNode, pluginsPanel?: ReactNode) {
   const queryClient = createKodexQueryClient();
   queryClient.setDefaultOptions({
     queries: {
@@ -64,6 +64,7 @@ function renderPreferences(initialSection: "appearance" | "execution" | "notific
       <PreferencesModal
         activeSection={section}
         mcpPanel={mcpPanel}
+        pluginsPanel={pluginsPanel}
         preferences={{ mode: "dark", lightThemeId: "paper-light", darkThemeId: "oled-black" }}
         resolvedSchemeId="oled-black"
         onClose={vi.fn()}
@@ -600,4 +601,35 @@ describe('PreferencesModal MCP panel extension', () => {
     expect(apiMocks.listMcpServers).toHaveBeenCalledOnce();
     expect(apiMocks.listConfiguredMcpServers).toHaveBeenCalledOnce();
   });
+});
+
+
+describe('PreferencesModal Plugins panel extension', () => {
+  beforeEach(() => { apiMocks.getKodexControlPluginStatus.mockReset(); apiMocks.installKodexControlPlugin.mockReset(); });
+  it('navigates to a replacement Plugins panel without legacy plugin requests', async () => {
+    renderPreferences('appearance', undefined, <p>Built-in native Control</p>);
+    await userEvent.click(screen.getByRole('button', { name: 'Plugins' }));
+    expect(screen.getByText('Built-in native Control')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Install|Reinstall|Refresh plugins/ })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Appearance' }));
+    expect(screen.queryByText('Built-in native Control')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Plugins' }));
+    expect(screen.getByText('Built-in native Control')).toBeInTheDocument();
+    expect(apiMocks.getKodexControlPluginStatus).not.toHaveBeenCalled();
+    expect(apiMocks.installKodexControlPlugin).not.toHaveBeenCalled();
+  });
+});
+
+it('preserves an app-server plugin installation in progress across section navigation', async () => {
+  apiMocks.getKodexControlPluginStatus.mockReset().mockResolvedValue({ status: 'installed', skills: [], mcpServers: [] });
+  let finish!: () => void;
+  apiMocks.installKodexControlPlugin.mockReset().mockImplementation(() => new Promise((_resolve, reject) => { finish = () => reject(new Error('Installation failed')); }));
+  renderPreferences('plugins');
+  await userEvent.click(await screen.findByRole('button', { name: 'Reinstall' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Appearance' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Plugins' }));
+  expect(screen.getByRole('button', { name: 'Reinstall' })).toBeDisabled();
+  await act(async () => finish());
+  expect(await screen.findByRole('alert')).toHaveTextContent('Installation failed');
+  expect(apiMocks.installKodexControlPlugin).toHaveBeenCalledOnce();
 });

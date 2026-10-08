@@ -119,7 +119,7 @@ Historical diagnostic reports predate supported runtime affinity; current runtim
 
 The automation UI uses native cron/IANA-timezone calendars, preserves target editing and shows native trigger history. A workflow trigger's `published` outcome records calendar publication; successful dispatch is shown as Input accepted, not completed inference. Tests check persisted assistant responses separately, including an overdue schedule after cold process restart. The persistent calendar is `mastra.schedules`; the SDK's local `threadScheduler` is a different, process-local facility.
 
-Native Control discovery and chat-management tools are mounted directly as SDK extraTools. They use the current host service, validate the invoking native ordinary chat, and queue cross-chat input without steering an active run. Reading another chat's metadata/history does not activate it. Fresh child sessions cannot create chats through these tools. This is not an MCP/plugin installation facade: automation agent tools, broader Control workflows and MCP product wiring remain in progress.
+Native Control project discovery, chat-management and automation tools are mounted directly as SDK extraTools. They use the current host service, validate the invoking native ordinary chat, and queue cross-chat input without steering an active run. Reading another chat's metadata/history does not activate it. Fresh child sessions cannot create chats through these tools. Preferences → Plugins describes these built-in tools; no Control plugin installation or MCP setup is needed. Broader Control workflows and arbitrary native extensions remain separate capability work.
 
 ## Configuration ownership checks
 
