@@ -7,6 +7,9 @@ import { TimelineItemRenderer } from '../timeline/renderers';
 import { defaultDisplayState } from '../../../../spikes/mastra-code-sdk/node_modules/@mastra/core/dist/agent-controller/index.js';
 import { acceptsSnapshot, timelinePresentation } from './presentation';
 import type { ChatSnapshot } from './client';
+function presentationItems(value: ChatSnapshot) {
+  return timelinePresentation(value).rows.flatMap(row => row.type === 'activity' ? row.items : row.type === 'item' ? [row.item] : []);
+}
 
 function snapshot(): ChatSnapshot {
   return { epoch: 'session-a', revision: 1, chat: { pinned: false, notificationsEnabled: true, id: 'chat', projectId: 'project', title: 'Chat', name: 'Chat', cwd: '/project' }, error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(),
@@ -41,7 +44,7 @@ describe('native chat presentation', () => {
   it('converges sparse live file summaries with saved arguments/results and clears fields when the native type changes', () => {
     const value = snapshot();
     value.messages[1].content.parts = [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'file', toolName: 'write_file', state: 'result', args: { path: 'notes.txt' }, result: 'Native saved write result' } }];
-    const item = () => timelinePresentation(value).rows.flatMap(row => row.type === 'item' && row.item.id === 'file' ? [row.item] : []);
+    const item = () => presentationItems(value).filter(item => item.id === 'file');
     value.display.activeTools.set('file', { name: 'write_file', args: undefined, status: 'completed' });
     expect(item()).toHaveLength(1);
     expect(item()[0]).toMatchObject({ kind: 'file_change', action: 'Write', path: 'notes.txt', output: 'Native saved write result', fileChangeOutcomeKnown: false });
@@ -111,8 +114,7 @@ describe('native chat presentation', () => {
     const value = snapshot();
     value.messages[1].content.parts = [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'call', toolName: 'read_file', state: 'call', args: { path: 'README.md' } } }];
     value.display.activeTools.set('call', { name: 'read_file', args: { path: 'README.md' }, status: 'completed', result: 'contents' });
-    const rows = timelinePresentation(value).rows;
-    const tools = rows.flatMap(row => row.type === 'item' && row.item.kind === 'dynamic_tool_call' ? [row.item] : []);
+    const tools = presentationItems(value).filter(item => item.kind === 'dynamic_tool_call');
     expect(tools).toHaveLength(1);
     expect(tools[0]).toMatchObject({ toolName: 'read_file', status: 'completed', output: 'contents' });
     expect(tools[0].argsSummary).toContain('README.md');
@@ -128,7 +130,7 @@ describe('native chat presentation', () => {
     const value = snapshot();
     value.messages[1].content.parts = [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'shell', toolName: 'execute_command', state: 'call', args: { command: 'false' } } }];
     value.display.activeTools.set('shell', { name: 'execute_command', args: { command: 'false' }, status: 'running', shellOutput: 'partial output' });
-    const toolItem = () => timelinePresentation(value).rows.flatMap(row => row.type === 'item' && row.item.id === 'shell' ? [row.item] : []);
+    const toolItem = () => presentationItems(value).filter(item => item.id === 'shell');
     const rendered = render(createElement(MantineProvider, null, createElement(TimelineItemRenderer, { item: toolItem()[0] })));
     expect(screen.getByText(/partial output/)).toBeVisible();
     value.display.activeTools.set('shell', { name: 'execute_command', args: { command: 'false' }, status: 'completed', shellOutput: 'partial output', result: 'partial output\nExit code: 1' });
@@ -150,7 +152,7 @@ describe('native chat presentation', () => {
     const value = snapshot();
     value.messages[1].content.parts = [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'stored', toolName: 'custom_tool', state: 'result', args: {}, result: { detail: 'STORED_RESULT' } } }];
     value.display.activeTools.set('stored', { name: 'custom_tool', args: {}, status: 'completed' });
-    const toolItem = () => timelinePresentation(value).rows.flatMap(row => row.type === 'item' && row.item.id === 'stored' ? [row.item] : [])[0];
+    const toolItem = () => presentationItems(value).filter(item => item.id === 'stored')[0];
     expect(toolItem().resultSummary).toContain('STORED_RESULT');
     value.display.activeTools.get('stored')!.result = null;
     expect(toolItem().resultSummary).toBe('null');
@@ -211,7 +213,7 @@ describe('native chat presentation', () => {
   it('renders native shell output without treating tool completion as command success', () => {
     const value = snapshot();
     value.messages[1].content.parts = [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'shell', toolName: 'execute_command', state: 'result', args: { command: 'exit 7' }, result: 'Exit code: 7' } }];
-    const item = () => timelinePresentation(value).rows.flatMap(row => row.type === 'item' && row.item.id === 'shell' ? [row.item] : [])[0];
+    const item = () => presentationItems(value).filter(item => item.id === 'shell')[0];
     const rendered = render(createElement(MantineProvider, null, createElement(TimelineItemRenderer, { item: item() })));
     expect(screen.getByText('Shell')).toBeInTheDocument();
     expect(screen.getByText('$ exit 7')).toBeInTheDocument();

@@ -454,11 +454,13 @@ test('native shell output uses main command rendering without an invented succes
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   const verify = async (tab: Page) => {
+    await pane(tab).locator('.kodex-activity-group > summary').click();
+    await pane(tab).locator('.kodex-activity-item > summary').click();
     await expect(pane(tab).getByText('Shell', { exact: true })).toBeVisible();
     await expect(pane(tab).locator('.kodex-command-panel')).toContainText("$ printf 'NATIVE_SHELL_OUTPUT");
     await expect(pane(tab).locator('.kodex-timeline-output')).toContainText('NATIVE_SHELL_OUTPUT');
     await expect(pane(tab).locator('.kodex-timeline-output')).toContainText('Exit code: 7');
-    await expect(pane(tab).getByText('Finished', { exact: true })).toBeVisible();
+    await expect(pane(tab).locator('.kodex-command-panel').getByText('Finished', { exact: true })).toBeVisible();
     await expect(pane(tab).getByText('Success', { exact: true })).toHaveCount(0);
   };
   try {

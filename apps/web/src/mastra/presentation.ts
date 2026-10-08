@@ -4,7 +4,8 @@ import { nativeFileFields } from './nativeFiles';
 import { nativeInputFiles, nativeInputFileText } from './nativeInputFiles';
 import { nativeInputSkillFields } from './nativeInputSkills';
 import { nativeQuestionFields, nativeQuestionReplyClientId } from './nativeQuestions';
-import type { TimelineItem, TimelineRow } from '../timeline/state';
+import type { TimelineItem } from '../timeline/state';
+import { nativeTimelineRows, type NativeItemOrigin } from './nativeTimelineRows';
 import type { TimelinePresentation } from '../timeline/TimelineView';
 import type { ThreadListEntry } from '../threads/viewTypes';
 
@@ -41,10 +42,12 @@ export function timelinePresentation(snapshot: PresentationSnapshot, isLoadingOl
   const messages = snapshot.messages.map(message => message.id === current?.id ? current : message);
   if (current && !messages.some(message => message.id === current.id)) messages.push(current);
   const items: TimelineItem[] = [];
+  const origins: Array<NativeItemOrigin | undefined> = [];
   const toolIndexes = new Map<string, number>();
   const savedToolArgs = new Map<string, { name: string; args: unknown; result: unknown; failed: boolean; completed: boolean; messageId?: string }>();
-  function append(item: Omit<TimelineItem, 'displayOrder' | 'turnId' | 'debugEvents'>) {
+  function append(item: Omit<TimelineItem, 'displayOrder' | 'turnId' | 'debugEvents'>, origin?: NativeItemOrigin) {
     items.push({ ...item, displayOrder: items.length, turnId: null, debugEvents: [] });
+    origins.push(origin);
   }
   for (const message of messages) {
     // Native sessions persist human inputs and steers as user-authored signals.
@@ -59,10 +62,11 @@ export function timelinePresentation(snapshot: PresentationSnapshot, isLoadingOl
     const firstText = message.content.parts.findIndex(part => part.type === 'text');
     if ((images.length || files.length) && firstText === -1) append({ id: `${message.id}:${images.length ? 'images' : 'attachments'}`, kind: 'user_message', text: '', ...attachmentFields, status, payload: message.content.parts, timestampMs: new Date(message.createdAt).getTime(), clientId: nativeQuestionReplyClientId(message.content.metadata) });
     message.content.parts.forEach((part, index) => {
+      const origin = message.role === 'assistant' ? { messageId: message.id, partIndex: index } : undefined;
       const id = `${message.id}:${index}`;
       const timestampMs = new Date(message.createdAt).getTime();
-      if (part.type === 'text') append({ id, kind: userAuthored ? 'user_message' : 'assistant_message', text: userAuthored && index === firstText ? skillFields?.text ?? nativeInputFileText(part.text, files) : part.text, status, payload: part, timestampMs, ...(userAuthored && { clientId: nativeQuestionReplyClientId(message.content.metadata), ...(index === firstText && { ...attachmentFields, ...(skillFields && { skillMentions: skillFields.skillMentions }) }) }) });
-      else if (part.type === 'reasoning') append({ id, kind: 'reasoning', text: part.reasoning, status, payload: part, timestampMs });
+      if (part.type === 'text') append({ id, kind: userAuthored ? 'user_message' : 'assistant_message', text: userAuthored && index === firstText ? skillFields?.text ?? nativeInputFileText(part.text, files) : part.text, status, payload: part, timestampMs, ...(userAuthored && { clientId: nativeQuestionReplyClientId(message.content.metadata), ...(index === firstText && { ...attachmentFields, ...(skillFields && { skillMentions: skillFields.skillMentions }) }) }) }, origin);
+      else if (part.type === 'reasoning') append({ id, kind: 'reasoning', text: part.reasoning, status, payload: part, timestampMs }, origin);
       else if (part.type === 'tool-invocation') {
         const tool = part.toolInvocation;
         toolIndexes.set(tool.toolCallId, items.length);
@@ -71,8 +75,8 @@ export function timelinePresentation(snapshot: PresentationSnapshot, isLoadingOl
         const messageId = message.role === 'assistant' ? message.id : undefined;
         savedToolArgs.set(tool.toolCallId, { name: tool.toolName, args: tool.args, result: tool.result, failed, completed, messageId });
         const output = toolResultText(tool.result !== undefined ? tool.result : tool.errorText);
-        append({ id: tool.toolCallId, kind: 'dynamic_tool_call', text: '', status: tool.isError || tool.state === 'output-error' || tool.state === 'output-denied' ? 'failed' : tool.state === 'result' ? 'completed' : tool.state === 'approval-requested' ? 'approval_required' : 'running', toolName: tool.toolName, argsSummary: printable(tool.args), output, resultSummary: output, payload: part, timestampMs, ...(nativeQuestionFields(tool.toolName, tool.args, tool.result, failed, completed, messageId, tool.toolCallId) ?? nativeToolFields(tool.toolName, tool.args, tool.result, failed)) });
-      } else if (part.type === 'error') append({ id, kind: 'assistant_message', text: part.error.message, status: 'failed', payload: part, timestampMs });
+        append({ id: tool.toolCallId, kind: 'dynamic_tool_call', text: '', status: tool.isError || tool.state === 'output-error' || tool.state === 'output-denied' ? 'failed' : tool.state === 'result' ? 'completed' : tool.state === 'approval-requested' ? 'approval_required' : 'running', toolName: tool.toolName, argsSummary: printable(tool.args), output, resultSummary: output, payload: part, timestampMs, ...(nativeQuestionFields(tool.toolName, tool.args, tool.result, failed, completed, messageId, tool.toolCallId) ?? nativeToolFields(tool.toolName, tool.args, tool.result, failed)) }, origin);
+      } else if (part.type === 'error') append({ id, kind: 'assistant_message', text: part.error.message, status: 'failed', payload: part, timestampMs }, origin);
     });
   }
   for (const [id, tool] of snapshot.display?.activeTools ?? []) {
@@ -106,6 +110,6 @@ export function timelinePresentation(snapshot: PresentationSnapshot, isLoadingOl
     const index = toolIndexes.get(prompt.target.toolCallId);
     if (index !== undefined && items[index].toolName === name) items[index] = { ...items[index], status: prompt.kind === 'question' ? 'waiting' : 'approval_required' };
   }
-  const rows: TimelineRow[] = items.map(item => ({ type: 'item', key: item.id, turnKey: item.id, turnId: null, displayOrder: item.displayOrder, item }));
+  const rows = nativeTimelineRows(items, origins);
   return { rows, hiddenItems: [], hasOlderHistory: snapshot.history.hasOlder, isLoadingOlderHistory, lastSeq: snapshot.revision, pendingApprovalRequests: [], pendingUserInputRequests: [] };
 }

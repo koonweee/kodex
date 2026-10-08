@@ -65,12 +65,28 @@ export function LazyMarkdownContent({
   );
 }
 
+function debugItemPayload(payload: unknown): string | undefined {
+  return JSON.stringify(payload, (_key, value: unknown) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+    const record = value as Record<string, unknown>;
+    if (typeof record.data !== "string") return value;
+    // These native media shapes contain encoded bytes, including nested tool
+    // results and attachment-only arrays. Ordinary text and tool data stay raw.
+    const workspaceMedia = record.__workspaceMedia === true && typeof record.mediaType === "string";
+    const inlineFile = record.type === "file" && typeof record.mimeType === "string"
+      && (/^data:[^,]*;base64,/.test(record.data) || /^[A-Za-z0-9+/\s]+={0,2}$/.test(record.data));
+    return workspaceMedia || inlineFile
+      ? { ...record, data: `[Inline media omitted: ${record.data.length} characters]` }
+      : value;
+  }, 2);
+}
+
 export function DebugDisclosure({ item }: { item: TimelineItem }) {
   return (
     <details className="kodex-timeline-debug">
       <summary>Debug details</summary>
       <Stack gap={8} mt={8}>
-        {item.debugEvents.map((event) => (
+        {item.debugEvents.length ? item.debugEvents.map((event) => (
           <Box key={event.id}>
             <Text size="xs" c="dimmed">
               {event.codexMethod ?? event.kind}
@@ -80,7 +96,14 @@ export function DebugDisclosure({ item }: { item: TimelineItem }) {
               {JSON.stringify(event.payload, null, 2)}
             </Code>
           </Box>
-        ))}
+        )) : (
+          <Box>
+            <Text size="xs" c="dimmed">Item payload</Text>
+            <Code block className="kodex-timeline-debug-payload">
+              {debugItemPayload(item.payload)}
+            </Code>
+          </Box>
+        )}
       </Stack>
     </details>
   );

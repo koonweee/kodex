@@ -17,7 +17,7 @@ function question(messageId: string, callId = 'repeated-call'): Message {
     toolInvocation: { toolCallId: callId, toolName: 'request_user_input_async', state: 'result', args: { questions }, result: { accepted: true } } }] } };
 }
 function items(messages: Message[], display?: ChatSnapshot['display']): TimelineItem[] {
-  return timelinePresentation({ messages, display, revision: 1, history: { earliest: null, hasOlder: false } }).rows.flatMap(row => row.type === 'item' ? [row.item] : []);
+  return timelinePresentation({ messages, display, revision: 1, history: { earliest: null, hasOlder: false } }).rows.flatMap(row => row.type === 'activity' ? row.items : row.type === 'item' ? [row.item] : []);
 }
 afterEach(cleanup);
 describe('native asynchronous question presentation', () => {
