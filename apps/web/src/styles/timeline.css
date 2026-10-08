@@ -9,10 +9,10 @@
   padding: 8px 0;
 }
 
-/* Intermediate chrome contributes half the normal row padding. Its contents
-   already provide their own visual height, unlike prose message rows. */
+/* Intermediate controls provide their own hit-area spacing. Avoid adding the
+   prose row padding around them as a second source of vertical whitespace. */
 .kodex-turn-group[data-spacing="compact"] {
-  padding-block: 4px;
+  padding-block: 0;
 }
 
 /* Timeline rows share one outer spacing owner. Item and work renderers retain
