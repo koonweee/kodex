@@ -12,6 +12,7 @@
 
 .kodex-composer-model-control[data-icon-only] {
   width: var(--kodex-adaptive-icon-button-size);
+  border-radius: var(--kodex-radius-round);
 }
 
 .kodex-run-settings-menu {
