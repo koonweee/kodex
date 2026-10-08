@@ -7,7 +7,7 @@ interface McpSource {
   projectId: string | null;
   projectName: string | null;
   cwd: string;
-  mcp: Pick<NonNullable<ProjectRuntime['mcp']>, 'snapshot' | 'reload' | 'setServerEnabled' | 'inheritServer'> | undefined;
+  mcp: Pick<NonNullable<ProjectRuntime['mcp']>, 'snapshot' | 'reload' | 'setServerEnabled' | 'inheritServer' | 'authenticateServer' | 'cancelServerAuthentication'> | undefined;
 }
 export function createMcpService(options: {
   sources: () => Promise<McpSource[]>;
@@ -41,19 +41,23 @@ export function createMcpService(options: {
     try { await source.mcp.reload(); return { bindingId: source.bindingId, error: null }; }
     catch { return { bindingId: source.bindingId, error: 'MCP reload failed.' }; }
   }
+  async function findTarget(input: { bindingId: string }, assertWaiting: () => void) {
+    const sources = await options.sources();
+    assertWaiting();
+    const target = sources.find(source => source.bindingId === input.bindingId);
+    if (!target) throw new ORPCError('NOT_FOUND', { message: 'MCP runtime binding not found.' });
+    if (!target.mcp) throw new ORPCError('BAD_REQUEST', { message: 'MCP is disabled for this runtime.' });
+    return { sources, target, mcp: target.mcp };
+  }
   function projectCommand(input: { bindingId: string; server: string }, mutate: (mcp: NonNullable<McpSource['mcp']>) => Promise<void>, signal?: AbortSignal) {
     return command(async assertWaiting => {
-      const sources = await options.sources();
-      const target = sources.find(source => source.bindingId === input.bindingId);
-      if (!target) throw new ORPCError('NOT_FOUND', { message: 'MCP runtime binding not found.' });
-      if (!target.mcp) throw new ORPCError('BAD_REQUEST', { message: 'MCP is disabled for this runtime.' });
-      assertWaiting();
+      const { sources, target, mcp } = await findTarget(input, assertWaiting);
       // The native detected project root owns override state. Different cwd
       // bindings can share that root; the native primary path identifies it.
-      const path = target.mcp.snapshot().paths.project;
+      const path = mcp.snapshot().paths.project;
       const peers = sources.filter(source => source !== target && source.mcp?.snapshot().paths.project === path);
       let error: string | null = null;
-      try { await mutate(target.mcp); } catch { error = 'MCP server setting could not be applied.'; }
+      try { await mutate(mcp); } catch { error = 'MCP server setting could not be applied.'; }
       // A native write may succeed before connection rebuilding fails. Refill
       // peers even in that case; never retry the write or mirror its state.
       return [{ bindingId: target.bindingId, error }, ...await Promise.all(peers.map(reloadSource))];
@@ -71,6 +75,18 @@ export function createMcpService(options: {
         if (input.bindingId !== undefined && !selected.length) throw new ORPCError('NOT_FOUND', { message: 'MCP runtime binding not found.' });
         assertWaiting();
         return Promise.all(selected.map(reloadSource));
+      }, signal);
+    },
+    authenticateServer(input: { bindingId: string; server: string }, signal?: AbortSignal) {
+      return command(async assertWaiting => {
+        const { mcp } = await findTarget(input, assertWaiting);
+        return mcp.authenticateServer(input.server);
+      }, signal);
+    },
+    cancelServerAuthentication(input: { bindingId: string; server: string }, signal?: AbortSignal) {
+      return command(async assertWaiting => {
+        const { mcp } = await findTarget(input, assertWaiting);
+        return mcp.cancelServerAuthentication(input.server);
       }, signal);
     },
     setServerEnabled(input: { bindingId: string; server: string; enabled: boolean }, signal?: AbortSignal) {

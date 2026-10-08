@@ -209,6 +209,7 @@ if (process.env.KODEX_MCP_SERVICE_FIXTURE === '1') {
     let nativeFinished = false;
     const lifetime = new AbortController();
     const service = createMcpService({ assertActive() {}, signal: lifetime.signal, sources: async () => [{ bindingId: 'held', projectId: null, projectName: null, cwd: '/fixture', mcp: {
+      authenticateServer: async () => ({ authorizationUrl: null, error: null }), cancelServerAuthentication: async () => false,
       setServerEnabled: async () => {}, inheritServer: async () => {},
       snapshot: () => ({ phase: 'ready' as const, servers: [], skipped: [], paths: { project: '/fixture/mcp.json', global: '/fixture/global.json', claude: '/fixture/claude.json' } }),
       async reload() { entered.release(); await release.promise; nativeFinished = true; completed.release(); },

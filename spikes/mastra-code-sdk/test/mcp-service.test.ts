@@ -9,6 +9,7 @@ test('reload reaches retained bindings and two observers converge on native snap
     bindingId, projectId: bindingId === 'current' ? 'project' : null,
     projectName: bindingId === 'current' ? 'Project' : null, cwd: `/${bindingId}`,
     mcp: {
+      authenticateServer: async () => ({ authorizationUrl: null, error: null }), cancelServerAuthentication: async () => false,
       setServerEnabled: async () => {}, inheritServer: async () => {},
       snapshot: () => ({ phase: 'ready' as const, servers: [{ name: 'local', connected: true, toolCount: 1, toolNames: [`probe_${generation}`], transport: 'stdio' as const }], skipped: [], paths: { project: '/project/mcp.json', global: '/home/mcp.json', claude: '/project/settings.local.json' } }),
       reload: async () => { loaded.push(bindingId); generation++; },
@@ -36,6 +37,7 @@ test('binding selection rejects unknown IDs and preserves safe per-binding reloa
   const service = createMcpService({ signal: new AbortController().signal, assertActive() {}, sources: async () => [
     { bindingId: 'disabled', projectId: null, projectName: null, cwd: '/disabled', mcp: undefined },
     { bindingId: 'failed', projectId: null, projectName: null, cwd: '/failed', mcp: {
+      authenticateServer: async () => ({ authorizationUrl: null, error: null }), cancelServerAuthentication: async () => false,
       setServerEnabled: async () => {}, inheritServer: async () => {},
       snapshot: () => ({ phase: 'ready' as const, servers: [], skipped: [], paths: { project: 'p', global: 'g', claude: 'c' } }),
       reload: async () => { calls++; throw new Error('secret-internal-value'); },
@@ -57,6 +59,7 @@ test('transport cancellation releases the reload reply without pretending native
   let completed = false;
   const service = createMcpService({ signal: new AbortController().signal, assertActive() {}, sources: async () => [{
     bindingId: 'held', projectId: null, projectName: null, cwd: '/held', mcp: {
+      authenticateServer: async () => ({ authorizationUrl: null, error: null }), cancelServerAuthentication: async () => false,
       setServerEnabled: async () => {}, inheritServer: async () => {},
       snapshot: () => ({ phase: 'reloading' as const, servers: [], skipped: [], paths: { project: 'p', global: 'g', claude: 'c' } }),
       reload: async () => { started(); await nativeWork; completed = true; },
@@ -77,6 +80,7 @@ test('native project server overrides refill same-scope managers without changin
     mcp: {
       snapshot: () => ({ phase: 'ready' as const, servers: [{ name: 'docs', connected: true, toolCount: 0, toolNames: [], transport: 'stdio' as const }], skipped: [], paths: { project: nativeProject, global: '/global/mcp.json', claude: '/claude' } }),
       reload: async () => { calls.push(`reload:${bindingId}`); },
+      authenticateServer: async () => ({ authorizationUrl: null, error: null }), cancelServerAuthentication: async () => false,
       setServerEnabled: async (name: string, enabled: boolean) => { calls.push(`${bindingId}:${name}:${enabled}`); },
       inheritServer: async (name: string) => { calls.push(`inherit:${bindingId}:${name}`); },
     },
@@ -89,4 +93,34 @@ test('native project server overrides refill same-scope managers without changin
   const cancelled = new AbortController(); cancelled.abort();
   await assert.rejects(service.setServerEnabled({ bindingId: 'selected', server: 'docs', enabled: true }, cancelled.signal), /no longer waiting/);
   assert.equal(calls.length, 4);
+});
+
+
+test('OAuth starts on the exact binding, keeps URLs out of peer snapshots, and cancellation reaches native work', async () => {
+  const calls: string[] = [];
+  let active = false;
+  const mcp = {
+    snapshot: () => ({ phase: 'ready' as const, servers: [{ name: 'docs', connected: false, authenticating: active, needsAuth: true, toolCount: 0, toolNames: [], transport: 'http' as const }], skipped: [], paths: { project: '/p/mcp.json', global: '/g/mcp.json', claude: '/p/claude' } }),
+    reload: async () => {}, setServerEnabled: async () => {}, inheritServer: async () => {},
+    authenticateServer: async (name: string) => { calls.push(`start:${name}`); active = true; return { authorizationUrl: 'https://auth.example/?state=LOCAL_ONLY', error: null }; },
+    cancelServerAuthentication: async (name: string) => { calls.push(`cancel:${name}`); const previous = active; active = false; return previous; },
+  };
+  const service = createMcpService({ signal: new AbortController().signal, assertActive() {}, sources: async () => [
+    { bindingId: 'selected', projectId: 'p', projectName: 'p', cwd: '/p', mcp },
+  ] });
+  await assert.rejects(service.authenticateServer({ bindingId: 'foreign', server: 'docs' }), /not found/i);
+  const response = await service.authenticateServer({ bindingId: 'selected', server: 'docs' });
+  assert.match(response.authorizationUrl!, /LOCAL_ONLY/);
+  const peers = [service.watch(), service.watch()];
+  for (const peer of peers) {
+    const value = (await peer.next()).value!;
+    assert.equal(value.rows[0]?.servers[0]?.authenticating, true);
+    assert.doesNotMatch(JSON.stringify(value), /LOCAL_ONLY/);
+  }
+  assert.equal(await service.cancelServerAuthentication({ bindingId: 'selected', server: 'docs' }), true);
+  for (const peer of peers) {
+    assert.equal((await peer.next()).value!.rows[0]?.servers[0]?.authenticating, false);
+    await peer.return();
+  }
+  assert.deepEqual(calls, ['start:docs', 'cancel:docs']);
 });

@@ -7,7 +7,7 @@ export interface RuntimeMcpSnapshot {
   skipped: Array<{ name: string; reason: string }>;
   paths: ReturnType<McpManager['getConfigPaths']>;
 }
-type NativeMcpManager = Pick<McpManager, 'initInBackground' | 'reload' | 'disconnect' | 'getServerStatuses' | 'getSkippedServers' | 'getConfigPaths' | 'setServerDisabled' | 'inheritServer'>;
+type NativeMcpManager = Pick<McpManager, 'initInBackground' | 'reload' | 'disconnect' | 'getServerStatuses' | 'getSkippedServers' | 'getConfigPaths' | 'setServerDisabled' | 'inheritServer' | 'authenticateServer' | 'cancelServerAuthentication'>;
 
 /** Transient admission/operation state around one retained native manager.
  * Native discovery owns server status and tools. Disconnect is not an init
@@ -55,7 +55,7 @@ export function createRuntimeMcp(manager: NativeMcpManager) {
         ...(server.projectOverride !== undefined && { projectOverride: server.projectOverride }),
         ...(server.globalDefault !== undefined && { globalDefault: server.globalDefault }),
         ...(server.globalKillSwitch !== undefined && { globalKillSwitch: server.globalKillSwitch }),
-        ...(server.error !== undefined && { error: 'MCP server connection failed.' }),
+        ...(server.error !== undefined && !server.cancelled && { error: 'MCP server connection failed.' }),
       }));
       const paths = manager.getConfigPaths();
       return { phase, servers,
@@ -68,6 +68,37 @@ export function createRuntimeMcp(manager: NativeMcpManager) {
       return mutate(() => manager.setServerDisabled(name, !enabled), name);
     },
     inheritServer(name: string): Promise<void> { return mutate(() => manager.inheritServer(name), name); },
+    authenticateServer(name: string): Promise<{ authorizationUrl: string | null; error: string | null }> {
+      if (disposed) return Promise.reject(new Error('Runtime MCP is disposed.'));
+      return new Promise((resolve, reject) => {
+        // Queue admission only, not consent or URL discovery. Native reload and
+        // cancellation must remain available while the browser is signing in.
+        const admission = tail.then(() => {
+          assertOpen();
+          if (!manager.getServerStatuses().some(server => server.name === name)) throw new Error('MCP server not found.');
+          const pending = manager.authenticateServer(name, { onAuthorizationUrl: value => {
+            // Never throw into the native provider's callback. Keep the exact
+            // native state/PKCE URL in this initiating response only.
+            try {
+              const url = new URL(value);
+              if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error();
+              resolve({ authorizationUrl: value, error: null });
+            } catch { reject(new Error('MCP authorization URL is unavailable.')); }
+          } });
+          void pending.then(status => resolve({ authorizationUrl: null,
+            error: status.error && !status.cancelled ? 'MCP authentication could not be completed.' : null }),
+          () => reject(new Error('MCP authentication failed.')));
+        });
+        tail = admission.catch(() => {});
+        void admission.catch(error => reject(new Error(disposed ? 'Runtime MCP is disposed.'
+          : error instanceof Error && error.message === 'MCP server not found.' ? error.message : 'MCP authentication failed.')));
+      });
+    },
+    async cancelServerAuthentication(name: string): Promise<boolean> {
+      assertOpen();
+      try { return await manager.cancelServerAuthentication(name); }
+      catch { throw new Error('MCP authentication cancellation failed.'); }
+    },
     dispose(): Promise<void> {
       if (disposal) return disposal;
       disposed = true;

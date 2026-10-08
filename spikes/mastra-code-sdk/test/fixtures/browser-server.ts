@@ -60,7 +60,7 @@ const model = await startModelFixture(async request => {
   if (request.model === 'judge') return { text: JSON.stringify({ decision: 'done', reason: 'Browser goal complete' }) };
   if (!request.stream) return { text: 'Browser test chat' };
   const user = lastUserText(request);
-  if (process.argv[4] === 'mcp' && user.startsWith('BROWSER_MCP:')) {
+  if (process.argv[4]?.startsWith('mcp') && user.startsWith('BROWSER_MCP:')) {
     const marker = user.slice('BROWSER_MCP:'.length);
     if (request.messages.at(-1)?.role !== 'tool') {
       const name = `local_probe_${marker}`;
@@ -196,7 +196,7 @@ const service = createChatService({
   profile, directoryHome, ...await loadServerConfig(profile, [projectPath]),
   runtimeFactory: async options => {
     let runtime!: ProjectRuntime;
-    runtime = await createProjectRuntime({ ...options, disableMcp: process.argv[4] !== 'mcp', extraTools: { ...createChildTools({ getRuntime: () => runtime }), ...createAsyncQuestionTools(), ...createControlTools({ getRuntime: () => runtime, getService: () => service }), ...promptTools },
+    runtime = await createProjectRuntime({ ...options, disableMcp: !process.argv[4]?.startsWith('mcp'), extraTools: { ...createChildTools({ getRuntime: () => runtime }), ...createAsyncQuestionTools(), ...createControlTools({ getRuntime: () => runtime, getService: () => service }), ...promptTools },
       modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }, ...(process.argv[4] === 'plans' ? [{ id: 'plan', defaultModelId: 'fixture/chat' }] : [])] });
     if (process.argv[4] === 'approvals') {
       const create = runtime.createSession.bind(runtime);

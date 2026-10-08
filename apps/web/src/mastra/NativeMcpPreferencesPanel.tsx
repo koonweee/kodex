@@ -1,9 +1,10 @@
-import { Alert, Badge, Box, Button, Group, Loader, Select, Stack, Text } from '@mantine/core';
+import { Alert, Anchor, Badge, Box, Button, Group, Loader, Select, Stack, Text } from '@mantine/core';
 import { useMutation } from '@tanstack/react-query';
-import { RotateCw, Server } from 'lucide-react';
+import { ExternalLink, KeyRound, RotateCw, Server } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { mastraClient, type ChatClient } from './client';
 import { useNativeSnapshots } from './useNativeSnapshots';
+import { useNativeMcpAuthentication } from './useNativeMcpAuthentication';
 
 type Inventory = Awaited<ReturnType<ChatClient['nativeMcpWatch']>> extends AsyncIterable<infer T> ? T : never;
 type Runtime = Inventory['rows'][number];
@@ -40,6 +41,7 @@ export function NativeMcpPreferencesPanel() {
   const rows = view.snapshot?.rows ?? [];
   const runtime = rows.find(row => row.bindingId === bindingId) ?? rows[0];
   const server = runtime?.servers.find(row => row.name === serverName) ?? runtime?.servers[0];
+  const authentication = useNativeMcpAuthentication(runtime?.bindingId ?? null, server, view.snapshot, view.retry);
   const reload = useMutation({ mutationFn: () => mastraClient.nativeMcpReload({}), onSuccess: () => view.retry() });
   const update = useMutation({
     mutationFn: (action: ServerAction) => action.kind === 'enabled'
@@ -56,7 +58,7 @@ export function NativeMcpPreferencesPanel() {
     <Group justify="space-between" wrap="nowrap">
       <Text className="kodex-preferences-panel-title" fw={650}>MCP</Text>
       <Button aria-label="Reload MCP servers" disabled={!rows.length || reload.isPending} leftSection={<RotateCw size={15} />}
-        loading={reload.isPending} onClick={() => reload.mutate()} size="xs" variant="subtle">Reload all</Button>
+        loading={reload.isPending} onClick={() => { authentication.clear(); reload.mutate(); }} size="xs" variant="subtle">Reload all</Button>
     </Group>
     {loading ? <Group gap={8}><Loader size={14} /><Text c="dimmed" size="xs">Loading MCP servers</Text></Group> : null}
     {view.error ? <Alert color="red" variant="light">{view.error}</Alert> : null}
@@ -65,7 +67,7 @@ export function NativeMcpPreferencesPanel() {
     {!loading && !view.error && !rows.length ? <Text c="dimmed" size="sm">No MCP runtimes available</Text> : null}
     {runtime ? <>
       <Select label="Runtime" data={rows.map(row => ({ value: row.bindingId, label: runtimeLabel(row) }))} value={runtime.bindingId}
-        onChange={id => { setBindingId(id); setServerName(null); }} allowDeselect={false} />
+        onChange={id => { authentication.clear(); setBindingId(id); setServerName(null); }} allowDeselect={false} />
       <Group justify="space-between" wrap="wrap">
         <Text c="dimmed" size="xs" className="kodex-mcp-wrapping-text">{runtime.cwd}</Text>
         <Badge data-tone={runtime.phase === 'failed' ? 'danger' : 'neutral'}>{phaseLabel}</Badge>
@@ -86,7 +88,7 @@ export function NativeMcpPreferencesPanel() {
       {runtime.servers.length ? <Box className="kodex-mcp-layout">
         <Stack className="kodex-mcp-server-list" gap={6}>
           {runtime.servers.map(row => <Button key={row.name} className="kodex-mcp-server-row" data-active={row.name === server?.name ? 'true' : undefined}
-            onClick={() => setServerName(row.name)} type="button" variant={row.name === server?.name ? 'light' : 'subtle'}>
+            onClick={() => { authentication.clear(); setServerName(row.name); }} type="button" variant={row.name === server?.name ? 'light' : 'subtle'}>
             <Box className="kodex-mcp-server-row-copy">
               <Group className="kodex-mcp-server-row-title" gap={6} wrap="wrap">
                 <Text className="kodex-mcp-server-name" fw={650} size="sm">{row.name}</Text><ServerBadge server={row} />
@@ -100,17 +102,29 @@ export function NativeMcpPreferencesPanel() {
             <Group gap={6}><Text fw={650} size="sm">{server.name}</Text><ServerBadge server={server} /></Group>
             <Group gap={6}>
               <Button disabled={controlsDisabled || Boolean(server.disabled && server.globalKillSwitch)} loading={updatePending && update.variables?.kind === 'enabled'}
-                onClick={() => update.mutate({ kind: 'enabled', input: { bindingId: runtime.bindingId, server: server.name, enabled: Boolean(server.disabled) } })}
+                onClick={() => { authentication.clear(); update.mutate({ kind: 'enabled', input: { bindingId: runtime.bindingId, server: server.name, enabled: Boolean(server.disabled) } }); }}
                 size="xs" type="button" variant="subtle">{server.disabled ? 'Enable' : 'Disable'}</Button>
               {server.projectOverride ? <Button disabled={controlsDisabled} loading={updatePending && update.variables?.kind === 'inherit'}
-                onClick={() => update.mutate({ kind: 'inherit', input: { bindingId: runtime.bindingId, server: server.name } })}
+                onClick={() => { authentication.clear(); update.mutate({ kind: 'inherit', input: { bindingId: runtime.bindingId, server: server.name } }); }}
                 size="xs" type="button" variant="subtle">Use global default</Button> : null}
+              {server.authenticating ? <Button loading={authentication.cancelling} disabled={authentication.cancelling} onClick={authentication.cancel}
+                size="xs" type="button" variant="subtle">Cancel authentication</Button> : server.transport === 'http' ? <Button leftSection={<KeyRound size={15} />}
+                loading={authentication.starting} disabled={controlsDisabled || Boolean(server.disabled || server.globalKillSwitch || authentication.starting || authentication.authorizationUrl)}
+                onClick={authentication.start} size="xs" type="button" variant="light">Log in</Button> : null}
             </Group>
           </Group>
           {server.globalKillSwitch ? <Text c="dimmed" size="xs">MCP is disabled globally; project settings cannot enable it.</Text> : null}
           {selectedUpdate && update.error ? <Alert color="red" variant="light">{update.error.message}</Alert> : null}
           {selectedUpdate ? <OperationErrors results={update.data} rows={rows} /> : null}
-          {server.error ? <Alert color="red" variant="light">{server.error}</Alert> : null}
+          {authentication.error ? <Alert color="red" variant="light">{authentication.error}</Alert> : null}
+          {authentication.authorizationUrl ? <Alert color="blue" variant="light">
+            <Group gap={8} justify="space-between" wrap="nowrap"><Text size="sm">Authorization is ready.</Text>
+              <Anchor href={authentication.authorizationUrl} rel="noreferrer" target="_blank">
+                <Group gap={4} wrap="nowrap"><Text size="sm">Open login</Text><ExternalLink size={14} /></Group>
+              </Anchor>
+            </Group>
+          </Alert> : null}
+          {server.error && !server.cancelled ? <Alert color="red" variant="light">{server.error}</Alert> : null}
           <Box><Text fw={650} size="xs">Tools</Text>
             <Text className="kodex-mcp-wrapping-text" c="dimmed" size="xs">
               {server.connected ? server.toolNames.length ? [...server.toolNames].sort().join(', ') : 'No tools reported' : 'Tools unavailable until connected'}

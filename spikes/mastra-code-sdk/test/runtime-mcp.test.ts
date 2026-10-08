@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { McpInitResult } from '@mastra/code-sdk/mcp/manager';
+import type { McpManager, McpInitResult } from '@mastra/code-sdk/mcp/manager';
 import type { McpServerStatus } from '@mastra/code-sdk/mcp/types';
 import { createRuntimeMcp } from '../src/runtime-mcp.js';
 
@@ -13,7 +13,11 @@ function nativeManager() {
   const initial = gate(), calls: string[] = [], reloads: Array<ReturnType<typeof gate>> = [], mutations: Array<ReturnType<typeof gate>> = [];
   const disableArguments: Array<[string, boolean, { global?: boolean } | undefined]> = [];
   let initError: Error | undefined, reloadError: Error | undefined, mutationError: Error | undefined;
+  let authenticate: McpManager['authenticateServer'] = async () => statuses[0]!;
+  let cancel: McpManager['cancelServerAuthentication'] = async () => false;
   const manager = {
+    authenticateServer: (...args: Parameters<McpManager['authenticateServer']>) => authenticate(...args),
+    cancelServerAuthentication: (name: string) => cancel(name),
     async initInBackground(): Promise<McpInitResult> {
       calls.push('init'); await initial.promise; if (initError) throw initError;
       return { connected: statuses.filter(server => server.connected), failed: statuses.filter(server => !server.connected), skipped: [], totalTools: 0 };
@@ -36,6 +40,8 @@ function nativeManager() {
     getConfigPaths: () => ({ project: '/project/.kodex-mastra-spike/mcp.json', global: '/home/.kodex-mastra-spike/mcp.json', claude: '/project/.claude/settings.local.json' }),
   };
   return { manager, initial, calls, reloads, mutations, disableArguments,
+    setAuthenticate(value: McpManager['authenticateServer']) { authenticate = value; },
+    setCancel(value: McpManager['cancelServerAuthentication']) { cancel = value; },
     setStatuses(value: McpServerStatus[]) { statuses = value; },
     rejectInit(error: Error) { initError = error; },
     rejectReload(error: Error | undefined) { reloadError = error; },
@@ -88,6 +94,7 @@ test('disposal disconnects without joining unfinished initialization and fences 
   assert.equal(initialized, false, 'native initialization is not a shutdown barrier');
   assert.deepEqual(native.calls, ['init', 'disconnect']);
   await assert.rejects(mcp.reload(), /disposed/i);
+  await assert.rejects(mcp.authenticateServer('local'), /disposed/i);
   assert.throws(() => mcp.snapshot(), /disposed/i);
   native.initial.release(); await mcp.ready; await assert.rejects(queued, /disposed/i);
   await mcp.dispose(); assert.deepEqual(native.calls, ['init', 'disconnect'], 'queued reload cannot start after admission closes');
@@ -143,4 +150,62 @@ test('failed native mutations recover serially while disposal fences queued enab
   await assert.rejects(mcp.setServerEnabled('local', true), /disposed/i); await assert.rejects(mcp.inheritServer('local'), /disposed/i);
   held.release(); await reloaded; await Promise.all(queued.map(pending => assert.rejects(pending, /disposed/i)));
   assert.deepEqual(native.calls, callsAtDisposal, 'no queued server mutation begins after native disconnect');
+});
+
+
+test('OAuth returns only the initiating URL while native consent remains running and reload/cancel remain available', async () => {
+  const native = nativeManager(), held = gate();
+  let finished = false;
+  const status: McpServerStatus = { name: 'http', connected: false, needsAuth: true, toolCount: 0, toolNames: [], transport: 'http' };
+  native.setStatuses([status]);
+  native.setAuthenticate(async (name, options) => {
+    native.calls.push(`auth:${name}`);
+    native.setStatuses([{ ...status, authenticating: true }]);
+    options?.onAuthorizationUrl?.('https://auth.example/authorize?state=UNCHANGED&code_challenge=EXACT');
+    await held.promise; finished = true;
+    native.setStatuses([{ ...status, cancelled: true, error: 'private-token' }]);
+    return { ...status, cancelled: true, error: 'private-token' };
+  });
+  native.setCancel(async name => { native.calls.push(`cancel:${name}`); held.release(); return true; });
+  const mcp = createRuntimeMcp(native.manager); native.initial.release(); await mcp.ready;
+  assert.deepEqual(await mcp.authenticateServer('http'), { authorizationUrl: 'https://auth.example/authorize?state=UNCHANGED&code_challenge=EXACT', error: null });
+  assert.equal(finished, false);
+  assert.equal(mcp.snapshot().servers[0]?.authenticating, true);
+  assert.doesNotMatch(JSON.stringify(mcp.snapshot()), /UNCHANGED|code_challenge/);
+  await mcp.reload(); assert.ok(native.calls.includes('reload'), 'consent does not hold the reload exclusion');
+  assert.equal(await mcp.cancelServerAuthentication('http'), true);
+  assert.equal(mcp.snapshot().servers[0]?.cancelled, true);
+  assert.equal(mcp.snapshot().servers[0]?.error, undefined, 'deliberate native cancellation is not a connection failure');
+  await mcp.dispose();
+});
+
+test('OAuth initiating failures are sanitized independently from current native inventory', async () => {
+  const native = nativeManager();
+  const status: McpServerStatus = { name: 'http', connected: false, authenticating: true, toolCount: 0, toolNames: [], transport: 'http' };
+  native.setStatuses([status]);
+  native.setAuthenticate(async () => ({ ...status, error: 'already running secret-token' }));
+  const mcp = createRuntimeMcp(native.manager); native.initial.release(); await mcp.ready;
+  const duplicate = await mcp.authenticateServer('http');
+  assert.equal(duplicate.authorizationUrl, null); assert.ok(duplicate.error);
+  assert.doesNotMatch(JSON.stringify(duplicate), /secret-token/);
+  assert.equal(mcp.snapshot().servers[0]?.authenticating, true, 'returned operation error cannot overwrite native active status');
+  native.setAuthenticate(async () => { throw new Error('private-token'); });
+  await assert.rejects(mcp.authenticateServer('http'), error => error instanceof Error && !error.message.includes('private-token'));
+  native.setAuthenticate(async (_name, options) => { options?.onAuthorizationUrl?.('javascript:private-token'); return status; });
+  await assert.rejects(mcp.authenticateServer('http'), error => error instanceof Error && !error.message.includes('private-token'));
+  await mcp.dispose();
+});
+
+test('OAuth admission waits for initialization and rejects removed or disposed targets without starting native auth', async () => {
+  const native = nativeManager(), mcp = createRuntimeMcp(native.manager);
+  native.setAuthenticate(async () => { native.calls.push('auth'); return { name: 'local', connected: false, toolCount: 0, toolNames: [], transport: 'stdio' }; });
+  const missing = mcp.authenticateServer('removed'); void missing.catch(() => {});
+  await Promise.resolve(); assert.deepEqual(native.calls, ['init']);
+  native.initial.release(); await mcp.ready; await assert.rejects(missing, /not found/i);
+  const held = gate(); native.reloads.push(held);
+  const reloaded = mcp.reload(), queued = mcp.authenticateServer('local'); void queued.catch(() => {});
+  await Promise.resolve(); await mcp.dispose(); held.release(); await reloaded;
+  await assert.rejects(queued, /disposed/i);
+  await assert.rejects(mcp.cancelServerAuthentication('local'), /disposed/i);
+  assert.ok(!native.calls.includes('auth'));
 });

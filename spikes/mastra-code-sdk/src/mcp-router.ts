@@ -10,11 +10,13 @@ const serverTarget = (value: unknown): value is { bindingId: string; server: str
   && 'server' in value && typeof value.server === 'string' && value.server.length > 0 && value.server.length <= 512;
 const enabledInput = inputSchema<{ bindingId: string; server: string; enabled: boolean }>(value => serverTarget(value)
   && Object.keys(value).length === 3 && 'enabled' in value && typeof value.enabled === 'boolean');
-const inheritInput = inputSchema<{ bindingId: string; server: string }>(value => serverTarget(value) && Object.keys(value).length === 2);
+const targetInput = inputSchema<{ bindingId: string; server: string }>(value => serverTarget(value) && Object.keys(value).length === 2);
 export function createMcpRouter(service: McpService) {
   return {
+    nativeMcpAuthenticate: os.input(targetInput).handler(({ input, signal }) => service.authenticateServer(input, signal)),
+    nativeMcpCancelAuthentication: os.input(targetInput).handler(({ input, signal }) => service.cancelServerAuthentication(input, signal)),
     nativeMcpSetServerEnabled: os.input(enabledInput).handler(({ input, signal }) => service.setServerEnabled(input, signal)),
-    nativeMcpInheritServer: os.input(inheritInput).handler(({ input, signal }) => service.inheritServer(input, signal)),
+    nativeMcpInheritServer: os.input(targetInput).handler(({ input, signal }) => service.inheritServer(input, signal)),
     nativeMcpList: os.handler(() => service.list()),
     nativeMcpWatch: os.handler(({ signal }) => service.watch(signal)),
     nativeMcpReload: os.input(reloadInput).handler(({ input, signal }) => service.reload(input, signal)),

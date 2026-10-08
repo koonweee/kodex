@@ -8,7 +8,7 @@ Kodex is a self-hosted web workspace for [OpenAI Codex](https://github.com/opena
 
 A Rust gateway manages Codex and local capabilities, while a responsive React PWA provides the workspace.
 
-This branch also contains the opt-in [Mastra Code SDK port](spikes/mastra-code-sdk/README.md). Its native MCP inventory, project enable/disable, file reload and tool execution are connected to Preferences; production Codex deployment remains separate.
+This branch also contains the opt-in [Mastra Code SDK port](spikes/mastra-code-sdk/README.md). Its native MCP inventory, project enable/disable, OAuth, file reload and tool execution are connected to Preferences; production Codex deployment remains separate.
 
 > [!WARNING]
 > Kodex does not provide gateway access control. Run it only on localhost or a trusted private network, and never expose it directly to the public internet. Its terminal and file-preview features can access the host with the permissions of the gateway process.
