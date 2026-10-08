@@ -19,8 +19,36 @@ for (const shape of [
         const region = page.getByRole("region", { name: "Queued messages", exact: true });
         await expect(region.getByRole("group", { name: "Queued message", exact: true })).toHaveCount(2);
         const toggle = region.getByRole("button", { name: "Collapse queued messages" });
-        if (shape.hasTouch) await expect(toggle).toHaveCSS("opacity", "1");
-        else {
+        if (shape.hasTouch) {
+          await expect(toggle).toHaveCSS("opacity", "1");
+          const layout = await region.evaluate(element => {
+            const region = element.getBoundingClientRect();
+            const zone = element.querySelector(".kodex-queue-collapse-zone")!.getBoundingClientRect();
+            const button = element.querySelector(".kodex-queue-collapse")!.getBoundingClientRect();
+            const first = element.querySelector(".kodex-queue-row")!.getBoundingClientRect();
+            return {
+              buttonBottom: button.bottom,
+              buttonHeight: button.height,
+              firstOffset: first.top - region.top,
+              firstTop: first.top,
+              regionWidth: region.width,
+              zoneWidth: zone.width,
+            };
+          });
+          expect(layout.buttonHeight).toBeGreaterThanOrEqual(44);
+          expect(layout.zoneWidth).toBeLessThan(layout.regionWidth / 2);
+          expect(layout.firstOffset).toBeLessThan(20);
+          expect(layout.buttonBottom).toBeLessThanOrEqual(layout.firstTop);
+
+          const preview = region.getByRole("button", { name: "Modify queued message: First", exact: true });
+          const previewBox = await preview.boundingBox();
+          expect(previewBox).not.toBeNull();
+          await page.touchscreen.tap(previewBox!.x + previewBox!.width / 2, previewBox!.y + 8);
+          const editor = page.getByRole("dialog", { name: "Edit queued message", exact: true });
+          await expect(editor).toBeVisible();
+          await page.keyboard.press("Escape");
+          await expect(editor).not.toBeVisible();
+        } else {
           await page.mouse.move(0, 0);
           await expect(toggle).toHaveCSS("opacity", "0");
           await toggle.hover();
