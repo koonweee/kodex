@@ -34,6 +34,9 @@ for (const shape of [
         const dialog = pane.getByRole("dialog", { name: "Compose", exact: true });
         await expect(dialog).toHaveCount(expandsOnTouch ? 1 : 0);
         if (expandsOnTouch) {
+          const threadContent = pane.locator(":scope > .kodex-thread-content");
+          await expect(threadContent).toHaveCSS("visibility", "hidden");
+          await expect(threadContent).toHaveCSS("opacity", "0");
           const dialogBounds = await dialog.boundingBox();
           expect(dialogBounds!.y).toBeCloseTo(await page.evaluate(() => visualViewport?.offsetTop ?? 0), 0);
           await expect(page.locator(".kodex-workspace-single-pane-header")).toBeHidden();
@@ -97,6 +100,8 @@ for (const shape of [
           await expect(dialog).toHaveCount(1);
           await pane.getByRole("button", { name: "Collapse composer", exact: true }).tap();
           await expect(pane.getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
+          await expect(pane.locator(":scope > .kodex-thread-content")).toHaveCSS("visibility", "visible");
+          await expect(pane.locator(":scope > .kodex-thread-content")).toHaveCSS("opacity", "1");
           const switcher = page.getByRole("button", { name: "Switch workspace pane", exact: true });
           await expect(switcher).toBeInViewport();
           expect(await switcher.evaluate(el => {
@@ -114,6 +119,60 @@ for (const shape of [
     });
   });
 }
+
+test("fullscreen keeps timeline paint out of the keyboard viewport gap", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true,
+    baseURL: test.info().project.use.baseURL });
+  const fixture = await nativeSettingsFixture(context);
+  try {
+    const page = await fixture.page("keyboard-gap");
+    await page.evaluate(() => {
+      const events = new EventTarget();
+      Object.defineProperty(window, "visualViewport", { configurable: true, value: {
+        addEventListener: events.addEventListener.bind(events),
+        height: 544,
+        offsetTop: 0,
+        removeEventListener: events.removeEventListener.bind(events),
+      } });
+    });
+    const pane = page.locator('.kodex-thread-pane[data-workspace-pane-active="true"]');
+    const threadContent = pane.locator(":scope > .kodex-thread-content");
+    await threadContent.evaluate((element) => {
+      const probe = document.createElement("span");
+      probe.dataset.keyboardBleedProbe = "true";
+      probe.style.visibility = "visible";
+      element.append(probe);
+    });
+    const contentHandle = await threadContent.elementHandle();
+    await pane.getByLabel("Message composer", { exact: true }).tap();
+    const dialog = pane.getByRole("dialog", { name: "Compose", exact: true });
+    await expect(dialog).toBeVisible();
+    await expect.poll(async () => {
+      const dialogBounds = await dialog.boundingBox();
+      const paneBounds = await pane.boundingBox();
+      return Math.round((paneBounds ? paneBounds.y + paneBounds.height : 0) -
+        (dialogBounds ? dialogBounds.y + dialogBounds.height : 0));
+    }).toBe(300);
+    await expect(threadContent).toHaveCSS("visibility", "hidden");
+    await expect(threadContent).toHaveCSS("opacity", "0");
+    const probe = threadContent.locator('[data-keyboard-bleed-probe="true"]');
+    await expect(probe).toHaveCSS("visibility", "visible");
+    expect(await probe.evaluate((element) => {
+      let effectiveOpacity = 1;
+      for (let current: Element | null = element; current; current = current.parentElement) {
+        effectiveOpacity *= Number.parseFloat(getComputedStyle(current).opacity);
+      }
+      return effectiveOpacity;
+    })).toBe(0);
+    await pane.getByRole("button", { name: "Collapse composer", exact: true }).tap();
+    await expect(dialog).toHaveCount(0);
+    expect(await contentHandle!.evaluate(element => element.isConnected)).toBe(true);
+    await expect(threadContent).toHaveCSS("visibility", "visible");
+    await expect(threadContent).toHaveCSS("opacity", "1");
+  } finally { await fixture.close(); await context.close(); }
+  expect(fixture.errors).toEqual([]);
+  expect(fixture.unexpected).toEqual([]);
+});
 
 test("fullscreen regular pane keeps its active goal in the composer toolbar", async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 768, height: 844 }, hasTouch: true,

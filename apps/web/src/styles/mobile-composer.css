@@ -128,6 +128,18 @@
   display: none;
 }
 
+/* iOS keyboard chrome is translucent. Preserve the mounted timeline and its
+   scroll state, but leave only an opaque pane surface behind the keyboard. */
+.kodex-thread-pane-existing:has(> .kodex-mobile-composer-expanded) {
+  background: var(--kodex-bg-shell);
+}
+
+.kodex-thread-pane-existing:has(> .kodex-mobile-composer-expanded) > .kodex-thread-pane-status,
+.kodex-thread-pane-existing:has(> .kodex-mobile-composer-expanded) > .kodex-thread-content {
+  visibility: hidden;
+  opacity: 0;
+}
+
 .kodex-composer-shell.kodex-mobile-composer-expanded {
   position: absolute;
   top: max(0px, calc(
