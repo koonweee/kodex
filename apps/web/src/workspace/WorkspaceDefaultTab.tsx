@@ -20,9 +20,7 @@ export function WorkspaceDefaultTab(props: IDockviewPanelHeaderProps<DockviewPan
   const animationRef = useSynchronizedAnimation<HTMLSpanElement>(indicatorState);
   const syncing = paneHeaderAdornmentsById[props.api.id];
   const headerAdornment = indicatorState === "running"
-    ? <span ref={animationRef} className="kodex-workspace-tab-running" aria-label="Thread in progress" role="status">
-        <svg aria-hidden="true" focusable="false"><rect x="1" y="1" pathLength="100" /></svg>
-      </span>
+    ? <span ref={animationRef} className="kodex-workspace-tab-running" aria-label="Thread in progress" role="status" />
     : indicatorState ? <ThreadStatusIndicator state={indicatorState} />
     : syncing ? <span aria-label="Pane syncing" role="status" title="Pane syncing">{syncing}</span> : null;
   const terminalStatus = pane.kind === "terminal" ? paneTabStatusById[props.api.id] : undefined;

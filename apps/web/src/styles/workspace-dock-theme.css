@@ -61,43 +61,59 @@
   outline-offset: -1px;
 }
 
-/* A dashed SVG stroke bends around the actual tab radius at any tab width.
-   It occupies no layout space and never intercepts tab/close/drag gestures. */
+/* Running tabs get a restrained surface shimmer. It occupies no layout space,
+   never intercepts tab/close/drag gestures, and moves only a composited layer. */
 .kodex-workspace-dock .kodex-workspace-tab:has(.kodex-workspace-tab-running) {
   position: static;
 }
 
 .kodex-workspace-tab-running {
   position: absolute;
-  inset: 0;
+  inset: 1px;
+  overflow: hidden;
+  border-radius: calc(var(--dv-tab-border-radius) - 1px);
   pointer-events: none;
 }
 
-.kodex-workspace-tab-running svg {
-  display: block;
-  width: 100%;
-  height: 100%;
+.kodex-workspace-tab-running::before {
+  content: "";
+  position: absolute;
+  top: -50%;
+  bottom: -50%;
+  left: -45%;
+  width: 40%;
+  opacity: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--kodex-accent) 14%, transparent),
+    transparent
+  );
+  transform: translate3d(0, 0, 0) skewX(-16deg);
+  animation: kodex-tab-running-shimmer 6s ease-in-out infinite;
+  will-change: transform, opacity;
 }
 
-.kodex-workspace-tab-running rect {
-  width: calc(100% - 2px);
-  height: calc(100% - 2px);
-  rx: calc(var(--dv-tab-border-radius) - 1px);
-  fill: none;
-  stroke: color-mix(in srgb, var(--kodex-accent) 65%, transparent);
-  stroke-width: 1.5px;
-  stroke-linecap: round;
-  stroke-dasharray: 8 92;
-  animation: kodex-tab-perimeter-pulse 6.667s linear infinite;
-}
-
-@keyframes kodex-tab-perimeter-pulse {
-  to { stroke-dashoffset: -100; }
+@keyframes kodex-tab-running-shimmer {
+  0%, 68% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0) skewX(-16deg);
+  }
+  76% { opacity: 1; }
+  94%, 100% {
+    opacity: 0;
+    transform: translate3d(365%, 0, 0) skewX(-16deg);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .kodex-workspace-tab-running rect {
+  .kodex-workspace-tab-running {
+    box-shadow: inset 0 0 0 1px var(--kodex-border-accent);
+  }
+
+  .kodex-workspace-tab-running::before {
     animation: none;
+    opacity: 0;
   }
 }
 
