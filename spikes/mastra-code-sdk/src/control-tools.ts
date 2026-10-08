@@ -8,7 +8,7 @@ import type { ChatService } from './chat-service.js';
 import type { HistoryRequest } from './chat-history.js';
 import type { ProjectRuntime } from './runtime.js';
 
-interface ControlOptions { getRuntime(): ProjectRuntime; getService(): ChatService }
+export interface ControlOptions { getRuntime(): ProjectRuntime; getService(): ChatService }
 const denied = () => new Error('Kodex Control requires an original live ordinary chat session.');
 const id = { type: 'string', minLength: 1, maxLength: 256, pattern: '\\S' } as const;
 const nullableId = { anyOf: [id, { type: 'null' as const }] };
@@ -36,9 +36,9 @@ async function authorize(runtime: ProjectRuntime, context: ToolExecutionContext)
     || origin.isThreadActive?.() === false || context.abortSignal?.aborted) throw denied();
 }
 
-/** Native host tools only: no MCP/plugin facade, transport or duplicate runtime. */
-export function createControlTools(options: ControlOptions) {
-  function tool<I extends object>(name: string, description: string, inputSchema: PublicSchema,
+/** Share the native origin guard across the bounded Control tool families. */
+export function createControlToolFactory(options: ControlOptions) {
+  return function tool<I extends object>(name: string, description: string, inputSchema: PublicSchema,
     run: (input: I, service: ChatService) => Promise<unknown>) {
     return createTool({ id: name, description, inputSchema, background: { enabled: false },
       execute: async (input, context) => {
@@ -47,6 +47,11 @@ export function createControlTools(options: ControlOptions) {
       },
     });
   }
+}
+
+/** Native host tools only: no MCP/plugin facade, transport or duplicate runtime. */
+export function createControlTools(options: ControlOptions) {
+  const tool = createControlToolFactory(options);
   const missing = () => new ORPCError('NOT_FOUND', { message: 'Chat or project not found.' });
   return {
     get_status: tool('get_status', 'Read the connected native Kodex host identity.', schema(),

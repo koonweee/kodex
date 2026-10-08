@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { MastraError } from '@mastra/core/error';
 import { toWorkflowSchedule, type WorkflowSchedule, type AnySchedule } from '@mastra/core/schedules';
 import { AUTOMATION_INPUT_LIMITS, AUTOMATION_WORKFLOW_ID, readAutomationWorkflowInput, type AutomationWorkflowInput } from './automation-workflow.js';
-import type { AnyWorkflow } from '@mastra/core/workflows';
+import { computeNextFireAt, validateCron, type AnyWorkflow } from '@mastra/core/workflows';
 import { ORPCError } from '@orpc/server';
 import type { ProjectRuntime } from './runtime.js';
 
@@ -97,14 +97,31 @@ export function createAutomationService(options: AutomationServiceOptions) {
         return rows.filter(owned).map(project);
       }))).flat().sort((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id)));
     },
-    create(input: AutomationCreate): Promise<Automation> {
+    get({ id }: { id: string }): Promise<Automation> {
+      return native(async () => project((await locate(id)).row));
+    },
+    validate(input: AutomationCreate): Promise<{ valid: true; nextFireAt: number }> {
       return native(async () => {
         if (!validAutomationCreate(input)) throw new ORPCError('BAD_REQUEST', { message: 'Provide a name, prompt, target chat, cron expression and timezone.' });
+        const { thread } = await options.resolveTarget(input.targetThreadId);
+        if (thread.id !== input.targetThreadId || !validAutomationId(thread.resourceId)) throw missing();
+        try {
+          validateCron(input.cron, input.timezone);
+          return { valid: true, nextFireAt: computeNextFireAt(input.cron, { timezone: input.timezone }) };
+        } catch {
+          throw new ORPCError('BAD_REQUEST', { message: 'Enter a valid cron expression and IANA timezone with a future occurrence.' });
+        }
+      });
+    },
+    create(input: AutomationCreate, creation: { status?: 'active' | 'paused' } = {}): Promise<Automation> {
+      return native(async () => {
+        if (!validAutomationCreate(input)) throw new ORPCError('BAD_REQUEST', { message: 'Provide a name, prompt, target chat, cron expression and timezone.' });
+        if (creation.status !== undefined && creation.status !== 'active' && creation.status !== 'paused') throw new ORPCError('BAD_REQUEST', { message: 'Provide an active or paused schedule status.' });
         const { runtime, thread } = await options.resolveTarget(input.targetThreadId);
         if (thread.id !== input.targetThreadId || !validAutomationId(thread.resourceId)) throw missing();
         const inputData: AutomationWorkflowInput = { name: input.name.trim(), prompt: input.prompt, targetThreadId: thread.id };
         const row = await runtime.mastra.schedules.create({ id: randomUUID(), workflowId: AUTOMATION_WORKFLOW_ID,
-          inputData, resourceId: thread.resourceId, cron: input.cron, timezone: input.timezone, metadata: { kodexAutomation: 1 } });
+          inputData, resourceId: thread.resourceId, cron: input.cron, timezone: input.timezone, metadata: { kodexAutomation: 1 }, ...(creation.status !== undefined && { status: creation.status }) });
         if (!owned(row)) throw missing();
         return project(row);
       });
@@ -135,6 +152,16 @@ export function createAutomationService(options: AutomationServiceOptions) {
     resume({ id }: { id: string }): Promise<Automation> { return native(() => mutate(id, runtime => runtime.mastra.schedules.resume(id))); },
     remove({ id }: { id: string }): Promise<{ id: string }> {
       return native(() => serial(id, async () => { const { runtime } = await locate(id); await runtime.mastra.schedules.delete(id); return { id }; }));
+    },
+    run({ id }: { id: string }) {
+      return native(() => serial(id, async () => {
+        const { runtime, row } = await locate(id);
+        const target = await options.resolveTarget(row.inputData.targetThreadId);
+        if (target.thread.id !== row.inputData.targetThreadId || target.thread.resourceId !== row.resourceId) throw missing();
+        // Native manual dispatch does not resume the calendar or await the
+        // resulting model. An ambiguous admission must not be retried.
+        return runtime.mastra.schedules.run(id);
+      }));
     },
     runs({ id }: { id: string }) {
       return native(async () => {

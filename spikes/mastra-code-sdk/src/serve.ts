@@ -7,6 +7,7 @@ import { createProjectRuntime, type ProjectRuntime } from './runtime.js';
 import { createAsyncQuestionTools } from './async-question-tools.js';
 import { createChildTools } from './child-tools.js';
 import { createControlTools } from './control-tools.js';
+import { createControlAutomationTools } from './control-automation-tools.js';
 import { loadServerConfig } from './server-config.js';
 import { createChatService, type ChatService } from './chat-service.js';
 import { createGatewayRouter } from './gateway-router.js';
@@ -40,7 +41,8 @@ const service: ChatService = createChatService({
     let runtime!: ProjectRuntime;
     runtime = await createProjectRuntime({ ...options,
       extraTools: { ...createChildTools({ getRuntime: () => runtime }), ...createAsyncQuestionTools(),
-        ...createControlTools({ getRuntime: () => runtime, getService: () => service }) },
+        ...createControlTools({ getRuntime: () => runtime, getService: () => service }),
+        ...createControlAutomationTools({ getRuntime: () => runtime, getService: () => service }) },
       modes: [{ id: 'build', defaultModelId: values.model, metadata: { default: true } }],
     });
     return runtime;
