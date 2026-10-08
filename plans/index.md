@@ -19,7 +19,7 @@ Focused subsystem replacements are encouraged wherever they reduce maintained co
 
 | Plan | Status | Scope | Notes |
 | --- | --- | --- | --- |
-| [Responsive UI contract and classification cleanup](responsive-ui-contract.md) | Complete | Shared workspace/pane/input classifications, enforceable ownership and compact-pane migration | Initial contract, idle composer, radius/loading refinements and subtle inline composer morph deployed. Shadow-stability and device-local fullscreen-touch preference refinements are validated but not yet deployed. |
+| [Responsive UI contract and classification cleanup](responsive-ui-contract.md) | Complete | Shared workspace/pane/input classifications, enforceable ownership and compact-pane migration | Initial contract, idle composer, radius/loading refinements, subtle inline composer morph and device-local fullscreen-touch preference deployed. Shadow-stability refinement is validated but not yet deployed. |
 | [Native goal management](native-goals.md) | Complete | Native-backed goal visibility and management | Desktop goal bar, mobile bullseye/modal, model-created goals and cross-client recovery. |
 | [Integration shortcut cleanup](integration-shortcut-cleanup.md) | Complete | Resolve runtime integration audit follow-ups | Tested and deployed native reads/errors, browser compatibility, PWA and contract tooling. |
 | [Pinned upstream runtime](pinned-runtime-distribution.md) | Complete | Direct official runtime acquisition | Deployed verified complete package; native Code Mode proof passed; adjacent audit recorded. |

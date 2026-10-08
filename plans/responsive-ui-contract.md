@@ -220,7 +220,7 @@ Composer menus restore their existing trigger synchronously before reporting clo
 
 ## Follow-up: device fullscreen composer preference
 
-Complete and validated. This decision supersedes the earlier narrow-workspace requirement and the historical wide-touch-inline validation above. It is not yet deployed.
+Complete, validated and deployed frontend-only. This decision supersedes the earlier narrow-workspace requirement and the historical wide-touch-inline validation above.
 
 - The Preferences section named Appearance is now presented as **Interface**. Theme controls remain there alongside device-level interaction choices.
 - **Open composer fullscreen when using touch** defaults on. With it enabled, an actual touch opening expands the existing composer at any workspace width. With it disabled, every opening remains inline. Mouse, keyboard and programmatic focus always remain inline.
@@ -230,6 +230,8 @@ Complete and validated. This decision supersedes the earlier narrow-workspace re
 - Keep the textarea mounted and preserve focus, selection, IME composition, draft content, annotations, skill bindings and attachments through every transition. Keyboard submission and shared conversation state remain unchanged.
 
 Validation: 84 focused unit/component tests and 43 bundled-Chromium cases pass, including default and opt-out touch opening, mouse/keyboard inline opening, same-browser two-tab preference convergence, annotations, idle motion, compact/regular panes and a four-pane visual-viewport overlap case. Production build/typecheck, frontend trim and all 11 responsive ownership fixtures pass. Independent review found and verified fixes for pane-relative keyboard clipping and idle-selector specificity; rendered checks preserve balanced 8px idle padding and the 32px idle radius.
+
+Deployment: clean snapshot `6381857` was installed with the frontend-only updater onto release `20261008-024630-3ef10fff`. Gateway PID `45933` remained unchanged, `/readyz` reports ready and the served index matches the clean build.
 
 Separate pre-existing follow-up: activating another hidden native group while the workspace is narrow can exit maximize before the client receives the active-panel event and alter split allocations. This change addresses width transitions and serialization; wrapping native group activation is outside the idle-composer scope. Physical iOS keyboard behavior was not revalidated; touch and hybrid evidence uses bundled Chromium.
 
