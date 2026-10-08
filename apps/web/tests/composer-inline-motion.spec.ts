@@ -83,7 +83,7 @@ async function recordMotion(form: Locator, action: "focus" | "rapid" | "resize" 
           }
           return false;
         })(),
-        movingControls: [...form.querySelectorAll(".kodex-composer-textarea, .kodex-composer-attachment-target, .kodex-composer-footer-left, .kodex-composer-footer-right, .kodex-composer-toolbar-left > .kodex-adaptive-icon-button, .kodex-composer-action")].some(translated),
+        movingControls: [...form.querySelectorAll(".kodex-composer-textarea, .kodex-composer-attachment-target, .kodex-composer-control-slot, .kodex-composer-toolbar-left > .kodex-adaptive-icon-button, .kodex-composer-action")].some(translated),
         runningAnimations: form.getAnimations({ subtree: true }).filter(animation => animation.playState === "running" &&
           animation.effect instanceof KeyframeEffect && animation.effect.getKeyframes().some(keyframe =>
             ["transform", "width", "height", "borderRadius"].some(property => property in keyframe))).length,

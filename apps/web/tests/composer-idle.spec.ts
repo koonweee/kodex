@@ -33,6 +33,7 @@ for (const shape of [
           const model = bounds(".kodex-composer-model-control");
           return { height: el.getBoundingClientRect().height, padding: parseFloat(style.paddingTop) + parseFloat(style.paddingBottom),
             inputHeight: input.height, inputWidth: input.width, fieldBetween: input.left >= add.right && input.right <= context.left,
+            contextWidth: context.width, contextModelGap: model.left - context.right,
             controlHeight: add.height, modelWidth: model.width, modelHeight: model.height, overflow: el.scrollWidth - el.clientWidth };
         });
         await expect.poll(async () => (await measure()).overflow).toBeLessThanOrEqual(1);
@@ -41,6 +42,8 @@ for (const shape of [
         expect(idle.inputWidth).toBeGreaterThan(40);
         expect(idle.inputHeight).toBeLessThanOrEqual(idle.controlHeight + 1);
         expect(idle.fieldBetween).toBe(true);
+        expect(idle.contextWidth).toBeCloseTo(idle.modelWidth, 0);
+        expect(idle.contextModelGap).toBeCloseTo(4, 0);
         expect(idle.modelWidth).toBeCloseTo(idle.controlHeight, 0);
         expect(idle.modelHeight).toBeCloseTo(idle.controlHeight, 0);
         await page.screenshot({ path: test.info().outputPath("idle-row.png") });
@@ -61,7 +64,10 @@ for (const shape of [
         await expect(input).toBeFocused();
         await expect(form).toHaveAttribute("data-idle-compact", "false");
         await expect(pane.getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
-        expect((await measure()).height).toBeGreaterThan(idle.height);
+        const active = await measure();
+        expect(active.height).toBeGreaterThan(idle.height);
+        expect(active.contextWidth).toBeCloseTo(active.modelWidth, 0);
+        expect(active.contextModelGap).toBeCloseTo(4, 0);
         await input.fill(" ");
         await page.mouse.click(shape.width - 20, 150);
         await expect(form).toHaveAttribute("data-idle-compact", "false");
@@ -168,6 +174,18 @@ for (const settingsError of [false, true]) {
       expect(await form.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
       const input = pane.getByRole("textbox", { name: "Message composer", exact: true });
       expect((await input.boundingBox())!.width).toBeGreaterThan(20);
+      if (!settingsError) {
+        const controls = await form.evaluate(el => [
+          ".kodex-composer-fast-indicator",
+          ".kodex-composer-model-control",
+          ".kodex-goal-icon",
+          ".kodex-composer-action",
+        ].map(selector => el.querySelector(selector)!.getBoundingClientRect()).map(box => ({ left: box.left, right: box.right, width: box.width })));
+        for (const control of controls) expect(control.width).toBeCloseTo(44, 0);
+        for (let index = 1; index < controls.length; index += 1) {
+          expect(controls[index].left - controls[index - 1].right).toBeCloseTo(4, 0);
+        }
+      }
       await page.screenshot({ path: test.info().outputPath("auxiliary-controls.png") });
       await input.tap();
       await expect(input).toBeFocused();

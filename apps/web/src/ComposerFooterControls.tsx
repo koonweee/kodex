@@ -1,7 +1,7 @@
 import { Box, Button, Group, Menu, Switch, Text, Tooltip } from "@mantine/core";
 import { AlertCircle, ArrowLeft, Brain, Check, ChevronRight, Gauge, X } from "lucide-react";
-import type { CSSProperties } from "react";
-import { useLayoutEffect, useRef, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { Children, isValidElement, useLayoutEffect, useRef, useState } from "react";
 
 import { useCompactDialog } from "./shared/layoutBreakpoints";
 import { usePaneLayout } from "./shared/PaneLayout";
@@ -108,26 +108,22 @@ export function ComposerFooterControls({
   }
 
   return (
-    <Group className="kodex-composer-footer-controls" gap={4} wrap="nowrap">
-      <Group className="kodex-composer-footer-left" gap={4} wrap="nowrap">
-        {settingsError ? (
-          <AdaptiveIconButton color="red" label={settingsError}>
-            <AlertCircle />
-          </AdaptiveIconButton>
-        ) : null}
-      </Group>
+    <ComposerControlSlots>
+      {settingsError ? (
+        <AdaptiveIconButton className="kodex-composer-settings-error" color="red" label={settingsError}>
+          <AlertCircle />
+        </AdaptiveIconButton>
+      ) : null}
+      {showContextUsage ? <ContextUsageIndicator usage={contextUsage} /> : null}
+      {settings?.fast ? (
+        <Tooltip label="Fast responses enabled">
+          <Box aria-label="Fast responses enabled" className="kodex-composer-fast-indicator" component="span" role="img">
+            <SolidBoltIcon />
+          </Box>
+        </Tooltip>
+      ) : null}
 
-      <Group className="kodex-composer-footer-right" gap={4} wrap="nowrap">
-        {showContextUsage ? <ContextUsageIndicator usage={contextUsage} /> : null}
-        {settings?.fast ? (
-          <Tooltip label="Fast responses enabled">
-            <Box aria-label="Fast responses enabled" className="kodex-composer-fast-indicator" component="span" role="img">
-              <SolidBoltIcon />
-            </Box>
-          </Tooltip>
-        ) : null}
-
-        <Menu position="top-start" withinPortal returnFocus={false} opened={modelMenuOpened} onChange={changeMenuOpened} middlewares={{ flip: true, shift: { padding: 10, crossAxis: true } }}>
+      <Menu position="top-start" withinPortal returnFocus={false} opened={modelMenuOpened} onChange={changeMenuOpened} middlewares={{ flip: true, shift: { padding: 10, crossAxis: true } }}>
           <Tooltip label={modelControlLabel} disabled={!compact || modelMenuOpened}>
             <Menu.Target>
               <Button
@@ -252,8 +248,20 @@ export function ComposerFooterControls({
               </>
             )}
           </Menu.Dropdown>
-        </Menu>
-      </Group>
+      </Menu>
+    </ComposerControlSlots>
+  );
+}
+
+function ComposerControlSlots({ children }: { children: ReactNode }) {
+  const controls = Children.toArray(children).filter(isValidElement);
+  return (
+    <Group className="kodex-composer-footer-controls" gap={4} wrap="nowrap">
+      {controls.map((control) => (
+        <Box component="span" className="kodex-composer-control-slot" key={control.key}>
+          {control}
+        </Box>
+      ))}
     </Group>
   );
 }

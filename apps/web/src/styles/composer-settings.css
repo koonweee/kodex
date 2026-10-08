@@ -1,3 +1,15 @@
+.kodex-composer-control-slot {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+}
+
+.kodex-composer-control-slot:has(.kodex-composer-model-control:not([data-icon-only])) {
+  width: auto;
+}
+
 .kodex-composer-model-control[data-icon-only] {
   width: var(--kodex-adaptive-icon-button-size);
 }
@@ -49,6 +61,11 @@
 }
 
 @media (pointer: coarse), (any-pointer: coarse) {
+  .kodex-composer-control-slot {
+    width: 44px;
+    height: 44px;
+  }
+
   .kodex-run-settings-menu [data-menu-item] {
     min-height: 44px;
   }

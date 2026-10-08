@@ -40,6 +40,8 @@
   position: relative;
   z-index: 1;
   contain: layout style;
+  container-name: kodex-composer;
+  container-type: inline-size;
   display: grid;
   grid-template-rows: auto auto auto;
   gap: 0;
@@ -429,17 +431,12 @@
 
 .kodex-composer-footer-controls {
   flex: 1 1 auto;
-  justify-content: space-between;
+  justify-content: flex-end;
   min-width: 0;
 }
 
-.kodex-composer-footer-left,
-.kodex-composer-footer-right {
-  min-width: 0;
-}
-
-.kodex-composer-footer-right {
-  margin-left: auto;
+.kodex-composer-control-slot:has(.kodex-composer-settings-error) {
+  margin-right: auto;
 }
 
 .kodex-composer-action,
@@ -503,9 +500,8 @@
   display: inline-grid;
   place-items: center;
   flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
-  margin-right: -3px;
+  width: 100%;
+  height: 100%;
   border-radius: var(--kodex-radius-round);
   color: var(--kodex-text-secondary);
 }
@@ -540,8 +536,8 @@
 .kodex-context-usage {
   display: inline-grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 100%;
+  height: 100%;
   border-radius: var(--kodex-radius-round);
   color: var(--kodex-text-secondary);
 }

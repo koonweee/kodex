@@ -66,10 +66,6 @@
   display: contents;
 }
 
-.kodex-composer[data-idle-compact="true"] .kodex-composer-footer-left:empty {
-  display: none;
-}
-
 .kodex-composer[data-idle-compact="true"] .kodex-composer-attachment-target {
   grid-area: 1 / 1;
 }
@@ -97,6 +93,14 @@
 
 .kodex-composer[data-idle-compact="true"] .kodex-composer-action {
   grid-area: 1 / 5;
+}
+
+/* Keep a usable editable strip when every optional status slot is present. */
+@container kodex-composer (max-width: 320px) {
+  .kodex-composer[data-idle-compact="true"]:has(.kodex-composer-fast-indicator):has(.kodex-goal-icon)
+    .kodex-composer-control-slot:has(.kodex-context-usage) {
+    display: none;
+  }
 }
 
 /* Editable size and safe areas follow touch capability, independently of density. */

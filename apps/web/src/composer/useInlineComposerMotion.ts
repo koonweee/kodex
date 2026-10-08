@@ -13,8 +13,7 @@ type Motion = { from: Layout; to: Layout; surface: Animation; animations: Animat
 const partsSelector = [
   ".kodex-composer-textarea",
   ".kodex-composer-attachment-target",
-  ".kodex-composer-footer-left",
-  ".kodex-composer-footer-right",
+  ".kodex-composer-control-slot",
   ".kodex-composer-toolbar-left > .kodex-adaptive-icon-button",
   ".kodex-composer-action",
 ].join(", ");
