@@ -11,7 +11,7 @@ import type { ThreadListEntry } from '../threads/viewTypes';
 export function acceptsSnapshot(current: { epoch: string; revision: number } | null, next: { epoch: string; revision: number }): boolean {
   return current === null || current.epoch !== next.epoch || next.revision > current.revision;
 }
-export function chatListEntry(chat: Chat): ThreadListEntry { return { id: chat.id, name: chat.title, projectId: chat.projectId, pinned: chat.pinned }; }
+export function chatListEntry(chat: Chat): ThreadListEntry { return { id: chat.id, name: chat.title, projectId: chat.projectId, pinned: chat.pinned, isRunning: chat.isRunning }; }
 function printable(value: unknown): string {
   if (typeof value === 'string') return value;
   if (value === undefined) return '';

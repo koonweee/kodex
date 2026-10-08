@@ -614,3 +614,17 @@ Shared PreferencesModal now accepts an optional Execution panel; the app-server 
 Failing-first query/control regression then focused30/30, build/typecheck/trim and independent review pass. Actual browser3/3 across desktop/narrow-fine/narrow-touch verifies navigation into Execution, Appearance switching, no legacy requests or console errors, and settled narrow rendering. The initial narrow browser failure was a fixture visibility check before the shell loaded; waiting for the real shell corrected the fixture, with no product change. Evidence: `/tmp/kodex-native-execution-preferences-green.log`, `/tmp/kodex-native-execution-preferences-build.log`, `/tmp/kodex-native-execution-preferences-trim.log`, `/tmp/kodex-native-execution-browser-final.log`.
 
 Checkpoint: reviewed work is committed; no deployment. The full port goal is still active and incomplete. User alignment remains pending on a small durable Kodex completion marker and its narrow hard-crash lost-marker window; do not implement read-state storage until answered. Remaining independent scope is the browser audit list above, broader Control/MCP setup, PWA/notifications, and final moving-main reconciliation.
+
+
+### Next independent slice: native live activity (2026-10-08)
+
+Unread-marker alignment remains unanswered; no read-state persistence is authorized by elapsed time or the automatic goal continuation. The preceding goal turn made verified implementation progress. Continue the separate frozen-main live-activity gap: expose current ordinary host Session display.isRunning in each canonical catalog chat, publish native running transitions through existing catalog revision fencing, and feed the shared sidebar/tab indicators. Pane context uses its own native snapshot as the existing fallback. No unread inference, durable activity cache, guessed timestamp/queue status, CSS redesign or Session activation from inventory. Current product input paths all use host-bound Sessions; do not build a new external-session orchestration registry. Validate two clients, missed-event/refetch/restart, held runs/Stop and independent chat/pane state before acceptance.
+
+
+### Native live activity accepted (2026-10-08)
+
+Catalog chats now project current host-bound native Session display.isRunning, with catalog invalidation on transitions and the existing revision fence protecting overlapping reads. Shared sidebar and pane-tab indicators consume this state; dormant reads activate no Sessions. Native suspension remains false. No unread inference, durable activity cache or external Session registry. All retained input paths bind before execution.
+
+Failing-first coverage, native two-client proof, affected backend76/76, frontend45/45, both typechecks/builds, frontend trim and independent review pass. Browser3/3 covers an unopened pinned target, independent idle peer, active reload, Stop convergence and pane tabs, with no legacy requests or console errors; desktop/touch screenshots reviewed. Evidence: /tmp/kodex-chat-activity-affected.log, /tmp/kodex-native-activity-frontend-green.log, /tmp/kodex-native-activity-browser.log, /tmp/kodex-native-activity-frontend-build.log, /tmp/kodex-native-activity-frontend-trim.log.
+
+Next independent slice: truthful native-message activity grouping and nonempty debug disclosures using existing shared rendering. Do not fabricate terminal turn outcomes/durations or event envelopes from saved messages. Completion-marker alignment remains pending; full goal active, no deployment.

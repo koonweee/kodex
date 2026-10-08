@@ -269,3 +269,21 @@ it('opens the inspector when only fresh delegated children exist', async () => {
     expect(screen.getByText('Composer')).toBeVisible();
   } finally { native.subagents = null; }
 });
+
+it('updates an inactive pane tab activity from its own native display and ignores a different chat snapshot', async () => {
+  native.useWorkspace.mockImplementation(() => useContext(context));
+  native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: null, cwd: '/project', title: 'Chat', name: 'Chat', pinned: false, notificationsEnabled: true }, display: { ...defaultDisplayState(), isRunning: true }, messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
+  const inactivePane = { ...pane, id: 'inactive-pane' };
+  const node = (threadId = 'chat') => <Harness><NativeThreadPane pane={{ ...inactivePane, target: { mode: 'existing', threadId } }} draftStore={{} as ComposerDraftStore} onError={onError} /></Harness>;
+  const view = render(node());
+  expect(stable.setPaneThreadContext).toHaveBeenLastCalledWith('inactive-pane', { id: 'chat', projectId: null, cwd: '/project', indicatorState: 'running' });
+  native.snapshot = { ...native.snapshot, revision: 2, display: { ...native.snapshot.display, isRunning: false } };
+  await act(async () => view.rerender(node()));
+  expect(stable.setPaneThreadContext).toHaveBeenLastCalledWith('inactive-pane', { id: 'chat', projectId: null, cwd: '/project', indicatorState: null });
+  stable.setPaneThreadContext.mockClear();
+  await act(async () => view.rerender(node('other-chat')));
+  expect(stable.setPaneThreadContext).not.toHaveBeenCalled();
+  native.snapshot = { ...native.snapshot, revision: 3, chat: { ...native.snapshot.chat, id: 'other-chat' }, display: { ...native.snapshot.display, isRunning: true } };
+  await act(async () => view.rerender(node('other-chat')));
+  expect(stable.setPaneThreadContext).toHaveBeenLastCalledWith('inactive-pane', { id: 'other-chat', projectId: null, cwd: '/project', indicatorState: 'running' });
+});

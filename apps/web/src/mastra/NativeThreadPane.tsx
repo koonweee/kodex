@@ -15,6 +15,7 @@ import { useNativeCatalogSnapshot } from './NativeCatalogContext';
 import { timelinePresentation } from './presentation';
 import { NativeComposer } from './NativeComposer';
 import { SubagentPaneToggle } from '../threads/SubagentPaneToggle';
+import { threadIndicatorState } from '../threads/ThreadStatusIndicator';
 import { useNativeSubagents } from './useNativeSubagents';
 import { NativePromptStack } from './NativePromptStack';
 import { NativeSubagentViewer } from './NativeSubagentViewer';
@@ -50,10 +51,10 @@ export function NativeThreadPane({ pane, draftStore, onError }: { pane: Workspac
     return () => { renameGeneration.current++; };
   }, [chatId]);
   useEffect(() => {
-    if (!snapshot) return;
-    setPaneThreadContext(pane.id, { id: snapshot.chat.id, projectId: snapshot.chat.projectId, cwd: snapshot.chat.cwd });
+    if (!snapshot || snapshot.chat.id !== chatId) return;
+    setPaneThreadContext(pane.id, { id: snapshot.chat.id, projectId: snapshot.chat.projectId, cwd: snapshot.chat.cwd, indicatorState: threadIndicatorState({ id: snapshot.chat.id, isRunning: snapshot.display.isRunning }) });
     if (pane.title !== snapshot.chat.title) void updatePane(pane.id, { title: snapshot.chat.title }).catch(onError);
-  }, [snapshot?.chat.id, snapshot?.chat.title, snapshot?.chat.projectId, snapshot?.chat.cwd, pane.id, pane.title, setPaneThreadContext, updatePane, onError]);
+  }, [chatId, snapshot?.chat.id, snapshot?.chat.title, snapshot?.chat.projectId, snapshot?.chat.cwd, snapshot?.display.isRunning, pane.id, pane.title, setPaneThreadContext, updatePane, onError]);
   const title = isUnavailable ? 'Thread not found or unavailable' : snapshot?.chat.title ?? pane.title ?? 'New thread';
   const nativeChatId = snapshot?.chat.id;
   const nativeName = snapshot?.chat.name;
