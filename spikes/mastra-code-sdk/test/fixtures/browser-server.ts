@@ -159,6 +159,28 @@ if (process.argv[4] === 'history' && !(await service.listChats()).chats.length) 
   await store.saveMessages({ messages: Array.from({ length: 100 }, (_, i) => ({ id: `history-${i}`, threadId: chat.id, resourceId: thread.resourceId,
     role: 'user' as const, createdAt: new Date(Date.now() - 100_000 + i * 1000), content: { format: 2 as const, parts: [{ type: 'text' as const, text: `HISTORY_ROW_${i}` }] } })) });
 }
+if (process.argv[4] === 'input-images' && !(await service.listChats()).chats.length) {
+  const catalog = await service.listChats();
+  const chat = await service.createChat({ projectId: catalog.projects[0].id });
+  await service.renameChat({ chatId: chat.id, title: 'Native input image fixture' });
+  const runtime = runtimes[0], thread = await runtime.controller.queryThreadById({ threadId: chat.id });
+  if (!thread) throw new Error('Missing seeded native input image thread');
+  const store = await runtime.storage.getStore('memory');
+  if (!store) throw new Error('Missing seeded native image storage');
+  // Actual native saved signal/file shape proven by chat-attachments.native.test.ts.
+  // This is persisted history rendering, not browser submission or a mocked API.
+  const file = (data: string, mimeType: string, filename: string) => ({ type: 'file' as const, data, mimeType, filename });
+  const source = { threadId: chat.id, resourceId: thread.resourceId, role: 'signal' as const };
+  await store.saveMessages({ messages: [
+    { ...source, id: 'input-images-text', createdAt: new Date(Date.now() - 2000), content: { format: 2 as const,
+      parts: [{ type: 'text' as const, text: 'Inspect this image <pixel> & preserve the text.' }, file(png.toString('base64'), 'image/png', 'pixel.png'),
+        file('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'image/gif', 'motion.gif')],
+      metadata: { signal: { id: 'input-images-text', type: 'user', metadata: { clientId: 'input-image-text-correlation' } } } } },
+    { ...source, id: 'input-images-only', createdAt: new Date(Date.now() - 1000), content: { format: 2 as const,
+      parts: [file(png.toString('base64'), 'image/png', 'only.png')],
+      metadata: { signal: { id: 'input-images-only', type: 'user', metadata: { clientId: 'input-image-only-correlation' } } } } },
+  ] });
+}
 const server = await serveRouter(createChatRouter(service), port);
 console.log(`BROWSER_FIXTURE_READY ${server.url}`);
 let stopping = false;
