@@ -1,0 +1,48 @@
+import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import { tmpdir } from 'node:os';
+import { realpath } from 'node:fs/promises';
+import { test } from 'node:test';
+import { createORPCClient } from '@orpc/client';
+import { RPCLink } from '@orpc/client/fetch';
+import type { RouterClient } from '@orpc/server';
+import { WebSocket } from 'ws';
+import { createTerminalService } from '../src/terminal-service.js';
+import { createTerminalRouter } from '../src/terminal-router.js';
+import { serveRouter } from '../src/server.js';
+
+test('two typed clients and raw sockets share the real PTY, Stop, and authoritative project root', { timeout: 15_000 }, async t => {
+  const cwd = await realpath(tmpdir());
+  const terminals = createTerminalService({ defaultCwd: cwd, async projectCwd(id) { assert.equal(id, 'project'); return cwd; } });
+  const router = createTerminalRouter(terminals);
+  const server = await serveRouter(router, 0, undefined, terminals);
+  t.after(async () => { await server.close(); await terminals.dispose(); });
+  const client = (): RouterClient<typeof router> => createORPCClient(new RPCLink({ url: `${server.url}/rpc` }));
+  const a = client(), b = client();
+  await assert.rejects(a.createTerminal({ projectId: 'project', cwd: '/wrong' }), /match the project root/);
+  await assert.rejects(a.createTerminal({ projectId: '' }));
+  assert.deepEqual(await b.listTerminals(), []);
+  const created = await a.createTerminal({ projectId: 'project', command: '/bin/sh' });
+  assert.equal(created.cwd, cwd); assert.deepEqual(await b.listTerminals(), [created]);
+  const endpoint = `${server.url.replace('http:', 'ws:')}/v1/terminals/${created.id}/ws`;
+  const first = new WebSocket(endpoint), second = new WebSocket(endpoint);
+  t.after(() => { first.terminate(); second.terminate(); });
+  let output = ''; let updated: (() => void) | undefined;
+  second.on('message', data => { output += data.toString(); updated?.(); });
+  await Promise.all([once(first, 'open'), once(second, 'open')]);
+  const marker = new Promise<void>(resolve => { updated = () => { if (output.includes('PEER_RESULT:42\r\n')) resolve(); }; });
+  first.send(Buffer.concat([Buffer.from("stty -echo; printf 'PEER_RESULT:%s\\n' 42\n"), Buffer.from([1])]));
+  await marker;
+  const closed = once(second, 'close');
+  await b.deleteTerminal({ terminalId: created.id }); await closed;
+  assert.ok(output.includes('terminal exited'));
+  assert.deepEqual(await a.listTerminals(), []);
+  await assert.rejects(a.deleteTerminal({ terminalId: created.id }), /was not found/);
+  // The same origin gate protects PTY upgrades as the ordinary RPC socket.
+  const foreign = new WebSocket(endpoint, { origin: 'https://foreign.example' });
+  foreign.on('error', () => {});
+  const [, response] = await once(foreign, 'unexpected-response');
+  assert.equal(response.statusCode, 403);
+  response.resume();
+  foreign.terminate();
+});

@@ -36,7 +36,7 @@ const TERMINAL_ACCESSORY_KEYS: Array<{ data: string; label: string }> = [
 export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
   const { hasTouchInput } = useInputCapabilities();
   const target = paneTargetRecord(pane);
-  const { openNewTerminalPane, setPaneHeaderActions, setPaneTabStatus, updatePane } = useWorkspace();
+  const { openNewTerminalPane, setPaneHeaderActions, setPaneTabStatus, terminalSessionApi, updatePane } = useWorkspace();
   const targetTerminalId = typeof target.terminalId === "string" ? target.terminalId : null;
   const targetCwd = typeof target.cwd === "string" ? target.cwd : null;
   const targetProjectId = typeof target.projectId === "string" ? target.projectId : null;
@@ -50,6 +50,7 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
     [pane.title, targetCommand, targetCwd, targetProjectId],
   );
   const { error, isLoading, recoverSession, session, stopSession } = useGatewayTerminalSession(true, {
+    ...(terminalSessionApi ? { api: terminalSessionApi } : {}),
     createRequest,
     preferredTerminalId: targetTerminalId,
     reuseRunning: target.reuseRunning === true,

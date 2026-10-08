@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useInputCapabilities } from "../../shared/inputCapabilities";
 import type { TerminalSessionInfo } from "../../api/client";
-import { useGatewayTerminalSession } from "../../terminal/useGatewayTerminalSession";
+import { type TerminalSessionApi, useGatewayTerminalSession } from "../../terminal/useGatewayTerminalSession";
 import type { WorkspacePane } from "../../workspace/paneTypes";
 import { TerminalPane } from "./TerminalPane";
 
@@ -16,6 +16,7 @@ const workspaceMocks = vi.hoisted(() => ({
   setPaneHeaderActions: vi.fn(),
   setPaneTabStatus: vi.fn(),
   updatePane: vi.fn(),
+  terminalSessionApi: undefined as TerminalSessionApi | undefined,
 }));
 
 vi.mock("../../workspace/WorkspaceProvider", () => ({
@@ -25,6 +26,7 @@ vi.mock("../../workspace/WorkspaceProvider", () => ({
     setPaneHeaderActions: workspaceMocks.setPaneHeaderActions,
     setPaneTabStatus: workspaceMocks.setPaneTabStatus,
     updatePane: workspaceMocks.updatePane,
+    terminalSessionApi: workspaceMocks.terminalSessionApi,
   }),
 }));
 
@@ -57,6 +59,7 @@ describe("TerminalPane", () => {
     workspaceMocks.openTerminalPane.mockResolvedValue(undefined);
     workspaceMocks.setPaneHeaderActions.mockReset();
     workspaceMocks.setPaneTabStatus.mockReset();
+    workspaceMocks.terminalSessionApi = undefined;
     workspaceMocks.updatePane.mockReset();
     workspaceMocks.updatePane.mockResolvedValue(undefined);
     vi.mocked(useGatewayTerminalSession).mockReset();
@@ -68,6 +71,19 @@ describe("TerminalPane", () => {
       session,
       stopSession: vi.fn(),
     });
+  });
+
+  it("passes the workspace native API through the existing pane and keeps the raw terminal WebSocket", () => {
+    const api: TerminalSessionApi = { list: vi.fn(), create: vi.fn(), delete: vi.fn() };
+    workspaceMocks.terminalSessionApi = api;
+    renderTerminalPane(workspacePane({ terminalId: session.id, projectId: "project-1" }));
+    expect(useGatewayTerminalSession).toHaveBeenCalledWith(true, {
+      api, createRequest: { command: undefined, projectId: "project-1", title: undefined },
+      preferredTerminalId: session.id, reuseRunning: false,
+    });
+    expect(screen.getByTestId("xterm-terminal").getAttribute("data-websocket-url")).toContain(
+      `/v1/terminals/${session.id}/ws`,
+    );
   });
 
   it("hides accessory keys on non-touch devices", () => {

@@ -15,7 +15,20 @@ type GatewayTerminalSessionState = {
   session: TerminalSessionInfo | null;
 };
 
+export type TerminalSessionApi = {
+  list: typeof listTerminalSessions;
+  create: typeof createTerminalSession;
+  delete: typeof deleteTerminalSession;
+};
+
+const gatewayTerminalApi: TerminalSessionApi = {
+  list: listTerminalSessions,
+  create: createTerminalSession,
+  delete: deleteTerminalSession,
+};
+
 type GatewayTerminalSessionOptions = {
+  api?: TerminalSessionApi;
   createRequest?: CreateTerminalSession;
   preferredTerminalId?: string | null;
   reuseRunning?: boolean;
@@ -23,6 +36,7 @@ type GatewayTerminalSessionOptions = {
 
 export function useGatewayTerminalSession(opened: boolean, options: GatewayTerminalSessionOptions = {}) {
   const {
+    api = gatewayTerminalApi,
     createRequest = {},
     preferredTerminalId = null,
     reuseRunning = true,
@@ -43,8 +57,8 @@ export function useGatewayTerminalSession(opened: boolean, options: GatewayTermi
     setState((current) => ({ ...current, error: null, isLoading: true }));
 
     async function ensureSession() {
-      const existing = await listTerminalSessions();
-      return ensureTerminalSession(existing, preferredSessionId, reuseRunning, createRequest);
+      const existing = await api.list();
+      return ensureTerminalSession(api, existing, preferredSessionId, reuseRunning, createRequest);
     }
 
     ensureSession()
@@ -67,16 +81,16 @@ export function useGatewayTerminalSession(opened: boolean, options: GatewayTermi
     return () => {
       cancelled = true;
     };
-  }, [createRequest.command, createRequest.cwd, createRequest.projectId, createRequest.title, opened, preferredTerminalId, reuseRunning]);
+  }, [api, createRequest.command, createRequest.cwd, createRequest.projectId, createRequest.title, opened, preferredTerminalId, reuseRunning]);
 
   const createNewSession = useCallback(async () => {
     const currentTerminalId = state.session?.id ?? null;
     setState((current) => ({ ...current, error: null, isLoading: true }));
     try {
       if (currentTerminalId) {
-        await deleteKnownSession(currentTerminalId);
+        await deleteKnownSession(api, currentTerminalId);
       }
-      const session = await createTerminalSession(createRequest);
+      const session = await api.create(createRequest);
       setState({ error: null, isLoading: false, session });
     } catch (error) {
       setState((current) => ({
@@ -85,7 +99,7 @@ export function useGatewayTerminalSession(opened: boolean, options: GatewayTermi
         isLoading: false,
       }));
     }
-  }, [createRequest, state.session?.id]);
+  }, [api, createRequest, state.session?.id]);
 
   const stopSession = useCallback(async () => {
     const terminalId = state.session?.id;
@@ -94,7 +108,7 @@ export function useGatewayTerminalSession(opened: boolean, options: GatewayTermi
     }
     setState((current) => ({ ...current, error: null, isLoading: true }));
     try {
-      await deleteKnownSession(terminalId);
+      await deleteKnownSession(api, terminalId);
       setState({ error: null, isLoading: false, session: null });
     } catch (error) {
       setState((current) => ({
@@ -103,13 +117,13 @@ export function useGatewayTerminalSession(opened: boolean, options: GatewayTermi
         isLoading: false,
       }));
     }
-  }, [state.session?.id]);
+  }, [api, state.session?.id]);
 
   const recoverSession = useCallback(async () => {
     setState((current) => ({ ...current, error: null, isLoading: true, session: null }));
     try {
-      const existing = await listTerminalSessions();
-      const session = await ensureTerminalSession(existing, preferredTerminalId, reuseRunning, createRequest);
+      const existing = await api.list();
+      const session = await ensureTerminalSession(api, existing, preferredTerminalId, reuseRunning, createRequest);
       setState({ error: null, isLoading: false, session });
     } catch (error) {
       setState((current) => ({
@@ -119,7 +133,7 @@ export function useGatewayTerminalSession(opened: boolean, options: GatewayTermi
         session: null,
       }));
     }
-  }, [createRequest, preferredTerminalId, reuseRunning]);
+  }, [api, createRequest, preferredTerminalId, reuseRunning]);
 
   return {
     ...state,
@@ -130,6 +144,7 @@ export function useGatewayTerminalSession(opened: boolean, options: GatewayTermi
 }
 
 async function ensureTerminalSession(
+  api: TerminalSessionApi,
   existing: TerminalSessionInfo[],
   preferredTerminalId: string | null,
   reuseRunning: boolean,
@@ -140,12 +155,12 @@ async function ensureTerminalSession(
       ? existing.find((session) => session.id === preferredTerminalId && session.status === "running")
       : null;
   const reusableSession = reuseRunning ? existing.find((session) => session.status === "running") ?? null : null;
-  return preferredSession ?? reusableSession ?? createTerminalSession(createRequest);
+  return preferredSession ?? reusableSession ?? api.create(createRequest);
 }
 
-async function deleteKnownSession(terminalId: string) {
+async function deleteKnownSession(api: TerminalSessionApi, terminalId: string) {
   try {
-    await deleteTerminalSession(terminalId);
+    await api.delete(terminalId);
   } catch (error) {
     if (!errorMessageFrom(error).includes("was not found")) {
       throw error;

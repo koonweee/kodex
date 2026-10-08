@@ -24,6 +24,7 @@ import { NativeAccountMenu } from './NativeAccountMenu';
 import { useNativeAccount } from './useNativeAccount';
 import { useNativeChatMetadata } from './useNativeChatMetadata';
 import { mastraClient } from './client';
+import { nativeTerminalApi } from './nativeTerminalApi';
 import { NativeCatalogProvider } from './NativeCatalogContext';
 import type { DirectoryLoader, ProjectCreationFields, ProjectFormPatch } from '../projects/controls';
 
@@ -112,7 +113,7 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
     return { ...project, roots: project.roots.map(path => ({ path })) };
   }, []);
   return <NativeCatalogProvider snapshot={catalog.snapshot}>
-    <WorkspaceProvider liveTransport="external" paneStore={workspacePaneStore} errorMessage={displayError}
+    <WorkspaceProvider liveTransport="external" terminalSessionApi={nativeTerminalApi} paneStore={workspacePaneStore} errorMessage={displayError}
       isVisible={mainPane === 'thread' && (!singlePane || mobilePanel === 'chat')} onFocusThreadPane={reportWorkspaceFocus}
       onShowMobileSidebar={() => setMobilePanel('threads')} onImageOpen={setLightbox}
       onMarkdownOpen={setMarkdownPreview}
@@ -145,7 +146,7 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
           onSelectAutomations: () => navigate({ threadId: null, view: 'automations', panel: null }),
           onArchiveThread: id => perform(mastraClient.archiveChat({ chatId: id })), onPinThread: metadata.pin, onUnpinThread: metadata.unpin,
           onMoveProject: (id, beforeId) => perform(mastraClient.moveProjectBefore({ projectId: id, beforeId })), onLogout: account.logout,
-          onOpenPreferences: () => setPreferencesOpen(true), onOpenTerminal: () => setMobilePanel('chat'), onShowThread: () => setMobilePanel('chat'),
+          onOpenPreferences: () => setPreferencesOpen(true), onOpenTerminal: () => navigate({ ...route, view: 'thread', panel: null }), onShowThread: () => setMobilePanel('chat'),
           onShowDebugEventsChange: setShowDebugEvents, showDebugEvents, sidebarWidth: resize.sidebarWidth,
           onSidebarCollapseClick: resize.handleSidebarCollapseClick, onSidebarExpandClick: resize.handleSidebarExpandClick, onThreadActionHoverChange: setHoveredThreadActionId,
         }} />

@@ -24,6 +24,8 @@
     "@mastra/memory": "1.36.0",
     "@orpc/client": "1.15.4",
     "@orpc/server": "1.15.4",
+    "node-pty": "1.2.0-beta.15",
+    "shlex": "3.0.0",
     "ws": "8.22.0"
   },
   "devDependencies": {

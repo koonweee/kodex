@@ -205,6 +205,7 @@ export function createChatService(options: ChatServiceOptions) {
   }
 
   const service = {
+    async terminalProjectCwd(projectId: string) { assertActive(); return (await projects.executionBinding(projectId)).cwd; },
     async getAccount() { return (await accounts()).get(); },
     async logoutAccount() { return (await accounts()).logout(); },
     async getAccountUsage(signal?: AbortSignal) { return (await accounts()).getUsage(signal); },

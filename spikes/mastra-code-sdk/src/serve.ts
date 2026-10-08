@@ -1,3 +1,5 @@
+import { homedir } from 'node:os';
+import { createTerminalService } from './terminal-service.js';
 import { parseArgs } from 'node:util';
 import { activateProfile, resolveProfile } from './profile.js';
 import { requireChatGptAuth } from './auth.js';
@@ -6,7 +8,7 @@ import { createAsyncQuestionTools } from './async-question-tools.js';
 import { createChildTools } from './child-tools.js';
 import { loadServerConfig } from './server-config.js';
 import { createChatService } from './chat-service.js';
-import { createChatRouter } from './chat-router.js';
+import { createGatewayRouter } from './gateway-router.js';
 import { serveRouter } from './server.js';
 
 const { values } = parseArgs({ options: {
@@ -42,14 +44,15 @@ const service = createChatService({
     return runtime;
   },
 });
-const server = await serveRouter(createChatRouter(service), port, service);
+const terminals = createTerminalService({ defaultCwd: homedir(), projectCwd: id => service.terminalProjectCwd(id) });
+const server = await serveRouter(createGatewayRouter(service, terminals), port, service, terminals);
 console.log(`Kodex Mastra spike: ${server.url} (localhost only)`);
 console.log(`Profile: ${profile.root}; projects: ${config.projects.map(project => project.path).join(', ')}`);
 let stopping = false;
 const stop = () => {
   if (stopping) return;
   stopping = true;
-  void (async () => { await server.close(); await service.dispose(); })().catch(() => {
+  void (async () => { await server.close(); await terminals.dispose(); await service.dispose(); })().catch(() => {
     console.error('Mastra shutdown failed. Native trailing-write limitations remain under evaluation.');
     process.exitCode = 1;
   });

@@ -1,3 +1,4 @@
+import { createTerminalService } from '../../src/terminal-service.js';
 import { getLocalPlansDir, getSuggestedPlanRelativePath } from '@mastra/code-sdk/utils/plans';
 import { createTool } from '@mastra/core/tools';
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
@@ -8,7 +9,7 @@ import { createProjectRuntime, type ProjectRuntime } from '../../src/runtime.js'
 import { createAsyncQuestionTools } from '../../src/async-question-tools.js';
 import { createChildTools } from '../../src/child-tools.js';
 import { createChatService } from '../../src/chat-service.js';
-import { createChatRouter } from '../../src/chat-router.js';
+import { createGatewayRouter } from '../../src/gateway-router.js';
 import { serveRouter } from '../../src/server.js';
 import { lastUserText, startModelFixture } from './model-server.js';
 
@@ -220,7 +221,8 @@ if (process.argv[4] === 'input-images' && !(await service.listChats()).chats.len
       metadata: { signal: { id: 'input-images-only', type: 'user', metadata: { clientId: 'input-image-only-correlation' } } } } },
   ] });
 }
-const server = await serveRouter(createChatRouter(service), port, service);
+const terminals = createTerminalService({ defaultCwd: directoryHome, projectCwd: id => service.terminalProjectCwd(id) });
+const server = await serveRouter(createGatewayRouter(service, terminals), port, service, terminals);
 console.log(`BROWSER_FIXTURE_READY ${server.url}`);
 let stopping = false;
 const stop = () => {
@@ -228,7 +230,7 @@ const stop = () => {
   stopping = true;
   void (async () => {
     await server.close();
-    await service.dispose();
+    await terminals.dispose(); await service.dispose();
     await model.close();
   })().then(() => process.exit(0), () => process.exit(1));
 };

@@ -12,6 +12,7 @@ import {
 import { useGatewayInstanceStorage, useGatewayInstanceValidation, useGatewayStreamConnected } from "../api/GatewayInstanceBoundary";
 import type { MarkdownPreviewRequest } from "../files/types";
 import type { ImageLightboxImage } from "../images/types";
+import type { TerminalSessionApi } from "../terminal/useGatewayTerminalSession";
 import { recordLiveEvent } from "../events/liveDiagnostics";
 import { createEventStreamClient } from "../events/stream";
 import { layoutMatchesWorkspacePanes } from "./workspaceLayoutCodec";
@@ -92,6 +93,7 @@ type WorkspaceProviderProps = {
   renderThreadPane?: (pane: WorkspacePane, fallback: ReactNode) => ReactNode;
   showDebugEvents?: boolean;
   subscribeThreadPaneTimelineAction?: (handler: ThreadPaneTimelineActionHandler) => () => void;
+  terminalSessionApi?: TerminalSessionApi;
   threadProjectIdsById?: Record<string, string>;
   threadSummariesById?: Record<string, ThreadSummary>;
   threadActions?: WorkspaceThreadActions;
@@ -140,6 +142,7 @@ type WorkspaceContextValue = {
   setPaneHeaderAdornment: (paneId: string, adornment: ReactNode | null) => void;
   setPaneHeaderActions: (paneId: string, actions: ReactNode | null) => void;
   setPaneTabStatus: (paneId: string, status: WorkspacePaneTabStatus | null) => void;
+  terminalSessionApi?: TerminalSessionApi;
   threadProjectIdsById: Record<string, string>;
   threadSummariesById: Record<string, ThreadSummary>;
   threadActions: WorkspaceThreadActions;
@@ -186,6 +189,7 @@ export function WorkspaceProvider({
   renderThreadPane,
   showDebugEvents = false,
   subscribeThreadPaneTimelineAction = noopSubscribeThreadPaneTimelineAction,
+  terminalSessionApi,
   threadProjectIdsById = {},
   threadSummariesById = {},
   threadActions = {},
@@ -845,6 +849,7 @@ export function WorkspaceProvider({
       setPaneHeaderAdornment,
       setPaneHeaderActions,
       setPaneTabStatus,
+      terminalSessionApi,
       threadProjectIdsById,
       threadSummariesById,
       threadActions: archiveAwareThreadActions,
@@ -894,6 +899,7 @@ export function WorkspaceProvider({
       setPaneHeaderAdornment,
       setPaneHeaderActions,
       setPaneTabStatus,
+      terminalSessionApi,
       threadProjectIdsById,
       threadSummariesById,
       archiveAwareThreadActions,

@@ -2,10 +2,10 @@ import { createORPCClient } from '@orpc/client';
 import { RPCLink } from '@orpc/client/fetch';
 import { createSocketLink } from './socketLink';
 import type { RouterClient } from '@orpc/server';
-import type { ChatRouter } from '../../../../spikes/mastra-code-sdk/src/chat-router';
+import type { GatewayRouter } from '../../../../spikes/mastra-code-sdk/src/gateway-router';
 import { getApiBaseUrl } from '../api/client';
 
-export type ChatClient = RouterClient<ChatRouter>;
+export type ChatClient = RouterClient<GatewayRouter>;
 export type ChatSnapshot = Awaited<ReturnType<ChatClient['openChat']>>;
 export type CatalogSnapshot = Awaited<ReturnType<ChatClient['listChats']>>;
 export type Chat = CatalogSnapshot['chats'][number];

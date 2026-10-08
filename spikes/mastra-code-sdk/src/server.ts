@@ -1,3 +1,4 @@
+import { connectTerminalSocket, type TerminalSocketManager } from './terminal-websocket.js';
 import { handleFilePreview } from './file-preview-http.js';
 import type { ChatService } from './chat-service.js';
 import { once } from 'node:events';
@@ -8,9 +9,10 @@ import { RPCHandler as WebsocketHandler } from '@orpc/server/websocket';
 import { WebSocketServer } from 'ws';
 
 /** Dedicated localhost backend. Unported routes fail here; no upstream fallback. */
-export async function serveRouter(router: AnyRouter, port = 8789, files?: Pick<ChatService, 'previewFile'>) {
+export async function serveRouter(router: AnyRouter, port = 8789, files?: Pick<ChatService, 'previewFile'>, terminals?: TerminalSocketManager) {
   const websocketHandler = new WebsocketHandler(router);
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 1_048_576 });
+  const terminalSockets = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 * 1024 });
   const messages = new Set<Promise<void>>();
   let closing: Promise<void> | undefined;
   const handler = new RPCHandler(router, { plugins: [new BodyLimitPlugin({ maxBodySize: 1_048_576 })] });
@@ -42,12 +44,16 @@ export async function serveRouter(router: AnyRouter, port = 8789, files?: Pick<C
         allowedOrigin = ['http:', 'https:'].includes(origin.protocol) && origin.host === new URL(`${origin.protocol}//${request.headers.host}`).host;
       }
     } catch { allowedOrigin = false; }
-    if (closing || request.url?.split('?')[0] !== '/rpc' || !allowedOrigin) {
+    const path = request.url?.split('?')[0];
+    const terminalId = terminals ? /^\/v1\/terminals\/([^/]+)\/ws$/.exec(path ?? '')?.[1] : undefined;
+    if (closing || (path !== '/rpc' && !terminalId) || !allowedOrigin) {
       const status = closing ? '503 Service Unavailable' : allowedOrigin ? '404 Not Found' : '403 Forbidden';
       socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
       return;
     }
-    sockets.handleUpgrade(request, socket, head, connection => sockets.emit('connection', connection));
+    if (terminalId && terminals) {
+      terminalSockets.handleUpgrade(request, socket, head, connection => connectTerminalSocket(connection, terminalId, terminals));
+    } else sockets.handleUpgrade(request, socket, head, connection => sockets.emit('connection', connection));
   });
   sockets.on('connection', socket => {
     socket.binaryType = 'arraybuffer';
@@ -77,7 +83,9 @@ export async function serveRouter(router: AnyRouter, port = 8789, files?: Pick<C
     close() {
       return closing ??= (async () => {
         for (const socket of sockets.clients) { websocketHandler.close(socket); socket.terminate(); }
+        for (const socket of terminalSockets.clients) socket.terminate();
         await Promise.all([
+          new Promise<void>((resolve, reject) => terminalSockets.close(error => error ? reject(error) : resolve())),
           new Promise<void>((resolve, reject) => sockets.close(error => error ? reject(error) : resolve())),
           new Promise<void>((resolve, reject) => {
             server.close(error => error ? reject(error) : resolve());
