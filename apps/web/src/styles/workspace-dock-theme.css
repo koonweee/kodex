@@ -90,7 +90,7 @@
     transparent
   );
   transform: translate3d(0, 0, 0) skewX(-16deg);
-  animation: kodex-tab-running-shimmer 5.5s linear infinite;
+  animation: kodex-tab-running-shimmer 4s linear infinite;
   will-change: transform, opacity;
 }
 
@@ -100,7 +100,7 @@
     transform: translate3d(0, 0, 0) skewX(-16deg);
   }
   6% { opacity: 1; }
-  92% {
+  87.5% {
     opacity: 1;
     transform: translate3d(365%, 0, 0) skewX(-16deg);
   }
