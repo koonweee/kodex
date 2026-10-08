@@ -215,7 +215,7 @@ for (const shape of [
         // Editing one known text field retains unfamiliar native input unchanged.
         fixture.queuedInputs[0].input = [{ type: "text", text: "First queued work", nativeAnnotation: "preserve" }, { type: "futureInput", opaque: { keep: true } }];
         fixture.queueChanged();
-        await click(row(first, "First queued work").getByRole("button", { name: "Edit", exact: true }), shape.hasTouch);
+        await click(row(first, "First queued work").getByRole("button", { name: "Modify queued message: First queued work", exact: true }), shape.hasTouch);
         await first.getByLabel("Queued message text", { exact: true }).fill("Edited queued work");
         await click(first.getByRole("button", { name: "Save queued message", exact: true }), shape.hasTouch);
         await expect(row(second, "Edited queued work")).toBeVisible();

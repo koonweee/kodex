@@ -96,6 +96,20 @@ it("edits queued response annotations without exposing their serialized markup",
   ] }]));
 });
 
+it("opens the queued message editor when its preview text is clicked", async () => {
+  mockGateway({
+    "GET /v1/threads/chat/queued-inputs": {
+      queuedInputs: [row("Click this queued message")],
+      transfers: [],
+      nextCursor: null,
+    },
+  });
+  mount();
+  await userEvent.click(await screen.findByText("Click this queued message"));
+  expect(screen.getByRole("dialog", { name: "Edit queued message" })).toBeVisible();
+  expect(screen.getByRole("textbox", { name: "Queued message text" })).toHaveValue("Click this queued message");
+});
+
 it("removes a queued annotation while leaving the main text editable", async () => {
   const original = appendResponseAnnotations("Keep the main text", [{ id: "quote", text: "Selected answer", comment: "Remove this" }]);
   const queued = { ...row("annotated"), input: [{ type: "text", text: original }] };

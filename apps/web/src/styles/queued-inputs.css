@@ -33,8 +33,20 @@
   border-radius: var(--kodex-radius-md);
 }
 
-.kodex-queue-preview { flex: 1; min-width: 0; }
-.kodex-queue-text { font-size: 14px; white-space: nowrap; }
+.kodex-queue-preview {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.kodex-queue-preview:disabled { cursor: default; }
+.kodex-queue-text { display: block; font-size: 14px; white-space: nowrap; }
+.kodex-queue-attachments { display: block; }
 .kodex-queue-attachments, .kodex-queue-notice { color: var(--kodex-text-secondary); }
 .kodex-queue-notice { padding: 4px 8px; }
 .kodex-queue-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }

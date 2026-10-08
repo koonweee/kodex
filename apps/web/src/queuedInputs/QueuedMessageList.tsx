@@ -139,10 +139,11 @@ function QueueRows({ rows, busy, partial, isActive, onReorder, transferringIds =
                 event.preventDefault(); cancel(); move(row.id, index + (event.key === "ArrowUp" ? -1 : 1));
               }
             }}><GripVertical /></AdaptiveIconButton> : null}
-          <div className="kodex-queue-preview" title={text}>
-            <Text truncate className="kodex-queue-text">{text}</Text>
-            {row.attachments.length > 0 ? <Text size="xs" className="kodex-queue-attachments">{row.attachments.length} attached file(s)</Text> : null}
-          </div>
+          <button type="button" className="kodex-queue-preview" title={text} disabled={busy}
+            aria-label={`Modify queued message: ${text}`} onClick={() => onEdit(row)}>
+            <Text component="span" truncate className="kodex-queue-text">{text}</Text>
+            {row.attachments.length > 0 ? <Text component="span" size="xs" className="kodex-queue-attachments">{row.attachments.length} attached file(s)</Text> : null}
+          </button>
           <div className="kodex-queue-actions">
             <AdaptiveIconButton density="compact" label={row.canSteer ? "Steer" : "Send now"} disabled={busy || transferringIds.includes(row.id)}
               onClick={() => onSendNow(row)}><CornerDownRight /></AdaptiveIconButton>
