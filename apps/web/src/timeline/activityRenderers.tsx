@@ -119,7 +119,7 @@ export function WebSearchBlock({ actions }: { actions: WebSearchAction[] }) {
 export function CommandBlock({ item }: { item: TimelineItem }) {
   const command = item.command || payloadValue(item.payload, "command");
   const output = item.output || payloadValue(item.payload, "output") || payloadValue(item.payload, "stdout") || payloadValue(item.payload, "stderr");
-  const status = commandStatusMeta(item.status);
+  const status = commandStatusMeta(item.status, item.commandOutcomeKnown);
   return (
     <Stack gap={6} className="kodex-command-panel">
       <Text size="xs" className="kodex-command-shell">
@@ -265,7 +265,7 @@ const ActivityItemRenderer = memo(function ActivityItemRenderer({
   };
 
   if (item.kind === "command_execution") {
-    const status = commandStatusMeta(item.status);
+    const status = commandStatusMeta(item.status, item.commandOutcomeKnown);
     return (
       <details className="kodex-activity-item" onToggle={handleToggle}>
         <summary>

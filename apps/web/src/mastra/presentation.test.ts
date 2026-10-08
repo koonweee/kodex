@@ -140,6 +140,24 @@ describe('native chat presentation', () => {
     expect(item.path).toBeUndefined();
     expect(item.status).toBe(isError ? 'failed' : 'completed');
   });
+  it('renders native shell output without treating tool completion as command success', () => {
+    const value = snapshot();
+    value.messages[1].content.parts = [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'shell', toolName: 'execute_command', state: 'result', args: { command: 'exit 7' }, result: 'Exit code: 7' } }];
+    const item = () => timelinePresentation(value).rows.flatMap(row => row.type === 'item' && row.item.id === 'shell' ? [row.item] : [])[0];
+    const rendered = render(createElement(MantineProvider, null, createElement(TimelineItemRenderer, { item: item() })));
+    expect(screen.getByText('Shell')).toBeInTheDocument();
+    expect(screen.getByText('$ exit 7')).toBeInTheDocument();
+    expect(screen.getByText('Exit code: 7')).toBeInTheDocument();
+    expect(screen.getByText('Finished')).toBeInTheDocument();
+    expect(screen.queryByText('Success')).not.toBeInTheDocument();
+    value.display.activeTools.set('shell', { name: 'execute_command', args: { command: 'exit 7' }, status: 'completed', shellOutput: 'partial output', result: 'Exit code: 7' });
+    expect(item().kind).toBe('command_execution');
+    expect(item().command).toBe('exit 7');
+    expect(item().output).toBe('Exit code: 7');
+    value.display.activeTools.get('shell')!.isError = true;
+    rendered.rerender(createElement(MantineProvider, null, createElement(TimelineItemRenderer, { item: item() })));
+    expect(screen.getByText('Failed')).toBeInTheDocument();
+  });
   it('rejects stale snapshots within an epoch and accepts restarted sessions', () => {
     expect(acceptsSnapshot({ epoch: 'a', revision: 7 }, { epoch: 'a', revision: 6 })).toBe(false);
     expect(acceptsSnapshot({ epoch: 'a', revision: 7 }, { epoch: 'a', revision: 7 })).toBe(false);

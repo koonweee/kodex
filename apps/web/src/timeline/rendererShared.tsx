@@ -187,11 +187,12 @@ export function statusTone(status: TimelineItem["status"]): "danger" | "info" | 
   return "success";
 }
 
-export function commandStatusMeta(status: TimelineItem["status"]):
+export function commandStatusMeta(status: TimelineItem["status"], outcomeKnown = true):
   | { Icon: typeof AlertTriangle; label: string; tone: ReturnType<typeof statusTone> }
   | { Icon: typeof Check; label: string; tone: ReturnType<typeof statusTone> }
   | null {
   if (status === "completed") {
+    if (!outcomeKnown) return { Icon: Info, label: "Finished", tone: "neutral" };
     return { Icon: Check, label: "Success", tone: "success" };
   }
   if (status === "failed") {

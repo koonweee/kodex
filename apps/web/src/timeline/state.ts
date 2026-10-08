@@ -48,6 +48,8 @@ export type TimelineItem = {
   actions?: WebSearchAction[];
   argsSummary?: string;
   command?: string;
+  /** False when tool completion does not establish the command exit outcome. */
+  commandOutcomeKnown?: boolean;
   cwd?: string;
   output?: string;
   path?: string;

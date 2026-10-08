@@ -481,3 +481,32 @@ test('native image tool results open the shared viewer and survive peer reload a
     expect(legacyPreviews).toEqual([]); expect(errors).toEqual([]);
   } finally { if (backend) await stopBackend(backend); await rm(root, { recursive: true, force: true }); }
 });
+
+
+test('native shell output uses main command rendering without an invented success across tabs and restart', async ({ context, page }) => {
+  const root = await mkdtemp(join(tmpdir(), 'kodex-shell-browser-'));
+  let backend: ChildProcessWithoutNullStreams | undefined;
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const verify = async (tab: Page) => {
+    await expect(pane(tab).getByText('Shell', { exact: true })).toBeVisible();
+    await expect(pane(tab).locator('.kodex-command-panel')).toContainText("$ printf 'NATIVE_SHELL_OUTPUT");
+    await expect(pane(tab).locator('.kodex-timeline-output')).toContainText('NATIVE_SHELL_OUTPUT');
+    await expect(pane(tab).locator('.kodex-timeline-output')).toContainText('Exit code: 7');
+    await expect(pane(tab).getByText('Finished', { exact: true })).toBeVisible();
+    await expect(pane(tab).getByText('Success', { exact: true })).toHaveCount(0);
+  };
+  try {
+    backend = await startBackend(root);
+    await page.goto('/'); await send(page, 'RUN_SHELL_FAILURE');
+    await expect(pane(page).getByText('fixture:RUN_SHELL_FAILURE', { exact: true })).toBeVisible();
+    await verify(page);
+    const second = await context.newPage(); second.on('pageerror', error => errors.push(error.message));
+    await second.goto(page.url()); await verify(second);
+    await second.reload(); await verify(second);
+    await stopBackend(backend, true); backend = await startBackend(root);
+    await second.reload(); await verify(second);
+    await second.screenshot({ path: test.info().outputPath('native-shell.png') });
+    expect(errors).toEqual([]);
+  } finally { if (backend) await stopBackend(backend); await rm(root, { recursive: true, force: true }); }
+});

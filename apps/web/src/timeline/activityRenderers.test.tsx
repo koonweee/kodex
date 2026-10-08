@@ -39,6 +39,18 @@ function openDetails(details: HTMLDetailsElement) {
 }
 
 describe("timeline activity renderers", () => {
+  it("preserves known command success and labels unreported outcomes neutrally", () => {
+    const command = item({ kind: "command_execution", command: "pwd", output: "/project" });
+    const rendered = render(<MantineProvider><TimelineItemRenderer item={command} /></MantineProvider>);
+    expect(screen.getByText("Success")).toBeInTheDocument();
+    rendered.rerender(<MantineProvider><TimelineItemRenderer item={{ ...command, commandOutcomeKnown: false }} /></MantineProvider>);
+    expect(screen.getByText("Finished")).toBeInTheDocument();
+    expect(screen.queryByText("Success")).not.toBeInTheDocument();
+    rendered.rerender(<MantineProvider><TimelineActivityGroupRenderer items={[{ ...command, commandOutcomeKnown: false }]} /></MantineProvider>);
+    expect(screen.getByText("Finished")).toBeInTheDocument();
+    expect(screen.queryByText("Success")).not.toBeInTheDocument();
+  });
+
   afterEach(() => {
     vi.useRealTimers();
   });

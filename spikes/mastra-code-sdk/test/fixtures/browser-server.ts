@@ -28,6 +28,9 @@ const model = await startModelFixture(request => {
   if (!request.stream) return { text: 'Browser test chat' };
   const user = lastUserText(request);
   if (JSON.stringify(request.messages).includes('HISTORY_NEW_ARRIVAL')) return { text: 'HISTORY_REPLY' };
+  if (user.includes('RUN_SHELL_FAILURE') && request.messages.at(-1)?.role !== 'tool') {
+    return { toolCalls: [{ name: 'execute_command', arguments: { description: "Exercise native nonzero shell output", command: "printf 'NATIVE_SHELL_OUTPUT\\n'; exit 7" } }] };
+  }
   if (user.includes('READ_IMAGE') && request.messages.at(-1)?.role !== 'tool') return { toolCalls: [{ name: 'view', arguments: { path: 'pixel.png' } }] };
   if (user.includes('READ_MARKER') && request.messages.at(-1)?.role !== 'tool') {
     const tool = request.tools?.find(tool => tool.function.name === 'view');

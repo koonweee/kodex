@@ -19,6 +19,12 @@ function toolResultText(value: unknown): string {
   if (typeof value === 'object' && value !== null && '__workspaceMedia' in value && value.__workspaceMedia === true && 'text' in value && typeof value.text === 'string') return value.text;
   return printable(value);
 }
+function nativeCommandFields(name: string, args: unknown) {
+  if (name !== 'execute_command' || typeof args !== 'object' || args === null || !('command' in args) || typeof args.command !== 'string') return null;
+  // Native command failures may be successful tool results containing text.
+  // Preserve that output without interpreting prose as a structured exit status.
+  return { kind: 'command_execution', command: args.command, commandOutcomeKnown: false };
+}
 export function timelinePresentation(snapshot: ChatSnapshot, isLoadingOlderHistory = false): TimelinePresentation {
   const current = snapshot.display.currentMessage;
   const messages = snapshot.messages.map(message => message.id === current?.id ? current : message);
@@ -43,7 +49,7 @@ export function timelinePresentation(snapshot: ChatSnapshot, isLoadingOlderHisto
         const tool = part.toolInvocation;
         toolIndexes.set(tool.toolCallId, items.length);
         const output = toolResultText(tool.result !== undefined ? tool.result : tool.errorText);
-        append({ id: tool.toolCallId, kind: 'dynamic_tool_call', text: '', status: tool.isError || tool.state === 'output-error' || tool.state === 'output-denied' ? 'failed' : tool.state === 'result' ? 'completed' : tool.state === 'approval-requested' ? 'approval_required' : 'running', toolName: tool.toolName, argsSummary: printable(tool.args), output, resultSummary: output, payload: part, timestampMs, ...nativeImageFields(tool.toolName, tool.args, tool.result, Boolean(tool.isError || tool.state === 'output-error' || tool.state === 'output-denied')) });
+        append({ id: tool.toolCallId, kind: 'dynamic_tool_call', text: '', status: tool.isError || tool.state === 'output-error' || tool.state === 'output-denied' ? 'failed' : tool.state === 'result' ? 'completed' : tool.state === 'approval-requested' ? 'approval_required' : 'running', toolName: tool.toolName, argsSummary: printable(tool.args), output, resultSummary: output, payload: part, timestampMs, ...nativeCommandFields(tool.toolName, tool.args), ...nativeImageFields(tool.toolName, tool.args, tool.result, Boolean(tool.isError || tool.state === 'output-error' || tool.state === 'output-denied')) });
       } else if (part.type === 'error') append({ id, kind: 'assistant_message', text: part.error.message, status: 'failed', payload: part, timestampMs });
     });
   }
@@ -56,7 +62,7 @@ export function timelinePresentation(snapshot: ChatSnapshot, isLoadingOlderHisto
     const image = tool.result === undefined && !tool.isError && tool.status !== 'error' && previous?.kind === 'image_view'
       ? { kind: previous.kind, path: previous.path, imageSrc: previous.imageSrc, resultSummary: undefined }
       : nativeImageFields(tool.name, tool.args, tool.result, Boolean(tool.isError || tool.status === 'error'));
-    const item = { id, kind: 'dynamic_tool_call', text: '', status: tool.isError || tool.status === 'error' ? 'failed' as const : tool.status === 'completed' ? 'completed' as const : 'running' as const, toolName: tool.name, argsSummary: printable(tool.args), output, resultSummary: output, payload: tool, imageSrc: undefined, path: undefined, ...image };
+    const item = { id, kind: 'dynamic_tool_call', text: '', status: tool.isError || tool.status === 'error' ? 'failed' as const : tool.status === 'completed' ? 'completed' as const : 'running' as const, toolName: tool.name, argsSummary: printable(tool.args), output, resultSummary: output, payload: tool, imageSrc: undefined, path: undefined, command: undefined, commandOutcomeKnown: undefined, ...nativeCommandFields(tool.name, tool.args), ...image };
     if (existing === undefined) append(item);
     else items[existing] = { ...items[existing], ...item };
   }

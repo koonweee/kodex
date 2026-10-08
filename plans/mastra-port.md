@@ -228,3 +228,7 @@ Tagged native view-image output now uses main's existing thumbnail/lightbox from
 ### 2026-10-08 — child retirement ordering characterized
 
 Public stream observation traces the late DB read to parent continuation on native child cancellation. Cancel-first and task-manager-shutdown-after-cancel reproduce the read; stopping the parent with public abortThreadStream before cancellation prevents it. Author and independent root characterization4/4 pass, with expected baseline failures retained. Native signal wake defaults to untilIdle without an explicit session-send option. No production change: already-started preparation still lacks a proved public drain. Apply any future ordering only to runtime retirement, not ordinary child cancellation. See parity plan for scope and evidence.
+
+### 2026-10-08 — native shell presentation validated
+
+Native commands now reuse main's command panel with real output and neutral Finished when the SDK lacks a structured process outcome; explicit tool errors remain Failed and app-server Success is unchanged. Reviewed regression29/29, build/trim/typecheck and actual nonzero-command browser3/3 pass. Browser proof covers both clients, reload, backend restart and all three layouts; screenshot inspected. Child-retirement characterization is separately committed as c747751. Full port remains active; no deployment.
