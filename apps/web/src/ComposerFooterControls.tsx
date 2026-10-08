@@ -108,8 +108,8 @@ export function ComposerFooterControls({
   }
 
   return (
-    <Group className="kodex-composer-footer-controls" gap={6} wrap="nowrap">
-      <Group className="kodex-composer-footer-left" gap={6} wrap="nowrap">
+    <Group className="kodex-composer-footer-controls" gap={4} wrap="nowrap">
+      <Group className="kodex-composer-footer-left" gap={4} wrap="nowrap">
         {settingsError ? (
           <AdaptiveIconButton color="red" label={settingsError}>
             <AlertCircle />
@@ -117,7 +117,7 @@ export function ComposerFooterControls({
         ) : null}
       </Group>
 
-      <Group className="kodex-composer-footer-right" gap={6} wrap="nowrap">
+      <Group className="kodex-composer-footer-right" gap={4} wrap="nowrap">
         {showContextUsage ? <ContextUsageIndicator usage={contextUsage} /> : null}
         {settings?.fast ? (
           <Tooltip label="Fast responses enabled">

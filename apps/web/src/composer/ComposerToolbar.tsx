@@ -89,8 +89,8 @@ export const ComposerToolbar = memo(function ComposerToolbar({
       : queueOnSubmit ? COMPOSER_TOOLBAR_TEXT.addToQueue : COMPOSER_TOOLBAR_TEXT.send;
 
   return (
-    <Group className="kodex-composer-toolbar" justify="space-between" wrap="wrap">
-      <Group className="kodex-composer-toolbar-left" gap={6} wrap="nowrap">
+    <Group className="kodex-composer-toolbar" gap={4} justify="space-between" wrap="wrap">
+      <Group className="kodex-composer-toolbar-left" gap={4} wrap="nowrap">
         <Menu position="top-start" withinPortal returnFocus={false} opened={attachmentMenuOpen} onChange={changeAttachmentMenuOpen}>
           <span ref={attachmentTargetRef} className="kodex-composer-attachment-target">
             <Menu.Target>

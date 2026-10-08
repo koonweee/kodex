@@ -41,10 +41,6 @@
   display: none;
 }
 
-.kodex-composer[data-idle-compact="true"] .kodex-composer-footer-right {
-  gap: 4px;
-}
-
 .kodex-composer[data-idle-compact="true"] .kodex-composer-attachment-target {
   grid-area: 1 / 1;
 }
