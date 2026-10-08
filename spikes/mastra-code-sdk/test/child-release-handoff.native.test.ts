@@ -183,3 +183,59 @@ test('cancelled task wait is earlier than native binding release; an admitted ru
   assert.ok(JSON.stringify(await reopened.thread.listActiveMessages()).includes('DIRECT_RESULT:SAFE_DIRECT_AFTER_CANCELLED_RELEASE'));
   assert.equal(await env.runtime.controller.getSessionByResource(env.target.resourceId), reopened, 'the old finalizer does not release the replacement once its admitted release is joined');
 });
+
+test('cancellation before release admission discards active-only user input, but terminal status plus early release/reopen still lets the old finalizer abort the replacement', { timeout: 30_000 }, async t => {
+  const env = await setup(t, 'history');
+  env.initial.release(); await env.childEnded.promise; await env.reached.promise;
+  const release = env.runtime.releaseSession.bind(env.runtime);
+  let releases = 0;
+  t.mock.method(env.runtime, 'releaseSession', (...args: Parameters<typeof release>) => {
+    if (args[0].resourceId === env.target.resourceId) releases++;
+    return release(...args);
+  });
+  await env.manager.cancel(env.taskId);
+  const terminal = await env.manager.waitForNextTask([env.taskId], { timeoutMs: 5_000 });
+  assert.equal(terminal.status, 'cancelled'); assert.equal(terminal.result, undefined);
+  assert.equal(releases, 0, 'the adopted completion is still awaiting its history return, before release admission');
+  assert.equal(env.child.thread.getId(), env.target.threadId);
+  assert.equal(env.child.displayState.get().isRunning, false);
+
+  const discardedInputRequests = () => env.fixture.requests.filter(request => request.stream && lastUserText(request).includes('ACTIVE_ONLY_CANCELLED_HANDOFF')).length;
+  assert.equal(discardedInputRequests(), 0);
+  let starts = 0;
+  const off = env.child.subscribe(event => { if (event.type === 'agent_start') starts++; }); t.after(off);
+  const signal = env.child.sendSignal({ type: 'user', contents: 'ACTIVE_ONLY_CANCELLED_HANDOFF',
+    metadata: { clientId: 'handoff-discarded-client' } },
+  { ifActive: { behavior: 'deliver' }, ifIdle: { behavior: 'discard' }, requireDelivery: true });
+  const acceptance = await signal.accepted;
+  assert.equal(acceptance.action, 'discard', 'public native disposition avoids waking the idle owned binding');
+  assert.equal(acceptance.runId, undefined); assert.equal(starts, 0);
+  assert.equal(env.child.machinery.getAgent().getActiveThreadRunId(env.target), undefined);
+  assert.equal(discardedInputRequests(), 0, 'parent cancellation wakes do not substitute for model work on the discarded child input');
+  assert.equal((await env.runtime.controller.queryThreadMessages({ ...env.target, perPage: false })).messages.some(message => message.id === signal.id), false, 'known discard is not a persisted input acknowledgment');
+  assert.equal(await env.runtime.createSession(env.target), env.child, 'terminal cancellation alone still returns the unreleased original alias');
+  assert.equal(releases, 0);
+
+  // A caller may try to force cleanup after the terminal wait. It has not joined
+  // a future finalizer admission, so reopening now still needs identity protection.
+  await env.runtime.releaseSession({ resourceId: env.target.resourceId });
+  const replacement = await env.runtime.createSession(env.target);
+  assert.notEqual(replacement, env.child);
+  const deleted = gate();
+  const offDeleted = env.runtime.controller.onSessionDeleted(session => { if (session === replacement) deleted.release(); });
+  t.after(offDeleted);
+  const newRun = replacement.sendMessage({ content: 'NAIVE_DIRECT_AFTER_CANCELLED_EARLY_RELEASE' }); void newRun.catch(() => {});
+  await env.naive.reached;
+  assert.equal(replacement.displayState.get().isRunning, true);
+  const abortWatch = new AbortController(); t.after(() => abortWatch.abort());
+  const abortGeneration = replacement.run.getAbortGeneration();
+  const aborted = replacement.run.waitForAbortRequest(abortWatch.signal, { after: abortGeneration });
+  env.resume.release(); await aborted; await deleted.promise;
+  assert.equal(releases, 2, 'the delayed adopted finalizer releases the resource again after the caller already reopened it');
+  assert.ok(replacement.run.getAbortGeneration() > abortGeneration);
+  assert.equal(replacement.thread.getId(), null);
+  assert.equal(await env.runtime.controller.getSessionByResource(env.target.resourceId), undefined);
+  env.naive.release(); await Promise.allSettled([newRun]); await env.joinProducers();
+  assert.equal((await env.manager.getTask(env.taskId))?.status, 'cancelled');
+  assert.equal((await env.runtime.controller.queryThreadMessages({ ...env.target, perPage: false })).messages.some(message => message.id === signal.id), false, 'the discarded signal stays absent after all fixture producers settle');
+});
