@@ -4,6 +4,7 @@ import { once } from 'node:events';
 import { EventPublisher, eventIterator, os, type as schemaType } from '@orpc/server';
 import { RPCHandler } from '@orpc/server/node';
 import type { NativeSession } from './runtime.js';
+import type { ChatHistory, HistoryBoundary, HistoryRequest } from './chat-history.js';
 
 type Display = ReturnType<NativeSession['displayState']['get']>;
 type Messages = Awaited<ReturnType<NativeSession['thread']['listActiveMessages']>>;
@@ -13,12 +14,13 @@ export interface SessionSnapshot {
   revision: number;
   display: Display;
   messages: Messages;
+  history: HistoryBoundary;
 }
 
 /** Compatibility proof, not the production protocol: SDK owns all conversation state.
  * oRPC buffers a single invalidation per consumer; every update is a fresh full snapshot.
  */
-export function createSessionProjection(session: NativeSession) {
+export function createSessionProjection(session: NativeSession, readHistory?: (request: HistoryRequest, signal?: AbortSignal) => Promise<ChatHistory>) {
   const epoch = randomUUID();
   let revision = 0;
   const lifetime = new AbortController();
@@ -30,7 +32,7 @@ export function createSessionProjection(session: NativeSession) {
     if (event.type === 'display_state_changed') publisher.publish('changed', revision);
   });
 
-  async function snapshot(signal?: AbortSignal): Promise<SessionSnapshot> {
+  async function snapshot(signal?: AbortSignal, request: HistoryRequest = {}): Promise<SessionSnapshot> {
     // A history read can overlap a native mutation. Retry rather than claim a
     // newer display revision also covers an older history response. This
     // cannot fence native database writes that have no corresponding event.
@@ -38,24 +40,24 @@ export function createSessionProjection(session: NativeSession) {
       signal?.throwIfAborted();
       lifetime.signal.throwIfAborted();
       const startedAt = revision;
-      const messages = await session.thread.listActiveMessages();
+      const history = readHistory ? await readHistory(request, signal) : { messages: await session.thread.listActiveMessages(), history: { earliest: null, hasOlder: false } };
       signal?.throwIfAborted();
       lifetime.signal.throwIfAborted();
       if (startedAt !== revision) continue;
-      return structuredClone({ epoch, revision, display: session.displayState.get(), messages });
+      return structuredClone({ epoch, revision, display: session.displayState.get(), ...history });
     }
   }
   return {
     snapshot,
-    async *watch(signal?: AbortSignal): AsyncGenerator<SessionSnapshot, void> {
+    async *watch(signal?: AbortSignal, request: HistoryRequest = {}): AsyncGenerator<SessionSnapshot, void> {
       const combined = AbortSignal.any([lifetime.signal, ...(signal ? [signal] : [])]);
       const changes = publisher.subscribe('changed', { signal: combined });
       try {
-        let last = await snapshot(combined);
+        let last = await snapshot(combined, request);
         yield last;
         for await (const current of changes) {
           if (current <= last.revision) continue;
-          last = await snapshot(combined);
+          last = await snapshot(combined, last.history.earliest ? { earliest: last.history.earliest } : {});
           yield last;
         }
       } finally {

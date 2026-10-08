@@ -1,0 +1,71 @@
+import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { test } from 'node:test';
+import { createORPCClient } from '@orpc/client';
+import { RPCLink } from '@orpc/client/fetch';
+import type { RouterClient } from '@orpc/server';
+import { createChatRouter, type ChatRouter } from '../src/chat-router.js';
+import { serveRouter } from '../src/server.js';
+import { activateProfile, resolveProfile } from '../src/profile.js';
+import { createChatService } from '../src/chat-service.js';
+import { createProjectRuntime, type ProjectRuntime } from '../src/runtime.js';
+
+test('independent history subscriptions preserve their loaded range across native arrivals and restart', { timeout: 30_000 }, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'kodex-history-service-'));
+  const profile = activateProfile(resolveProfile(join(root, 'profile')));
+  const path = join(root, 'project'); await mkdir(path);
+  await writeFile(profile.settingsPath, JSON.stringify({ customProviders: [{ name: 'fixture', url: 'http://127.0.0.1:1/v1', apiKey: 'fixture', models: ['chat'] }], lsp: false, observability: { enabled: false } }));
+  let runtime!: ProjectRuntime;
+  const make = () => createChatService({ profile, instanceId: 'history', projects: [{ id: 'project', name: 'Project', path, runtimeRoot: join(root, 'runtime') }],
+    runtimeFactory: async options => runtime = await createProjectRuntime({ ...options, subagents: [], modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }] }) });
+  let service = make();
+  const server = await serveRouter(createChatRouter(service), 0);
+  const client = (): RouterClient<ChatRouter> => createORPCClient(new RPCLink({ url: `${server.url}/rpc` }));
+  const firstClient = client(), secondClient = client();
+  const abort = new AbortController();
+  t.after(async () => { abort.abort(); await server.close(); await service.dispose(); await rm(root, { recursive: true, force: true }); });
+  const chat = await service.createChat({ projectId: 'project' });
+  const thread = await runtime.controller.queryThreadById({ threadId: chat.id }); assert.ok(thread);
+  const store = await runtime.storage.getStore('memory'); assert.ok(store);
+  const message = (i: number) => ({ id: `message-${i}`, threadId: chat.id, resourceId: thread.resourceId, role: 'user' as const,
+    createdAt: new Date(1_700_000_000_000 + i * 1000), content: { format: 2 as const, parts: [{ type: 'text' as const, text: `Message ${i}` }] } });
+  await store.saveMessages({ messages: Array.from({ length: 100 }, (_, i) => message(i)) });
+  await assert.rejects(firstClient.openChat({ chatId: chat.id, history: { earliest: 'not-a-date' } }), { code: 'BAD_REQUEST' });
+  await assert.rejects(firstClient.watchChat({ chatId: chat.id, history: { older: 'yes' as unknown as boolean } }), { code: 'BAD_REQUEST' });
+  const recent = await firstClient.openChat({ chatId: chat.id });
+  assert.equal(recent.messages.length, 40);
+  assert.equal(recent.messages[0].id, 'message-60');
+  assert.equal(recent.history.hasOlder, true);
+  const session = await runtime.controller.getSessionByResource(thread.resourceId); assert.ok(session);
+  const query = runtime.controller.queryThreadMessages.bind(runtime.controller);
+  let overlap = true;
+  const read = t.mock.method(runtime.controller, 'queryThreadMessages', async (input: Parameters<typeof query>[0]) => {
+    const result = await query(input);
+    if (overlap) { overlap = false; session.emit({ type: 'display_state_changed', displayState: session.displayState.get() }); }
+    return result;
+  });
+  const older = await secondClient.watchChat({ chatId: chat.id, history: { earliest: recent.history.earliest!, older: true } }, { signal: abort.signal });
+  const first = await older.next(); assert.equal(first.done, false);
+  assert.equal(first.value!.messages.length, 80);
+  assert.equal(first.value!.messages[0].id, 'message-20');
+  read.mock.restore();
+  await store.saveMessages({ messages: [message(100)] });
+  session.emit({ type: 'display_state_changed', displayState: session.displayState.get() });
+  const next = await older.next(); assert.equal(next.done, false);
+  assert.equal(next.value!.messages.length, 81);
+  assert.equal(next.value!.messages[0].id, 'message-20', 'new arrivals cannot evict loaded history');
+  assert.equal(next.value!.messages.at(-1)!.id, 'message-100');
+  const peer = await firstClient.openChat({ chatId: chat.id });
+  assert.equal(peer.messages.length, 40, 'one pane loading older does not expand other panes');
+  const boundary = next.value!.history.earliest!;
+  await older.return();
+  await server.close();
+  await service.dispose(); service = make();
+  const restored = await service.openChat({ chatId: chat.id, history: { earliest: boundary } });
+  assert.equal(restored.messages.length, 81);
+  const all = await service.openChat({ chatId: chat.id, history: { earliest: boundary, older: true } });
+  assert.equal(all.messages.length, 101);
+  assert.equal(all.history.hasOlder, false);
+});

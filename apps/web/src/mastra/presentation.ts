@@ -12,7 +12,7 @@ function printable(value: unknown): string {
   if (value === undefined) return '';
   try { return JSON.stringify(value, null, 2); } catch { return String(value); }
 }
-export function timelinePresentation(snapshot: ChatSnapshot): TimelinePresentation {
+export function timelinePresentation(snapshot: ChatSnapshot, isLoadingOlderHistory = false): TimelinePresentation {
   const current = snapshot.display.currentMessage;
   const messages = snapshot.messages.map(message => message.id === current?.id ? current : message);
   if (current && !messages.some(message => message.id === current.id)) messages.push(current);
@@ -46,5 +46,5 @@ export function timelinePresentation(snapshot: ChatSnapshot): TimelinePresentati
     else items[existing] = { ...items[existing], ...item };
   }
   const rows: TimelineRow[] = items.map(item => ({ type: 'item', key: item.id, turnKey: item.id, turnId: null, displayOrder: item.displayOrder, item }));
-  return { rows, hiddenItems: [], hasOlderHistory: false, isLoadingOlderHistory: false, lastSeq: snapshot.revision, pendingApprovalRequests: [], pendingUserInputRequests: [] };
+  return { rows, hiddenItems: [], hasOlderHistory: snapshot.history.hasOlder, isLoadingOlderHistory, lastSeq: snapshot.revision, pendingApprovalRequests: [], pendingUserInputRequests: [] };
 }

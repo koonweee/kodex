@@ -1,4 +1,5 @@
 import { eventIterator, os, type as schemaType } from '@orpc/server';
+import type { HistoryRequest } from './chat-history.js';
 import type { GoalPatch } from './chat-goals.js';
 import type { ProjectPatch } from './product-registry.js';
 import type { AccountSnapshot } from './account-service.js';
@@ -43,6 +44,8 @@ const chatSettingsInput = inputSchema<{ chatId: string; patch: ChatSettingsPatch
 const goalInput = inputSchema<{ chatId: string; patch: GoalPatch }>(value => object(value) && only(value, ['chatId', 'patch']) && string(value.chatId) && object(value.patch) && only(value.patch, ['objective', 'status']) && Object.keys(value.patch).length > 0 && (!('objective' in value.patch) || string(value.patch.objective, 100_000)) && (!('status' in value.patch) || value.patch.status === 'active' || value.patch.status === 'paused'));
 const defaultsInput = inputSchema<{ version: string; patch: ChatSettingsPatch }>(value => object(value) && only(value, ['version', 'patch']) && string(value.version) && validSettingsPatch(value.patch, false));
 
+const historyInput = inputSchema<{ chatId: string; history?: HistoryRequest }>(value => object(value) && only(value, ['chatId', 'history']) && string(value.chatId) && (value.history === undefined || (object(value.history) && only(value.history, ['earliest', 'older']) && (value.history.earliest === undefined || (typeof value.history.earliest === 'string' && value.history.earliest.length <= 32 && Number.isFinite(Date.parse(value.history.earliest)))) && (value.history.older === undefined || typeof value.history.older === 'boolean'))));
+
 export function createChatRouter(service: ChatService) {
   return {
     info: os.handler(() => service.info()),
@@ -69,8 +72,8 @@ export function createChatRouter(service: ChatService) {
     updateDraftDefaults: os.input(defaultsInput).handler(({ input }) => service.updateDraftDefaults(input)),
     watchDraftDefaults: os.output(eventIterator(schemaType<DraftDefaults>())).handler(({ signal }) => service.watchDraftDefaults(signal)),
     createChat: os.input(createInput).handler(({ input }) => service.createChat(input)),
-    openChat: os.input(chatInput).handler(({ input, signal }) => service.openChat(input, signal)),
-    watchChat: os.input(chatInput).output(eventIterator(schemaType<ChatSnapshot>())).handler(({ input, signal }) => service.watchChat(input, signal)),
+    openChat: os.input(historyInput).handler(({ input, signal }) => service.openChat(input, signal)),
+    watchChat: os.input(historyInput).output(eventIterator(schemaType<ChatSnapshot>())).handler(({ input, signal }) => service.watchChat(input, signal)),
     watchCatalog: os.output(eventIterator(schemaType<CatalogSnapshot>())).handler(({ signal }) => service.watchCatalog(signal)),
     send: os.input(sendInput).handler(({ input }) => service.send(input)),
     queue: os.input(messageInput).handler(({ input }) => service.queue(input)),

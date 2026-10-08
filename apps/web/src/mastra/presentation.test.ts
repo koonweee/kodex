@@ -6,12 +6,20 @@ import type { ChatSnapshot } from './client';
 
 function snapshot(): ChatSnapshot {
   return { epoch: 'session-a', revision: 1, chat: { pinned: false, notificationsEnabled: true, id: 'chat', projectId: 'project', title: 'Chat', name: 'Chat', cwd: '/project' }, error: null, goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(),
-    display: defaultDisplayState(), messages: [
+    history: { earliest: 'user', hasOlder: true }, display: defaultDisplayState(), messages: [
       { id: 'user', role: 'user', createdAt: new Date(0), content: { format: 2, parts: [{ type: 'text', text: 'Hello' }] } },
       { id: 'assistant', role: 'assistant', createdAt: new Date(1), content: { format: 2, parts: [{ type: 'text', text: 'Old' }] } },
     ] };
 }
 describe('native chat presentation', () => {
+  it('uses canonical history availability and the pane loading state', () => {
+    const value = snapshot();
+    expect(timelinePresentation(value).hasOlderHistory).toBe(true);
+    expect(timelinePresentation(value).isLoadingOlderHistory).toBe(false);
+    expect(timelinePresentation(value, true).isLoadingOlderHistory).toBe(true);
+    value.history = { earliest: 'user', hasOlder: false };
+    expect(timelinePresentation(value).hasOlderHistory).toBe(false);
+  });
   it('replaces persisted content with the live message without duplicating it', () => {
     const value = snapshot();
     value.display = { ...value.display, isRunning: true, currentMessage: { ...value.messages[1], content: { format: 2, parts: [{ type: 'text', text: 'Streaming answer' }] } } };

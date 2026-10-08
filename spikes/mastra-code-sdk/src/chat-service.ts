@@ -10,6 +10,7 @@ import { captureChatFastRequestContext } from './chat-fast.js';
 import { createChatQueue, type ChatQueueInput, type ChatQueueSnapshot, type ChatQueueResult } from './chat-queue.js';
 import { abortNativeChat } from './chat-archive.js';
 import { createChatLifecycle } from './chat-lifecycle.js';
+import { readChatHistory, type HistoryRequest } from './chat-history.js';
 import { createChatGoals, type NativeGoal, type GoalPatch } from './chat-goals.js';
 import { createNativeChatSettings, type ChatSettings, type ChatSettingsPatch } from './chat-settings.js';
 import { createSessionProjection, type SessionSnapshot } from './transport.js';
@@ -78,7 +79,7 @@ export function createChatService(options: ChatServiceOptions) {
     // Bind the native count before projection listeners start: raw extension
     // queue submissions must also participate in existing-chat Send routing.
     session.ensureFollowUpBinding(session.machinery.getAgent(), session.identity.getResourceId(), session.thread.requireId());
-    const projection = createSessionProjection(session);
+    const projection = createSessionProjection(session, (request, signal) => readChatHistory(runtime.controller, { threadId: session.thread.requireId(), resourceId: session.identity.getResourceId() }, request, signal));
     const queue = createChatQueue(session, { epoch, onChanged: () => {
       session.emit({ type: 'display_state_changed', displayState: session.displayState.get() });
     } });
@@ -109,12 +110,14 @@ export function createChatService(options: ChatServiceOptions) {
     });
   }
 
-  async function snapshot(handle: Handle, signal?: AbortSignal, initial?: SessionSnapshot): Promise<ChatSnapshot> {
+  async function snapshot(handle: Handle, signal?: AbortSignal, initial?: SessionSnapshot, request: HistoryRequest = {}): Promise<ChatSnapshot> {
     let supplied = initial;
+    // Retry an already-read window without expanding it a second time.
+    const history = initial?.history.earliest ? { earliest: initial.history.earliest } : request;
     for (;;) {
       signal?.throwIfAborted();
       lifetime.signal.throwIfAborted();
-      const current = supplied ?? await handle.projection.snapshot(signal);
+      const current = supplied ?? await handle.projection.snapshot(signal, history);
       supplied = undefined;
       if (current.revision !== handle.revision) continue;
       const thread = await handle.runtime.controller.queryThreadById({ threadId: handle.session.thread.requireId() });
@@ -262,13 +265,13 @@ export function createChatService(options: ChatServiceOptions) {
         return created.chat;
       });
     },
-    async openChat({ chatId }: { chatId: string }, signal?: AbortSignal) {
-      return snapshot(await handleFor(chatId), signal);
+    async openChat({ chatId, history }: { chatId: string; history?: HistoryRequest }, signal?: AbortSignal) {
+      return snapshot(await handleFor(chatId), signal, undefined, history);
     },
-    async *watchChat({ chatId }: { chatId: string }, signal?: AbortSignal): AsyncGenerator<ChatSnapshot, void> {
+    async *watchChat({ chatId, history }: { chatId: string; history?: HistoryRequest }, signal?: AbortSignal): AsyncGenerator<ChatSnapshot, void> {
       const handle = await lifecycle.admit(chatId, () => handleFor(chatId));
       const combined = AbortSignal.any([lifetime.signal, handle.observers.signal, ...(signal ? [signal] : [])]);
-      for await (const current of handle.projection.watch(combined)) yield await snapshot(handle, combined, current);
+      for await (const current of handle.projection.watch(combined, history)) yield await snapshot(handle, combined, current);
     },
     async *watchCatalog(signal?: AbortSignal): AsyncGenerator<CatalogSnapshot, void> {
       const combined = AbortSignal.any([lifetime.signal, ...(signal ? [signal] : [])]);

@@ -5,8 +5,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 
-async function startBackend(root: string) {
-  const child = spawn(process.execPath, ['--import', 'tsx', 'test/fixtures/browser-server.ts', root, '18789'], {
+async function startBackend(root: string, seed?: string) {
+  const child = spawn(process.execPath, ['--import', 'tsx', 'test/fixtures/browser-server.ts', root, '18789', ...(seed ? [seed] : [])], {
     cwd: resolve('../../spikes/mastra-code-sdk'), stdio: 'pipe',
   });
   let diagnostics = '';
@@ -401,4 +401,49 @@ test('native goals share pause, replacement, resume and clear across tabs and re
     if (backend) await stopBackend(backend);
     await rm(root, { recursive: true, force: true });
   }
+});
+
+
+test('native history loads older rows independently and retains them after peer sends and restart', async ({ context, page }) => {
+  const root = await mkdtemp(join(tmpdir(), 'kodex-history-browser-'));
+  let backend: ChildProcessWithoutNullStreams | undefined;
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const rows = (tab: Page) => pane(tab).locator('.kodex-user-message-bubble');
+  const scrollTop = async (tab: Page) => {
+    const scroller = pane(tab).locator('.kodex-thread-pane-scroll');
+    await scroller.hover(); await tab.mouse.wheel(0, -100000);
+    await expect.poll(() => scroller.evaluate(element => element.scrollTop)).toBeLessThan(2);
+  };
+  try {
+    backend = await startBackend(root, 'history');
+    await page.goto('/'); await showSidebar(page);
+    await page.getByText('History paging fixture', { exact: true }).click();
+    await expect(pane(page).getByText('HISTORY_ROW_99', { exact: true })).toBeVisible();
+    const second = await context.newPage(); second.on('pageerror', error => errors.push(error.message));
+    await second.goto(page.url()); await expect(pane(second).getByText('HISTORY_ROW_99', { exact: true })).toBeVisible();
+    await scrollTop(page);
+    await pane(page).getByRole('button', { name: 'Load older history', exact: true }).click();
+    await expect(pane(page).getByRole('button', { name: 'Loading older history', exact: true })).toHaveCount(0);
+    await scrollTop(page);
+    await expect(pane(page).getByText('HISTORY_ROW_20', { exact: true })).toBeVisible();
+    await scrollTop(second);
+    await expect(pane(second).getByText('HISTORY_ROW_60', { exact: true })).toBeVisible();
+    await expect(rows(second).filter({ hasText: /^HISTORY_ROW_20$/ })).toHaveCount(0);
+    await pane(second).locator('.kodex-thread-pane-scroll').hover(); await second.mouse.wheel(0, 100000);
+    await expect(pane(second).getByText('HISTORY_ROW_99', { exact: true })).toBeVisible();
+    await send(second, 'HISTORY_NEW_ARRIVAL');
+    await expect(pane(second).getByText('HISTORY_REPLY', { exact: true })).toBeVisible();
+    await scrollTop(page);
+    await expect(rows(page).filter({ hasText: /^HISTORY_ROW_20$/ })).toHaveCount(1);
+    await stopBackend(backend, true); backend = await startBackend(root);
+    await expect(pane(page).getByRole('button', { name: /^Model:/ })).toBeVisible();
+    await scrollTop(page);
+    await pane(page).getByRole('button', { name: 'Load older history', exact: true }).click();
+    await expect(pane(page).getByRole('button', { name: 'Load older history', exact: true })).toHaveCount(0);
+    await scrollTop(page);
+    await expect(rows(page).filter({ hasText: /^HISTORY_ROW_0$/ })).toHaveCount(1);
+    await expect(pane(page).getByRole('button', { name: 'Load older history', exact: true })).toHaveCount(0);
+    expect(errors).toEqual([]);
+  } finally { if (backend) await stopBackend(backend); await rm(root, { recursive: true, force: true }); }
 });

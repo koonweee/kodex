@@ -2,7 +2,7 @@ import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { activateProfile, resolveProfile } from '../../src/profile.js';
 import { loadServerConfig } from '../../src/server-config.js';
-import { createProjectRuntime } from '../../src/runtime.js';
+import { createProjectRuntime, type ProjectRuntime } from '../../src/runtime.js';
 import { createChatService } from '../../src/chat-service.js';
 import { createChatRouter } from '../../src/chat-router.js';
 import { serveRouter } from '../../src/server.js';
@@ -24,6 +24,7 @@ const model = await startModelFixture(request => {
   if (request.model === 'judge') return { text: JSON.stringify({ decision: 'done', reason: 'Browser goal complete' }) };
   if (!request.stream) return { text: 'Browser test chat' };
   const user = lastUserText(request);
+  if (JSON.stringify(request.messages).includes('HISTORY_NEW_ARRIVAL')) return { text: 'HISTORY_REPLY' };
   if (user.includes('READ_MARKER') && request.messages.at(-1)?.role !== 'tool') {
     const tool = request.tools?.find(tool => tool.function.name === 'view');
     if (!tool) throw new Error('Native view tool missing');
@@ -41,10 +42,23 @@ await writeFile(profile.settingsPath, JSON.stringify({
   customProviders: [{ name: 'fixture', url: model.url, apiKey: 'fixture', models: ['chat', 'judge'] }],
   observability: { enabled: false },
 }));
+const runtimes: ProjectRuntime[] = [];
 const service = createChatService({
   profile, directoryHome, ...await loadServerConfig(profile, [projectPath]),
-  runtimeFactory: options => createProjectRuntime({ ...options, modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }] }),
+  runtimeFactory: async options => { const runtime = await createProjectRuntime({ ...options, modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }] }); runtimes.push(runtime); return runtime; },
 });
+if (process.argv[4] === 'history' && !(await service.listChats()).chats.length) {
+  const catalog = await service.listChats();
+  const chat = await service.createChat({ projectId: catalog.projects[0].id });
+  await service.renameChat({ chatId: chat.id, title: 'History paging fixture' });
+  const runtime = runtimes[0];
+  const thread = await runtime.controller.queryThreadById({ threadId: chat.id });
+  if (!thread) throw new Error('Missing seeded native history thread');
+  const store = await runtime.storage.getStore('memory');
+  if (!store) throw new Error('Missing seeded native history storage');
+  await store.saveMessages({ messages: Array.from({ length: 100 }, (_, i) => ({ id: `history-${i}`, threadId: chat.id, resourceId: thread.resourceId,
+    role: 'user' as const, createdAt: new Date(Date.now() - 100_000 + i * 1000), content: { format: 2 as const, parts: [{ type: 'text' as const, text: `HISTORY_ROW_${i}` }] } })) });
+}
 const server = await serveRouter(createChatRouter(service), port);
 console.log(`BROWSER_FIXTURE_READY ${server.url}`);
 let stopping = false;

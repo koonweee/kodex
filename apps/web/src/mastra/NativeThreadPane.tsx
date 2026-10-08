@@ -18,9 +18,9 @@ export function NativeThreadPane({ pane, draftStore, onError }: { pane: Workspac
   const chatId = target.mode === 'existing' && typeof target.threadId === 'string' ? target.threadId : null;
   const catalog = useNativeCatalogSnapshot();
   const archived = chatId !== null && Boolean(catalog?.archivedChatIds.includes(chatId));
-  const { snapshot, error, retry } = useNativeChat(archived ? null : chatId);
+  const { snapshot, error, retry, loadOlderHistory, isLoadingOlderHistory } = useNativeChat(archived ? null : chatId);
   const isActive = workspace.activePaneId === pane.id;
-  const timeline = useMemo(() => snapshot ? timelinePresentation(snapshot) : null, [snapshot]);
+  const timeline = useMemo(() => snapshot ? timelinePresentation(snapshot, isLoadingOlderHistory) : null, [snapshot, isLoadingOlderHistory]);
   const [scrollParent, setScrollParent] = useState<HTMLDivElement | null>(null);
   const [renameOpen, setRenameOpen] = useState(false);
   const [name, setName] = useState('');
@@ -86,7 +86,7 @@ export function NativeThreadPane({ pane, draftStore, onError }: { pane: Workspac
       onChange={value => { setName(value); if (renameError) setRenameError(null); }} />
     <div className="kodex-thread-pane-status">{isActive && errorMessage ? <Alert color="red" role="alert">{errorMessage}</Alert> : null}{error || snapshot?.error ? <Alert color="red" role="alert">{error ?? snapshot?.error}</Alert> : null}</div>
     <Box className="kodex-thread-content"><div className="kodex-thread-scroll-frame"><div className="kodex-thread-pane-scroll kodex-timeline-scroll" ref={setScrollParent}>
-      {chatId && !timeline ? <Loader aria-label="Loading chat" /> : timeline ? <TimelineView approvals={[]} imagePreviewUrlsByPath={{}} onApprovalDecision={() => {}} onImageOpen={onImageOpen} onMarkdownOpen={onMarkdownOpen} onReady={() => {}} scrollParentElement={scrollParent} showDebug={showDebugEvents} threadId={chatId ?? undefined} timeline={timeline} /> : null}
+      {chatId && !timeline ? <Loader aria-label="Loading chat" /> : timeline ? <TimelineView approvals={[]} imagePreviewUrlsByPath={{}} onApprovalDecision={() => {}} onImageOpen={onImageOpen} onLoadOlderHistory={loadOlderHistory} onMarkdownOpen={onMarkdownOpen} onReady={() => {}} scrollParentElement={scrollParent} showDebug={showDebugEvents} threadId={chatId ?? undefined} timeline={timeline} /> : null}
     </div></div></Box>
     <NativeComposer pane={pane} snapshot={snapshot} ready={!chatId || Boolean(snapshot)} isActive={isActive} draftStore={draftStore} onError={onError} onQueueReload={retry} />
   </section>;
