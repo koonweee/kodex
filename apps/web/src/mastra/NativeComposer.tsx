@@ -61,6 +61,9 @@ export function NativeComposer({ pane, snapshot, ready, isActive, draftStore, on
         return submitNative(() => mastraClient.queue({ chatId: id, text: input.flatMap(value => value.type === 'text' ? [value.text] : []).join('\n') }));
       },
       stop: id => mastraClient.stop({ chatId: id }),
+      compact: async () => {
+        throw new Error("Mastra manages conversation memory automatically. Manual /compact is not supported; no compaction was requested.");
+      },
     },
   });
   return <>

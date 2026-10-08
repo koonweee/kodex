@@ -360,3 +360,17 @@ it('preserves rejected native goal drafts and allows explicit retry', async () =
   await waitFor(() => expect(input).toHaveValue(''));
   expect(rpc.send).not.toHaveBeenCalled();
 });
+
+it('explains automatic native memory management without calling legacy compaction or sending input', async () => {
+  setup();
+  const gateway = mockGateway(baseRoutes({ 'POST /v1/threads/chat/compact': { disposition: 'started', rawPayload: {} } }));
+  renderComposer({ id: 'pane', kind: 'thread', target: { mode: 'existing', threadId: 'chat' } }, snapshot());
+  const composer = screen.getByLabelText('Message composer');
+  await userEvent.type(composer, '/compact');
+  await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  await waitFor(() => expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('Mastra manages conversation memory automatically') })));
+  expect(composer).toHaveValue('/compact');
+  expect(gateway.callsFor('POST', '/v1/threads/chat/compact')).toHaveLength(0);
+  expect(rpc.send).not.toHaveBeenCalled();
+  expect(rpc.queue).not.toHaveBeenCalled();
+});

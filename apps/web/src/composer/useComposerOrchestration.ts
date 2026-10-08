@@ -16,16 +16,12 @@ import {
   createQueuedInput,
   interruptCurrentTurn,
   submitThreadInput,
-  uploadFiles,
-  uploadImages,
-  type ImageUpload,
   type TextElement,
   type TimelineFileAttachment,
   type TimelineSkillMention,
   type UserInput,
 } from "../api/client";
 import type { ComposerSettings } from "../ComposerFooterControls";
-import { errorMessageFrom } from "../shared/values";
 import { sameComposerContext, type ComposerContext } from "./settings";
 import { slashCommandFromSubmittedText } from "./slashCommands";
 import {
@@ -38,6 +34,7 @@ import type { ComposerDraftControls } from "./ComposerPanel";
 import { isTouchInputDevice } from "../shared/inputCapabilities";
 import { createClientRequestId } from "../shared/id";
 import type { PendingAttachment } from "./types";
+import { buildTurnPayload } from "./buildTurnPayload";
 
 type DraftThreadCreateRequest = { composerSettings?: ComposerSettings; firstMessageText: string; projectId?: string };
 type DraftThreadCreateResult = { threadId: string };
@@ -49,6 +46,7 @@ type UseComposerOrchestrationParams = {
     send: (threadId: string, input: UserInput[], attachments: TimelineFileAttachment[]) => Promise<unknown>;
     queue: (threadId: string, input: UserInput[], attachments: TimelineFileAttachment[]) => Promise<unknown>;
     stop: (threadId: string) => Promise<unknown>;
+    compact: (threadId: string) => Promise<unknown>;
   };
   activeSelectedTurnIdOverrideRef?: { current: string | null | undefined };
   canCompose: boolean;
@@ -172,7 +170,8 @@ export function useComposerOrchestration({
       }
       setIsComposerSubmitting(true);
       try {
-        await compactThread(selectedThreadId);
+        if (commands) await commands.compact(selectedThreadId);
+        else await compactThread(selectedThreadId);
         draftControls.clearText();
         clearPendingAttachments();
       } catch (error) {
@@ -198,7 +197,10 @@ export function useComposerOrchestration({
     try {
       if (selectedThreadId) {
         draftControls.clearText();
-        const payload = await buildTurnPayload(selectedThreadId, text, attachments, skillInputs, skillTextElements);
+        const payload = await buildTurnPayload({
+          threadId: selectedThreadId, text, attachments, skillInputs, skillTextElements,
+          updateAttachments, rememberImagePreviewUrls,
+        });
         if (queueRequested) {
           try {
             if (commands) await commands.queue(selectedThreadId, payload.input, payload.attachments);
@@ -266,7 +268,10 @@ export function useComposerOrchestration({
       startedThreadId = threadId;
       onThreadTurnStarted(threadId);
       draftControls.clearText();
-      const payload = await buildTurnPayload(threadId, text, attachments, skillInputs, skillTextElements);
+      const payload = await buildTurnPayload({
+        threadId, text, attachments, skillInputs, skillTextElements,
+        updateAttachments, rememberImagePreviewUrls,
+      });
       if (commands) await commands.send(threadId, payload.input, payload.attachments);
       else await submitThreadInput(threadId, payload.input, payload.attachments, clientUserMessageId);
       onThreadMaterialized(threadId);
@@ -378,113 +383,6 @@ export function useComposerOrchestration({
 
   function currentCanCompose() {
     return canComposeOverrideRef?.current ?? canCompose;
-  }
-
-  async function buildTurnPayload(
-    threadId: string,
-    text: string,
-    attachments: PendingAttachment[],
-    skillInputs: UserInput[] = [],
-    skillTextElements: TextElement[] = [],
-  ): Promise<{ input: UserInput[]; attachments: TimelineFileAttachment[] }> {
-    const input: UserInput[] = [];
-    const fileAttachments: TimelineFileAttachment[] = [];
-    if (text) {
-      input.push({ type: "text", text, ...(skillTextElements.length > 0 ? { text_elements: skillTextElements } : {}) });
-    }
-    input.push(...skillInputs);
-    if (attachments.length > 0) {
-      const imageAttachmentsToUpload = attachments.filter(
-        (attachment) => attachment.kind === "image" && !attachment.uploaded,
-      );
-      const fileAttachmentsToUpload = attachments.filter(
-        (attachment) => attachment.kind === "file" && !attachment.uploadedFile,
-      );
-      const attachmentsToUpload = [...imageAttachmentsToUpload, ...fileAttachmentsToUpload];
-      updateAttachments(
-        new Map(
-          attachmentsToUpload.map((attachment) => [
-            attachment.id,
-            { status: "uploading" as const, error: undefined },
-          ]),
-        ),
-      );
-      let uploads: ImageUpload[] = [];
-      let fileUploads: TimelineFileAttachment[] = [];
-      try {
-        uploads =
-          imageAttachmentsToUpload.length > 0
-            ? await uploadImages(imageAttachmentsToUpload.map((attachment) => attachment.file))
-            : [];
-        fileUploads =
-          fileAttachmentsToUpload.length > 0
-            ? await uploadFiles(threadId, fileAttachmentsToUpload.map((attachment) => attachment.file))
-            : [];
-        if (uploads.length !== imageAttachmentsToUpload.length || fileUploads.length !== fileAttachmentsToUpload.length) {
-          throw new Error("Gateway upload response did not match selected attachments");
-        }
-      } catch (error) {
-        const message = errorMessageFrom(error);
-        updateAttachments(
-          new Map(
-            attachmentsToUpload.map((attachment) => [
-              attachment.id,
-              { status: "error" as const, error: message },
-            ]),
-          ),
-        );
-        throw error;
-      }
-
-      const previewUrls: Record<string, string> = {};
-      const uploadedByAttachmentId = new Map<string, ImageUpload>();
-      const uploadedFileByAttachmentId = new Map<string, TimelineFileAttachment>();
-      for (const [index, upload] of uploads.entries()) {
-        const attachment = imageAttachmentsToUpload[index];
-        if (attachment) {
-          uploadedByAttachmentId.set(attachment.id, upload);
-          if (attachment.objectUrl) {
-            previewUrls[upload.path] = attachment.objectUrl;
-          }
-        }
-      }
-      for (const [index, upload] of fileUploads.entries()) {
-        const attachment = fileAttachmentsToUpload[index];
-        if (attachment) {
-          uploadedFileByAttachmentId.set(attachment.id, upload);
-        }
-      }
-      updateAttachments(
-        new Map(
-          attachmentsToUpload.map((attachment) => [
-            attachment.id,
-            {
-              status: "uploaded" as const,
-              uploaded: uploadedByAttachmentId.get(attachment.id),
-              uploadedFile: uploadedFileByAttachmentId.get(attachment.id),
-              error: undefined,
-            },
-          ]),
-        ),
-      );
-      for (const attachment of attachments) {
-        if (attachment.kind === "image") {
-          const upload = attachment.uploaded ?? uploadedByAttachmentId.get(attachment.id);
-          if (upload) {
-            input.push({ type: "localImage", path: upload.path });
-          }
-        } else {
-          const upload = attachment.uploadedFile ?? uploadedFileByAttachmentId.get(attachment.id);
-          if (upload) {
-            fileAttachments.push(upload);
-          }
-        }
-      }
-      if (Object.keys(previewUrls).length > 0) {
-        rememberImagePreviewUrls(previewUrls);
-      }
-    }
-    return { input, attachments: fileAttachments };
   }
 
   function appendFiles(fileList: FileList | File[] | null) {
