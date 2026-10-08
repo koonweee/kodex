@@ -1,6 +1,6 @@
 import { Box, Group, Menu, Textarea } from "@mantine/core";
 import { ChevronDown, Folder, MessageSquare } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject, PointerEventHandler } from "react";
 
 import type { SkillMetadata } from "../api/client";
@@ -33,7 +33,8 @@ type InlineComposerPanelProps = ComposerPanelProps & {
   queueOnSubmit?: boolean;
   canSubmitComposer: boolean;
   density?: "regular" | "compact";
-  expanded?: { header: ReactNode; style: CSSProperties };
+  expanded?: { header: ReactNode };
+  keyboardViewportStyle?: CSSProperties;
   draftState: ComposerDraftState;
   filteredSkills: SkillMetadata[];
   filteredSlashCommands: SlashCommandItem[];
@@ -43,6 +44,7 @@ type InlineComposerPanelProps = ComposerPanelProps & {
   isComposerDisabled: boolean;
   isEntryPending: boolean;
   onEditablePointerDown?: PointerEventHandler<HTMLTextAreaElement>;
+  onFocusSessionChange?: (focused: boolean) => void;
   renderSkillSuggestions?: () => ReactNode;
   selectSkill: (skillIndex?: number) => void;
   selectSlashCommand: (commandIndex?: number) => void;
@@ -65,6 +67,7 @@ export function InlineComposerPanel({
   currentProjectName,
   density = "regular",
   expanded,
+  keyboardViewportStyle,
   draftProjectSelector,
   draftState,
   goalControls,
@@ -88,6 +91,7 @@ export function InlineComposerPanel({
   onComposerPaste,
   onComposerSettingsChange,
   onEditablePointerDown,
+  onFocusSessionChange,
   onImageOpen,
   onRemovePendingAttachment,
   onStopTurn,
@@ -111,8 +115,12 @@ export function InlineComposerPanel({
   const [editingActive, setEditingActive] = useState(false);
   const [composerFocused, setComposerFocused] = useState(false);
   const [toolbarMenuOpen, setToolbarMenuOpen] = useState(false);
+  const focusSessionActive = composerFocused || toolbarMenuOpen;
   const focusRevision = useRef(0);
   useEffect(() => () => { focusRevision.current += 1; }, []);
+  useLayoutEffect(() => {
+    onFocusSessionChange?.(focusSessionActive);
+  }, [focusSessionActive, onFocusSessionChange]);
   useEffect(() => {
     if (composerFocused || toolbarMenuOpen) return;
     // Let focus and menu state settle before ending the editing session.
@@ -143,7 +151,8 @@ export function InlineComposerPanel({
       className={`kodex-composer-shell kodex-thread-column${expanded ? " kodex-mobile-composer-expanded" : ""}`}
       role={expanded ? "dialog" : undefined}
       aria-label={expanded ? "Compose" : undefined}
-      style={expanded?.style}
+      style={keyboardViewportStyle}
+      data-focus-session={focusSessionActive ? "true" : undefined}
       data-inline-density={density}
       data-entry-ready={isEntryPending ? "false" : "true"}
       data-drag-active={isComposerDragActive ? "true" : "false"}
@@ -180,7 +189,9 @@ export function InlineComposerPanel({
           // React focus events include portalled menus. Wait for the next focus
           // before ending editing, rather than using DOM containment across portals.
           queueMicrotask(() => {
-            if (focusRevision.current === revision) setComposerFocused(false);
+            if (focusRevision.current === revision) {
+              setComposerFocused(false);
+            }
           });
         }}
         data-skill-command-open={expanded && (skillPopupOpen || slashPopupOpen) ? "true" : undefined}

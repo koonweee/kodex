@@ -1,6 +1,6 @@
 import { Box, Text } from "@mantine/core";
 import { Minimize2 } from "lucide-react";
-import { useLayoutEffect, useState } from "react";
+import { useCallback, useLayoutEffect, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from "react";
 
 import { usePaneLayout } from "../shared/PaneLayout";
@@ -86,17 +86,24 @@ export function ExpandedComposerPanel({
   const { compact } = usePaneLayout();
   const narrowWorkspace = useNarrowWorkspace();
   const [expansionRequested, setIsExpanded] = useState(false);
+  const [focusSessionActive, setFocusSessionActive] = useState(false);
+  const [composerShellNode, setLocalComposerShellNode] = useState<HTMLDivElement | null>(null);
   const isExpanded = expansionRequested && narrowWorkspace;
   useLayoutEffect(() => {
     if (!narrowWorkspace) setIsExpanded(false);
   }, [narrowWorkspace]);
-  const keyboardViewport = useComposerKeyboardViewport(isExpanded);
-  const expandedStyle = {
+  const keyboardViewport = useComposerKeyboardViewport(isExpanded || focusSessionActive, composerShellNode);
+  const keyboardViewportStyle = {
     "--kodex-mobile-keyboard-inset": `${keyboardViewport.keyboardInset}px`,
+    "--kodex-mobile-inline-keyboard-inset": `${keyboardViewport.inlineKeyboardInset}px`,
     "--kodex-mobile-visual-viewport-offset-top": `${keyboardViewport.viewportOffsetTop}px`,
     "--kodex-mobile-visual-viewport-height": `${keyboardViewport.viewportHeight}px`,
     "--kodex-mobile-bottom-safe-area": keyboardViewport.keyboardInset > 0 ? "0px" : undefined,
   } as CSSProperties;
+  const handleComposerShellNode = useCallback((node: HTMLDivElement | null) => {
+    setLocalComposerShellNode(node);
+    setComposerShellNode(node);
+  }, [setComposerShellNode]);
   function renderSkillCommandSheet() {
     if (skillPopupOpen) {
       return (
@@ -138,7 +145,6 @@ export function ExpandedComposerPanel({
         contextUsage={contextUsage}
         density={compact ? "compact" : "regular"}
         expanded={isExpanded ? {
-          style: expandedStyle,
           header: (
             <Box className="kodex-mobile-composer-expanded-header">
               <span aria-hidden="true" />
@@ -173,6 +179,7 @@ export function ExpandedComposerPanel({
             setIsExpanded(true);
           }
         }}
+        onFocusSessionChange={setFocusSessionActive}
         onImageOpen={onImageOpen}
         onRemovePendingAttachment={onRemovePendingAttachment}
         onStopTurn={onStopTurn}
@@ -183,10 +190,11 @@ export function ExpandedComposerPanel({
           }
         }}
         pendingAttachments={pendingAttachments}
+        keyboardViewportStyle={keyboardViewportStyle}
         selectedThreadPresent={selectedThreadPresent}
         selectSkill={selectSkill}
         selectSlashCommand={selectSlashCommand}
-        setComposerShellNode={setComposerShellNode}
+        setComposerShellNode={handleComposerShellNode}
         shouldShowStopAction={shouldShowStopAction}
         skillCatalog={skillCatalog}
         skillPopupOpen={skillPopupOpen}

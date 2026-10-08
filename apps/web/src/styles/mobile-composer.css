@@ -119,6 +119,13 @@
   .kodex-thread-pane-existing > .kodex-composer-shell:not(.kodex-mobile-composer-expanded) {
     margin-bottom: calc(var(--kodex-pane-edge-space) + env(safe-area-inset-bottom));
   }
+
+  .kodex-thread-pane-existing > .kodex-composer-shell[data-focus-session="true"]:not(.kodex-mobile-composer-expanded) {
+    margin-bottom: calc(
+      var(--kodex-pane-edge-space) + var(--kodex-mobile-inline-keyboard-inset, 0px) +
+        var(--kodex-mobile-bottom-safe-area, env(safe-area-inset-bottom))
+    );
+  }
 }
 
 /* Fullscreen composition owns the narrow workspace chrome. Keeping the

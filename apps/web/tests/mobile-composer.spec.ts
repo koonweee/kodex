@@ -174,6 +174,41 @@ test("fullscreen keeps timeline paint out of the keyboard viewport gap", async (
   expect(fixture.unexpected).toEqual([]);
 });
 
+test("inline composer does not reserve keyboard space above the visual viewport bottom", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true,
+    baseURL: test.info().project.use.baseURL });
+  const fixture = await nativeSettingsFixture(context);
+  try {
+    const page = await fixture.page("inline-pane-above-keyboard");
+    const pane = page.locator('.kodex-thread-pane[data-workspace-pane-active="true"]');
+    const shell = pane.locator(":scope > .kodex-composer-shell");
+    const input = pane.getByLabel("Message composer", { exact: true });
+    await input.fill("Keep the inline composer active");
+    await input.evaluate((element: HTMLTextAreaElement) => element.blur());
+    await expect(shell).not.toHaveAttribute("data-focus-session", "true");
+    await pane.evaluate((element) => { (element as HTMLElement).style.height = "480px"; });
+    await page.evaluate(() => {
+      const events = new EventTarget();
+      Object.defineProperty(window, "visualViewport", { configurable: true, value: {
+        addEventListener: events.addEventListener.bind(events),
+        height: 544,
+        offsetTop: 0,
+        removeEventListener: events.removeEventListener.bind(events),
+      } });
+    });
+    const before = await shell.boundingBox();
+    await input.evaluate((element: HTMLTextAreaElement) => element.focus({ preventScroll: true }));
+    await expect(input).toBeFocused();
+    await expect(pane.getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
+    await expect(shell).toHaveAttribute("data-focus-session", "true");
+    await expect.poll(async () => (await shell.boundingBox())!.y).toBeCloseTo(before!.y, 0);
+    const paneBounds = await pane.boundingBox();
+    expect(paneBounds!.y + paneBounds!.height).toBeLessThanOrEqual(544);
+  } finally { await fixture.close(); await context.close(); }
+  expect(fixture.errors).toEqual([]);
+  expect(fixture.unexpected).toEqual([]);
+});
+
 test("fullscreen regular pane keeps its active goal in the composer toolbar", async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 768, height: 844 }, hasTouch: true,
     baseURL: test.info().project.use.baseURL });
