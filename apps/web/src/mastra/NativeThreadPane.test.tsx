@@ -37,7 +37,7 @@ function Harness({ children }: { children?: ReactNode }) {
   const value = useMemo(() => ({ ...stable, workspace: { activePaneId: 'pane' }, setPaneHeaderActions, header }), [header, setPaneHeaderActions]);
   return <MantineProvider env="test"><context.Provider value={value}><div aria-label="Workspace header">{header}</div>{children ?? <NativeThreadPane pane={pane} draftStore={{} as ComposerDraftStore} onError={onError} />}</context.Provider></MantineProvider>;
 }
-afterEach(() => { cleanup(); vi.clearAllMocks(); native.error = null; native.isLoadingOlderHistory = false; });
+afterEach(() => { cleanup(); vi.clearAllMocks(); native.error = null; native.subagentError = null; native.isLoadingOlderHistory = false; });
 it('loads older native history, disables the pending action, and surfaces failures while preserving the timeline', async () => {
   native.useWorkspace.mockImplementation(() => useContext(context));
   native.snapshot = { epoch: 'epoch', revision: 1, chat: { id: 'chat', projectId: 'project', cwd: '/project', title: 'Chat title', name: 'Chat title', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: 'recent', hasOlder: true } };
@@ -55,10 +55,42 @@ it('loads older native history, disables the pending action, and surfaces failur
   expect(screen.getByRole('alert')).toHaveTextContent('History unavailable');
   expect(screen.getByRole('button', { name: 'Load older history' })).toBeEnabled();
   expect(screen.queryByLabelText('Loading chat')).not.toBeInTheDocument();
+  expect(screen.getByText('Composer')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Thread actions' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Browse threads' })).not.toBeInTheDocument();
   native.error = null;
   native.snapshot = { ...native.snapshot, history: { earliest: 'oldest', hasOlder: false } };
   await act(async () => view.rerender(<Harness />));
   expect(screen.queryByRole('button', { name: 'Load older history' })).not.toBeInTheDocument();
+});
+it('reuses main unavailable-thread recovery controls after an initial failure and recovers on a canonical refill', async () => {
+  native.useWorkspace.mockImplementation(() => useContext(context));
+  native.snapshot = null;
+  const view = render(<Harness />);
+  expect(screen.getByLabelText('Loading chat')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Browse threads' })).not.toBeInTheDocument();
+  native.error = 'Native chat not found';
+  native.subagentError = 'Native chat not found';
+  await act(async () => view.rerender(<Harness />));
+  expect(screen.getByRole('button', { name: 'Browse threads' })).toBeInTheDocument();
+  expect(screen.getByText('This thread could not be loaded. It may have been archived, deleted, or unavailable from this gateway.')).toBeInTheDocument();
+  expect(screen.queryByLabelText('Loading chat')).not.toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(screen.queryByText('Composer')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Thread actions' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Browse threads' }));
+  expect(stable.onShowMobileSidebar).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole('button', { name: 'Close pane' }));
+  expect(native.close).toHaveBeenCalledWith('pane', null);
+  expect(native.watched).toHaveBeenLastCalledWith('chat');
+  native.error = null; native.subagentError = null;
+  native.snapshot = { epoch: 'epoch', revision: 2, chat: { id: 'chat', projectId: null, cwd: '/project', title: 'Recovered chat', name: 'Recovered chat', pinned: false, notificationsEnabled: true }, display: defaultDisplayState(), messages: [], error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
+  await act(async () => view.rerender(<Harness />));
+  expect(screen.getByRole('region', { name: 'Recovered chat' })).toBeInTheDocument();
+  expect(screen.getByText('Composer')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Thread actions' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Browse threads' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });
 it('registers one workspace action menu, keeps it stable while streaming, and unregisters on removal', async () => {
   native.useWorkspace.mockImplementation(() => useContext(context));
