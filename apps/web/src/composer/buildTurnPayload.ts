@@ -9,7 +9,12 @@ import {
 import { errorMessageFrom } from "../shared/values";
 import type { PendingAttachment } from "./types";
 
+export type ComposerUploads = {
+  images: (threadId: string, files: File[]) => Promise<ImageUpload[]>;
+  files: (threadId: string, files: File[]) => Promise<TimelineFileAttachment[]>;
+};
 type TurnPayloadOptions = {
+  uploads?: ComposerUploads;
   threadId: string;
   text: string;
   attachments: PendingAttachment[];
@@ -20,6 +25,7 @@ type TurnPayloadOptions = {
 };
 
 export async function buildTurnPayload({
+  uploads: uploadCommands,
   threadId,
   text,
   attachments,
@@ -27,9 +33,10 @@ export async function buildTurnPayload({
   skillTextElements,
   updateAttachments,
   rememberImagePreviewUrls,
-}: TurnPayloadOptions): Promise<{ input: UserInput[]; attachments: TimelineFileAttachment[] }> {
+}: TurnPayloadOptions): Promise<{ input: UserInput[]; attachments: TimelineFileAttachment[]; images: ImageUpload[] }> {
   const input: UserInput[] = [];
   const fileAttachments: TimelineFileAttachment[] = [];
+  const images: ImageUpload[] = [];
   if (text) {
     input.push({ type: "text", text, ...(skillTextElements.length > 0 ? { text_elements: skillTextElements } : {}) });
   }
@@ -55,11 +62,11 @@ export async function buildTurnPayload({
     try {
       uploads =
         imageAttachmentsToUpload.length > 0
-          ? await uploadImages(imageAttachmentsToUpload.map((attachment) => attachment.file))
+          ? await (uploadCommands ? uploadCommands.images(threadId, imageAttachmentsToUpload.map((attachment) => attachment.file)) : uploadImages(imageAttachmentsToUpload.map((attachment) => attachment.file)))
           : [];
       fileUploads =
         fileAttachmentsToUpload.length > 0
-          ? await uploadFiles(threadId, fileAttachmentsToUpload.map((attachment) => attachment.file))
+          ? await (uploadCommands?.files ?? uploadFiles)(threadId, fileAttachmentsToUpload.map((attachment) => attachment.file))
           : [];
       if (uploads.length !== imageAttachmentsToUpload.length || fileUploads.length !== fileAttachmentsToUpload.length) {
         throw new Error("Gateway upload response did not match selected attachments");
@@ -113,6 +120,7 @@ export async function buildTurnPayload({
         const upload = attachment.uploaded ?? uploadedByAttachmentId.get(attachment.id);
         if (upload) {
           input.push({ type: "localImage", path: upload.path });
+          images.push(upload);
         }
       } else {
         const upload = attachment.uploadedFile ?? uploadedFileByAttachmentId.get(attachment.id);
@@ -125,5 +133,5 @@ export async function buildTurnPayload({
       rememberImagePreviewUrls(previewUrls);
     }
   }
-  return { input, attachments: fileAttachments };
+  return { input, attachments: fileAttachments, images };
 }

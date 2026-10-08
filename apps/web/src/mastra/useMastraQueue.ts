@@ -4,6 +4,11 @@ import { errorMessageFrom } from '../shared/values';
 import { mastraClient, type ChatSnapshot } from './client';
 
 type Snapshot = ChatSnapshot['queue'];
+function queueInputView(input: Snapshot['rows'][number]['input']): unknown[] {
+  return [{ type: 'text', text: input.text },
+    ...(input.images ?? []).map(image => ({ type: 'localImage', path: image.path })),
+    ...(input.files ?? []).map(file => ({ type: 'file', path: file.relativePath }))];
+}
 export function useMastraQueue(chatId: string | null, snapshot: Snapshot | null, onError: (error: unknown) => void, onReload?: () => void): QueueController {
   const scope = JSON.stringify([chatId, snapshot?.epoch]);
   const active = useRef(scope); active.current = scope;
@@ -36,9 +41,9 @@ export function useMastraQueue(chatId: string | null, snapshot: Snapshot | null,
   const rows = snapshot?.rows ?? [];
   const controller: QueueController = {
     rows: rows.filter(row => row.status === 'queued' || row.status === 'steering').map(row => ({ id: row.id,
-      input: [{ type: 'text', text: row.input.text }], attachmentCount: 0, canSteer: row.status === 'queued', disabled: row.status === 'steering', editDisabled: snapshot?.partial })),
+      input: queueInputView(row.input), attachmentCount: (row.input.images?.length ?? 0) + (row.input.files?.length ?? 0), canSteer: row.status === 'queued', disabled: row.status === 'steering', editDisabled: snapshot?.partial })),
     recovery: rows.filter(row => row.status === 'uncertain' || row.status === 'recoverable').map(row => ({ id: row.id,
-      input: [{ type: 'text', text: row.input.text }], savedInput: row.input, status: row.status as 'uncertain' | 'recoverable' })),
+      input: queueInputView(row.input), savedInput: row.input, status: row.status as 'uncertain' | 'recoverable' })),
     busy: operation?.scope === scope && operation.busy,
     error: operation?.scope === scope ? operation.error : null,
     partial: snapshot?.partial ?? false, hasPendingInput: (snapshot?.nativeCount ?? 0) > 0, reorderDisabled: rows.some(row => row.status !== 'queued'),
@@ -49,7 +54,7 @@ export function useMastraQueue(chatId: string | null, snapshot: Snapshot | null,
       if (!first) return false;
       void mutate(() => mastraClient.steerQueued(selection(first.id))); return true;
     },
-    edit: (row, input) => mutate(() => mastraClient.editQueued({ ...selection(row.id), input: { text: input.map(value => (value as { text: string }).text).join('\n') } })),
+    edit: (row, input) => mutate(() => mastraClient.editQueued({ ...selection(row.id), input: { text: input.flatMap(value => typeof value === 'object' && value !== null && 'type' in value && value.type === 'text' && 'text' in value && typeof value.text === 'string' ? [value.text] : []).join('\n') } })),
     reorder: ids => mutate(() => mastraClient.reorderQueued({ chatId: chatId!, epoch: snapshot!.epoch, revision: snapshot!.revision, ids })),
     remove: row => mutate(() => mastraClient.removeQueued(selection(row.id))),
     steer: row => mutate(() => mastraClient.steerQueued(selection(row.id))),

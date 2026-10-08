@@ -16,7 +16,7 @@ export async function serveRouter(router: AnyRouter, port = 8789) {
   // large bodies off the shared socket and leave ordinary command limits intact.
   const uploadHandler = new RPCHandler(router, { plugins: [new BodyLimitPlugin({ maxBodySize: 26 * 1024 * 1024 })] });
   const server = createServer((request, response) => {
-    const selectedHandler = request.url?.split('?')[0] === '/rpc/uploadFile' ? uploadHandler : handler;
+    const selectedHandler = ['/rpc/uploadFile', '/rpc/uploadImage'].includes(request.url?.split('?')[0] ?? '') ? uploadHandler : handler;
     void selectedHandler.handle(request, response, { prefix: '/rpc', context: {} }).then(({ matched }) => {
       if (!matched) {
         response.writeHead(404, { 'content-type': 'application/json' });

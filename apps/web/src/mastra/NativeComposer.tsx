@@ -4,10 +4,9 @@ import { useEffect, useRef } from 'react';
 import { ComposerPanel } from '../composer/ComposerPanel';
 import { useComposerOrchestration } from '../composer/useComposerOrchestration';
 import type { ComposerDraftStore } from '../composer/useComposerDraftState';
-import { createQueuedInput, submitThreadInput } from '../api/client';
 import { paneTargetRecord, type WorkspacePane } from '../workspace/paneTypes';
 import { useWorkspace } from '../workspace/WorkspaceProvider';
-import { mastraClient, type ChatSnapshot } from './client';
+import { mastraClient, mastraUploadClient, type ChatSnapshot } from './client';
 import { useNativeCatalogSnapshot } from './NativeCatalogContext';
 import { DEFAULT_COMPOSER_SETTINGS } from '../composer/settings';
 import { useNativeComposerSettings } from './useNativeComposerSettings';
@@ -52,13 +51,17 @@ export function NativeComposer({ pane, snapshot, ready, isActive, draftStore, on
     onThreadMaterialized: id => { void updatePane(pane.id, { target: { mode: 'existing', threadId: id } }).catch(onError); },
     onThreadTurnStarted: () => {}, onThreadTurnStartFailed: () => {}, onError,
     commands: {
-      send: async (id, input, attachments) => {
-        if (attachments.length || input.some(value => value.type !== 'text')) return submitThreadInput(id, input, attachments);
-        return submitNative(() => mastraClient.send({ chatId: id, queueIfPending: true, text: input.flatMap(value => value.type === 'text' ? [value.text] : []).join('\n') }));
+      send: async (id, input, attachments, images) => {
+        if (input.some(value => !['text', 'localImage'].includes(value.type))) throw new Error('Native skill mentions are not connected yet.');
+        return submitNative(() => mastraClient.send({ chatId: id, queueIfPending: true, text: input.flatMap(value => value.type === 'text' ? [value.text] : []).join('\n'), ...(images.length && { images }), ...(attachments.length && { files: attachments.map(file => ({ ...file, absolutePath: file.absolutePath ?? '', mimeType: file.mimeType ?? null })) }) }));
       },
-      queue: async (id, input, attachments) => {
-        if (attachments.length || input.some(value => value.type !== 'text')) return createQueuedInput(id, input, attachments);
-        return submitNative(() => mastraClient.queue({ chatId: id, text: input.flatMap(value => value.type === 'text' ? [value.text] : []).join('\n') }));
+      queue: async (id, input, attachments, images) => {
+        if (input.some(value => !['text', 'localImage'].includes(value.type))) throw new Error('Native skill mentions are not connected yet.');
+        return submitNative(() => mastraClient.queue({ chatId: id, text: input.flatMap(value => value.type === 'text' ? [value.text] : []).join('\n'), ...(images.length && { images }), ...(attachments.length && { files: attachments.map(file => ({ ...file, absolutePath: file.absolutePath ?? '', mimeType: file.mimeType ?? null })) }) }));
+      },
+      uploads: {
+        images: (chatId, files) => Promise.all(files.map(file => mastraUploadClient.uploadImage({ chatId, file }))),
+        files: (chatId, files) => Promise.all(files.map(file => mastraUploadClient.uploadFile({ chatId, file }))),
       },
       stop: id => mastraClient.stop({ chatId: id }),
       compact: async () => {

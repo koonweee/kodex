@@ -12,9 +12,9 @@ import { NativeCatalogProvider } from './NativeCatalogContext';
 import type { WorkspacePane } from '../workspace/paneTypes';
 import { baseRoutes, mockGateway } from '../test/mvpAppHarness';
 
-const rpc = vi.hoisted(() => ({ listModels: vi.fn(), watchDraftDefaults: vi.fn(), updateChatSettings: vi.fn(), updateGoal: vi.fn(), clearGoal: vi.fn(), createChat: vi.fn(), send: vi.fn(), queue: vi.fn(), stop: vi.fn() }));
+const rpc = vi.hoisted(() => ({ listModels: vi.fn(), watchDraftDefaults: vi.fn(), updateChatSettings: vi.fn(), updateGoal: vi.fn(), clearGoal: vi.fn(), createChat: vi.fn(), send: vi.fn(), queue: vi.fn(), stop: vi.fn(), uploadImage: vi.fn(), uploadFile: vi.fn() }));
 const workspace = vi.hoisted(() => ({ updatePane: vi.fn().mockResolvedValue(undefined), setPaneDraftDisposable: vi.fn(), onImageOpen: vi.fn() }));
-vi.mock('./client', () => ({ mastraClient: rpc }));
+vi.mock('./client', () => ({ mastraClient: rpc, mastraUploadClient: rpc }));
 vi.mock('../workspace/WorkspaceProvider', () => ({ useWorkspace: () => workspace }));
 const onError = vi.fn();
 const levels = ['off', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
@@ -373,4 +373,58 @@ it('explains automatic native memory management without calling legacy compactio
   expect(gateway.callsFor('POST', '/v1/threads/chat/compact')).toHaveLength(0);
   expect(rpc.send).not.toHaveBeenCalled();
   expect(rpc.queue).not.toHaveBeenCalled();
+});
+
+
+it('uploads image and file attachments through native RPC and sends their descriptors without legacy input', async () => {
+  setup();
+  const gateway = mockGateway(baseRoutes());
+  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:native-image');
+  const image = { id: 'image', fileName: 'pixel.png', mimeType: 'image/png', sizeBytes: 4, path: '/native/uploads/pixel.png' };
+  const file = { id: 'file', fileName: 'notes.md', extension: 'md', relativePath: '.kodex/uploads/chat/file/notes.md', absolutePath: '/project/.kodex/uploads/chat/file/notes.md', mimeType: 'text/markdown', sizeBytes: 5 };
+  rpc.uploadImage.mockResolvedValue(image); rpc.uploadFile.mockResolvedValue(file);
+  const { container } = renderComposer({ id: 'pane', kind: 'thread', target: { mode: 'existing', threadId: 'chat' } }, snapshot());
+  const imageFile = new File(['fake'], 'pixel.png', { type: 'image/png' }), textFile = new File(['notes'], 'notes.md', { type: 'text/markdown' });
+  await userEvent.upload(container.querySelector<HTMLInputElement>('input[type="file"]')!, [imageFile, textFile]);
+  await userEvent.type(screen.getByLabelText('Message composer'), 'Read attachments');
+  await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  await waitFor(() => expect(rpc.send).toHaveBeenCalledWith({ chatId: 'chat', queueIfPending: true, text: 'Read attachments', images: [image], files: [file] }));
+  expect(rpc.uploadImage).toHaveBeenCalledWith({ chatId: 'chat', file: imageFile });
+  expect(rpc.uploadFile).toHaveBeenCalledWith({ chatId: 'chat', file: textFile });
+  expect(gateway.callsFor('POST', '/v1/uploads/images')).toHaveLength(0);
+  expect(gateway.callsFor('POST', '/v1/threads/chat/uploads/files')).toHaveLength(0);
+  expect(gateway.callsFor('POST', '/v1/threads/chat/input')).toHaveLength(0);
+});
+
+it('retains image-only input after uncertain Send and reuses its upload only on explicit retry', async () => {
+  setup();
+  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:native-retry');
+  const image = { id: 'image', fileName: 'pixel.png', mimeType: 'image/png', sizeBytes: 4, path: '/native/uploads/pixel.png' };
+  rpc.uploadImage.mockResolvedValue(image);
+  rpc.send.mockRejectedValueOnce(new Error('Connection lost')).mockResolvedValue({ accepted: true });
+  const { container } = renderComposer({ id: 'pane', kind: 'thread', target: { mode: 'existing', threadId: 'chat' } }, snapshot());
+  await userEvent.upload(container.querySelector<HTMLInputElement>('input[type="file"]')!, new File(['fake'], 'pixel.png', { type: 'image/png' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  await waitFor(() => expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('Delivery could not be confirmed') })));
+  expect(rpc.send).toHaveBeenCalledTimes(1); expect(rpc.uploadImage).toHaveBeenCalledTimes(1);
+  await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  await waitFor(() => expect(rpc.send).toHaveBeenCalledTimes(2));
+  expect(rpc.send).toHaveBeenLastCalledWith({ chatId: 'chat', queueIfPending: true, text: '', images: [image] });
+  expect(rpc.uploadImage).toHaveBeenCalledTimes(1);
+});
+
+it('retains a failed file upload and draft without submitting until explicit retry', async () => {
+  setup();
+  const file = { id: 'file', fileName: 'notes.md', extension: 'md', relativePath: '.kodex/uploads/chat/file/notes.md', absolutePath: '/project/.kodex/uploads/chat/file/notes.md', mimeType: 'text/markdown', sizeBytes: 5 };
+  rpc.uploadFile.mockRejectedValueOnce(new Error('Upload unavailable')).mockResolvedValue(file);
+  const { container } = renderComposer({ id: 'pane', kind: 'thread', target: { mode: 'existing', threadId: 'chat' } }, snapshot());
+  await userEvent.upload(container.querySelector<HTMLInputElement>('input[type="file"]')!, new File(['notes'], 'notes.md', { type: 'text/markdown' }));
+  const composer = screen.getByLabelText('Message composer'); await userEvent.type(composer, 'Keep this draft');
+  await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  await waitFor(() => expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'Upload unavailable' })));
+  expect(composer).toHaveValue('Keep this draft'); expect(rpc.send).not.toHaveBeenCalled();
+  expect(rpc.uploadFile).toHaveBeenCalledTimes(1);
+  await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  await waitFor(() => expect(rpc.send).toHaveBeenCalledWith({ chatId: 'chat', queueIfPending: true, text: 'Keep this draft', files: [file] }));
+  expect(rpc.uploadFile).toHaveBeenCalledTimes(2);
 });

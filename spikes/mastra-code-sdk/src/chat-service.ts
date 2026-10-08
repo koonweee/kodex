@@ -1,3 +1,6 @@
+import { join } from 'node:path';
+import { prepareChatInput, type ChatInput } from './chat-input.js';
+import { uploadChatImage } from './chat-image-uploads.js';
 import { uploadChatFile } from './chat-uploads.js';
 import { readNativePromptViews, respondNativePrompt, type NativePrompt, type PromptResponse } from './chat-prompts.js';
 import { readChatDescendants } from './chat-descendants.js';
@@ -48,6 +51,7 @@ const missing = () => new ORPCError('NOT_FOUND', { message: 'Chat or project not
  */
 export function createChatService(options: ChatServiceOptions) {
   const handles = new Map<string, Promise<Handle>>();
+  const imageRoot = join(options.profile.root, 'uploads', 'images');
   const lifetime = new AbortController();
   const lifecycle = createChatLifecycle();
   const goals = createChatGoals();
@@ -91,7 +95,7 @@ export function createChatService(options: ChatServiceOptions) {
     session.ensureFollowUpBinding(session.machinery.getAgent(), session.identity.getResourceId(), session.thread.requireId());
     const parentChatId = session.thread.requireId();
     const projection = createSessionProjection(session, (request, signal) => readChatHistory(runtime.controller, { threadId: session.thread.requireId(), resourceId: session.identity.getResourceId() }, request, signal));
-    const queue = createChatQueue(session, { epoch, onChanged: () => {
+    const queue = createChatQueue(session, { epoch, prepareInput: input => prepareChatInput({ chatId: parentChatId, imageRoot, input }), onChanged: () => {
       session.emit({ type: 'display_state_changed', displayState: session.displayState.get() });
     } });
     const handle: Handle = { binding, runtime, session, projection, queue, revision: 0, error: null, unsubscribe: () => {}, observers: new AbortController() };
@@ -161,13 +165,15 @@ export function createChatService(options: ChatServiceOptions) {
       if (revision === catalogRevision) return { epoch, revision, ...inventory };
     }
   }
-  async function sendNative(handle: Handle, text: string, clientId?: string) {
+  async function sendNative(handle: Handle, input: ChatInput, clientId?: string) {
     try {
       const requestContext = await captureChatFastRequestContext(handle.session);
       assertActive();
-      const submission = clientId === undefined
-        ? handle.session.sendSignal({ content: text, requestContext }, { requireDelivery: true })
-        : handle.session.sendSignal({ type: 'user', contents: text, metadata: { clientId } }, { requestContext, requireDelivery: true });
+      const prepared = await prepareChatInput({ chatId: handle.session.thread.requireId(), imageRoot, input });
+      assertActive();
+      const submission = handle.session.sendSignal({ type: 'user', ...prepared,
+        ...(clientId !== undefined && { metadata: { ...prepared.metadata, clientId } }),
+      }, { requestContext, requireDelivery: true });
       const decision = await submission.accepted;
       if (decision.action === 'blocked') throw new ORPCError('CONFLICT', { message: 'This chat is waiting for a tool response.' });
       if (decision.action !== 'wake' && decision.action !== 'deliver') throw new Error('Native input was not admitted to a run.');
@@ -178,10 +184,10 @@ export function createChatService(options: ChatServiceOptions) {
     }
   }
 
-  async function enqueueNative(handle: Handle, text: string) {
+  async function enqueueNative(handle: Handle, input: ChatInput) {
     assertActive();
     try {
-      const submitted = await handle.queue.enqueue({ text });
+      const submitted = await handle.queue.enqueue(input);
       return { accepted: submitted.outcome === 'applied', ...submitted };
     } catch {
       throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Chat input could not be queued.' });
@@ -317,13 +323,22 @@ export function createChatService(options: ChatServiceOptions) {
         throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'File could not be uploaded.' });
       }
     },
-    async send({ chatId, text, queueIfPending = false }: { chatId: string; text: string; queueIfPending?: boolean }) {
+    async uploadImage({ chatId, file }: { chatId: string; file: File }) {
+      await projects.findThread(chatId);
+      assertActive();
+      try { return await uploadChatImage({ imageRoot, file }); }
+      catch (error) {
+        if (error instanceof ORPCError) throw error;
+        throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Image could not be uploaded.' });
+      }
+    },
+    async send({ chatId, queueIfPending = false, ...input }: ChatInput & { chatId: string; queueIfPending?: boolean }) {
       const handle = await handleFor(chatId);
       // Read authoritative native pending work, including input submitted by
       // native extensions. A concurrent drain can still let Send interject into
       // the new active run; the browser never chooses start/steer routing.
-      if (queueIfPending && handle.session.displayState.get().queuedFollowUps > 0) return enqueueNative(handle, text);
-      return sendNative(handle, text);
+      if (queueIfPending && handle.session.displayState.get().queuedFollowUps > 0) return enqueueNative(handle, input);
+      return sendNative(handle, input);
     },
     async respondPrompt(input: ChatPromptResponse) {
       const { binding, runtime, thread } = await projects.findThread(input.chatId);
@@ -342,10 +357,10 @@ export function createChatService(options: ChatServiceOptions) {
     // Match main's nonblocking cards: replies are ordinary native user input,
     // with persisted correlation only (not an idempotency or prompt-state key).
     async replyToQuestion({ chatId, text, clientId }: { chatId: string; text: string; clientId: string }) {
-      return sendNative(await handleFor(chatId), text, clientId);
+      return sendNative(await handleFor(chatId), { text }, clientId);
     },
-    async queue({ chatId, text }: { chatId: string; text: string }) {
-      return enqueueNative(await handleFor(chatId), text);
+    async queue({ chatId, ...input }: ChatInput & { chatId: string }) {
+      return enqueueNative(await handleFor(chatId), input);
     },
     async editQueued(selection: QueuedEdit) { return queueCommand(selection, queue => queue.edit(selection)); },
     async removeQueued(selection: QueuedSelection) { return queueCommand(selection, queue => queue.remove(selection)); },
@@ -408,7 +423,7 @@ export function createChatService(options: ChatServiceOptions) {
     openChat: guarded(service.openChat), getChatSettings: guarded(service.getChatSettings),
     updateChatSettings: guarded(service.updateChatSettings), renameChat: guarded(service.renameChat),
     setChatPinned: guarded(service.setChatPinned), setChatNotifications: guarded(service.setChatNotifications),
-    uploadFile: guarded(service.uploadFile),
+    uploadFile: guarded(service.uploadFile), uploadImage: guarded(service.uploadImage),
     send: guarded(service.send), replyToQuestion: guarded(service.replyToQuestion), respondPrompt: guarded(service.respondPrompt), queue: guarded(service.queue), stop: guarded(service.stop),
     editQueued: guarded(service.editQueued), removeQueued: guarded(service.removeQueued),
     reorderQueued: guarded(service.reorderQueued), steerQueued: guarded(service.steerQueued),

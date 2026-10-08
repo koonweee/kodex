@@ -7,6 +7,8 @@ import path from 'node:path';
 import { activateProfile, resolveProfile } from '../src/profile.js';
 import { createProjectRuntime, type ProjectRuntime } from '../src/runtime.js';
 import { lastUserText, startModelFixture } from './fixtures/model-server.js';
+import { prepareChatInput, type ChatInput } from '../src/chat-input.js';
+import { uploadChatImage } from '../src/chat-image-uploads.js';
 import { createChatQueue } from '../src/chat-queue.js';
 
 let root: string;
@@ -28,7 +30,7 @@ before(async () => {
 });
 after(async () => { await runtime?.dispose(); await fixture?.close(); if (root) await rm(root, { recursive: true, force: true }); });
 
-async function heldSession(name: string, missAdmission = false) {
+async function heldSession(name: string, missAdmission = false, prepareInput?: (input: ChatInput) => Promise<AgentMessageInput>) {
   const session = await runtime.createSession({ resourceId: `resource-${name}`, threadId: `thread-${name}` });
   await session.thread.rename({ title: name });
   let currentInput = '';
@@ -57,7 +59,7 @@ async function heldSession(name: string, missAdmission = false) {
     if (key === 'subscribe') return (callback: Parameters<typeof session.subscribe>[0]) => target.subscribe(event => { if (event.type !== 'message_start') callback(event); });
     const value = Reflect.get(target, key, target); return typeof value === 'function' ? value.bind(target) : value;
   } }) : session;
-  const queue = createChatQueue(observed, { epoch: 'native-fixture' });
+  const queue = createChatQueue(observed, { epoch: 'native-fixture', ...(prepareInput && { prepareInput }) });
   return { session, hold, running, queue, completed, unsubscribe };
 }
 function requestsWith(prefix: string) { return fixture.requests.map(lastUserText).filter(text => text.startsWith(prefix)); }
@@ -185,4 +187,85 @@ test('native memory-only signal persistence and an early exact-ID user event can
   assert.ok((await session.thread.listActiveMessages()).some(message => message.id === row.nativeSignalId), 'the native persisted lookalike exists');
   assert.deepEqual(requestsWith('NATIVE_MEMORY_ONLY_'), [], 'no model execution happened for the persisted signal');
   hold.release(); await running;
+});
+
+const pngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+async function imageQueue(name: string) {
+  const imageRoot = path.join(root, 'images');
+  const image = await uploadChatImage({ imageRoot, file: new File([Buffer.from(pngBase64, 'base64')], 'pixel.png', { type: 'image/png' }) });
+  const held = await heldSession(name, false, input => prepareChatInput({ chatId: `thread-${name}`, imageRoot, input }));
+  return { ...held, image };
+}
+function lastImages(request: (typeof fixture.requests)[number]) {
+  const content = request.messages.findLast(message => message.role === 'user')?.content;
+  return Array.isArray(content) ? content.filter(part => part.type === 'image_url').map(part => part.image_url.url) : [];
+}
+function assertImage(message: { content: { parts: unknown[] } }) {
+  assert.deepEqual(message.content.parts.flatMap(part => typeof part === 'object' && part && 'type' in part && part.type === 'file'
+    && 'data' in part && 'mimeType' in part && 'filename' in part ? [{ type: part.type, data: part.data, mimeType: part.mimeType, filename: part.filename }] : []),
+    [{ type: 'file', data: pngBase64, mimeType: 'image/png', filename: 'pixel.png' }]);
+}
+
+test('native image queue text edit and reorder retain captured bytes and persist real file parts', { timeout: 30_000 }, async t => {
+  const { session, hold, running, queue, completed, unsubscribe, image } = await imageQueue('image-reorder');
+  t.after(() => { hold.release(); queue.dispose(); unsubscribe(); });
+  const a = await queue.enqueue({ text: 'NATIVE_IMAGE_ORIGINAL', images: [image] });
+  const b = await queue.enqueue(text('NATIVE_IMAGE_SIBLING'));
+  const edited = await queue.edit({ id: a.rowId, input: text('NATIVE_IMAGE_EDITED'), revision: queue.snapshot().revision });
+  assert.equal(edited.outcome, 'applied'); assert.deepEqual(edited.snapshot.rows[0]!.input.images, [image]);
+  await rm(image.path);
+  const reordered = await queue.reorder({ ids: [b.rowId, a.rowId], revision: queue.snapshot().revision });
+  assert.equal(reordered.outcome, 'applied');
+  const imageSignalId = reordered.snapshot.rows[1]!.nativeSignalId;
+  assert.equal(JSON.stringify(reordered).includes(pngBase64), false);
+  hold.release(); await completed('NATIVE_IMAGE_EDITED'); await running;
+  const requests = fixture.requests.filter(request => lastUserText(request).startsWith('NATIVE_IMAGE_'));
+  assert.deepEqual(requests.map(request => lastUserText(request).trim()), ['NATIVE_IMAGE_SIBLING', 'NATIVE_IMAGE_EDITED']);
+  assert.deepEqual(lastImages(requests[0]!), []);
+  assert.deepEqual(lastImages(requests[1]!), [`data:image/png;base64,${pngBase64}`]);
+  const saved = (await session.thread.listActiveMessages()).find(message => message.id === imageSignalId); assert.ok(saved); assertImage(saved);
+  assert.deepEqual(queue.snapshot().rows, []);
+});
+
+test('native multipart queue steering delivers captured image and file metadata while preserving another queued input', { timeout: 30_000 }, async t => {
+  const name = 'image-steer';
+  const { session, hold, running, queue, completed, unsubscribe, image } = await imageQueue(name);
+  t.after(() => { hold.release(); queue.dispose(); unsubscribe(); });
+  const file = { id: 'file', fileName: 'notes.txt', extension: 'txt', relativePath: `.kodex/uploads/thread-${name}/file/notes.txt`,
+    absolutePath: '/untrusted/notes.txt', mimeType: 'text/plain', sizeBytes: 4 };
+  const a = await queue.enqueue({ text: 'NATIVE_MULTIPART_STEER', images: [image], files: [file] });
+  const b = await queue.enqueue(text('NATIVE_MULTIPART_SIBLING'));
+  await rm(image.path);
+  const result = await queue.steer({ id: a.rowId, revision: queue.snapshot().revision });
+  assert.equal(result.outcome, 'applied');
+  assert.equal(result.snapshot.rows.find(row => row.id === b.rowId)?.status, 'queued');
+  hold.release(); await Promise.all([completed('NATIVE_MULTIPART_STEER'), completed('NATIVE_MULTIPART_SIBLING')]); await running;
+  const requests = fixture.requests.filter(request => lastUserText(request).includes('NATIVE_MULTIPART_'));
+  assert.equal(requests.length, 2);
+  assert.ok(lastUserText(requests[0]!).includes('NATIVE_MULTIPART_STEER'));
+  assert.equal(lastUserText(requests[1]!), 'NATIVE_MULTIPART_SIBLING');
+  assert.deepEqual(lastImages(requests[0]!), [`data:image/png;base64,${pngBase64}`]);
+  assert.ok(lastUserText(requests[0]!).includes(file.relativePath));
+  assert.equal(JSON.stringify(requests[0]).includes(file.absolutePath), false);
+  const inputs = (await session.thread.listActiveMessages()).filter(message => message.role === 'signal');
+  const saved = inputs.find(message => message.content.parts.some(part => part.type === 'text' && part.text.includes('NATIVE_MULTIPART_STEER'))); assert.ok(saved);
+  assertImage(saved);
+  const { absolutePath: ignored, ...reference } = file; void ignored;
+  assert.deepEqual((saved.content.metadata?.signal as { metadata?: unknown }).metadata, { kodexAttachments: [reference] });
+  assert.equal(inputs.filter(message => JSON.stringify(message.content).includes('NATIVE_MULTIPART_SIBLING')).length, 1);
+  assert.deepEqual(queue.snapshot().rows, []);
+});
+
+test('native image-only queue input executes without adding synthetic text', { timeout: 30_000 }, async t => {
+  const { session, hold, running, queue, completed, unsubscribe, image } = await imageQueue('image-only');
+  t.after(() => { hold.release(); queue.dispose(); unsubscribe(); });
+  const submitted = await queue.enqueue({ text: '', images: [image] });
+  assert.equal(submitted.outcome, 'applied');
+  const id = submitted.snapshot.rows[0]!.nativeSignalId;
+  const received = fixture.waitForRequest(request => lastImages(request).length === 1 && lastUserText(request).trim() === '');
+  hold.release(); await completed('pixel.png'); await running;
+  assert.deepEqual(lastImages(await received), [`data:image/png;base64,${pngBase64}`]);
+  const saved = (await session.thread.listActiveMessages()).find(message => message.id === id); assert.ok(saved);
+  assertImage(saved); assert.equal(saved.content.parts.some(part => part.type === 'text'), false);
+  assert.deepEqual(queue.snapshot().rows, []);
 });

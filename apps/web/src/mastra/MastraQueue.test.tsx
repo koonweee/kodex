@@ -151,3 +151,24 @@ it('shows unknown native queue coverage even when no tracked rows can be display
   render(wrap(<Panel snapshot={{ ...queued(), rows: [], nativeCount: 2, partial: true }} />));
   expect(screen.getByText('Only part of the queue is shown. Reordering is unavailable.')).toBeInTheDocument();
 });
+
+it('does not offer lossy text-only restoration for saved attachment input', async () => {
+  const value = queued(); value.rows[0].status = 'uncertain'; value.nativeCount = 0;
+  value.rows[0].input.images = [{ id: 'image', fileName: 'pixel.png', mimeType: 'image/png', sizeBytes: 4, path: '/native/pixel.png' }];
+  render(wrap(<Panel snapshot={value} />));
+  expect(screen.getByRole('button', { name: 'Restore to composer' })).toBeDisabled();
+  await userEvent.click(screen.getByRole('button', { name: 'Saved input' }));
+  expect(screen.getByLabelText('Saved native input JSON')).toHaveValue(JSON.stringify(value.rows[0].input, null, 2));
+  expect(restore).not.toHaveBeenCalled();
+});
+
+it('edits only queued text while preserving attachment identity in the authoritative row', async () => {
+  rpc.editQueued.mockResolvedValue({ outcome: 'applied' });
+  const value = queued();
+  value.rows[0].input.images = [{ id: 'image', fileName: 'pixel.png', mimeType: 'image/png', sizeBytes: 4, path: '/native/pixel.png' }];
+  render(wrap(<Panel snapshot={value} />));
+  await userEvent.click(screen.getByRole('button', { name: 'Edit' }));
+  fireEvent.change(screen.getByLabelText('Queued message text'), { target: { value: 'Edited with image' } });
+  await userEvent.click(screen.getByRole('button', { name: 'Save queued message' }));
+  await waitFor(() => expect(rpc.editQueued).toHaveBeenCalledWith({ chatId: 'chat', epoch: 'epoch', revision: 1, id: 'row', input: { text: 'Edited with image' } }));
+});

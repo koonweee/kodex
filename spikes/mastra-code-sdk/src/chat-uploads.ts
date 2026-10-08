@@ -15,7 +15,7 @@ export interface ChatFileAttachment {
 }
 export interface ChatFileUploadInput { cwd: string; chatId: string; file: File }
 const invalid = (message: string) => new ORPCError('BAD_REQUEST', { message });
-function safeComponent(value: string) {
+export function safeUploadComponent(value: string) {
   return Array.from(value, character => /^[A-Za-z0-9._-]$/.test(character) ? character : '_').join('').replace(/^\.+|\.+$/g, '') || 'file';
 }
 function displayName(value: string) {
@@ -50,10 +50,10 @@ export async function uploadChatFile(input: ChatFileUploadInput): Promise<ChatFi
   const bytes = Buffer.from(await file.arrayBuffer());
   if (!bytes.length || bytes.length > MAX_UPLOAD_FILE_BYTES) throw invalid('The uploaded file must contain between 1 byte and 25 MiB.');
   const id = randomUUID(), fileName = displayName(file.name);
-  const components = ['.kodex', 'uploads', safeComponent(input.chatId), id];
+  const components = ['.kodex', 'uploads', safeUploadComponent(input.chatId), id];
   let directory = cwd;
   for (const component of components) { directory = join(directory, component); await ensureDirectory(directory); }
-  const storedName = safeComponent(fileName), absolutePath = join(directory, storedName);
+  const storedName = safeUploadComponent(fileName), absolutePath = join(directory, storedName);
   const handle = await fs.open(absolutePath, 'wx');
   try { await handle.writeFile(bytes); }
   finally { await handle.close(); }

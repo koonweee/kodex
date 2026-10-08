@@ -387,3 +387,25 @@ test('native file upload resolves the retained chat root without activating dorm
   await service.archiveChat({ chatId: chat.id });
   await assert.rejects(client.uploadFile({ chatId: chat.id, file: new File(['content'], 'notes.txt') }), { code: 'CONFLICT' });
 });
+
+test('native upload descriptors become saved image bytes and project references through typed Send', { timeout: 30_000 }, async t => {
+  const { makeService, runtimes } = await setup('attachment-send');
+  const service = makeService(), server = await serve(service);
+  const abort = new AbortController();
+  t.after(async () => { abort.abort(); await server.close(); await service.dispose(); });
+  const client = server.client(), chat = await client.createChat({ projectId: 'a' });
+  await (await nativeSession(runtimes, chat.id)).thread.rename({ title: 'Native attachment send', pin: true });
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+  const image = await client.uploadImage({ chatId: chat.id, file: new File([Buffer.from(png, 'base64')], 'pixel.png', { type: 'image/png' }) });
+  const file = await client.uploadFile({ chatId: chat.id, file: new File(['Attachment notes'], 'notes.md', { type: 'text/markdown' }) });
+  const stream = await client.watchChat({ chatId: chat.id }, { signal: abort.signal }); await stream.next();
+  await client.send({ chatId: chat.id, text: 'ATTACHMENT_SEND', images: [image], files: [file] });
+  const completed = await until(stream, value => !value.display.isRunning && value.messages.some(message => message.role === 'assistant'));
+  const user = completed.messages.find(message => message.role === 'signal'); assert.ok(user);
+  assert.ok(user.content.parts.some(part => part.type === 'file' && part.data === png && part.mimeType === 'image/png'));
+  assert.ok(JSON.stringify(user.content).includes(file.relativePath));
+  assert.equal(JSON.stringify(user.content).includes(file.absolutePath), false);
+  const request = fixture.requests.findLast(value => lastUserText(value).includes('ATTACHMENT_SEND')); assert.ok(request);
+  assert.ok(JSON.stringify(request.messages).includes(`data:image/png;base64,${png}`));
+  assert.ok(JSON.stringify(request.messages).includes(file.relativePath));
+});

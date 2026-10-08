@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { NativeSession } from '../src/runtime.js';
+import type { AgentMessageInput } from '@mastra/core/agent';
+import type { ChatInput } from '../src/chat-input.js';
 import { createChatQueue } from '../src/chat-queue.js';
 
-function fixture() {
+function fixture(prepareInput?: (input: ChatInput) => Promise<AgentMessageInput>) {
   let next = 0, setting = 'old', fast = false, throwAfter = false, rejectAcceptance = false;
   let preparation: Promise<void> = Promise.resolve();
   let cancelledOnly: string[] | undefined;
@@ -13,11 +15,13 @@ function fixture() {
   let throwCancel = false;
   let steering: Promise<void> = Promise.resolve();
   let action: 'deliver' | 'blocked' | 'persist' | 'discard' = 'deliver';
-  const submitted: Array<{ id: string; text: string; options: unknown }> = [];
+  const submitted: Array<{ id: string; text: AgentMessageInput; options: unknown }> = [];
+  const steered: unknown[] = []; let aborts = 0, cancellations = 0;
+  let changed: () => void = () => undefined;
   const pending = new Set<string>();
   const listeners = new Set<(event: { type: string; message?: { id: string }; count?: number }) => void>();
   const agent = {
-    queueMessage(text: string, options: unknown) {
+    queueMessage(text: AgentMessageInput, options: unknown) {
       const id = `native-${++next}`;
       submitted.push({ id, text, options }); pending.add(id);
       if (throwAfter) { throwAfter = false; throw new Error('credential-bearing internal error'); }
@@ -28,6 +32,7 @@ function fixture() {
     },
     async getMemory() { return { storage: { getStore: async () => ({ listMessagesById: async () => { await receiptRead; return { messages: receipts }; } }) } }; },
     cancelQueuedMessages({ signalIds }: { signalIds: string[] }) {
+      cancellations++;
       const cancelledSignalIds = signalIds.filter(id => pending.has(id) && (!cancelledOnly || cancelledOnly.includes(id)));
       for (const id of cancelledSignalIds) pending.delete(id);
       if (throwCancel) throw new Error('sensitive cancellation callback');
@@ -42,9 +47,12 @@ function fixture() {
     displayState: { get: () => ({ queuedFollowUps: pending.size + externalPending }) },
     subscribe(callback: (event: { type: string; message?: { id: string }; count?: number }) => void) { listeners.add(callback); return () => listeners.delete(callback); },
     steer: () => steering,
+    abort: () => { aborts++; },
+    sendSignal: (input: unknown) => { steered.push(input); return { id: 'native-steer', accepted: steering.then(() => ({ accepted: true, action: 'wake' })) }; },
   } as unknown as NativeSession;
-  const queue = createChatQueue(session, { epoch: 'fixture' });
-  return { queue, submitted,
+  const queue = createChatQueue(session, { epoch: 'fixture', onChanged: () => changed(), ...(prepareInput && { prepareInput }) });
+  return { queue, submitted, steered, get aborts() { return aborts; }, get cancellations() { return cancellations; },
+    nextChange() { return new Promise<void>(resolve => { changed = resolve; }); },
     admit(id: string) { pending.delete(id); for (const listener of listeners) listener({ type: 'message_start', message: { id } }); },
     set setting(value: string) { setting = value; }, set fast(value: boolean) { fast = value; },
     set steering(value: Promise<void>) { steering = value; },
@@ -134,7 +142,7 @@ test('native steering acknowledges promptly, does not hold command gate, and exp
   assert.equal(steered.snapshot.rows[0]!.status, 'steering');
   assert.equal((await f.queue.dismiss({ id: a.rowId, revision: f.queue.snapshot().revision })).outcome, 'conflict');
   await f.queue.enqueue(text('B'));
-  reject(new Error('private native failure')); await Promise.resolve(); await Promise.resolve();
+  const changed = f.nextChange(); reject(new Error('private native failure')); await changed;
   assert.equal(f.queue.snapshot().rows.find(row => row.id === a.rowId)?.status, 'uncertain');
   assert.equal(JSON.stringify(f.queue.snapshot()).includes('private'), false);
   assert.deepEqual(f.submitted.map(row => row.text), ['A', 'B']);
@@ -220,4 +228,65 @@ test('unknown native pending coverage blocks edit/reorder but exact-ID remove re
   assert.equal((await f.queue.reorder({ ids: [submitted.rowId], revision: partial.revision })).outcome, 'conflict');
   assert.equal((await f.queue.remove({ id: submitted.rowId, revision: partial.revision })).outcome, 'applied');
   assert.equal(f.queue.snapshot().nativeCount, 1); assert.deepEqual(f.queue.snapshot().rows, []);
+});
+
+
+const attachment = { id: 'upload', fileName: 'notes.txt', extension: 'txt', relativePath: '.kodex/uploads/thread/upload/notes.txt', absolutePath: '/project/.kodex/uploads/thread/upload/notes.txt', mimeType: 'text/plain', sizeBytes: 4 };
+const image = { id: 'image', fileName: 'pixel.png', path: '/project/images/pixel.png', mimeType: 'image/png', sizeBytes: 8 };
+test('queued attachments and materialized parts are immutable; text edits preserve attachments and reorder does not reread them', async () => {
+  const prepared: AgentMessageInput = { contents: [{ type: 'text', text: 'FIRST' }, { type: 'file', data: 'aW1hZ2U=', mediaType: 'image/png', filename: 'pixel.png' }], metadata: { private: 'native-metadata' } };
+  const calls: ChatInput[] = [];
+  const f = fixture(async value => { calls.push(structuredClone(value)); return { ...prepared, contents: [{ type: 'text', text: value.text }, ...(typeof prepared !== 'string' && !Array.isArray(prepared) && Array.isArray(prepared.contents) ? prepared.contents.slice(1) : [])] }; });
+  const caller = { text: 'FIRST', images: [structuredClone(image)], files: [structuredClone(attachment)] };
+  const pending = f.queue.enqueue(caller); caller.images[0].fileName = 'caller mutation'; caller.files[0].relativePath = 'caller mutation';
+  const a = await pending; const b = await f.queue.enqueue(text('SECOND'));
+  assert.equal(calls[0]?.images?.[0]?.fileName, 'pixel.png'); assert.equal(calls[0]?.files?.[0]?.relativePath, attachment.relativePath);
+  const snapshot = f.queue.snapshot(); const publicInput = snapshot.rows[0]!.input as ChatInput;
+  assert.deepEqual(publicInput.images, [image]); assert.deepEqual(publicInput.files, [attachment]);
+  publicInput.images![0].fileName = 'snapshot mutation'; publicInput.files![0].relativePath = 'snapshot mutation';
+  assert.equal(JSON.stringify(snapshot).includes('aW1hZ2U='), false); assert.equal(JSON.stringify(snapshot).includes('native-metadata'), false);
+  const edited = await f.queue.edit({ id: a.rowId, input: text('FIRST_EDITED'), revision: f.queue.snapshot().revision });
+  assert.equal(edited.outcome, 'applied'); assert.deepEqual(calls.at(-1)?.images, [image]); assert.deepEqual(calls.at(-1)?.files, [attachment]);
+  const lastCallCount = calls.length;
+  const contents = typeof prepared !== 'string' && !Array.isArray(prepared) ? prepared.contents : undefined;
+  if (Array.isArray(contents) && contents[1]?.type === 'file') contents[1].data = 'mutated native bytes';
+  assert.equal((await f.queue.reorder({ ids: [b.rowId, a.rowId], revision: f.queue.snapshot().revision })).outcome, 'applied');
+  assert.equal(calls.length, lastCallCount); assert.ok(JSON.stringify(f.submitted.at(-1)?.text).includes('aW1hZ2U='));
+  let finish!: () => void; f.steering = new Promise<void>(resolve => { finish = resolve; });
+  const steered = await f.queue.steer({ id: a.rowId, revision: f.queue.snapshot().revision });
+  assert.equal(steered.snapshot.rows.find(row => row.id === a.rowId)?.status, 'steering'); assert.equal(f.aborts, 1);
+  assert.ok(JSON.stringify(f.steered).includes('aW1hZ2U=')); assert.equal(JSON.stringify(f.steered).includes('mutated native bytes'), false);
+  finish(); await Promise.resolve(); await Promise.resolve();
+});
+
+test('attachment-only queue input and blank text edits are valid only for a row retaining authoritative attachments', async () => {
+  const f = fixture(async value => ({ contents: value.text || 'native attachment content' }));
+  const a = await f.queue.enqueue({ text: '', files: [attachment] });
+  assert.equal(a.outcome, 'applied');
+  await f.queue.edit({ id: a.rowId, input: text('Added text'), revision: f.queue.snapshot().revision });
+  const blanked = await f.queue.edit({ id: a.rowId, input: text(''), revision: f.queue.snapshot().revision });
+  assert.equal(blanked.outcome, 'applied'); assert.deepEqual((blanked.snapshot.rows[0]!.input as ChatInput).files, [attachment]);
+  const plain = await f.queue.enqueue(text('Plain')); const before = f.cancellations;
+  await assert.rejects(f.queue.edit({ id: plain.rowId, input: text(''), revision: f.queue.snapshot().revision }), /text|attachments/);
+  assert.equal(f.cancellations, before);
+});
+
+test('attachment materialization failure leaves original native rows uncancelled and exposes no private path', async () => {
+  let fail = false;
+  const f = fixture(async value => { if (fail) throw new Error('/private/image/read-failed'); return value.text; });
+  const a = await f.queue.enqueue({ text: 'Original', images: [image] }); const before = f.queue.snapshot(); fail = true;
+  await assert.rejects(f.queue.edit({ id: a.rowId, input: text('Edited'), revision: before.revision }), { message: 'Native queue preparation failed.' });
+  assert.equal(f.cancellations, 0); assert.deepEqual(f.queue.snapshot(), before); assert.equal(f.submitted.length, 1);
+});
+
+test('ignored untrusted absolute paths cannot inject object-valued private data into public queue descriptors', async () => {
+  const calls: ChatInput[] = [];
+  const f = fixture(async value => { calls.push(value); return value.text; });
+  const forged = { ...attachment, absolutePath: { bytes: 'inline attachment bytes' } };
+  const queued = f.queue.enqueue({ text: 'File', files: [forged as unknown as typeof attachment] });
+  forged.absolutePath.bytes = 'caller mutation';
+  const result = await queued;
+  assert.equal(result.snapshot.rows[0]!.input.files![0]!.absolutePath, '');
+  assert.equal(calls[0]!.files![0]!.absolutePath, '');
+  assert.equal(JSON.stringify(result).includes('caller mutation'), false);
 });

@@ -1,8 +1,10 @@
+import type { AgentMessageInput } from '@mastra/core/agent';
+import { validChatInput, type ChatInput } from './chat-input.js';
 import { randomUUID } from 'node:crypto';
 import type { NativeSession } from './runtime.js';
 import { captureChatFastRequestContext } from './chat-fast.js';
 
-export interface ChatQueueInput { text: string }
+export type ChatQueueInput = ChatInput;
 export interface ChatQueueRow {
   id: string;
   input: ChatQueueInput;
@@ -19,6 +21,7 @@ interface Selection { id: string; revision: number }
 type Agent = ReturnType<NativeSession['machinery']['getAgent']>;
 type Submission = ReturnType<Agent['queueMessage']>;
 interface Prepared {
+  message: AgentMessageInput;
   agent: Agent;
   options: Awaited<ReturnType<NativeSession['machinery']['buildStreamOptions']>>;
   context: Awaited<ReturnType<typeof captureChatFastRequestContext>>;
@@ -31,7 +34,7 @@ interface Planned { record: RecordRow; input: ChatQueueInput; prepared: Prepared
  * Unchanged/reordered inputs retain submission-time options. Editing text is a
  * new submission and captures current settings. Prepared contexts stay private.
  */
-export function createChatQueue(session: NativeSession, options: { epoch: string; onChanged?: () => void }) {
+export function createChatQueue(session: NativeSession, options: { epoch: string; onChanged?: () => void; prepareInput?: (input: ChatQueueInput) => Promise<AgentMessageInput> }) {
   const threadId = session.thread.getId();
   if (!threadId) throw new Error('Queue requires a loaded native chat.');
   const resourceId = session.identity.getResourceId();
@@ -45,7 +48,7 @@ export function createChatQueue(session: NativeSession, options: { epoch: string
   function partial(count = nativeCount()) { return count > records.filter(record => record.row.status === 'queued' && record.row.nativeSignalId !== null).length; }
   function snapshot(): ChatQueueSnapshot {
     const count = nativeCount();
-    return { epoch: options.epoch, revision, nativeCount: count, partial: partial(count), rows: records.map(({ row }) => ({ ...row, input: { ...row.input } })) };
+    return { epoch: options.epoch, revision, nativeCount: count, partial: partial(count), rows: records.map(({ row }) => ({ ...row, input: structuredClone(row.input) })) };
   }
   function changed() {
     if (disposed) return;
@@ -61,8 +64,11 @@ export function createChatQueue(session: NativeSession, options: { epoch: string
     return next;
   }
   function input(value: ChatQueueInput): ChatQueueInput {
-    if (!value || typeof value.text !== 'string' || !value.text.trim()) throw new Error('Queue input must contain text.');
-    return { text: value.text };
+    if (!validChatInput(value)) throw new Error('Queue input must contain text or attachments.');
+    return { text: value.text,
+      ...(value.images && { images: value.images.map(image => ({ id: image.id, fileName: image.fileName, mimeType: image.mimeType, sizeBytes: image.sizeBytes, path: image.path })) }),
+      ...(value.files && { files: value.files.map(file => ({ id: file.id, fileName: file.fileName, extension: file.extension, relativePath: file.relativePath, absolutePath: typeof file.absolutePath === 'string' ? file.absolutePath : '', mimeType: file.mimeType, sizeBytes: file.sizeBytes })) }),
+    };
   }
   function find(id: string) { return records.find(record => record.row.id === id); }
   function removeRecord(record: RecordRow) {
@@ -88,21 +94,23 @@ export function createChatQueue(session: NativeSession, options: { epoch: string
       else { removeRecord(admitted); changed(); }
     }
   });
-  async function prepare(): Promise<Prepared> {
+  async function prepare(value?: ChatQueueInput): Promise<Prepared> {
     try {
+      if (value && (value.images?.length || value.files?.length) && !options.prepareInput) throw new Error('Attachments require native preparation.');
+      const message = value ? structuredClone(options.prepareInput ? await options.prepareInput(structuredClone(value)) : value.text) : '';
       const context = await captureChatFastRequestContext(session);
       const agent = session.machinery.getAgent();
       session.ensureFollowUpBinding(agent, resourceId, threadId!);
       const nativeOptions = await session.machinery.buildStreamOptions({ requestContext: context, abortSignal: new AbortController().signal });
       assertActive();
-      return { agent, context, options: nativeOptions };
+      return { message, agent, context, options: nativeOptions };
     } catch { throw new Error('Native queue preparation failed.'); }
   }
   function submit(plan: Planned): Submission {
-    const native = plan.prepared.agent.queueMessage(plan.input.text, {
+    const native = plan.prepared.agent.queueMessage(structuredClone(plan.prepared.message), {
       resourceId, threadId: threadId!, queueOwnerId: owner, ifIdle: { streamOptions: plan.prepared.options },
     });
-    plan.record.row.input = { ...plan.input };
+    plan.record.row.input = structuredClone(plan.input);
     plan.record.row.nativeSignalId = native.signal.id;
     plan.record.row.status = 'queued';
     plan.record.prepared = plan.prepared;
@@ -170,7 +178,7 @@ export function createChatQueue(session: NativeSession, options: { epoch: string
 
   async function replace(selected: RecordRow[], desired: Planned[], expectedRevision: number) {
     if (revision !== expectedRevision) return result('conflict');
-    const originals: Planned[] = selected.map(record => ({ record, input: { ...record.row.input }, prepared: record.prepared! }));
+    const originals: Planned[] = selected.map(record => ({ record, input: structuredClone(record.row.input), prepared: record.prepared! }));
     const confirmed = cancel(selected);
     if (!confirmed) return result('uncertain');
     const conflict = originals.some(plan => !confirmed.has(plan.record.row.nativeSignalId!));
@@ -194,10 +202,10 @@ export function createChatQueue(session: NativeSession, options: { epoch: string
       try { acknowledgments.push(acknowledge(item.record, submit(item))); }
       catch {
         // The call may have enqueued before throwing and returning its ID.
-        item.record.row.input = { ...item.input };
+        item.record.row.input = structuredClone(item.input);
         uncertain(item.record, null);
         for (const tail of plan.slice(index + 1)) {
-          tail.record.row.input = { ...tail.input };
+          tail.record.row.input = structuredClone(tail.input);
           tail.record.row.nativeSignalId = null;
           tail.record.row.status = 'recoverable';
           tail.record.prepared = undefined;
@@ -217,7 +225,7 @@ export function createChatQueue(session: NativeSession, options: { epoch: string
     enqueue(value: ChatQueueInput): Promise<ChatQueueResult & { rowId: string }> {
       const nextInput = input(value);
       return serial(async () => {
-        const prepared = await prepare();
+        const prepared = await prepare(nextInput);
         const record: RecordRow = { row: { id: randomUUID(), input: nextInput, nativeSignalId: null, status: 'queued' }, prepared };
         records.push(record);
         let accepted = false;
@@ -226,17 +234,19 @@ export function createChatQueue(session: NativeSession, options: { epoch: string
         return { ...result(accepted ? 'applied' : 'uncertain'), rowId: record.row.id };
       });
     },
-    edit(selection: Selection & { input: ChatQueueInput }) {
-      const nextInput = input(selection.input);
+    edit(selection: Selection & { input: Pick<ChatQueueInput, 'text'> }) {
+      const nextText = selection.input?.text;
+      if (typeof nextText !== 'string') throw new Error('Queue input must contain text or attachments.');
       return serial(async () => {
         const chosen = find(selection.id);
         if (selection.revision !== revision || partial() || !editable(chosen)) return result('conflict');
         const suffix = records.slice(records.indexOf(chosen));
         if (!suffix.every(editable)) return result('conflict');
+        const nextInput = input({ ...structuredClone(chosen.row.input), text: nextText });
         if (chosen.row.input.text === nextInput.text) return result();
-        const prepared = await prepare();
+        const prepared = await prepare(nextInput);
         if (selection.revision !== revision || partial()) return result('conflict');
-        return replace(suffix, suffix.map(record => ({ record, input: record === chosen ? nextInput : { ...record.row.input }, prepared: record === chosen ? prepared : record.prepared! })), selection.revision);
+        return replace(suffix, suffix.map(record => ({ record, input: record === chosen ? nextInput : structuredClone(record.row.input), prepared: record === chosen ? prepared : record.prepared! })), selection.revision);
       });
     },
     reorder(selection: { ids: string[]; revision: number }) {
@@ -246,7 +256,7 @@ export function createChatQueue(session: NativeSession, options: { epoch: string
         if (ids.every((id, index) => records[index]!.row.id === id)) return result();
         await prepare();
         if (selection.revision !== revision || partial()) return result('conflict');
-        return replace([...records], ids.map(id => { const record = find(id)!; return { record, input: { ...record.row.input }, prepared: record.prepared! }; }), selection.revision);
+        return replace([...records], ids.map(id => { const record = find(id)!; return { record, input: structuredClone(record.row.input), prepared: record.prepared! }; }), selection.revision);
       });
     },
     remove(selection: Selection) {
@@ -263,7 +273,7 @@ export function createChatQueue(session: NativeSession, options: { epoch: string
       return serial(() => {
         const record = find(selection.id);
         if (selection.revision !== revision || !editable(record)) return result('conflict');
-        const context = record.prepared!.context;
+        const context = record.prepared!.context, message = structuredClone(record.prepared!.message);
         const confirmed = cancel([record]);
         if (!confirmed) return result('uncertain');
         if (!confirmed.has(record.row.nativeSignalId!)) { uncertain(record); changed(); return result('conflict'); }
@@ -272,9 +282,16 @@ export function createChatQueue(session: NativeSession, options: { epoch: string
         record.receiptEligible = false;
         record.prepared = undefined;
         try {
-          const settled = session.steer({ content: record.row.input.text, requestContext: context });
-          // Native steer joins the run. Publish admission in progress promptly;
-          // it must not hold the HTTP response or command gate until completion.
+          const messageInput = typeof message === 'string' || Array.isArray(message) ? { contents: message } : message;
+          // Match native hard steering: abort preserves other queued signals,
+          // and Session.sendSignal owns the abort-aware multipart startup.
+          session.abort();
+          const native = session.sendSignal({ type: 'user', ...messageInput }, { requestContext: context, requireDelivery: true });
+          const settled = native.accepted.then(decision => {
+            if (decision.action !== 'wake' && decision.action !== 'deliver') throw new Error('Native steering was not admitted.');
+          });
+          // Publish transfer immediately; admission does not promise completion
+          // and must not hold the response or command gate until the model ends.
           void settled.then(() => {
             if (!disposed && records.includes(record)) { removeRecord(record); changed(); }
           }, () => {

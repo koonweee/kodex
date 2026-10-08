@@ -16,6 +16,7 @@ import {
   createQueuedInput,
   interruptCurrentTurn,
   submitThreadInput,
+  type ImageUpload,
   type TextElement,
   type TimelineFileAttachment,
   type TimelineSkillMention,
@@ -34,7 +35,7 @@ import type { ComposerDraftControls } from "./ComposerPanel";
 import { isTouchInputDevice } from "../shared/inputCapabilities";
 import { createClientRequestId } from "../shared/id";
 import type { PendingAttachment } from "./types";
-import { buildTurnPayload } from "./buildTurnPayload";
+import { buildTurnPayload, type ComposerUploads } from "./buildTurnPayload";
 
 type DraftThreadCreateRequest = { composerSettings?: ComposerSettings; firstMessageText: string; projectId?: string };
 type DraftThreadCreateResult = { threadId: string };
@@ -43,10 +44,11 @@ type UseComposerOrchestrationParams = {
   activeSelectedTurnId: string | null;
   isRunning?: boolean;
   commands?: {
-    send: (threadId: string, input: UserInput[], attachments: TimelineFileAttachment[]) => Promise<unknown>;
-    queue: (threadId: string, input: UserInput[], attachments: TimelineFileAttachment[]) => Promise<unknown>;
+    send: (threadId: string, input: UserInput[], attachments: TimelineFileAttachment[], images: ImageUpload[]) => Promise<unknown>;
+    queue: (threadId: string, input: UserInput[], attachments: TimelineFileAttachment[], images: ImageUpload[]) => Promise<unknown>;
     stop: (threadId: string) => Promise<unknown>;
     compact: (threadId: string) => Promise<unknown>;
+    uploads: ComposerUploads;
   };
   activeSelectedTurnIdOverrideRef?: { current: string | null | undefined };
   canCompose: boolean;
@@ -198,12 +200,13 @@ export function useComposerOrchestration({
       if (selectedThreadId) {
         draftControls.clearText();
         const payload = await buildTurnPayload({
+          uploads: commands?.uploads,
           threadId: selectedThreadId, text, attachments, skillInputs, skillTextElements,
           updateAttachments, rememberImagePreviewUrls,
         });
         if (queueRequested) {
           try {
-            if (commands) await commands.queue(selectedThreadId, payload.input, payload.attachments);
+            if (commands) await commands.queue(selectedThreadId, payload.input, payload.attachments, payload.images);
             else await createQueuedInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId);
           } finally {
             if (!commands) void refreshQueuedInputs(queryClient, selectedThreadId);
@@ -223,7 +226,7 @@ export function useComposerOrchestration({
           });
         }
         if (commands) {
-          await commands.send(selectedThreadId, payload.input, payload.attachments);
+          await commands.send(selectedThreadId, payload.input, payload.attachments, payload.images);
         } else {
           const result = await submitThreadInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId, true);
           if (result.disposition === "queued") {
@@ -269,10 +272,11 @@ export function useComposerOrchestration({
       onThreadTurnStarted(threadId);
       draftControls.clearText();
       const payload = await buildTurnPayload({
+          uploads: commands?.uploads,
         threadId, text, attachments, skillInputs, skillTextElements,
         updateAttachments, rememberImagePreviewUrls,
       });
-      if (commands) await commands.send(threadId, payload.input, payload.attachments);
+      if (commands) await commands.send(threadId, payload.input, payload.attachments, payload.images);
       else await submitThreadInput(threadId, payload.input, payload.attachments, clientUserMessageId);
       onThreadMaterialized(threadId);
       clearPendingAttachments();
