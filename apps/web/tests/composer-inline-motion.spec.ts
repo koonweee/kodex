@@ -6,6 +6,11 @@ type Frame = {
   elapsed: number;
   height: number;
   bottom: number;
+  shadowBottom: number;
+  shadowHeight: number;
+  shadowBoxShadow: string;
+  shadowScaled: boolean;
+  surfaceBoxShadow: string;
   addX: number;
   addY: number;
   modelX: number;
@@ -36,13 +41,28 @@ async function recordMotion(form: Locator, action: "focus" | "rapid" | "resize" 
       return Math.abs(matrix.m41) > 0.01 || Math.abs(matrix.m42) > 0.01 ||
         Math.abs(matrix.m11 - 1) > 0.01 || Math.abs(matrix.m22 - 1) > 0.01;
     };
+    const scaled = (element: Element) => {
+      const transform = getComputedStyle(element).transform;
+      if (transform === "none") return false;
+      const matrix = new DOMMatrixReadOnly(transform);
+      return Math.abs(matrix.m11 - 1) > 0.01 || Math.abs(matrix.m22 - 1) > 0.01 ||
+        Math.abs(matrix.m12) > 0.01 || Math.abs(matrix.m21) > 0.01;
+    };
     const measure = (): Frame => {
       // The fallback gives the pre-animation implementation a behavioral failure.
-      const surface = (form.querySelector(".kodex-composer-surface") ?? form).getBoundingClientRect();
+      const surfaceElement = form.querySelector<HTMLElement>(".kodex-composer-surface") ?? form;
+      const shadowElement = form.querySelector<HTMLElement>(".kodex-composer-shadow") ?? surfaceElement;
+      const surface = surfaceElement.getBoundingClientRect();
+      const shadow = shadowElement.getBoundingClientRect();
       const add = form.querySelector(".kodex-composer-secondary-action")!.getBoundingClientRect();
       const model = form.querySelector(".kodex-composer-model-control")!.getBoundingClientRect();
       return {
         elapsed: performance.now() - started, height: surface.height, bottom: surface.bottom,
+        shadowBottom: shadow.bottom,
+        shadowHeight: shadow.height,
+        shadowBoxShadow: getComputedStyle(shadowElement).boxShadow,
+        shadowScaled: scaled(shadowElement),
+        surfaceBoxShadow: getComputedStyle(surfaceElement).boxShadow,
         addX: add.left, addY: add.top, modelX: model.left, modelY: model.top,
         idle: form.dataset.idleCompact === "true",
         expanded: Boolean(form.closest('[role="dialog"][aria-label="Compose"]')),
@@ -115,8 +135,13 @@ function expectInlineMorph(frames: Frame[]) {
   expect(active.height).toBeGreaterThan(idle.height + 10);
   expect(frames.filter(frame => frame.height > idle.height + 1 && frame.height < active.height - 1).length).toBeGreaterThan(1);
   expect(Math.max(...frames.map(frame => Math.abs(frame.bottom - idle.bottom)))).toBeLessThan(1);
+  expect(Math.max(...frames.map(frame => Math.abs(frame.shadowBottom - idle.shadowBottom)))).toBeLessThan(1);
+  expect(Math.max(...frames.map(frame => Math.abs(frame.shadowHeight - frame.height)))).toBeLessThan(1);
   expect(frames.every(frame => frame.height >= idle.height - 0.5 && frame.height <= active.height + 0.5)).toBe(true);
   expect(frames.every(frame => frame.sameInput && !frame.inputScaled && !frame.expanded)).toBe(true);
+  expect(frames.every(frame => !frame.shadowScaled && frame.surfaceBoxShadow === "none")).toBe(true);
+  expect(idle.shadowBoxShadow).not.toBe("none");
+  expect(new Set(frames.map(frame => frame.shadowBoxShadow))).toEqual(new Set([idle.shadowBoxShadow]));
   // Even a short control glide must show a real intermediate position.
   expect(Math.abs(active.modelX - idle.modelX)).toBeGreaterThan(2);
   expect(frames.some(frame => frame.modelX > Math.min(idle.modelX, active.modelX) + 1 &&

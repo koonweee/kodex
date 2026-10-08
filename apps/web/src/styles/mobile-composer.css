@@ -28,15 +28,27 @@
   box-shadow: none;
 }
 
+.kodex-composer-shadow,
 .kodex-composer-surface {
   position: absolute;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.kodex-composer-shadow {
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: -2;
+  height: 100%;
+  box-shadow: var(--kodex-composer-shadow);
+}
+
+.kodex-composer-surface {
   inset: 0;
   z-index: -1;
-  border-radius: inherit;
   background: var(--kodex-bg-raised);
-  box-shadow: var(--kodex-composer-shadow);
   transform-origin: left bottom;
-  pointer-events: none;
 }
 
 /* Flatten only layout wrappers; the textarea and controls stay mounted. */

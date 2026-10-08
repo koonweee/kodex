@@ -3,6 +3,7 @@ import { useLayoutEffect, useRef, type RefObject } from "react";
 type Bounds = Pick<DOMRect, "left" | "top" | "bottom" | "width" | "height">;
 type Layout = {
   idle: boolean;
+  shadow: HTMLElement;
   surface: HTMLElement;
   bounds: Bounds;
   radius: number;
@@ -55,12 +56,13 @@ export function createInlineComposerMotion(form: HTMLElement) {
   }
 
   function measure(): Layout | null {
+    const shadow = form.querySelector<HTMLElement>(".kodex-composer-shadow");
     const surface = form.querySelector<HTMLElement>(".kodex-composer-surface");
     const bounds = form.getBoundingClientRect();
-    if (!surface || bounds.width <= 0 || bounds.height <= 0) return null;
+    if (!shadow || !surface || bounds.width <= 0 || bounds.height <= 0) return null;
     // Short pills normalize 32px corners to half their height in the browser.
     const radius = Math.min(parseFloat(getComputedStyle(form).borderTopLeftRadius), bounds.width / 2, bounds.height / 2);
-    return { idle, surface, bounds, radius, parts: new Map(
+    return { idle, shadow, surface, bounds, radius, parts: new Map(
       [...form.querySelectorAll<HTMLElement>(partsSelector)].map(element => [element, element.getBoundingClientRect()]),
     ) };
   }
@@ -105,7 +107,15 @@ export function createInlineComposerMotion(form: HTMLElement) {
         borderRadius: `${radius / x}px / ${radius / y}px`,
       };
     }), timing);
-    const animations = [surface];
+    // Animate shadow geometry without scaling it, so its blur and offset stay
+    // visually constant while the fill uses a compositor transform.
+    const shadow = to.shadow.animate([0, 0.25, 0.5, 0.75, 1].map(progress => ({
+      offset: progress,
+      height: `${mix(from.bounds.height, to.bounds.height, progress)}px`,
+      transform: `translate(${mix(dx, 0, progress)}px, ${mix(dy, 0, progress)}px)`,
+      borderRadius: `${mix(from.radius, to.radius, progress)}px`,
+    })), timing);
+    const animations = [surface, shadow];
     for (const [element, destination] of to.parts) {
       const start = from.parts.get(element);
       if (!start || start.width <= 0 || destination.width <= 0) continue;

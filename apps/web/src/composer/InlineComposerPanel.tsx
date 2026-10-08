@@ -194,7 +194,10 @@ export function InlineComposerPanel({
           )
         }
       >
-        {inlineMotion ? <Box className="kodex-composer-surface" aria-hidden="true" /> : null}
+        {inlineMotion ? <>
+          <Box className="kodex-composer-shadow" aria-hidden="true" />
+          <Box className="kodex-composer-surface" aria-hidden="true" />
+        </> : null}
         {selectedThreadPresent ? <button type="submit" hidden data-submit-intent="queue" disabled={!canSubmitComposer} /> : null}
         <button type="submit" hidden data-submit-intent="alternate" disabled={!canSubmitComposer} />
         {skillPopupOpen || slashPopupOpen ? (

@@ -15,14 +15,15 @@ function fixture() {
     disconnect = disconnect;
   });
   const form = document.createElement("form");
-  form.innerHTML = '<div class="kodex-composer-surface"></div><div class="kodex-composer-textarea"><textarea></textarea></div>';
+  form.innerHTML = '<div class="kodex-composer-shadow"></div><div class="kodex-composer-surface"></div><div class="kodex-composer-textarea"><textarea></textarea></div>';
   document.body.append(form);
   let idle = true;
   let width = 360;
-  const surface = form.firstElementChild as HTMLElement;
+  const shadow = form.firstElementChild as HTMLElement;
+  const surface = form.children[1] as HTMLElement;
   const field = form.lastElementChild as HTMLElement;
   const animations: { node: HTMLElement; frames: Keyframe[]; animation: Animation; cancel: ReturnType<typeof vi.fn>; progress: number; finish: () => void }[] = [];
-  for (const node of [form, surface, field]) {
+  for (const node of [form, shadow, surface, field]) {
     node.getBoundingClientRect = () => {
       const height = idle ? 60 : 110;
       return node === field ? new DOMRect(idle ? 60 : 10, idle ? 648 : 598, idle ? 150 : width - 20, 44)
@@ -43,7 +44,7 @@ function fixture() {
   const setIdle = (next: boolean) => { idle = next; form.style.borderRadius = next ? "32px" : "24px"; };
   setIdle(true);
   controller.update(true, true);
-  return { controller, animations, form, surface, field, media, disconnect, setIdle,
+  return { controller, animations, form, shadow, surface, field, media, disconnect, setIdle,
     resize(next: number) { width = next; observers[0]([], {} as ResizeObserver); } };
 }
 
@@ -81,6 +82,18 @@ it("reverses from the eased visible geometry instead of jumping to an endpoint",
   expect(scaleY * 60).toBeCloseTo(visibleHeight);
   const field = f.animations.slice(first.length).find(record => record.node === f.field)!;
   expect(parseFloat(String(field.frames[0].width))).toBeCloseTo(150 + (340 - 150) * 0.4);
+});
+
+it("animates shadow geometry without scaling its blur layer", () => {
+  const f = fixture();
+  f.setIdle(false);
+  f.controller.update(true, false);
+  const shadow = f.animations.find(record => record.node === f.shadow)!;
+  for (const frame of shadow.frames) {
+    expect(frame.height).toBeDefined();
+    expect(frame.borderRadius).toBeDefined();
+    expect(String(frame.transform)).not.toContain("scale");
+  }
 });
 
 it("cancels stale geometry after resize and does not animate the new layout", () => {
