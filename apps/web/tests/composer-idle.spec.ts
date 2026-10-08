@@ -32,7 +32,6 @@ for (const shape of [
           const context = bounds(".kodex-context-usage");
           const model = bounds(".kodex-composer-model-control");
           return { height: el.getBoundingClientRect().height, padding: parseFloat(style.paddingTop) + parseFloat(style.paddingBottom),
-            radii: [style.borderTopLeftRadius, style.borderTopRightRadius, style.borderBottomLeftRadius, style.borderBottomRightRadius],
             inputHeight: input.height, inputWidth: input.width, fieldBetween: input.left >= add.right && input.right <= context.left,
             controlHeight: add.height, modelWidth: model.width, modelHeight: model.height, overflow: el.scrollWidth - el.clientWidth };
         });
@@ -63,7 +62,6 @@ for (const shape of [
         await expect(form).toHaveAttribute("data-idle-compact", "false");
         await expect(pane.getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
         expect((await measure()).height).toBeGreaterThan(idle.height);
-        expect((await measure()).radii).toEqual(idle.radii);
         await input.fill(" ");
         await page.mouse.click(shape.width - 20, 150);
         await expect(form).toHaveAttribute("data-idle-compact", "false");
@@ -176,6 +174,77 @@ for (const settingsError of [false, true]) {
       await expect(pane.getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(1);
     } finally { await fixture.close(); await context.close(); }
     expect(fixture.errors).toEqual(settingsError ? ["Failed to load resource: the server responded with a status of 400 (Bad Request)"] : []);
+    expect(fixture.unexpected).toEqual([]);
+  });
+}
+
+for (const hasTouch of [false, true]) {
+  test(`compact ${hasTouch ? "touch" : "fine pointer"} loading keeps the idle row through native attachment and settings`, async ({ browser }) => {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch, baseURL: test.info().project.use.baseURL });
+    const fixture = await nativeSettingsFixture(context);
+    const client = "loading-idle";
+    // Strict Mode and reconnects may replace initial requests. Delay every
+    // response until release so an aborted request cannot consume the gate.
+    let releaseAttachment!: () => void;
+    let releaseSettings!: () => void;
+    let attachmentStarted = false;
+    let settingsStarted = false;
+    const attachmentGate = new Promise<void>(resolve => { releaseAttachment = resolve; });
+    const settingsGate = new Promise<void>(resolve => { releaseSettings = resolve; });
+    await context.route("**/v1/threads/settings-chat/attach", async route => {
+      attachmentStarted = true;
+      await attachmentGate;
+      await route.fallback();
+    });
+    await context.route("**/v1/threads/settings-chat/settings", async route => {
+      settingsStarted = true;
+      await settingsGate;
+      await route.fallback();
+    });
+    try {
+      const page = await fixture.page(client);
+      await expect.poll(() => attachmentStarted).toBe(true);
+      const pane = page.locator(".kodex-thread-pane-existing");
+      const input = pane.getByRole("textbox", { name: "Message composer", exact: true });
+      const form = pane.locator("form.kodex-composer");
+      const add = pane.getByRole("button", { name: "Open attachment menu", exact: true });
+      await expect(pane).toHaveAttribute("data-pane-width", "compact");
+      await expect(form).toHaveAttribute("data-idle-compact", "true");
+      await expect(pane.locator(".kodex-composer-shell")).toHaveAttribute("data-entry-ready", "false");
+      await expect(add).toBeDisabled();
+      const original = await input.elementHandle();
+      const height = (await form.boundingBox())!.height;
+      const footerHeight = await add.evaluate(el => el.getBoundingClientRect().height);
+      const padding = await form.evaluate(el => {
+        const style = getComputedStyle(el);
+        return parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+      });
+      expect(height).toBeCloseTo(footerHeight + padding, 0);
+      await page.screenshot({ path: test.info().outputPath("loading-idle.png") });
+      releaseAttachment();
+      await expect.poll(() => settingsStarted).toBe(true);
+      await expect(pane.locator(".kodex-composer-shell")).toHaveAttribute("data-entry-ready", "true");
+      await expect(form).toHaveAttribute("data-idle-compact", "true");
+      await expect(add).toBeEnabled();
+      await expect(pane.getByRole("button", { name: "Loading chat settings", exact: true })).toBeDisabled();
+      expect((await form.boundingBox())!.height).toBeCloseTo(height, 0);
+      releaseSettings();
+      await expect(pane.getByRole("button", { name: "Model: gpt-5.4, medium", exact: true })).toBeEnabled();
+      await expect(form).toHaveAttribute("data-idle-compact", "true");
+      expect((await form.boundingBox())!.height).toBeCloseTo(height, 0);
+      expect(await original!.evaluate(el => el.isConnected)).toBe(true);
+      await page.screenshot({ path: test.info().outputPath("ready-idle.png") });
+      await input.click();
+      await expect(input).toBeFocused();
+      expect(await original!.evaluate(el => el === document.activeElement)).toBe(true);
+      await expect(form).toHaveAttribute("data-idle-compact", "false");
+    } finally {
+      releaseAttachment();
+      releaseSettings();
+      await fixture.close();
+      await context.close();
+    }
+    expect(fixture.errors).toEqual([]);
     expect(fixture.unexpected).toEqual([]);
   });
 }

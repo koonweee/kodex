@@ -117,11 +117,12 @@ export function InlineComposerPanel({
     const frame = requestAnimationFrame(() => setEditingActive(false));
     return () => cancelAnimationFrame(frame);
   }, [composerFocused, toolbarMenuOpen]);
+  // Keep the empty row stable through attachment and settings loading.
   const idleCompact = density === "compact" && selectedThreadPresent && !isDraftThreadSelected &&
     !isDraftComposerTransitioning && !expanded && !editingActive &&
     draftState.composerText.length === 0 && draftState.annotations.length === 0 &&
     draftState.skillBindings.length === 0 && pendingAttachments.length === 0 &&
-    !skillPopupOpen && !slashPopupOpen && !isComposerDragActive && !isComposerBusy && !isEntryPending && !composerSettingsError && !composerSettingsDisabled;
+    !skillPopupOpen && !slashPopupOpen && !isComposerDragActive && !isComposerBusy && !composerSettingsError;
   const draftHeroText = greetingForDate(new Date());
   const shouldShowDraftHero = !expanded && (isDraftThreadSelected || isDraftComposerTransitioning);
   const selectedDraftProject =

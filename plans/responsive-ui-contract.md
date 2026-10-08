@@ -2,7 +2,7 @@
 
 ## Status
 
-Complete. Initial contract deployed frontend/backend and idle compact composer follow-up deployed frontend-only on 2026-10-08. Created 2026-10-08.
+Initial contract and idle compact composer complete and deployed. Compact radius/loading refinements are validated; authorized frontend-only deployment pending. Created 2026-10-08.
 
 ## Objective
 
@@ -209,7 +209,7 @@ Complete. The user authorized implementation and frontend-only deployment on 202
 - When empty and inactive, the composer keeps its four corner radii and becomes one footer-height row. The same single-line textarea occupies the space between attachment and context/settings controls. All footer actions, including Stop, remain available.
 - Compact panes replace the model/effort text with a brain icon, retaining the complete accessible label and tooltip. Regular panes retain the text.
 - Editable focus restores normal inline height. Actual touch in a narrow workspace opens the existing fullscreen composer; mouse, keyboard, programmatic focus, and compact touch panes in wide workspaces remain inline.
-- Text (including whitespace), attachments, annotations, skill bindings, drag/drop, pending entry/settings, settings errors, and submission prevent idle collapse. Focus moving through the composer and its portalled menus preserves an active editing session.
+- Text (including whitespace), attachments, annotations, skill bindings, drag/drop, settings errors, and submission prevent idle collapse. Empty inactive compact panes keep idle presentation through entry/settings loading or settings updates, with existing readiness and disabled-control guards. Focus moving through the composer and its portalled menus preserves an active editing session.
 - Preserve textarea identity, selection, IME and drafts across every transition. This is per-pane presentation; native submission, queue and settings ownership remain unchanged.
 
 Exit: focused behavior tests, bundled-Chromium layout/input/menu/resize checks, build/typecheck, trim and independent review pass; deploy a committed frontend snapshot without restarting the gateway, and verify the served bundle. This follow-up supersedes the two-row minimum only for eligible idle existing conversations.
@@ -225,3 +225,7 @@ Follow-up validation: 200 focused composer tests and 43 native workspace tests p
 Idle-row alignment refinement (2026-10-08): the user requested “build thing” only while idle compact, a vertically centered single-line placeholder, and 8px above and below the controls. Idle-only line heights match fine/coarse control heights; active editing and fullscreen typography remain unchanged. Independent review and 11 Chromium layout/input/height checks passed for this adjustment, along with build/typecheck and trim. The final frontend deployment uses the current API-compatible release, including other already-deployed committed frontend changes.
 
 Alignment refinement deployment verified: frontend snapshot `b044ec1` was deployed onto release `20261008-024630-3ef10fff` with gateway PID `45933` unchanged and `/readyz` ready. Served HTML and both entry assets match the clean snapshot; index SHA256 `d3385bbc59fca0cf49a9c4a5aff21a82f11eb5ddcf941da40361843684f6ff79`. The current API-compatible snapshot again passed all 11 Chromium composer/height checks, build/typecheck and trim. The successful full operation `c5000bfcb5b140ebb7bc67315838b5f1` had already deployed `15f853a`; no committed or working-tree backend/controller differences remain from that source.
+
+Compact-row radius refinement (2026-10-08): the user requested 32px only for the idle compact composer. A dedicated shared corner token applies at that mode selector; active inline composers retain 24px and fullscreen styling retains its existing policy. This supersedes the earlier equal-radius assertion across idle/active transitions, so that obsolete styling assertion is removed while geometry, activation, input identity and menu coverage remain. Frontend-only deployment is authorized.
+
+Compact loading refinement (2026-10-08): empty inactive existing-chat panes retain the idle row during native attachment and settings reads/updates. Drafts, attachments, active editing, errors and submission retain normal presentation. Only the visual predicate changes; native submission/settings ownership, readiness attributes, input identity and disabled controls remain unchanged. Three focused loading regressions failed before implementation. All 32 composer component tests and 16 bundled-Chromium idle/fullscreen cases pass, including held initial attachment/settings responses for fine pointer and touch. Build/typecheck, frontend trim and all 11 responsive ownership fixtures pass. Independent review found no blockers. The authorized frontend deployment remains pending.

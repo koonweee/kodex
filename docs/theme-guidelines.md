@@ -13,7 +13,7 @@ The registry and its bootstrap generation remain the single source of theme valu
 
 ## Corner shapes
 
-`styles/ui.css` owns the shared corner scale: 6/10/12/16/20px for xs through xl. Mantine's radius scale maps directly to those variables in `theme.ts`. Standard buttons, icon actions, tooltips, inputs and selectable menu rows use 12px corners; dense custom rows use 10px. Menus and popovers use 18px outer corners, with 20px dialogs and the existing 24px composer/28px shell hierarchy. Hover, selected, disabled and keyboard-focus states retain the same component shape.
+`styles/ui.css` owns the shared corner scale: 6/10/12/16/20px for xs through xl. Mantine's radius scale maps directly to those variables in `theme.ts`. Standard buttons, icon actions, tooltips, inputs and selectable menu rows use 12px corners; dense custom rows use 10px. Menus and popovers use 18px outer corners, with 20px dialogs and 24px composers, 32px idle compact composers and 28px shells. Hover, selected, disabled and keyboard-focus states retain the same component shape.
 
 Use the explicit round token for circles and capsules, including touch-size icon actions, switches and progress bars. Small checkboxes use 6px corners so they remain distinct from radio controls. Preserve square edges on full-screen mobile surfaces and joined composer seams. Feature CSS should consume the shared scale instead of adding literal corner sizes.
 

@@ -99,8 +99,64 @@ describe("Mobile composer panel", () => {
   });
 
   it.each([
-    { name: "pending settings", props: { composerSettingsDisabled: true } },
+    { name: "timeline attachment", props: { isSelectedTimelineReady: false } },
+    { name: "thread settings read", props: { composerSettings: null } },
+    { name: "settings update", props: { composerSettingsDisabled: true } },
+    { name: "attachment and settings", props: { isSelectedTimelineReady: false, composerSettings: null, composerSettingsDisabled: true } },
+  ])("keeps an empty compact composer idle through $name", ({ props: loading }) => {
+    const props: Partial<ComponentProps<typeof ComposerPanel>> = { ...loading };
+    const view = renderComposerPanel(props);
+    const input = screen.getByLabelText(/message composer/i);
+    const form = input.closest("form")!;
+    expect(form).toHaveAttribute("data-idle-compact", "true");
+    if (props.isSelectedTimelineReady === false) {
+      expect(screen.getByRole("button", { name: /open attachment menu/i })).toBeDisabled();
+    }
+    if (props.composerSettingsDisabled || props.composerSettings === null) {
+      expect(screen.getByRole("button", { name: /model:|loading chat settings/i })).toBeDisabled();
+    }
+    Object.assign(props, { isSelectedTimelineReady: true, composerSettings, composerSettingsDisabled: false });
+    view.refreshLayout();
+    expect(form).toHaveAttribute("data-idle-compact", "true");
+    expect(screen.getByLabelText(/message composer/i)).toBe(input);
+    expect(screen.getByRole("button", { name: /open attachment menu/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /model:/i })).toBeEnabled();
+  });
+
+  it("preserves a restored draft while its compact pane is loading", () => {
+    const props: Partial<ComponentProps<typeof ComposerPanel>> = {
+      isSelectedTimelineReady: false,
+      composerSettings: null,
+      composerSettingsDisabled: true,
+      composerDraftStore: new Map([["__default__", { composerText: "Keep my draft", skillBindings: [] }]]),
+    };
+    const view = renderComposerPanel(props);
+    const input = screen.getByLabelText(/message composer/i);
+    expect(input).toHaveValue("Keep my draft");
+    expect(input.closest("form")).toHaveAttribute("data-idle-compact", "false");
+    Object.assign(props, { isSelectedTimelineReady: true, composerSettings, composerSettingsDisabled: false });
+    view.refreshLayout();
+    expect(screen.getByLabelText(/message composer/i)).toBe(input);
+    expect(input).toHaveValue("Keep my draft");
+    expect(input.closest("form")).toHaveAttribute("data-idle-compact", "false");
+  });
+
+  it("keeps an active empty editor open during settings and timeline loading", async () => {
+    setMobileViewport(true, { touch: false });
+    const props: Partial<ComponentProps<typeof ComposerPanel>> = {};
+    const view = renderComposerPanel(props);
+    const input = screen.getByLabelText(/message composer/i);
+    await userEvent.click(input);
+    Object.assign(props, { isSelectedTimelineReady: false, composerSettingsDisabled: true });
+    view.refreshLayout();
+    expect(input.closest("form")).toHaveAttribute("data-idle-compact", "false");
+    expect(screen.getByLabelText(/message composer/i)).toBe(input);
+    expect(input).toHaveFocus();
+  });
+
+  it.each([
     { name: "settings errors", props: { composerSettingsError: "Could not load settings" } },
+    { name: "submission", props: { isComposerSubmitting: true } },
     { name: "new conversations", props: { isDraftThreadSelected: true, selectedThreadPresent: false } },
     { name: "attachments", props: { pendingAttachments: [{ id: "file", file: new File(["draft"], "draft.txt"), kind: "file" as const, status: "pending" as const }] } },
     { name: "whitespace drafts", props: { composerDraftStore: new Map([["__default__", { composerText: " \n", skillBindings: [] }]]) } },

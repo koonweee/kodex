@@ -24,6 +24,7 @@
 
 /* Flatten only layout wrappers; the textarea and controls stay mounted. */
 .kodex-composer-shell[data-inline-density="compact"] .kodex-composer[data-idle-compact="true"] {
+  border-radius: var(--kodex-radius-composer-compact);
   padding-block: 8px;
   grid-template-columns: auto minmax(0, 1fr) auto auto auto;
   grid-template-rows: auto;
