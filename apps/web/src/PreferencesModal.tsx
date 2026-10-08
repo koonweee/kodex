@@ -1,5 +1,6 @@
 import { Alert, Badge, Box, Button, Group, Loader, Modal, Stack, Text } from "@mantine/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { Bell, BellOff, Package, RefreshCw, Send } from "lucide-react";
 
 import {
@@ -34,6 +35,7 @@ export type PreferencesModalProps = {
   onThemeChange: (id: KodexColorSchemeId) => void;
   onSectionChange: (section: PreferenceSection) => void;
   opened: boolean;
+  executionPanel?: ReactNode;
 };
 
 export function PreferencesModal({
@@ -45,6 +47,7 @@ export function PreferencesModal({
   onThemeChange,
   onSectionChange,
   opened,
+  executionPanel,
 }: PreferencesModalProps) {
   const queryClient = useQueryClient();
   const pluginStatusQuery = useQuery({
@@ -172,7 +175,7 @@ export function PreferencesModal({
             onThemeChange={onThemeChange}
           />
         ) : activeSection === "execution" ? (
-          <ExecutionPreferencesPanel />
+          executionPanel ?? <ExecutionPreferencesPanel />
         ) : activeSection === "notifications" ? (
           <NotificationsPreferencesPanel
             disableError={disableNotificationsMutation.error}

@@ -19,6 +19,7 @@ import { chatListEntry } from './presentation';
 import { NativeArchiveReconciliation } from './NativeArchiveReconciliation';
 import { NativeThreadPane } from './NativeThreadPane';
 import { NativeAccountMenu } from './NativeAccountMenu';
+import { NativeExecutionPreferencesPanel } from './NativeExecutionPreferencesPanel';
 import { useNativeAccount } from './useNativeAccount';
 import { useNativeChatMetadata } from './useNativeChatMetadata';
 import { mastraClient } from './client';
@@ -127,7 +128,7 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
       <KodexShellView isDraftThreadSelected={!route.threadId} isSidebarResizing={resize.isSidebarResizing}
         mainPane={mainPane} mobilePanel={mobilePanel} sidebarCollapsed={resize.sidebarCollapsed} useSingleThreadWorkspace={singlePane}
         workspaceSelectedThreadPaneId={mainPane === 'thread' ? routeThreadPaneId : null}
-        preferencesProps={{ opened: preferencesOpen, activeSection: preferencesSection, resolvedSchemeId: colorSchemeId, preferences: appearance, onClose: () => setPreferencesOpen(false), onSectionChange: setPreferencesSection, onModeChange: onAppearanceModeChange, onThemeChange }}
+        preferencesProps={{ executionPanel: <NativeExecutionPreferencesPanel />, opened: preferencesOpen, activeSection: preferencesSection, resolvedSchemeId: colorSchemeId, preferences: appearance, onClose: () => setPreferencesOpen(false), onSectionChange: setPreferencesSection, onModeChange: onAppearanceModeChange, onThemeChange }}
         projectPaneProps={{ project: projects.find(project => project.id === route.projectId) ?? null, onDeleted: () => createDraft(), actions: projectActions, onShowMobileSidebar: () => setMobilePanel('threads') }}
         automationsPaneProps={{ mode: 'calendar', targetReadOnly: false, renderRuns: id => <NativeAutomationRuns automationId={id} />, automations: automations.rows, defaultThreadId: route.threadId, isLoading: automations.isLoading,
           onCreateAutomation: automations.create, onDeleteAutomation: automations.remove, onPauseAutomation: automations.pause, onResumeAutomation: automations.resume, onUpdateAutomation: automations.update,
