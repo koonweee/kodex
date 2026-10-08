@@ -199,6 +199,11 @@
   color: var(--kodex-text-muted);
 }
 
+.kodex-user-message-stack > .kodex-message-toolbar,
+.kodex-assistant-message-stack > .kodex-assistant-message-footer {
+  margin-top: -4px;
+}
+
 .kodex-message-toolbar[data-align="end"] {
   justify-content: flex-end;
 }
