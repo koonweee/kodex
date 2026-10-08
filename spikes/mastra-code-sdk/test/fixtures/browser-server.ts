@@ -8,6 +8,7 @@ import { loadServerConfig } from '../../src/server-config.js';
 import { createProjectRuntime, type ProjectRuntime } from '../../src/runtime.js';
 import { createAsyncQuestionTools } from '../../src/async-question-tools.js';
 import { createChildTools } from '../../src/child-tools.js';
+import { createControlTools } from '../../src/control-tools.js';
 import { createChatService } from '../../src/chat-service.js';
 import { createGatewayRouter } from '../../src/gateway-router.js';
 import { serveRouter } from '../../src/server.js';
@@ -51,6 +52,11 @@ const model = await startModelFixture(async request => {
   if (!request.stream) return { text: 'Browser test chat' };
   const user = lastUserText(request);
   const serialized = JSON.stringify(request.messages);
+  if (process.argv[4] === 'control' && user.startsWith('CONTROL_NATIVE:')) {
+    const command = JSON.parse(user.slice('CONTROL_NATIVE:'.length)) as { name: string; arguments: Record<string, unknown> };
+    if (request.messages.at(-1)?.role === 'tool') return { text: `CONTROL_DONE:${command.name}` };
+    return { toolCalls: [{ ...command, id: `browser-control-${command.name}` }] };
+  }
   if (process.argv[4] === 'skills' && (user.includes('BROWSER_SKILL_SEND') || user.includes('BROWSER_SKILL_QUEUE_EDITED'))) {
     const original = user.includes('BROWSER_SKILL_QUEUE_EDITED') ? 'BROWSER_SKILL_QUEUE_EDITED without the token' : 'BROWSER_SKILL_SEND 🧪 $browser-review';
     if (user !== `${original}\n\n${browserSkillActivation}`) throw new Error('Exact formatted native skill instructions did not reach the provider');
@@ -164,7 +170,7 @@ const service = createChatService({
   profile, directoryHome, ...await loadServerConfig(profile, [projectPath]),
   runtimeFactory: async options => {
     let runtime!: ProjectRuntime;
-    runtime = await createProjectRuntime({ ...options, extraTools: { ...createChildTools({ getRuntime: () => runtime }), ...createAsyncQuestionTools(), ...promptTools },
+    runtime = await createProjectRuntime({ ...options, extraTools: { ...createChildTools({ getRuntime: () => runtime }), ...createAsyncQuestionTools(), ...createControlTools({ getRuntime: () => runtime, getService: () => service }), ...promptTools },
       modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }, ...(process.argv[4] === 'plans' ? [{ id: 'plan', defaultModelId: 'fixture/chat' }] : [])] });
     if (process.argv[4] === 'approvals') {
       const create = runtime.createSession.bind(runtime);

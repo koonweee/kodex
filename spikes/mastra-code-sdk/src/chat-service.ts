@@ -20,7 +20,7 @@ import { captureChatFastRequestContext } from './chat-fast.js';
 import { createChatQueue, type ChatQueueInput, type ChatQueueSnapshot, type ChatQueueResult } from './chat-queue.js';
 import { abortNativeChat, retireChatDescendants } from './chat-archive.js';
 import { createChatLifecycle } from './chat-lifecycle.js';
-import { readChatHistory, type HistoryRequest } from './chat-history.js';
+import { readChatHistory, type ChatHistory, type HistoryRequest } from './chat-history.js';
 import { createChatSubagents, type SubagentSelection } from './chat-subagents.js';
 import { createChatGoals, type NativeGoal, type GoalPatch } from './chat-goals.js';
 import { createNativeChatSettings, type ChatSettings, type ChatSettingsPatch } from './chat-settings.js';
@@ -314,6 +314,18 @@ export function createChatService(options: ChatServiceOptions) {
         return created.chat;
       });
     },
+    async readControlChat({ chatId }: { chatId: string }): Promise<Chat> {
+      const { binding, thread } = await projects.findThread(chatId);
+      const chat = await projects.describe(binding.id, thread);
+      assertActive();
+      return chat;
+    },
+    async readControlHistory({ chatId, history }: { chatId: string; history?: HistoryRequest }): Promise<ChatHistory & { chat: Chat }> {
+      const { binding, runtime, thread } = await projects.findThread(chatId);
+      const chat = await projects.describe(binding.id, thread);
+      const saved = await readChatHistory(runtime.controller, { threadId: thread.id, resourceId: thread.resourceId }, history, lifetime.signal);
+      return { chat, ...saved };
+    },
     async openChat({ chatId, history }: { chatId: string; history?: HistoryRequest }, signal?: AbortSignal) {
       return snapshot(await handleFor(chatId), signal, undefined, history);
     },
@@ -447,6 +459,7 @@ export function createChatService(options: ChatServiceOptions) {
   }
   return { ...service,
     updateGoal: guarded(service.updateGoal), clearGoal: guarded(service.clearGoal),
+    readControlChat: guarded(service.readControlChat), readControlHistory: guarded(service.readControlHistory),
     openChat: guarded(service.openChat), getChatSettings: guarded(service.getChatSettings),
     updateChatSettings: guarded(service.updateChatSettings), renameChat: guarded(service.renameChat),
     setChatPinned: guarded(service.setChatPinned), setChatNotifications: guarded(service.setChatNotifications),

@@ -6,8 +6,9 @@ import { requireChatGptAuth } from './auth.js';
 import { createProjectRuntime, type ProjectRuntime } from './runtime.js';
 import { createAsyncQuestionTools } from './async-question-tools.js';
 import { createChildTools } from './child-tools.js';
+import { createControlTools } from './control-tools.js';
 import { loadServerConfig } from './server-config.js';
-import { createChatService } from './chat-service.js';
+import { createChatService, type ChatService } from './chat-service.js';
 import { createGatewayRouter } from './gateway-router.js';
 import { serveRouter } from './server.js';
 
@@ -33,12 +34,13 @@ settings.models.goalMaxTurns = Number.MAX_SAFE_INTEGER;
 // Native task workers and completion delivery own fresh child delegation.
 settings.backgroundTools.enabled = true;
 saveSettings(settings, profile.settingsPath);
-const service = createChatService({
+const service: ChatService = createChatService({
   profile, ...config,
   runtimeFactory: async options => {
     let runtime!: ProjectRuntime;
     runtime = await createProjectRuntime({ ...options,
-      extraTools: { ...createChildTools({ getRuntime: () => runtime }), ...createAsyncQuestionTools() },
+      extraTools: { ...createChildTools({ getRuntime: () => runtime }), ...createAsyncQuestionTools(),
+        ...createControlTools({ getRuntime: () => runtime, getService: () => service }) },
       modes: [{ id: 'build', defaultModelId: values.model, metadata: { default: true } }],
     });
     return runtime;

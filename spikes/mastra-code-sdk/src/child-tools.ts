@@ -4,7 +4,7 @@ import { createTool, type ToolExecutionContext } from '@mastra/core/tools';
 import { KODEX_CHILD_TAG, KODEX_CHILD_VERSION, readChildRelation, type ChildRelation } from './child-relation.js';
 import type { NativeSession, ProjectRuntime } from './runtime.js';
 
-const NESTED_OPERATION_TOOLS = ['delegate_child', 'message_child', 'subagent', 'create-workflow', 'run-workflow'];
+const NESTED_OPERATION_TOOLS = ['delegate_child', 'message_child', 'subagent', 'create-workflow', 'run-workflow', 'create_thread'];
 function childTarget(taskId: string) {
   // Native task identity generates the child identity; the model names only taskId.
   const id = `kodex-child:${taskId}`;
