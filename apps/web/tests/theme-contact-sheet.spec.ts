@@ -90,7 +90,7 @@ for (const scheme of KODEX_COLOR_SCHEMES) {
       await dialog.getByRole("button", { name: "Notifications", exact: true }).click();
       await expect(dialog.getByText("Your device’s notification settings also control alerts and app badges.")).toBeVisible();
       await capture("10-notifications");
-      await dialog.getByRole("button", { name: "Appearance", exact: true }).click();
+      await dialog.getByRole("button", { name: "Interface", exact: true }).click();
       await page.setViewportSize({ width: 390, height: 844 });
       await capture("11-preferences-narrow");
       await writeFile(path.join(directory, "measurements.json"), JSON.stringify(measurements, null, 2));

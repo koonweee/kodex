@@ -1,9 +1,10 @@
-import { Box, Button, Group, SegmentedControl, Stack, Text } from "@mantine/core";
+import { Box, Button, Group, SegmentedControl, Stack, Switch, Text } from "@mantine/core";
 import { Check } from "lucide-react";
 import { useRef, useState, type KeyboardEvent } from "react";
 
 import type { AppearanceMode, AppearancePreferences, AppearanceThemeMode } from "../theme/appearancePreferences";
 import { KODEX_COLOR_SCHEMES, type KodexColorSchemeId } from "../themeRegistry";
+import { useInterfacePreferences } from "./useInterfacePreferences";
 
 export type AppearancePreferencesPanelProps = {
   preferences: AppearancePreferences;
@@ -13,6 +14,7 @@ export type AppearancePreferencesPanelProps = {
 };
 
 export function AppearancePreferencesPanel({ preferences, resolvedSchemeId, onModeChange, onThemeChange }: AppearancePreferencesPanelProps) {
+  const { preferences: interfacePreferences, setFullscreenComposerOnTouch } = useInterfacePreferences();
   const activeScheme = KODEX_COLOR_SCHEMES.find((scheme) => scheme.id === resolvedSchemeId)!;
   const [browseMode, setBrowseMode] = useState<AppearanceThemeMode>(activeScheme.mode);
   const optionRefs = useRef<Partial<Record<KodexColorSchemeId, HTMLButtonElement | null>>>({});
@@ -39,7 +41,7 @@ export function AppearancePreferencesPanel({ preferences, resolvedSchemeId, onMo
 
   return (
     <Stack className="kodex-preferences-panel kodex-appearance-panel" gap={14}>
-      <Text className="kodex-preferences-panel-title" fw={650}>Appearance</Text>
+      <Text className="kodex-preferences-panel-title" fw={650}>Interface</Text>
       <Stack className="kodex-preferences-setting" gap={6}>
         <Text fw={600} id="kodex-appearance-mode-label" size="sm">Appearance mode</Text>
         <SegmentedControl
@@ -51,6 +53,15 @@ export function AppearancePreferencesPanel({ preferences, resolvedSchemeId, onMo
         />
         <Text c="dimmed" size="xs">Auto follows your system appearance using your selected light and dark themes.</Text>
         <Text c="dimmed" size="xs" aria-live="polite">Currently using {activeScheme.label}.</Text>
+      </Stack>
+      <Stack className="kodex-preferences-setting" gap={6}>
+        <Text fw={600} size="sm">Composer</Text>
+        <Switch
+          checked={interfacePreferences.fullscreenComposerOnTouch}
+          label="Open composer fullscreen when using touch"
+          onChange={(event) => setFullscreenComposerOnTouch(event.currentTarget.checked)}
+        />
+        <Text c="dimmed" size="xs">Mouse and keyboard activation always stays inline.</Text>
       </Stack>
       <Stack className="kodex-preferences-setting" gap={8}>
         <Group className="kodex-appearance-browse-header" justify="space-between" gap={8}>

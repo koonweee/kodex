@@ -280,7 +280,7 @@ for (const shape of [
 test.describe("annotation composer activation policy", () => {
   test.use({ viewport: { width: 1024, height: 844 }, hasTouch: true, isMobile: true });
 
-  test("uses the opening pointer instead of touch capability or later resize", async ({ context }) => {
+  test("uses the opening pointer instead of touch capability or viewport width", async ({ context }) => {
     const fixture = await nativeSettingsFixture(context);
     fixture.detail.timeline = {
       ...fixture.detail.timeline,
@@ -296,12 +296,10 @@ test.describe("annotation composer activation policy", () => {
       const firstCommentInput = activePane(page).getByRole("textbox", { name: "Annotation 1 comment", exact: true });
       const firstCommentNode = await firstCommentInput.elementHandle();
       await expect(firstCommentInput).toBeFocused();
-      await expect(activePane(page).getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
+      await expect(activePane(page).getByRole("dialog", { name: "Compose", exact: true })).toBeVisible();
 
       await page.setViewportSize({ width: 390, height: 844 });
       await expect(activePane(page)).toHaveAttribute("data-pane-width", "compact");
-      await expect(activePane(page).getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
-      await firstCommentInput.tap();
       await expect(activePane(page).getByRole("dialog", { name: "Compose", exact: true })).toBeVisible();
       expect(await firstCommentNode!.evaluate((element) => element.isConnected && element === document.activeElement)).toBe(true);
       await collapseTouchComposer(page, true);

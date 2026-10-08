@@ -241,7 +241,7 @@ describe("PreferencesModal plugins tab", () => {
     expect(screen.getByRole("button", { name: /^install$/i })).toBeDisabled();
   });
 
-  it("keeps appearance and plugins tab navigation separate", async () => {
+  it("keeps interface and plugins tab navigation separate", async () => {
     apiMocks.getKodexControlPluginStatus.mockResolvedValue({
       appServerReady: true,
       appsNeedingAuth: [],

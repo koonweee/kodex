@@ -4,6 +4,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject, PointerEventHandler } from "react";
 
 import type { SkillMetadata } from "../api/client";
+import { useInputCapabilities } from "../shared/inputCapabilities";
 import { AttachmentTray } from "./AttachmentTray";
 import { ComposerAnnotations } from "./ComposerAnnotations";
 import type { ComposerPanelProps } from "./ComposerPanel";
@@ -110,6 +111,7 @@ export function InlineComposerPanel({
   renderSkillSuggestions,
   textareaRef,
 }: InlineComposerPanelProps) {
+  const { hasTouchInput } = useInputCapabilities();
   const formId = useId();
   const formRef = useRef<HTMLFormElement>(null);
   const [editingActive, setEditingActive] = useState(false);
@@ -128,12 +130,13 @@ export function InlineComposerPanel({
     return () => cancelAnimationFrame(frame);
   }, [composerFocused, toolbarMenuOpen]);
   // Keep the empty row stable through attachment and settings loading.
-  const idleCompact = density === "compact" && selectedThreadPresent && !isDraftThreadSelected &&
+  const useIdlePresentation = density === "compact" || hasTouchInput;
+  const idleCompact = useIdlePresentation && selectedThreadPresent && !isDraftThreadSelected &&
     !isDraftComposerTransitioning && !expanded && !editingActive &&
     draftState.composerText.length === 0 && draftState.annotations.length === 0 &&
     draftState.skillBindings.length === 0 && pendingAttachments.length === 0 &&
     !skillPopupOpen && !slashPopupOpen && !isComposerDragActive && !isComposerBusy && !composerSettingsError;
-  const inlineMotion = density === "compact" && selectedThreadPresent && !isDraftThreadSelected && !isDraftComposerTransitioning && !expanded;
+  const inlineMotion = useIdlePresentation && selectedThreadPresent && !isDraftThreadSelected && !isDraftComposerTransitioning && !expanded;
   useInlineComposerMotion(formRef, inlineMotion, idleCompact);
   const draftHeroText = greetingForDate(new Date());
   const shouldShowDraftHero = !expanded && (isDraftThreadSelected || isDraftComposerTransitioning);

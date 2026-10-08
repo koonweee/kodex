@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { composerSettingsPresentation, shouldExpandComposerOnTouch } from "./presentationPolicy";
 
 describe("composer expansion initiation", () => {
-  it.each(["mouse", "pen", "", "touch"])("only expands narrow workspaces for touch, event=%s", (pointerType) => {
+  it.each(["mouse", "pen", "", "touch"])("only expands enabled touch openings, event=%s", (pointerType) => {
     expect(shouldExpandComposerOnTouch(false, pointerType)).toBe(false);
     expect(shouldExpandComposerOnTouch(true, pointerType)).toBe(pointerType === "touch");
   });

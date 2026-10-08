@@ -20,7 +20,8 @@ describe("useComposerKeyboardViewport", () => {
 
     const { result } = renderHook(() => useComposerKeyboardViewport());
 
-    expect(result.current).toEqual({ inlineKeyboardInset: 268, keyboardInset: 268, viewportHeight: 520, viewportOffsetTop: 12 });
+    expect(result.current).toEqual({ inlineKeyboardInset: 268, inlineViewportOffsetTop: 12,
+      keyboardInset: 268, viewportHeight: 520, viewportOffsetTop: 12 });
 
     act(() => {
       Object.defineProperty(window.visualViewport, "height", { configurable: true, value: 600 });
@@ -28,7 +29,8 @@ describe("useComposerKeyboardViewport", () => {
       listeners.get("resize")?.(new Event("resize"));
     });
 
-    expect(result.current).toEqual({ inlineKeyboardInset: 200, keyboardInset: 200, viewportHeight: 600, viewportOffsetTop: 0 });
+    expect(result.current).toEqual({ inlineKeyboardInset: 200, inlineViewportOffsetTop: 0,
+      keyboardInset: 200, viewportHeight: 600, viewportOffsetTop: 0 });
   });
 
   it("only reserves the part of an owning pane overlapped by the keyboard", () => {
@@ -46,18 +48,28 @@ describe("useComposerKeyboardViewport", () => {
     pane.append(composer);
     document.body.append(pane);
     let paneBottom = 420;
+    let paneTop = 0;
     vi.spyOn(pane, "getBoundingClientRect").mockImplementation(() => ({
-      bottom: paneBottom, height: 420, left: 0, right: 390, top: 0, width: 390, x: 0, y: 0, toJSON: () => ({}),
+      bottom: paneBottom, height: paneBottom - paneTop, left: 0, right: 390, top: paneTop, width: 390, x: 0, y: paneTop,
+      toJSON: () => ({}),
     }));
 
     const { result } = renderHook(() => useComposerKeyboardViewport(true, composer));
-    expect(result.current).toMatchObject({ inlineKeyboardInset: 0, keyboardInset: 300 });
+    expect(result.current).toMatchObject({ inlineKeyboardInset: 0, inlineViewportOffsetTop: 0, keyboardInset: 300 });
 
     act(() => {
       paneBottom = 620;
       listeners.get("resize")?.(new Event("resize"));
     });
     expect(result.current).toMatchObject({ inlineKeyboardInset: 120, keyboardInset: 300 });
+
+    act(() => {
+      paneTop = 40;
+      Object.defineProperty(window.visualViewport, "height", { configurable: true, value: 424 });
+      Object.defineProperty(window.visualViewport, "offsetTop", { configurable: true, value: 120 });
+      listeners.get("scroll")?.(new Event("scroll"));
+    });
+    expect(result.current).toMatchObject({ inlineKeyboardInset: 76, inlineViewportOffsetTop: 80, keyboardInset: 256 });
     pane.remove();
   });
 });

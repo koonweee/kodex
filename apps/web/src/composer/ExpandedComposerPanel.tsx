@@ -4,7 +4,7 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from "react";
 
 import { usePaneLayout } from "../shared/PaneLayout";
-import { useNarrowWorkspace } from "../shared/layoutBreakpoints";
+import { useInterfacePreferences } from "../preferences/useInterfacePreferences";
 import { shouldExpandComposerOnTouch } from "./presentationPolicy";
 import type { SkillMetadata } from "../api/client";
 import type { GoalControls } from "../goals/GoalControls";
@@ -86,25 +86,22 @@ export function ExpandedComposerPanel({
   ...inlineComposerProps
 }: ExpandedComposerPanelProps) {
   const { compact } = usePaneLayout();
-  const narrowWorkspace = useNarrowWorkspace();
+  const { preferences: interfacePreferences } = useInterfacePreferences();
   const [expansionRequested, setIsExpanded] = useState(false);
   const handledAnnotationTouchOpenRevision = useRef(0);
   const [focusSessionActive, setFocusSessionActive] = useState(false);
   const [composerShellNode, setLocalComposerShellNode] = useState<HTMLDivElement | null>(null);
-  const isExpanded = expansionRequested && narrowWorkspace;
-  useLayoutEffect(() => {
-    if (!narrowWorkspace) setIsExpanded(false);
-  }, [narrowWorkspace]);
+  const isExpanded = expansionRequested;
   useLayoutEffect(() => {
     if (!annotationTouchOpenRevision || handledAnnotationTouchOpenRevision.current === annotationTouchOpenRevision) return;
     handledAnnotationTouchOpenRevision.current = annotationTouchOpenRevision;
-    if (narrowWorkspace) setIsExpanded(true);
-  }, [annotationTouchOpenRevision, narrowWorkspace]);
+    if (interfacePreferences.fullscreenComposerOnTouch) setIsExpanded(true);
+  }, [annotationTouchOpenRevision, interfacePreferences.fullscreenComposerOnTouch]);
   const keyboardViewport = useComposerKeyboardViewport(isExpanded || focusSessionActive, composerShellNode);
   const keyboardViewportStyle = {
-    "--kodex-mobile-keyboard-inset": `${keyboardViewport.keyboardInset}px`,
+    "--kodex-mobile-keyboard-inset": `${keyboardViewport.inlineKeyboardInset}px`,
     "--kodex-mobile-inline-keyboard-inset": `${keyboardViewport.inlineKeyboardInset}px`,
-    "--kodex-mobile-visual-viewport-offset-top": `${keyboardViewport.viewportOffsetTop}px`,
+    "--kodex-mobile-pane-viewport-offset-top": `${keyboardViewport.inlineViewportOffsetTop}px`,
     "--kodex-mobile-visual-viewport-height": `${keyboardViewport.viewportHeight}px`,
     "--kodex-mobile-bottom-safe-area": keyboardViewport.keyboardInset > 0 ? "0px" : undefined,
   } as CSSProperties;
@@ -177,7 +174,10 @@ export function ExpandedComposerPanel({
         onComposerPaste={onComposerPaste}
         onComposerSettingsChange={onComposerSettingsChange}
         onEditablePointerDown={(event) => {
-          if (!isComposerDisabled && shouldExpandComposerOnTouch(narrowWorkspace, event.pointerType)) {
+          if (!isComposerDisabled && shouldExpandComposerOnTouch(
+            interfacePreferences.fullscreenComposerOnTouch,
+            event.pointerType,
+          )) {
             if (!isExpanded) {
               // Focus within the touch gesture; prevent native pointer defaults
               // from disturbing focus while fullscreen geometry moves the field.

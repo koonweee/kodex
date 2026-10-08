@@ -9,6 +9,7 @@ import { listSkills } from "../api/client";
 import { createKodexQueryClient } from "../api/queryClient";
 import type { SkillMetadata } from "../api/client";
 import type { ComposerSettings } from "../ComposerFooterControls";
+import { INTERFACE_PREFERENCES_STORAGE_KEY, readStoredInterfacePreferences } from "../preferences/useInterfacePreferences";
 import { ComposerPanel } from "./ComposerPanel";
 
 vi.mock("../api/client", async (importActual) => ({
@@ -31,6 +32,8 @@ function noopSubmit(event: FormEvent) {
 
 describe("Mobile composer panel", () => {
   beforeEach(() => {
+    window.localStorage.clear();
+    readStoredInterfacePreferences(true);
     vi.mocked(listSkills).mockReset();
     setMobileViewport(true);
     paneLayout.compact = true;
@@ -46,6 +49,8 @@ describe("Mobile composer panel", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    window.localStorage.clear();
+    readStoredInterfacePreferences(true);
   });
 
   it("renders the shared inline composer with compact density without an existing-thread underbar", async () => {
@@ -167,6 +172,7 @@ describe("Mobile composer panel", () => {
   });
 
   it("uses normal height in a regular pane and preserves an active empty input across width changes", async () => {
+    setMobileViewport(false, { touch: false });
     paneLayout.compact = false;
     const view = renderComposerPanel();
     const input = screen.getByLabelText(/message composer/i);
@@ -188,6 +194,35 @@ describe("Mobile composer panel", () => {
 
     expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toBe(textarea);
+    expect(textarea).toHaveFocus();
+  });
+
+  it("shows the idle composer in a regular touch pane and opens fullscreen at wide viewport", async () => {
+    setMobileViewport(false);
+    paneLayout.compact = false;
+    renderComposerPanel();
+    const textarea = screen.getByLabelText(/message composer/i);
+    expect(textarea.closest("form")).toHaveAttribute("data-idle-compact", "true");
+
+    await openByTouch(textarea);
+
+    expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/message composer/i)).toBe(textarea);
+    expect(textarea).toHaveFocus();
+  });
+
+  it("keeps touch activation inline when fullscreen opening is disabled for this device", async () => {
+    window.localStorage.setItem(INTERFACE_PREFERENCES_STORAGE_KEY, JSON.stringify({ fullscreenComposerOnTouch: false }));
+    setMobileViewport(false);
+    paneLayout.compact = false;
+    renderComposerPanel();
+    const textarea = screen.getByLabelText(/message composer/i);
+    expect(textarea.closest("form")).toHaveAttribute("data-idle-compact", "true");
+
+    await openByTouch(textarea);
+
+    expect(screen.queryByRole("dialog", { name: /compose/i })).not.toBeInTheDocument();
+    expect(textarea.closest("form")).toHaveAttribute("data-idle-compact", "false");
     expect(textarea).toHaveFocus();
   });
 
@@ -216,7 +251,7 @@ describe("Mobile composer panel", () => {
     expect(textarea).toHaveFocus();
   });
 
-  it("keeps the input, draft and selection through compact and regular pane transitions in a wide workspace", async () => {
+  it("keeps the input, draft and selection when touch expands from a wide workspace", async () => {
     setMobileViewport(false);
     const view = renderComposerPanel();
     const input = screen.getByLabelText(/message composer/i) as HTMLTextAreaElement;
@@ -233,7 +268,7 @@ describe("Mobile composer panel", () => {
     view.refreshLayout();
     fireEvent.compositionEnd(input);
     fireEvent.pointerDown(input, { pointerType: "touch" });
-    expect(screen.queryByRole("dialog", { name: /compose/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toBe(input);
     expect(input).toHaveFocus();
     expect([input.selectionStart, input.selectionEnd]).toEqual([2, 6]);
@@ -255,7 +290,7 @@ describe("Mobile composer panel", () => {
     expect(dialog).toHaveStyle({
       "--kodex-mobile-keyboard-inset": "256px",
       "--kodex-mobile-visual-viewport-height": "520px",
-      "--kodex-mobile-visual-viewport-offset-top": "24px",
+      "--kodex-mobile-pane-viewport-offset-top": "24px",
     });
 
   });

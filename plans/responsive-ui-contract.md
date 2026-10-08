@@ -12,7 +12,7 @@ Retain the existing native/gateway ownership of conversation, settings, queue an
 
 ## User Decisions
 
-1. Automatic fullscreen composer expansion requires a **narrow browser window and a touch interaction that opens the composer**. Mouse or keyboard focus stays inline, including on a touch-capable computer. A narrow pane inside a wide browser does not qualify by itself.
+1. Automatic fullscreen composer expansion requires an **actual touch interaction that opens the composer** and the device-local Interface preference to be enabled. It applies at any browser width by default. Mouse or keyboard focus stays inline, including on a touch-capable computer; disabling the preference keeps every opening inline.
 2. Compact panes reuse the **current mobile treatment** for composer controls, attachments and annotations. Do not invent a new toolbar redesign or replace it with an all-controls-wrapped layout. Separate its layout rules from touch ergonomics.
 3. **Keyboard-submit behavior remains unchanged.** Hybrid keyboard shortcuts are a separate follow-up, not an implicit consequence of classification cleanup. In particular, do not change Enter, Shift+Enter, Meta+Enter, queue submission or IME handling as part of this plan.
 4. Scope includes shared enforcement and cleanup of existing classifications. Implementation and full frontend/backend deployment were subsequently requested.
@@ -71,10 +71,10 @@ Start with two width classes and a separate height constraint. Add another class
 
 - Compact density applies from pane width on both fine-pointer and touch-capable devices. Reuse current compact control labels, accessory layout, attachment tray and annotation defaults, while preserving all existing actions.
 - Touch targets, editable-input zoom avoidance and safe-area treatment stay capability-owned. Fullscreen layout/keyboard adjustment is separate from compact density.
-- Automatic expansion is initiated by a touch interaction opening an editable composer field while the workspace is narrow. Capability flags alone, mouse clicks, Tab focus, programmatic autofocus and resize must not trigger expansion.
+- Automatic expansion is initiated by a touch interaction opening an editable composer field when the device-local Interface preference is enabled. Capability flags alone, mouse clicks, Tab focus, programmatic autofocus and resize must not trigger expansion.
 - Handle tapping an already-focused editable field, not just its first focus event. Avoid a global "last input was touch" flag that can make unrelated later focus expand the composer.
 - Preserve the directly focused textarea through expansion and all responsive changes. No alternate keyed subtree that remounts input on a width/capability transition. Preserve selection, IME composition, annotations, skill bindings, attachments and draft identity.
-- Preserve explicit collapse and submit behavior. An already-expanded composer returns inline when the workspace becomes wide, keeping its input and focus. Width changes must never newly auto-expand it. Keyboard visual-viewport changes size an existing expanded composer; they are not activation signals.
+- Preserve explicit collapse and submit behavior. Width changes must never expand or collapse an active composer. Keyboard visual-viewport changes size an existing expanded composer; they are not activation signals.
 - Preserve current anchored settings menus versus touch-sheet behavior through a named policy. A compact fine-pointer pane retains anchored menus. Do not make every fullscreen modal in the app touch-only: some global dialogs use fullscreen for viewport fit.
 - Keep all existing keyboard-submit semantics, including the current touch-capability-dependent branch, under an explicitly named legacy submission policy if renamed. Test preservation; do not derive it from the new compact/fullscreen flags.
 
@@ -117,7 +117,7 @@ Exit: meaningful helper/policy tests pass for independent pane sizes, capability
 - Preserve input identity, drafts, focus and editing context across resize, rotation, expansion and collapse.
 - Preserve keyboard-submit behavior, queue routing and textarea autosize.
 
-Exit: wide workspace with a narrow fine-pointer pane gets compact UI but never automatic fullscreen; narrow workspace expands only through actual touch opening; mouse/keyboard/programmatic focus remains inline. Existing keyboard, annotation, skill, attachment and queue behavior tests pass.
+Exit: wide workspace with a narrow fine-pointer pane gets compact UI but never automatic fullscreen; actual touch opening expands by default at any workspace width; the device preference can retain inline composition; mouse/keyboard/programmatic focus remains inline. Existing keyboard, annotation, skill, attachment and queue behavior tests pass.
 
 ### M3 — Pane content and classification cleanup
 
@@ -143,8 +143,8 @@ Exit: all required tests, build/typecheck and frontend trim/architecture guard p
 | --- | --- |
 | Wide fine-pointer browser, compact pane beside regular pane | Compact mobile visual treatment only in constrained pane; inline composer, keyboard behavior, no overflow |
 | Narrow fine-pointer browser | Single-panel shell and compact fit; mouse/Tab/programmatic focus never auto-fullscreen |
-| Narrow touch browser | Direct touch opening expands the existing textarea; keyboard/safe-area handling and Send/Stop remain usable |
-| Wide touch browser with narrow pane | Compact fit and touch affordances; narrow pane alone never triggers fullscreen |
+| Narrow touch browser | Direct touch opening expands the existing textarea by default; keyboard/safe-area handling and Send/Stop remain usable |
+| Wide touch browser with narrow pane | Compact fit and touch affordances; touch opening expands by default while capability or pane width alone never does |
 | Hybrid touch + fine hover in narrow browser | Mouse/keyboard focus stays inline; actual touch opening expands; hover and non-hover routes coexist |
 | Width breakpoint crossings during editing | Same DOM textarea, focus, selection, IME, draft/attachments/annotations/skill state retained; no new auto-expansion |
 | Independent height resize, including four-pane layout | Existing two-to-five textarea rows preserved; queue defaults respond to short height, manual choice retained |
@@ -205,10 +205,10 @@ Full macOS service update from implementation commit `a43072d` completed success
 
 Complete. The user authorized implementation and frontend-only deployment on 2026-10-08; both are verified.
 
-- All compact panes qualify; only existing conversations collapse. New-conversation greetings and project controls retain their current presentation.
+- All compact panes qualify, and touch-capable regular panes also qualify; only existing conversations collapse. New-conversation greetings and project controls retain their current presentation.
 - When empty and inactive, the composer keeps its four corner radii and becomes one footer-height row. The same single-line textarea occupies the space between attachment and context/settings controls. All footer actions, including Stop, remain available.
 - Compact panes replace the model/effort text with a brain icon, retaining the complete accessible label and tooltip. Regular panes retain the text.
-- Editable focus restores normal inline height. Actual touch in a narrow workspace opens the existing fullscreen composer; mouse, keyboard, programmatic focus, and compact touch panes in wide workspaces remain inline.
+- Editable focus restores normal inline height. Actual touch opens the existing fullscreen composer at any workspace width when the device preference is enabled; mouse, keyboard and programmatic focus remain inline.
 - Text (including whitespace), attachments, annotations, skill bindings, drag/drop, settings errors, and submission prevent idle collapse. Empty inactive compact panes keep idle presentation through entry/settings loading or settings updates, with existing readiness and disabled-control guards. Focus moving through the composer and its portalled menus preserves an active editing session.
 - Preserve textarea identity, selection, IME and drafts across every transition. This is per-pane presentation; native submission, queue and settings ownership remain unchanged.
 
@@ -217,6 +217,19 @@ Exit: focused behavior tests, bundled-Chromium layout/input/menu/resize checks, 
 Validation also exposed an existing native Dockview resize defect: hidden split allocations are absolute, and restoring them at narrow or transient sidebar-animation bounds changes their proportions. The responsive session records only its entry container dimensions. Native reveal and serialization temporarily use those bounds before restoring current geometry; native proportional resizing remains authoritative. Narrow entry cancels pending saves, delayed callbacks check current mode, and reconciliation serializes once through the same helper. Real Dockview core regressions cover resize, narrow serialization and delayed saves. The rendered browser test waits for the sidebar to settle while preserving the same per-group baseline and tolerance. No split ledger or renderer replacement was added.
 
 Composer menus restore their existing trigger synchronously before reporting closed, so focus gaps during portalled menu navigation cannot prematurely end editing. Native settings-save disabling remains intact. Touch opening focuses the existing editable field within the gesture and prevents pointer defaults from disturbing focus during relayout; already-expanded taps retain ordinary cursor/selection behavior.
+
+## Follow-up: device fullscreen composer preference
+
+Complete and validated. This decision supersedes the earlier narrow-workspace requirement and the historical wide-touch-inline validation above. It is not yet deployed.
+
+- The Preferences section named Appearance is now presented as **Interface**. Theme controls remain there alongside device-level interaction choices.
+- **Open composer fullscreen when using touch** defaults on. With it enabled, an actual touch opening expands the existing composer at any workspace width. With it disabled, every opening remains inline. Mouse, keyboard and programmatic focus always remain inline.
+- The choice is browser/device-local in `localStorage` and converges across tabs in the same browser. It is not shared through gateway or account state.
+- Idle presentation is a separate decision: an empty, inactive composer for an existing conversation is idle when its pane is compact or the browser reports touch input, regardless of the fullscreen preference.
+- Resizing never initiates expansion or collapses an active fullscreen composer. In a multi-pane workspace, fullscreen remains pane-owned; in a single-pane workspace it also replaces the workspace header.
+- Keep the textarea mounted and preserve focus, selection, IME composition, draft content, annotations, skill bindings and attachments through every transition. Keyboard submission and shared conversation state remain unchanged.
+
+Validation: 84 focused unit/component tests and 43 bundled-Chromium cases pass, including default and opt-out touch opening, mouse/keyboard inline opening, same-browser two-tab preference convergence, annotations, idle motion, compact/regular panes and a four-pane visual-viewport overlap case. Production build/typecheck, frontend trim and all 11 responsive ownership fixtures pass. Independent review found and verified fixes for pane-relative keyboard clipping and idle-selector specificity; rendered checks preserve balanced 8px idle padding and the 32px idle radius.
 
 Separate pre-existing follow-up: activating another hidden native group while the workspace is narrow can exit maximize before the client receives the active-panel event and alter split allocations. This change addresses width transitions and serialization; wrapping native group activation is outside the idle-composer scope. Physical iOS keyboard behavior was not revalidated; touch and hybrid evidence uses bundled Chromium.
 

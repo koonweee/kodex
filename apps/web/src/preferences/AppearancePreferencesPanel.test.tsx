@@ -2,11 +2,12 @@ import { MantineProvider } from "@mantine/core";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppearancePreferencesPanel } from "./AppearancePreferencesPanel";
 import type { AppearancePreferences } from "../theme/appearancePreferences";
 import { KODEX_COLOR_SCHEMES } from "../themeRegistry";
+import { INTERFACE_PREFERENCES_STORAGE_KEY, readStoredInterfacePreferences } from "./useInterfacePreferences";
 
 function mountPanel() {
   const onModeChange = vi.fn();
@@ -25,6 +26,22 @@ function mountPanel() {
 }
 
 describe("AppearancePreferencesPanel", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    readStoredInterfacePreferences(true);
+  });
+
+  it("stores the device fullscreen preference from the Interface panel", async () => {
+    mountPanel();
+    const toggle = screen.getByRole("switch", { name: "Open composer fullscreen when using touch" });
+    expect(toggle).toBeChecked();
+    await userEvent.click(toggle);
+    expect(toggle).not.toBeChecked();
+    expect(JSON.parse(window.localStorage.getItem(INTERFACE_PREFERENCES_STORAGE_KEY)!)).toEqual({
+      fullscreenComposerOnTouch: false,
+    });
+  });
+
   it("browses light and dark choices without changing appearance mode or saved themes", async () => {
     const { onModeChange, onThemeChange } = mountPanel();
     const filter = screen.getByRole("radiogroup", { name: "Browse themes" });

@@ -52,9 +52,9 @@
 }
 
 /* Flatten only layout wrappers; the textarea and controls stay mounted. */
-.kodex-composer-shell[data-inline-density="compact"] .kodex-composer[data-idle-compact="true"] {
+.kodex-composer-shell .kodex-composer[data-idle-compact="true"] {
   border-radius: var(--kodex-radius-composer-compact);
-  padding-block: 8px;
+  padding: 8px 10px;
   grid-template-columns: auto minmax(0, 1fr) auto auto auto;
   grid-template-rows: auto;
   align-items: center;
@@ -128,7 +128,7 @@
   }
 }
 
-/* Fullscreen composition owns the narrow workspace chrome. Keeping the
+/* Fullscreen composition owns single-pane workspace chrome. Keeping the
    overlay inside its pane avoids escaping Dockview's containment and stacking. */
 .kodex-workspace-shell[data-single-pane="true"]:has(.kodex-mobile-composer-expanded)
   > .kodex-workspace-single-pane-header {
@@ -149,9 +149,7 @@
 
 .kodex-composer-shell.kodex-mobile-composer-expanded {
   position: absolute;
-  top: max(0px, calc(
-    var(--kodex-mobile-visual-viewport-offset-top, 0px) - var(--kodex-mobile-safe-area-top, 0px)
-  ));
+  top: var(--kodex-mobile-pane-viewport-offset-top, 0px);
   right: 0;
   bottom: var(--kodex-mobile-keyboard-inset, 0px);
   left: 0;

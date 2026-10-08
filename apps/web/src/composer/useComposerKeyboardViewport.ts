@@ -2,6 +2,7 @@ import { useLayoutEffect, useState } from "react";
 
 export type ComposerKeyboardViewport = {
   inlineKeyboardInset: number;
+  inlineViewportOffsetTop: number;
   keyboardInset: number;
   viewportOffsetTop: number;
   viewportHeight: number;
@@ -17,6 +18,7 @@ export function useComposerKeyboardViewport(enabled = true, owner?: HTMLElement 
     function updateViewport() {
       const next = readViewport(owner);
       setViewport(current => current.inlineKeyboardInset === next.inlineKeyboardInset &&
+        current.inlineViewportOffsetTop === next.inlineViewportOffsetTop &&
         current.keyboardInset === next.keyboardInset &&
         current.viewportHeight === next.viewportHeight && current.viewportOffsetTop === next.viewportOffsetTop ? current : next);
     }
@@ -46,8 +48,11 @@ function readViewport(owner?: HTMLElement | null): ComposerKeyboardViewport {
   const viewportOffsetTop = Math.max(0, Math.round(visualViewport?.offsetTop ?? 0));
   const keyboardInset = Math.max(0, Math.round(layoutHeight - viewportHeight - viewportOffsetTop));
   const paneBounds = owner?.closest(".kodex-thread-pane")?.getBoundingClientRect();
+  const inlineViewportOffsetTop = paneBounds
+    ? Math.max(0, Math.min(Math.round(paneBounds.height), viewportOffsetTop - Math.round(paneBounds.top)))
+    : viewportOffsetTop;
   const inlineKeyboardInset = paneBounds
     ? Math.max(0, Math.min(Math.round(paneBounds.height), Math.round(paneBounds.bottom - viewportOffsetTop - viewportHeight)))
     : keyboardInset;
-  return { inlineKeyboardInset, keyboardInset, viewportHeight, viewportOffsetTop };
+  return { inlineKeyboardInset, inlineViewportOffsetTop, keyboardInset, viewportHeight, viewportOffsetTop };
 }

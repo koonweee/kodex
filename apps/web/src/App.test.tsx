@@ -388,7 +388,7 @@ describe("App shell", () => {
     await userEvent.click(await screen.findByRole("menuitem", { name: /preferences/i }));
 
     expect(await screen.findByRole("dialog", { name: /preferences/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /appearance/i })).toHaveAttribute("data-active", "true");
+    expect(screen.getByRole("button", { name: /interface/i })).toHaveAttribute("data-active", "true");
     const mode = screen.getByRole("radiogroup", { name: "Appearance mode" });
     expect(within(mode).getByRole("radio", { name: "Auto" })).toBeChecked();
     await userEvent.click(within(screen.getByRole("radiogroup", { name: "Browse themes" })).getByRole("radio", { name: "Dark" }));

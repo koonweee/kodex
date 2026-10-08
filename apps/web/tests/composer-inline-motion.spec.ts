@@ -290,14 +290,24 @@ test("a real narrow touch opening goes straight to fullscreen without inline mor
   expectClean(fixture);
 });
 
-test("a wide touch workspace animates its compact pane inline", async ({ browser }) => {
+test("a wide touch workspace with fullscreen disabled animates its idle composer inline", async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 1280, height: 844 }, hasTouch: true, baseURL: test.info().project.use.baseURL });
   await context.addInitScript(() => {
-    if (location.protocol === "http:") localStorage.setItem("kodex-color-scheme", "dracula");
+    if (location.protocol === "http:") {
+      localStorage.setItem("kodex-color-scheme", "dracula");
+      localStorage.setItem("kodex-interface", JSON.stringify({ fullscreenComposerOnTouch: false }));
+    }
   });
   const fixture = await nativeSettingsFixture(context);
   try {
-    const { page, pane, form, input } = await ready(fixture, "wide-touch-inline", true);
+    const page = await fixture.page("wide-touch-inline");
+    const pane = page.locator(".kodex-thread-pane-existing");
+    const form = pane.locator("form.kodex-composer");
+    const input = pane.getByRole("textbox", { name: "Message composer", exact: true });
+    await expect(pane).toHaveAttribute("data-pane-width", "regular");
+    await expect(form).toHaveAttribute("data-idle-compact", "true");
+    await expect(pane.getByRole("button", { name: "Model: gpt-5.4, medium", exact: true })).toBeEnabled();
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     await page.screenshot({ path: test.info().outputPath("idle-dark-inline.png") });
     await recordMotion(form, "none");
     await input.tap();

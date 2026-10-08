@@ -32,6 +32,8 @@ for (const shape of [
           const context = bounds(".kodex-context-usage");
           const model = bounds(".kodex-composer-model-control");
           return { height: el.getBoundingClientRect().height, padding: parseFloat(style.paddingTop) + parseFloat(style.paddingBottom),
+            paddingTop: parseFloat(style.paddingTop), paddingBottom: parseFloat(style.paddingBottom),
+            borderRadius: parseFloat(style.borderTopLeftRadius),
             inputHeight: input.height, inputWidth: input.width, fieldBetween: input.left >= add.right && input.right <= context.left,
             contextWidth: context.width, contextModelGap: model.left - context.right,
             controlHeight: add.height, modelWidth: model.width, modelHeight: model.height, overflow: el.scrollWidth - el.clientWidth };
@@ -39,6 +41,8 @@ for (const shape of [
         await expect.poll(async () => (await measure()).overflow).toBeLessThanOrEqual(1);
         const idle = await measure();
         expect(idle.height).toBeCloseTo(idle.controlHeight + idle.padding, 0);
+        expect(idle.paddingTop).toBeCloseTo(idle.paddingBottom, 1);
+        expect(idle.borderRadius).toBeCloseTo(32, 0);
         expect(idle.inputWidth).toBeGreaterThan(40);
         expect(idle.inputHeight).toBeLessThanOrEqual(idle.controlHeight + 1);
         expect(idle.fieldBetween).toBe(true);
@@ -122,12 +126,12 @@ for (const shape of [
         else await input.click();
         await expect(input).toBeFocused();
         await expect(form).toHaveAttribute("data-idle-compact", "false");
-        await expect(pane.getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(shape.hasTouch && shape.width <= 900 ? 1 : 0);
+        await expect(pane.getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(shape.hasTouch ? 1 : 0);
         expect(await original!.evaluate(el => el.isConnected && el === document.activeElement)).toBe(true);
         await input.fill("Draft survives resize");
         await input.evaluate(el => el.setSelectionRange(2, 7));
         await page.setViewportSize({ width: 1280, height: 500 });
-        await expect(pane.getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
+        await expect(pane.getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(shape.hasTouch ? 1 : 0);
         await expect(input).toHaveValue("Draft survives resize");
         await expect(input).toBeFocused();
         expect(await input.evaluate(el => [el.selectionStart, el.selectionEnd])).toEqual([2, 7]);
