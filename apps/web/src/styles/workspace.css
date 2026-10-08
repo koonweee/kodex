@@ -76,7 +76,7 @@
   align-items: center;
   background: transparent;
   border: 0;
-  border-radius: var(--kodex-radius-xs);
+  border-radius: var(--kodex-radius-md);
   color: var(--kodex-text-secondary);
   cursor: pointer;
   display: inline-flex;
@@ -203,7 +203,7 @@
 }
 
 .kodex-workspace-dock .dv-tabs-overflow-dropdown-default {
-  border-radius: var(--kodex-radius-xs);
+  border-radius: var(--kodex-radius-md);
   min-width: 44px;
 }
 

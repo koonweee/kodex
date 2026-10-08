@@ -197,7 +197,9 @@
   width: 100%;
 }
 
-.kodex-workspace-dock .kodex-workspace-tab .dv-default-tab-action,
+/* Match Dockview's full selector specificity so its hardcoded 2px hover
+   radius cannot replace the app's shared control radius. */
+.kodex-workspace-dock .dv-tab .dv-default-tab .dv-default-tab-action,
 .kodex-workspace-tab > .kodex-workspace-pane-title-adornment {
   position: absolute;
   right: 0;
@@ -207,7 +209,7 @@
   height: 24px;
   box-sizing: border-box;
   background: var(--kodex-tab-overlay-bg);
-  border-radius: var(--kodex-radius-xs);
+  border-radius: var(--kodex-radius-md);
 }
 
 .kodex-workspace-tab > .kodex-workspace-pane-title-adornment {

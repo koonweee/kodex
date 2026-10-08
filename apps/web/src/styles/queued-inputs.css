@@ -88,7 +88,7 @@
   height: 20px;
   min-height: 20px;
   padding: 0 14px;
-  border-radius: var(--kodex-radius-xs);
+  border-radius: var(--kodex-radius-round);
   background: var(--kodex-bg-raised-alt);
   color: var(--kodex-text-secondary);
   opacity: 0;
@@ -119,7 +119,7 @@
   .kodex-queue-collapse-zone .kodex-queue-collapse::before {
     position: absolute;
     inset: 12px 0;
-    border-radius: var(--kodex-radius-xs);
+    border-radius: var(--kodex-radius-round);
     background: var(--kodex-bg-raised-alt);
     content: "";
     pointer-events: none;
