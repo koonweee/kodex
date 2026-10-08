@@ -112,7 +112,7 @@
   outline-offset: -6px;
 }
 
-.kodex-composer-shell[data-drag-active="true"] .kodex-composer > :not(.kodex-composer-drop-hint) {
+.kodex-composer-shell[data-drag-active="true"] .kodex-composer > :not(.kodex-composer-drop-hint, .kodex-composer-surface) {
   opacity: 0.35;
 }
 

@@ -15,6 +15,7 @@ import { shouldSyncComposerCursorOnKeyUp } from "./keyEvents";
 import type { SlashCommandItem } from "./slashCommands";
 import type { ComposerDraftState } from "./useComposerDraftState";
 import type { SkillCatalogState } from "./useSkillCatalog";
+import { useInlineComposerMotion } from "./useInlineComposerMotion";
 
 const COMPOSER_TEXT = {
   addAttachment: "Add attachment",
@@ -106,6 +107,7 @@ export function InlineComposerPanel({
   textareaRef,
 }: InlineComposerPanelProps) {
   const formId = useId();
+  const formRef = useRef<HTMLFormElement>(null);
   const [editingActive, setEditingActive] = useState(false);
   const [composerFocused, setComposerFocused] = useState(false);
   const [toolbarMenuOpen, setToolbarMenuOpen] = useState(false);
@@ -123,6 +125,8 @@ export function InlineComposerPanel({
     draftState.composerText.length === 0 && draftState.annotations.length === 0 &&
     draftState.skillBindings.length === 0 && pendingAttachments.length === 0 &&
     !skillPopupOpen && !slashPopupOpen && !isComposerDragActive && !isComposerBusy && !composerSettingsError;
+  const inlineMotion = density === "compact" && selectedThreadPresent && !isDraftThreadSelected && !isDraftComposerTransitioning && !expanded;
+  useInlineComposerMotion(formRef, inlineMotion, idleCompact);
   const draftHeroText = greetingForDate(new Date());
   const shouldShowDraftHero = !expanded && (isDraftThreadSelected || isDraftComposerTransitioning);
   const selectedDraftProject =
@@ -159,9 +163,11 @@ export function InlineComposerPanel({
       {expanded ? null : queuePanel}
       <Box
         component="form"
+        ref={formRef}
         id={formId}
         className={`kodex-composer${expanded ? " kodex-mobile-composer-expanded-body" : ""}`}
         data-idle-compact={idleCompact ? "true" : "false"}
+        data-inline-motion={inlineMotion ? "true" : undefined}
         onFocusCapture={(event) => {
           focusRevision.current += 1;
           // Footer controls alone do not move under a pointer opening their menu.
@@ -188,6 +194,7 @@ export function InlineComposerPanel({
           )
         }
       >
+        {inlineMotion ? <Box className="kodex-composer-surface" aria-hidden="true" /> : null}
         {selectedThreadPresent ? <button type="submit" hidden data-submit-intent="queue" disabled={!canSubmitComposer} /> : null}
         <button type="submit" hidden data-submit-intent="sendNow" disabled={!canSubmitComposer} />
         {skillPopupOpen || slashPopupOpen ? (
