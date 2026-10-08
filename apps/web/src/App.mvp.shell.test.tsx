@@ -1412,6 +1412,85 @@ describe("MVP shell flows", () => {
     expect(main.querySelector(".kodex-main-stack")).toHaveAttribute("data-draft-thread", "true");
   });
 
+  it("removes and closes a thread archived by another client", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    let archived = false;
+    const gateway = mockGateway(baseRoutes({
+      "GET /v1/threads": () => ({
+        threads: archived ? [] : [thread],
+        nextCursor: null,
+        backwardsCursor: null,
+        rawPayload: {},
+      }),
+      "POST /v1/threads/thread-1/attach": () => archived
+        ? new Response(
+            JSON.stringify({ code: "thread_archived", message: "Thread thread-1 is archived", retryable: false }),
+            { status: 410, headers: { "Content-Type": "application/json" } },
+          )
+        : threadDetail(thread, [
+            snapshotTurn("turn-1", [snapshotItem("item-1", "agentMessage", { text: "Hello from Codex" })]),
+          ]),
+    }));
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^implement frontend$/i })).toBeInTheDocument();
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
+    const globalStream = FakeEventSource.instances.find((instance) => instance.url.includes("includeGlobal=true"));
+    expect(globalStream).toBeDefined();
+
+    archived = true;
+    act(() => globalStream?.emitNamed("thread.subagents_changed", {
+      id: "event-thread-archived",
+      seq: 80,
+      kind: "thread.subagents_changed",
+      codexMethod: "thread/archived",
+      projectId: null,
+      threadId: null,
+      turnId: null,
+      itemId: null,
+      payload: { changedThreadId: "thread-1" },
+      receivedAt: "2026-05-09T12:00:01Z",
+    }));
+
+    const main = screen.getByRole("main", { name: /thread/i });
+    await waitFor(() => expect(main.querySelector(".kodex-main-stack")).toHaveAttribute("data-draft-thread", "true"));
+    await waitFor(() => expect(screen.queryByRole("button", { name: /^implement frontend$/i })).not.toBeInTheDocument());
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/archive")).toHaveLength(0);
+  });
+
+  it("keeps an open thread through replayed archive and unarchive markers when attach succeeds", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const gateway = mockGateway(baseRoutes());
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
+    const globalStream = FakeEventSource.instances.find((instance) => instance.url.includes("includeGlobal=true"));
+    expect(globalStream).toBeDefined();
+
+    act(() => {
+      for (const [seq, method] of [[80, "thread/archived"], [81, "thread/unarchived"]] as const) {
+        globalStream?.emitNamed("thread.subagents_changed", {
+          id: `event-thread-catalog-${seq}`,
+          seq,
+          kind: "thread.subagents_changed",
+          codexMethod: method,
+          projectId: null,
+          threadId: null,
+          turnId: null,
+          itemId: null,
+          payload: { changedThreadId: "thread-1" },
+          receivedAt: "2026-05-09T12:00:01Z",
+        });
+      }
+    });
+
+    await waitFor(() => expect(screen.getByRole("button", { name: /^implement frontend$/i })).toBeInTheDocument());
+    expect(screen.getByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
+    expect(screen.getByRole("main", { name: /thread/i }).querySelector(".kodex-main-stack"))
+      .not.toHaveAttribute("data-draft-thread", "true");
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/attach").length).toBeGreaterThan(1);
+  });
+
   it("shows in-progress threads in the selector action slot until archive is available", async () => {
     mockGateway(
       baseRoutes({

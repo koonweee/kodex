@@ -16,7 +16,7 @@ import { AlertCircle, Sparkles } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import type { EventEnvelope, ThreadRead, ThreadSummary } from "../../api/client";
-import { attachThread, getThreadAppSurface, getThreadTimelinePage } from "../../api/client";
+import { attachThread, GatewayRequestError, getThreadAppSurface, getThreadTimelinePage } from "../../api/client";
 import { projectEventInvalidatesThread } from "../../projects/cache";
 import { queryKeys } from "../../api/queryKeys";
 import { recordReducerBatch } from "../../events/liveDiagnostics";
@@ -95,6 +95,7 @@ function ExistingThreadPane({
   const {
     approvals,
     errorMessage: appErrorMessage,
+    handleThreadArchived,
     imagePreviewUrlsByPath,
     onImageOpen,
     onMarkdownOpen,
@@ -196,6 +197,10 @@ function ExistingThreadPane({
       if (requestId !== refreshRequestIdRef.current || requestThreadId !== latestThreadIdRef.current) {
         return;
       }
+      if (error instanceof GatewayRequestError && error.code === "thread_archived") {
+        handleThreadArchived(threadId);
+        return;
+      }
       setEntry({ phase: "error", threadId });
       setPaneErrorMessage(errorMessageFrom(error));
       onThreadSnapshotLoadFailed(threadId);
@@ -210,7 +215,7 @@ function ExistingThreadPane({
         void refreshSnapshot();
       }
     }
-  }, [getDeliveryOptions, onThreadSnapshotLoadFailed, onThreadSnapshotLoaded, threadId]);
+  }, [getDeliveryOptions, handleThreadArchived, onThreadSnapshotLoadFailed, onThreadSnapshotLoaded, threadId]);
 
   useThreadReadState({
     thread,

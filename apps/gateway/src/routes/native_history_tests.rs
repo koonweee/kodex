@@ -450,6 +450,37 @@ async fn native_attach_cannot_fabricate_or_import_an_unknown_thread_after_missin
 }
 
 #[tokio::test]
+async fn native_attach_reports_the_exact_archived_resume_rejection_as_gone() {
+    let (state, native) = rejected_resume_state(
+        crate::app_server::JsonRpcError {
+            code: -32600,
+            message: format!(
+                "session {THREAD} is archived. Run `codex unarchive {THREAD}` to unarchive it first."
+            ),
+            data: None,
+        },
+        true,
+    )
+    .await;
+
+    let (status, body) = attach(&state).await;
+
+    assert_eq!(status, StatusCode::GONE, "{body}");
+    assert_eq!(body["code"], "thread_archived");
+    assert_eq!(body["retryable"], false);
+    assert_eq!(
+        native
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(method, _)| method.clone())
+            .collect::<Vec<_>>(),
+        vec!["thread/resume"]
+    );
+}
+
+#[tokio::test]
 async fn native_attach_does_not_hide_other_native_errors_with_history_fallback() {
     for error in [
         crate::app_server::JsonRpcError {
@@ -465,6 +496,27 @@ async fn native_attach_does_not_hide_other_native_errors_with_history_fallback()
         crate::app_server::JsonRpcError {
             code: -32000,
             message: format!("upstream reported -32600: no rollout found for thread id {THREAD}"),
+            data: None,
+        },
+        crate::app_server::JsonRpcError {
+            code: -32600,
+            message: format!(
+                "session {THREAD}-other is archived. Run `codex unarchive {THREAD}-other` to unarchive it first."
+            ),
+            data: None,
+        },
+        crate::app_server::JsonRpcError {
+            code: -32600,
+            message: format!(
+                "upstream: session {THREAD} is archived. Run `codex unarchive {THREAD}` to unarchive it first."
+            ),
+            data: None,
+        },
+        crate::app_server::JsonRpcError {
+            code: -32000,
+            message: format!(
+                "session {THREAD} is archived. Run `codex unarchive {THREAD}` to unarchive it first."
+            ),
             data: None,
         },
     ] {

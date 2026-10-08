@@ -805,7 +805,15 @@ pub async fn get_thread_timeline_page(
     Ok(Json(ThreadViewResponse::from_detail(response)))
 }
 
-#[utoipa::path(post, path = "/v1/threads/{threadId}/attach", params(ThreadViewDeliveryQuery), responses((status = 200, body = ThreadViewResponse)))]
+#[utoipa::path(
+    post,
+    path = "/v1/threads/{threadId}/attach",
+    params(ThreadViewDeliveryQuery),
+    responses(
+        (status = 200, body = ThreadViewResponse),
+        (status = 410, body = crate::error::ApiErrorBody, description = "Thread is archived")
+    )
+)]
 pub async fn attach_thread(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,

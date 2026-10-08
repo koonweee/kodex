@@ -391,10 +391,17 @@ describe("WorkspaceProvider pane commands", () => {
 
 function renderProvider(
   paneStore: ReturnType<typeof createMemoryWorkspacePaneStore>,
-  options: { threadActions?: ComponentProps<typeof WorkspaceProvider>["threadActions"] } = {},
+  options: {
+    onThreadArchived?: ComponentProps<typeof WorkspaceProvider>["onThreadArchived"];
+    threadActions?: ComponentProps<typeof WorkspaceProvider>["threadActions"];
+  } = {},
 ) {
   render(
-    <WorkspaceProvider paneStore={paneStore} threadActions={options.threadActions}>
+    <WorkspaceProvider
+      onThreadArchived={options.onThreadArchived}
+      paneStore={paneStore}
+      threadActions={options.threadActions}
+    >
       <CommandHarness />
     </WorkspaceProvider>,
   );

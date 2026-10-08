@@ -97,7 +97,7 @@ import { useSidebarThreadCaches } from "./threads/useSidebarThreadCaches";
 import { useSidebarThreadsSnapshot } from "./threads/useSidebarThreadsSnapshot";
 import { useThreadMetadata } from "./threads/useThreadMetadata";
 import { mergeThreadReadState, preserveNewerThreadReadState } from "./threads/readState";
-import { threadReadUpdateFromEvent } from "./threads/events";
+import { archivedThreadIdFromEvent, threadReadUpdateFromEvent, unarchivedThreadIdFromEvent } from "./threads/events";
 import { useThreadViewPresence } from "./threads/useThreadViewPresence";
 import { errorMessageFrom } from "./shared/values";
 import { KodexShellView } from "./shell/KodexShellView";
@@ -634,6 +634,12 @@ function KodexShell({
   });
 
   const handleWorkspaceLiveEvent = useEventCallback((event: EventEnvelope) => {
+    const archivedThreadId = archivedThreadIdFromEvent(event);
+    if (archivedThreadId) {
+      handleArchivedThreadProjection(archivedThreadId, { clearSelection: false });
+    } else if (unarchivedThreadIdFromEvent(event)) {
+      void refreshProjectState(queryClientForShell);
+    }
     routeGlobalLiveEvent(event, liveRouteHandlers);
   });
   const handleVisibleThreadIdsChange = useEventCallback((threadIds: string[]) => {
@@ -719,13 +725,24 @@ function KodexShell({
     if (!threadId) {
       return;
     }
+    await archiveThreadMutation.mutateAsync(threadId);
+    handleArchivedThreadProjection(threadId, { refillSidebar: false });
+  }
+
+  function handleArchivedThreadProjection(
+    threadId: string,
+    { clearSelection = true, refillSidebar = true }: { clearSelection?: boolean; refillSidebar?: boolean } = {},
+  ) {
     const archivedSelectedThreadId = selectedThreadIdRef.current;
     const shouldSelectDraftAfterArchive = threadId === archivedSelectedThreadId;
     const draftProjectId = selectedProjectIdRef.current;
-    await archiveThreadMutation.mutateAsync(threadId);
     void refreshUnreadBadge(queryClientForShell);
     removeThreadEverywhere(queryClientForShell, threadId);
+    if (refillSidebar) {
+      void refreshProjectState(queryClientForShell);
+    }
     if (
+      clearSelection &&
       shouldSelectDraftAfterArchive &&
       (selectedThreadIdRef.current === archivedSelectedThreadId || selectedThreadIdRef.current === null)
     ) {
@@ -794,6 +811,7 @@ function KodexShell({
   }
 
   const handleArchiveThreadById = useEventCallback((threadId: string) => void handleArchiveThread(threadId));
+  const handleThreadArchived = useEventCallback((threadId: string) => handleArchivedThreadProjection(threadId));
   const handleCloseLightbox = useEventCallback(() => setLightboxImage(null));
   const handleCloseMarkdownPreview = useEventCallback(() => setMarkdownPreview(null));
   const handleOpenMarkdownPreview = useEventCallback((request: MarkdownPreviewRequest) => setMarkdownPreview(request));
@@ -1043,6 +1061,7 @@ function KodexShell({
         onLiveEvent={handleWorkspaceLiveEvent}
         onMarkdownOpen={handleOpenMarkdownPreview}
         onShowMobileSidebar={handleShowMobileSidebar}
+        onThreadArchived={handleThreadArchived}
         onThreadSnapshotLoadFailed={handleThreadPaneSnapshotLoadFailed}
         onThreadSnapshotLoaded={handleThreadPaneSnapshotLoaded}
         onVisibleThreadIdsChange={handleVisibleThreadIdsChange}

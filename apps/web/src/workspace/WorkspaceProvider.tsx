@@ -33,6 +33,7 @@ import { paneTargetRecord, type WorkspaceModel, type WorkspacePane, type Workspa
 import { usePaneThreadContexts, type PaneThreadContext } from "./usePaneThreadContexts";
 import { useDraftPaneReuse } from "./useDraftPaneReuse";
 import { workspaceSubscribedThreadIds } from "./resourceSubscriptions";
+import { removeWorkspacePanes } from "./paneRemoval";
 
 type WorkspaceLiveEventHandler = (event: EventEnvelope) => void;
 export type ThreadPaneTimelineAction =
@@ -81,6 +82,7 @@ type WorkspaceProviderProps = {
   onLiveEvent?: (event: EventEnvelope) => void;
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   onShowMobileSidebar?: () => void;
+  onThreadArchived?: (threadId: string) => void;
   onThreadSnapshotLoadFailed?: (threadId: string) => void;
   onThreadSnapshotLoaded?: (thread: ThreadSummary) => void;
   onVisibleThreadIdsChange?: (threadIds: string[]) => void;
@@ -110,6 +112,7 @@ type WorkspaceContextValue = {
   onImageOpen: (image: ImageLightboxImage) => void;
   onMarkdownOpen: (request: MarkdownPreviewRequest) => void;
   onShowMobileSidebar: () => void;
+  handleThreadArchived: (threadId: string) => void;
   onThreadSnapshotLoadFailed: (threadId: string) => void;
   onThreadSnapshotLoaded: (thread: ThreadSummary) => void;
   onVisiblePaneIdsChange: (paneIds: string[]) => void;
@@ -173,6 +176,7 @@ export function WorkspaceProvider({
   onLiveEvent,
   onMarkdownOpen = () => undefined,
   onShowMobileSidebar = () => undefined,
+  onThreadArchived = noopThreadSnapshot,
   onThreadSnapshotLoadFailed = noopThreadSnapshot,
   onThreadSnapshotLoaded = noopThreadSnapshot,
   onVisibleThreadIdsChange = () => undefined,
@@ -310,6 +314,18 @@ export function WorkspaceProvider({
     setFocusPulseByPaneId((current) => ({ ...current, [paneId]: token }));
   }, []);
 
+  const closeThreadPanes = useCallback((threadId: string) => {
+    setWorkspace((current) => removeWorkspacePanes(
+      current,
+      (pane) => pane.kind === "thread" && pane.target.mode === "existing" && pane.target.threadId === threadId,
+    ));
+  }, []);
+
+  const handleThreadArchived = useCallback((threadId: string) => {
+    closeThreadPanes(threadId);
+    onThreadArchived(threadId);
+  }, [closeThreadPanes, onThreadArchived]);
+
   const exposedVisiblePaneIds = useMemo(() => isVisible ? visiblePaneIds : [], [isVisible, visiblePaneIds]);
   const visibleThreadIds = useMemo(
     () => visibleThreadIdsForPaneIds(workspace.panes, exposedVisiblePaneIds),
@@ -351,7 +367,7 @@ export function WorkspaceProvider({
     deliveryStreamRef.current = client;
     client.connect();
     return () => { deliveryStreamRef.current = null; client.close(); };
-  }, [handleStreamConnected, publishThreadPaneTimelineAction, subscribedThreadIdsKey, validateInstance, getDeliveryOptions]);
+  }, [getDeliveryOptions, handleStreamConnected, publishThreadPaneTimelineAction, subscribedThreadIdsKey, validateInstance]);
 
   useEffect(() => {
     deliveryStreamRef.current?.updateDeliveryOptions({ includeDebugEvents, includeCommandOutputs });
@@ -487,61 +503,11 @@ export function WorkspaceProvider({
   }, [pulsePane]);
 
   const closePane = useCallback((paneId: string, dockviewLayout: unknown, options: WorkspacePaneCloseOptions = {}) => {
-    setWorkspace((current) => {
-      const remainingPanes = current.panes.filter((pane) => pane.id !== paneId);
-      if (remainingPanes.length === current.panes.length) {
-        return current;
-      }
-      const panes = remainingPanes.length > 0 ? remainingPanes : [createDraftThreadPane()];
-      const requestedNextActivePaneId =
-        options.nextActivePaneId && panes.some((pane) => pane.id === options.nextActivePaneId)
-          ? options.nextActivePaneId
-          : null;
-      const activePaneId = current.activePaneId === paneId
-        ? requestedNextActivePaneId ?? panes[0]?.id ?? null
-        : panes.some((pane) => pane.id === current.activePaneId)
-          ? current.activePaneId
-          : panes[0]?.id ?? null;
-      return {
-        ...current,
-        activePaneId,
-        dockviewLayout: layoutMatchesWorkspacePanes(dockviewLayout, panes) ? dockviewLayout : null,
-        panes,
-      };
-    });
-  }, []);
-
-  const closeThreadPanes = useCallback((threadId: string) => {
-    setWorkspace((current) => {
-      const closingPaneIds = new Set(
-        current.panes
-          .filter((pane) => pane.kind === "thread" && pane.target.mode === "existing" && pane.target.threadId === threadId)
-          .map((pane) => pane.id),
-      );
-      if (closingPaneIds.size === 0) {
-        return current;
-      }
-
-      const remainingPanes = current.panes.filter((pane) => !closingPaneIds.has(pane.id));
-      const panes = remainingPanes.length > 0 ? remainingPanes : [createDraftThreadPane()];
-      let activePaneId = current.activePaneId;
-      if (activePaneId && closingPaneIds.has(activePaneId)) {
-        const activeIndex = current.panes.findIndex((pane) => pane.id === activePaneId);
-        const nextPane =
-          current.panes.slice(activeIndex + 1).find((pane) => !closingPaneIds.has(pane.id)) ??
-          current.panes.slice(0, activeIndex).reverse().find((pane) => !closingPaneIds.has(pane.id));
-        activePaneId = nextPane?.id ?? panes[0]?.id ?? null;
-      } else if (!panes.some((pane) => pane.id === activePaneId)) {
-        activePaneId = panes[0]?.id ?? null;
-      }
-
-      return {
-        ...current,
-        activePaneId,
-        dockviewLayout: layoutMatchesWorkspacePanes(current.dockviewLayout, panes) ? current.dockviewLayout : null,
-        panes,
-      };
-    });
+    setWorkspace((current) => removeWorkspacePanes(
+      current,
+      (pane) => pane.id === paneId,
+      { dockviewLayout, nextActivePaneId: options.nextActivePaneId },
+    ));
   }, []);
 
   const updatePane = useCallback(async (paneId: string, request: WorkspacePanePatch) => {
@@ -814,6 +780,7 @@ export function WorkspaceProvider({
       onImageOpen,
       onMarkdownOpen,
       onShowMobileSidebar,
+      handleThreadArchived,
       onThreadSnapshotLoadFailed,
       onThreadSnapshotLoaded,
       onVisiblePaneIdsChange,
@@ -868,6 +835,7 @@ export function WorkspaceProvider({
       onImageOpen,
       onMarkdownOpen,
       onShowMobileSidebar,
+      handleThreadArchived,
       onThreadSnapshotLoadFailed,
       onThreadSnapshotLoaded,
       onVisiblePaneIdsChange,

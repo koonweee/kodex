@@ -275,6 +275,131 @@ it("shows a native attach failure without a prose-based retry loop and recovers 
   expect(gateway.callsFor("POST", "/v1/threads/unavailable/attach")).toHaveLength(2);
 });
 
+it("closes a cold-restored archived pane without showing the unavailable state", async () => {
+  vi.stubGlobal("EventSource", UnopenedEventSource);
+  mockGateway({
+    "POST /v1/threads/archived/attach": new Response(
+      JSON.stringify({ code: "thread_archived", message: "Thread archived", retryable: false }),
+      { status: 410, headers: { "Content-Type": "application/json" } },
+    ),
+  });
+  const onArchived = vi.fn();
+  const onFailed = vi.fn();
+  const store = createMemoryWorkspacePaneStore({
+    schemaVersion: 1,
+    activePaneId: "archived-pane",
+    dockviewLayout: null,
+    panes: [{ id: "archived-pane", kind: "thread", target: { mode: "existing", threadId: "archived" } }],
+  });
+
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <MantineProvider><WorkspaceProvider
+      onThreadArchived={onArchived}
+      onThreadSnapshotLoadFailed={onFailed}
+      paneStore={store}
+      renderThreadComposer={() => <div>Draft ready</div>}
+    ><ActiveThreadPane /></WorkspaceProvider></MantineProvider>
+  </QueryClientProvider>);
+
+  await waitFor(() => expect(onArchived).toHaveBeenCalledOnce());
+  expect(await screen.findByText("Draft ready")).toBeInTheDocument();
+  expect(store.getState().panes).toHaveLength(1);
+  expect(store.getState().panes[0]).toMatchObject({ kind: "thread", target: { mode: "draft" } });
+  expect(screen.queryByRole("heading", { name: "Thread not found or unavailable" })).not.toBeInTheDocument();
+  expect(onArchived).toHaveBeenCalledWith("archived");
+  expect(onFailed).not.toHaveBeenCalled();
+});
+
+it("closes the same archived thread in two workspace clients after native confirmation", async () => {
+  vi.stubGlobal("EventSource", UnopenedEventSource);
+  const snapshot: ThreadViewResponse = {
+    thread: {
+      id: "shared-archive", name: "Shared archive", projectId: null, cwd: "/native", status: "idle",
+      notificationsEnabled: true, pinned: false, latestCompletedTurnId: null, seenCompletedTurnId: null,
+      readRevision: 0, readStateKnown: false, unreadCompletedAgentTurn: false, createdAt: 1, updatedAt: 2,
+      parentThreadId: null, canAcceptDirectInput: true,
+    },
+    liveState: "idle",
+    timeline: { liveState: "idle", pendingApprovalRequests: [], pendingUserInputRequests: [], rows: [], turns: [], viewRevision: 1 },
+  };
+  let archived = false;
+  mockGateway({
+    "POST /v1/threads/shared-archive/attach": () => archived
+      ? new Response(
+          JSON.stringify({ code: "thread_archived", message: "Thread shared-archive is archived", retryable: false }),
+          { status: 410, headers: { "Content-Type": "application/json" } },
+        )
+      : snapshot,
+    "GET /v1/threads/shared-archive/app-surface": { session: null },
+  });
+  const stores = ["first", "second"].map((id) => createMemoryWorkspacePaneStore({
+    schemaVersion: 1,
+    activePaneId: `${id}-pane`,
+    dockviewLayout: null,
+    panes: [{ id: `${id}-pane`, kind: "thread", target: { mode: "existing", threadId: "shared-archive" } }],
+  }));
+  stores.forEach((store, index) => render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MantineProvider><WorkspaceProvider paneStore={store} renderThreadComposer={() => <div>{index}: draft</div>}>
+        <ActiveThreadPane />
+      </WorkspaceProvider></MantineProvider>
+    </QueryClientProvider>,
+  ));
+  await waitFor(() => expect(screen.getAllByRole("heading", { name: "Shared archive" })).toHaveLength(2));
+  const streams = UnopenedEventSource.instances.slice();
+  expect(streams).toHaveLength(2);
+
+  archived = true;
+  act(() => streams.forEach((stream, index) => stream.emit(threadCatalogEvent("thread/archived", index + 1))));
+
+  await waitFor(() => stores.forEach((store) => {
+    expect(store.getState().panes).toHaveLength(1);
+    expect(store.getState().panes[0]).toMatchObject({ kind: "thread", target: { mode: "draft" } });
+  }));
+});
+
+it("keeps an available pane open across replayed archive and unarchive markers", async () => {
+  vi.stubGlobal("EventSource", UnopenedEventSource);
+  const snapshot: ThreadViewResponse = {
+    thread: {
+      id: "replayed", name: "Available again", projectId: null, cwd: "/native", status: "idle",
+      notificationsEnabled: true, pinned: false, latestCompletedTurnId: null, seenCompletedTurnId: null,
+      readRevision: 0, readStateKnown: false, unreadCompletedAgentTurn: false, createdAt: 1, updatedAt: 2,
+      parentThreadId: null, canAcceptDirectInput: true,
+    },
+    liveState: "idle",
+    timeline: { liveState: "idle", pendingApprovalRequests: [], pendingUserInputRequests: [], rows: [], turns: [], viewRevision: 1 },
+  };
+  const gateway = mockGateway({
+    "POST /v1/threads/replayed/attach": snapshot,
+    "GET /v1/threads/replayed/app-surface": { session: null },
+  });
+  const onArchived = vi.fn();
+  const store = createMemoryWorkspacePaneStore({
+    schemaVersion: 1,
+    activePaneId: "replayed-pane",
+    dockviewLayout: null,
+    panes: [{ id: "replayed-pane", kind: "thread", target: { mode: "existing", threadId: "replayed" } }],
+  });
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <MantineProvider><WorkspaceProvider onThreadArchived={onArchived} paneStore={store}>
+      <ActiveThreadPane />
+    </WorkspaceProvider></MantineProvider>
+  </QueryClientProvider>);
+  expect(await screen.findByRole("heading", { name: "Available again" })).toBeInTheDocument();
+  const stream = UnopenedEventSource.instances.at(-1)!;
+
+  act(() => {
+    stream.emit(threadCatalogEvent("thread/archived", 1, "replayed"));
+    stream.emit(threadCatalogEvent("thread/unarchived", 2, "replayed"));
+  });
+
+  await waitFor(() => expect(gateway.callsFor("POST", "/v1/threads/replayed/attach").length).toBeGreaterThan(1));
+  expect(store.getState().panes[0]).toMatchObject({ kind: "thread", target: { mode: "existing", threadId: "replayed" } });
+  expect(screen.getByRole("heading", { name: "Available again" })).toBeInTheDocument();
+  expect(onArchived).not.toHaveBeenCalled();
+});
+
 it("keeps direct-input capability owned by canonical detail when older sidebar and metadata summaries arrive", async () => {
   vi.stubGlobal("EventSource", UnopenedEventSource);
   const seed: ThreadSummary = {
@@ -399,4 +524,19 @@ it.each([false, true])("closes an unavailable pane and keeps a usable workspace 
 function ActiveThreadPane() {
   const { workspace } = useWorkspace();
   return <ThreadPane isActive pane={workspace.panes[0]} />;
+}
+
+function threadCatalogEvent(method: "thread/archived" | "thread/unarchived", seq: number, threadId = "shared-archive"): EventEnvelope {
+  return {
+    codexMethod: method,
+    id: `${method}-${seq}`,
+    itemId: null,
+    kind: "thread.subagents_changed",
+    payload: { changedThreadId: threadId },
+    projectId: null,
+    receivedAt: "2026-10-08T00:00:00Z",
+    seq,
+    threadId: null,
+    turnId: null,
+  };
 }

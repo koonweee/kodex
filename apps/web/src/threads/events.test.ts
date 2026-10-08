@@ -2,14 +2,44 @@ import { describe, expect, it } from "vitest";
 
 import type { EventEnvelope } from "../api/client";
 import {
+  archivedThreadIdFromEvent,
   threadReadUpdateFromEvent,
   threadNotificationsUpdateFromEvent,
   threadNameUpdateFromEvent,
   threadStatusUpdateFromEvent,
   threadUpsertFromEvent,
+  unarchivedThreadIdFromEvent,
 } from "./events";
 
 describe("thread events", () => {
+  it("extracts archived thread ids only from authoritative catalog markers", () => {
+    expect(archivedThreadIdFromEvent(event({
+      kind: "thread.subagents_changed",
+      codexMethod: "thread/archived",
+      payload: { changedThreadId: "thread-1" },
+    }))).toBe("thread-1");
+    expect(archivedThreadIdFromEvent(event({
+      kind: "thread.subagents_changed",
+      codexMethod: "thread/unarchived",
+      payload: { changedThreadId: "thread-1" },
+    }))).toBeNull();
+    expect(archivedThreadIdFromEvent(event({
+      kind: "thread.subagents_changed",
+      codexMethod: "thread/archived",
+      payload: {},
+    }))).toBeNull();
+    expect(unarchivedThreadIdFromEvent(event({
+      kind: "thread.subagents_changed",
+      codexMethod: "thread/unarchived",
+      payload: { changedThreadId: "thread-1" },
+    }))).toBe("thread-1");
+    expect(unarchivedThreadIdFromEvent(event({
+      kind: "thread.subagents_changed",
+      codexMethod: "thread/archived",
+      payload: { changedThreadId: "thread-1" },
+    }))).toBeNull();
+  });
+
   it("does not interpret idle, reset or raw completion notifications as read state", () => {
     for (const kind of ["thread_view.patch", "thread_view.cursor", "timeline.turn_completed"]) {
       expect(threadReadUpdateFromEvent(event({ kind, threadId: "thread-1", payload: {

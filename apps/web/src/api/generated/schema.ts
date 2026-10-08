@@ -6293,6 +6293,15 @@ export interface operations {
                     "application/json": components["schemas"]["ThreadViewResponse"];
                 };
             };
+            /** @description Thread is archived */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
         };
     };
     compact_thread: {

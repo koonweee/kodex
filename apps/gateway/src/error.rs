@@ -21,6 +21,8 @@ pub enum ApiError {
     UnsupportedMediaType(String),
     #[error("conflict: {0}")]
     Conflict(String),
+    #[error("thread archived: {0}")]
+    ThreadArchived(String),
     #[error("native configuration write rejected: {0:?}")]
     NativeConfigWrite(NativeConfigWriteErrorCode),
     #[error("app-server unavailable")]
@@ -93,6 +95,7 @@ impl ApiError {
             Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
             Self::UnsupportedMediaType(_) => StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            Self::ThreadArchived(_) => StatusCode::GONE,
             Self::Conflict(_)
             | Self::NativeConfigWrite(NativeConfigWriteErrorCode::ConfigVersionConflict) => {
                 StatusCode::CONFLICT
@@ -129,6 +132,12 @@ impl ApiError {
             Self::Conflict(message) => ApiErrorBody {
                 code: "conflict".to_string(),
                 message: message.clone(),
+                retryable: false,
+                data: None,
+            },
+            Self::ThreadArchived(thread_id) => ApiErrorBody {
+                code: "thread_archived".to_string(),
+                message: format!("Thread {thread_id} is archived"),
                 retryable: false,
                 data: None,
             },
