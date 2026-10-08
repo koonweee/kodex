@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -362,4 +362,28 @@ test('archive retries native deletion failure without retaining a cleared Sessio
   assert.equal(fixture.requests.length, requests);
   // Disposal must not revisit the cleared Session in the runtime tracking map.
   await service.dispose();
+});
+
+
+test('native file upload resolves the retained chat root without activating dormant sessions', async t => {
+  const { makeService, runtimes, projects } = await setup('uploads');
+  const initial = makeService();
+  const chat = await initial.createChat({ projectId: 'a' });
+  await initial.dispose();
+  const service = makeService();
+  const server = await serve(service);
+  t.after(async () => { await server.close(); await service.dispose(); });
+  const client = server.client();
+  const bytes = new Uint8Array(2 * 1024 * 1024).fill(42);
+  const saved = await client.uploadFile({ chatId: chat.id, file: new File([bytes], 'source notes.txt', { type: 'text/plain' }) });
+  assert.equal(saved.fileName, 'source notes.txt');
+  assert.equal(saved.sizeBytes, bytes.length);
+  assert.equal(saved.absolutePath, join(await realpath(projects[0]!.path), saved.relativePath));
+  assert.deepEqual(await readFile(saved.absolutePath), Buffer.from(bytes));
+  const runtime = runtimes.at(-1)!;
+  const thread = await runtime.controller.queryThreadById({ threadId: chat.id }); assert.ok(thread);
+  assert.equal(await runtime.controller.getSessionByResource(thread.resourceId), undefined);
+  await assert.rejects(client.uploadFile({ chatId: 'missing', file: new File(['content'], 'notes.txt') }), { code: 'NOT_FOUND' });
+  await service.archiveChat({ chatId: chat.id });
+  await assert.rejects(client.uploadFile({ chatId: chat.id, file: new File(['content'], 'notes.txt') }), { code: 'CONFLICT' });
 });

@@ -12,8 +12,12 @@ export async function serveRouter(router: AnyRouter, port = 8789) {
   const messages = new Set<Promise<void>>();
   let closing: Promise<void> | undefined;
   const handler = new RPCHandler(router, { plugins: [new BodyLimitPlugin({ maxBodySize: 1_048_576 })] });
+  // Native oRPC multipart encoding handles one uploaded File per request. Keep
+  // large bodies off the shared socket and leave ordinary command limits intact.
+  const uploadHandler = new RPCHandler(router, { plugins: [new BodyLimitPlugin({ maxBodySize: 26 * 1024 * 1024 })] });
   const server = createServer((request, response) => {
-    void handler.handle(request, response, { prefix: '/rpc', context: {} }).then(({ matched }) => {
+    const selectedHandler = request.url?.split('?')[0] === '/rpc/uploadFile' ? uploadHandler : handler;
+    void selectedHandler.handle(request, response, { prefix: '/rpc', context: {} }).then(({ matched }) => {
       if (!matched) {
         response.writeHead(404, { 'content-type': 'application/json' });
         response.end(JSON.stringify({ error: { message: 'Route not found on the Mastra backend.' } }));

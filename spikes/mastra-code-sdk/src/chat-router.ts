@@ -26,6 +26,7 @@ function objectInput<T extends Record<string, string>>(keys: (keyof T & string)[
   return inputSchema<T>(value => object(value) && only(value, keys) && keys.every(key => string(value[key], key === 'text' ? 100_000 : 256)));
 }
 const chatInput = objectInput<{ chatId: string }>(['chatId']);
+const uploadInput = inputSchema<{ chatId: string; file: File }>(value => object(value) && only(value, ['chatId', 'file']) && string(value.chatId) && value.file instanceof File);
 const pinInput = inputSchema<{ chatId: string; pinned: boolean; beforeChatId?: string | null }>(value => object(value) && only(value, ['chatId', 'pinned', 'beforeChatId']) && string(value.chatId) && typeof value.pinned === 'boolean' && (!('beforeChatId' in value) || value.pinned && (value.beforeChatId === null || string(value.beforeChatId))));
 const notificationsInput = inputSchema<{ chatId: string; enabled: boolean }>(value => object(value) && only(value, ['chatId', 'enabled']) && string(value.chatId) && typeof value.enabled === 'boolean');
 const renameInput = objectInput<{ chatId: string; title: string }>(['chatId', 'title']);
@@ -99,6 +100,7 @@ export function createChatRouter(service: ChatService) {
     watchCatalog: os.output(eventIterator(schemaType<CatalogSnapshot>())).handler(({ signal }) => service.watchCatalog(signal)),
     respondPrompt: os.input(promptResponseInput).handler(({ input }) => service.respondPrompt(input)),
     replyToQuestion: os.input(questionReplyInput).handler(({ input }) => service.replyToQuestion(input)),
+    uploadFile: os.input(uploadInput).handler(({ input }) => service.uploadFile(input)),
     send: os.input(sendInput).handler(({ input }) => service.send(input)),
     queue: os.input(messageInput).handler(({ input }) => service.queue(input)),
     editQueued: os.input(queuedEdit).handler(({ input }) => service.editQueued(input)),

@@ -1,3 +1,4 @@
+import { uploadChatFile } from './chat-uploads.js';
 import { readNativePromptViews, respondNativePrompt, type NativePrompt, type PromptResponse } from './chat-prompts.js';
 import { readChatDescendants } from './chat-descendants.js';
 import { randomUUID } from 'node:crypto';
@@ -307,6 +308,15 @@ export function createChatService(options: ChatServiceOptions) {
         }
       } finally { await changes.return(); }
     },
+    async uploadFile({ chatId, file }: { chatId: string; file: File }) {
+      const { binding } = await projects.findThread(chatId);
+      assertActive();
+      try { return await uploadChatFile({ cwd: binding.cwd, chatId, file }); }
+      catch (error) {
+        if (error instanceof ORPCError) throw error;
+        throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'File could not be uploaded.' });
+      }
+    },
     async send({ chatId, text, queueIfPending = false }: { chatId: string; text: string; queueIfPending?: boolean }) {
       const handle = await handleFor(chatId);
       // Read authoritative native pending work, including input submitted by
@@ -398,6 +408,7 @@ export function createChatService(options: ChatServiceOptions) {
     openChat: guarded(service.openChat), getChatSettings: guarded(service.getChatSettings),
     updateChatSettings: guarded(service.updateChatSettings), renameChat: guarded(service.renameChat),
     setChatPinned: guarded(service.setChatPinned), setChatNotifications: guarded(service.setChatNotifications),
+    uploadFile: guarded(service.uploadFile),
     send: guarded(service.send), replyToQuestion: guarded(service.replyToQuestion), respondPrompt: guarded(service.respondPrompt), queue: guarded(service.queue), stop: guarded(service.stop),
     editQueued: guarded(service.editQueued), removeQueued: guarded(service.removeQueued),
     reorderQueued: guarded(service.reorderQueued), steerQueued: guarded(service.steerQueued),
