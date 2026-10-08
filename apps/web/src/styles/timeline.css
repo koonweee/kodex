@@ -9,6 +9,12 @@
   padding: 8px 0;
 }
 
+/* Intermediate chrome contributes half the normal row padding. Its contents
+   already provide their own visual height, unlike prose message rows. */
+.kodex-turn-group[data-spacing="compact"] {
+  padding-block: 4px;
+}
+
 /* Timeline rows share one outer spacing owner. Item and work renderers retain
    their standalone padding outside TimelineView without doubling it here. */
 .kodex-turn-group > .kodex-timeline-item,

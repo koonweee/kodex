@@ -13,6 +13,7 @@ import {
   getTimelineRowApprovals,
   getUnanchoredApprovals,
 } from "./derive";
+import { isTimelineMessage } from "./rendererShared";
 import { TimelineActivityGroupRenderer, TimelineFileChangesRenderer, TimelineItemRenderer, TimelineWorkRowRenderer } from "./renderers";
 import type { TimelineItem, TimelineRow, TimelineState } from "./reducer";
 import { useTimelineScrollParent } from "./useTimelineScrollParent";
@@ -398,7 +399,7 @@ const TimelineRowView = memo(function TimelineRowView({
   toolbarTimestampMs?: number;
 }) {
   return (
-    <Box className="kodex-turn-group">
+    <Box className="kodex-turn-group" data-spacing={timelineRowSpacing(row)}>
       {row.type !== "work" && row.dividerBefore === "final_response" ? (
         <Box aria-hidden="true" className="kodex-timeline-final-response-divider" />
       ) : null}
@@ -458,6 +459,10 @@ const TimelineRowView = memo(function TimelineRowView({
     </Box>
   );
 });
+
+function timelineRowSpacing(row: TimelineRow): "compact" | undefined {
+  return row.type !== "item" || !isTimelineMessage(row.item.kind) ? "compact" : undefined;
+}
 
 function isTimestampedMessage(item: TimelineItem): boolean {
   return item.kind === "user_message" || ((item.kind === "assistant_message" || item.kind === "agent_message") && item.messagePhase === "final_answer");

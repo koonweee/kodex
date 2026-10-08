@@ -227,4 +227,10 @@
   .kodex-activity-item > summary {
     min-height: 44px;
   }
+
+  /* Top-level summaries are wide, low-frequency targets. Keep their visual
+     rhythm compact instead of making a one-line activity row 44px tall. */
+  .kodex-turn-group[data-spacing="compact"] > .kodex-activity-group > summary {
+    min-height: 32px;
+  }
 }
