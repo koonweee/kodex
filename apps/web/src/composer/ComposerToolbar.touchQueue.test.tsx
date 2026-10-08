@@ -68,6 +68,14 @@ describe("touch Send hold to queue", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add to queue" }));
     expect(submit).toHaveBeenCalledExactlyOnceWith("send");
   });
+  it.each([
+    { queueOnSubmit: true, label: "Send now" },
+    { queueOnSubmit: false, label: "Add to queue" },
+  ])("matches the previewed $label action when Command is held", ({ queueOnSubmit, label }) => {
+    const submit = vi.fn(); render(view(submit, { alternateSubmitPreview: true, queueOnSubmit }));
+    fireEvent.click(screen.getByRole("button", { name: label }));
+    expect(submit).toHaveBeenCalledExactlyOnceWith("alternate");
+  });
   it("preserves a keyboard submission after canceling a touch gesture", () => {
     const submit = vi.fn(); render(view(submit));
     pointer(send(), "pointerdown"); pointer(send(), "pointercancel");

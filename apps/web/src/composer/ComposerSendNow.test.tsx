@@ -44,6 +44,27 @@ afterEach(() => vi.restoreAllMocks());
 
 describe("composer alternate submission", () => {
   it.each([
+    { queuedInputs: [queuedInput], initialAction: "Add to queue", alternateAction: "Send now" },
+    { queuedInputs: [], initialAction: "Send message", alternateAction: "Add to queue" },
+  ])("previews $alternateAction while Command is held from $initialAction", async ({
+    queuedInputs,
+    initialAction,
+    alternateAction,
+  }) => {
+    mockGateway({ [`GET ${base}/queued-inputs`]: { queuedInputs, transfers: [], nextCursor: null } });
+    composer(null);
+    const field = screen.getByRole("textbox", { name: "Message composer" });
+    await userEvent.type(field, "Preview the alternate action");
+    expect(await screen.findByRole("button", { name: initialAction })).toBeVisible();
+
+    fireEvent.keyDown(field, { key: "Meta", metaKey: true });
+    expect(screen.getByRole("button", { name: alternateAction })).toBeVisible();
+
+    fireEvent.keyUp(field, { key: "Meta", metaKey: false });
+    expect(screen.getByRole("button", { name: initialAction })).toBeVisible();
+  });
+
+  it.each([
     { activeTurnId: null, touch: false },
     { activeTurnId: "active-turn", touch: false },
     { activeTurnId: null, touch: true },

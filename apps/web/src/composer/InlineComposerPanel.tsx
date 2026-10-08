@@ -117,12 +117,40 @@ export function InlineComposerPanel({
   const [editingActive, setEditingActive] = useState(false);
   const [composerFocused, setComposerFocused] = useState(false);
   const [toolbarMenuOpen, setToolbarMenuOpen] = useState(false);
+  const [alternateSubmitPreview, setAlternateSubmitPreview] = useState(false);
   const focusSessionActive = composerFocused || toolbarMenuOpen;
   const focusRevision = useRef(0);
   useEffect(() => () => { focusRevision.current += 1; }, []);
   useLayoutEffect(() => {
     onFocusSessionChange?.(focusSessionActive);
   }, [focusSessionActive, onFocusSessionChange]);
+  useEffect(() => {
+    if (!focusSessionActive || !selectedThreadPresent) {
+      setAlternateSubmitPreview(false);
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Meta") setAlternateSubmitPreview(true);
+    };
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.key === "Meta") setAlternateSubmitPreview(false);
+    };
+    const clearPreview = () => setAlternateSubmitPreview(false);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") clearPreview();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", clearPreview);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", clearPreview);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [focusSessionActive, selectedThreadPresent]);
   useEffect(() => {
     if (composerFocused || toolbarMenuOpen) return;
     // Let focus and menu state settle before ending the editing session.
@@ -295,6 +323,7 @@ export function InlineComposerPanel({
           <ComposerToolbar
             onMenuOpenChange={setToolbarMenuOpen}
             queueOnSubmit={queueOnSubmit}
+            alternateSubmitPreview={selectedThreadPresent && alternateSubmitPreview}
             goalControls={toolbarGoalControls}
             formId={formId}
             attachmentInputRef={attachmentInputRef}
