@@ -38,10 +38,7 @@ export function ApprovalCard({
   const isCommandApproval = normalizedApprovalMethod(approval.method) === "command";
 
   return (
-    <Box className="kodex-approval-card">
-      <Text fw={700} size="sm">
-        {approvalTitle(approval)}
-      </Text>
+    <ApprovalCardFrame title={approvalTitle(approval)}>
       {serverName ? (
         <Text size="sm">
           Server: <strong>{serverName}</strong>
@@ -69,8 +66,15 @@ export function ApprovalCard({
       <ParsedApprovalActions actions={parsedActions} />
       {approval.status === "responding" ? <Text role="status" size="xs">Waiting for Codex to finish processing this response…</Text> : null}
       <ApprovalActionButtons approval={approval} actions={actions} onDecision={onDecision} />
-    </Box>
+    </ApprovalCardFrame>
   );
+}
+
+export function ApprovalCardFrame({ title, children }: { title: ReactNode; children: ReactNode }) {
+  return <Box className="kodex-approval-card">
+    <Text fw={700} size="sm">{title}</Text>
+    {children}
+  </Box>;
 }
 
 export function ThreadApprovalStack({

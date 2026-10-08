@@ -18,7 +18,7 @@ function stream() {
   };
 }
 function snapshot(epoch: string, revision: number, title: string): ChatSnapshot {
-  return { epoch, revision, chat: { pinned: false, notificationsEnabled: true, id: 'chat', projectId: 'project', cwd: '/project', title, name: title }, error: null, goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(),
+  return { epoch, revision, chat: { pinned: false, notificationsEnabled: true, id: 'chat', projectId: 'project', cwd: '/project', title, name: title }, error: null, prompts: [], goal: null, queue: nativeQueueFixture(), settings: nativeSettingsFixture(),
     history: { earliest: null, hasOlder: false }, display: defaultDisplayState(), messages: [] };
 }
 afterEach(() => { rpc.watchChat.mockReset(); });

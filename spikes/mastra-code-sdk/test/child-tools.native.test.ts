@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
+import http from 'node:http';
+import { once } from 'node:events';
 import { createChildTools } from '../src/child-tools.js';
 import { readChildRelation } from '../src/child-relation.js';
 import { activateProfile, resolveProfile, type SpikeProfile } from '../src/profile.js';
@@ -216,97 +218,123 @@ test('host child tools use native task handles, enforce parent origin, deliver l
 });
 
 for (const maxRetries of [0, 1]) test(maxRetries === 0
-  ? 'a suspended native child fails its task and retracts the owned parked question'
+  ? 'a native child model error fails its task and releases the owned session'
   : 'a native model retry override cannot reopen the saved fresh child thread', { timeout: 30_000 }, async t => {
-  const root = await mkdtemp(join(tmpdir(), 'kodex-child-suspension-'));
+  const root = await mkdtemp(join(tmpdir(), 'kodex-child-error-'));
   let runtime: ProjectRuntime | undefined, child: NativeSession | undefined;
   let parentFinalRequested = false;
   let childRequests = 0;
+  let nativeChildError: string | undefined;
   let joinProducers = async () => {};
-  const finalEnded = gate(), suspended = gate();
-  const suspendedRuns = new Set<string>();
+  const finalEnded = gate(), errored = gate();
   const sessions: NativeSession[] = [];
   const trace: unknown[] = [];
   const fixture = await startModelFixture(request => {
     const serialized = JSON.stringify(request.messages);
-    if (request.messages.some(message => message.role === 'user' && JSON.stringify(message.content).includes('SUSPENDED_CHILD_TASK'))) {
-      childRequests++;
-      if (childRequests > 1) return { text: 'REOPENED_CHILD_RESULT' };
-      assert.ok(request.tools?.some(tool => tool.function.name === 'ask_user'), 'interactive tools retain native suspension semantics');
-      return { toolCalls: [{ name: 'ask_user', arguments: { question: 'Which file should I inspect?' }, id: 'child-question' }] };
+    if (request.messages.some(message => message.role === 'user' && JSON.stringify(message.content).includes('FAILED_CHILD_TASK'))) {
+      if (serialized.includes('FAILED_CHILD_FILE_EVIDENCE')) return { text: 'REOPENED_CHILD_RESULT' };
+      return { toolCalls: [{ name: 'view', arguments: { path: 'evidence.txt' }, id: 'failed-child-view' }] };
     }
-    if (serialized.includes('Child task ended without completion: suspended')
+    if (lastUserText(request).includes('background-task-failed')
       || serialized.includes('A delegated child task cannot reopen an existing child thread')
       || serialized.includes('REOPENED_CHILD_RESULT')) {
       parentFinalRequested = true;
       return { text: 'PARENT_NATIVE_FAILURE_ACK' };
     }
     if (request.messages.some(message => message.role === 'tool')) return { text: 'PARENT_WAITING_FOR_CHILD' };
-    return { toolCalls: [{ name: 'delegate_child', arguments: { task: 'SUSPENDED_CHILD_TASK: ask a clarifying question.', _background: { maxRetries } }, id: 'suspended-delegate' }] };
+    return { toolCalls: [{ name: 'delegate_child', arguments: { task: 'FAILED_CHILD_TASK: inspect evidence.txt and report the evidence.', _background: { maxRetries } }, id: 'failed-delegate' }] };
   });
-  t.diagnostic(`Child suspension trace: ${join(root, 'trace.json')}`);
+  // The real SDK sees a nonretryable HTTP model error after its real view
+  // output persisted. Other requests use the ordinary streaming fixture.
+  const modelBoundary = http.createServer(async (request, response) => {
+    try {
+      let raw = ''; for await (const chunk of request) raw += chunk;
+      const body = JSON.parse(raw) as { messages: Array<{ role: string; content?: unknown }> };
+      if (body.messages.some(message => message.role === 'user' && JSON.stringify(message.content).includes('FAILED_CHILD_TASK'))) {
+        childRequests++;
+        if (childRequests >= 2) {
+          response.writeHead(400, { 'content-type': 'application/json' });
+          response.end(JSON.stringify({ error: { message: 'Fixture native child model failure', type: 'invalid_request_error', code: 'child_model_failure' } }));
+          return;
+        }
+      }
+      const result = await fetch(`${fixture.url}/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: raw });
+      response.writeHead(result.status, { 'content-type': result.headers.get('content-type') ?? 'application/json' });
+      assert.ok(result.body);
+      const reader = result.body.getReader();
+      for (;;) {
+        const next = await reader.read(); if (next.done) break;
+        response.write(next.value);
+      }
+      response.end();
+    } catch (error) { response.destroy(error instanceof Error ? error : new Error(String(error))); }
+  });
+  modelBoundary.listen(0, '127.0.0.1'); await once(modelBoundary, 'listening');
+  const address = modelBoundary.address(); assert.ok(address && typeof address !== 'string');
+  t.diagnostic(`Child native error trace: ${join(root, 'trace.json')}`);
   t.after(async () => {
     for (const session of sessions) {
       const threadId = session.thread.getId();
       if (threadId) session.machinery.getAgent().abortThreadStream({ threadId, resourceId: session.identity.getResourceId(), clearPendingSignals: true });
       session.abort();
     }
-    await joinProducers(); await runtime?.dispose(); await fixture.close();
-    await writeFile(join(root, 'trace.json'), JSON.stringify({ requests: fixture.requests, trace }, null, 2));
+    await joinProducers(); await runtime?.dispose();
+    modelBoundary.closeAllConnections(); await new Promise<void>((resolve, reject) => modelBoundary.close(error => error ? reject(error) : resolve()));
+    await fixture.close();
+    await writeFile(join(root, 'trace.json'), JSON.stringify({ childRequests, requests: fixture.requests, trace }, null, 2));
     for (const directory of ['profile', 'project', 'runtime']) await rm(join(root, directory), { recursive: true, force: true });
   });
   await writeFile(profile.settingsPath, JSON.stringify({
     models: { modeDefaults: { build: 'fixture/chat' }, observerModelOverride: null, reflectorModelOverride: null },
-    customProviders: [{ name: 'fixture', url: fixture.url, apiKey: 'fixture-no-real-credential', models: ['chat'] }],
+    customProviders: [{ name: 'fixture', url: `http://127.0.0.1:${address.port}/v1`, apiKey: 'fixture-no-real-credential', models: ['chat'] }],
     backgroundTools: { enabled: true }, lsp: false, observability: { enabled: false },
   }));
   const projectPath = join(root, 'project'); await mkdir(projectPath);
+  await writeFile(join(projectPath, 'evidence.txt'), 'FAILED_CHILD_FILE_EVIDENCE: retained native view output.');
   const tools = createChildTools({ getRuntime: () => { assert.ok(runtime); return runtime; } });
   runtime = await createProjectRuntime({ profile, projectPath, runtimeRoot: join(root, 'runtime'),
     modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }], extraTools: tools });
-  joinProducers = observeProducers(t, runtime, suspendedRuns);
+  joinProducers = observeProducers(t, runtime);
   const off = runtime.controller.onSessionCreated(session => {
     sessions.push(session);
     if (session.getTags().kodexChild === '1') {
       child = session;
       session.subscribe(event => {
         trace.push({ child: event });
-        if (event.type === 'tool_suspended') {
-          // Native suspended workflows remain registered for resume after their
-          // producer ends (keepRegisteredForResume); unregister is no join here.
-          const runId = session.getCurrentRunId(); if (runId) suspendedRuns.add(runId);
-          suspended.release();
-        }
+        if (event.type === 'error') { nativeChildError = event.error.message; errored.release(); }
       });
     }
   });
   t.after(off);
-  const parent = await runtime.createSession({ threadId: 'suspension-parent', resourceId: 'suspension-parent' });
-  await parent.thread.rename({ title: 'Suspension parent', pin: true });
+  const parent = await runtime.createSession({ threadId: 'failure-parent', resourceId: 'failure-parent' });
+  await parent.thread.rename({ title: 'Failure parent', pin: true });
   parent.subscribe(event => {
     trace.push({ parent: event });
     if (parentFinalRequested && event.type === 'agent_end' && event.reason === 'complete') finalEnded.release();
   });
-  const run = parent.sendMessage({ content: 'Delegate a task that needs a question.', untilIdle: true });
-  await suspended.reached; await finalEnded.reached; await run;
+  const run = parent.sendMessage({ content: 'Delegate the file inspection task.', untilIdle: true });
+  await errored.reached;
+  await finalEnded.reached; await run;
   await joinProducers(); assert.ok(child); await settle(parent);
   const manager = runtime.mastra.backgroundTaskManager; assert.ok(manager);
   const tasks = await manager.listTasks({}); assert.equal(tasks.tasks.length, 1);
   const task = tasks.tasks[0]!;
   assert.equal(task.maxRetries, maxRetries, 'native model retry override is admitted');
   assert.equal(task.retryCount, maxRetries, 'native retry actually reaches the owned tool executor');
-  assert.equal(childRequests, 1, 'native retries cannot resume or run the saved child context');
+  assert.ok(childRequests >= 2, 'the real child model receives the failing request after native view output');
+  assert.equal(fixture.requests.filter(request => request.messages.some(message => message.role === 'user' && JSON.stringify(message.content).includes('FAILED_CHILD_TASK'))).length, 1, 'native task retries cannot resume or run the saved child context');
   assert.equal(sessions.filter(session => session.getTags().kodexChild === '1').length, 1, 'retry is rejected before native child session creation');
   assert.equal(task.status, 'failed');
-  assert.ok(task.error?.message.includes(maxRetries ? 'A delegated child task cannot reopen an existing child thread' : 'Child task ended without completion: suspended'));
-  assert.equal(task.result, undefined, 'a parked question never becomes a successful child result');
+  assert.ok(nativeChildError, 'nonretryable native model failure emits a public Session error');
+  assert.ok(task.error?.message.includes(maxRetries ? 'A delegated child task cannot reopen an existing child thread' : nativeChildError));
+  assert.equal(task.result, undefined, 'a native model error never becomes a successful child result');
   assert.equal(child.suspensions.hasPending(), false, 'failed task leaves no parked child question');
   assert.equal(child.displayState.get().pendingSuspensions.size, 0, 'read-only child has no unreachable live question');
   assert.equal(await runtime.controller.getSessionByResource(child.identity.getResourceId()), undefined, 'failed child binding is released');
   const saved = await runtime.controller.queryThreads({ metadata: { parentTaskId: task.id } });
   assert.equal(saved.length, 1, 'failed child relation and native history remain persisted');
   const history = await runtime.controller.queryThreadMessages({ threadId: saved[0]!.id, resourceId: saved[0]!.resourceId, perPage: 40, orderBy: { field: 'createdAt', direction: 'ASC' } });
-  assert.ok(JSON.stringify(history.messages).includes('Which file should I inspect?'), 'first child question history survives failure and retry');
+  assert.ok(JSON.stringify(history.messages).includes('FAILED_CHILD_FILE_EVIDENCE'), 'first child native view history survives failure and retry');
   assert.ok(!JSON.stringify(history.messages).includes('REOPENED_CHILD_RESULT'));
   assert.ok(JSON.stringify(await parent.thread.listActiveMessages()).includes('PARENT_NATIVE_FAILURE_ACK'));
 });
@@ -337,7 +365,8 @@ test('native cancellation during child setup aborts a late-created child before 
       if (threadId) session.machinery.getAgent().abortThreadStream({ threadId, resourceId: session.identity.getResourceId(), clearPendingSignals: true });
       session.abort();
     }
-    await joinProducers(); await runtime?.dispose(); await fixture.close();
+    await joinProducers(); await runtime?.dispose();
+    await fixture.close();
     await writeFile(join(root, 'trace.json'), JSON.stringify({ taskId, requests: fixture.requests }, null, 2));
     for (const directory of ['project', 'runtime']) await rm(join(root, directory), { recursive: true, force: true });
   });

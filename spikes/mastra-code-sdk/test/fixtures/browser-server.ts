@@ -1,4 +1,5 @@
-import { mkdir, realpath, writeFile } from 'node:fs/promises';
+import { createTool } from '@mastra/core/tools';
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { activateProfile, resolveProfile } from '../../src/profile.js';
 import { loadServerConfig } from '../../src/server-config.js';
@@ -30,6 +31,24 @@ const model = await startModelFixture(request => {
   if (!request.stream) return { text: 'Browser test chat' };
   const user = lastUserText(request);
   const serialized = JSON.stringify(request.messages);
+  if (serialized.includes('BROWSER_DELEGATE_QUESTION') && serialized.includes('BROWSER_INTERACTIVE_CHILD_RESULT')) return { text: 'BROWSER_PARENT_INTERACTION_RESULT' };
+  if (user.includes('BROWSER_INTERACTIVE_CHILD')) {
+    if (serialized.includes('User answered: Alpha, Beta')) return { text: 'BROWSER_INTERACTIVE_CHILD_RESULT' };
+    return { toolCalls: [{ name: 'ask_user', arguments: { question: 'Which child evidence?', options: [{ label: 'Alpha', description: 'First source' }, { label: 'Beta', description: 'Second source' }], selectionMode: 'multi_select' }, id: 'interactive-child-question' }] };
+  }
+  if (user.includes('BROWSER_DELEGATE_QUESTION')) {
+    if (serialized.includes('BROWSER_INTERACTIVE_CHILD_RESULT')) return { text: 'BROWSER_PARENT_INTERACTION_RESULT' };
+    if (request.messages.some(message => message.role === 'tool' && JSON.stringify(message.content).includes('Task ID:'))) return { text: 'BROWSER_PARENT_WORK_CONTINUES' };
+    return { toolCalls: [{ name: 'delegate_child', arguments: { task: 'BROWSER_INTERACTIVE_CHILD: ask the user which sources to inspect.' }, id: 'interactive-delegate' }] };
+  }
+  if (user.includes('BROWSER_NATIVE_QUESTION')) {
+    if (serialized.includes('User answered: Use repository evidence')) return { text: 'BROWSER_NATIVE_QUESTION_RESULT' };
+    return { toolCalls: [{ name: 'ask_user', arguments: { question: 'Which evidence should I inspect?', options: [{ label: 'Use repository evidence' }, { label: 'Ask later' }] }, id: 'native-question' }] };
+  }
+  if (user.includes('BROWSER_NATIVE_APPROVAL')) {
+    if (serialized.includes('BROWSER_TOOL_MARKER')) return { text: 'BROWSER_NATIVE_APPROVAL_RESULT' };
+    return { toolCalls: [{ name: 'prompt_approval', arguments: {}, id: 'native-approval' }] };
+  }
   if (user === 'Use native history') return { text: 'BROWSER_REPLY_CHOICE_RECEIVED' };
   if (user === 'Keep <this> & "that"') return { text: 'BROWSER_REPLY_TEXT_RECEIVED' };
   if (user.includes('BROWSER_ASK_ASYNC')) {
@@ -84,12 +103,27 @@ await writeFile(profile.settingsPath, JSON.stringify({
   observability: { enabled: false },
 }));
 const runtimes: ProjectRuntime[] = [];
+const promptTools = ['prompts', 'approvals'].includes(process.argv[4] ?? '') ? { prompt_approval: createTool({
+  id: 'prompt_approval', description: 'Test-only native approval gate.', requireApproval: true,
+  inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  execute: async () => readFile(join(projectPath, 'marker.txt'), 'utf8'),
+}) } : {};
 const service = createChatService({
   profile, directoryHome, ...await loadServerConfig(profile, [projectPath]),
   runtimeFactory: async options => {
     let runtime!: ProjectRuntime;
-    runtime = await createProjectRuntime({ ...options, extraTools: { ...createChildTools({ getRuntime: () => runtime }), ...createAsyncQuestionTools() },
+    runtime = await createProjectRuntime({ ...options, extraTools: { ...createChildTools({ getRuntime: () => runtime }), ...createAsyncQuestionTools(), ...promptTools },
       modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }] });
+    if (process.argv[4] === 'approvals') {
+      const create = runtime.createSession.bind(runtime);
+      runtime.createSession = async input => {
+        const session = await create(input);
+        await session.state.set({ yolo: false });
+        await session.permissions.setForTool({ toolName: 'prompt_approval', policy: 'ask' });
+        for (const toolName of ['ask_user', 'delegate_child']) await session.permissions.setForTool({ toolName, policy: 'allow' });
+        return session;
+      };
+    }
     runtimes.push(runtime); return runtime;
   },
 });

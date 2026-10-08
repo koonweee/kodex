@@ -9,7 +9,7 @@ const rpc = vi.hoisted(() => ({ watchSubagent: vi.fn() }));
 vi.mock('./client', () => ({ mastraClient: rpc }));
 const invocation = { id: 'call', agentType: 'explore', task: 'Inspect files', modelId: null, forked: false, status: 'running' as const, result: null,
   activity: { agentType: 'explore', task: 'Inspect files', status: 'running' as const, toolCalls: [{ name: 'view', isError: false }], textDelta: 'Looking at the files' } };
-const inventory: Awaited<ReturnType<ChatClient['listSubagents']>> = { epoch: 'epoch', revision: 1, chatId: 'parent', invocations: [invocation], forks: [], children: [], history: { earliest: null, hasOlder: false } };
+const inventory: Awaited<ReturnType<ChatClient['listSubagents']>> = { epoch: 'epoch', revision: 1, chatId: 'parent', childPrompts: [], invocations: [invocation], forks: [], children: [], history: { earliest: null, hasOlder: false } };
 const props = { chatId: 'parent', inventory, selectedId: 'invocation:call', onSelect: vi.fn(), error: null, onReload: vi.fn(), loadingMore: false, onLoadMore: vi.fn(), onImageOpen: vi.fn(), showDebug: false };
 afterEach(() => { cleanup(); rpc.watchSubagent.mockReset(); });
 it('uses the shared read-only viewer for live activity and saved results without activating an ordinary child', async () => {
@@ -19,7 +19,7 @@ it('uses the shared read-only viewer for live activity and saved results without
   expect(await screen.findByText('Looking at the files')).toBeVisible();
   expect(screen.getByText('view')).toBeVisible();
   expect(rpc.watchSubagent).not.toHaveBeenCalled();
-  view.rerender(<MantineProvider><NativeSubagentViewer {...props} inventory={{ ...inventory, revision: 2, invocations: [{ ...invocation, status: 'completed', result: 'Saved child findings', activity: null }] }} /></MantineProvider>);
+  view.rerender(<MantineProvider><NativeSubagentViewer {...props} inventory={{ ...inventory, revision: 2, childPrompts: [], invocations: [{ ...invocation, status: 'completed', result: 'Saved child findings', activity: null }] }} /></MantineProvider>);
   expect(await screen.findByText('Saved child findings')).toBeVisible();
   expect(screen.queryByText('Looking at the files')).not.toBeInTheDocument();
   expect(screen.queryByRole('textbox', { name: /message/i })).not.toBeInTheDocument();

@@ -15,6 +15,7 @@ import { timelinePresentation } from './presentation';
 import { NativeComposer } from './NativeComposer';
 import { SubagentPaneToggle } from '../threads/SubagentPaneToggle';
 import { useNativeSubagents } from './useNativeSubagents';
+import { NativePromptStack } from './NativePromptStack';
 import { NativeSubagentViewer } from './NativeSubagentViewer';
 
 const submitQuestionReply = ({ threadId, text, clientId }: { threadId: string; text: string; clientId: string }) => mastraClient.replyToQuestion({ chatId: threadId, text, clientId });
@@ -32,6 +33,9 @@ export function NativeThreadPane({ pane, draftStore, onError }: { pane: Workspac
   const isActive = workspace.activePaneId === pane.id;
   const timeline = useMemo(() => snapshot ? timelinePresentation(snapshot, isLoadingOlderHistory) : null, [snapshot, isLoadingOlderHistory]);
   const questionItems = useMemo(() => timeline?.rows.flatMap(row => row.type === 'item' ? [row.item] : []) ?? [], [timeline]);
+  const nativePrompts = useMemo(() => [
+    ...(snapshot?.prompts ?? []).map(prompt => ({ prompt })), ...(subagents.snapshot?.childPrompts ?? []),
+  ], [snapshot?.prompts, subagents.snapshot?.childPrompts]);
   const [scrollParent, setScrollParent] = useState<HTMLDivElement | null>(null);
   const [renameOpen, setRenameOpen] = useState(false);
   const [name, setName] = useState('');
@@ -99,6 +103,7 @@ export function NativeThreadPane({ pane, draftStore, onError }: { pane: Workspac
     <div className="kodex-thread-pane-status">{isActive && errorMessage ? <Alert color="red" role="alert">{errorMessage}</Alert> : null}{subagents.error ? <Alert color="red" role="alert">{subagents.error}</Alert> : null}{error || snapshot?.error ? <Alert color="red" role="alert">{error ?? snapshot?.error}</Alert> : null}</div>
     <Box className="kodex-thread-content" data-subagent-sidebar={subagentsOpen ? "open" : "closed"}><div className="kodex-thread-scroll-frame"><div className="kodex-thread-pane-scroll kodex-timeline-scroll" ref={setScrollParent}>
       {chatId && !timeline ? <Loader aria-label="Loading chat" /> : timeline ? <AsyncQuestionReplyProvider key={chatId} threadId={chatId!} enabled={!archived} items={questionItems} submitReply={submitQuestionReply}><TimelineView approvals={[]} imagePreviewUrlsByPath={{}} onApprovalDecision={() => {}} onImageOpen={onImageOpen} onLoadOlderHistory={loadOlderHistory} onMarkdownOpen={onMarkdownOpen} onReady={() => {}} scrollParentElement={scrollParent} showDebug={showDebugEvents} threadId={chatId ?? undefined} timeline={timeline} /></AsyncQuestionReplyProvider> : null}
+      {chatId && nativePrompts.length ? <NativePromptStack prompts={nativePrompts} onRespond={response => mastraClient.respondPrompt({ chatId, ...response })} /> : null}
     </div></div>
       {subagentsOpen && chatId ? <NativeSubagentViewer chatId={chatId} inventory={subagents.snapshot} selectedId={subagents.selectedId} onSelect={subagents.select}
         error={subagents.error} onReload={subagents.retry} loadingMore={subagents.isLoadingOlderHistory} onLoadMore={subagents.loadOlderHistory}

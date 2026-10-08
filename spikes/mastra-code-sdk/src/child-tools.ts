@@ -53,10 +53,19 @@ export function createChildTools({ getRuntime }: { getRuntime: () => ProjectRunt
     execute: async (input, context) => {
       if (!context.background) throw new Error('delegate_child requires native background execution');
       const runtime = getRuntime(), taskId = context.background.taskId;
-      let child: NativeSession | undefined, cancelled = false;
+      let child: NativeSession | undefined, stoppedChild: NativeSession | undefined, cancelled = false;
+      let finish!: () => void, fail!: (error: unknown) => void;
+      const terminal = new Promise<void>((resolve, reject) => { finish = resolve; fail = reject; });
+      // Setup can fail or native cancellation can arrive before the operation
+      // awaits its terminal event. Keep that early rejection owned here.
+      void terminal.catch(() => {});
       const stop = () => {
         cancelled = true;
-        if (!child) return;
+        // A parked native abort clears the question without promising a new
+        // agent_end. Cancellation must also settle this logical operation.
+        fail(new Error('Child task cancelled'));
+        if (!child || child === stoppedChild) return;
+        stoppedChild = child;
         const threadId = child.thread.getId();
         if (threadId) child.machinery.getAgent().abortThreadStream({ threadId, resourceId: child.identity.getResourceId(), clearPendingSignals: true });
         child.abort();
@@ -81,13 +90,19 @@ export function createChildTools({ getRuntime }: { getRuntime: () => ProjectRunt
         await child.model.switch(parent.model.get());
         await child.thread.rename({ title: (input as { task: string }).task.slice(0, 120), pin: true });
         if (cancelled) { stop(); throw new Error('Child task cancelled before execution'); }
-        let terminalReason: string | undefined;
-        const off = child.subscribe(event => { if (event.type === 'agent_end') terminalReason = event.reason; });
+        const off = child.subscribe(event => {
+          if (event.type === 'error') fail(event.error);
+          if (event.type !== 'agent_end' || event.reason === 'suspended') return;
+          if (event.reason === 'complete') finish();
+          else fail(new Error(`Child task ended without completion: ${event.reason}`));
+        });
         try {
-          // With native task dispatch and nested delegation denied, this first
-          // Session turn owns all model work started through these child tools.
+          // sendMessage settles at a suspended boundary. Public native terminal
+          // events keep the same operation owned through any question resumes.
+          // Nested/background model work remains disabled on those resume paths.
           await child.sendMessage({ content: (input as { task: string }).task, untilIdle: false });
-          if (cancelled || terminalReason !== 'complete') throw new Error(`Child task ended without completion: ${terminalReason ?? 'unknown'}`);
+          await terminal;
+          if (cancelled) throw new Error('Child task cancelled');
           return { taskId, childThreadId: child.thread.requireId(), result: await canonicalResult(child) };
         } finally { off(); }
       })().catch(error => {
@@ -107,7 +122,7 @@ export function createChildTools({ getRuntime }: { getRuntime: () => ProjectRunt
   });
   const message = createTool({
     id: 'message_child',
-    description: 'Send live guidance to your running delegate_child Task ID. A starting result means native child setup has not reached an active run yet.',
+    description: 'Send live guidance to your running delegate_child Task ID. A starting result means setup has not reached an active run; waiting_for_response means the child has a parked native prompt.',
     inputSchema: { type: 'object', properties: { taskId: { type: 'string', minLength: 1 }, message: { type: 'string', minLength: 1 } },
       required: ['taskId', 'message'], additionalProperties: false },
     execute: async (input, context) => {
@@ -131,6 +146,7 @@ export function createChildTools({ getRuntime }: { getRuntime: () => ProjectRunt
         || child.thread.getId() !== target.threadId || row?.resourceId !== target.resourceId) {
         throw new Error('Child task does not belong to this parent');
       }
+      if (child.suspensions.hasPending()) return { taskId, status: 'waiting_for_response' };
       if (!child.machinery.getAgent().getActiveThreadRunId(target)) return { taskId, status: 'starting' };
       const delivery = await child.sendSignal({ type: 'reactive', contents: message },
         { ifActive: { behavior: 'deliver' }, ifIdle: { behavior: 'discard' }, requireDelivery: true }).accepted;

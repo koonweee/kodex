@@ -1,3 +1,4 @@
+import { readNativePrompts, type NativePrompt } from './chat-prompts.js';
 import { randomUUID } from 'node:crypto';
 import { readChildRelation } from './child-relation.js';
 import { readChatDescendants } from './chat-descendants.js';
@@ -27,6 +28,7 @@ export interface SubagentList {
   /** Native fork metadata has no tool-call ID; these remain separate identities. */
   forks: Array<{ id: string; title: string }>;
   children: Array<{ id: string; title: string; active: boolean }>;
+  childPrompts: Array<{ prompt: NativePrompt; ownerTitle: string }>;
   history: HistoryBoundary;
 }
 export interface SubagentSelection { chatId: string; kind: 'invocation' | 'fork' | 'child'; id: string; history?: HistoryRequest }
@@ -157,14 +159,17 @@ export function createChatSubagents(options: { resolveParent: (chatId: string) =
       const live = liveOf(parent);
       const history = await readChatHistory(parent.runtime.controller, { threadId: parent.thread.id, resourceId: parent.thread.resourceId }, request, signal);
       const descendants = await readChatDescendants({ runtime: parent.runtime, parent: parent.thread, projectPath: parent.binding.cwd }, signal);
-      const fresh = await Promise.all(descendants.filter(row => row.kind === 'child').map(async ({ thread: child }) => ({
-        id: child.id, title: child.title ?? 'Delegated child', active: (await liveChild(parent, child))?.displayState.get().isRunning ?? false,
-      })));
+      const fresh = await Promise.all(descendants.filter(row => row.kind === 'child').map(async ({ thread: child }) => {
+        const session = await liveChild(parent, child);
+        return { id: child.id, title: child.title ?? 'Delegated child', active: session?.displayState.get().isRunning ?? false,
+          prompts: session ? readNativePrompts(session) : [] };
+      }));
       signal?.throwIfAborted(); options.signal.throwIfAborted();
       // Preserve an older-load boundary across retries rather than expanding twice.
       if (revisionOf(input.chatId) !== startedAt) { request = history.history.earliest ? { earliest: history.history.earliest } : request; continue; }
       return { epoch, revision: startedAt, chatId: input.chatId, invocations: invocations(history.messages, live),
-        forks: descendants.filter(row => row.kind === 'fork').map(({ thread: child }) => ({ id: child.id, title: child.title ?? 'Forked subagent' })), children: fresh, history: history.history };
+        forks: descendants.filter(row => row.kind === 'fork').map(({ thread: child }) => ({ id: child.id, title: child.title ?? 'Forked subagent' })), children: fresh.map(({ prompts: _prompts, ...child }) => child),
+        childPrompts: fresh.flatMap(child => child.prompts.map(prompt => ({ prompt, ownerTitle: child.title }))), history: history.history };
     }
   }
   async function open(input: SubagentSelection, signal?: AbortSignal): Promise<SubagentSnapshot> {

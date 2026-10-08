@@ -1,3 +1,5 @@
+import { readNativePrompts, respondNativePrompt, type NativePrompt, type PromptResponse } from './chat-prompts.js';
+import { readChatDescendants } from './chat-descendants.js';
 import { randomUUID } from 'node:crypto';
 import { pinUnnamedChat, renameNativeChat } from './chat-titles.js';
 import { EventPublisher, ORPCError } from '@orpc/server';
@@ -17,7 +19,8 @@ import { createNativeChatSettings, type ChatSettings, type ChatSettingsPatch } f
 import { createSessionProjection, type SessionSnapshot } from './transport.js';
 
 export interface CatalogSnapshot { epoch: string; revision: number; projects: ProductProject[]; chats: Chat[]; pinnedChatIds: string[]; archivedChatIds: string[] }
-export interface ChatSnapshot extends SessionSnapshot { chat: Chat; error: string | null; settings: ChatSettings; queue: ChatQueueSnapshot; goal: NativeGoal | null }
+export interface ChatSnapshot extends SessionSnapshot { prompts: NativePrompt[]; chat: Chat; error: string | null; settings: ChatSettings; queue: ChatQueueSnapshot; goal: NativeGoal | null }
+export type ChatPromptResponse = PromptResponse & { chatId: string };
 export interface QueuedSelection { chatId: string; epoch: string; revision: number; id: string }
 export interface QueuedEdit extends QueuedSelection { input: ChatQueueInput }
 export interface QueuedOrder { chatId: string; epoch: string; revision: number; ids: string[] }
@@ -140,7 +143,7 @@ export function createChatService(options: ChatServiceOptions) {
       if (current.revision !== handle.revision) continue;
       const goal = await goals.read(handle.session);
       if (current.revision !== handle.revision) continue;
-      return { ...current, chat, error: handle.error, settings: publicSettings, queue: handle.queue.snapshot(), goal };
+      return { ...current, chat, error: handle.error, settings: publicSettings, queue: handle.queue.snapshot(), goal, prompts: readNativePrompts(handle.session) };
     }
   }
   async function catalogSnapshot(signal?: AbortSignal): Promise<CatalogSnapshot> {
@@ -309,6 +312,20 @@ export function createChatService(options: ChatServiceOptions) {
       if (queueIfPending && handle.session.displayState.get().queuedFollowUps > 0) return enqueueNative(handle, text);
       return sendNative(handle, text);
     },
+    async respondPrompt(input: ChatPromptResponse) {
+      const { binding, runtime, thread } = await projects.findThread(input.chatId);
+      const targetThread = input.target.threadId === thread.id ? thread
+        : (await readChatDescendants({ runtime, parent: thread, projectPath: binding.cwd }))
+          .find(row => row.kind === 'child' && row.thread.id === input.target.threadId)?.thread;
+      if (!targetThread || targetThread.resourceId !== input.target.resourceId) throw missing();
+      // A stale prompt cannot activate a dormant parent or child. Resume only the
+      // exact already-mounted native owner; native prompt claims arbitrate peers.
+      const session = await runtime.controller.getSessionByResource(targetThread.resourceId);
+      if (!session || session.identity.getId() !== input.target.sessionId || session.thread.getId() !== targetThread.id) {
+        throw new ORPCError('CONFLICT', { message: 'This native prompt is no longer available.' });
+      }
+      return respondNativePrompt(session, input);
+    },
     // Match main's nonblocking cards: replies are ordinary native user input,
     // with persisted correlation only (not an idempotency or prompt-state key).
     async replyToQuestion({ chatId, text, clientId }: { chatId: string; text: string; clientId: string }) {
@@ -378,7 +395,7 @@ export function createChatService(options: ChatServiceOptions) {
     openChat: guarded(service.openChat), getChatSettings: guarded(service.getChatSettings),
     updateChatSettings: guarded(service.updateChatSettings), renameChat: guarded(service.renameChat),
     setChatPinned: guarded(service.setChatPinned), setChatNotifications: guarded(service.setChatNotifications),
-    send: guarded(service.send), replyToQuestion: guarded(service.replyToQuestion), queue: guarded(service.queue), stop: guarded(service.stop),
+    send: guarded(service.send), replyToQuestion: guarded(service.replyToQuestion), respondPrompt: guarded(service.respondPrompt), queue: guarded(service.queue), stop: guarded(service.stop),
     editQueued: guarded(service.editQueued), removeQueued: guarded(service.removeQueued),
     reorderQueued: guarded(service.reorderQueued), steerQueued: guarded(service.steerQueued),
     reconcileQueued: guarded(service.reconcileQueued), dismissQueued: guarded(service.dismissQueued),
