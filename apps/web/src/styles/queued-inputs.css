@@ -116,16 +116,17 @@
     background: transparent;
     opacity: 1;
   }
-  .kodex-queue-collapse-zone .kodex-queue-collapse::before {
+  .kodex-queue-collapse-zone::before {
     position: absolute;
-    inset: 12px 0;
-    border-radius: var(--kodex-radius-round);
+    top: 8px;
+    bottom: 14px;
+    left: 50%;
+    width: 44px;
+    transform: translateX(-50%);
+    border-radius: var(--kodex-radius-sm) var(--kodex-radius-sm) 0 0;
     background: var(--kodex-bg-raised-alt);
     content: "";
     pointer-events: none;
-  }
-  .kodex-queue-collapse-zone .kodex-queue-collapse .kodex-mantine-button-inner {
-    position: relative;
   }
   .kodex-queued-messages .kodex-queue-summary { height: 44px; }
 }
