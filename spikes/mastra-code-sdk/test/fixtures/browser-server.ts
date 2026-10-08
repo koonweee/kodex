@@ -1,8 +1,9 @@
+import webPush from 'web-push';
 import { fileURLToPath } from 'node:url';
 import { createTerminalService } from '../../src/terminal-service.js';
 import { getLocalPlansDir, getSuggestedPlanRelativePath } from '@mastra/code-sdk/utils/plans';
 import { createTool } from '@mastra/core/tools';
-import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { activateProfile, resolveProfile } from '../../src/profile.js';
 import { loadServerConfig } from '../../src/server-config.js';
@@ -194,6 +195,13 @@ const promptTools = ['prompts', 'approvals'].includes(process.argv[4] ?? '') ? {
 }) } : {};
 const service = createChatService({
   profile, directoryHome, ...await loadServerConfig(profile, [projectPath]),
+  ...(process.argv[4] === 'push' ? { push: {
+    config: { ...webPush.generateVAPIDKeys(), subject: 'mailto:fixture@example.test', recheckDelayMs: 0 },
+    sender: async (_subscription: unknown, payload: unknown) => {
+      await appendFile(join(root, 'push-deliveries.jsonl'), JSON.stringify(payload) + '\n');
+      return 'sent' as const;
+    },
+  } } : {}),
   runtimeFactory: async options => {
     let runtime!: ProjectRuntime;
     runtime = await createProjectRuntime({ ...options, disableMcp: !process.argv[4]?.startsWith('mcp'), extraTools: { ...createChildTools({ getRuntime: () => runtime }), ...createAsyncQuestionTools(), ...createControlTools({ getRuntime: () => runtime, getService: () => service }), ...promptTools },
@@ -254,8 +262,9 @@ if (process.argv[4] === 'input-images' && !(await service.listChats()).chats.len
   ] });
 }
 await service.initializeAutomations();
+if (process.argv[4] === 'push') await service.push();
 const terminals = createTerminalService({ defaultCwd: directoryHome, projectCwd: id => service.terminalProjectCwd(id) });
-const server = await serveRouter(createGatewayRouter(service, terminals), port, service, terminals);
+const server = await serveRouter(createGatewayRouter(service, terminals), port, service, terminals, { frontendDir: process.argv[5] });
 console.log(`BROWSER_FIXTURE_READY ${server.url}`);
 let stopping = false;
 const stop = () => {

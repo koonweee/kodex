@@ -1,3 +1,5 @@
+import { createChatPush } from './chat-push.js';
+import type { ChatHandle as Handle } from './chat-service-types.js';
 import { createChatNotifications } from './chat-notifications.js';
 import { createChatReadState } from './chat-read-state.js';
 import { createMcpService } from './mcp-service.js';
@@ -35,17 +37,7 @@ export type { ChatPresenceSelection } from './chat-presence.js';
 export type { UnreadBadge } from './chat-notifications.js';
 export type { CatalogSnapshot, ChatSnapshot, ChatPromptResponse, ChatSeenSelection, QueuedSelection, QueuedEdit, QueuedOrder, ChatServiceOptions } from './chat-service-types.js';
 import type { CatalogSnapshot, ChatSnapshot, ChatPromptResponse, ChatSeenSelection, QueuedSelection, QueuedEdit, QueuedOrder, ChatServiceOptions } from './chat-service-types.js';
-interface Handle {
-  binding: RuntimeBinding;
-  runtime: ProjectRuntime;
-  session: NativeSession;
-  projection: ReturnType<typeof createSessionProjection>;
-  queue: ReturnType<typeof createChatQueue>;
-  revision: number;
-  error: string | null;
-  unsubscribe: () => void;
-  observers: AbortController;
-}
+
 const accepted = () => ({ accepted: true as const });
 const missing = () => new ORPCError('NOT_FOUND', { message: 'Chat or project not found.' });
 
@@ -85,7 +77,7 @@ export function createChatService(options: ChatServiceOptions) {
     void handles.get(`${bindingId}:${threadId}`)?.then(handle => {
       if (!disposed && !handle.observers.signal.aborted) handle.session.emit({ type: 'display_state_changed', displayState: handle.session.displayState.get() });
     }, () => {});
-  });
+  }, event => push.capture(event));
   const projects = createChatProjects(options, assertActive, () => ({
     [AUTOMATION_WORKFLOW_ID]: createAutomationWorkflow(input => lifecycle.admit(input.targetThreadId, async () => {
       const target = await projects.findThread(input.targetThreadId);
@@ -196,6 +188,14 @@ export function createChatService(options: ChatServiceOptions) {
     },
   });
   const catalogSnapshot = notifications.catalogSnapshot;
+  const push = createChatPush({ profile: options.profile, options: options.push, async prepare(event) {
+    let route;
+    try { route = await projects.resolveThreadRoute(event.threadId, true); }
+    catch (error) { if (error instanceof ORPCError && error.code === 'NOT_FOUND') return null; throw error; }
+    if (route.binding.id !== event.bindingId || route.kind !== 'ordinary' || route.archived
+      || !route.chat.notificationsEnabled || notifications.isViewed(event.bindingId, event.threadId)) return null;
+    return { title: route.chat.name ?? route.chat.title ?? 'New chat' };
+  } });
   async function sendNative(handle: Handle, input: ChatInput, clientId?: string) {
     try {
       const requestContext = await captureChatFastRequestContext(handle.session);
@@ -462,6 +462,7 @@ export function createChatService(options: ChatServiceOptions) {
       lifetime.abort();
       activity.dispose(); reads.dispose(); notifications.dispose();
       disposal = (async () => {
+        await push.dispose();
         if (accountService) await accountService.then(service => service.dispose(), () => {});
         const loadedHandles = await Promise.allSettled(handles.values());
         for (const result of loadedHandles) if (result.status === 'fulfilled') {
@@ -479,6 +480,7 @@ export function createChatService(options: ChatServiceOptions) {
     return (input: T, ...args: Args) => admitChat(input.chatId, () => method(input, ...args));
   }
   return { ...service,
+    push: push.get,
     mcp: createMcpService({ sources: projects.mcpBindings, assertActive, signal: lifetime.signal }),
     markChatSeen: guarded(service.markChatSeen),
     updateGoal: guarded(service.updateGoal), clearGoal: guarded(service.clearGoal),

@@ -3,6 +3,7 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './tests',
   testMatch: 'mastra-*.spec.ts',
+  testIgnore: 'mastra-pwa.spec.ts',
   workers: 1,
   timeout: 120_000,
   expect: { timeout: 15_000 },

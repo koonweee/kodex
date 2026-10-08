@@ -42,7 +42,7 @@ vi.mock("./api/client", async (importOriginal) => ({
   upsertPushSubscription: apiMocks.upsertPushSubscription,
 }));
 
-function renderPreferences(initialSection: "appearance" | "execution" | "notifications" | "plugins" | "mcp" = "plugins", mcpPanel?: ReactNode, pluginsPanel?: ReactNode) {
+function renderPreferences(initialSection: "appearance" | "execution" | "notifications" | "plugins" | "mcp" = "plugins", mcpPanel?: ReactNode, pluginsPanel?: ReactNode, notificationsPanel?: ReactNode) {
   const queryClient = createKodexQueryClient();
   queryClient.setDefaultOptions({
     queries: {
@@ -65,6 +65,7 @@ function renderPreferences(initialSection: "appearance" | "execution" | "notific
         activeSection={section}
         mcpPanel={mcpPanel}
         pluginsPanel={pluginsPanel}
+        notificationsPanel={notificationsPanel}
         preferences={{ mode: "dark", lightThemeId: "paper-light", darkThemeId: "oled-black" }}
         resolvedSchemeId="oled-black"
         onClose={vi.fn()}
@@ -632,4 +633,39 @@ it('preserves an app-server plugin installation in progress across section navig
   await act(async () => finish());
   expect(await screen.findByRole('alert')).toHaveTextContent('Installation failed');
   expect(apiMocks.installKodexControlPlugin).toHaveBeenCalledOnce();
+});
+
+
+describe('PreferencesModal Notifications panel extension', () => {
+  it('uses the native panel without querying legacy notifications', async () => {
+    apiMocks.getNotificationStatus.mockClear();
+    apiMocks.getCurrentPushSubscriptionStatus.mockClear();
+    renderPreferences('notifications', undefined, undefined, <p>Native Push preferences</p>);
+    expect(await screen.findByText('Native Push preferences')).toBeVisible();
+    expect(apiMocks.getNotificationStatus).not.toHaveBeenCalled();
+    expect(apiMocks.getCurrentPushSubscriptionStatus).not.toHaveBeenCalled();
+  });
+
+  it('retains a pending enable operation across section navigation', async () => {
+    const user = userEvent.setup();
+    let finish!: () => void;
+    const subscription = { endpoint: 'https://push.example/pending' } as PushSubscription;
+    const registration = { pushManager: { getSubscription: vi.fn().mockResolvedValue(subscription) } } as unknown as ServiceWorkerRegistration;
+    const restore = installNotificationEnvironment({ permission: 'granted', registration });
+    let subscribed = false;
+    apiMocks.getNotificationStatus.mockResolvedValue({ configured: true, subscriptionsEnabled: true, vapidPublicKey: 'AQIDBA' });
+    apiMocks.getCurrentPushSubscriptionStatus.mockImplementation(async () => ({ configured: true, subscribed, subscription: null }));
+    pwaMocks.getServiceWorkerRegistration.mockResolvedValue(registration);
+    apiMocks.upsertPushSubscription.mockImplementation(() => new Promise(resolve => { finish = () => { subscribed = true; resolve({ subscription: { enabled: true } }); }; }));
+    try {
+      renderPreferences('notifications');
+      await user.click(await screen.findByRole('button', { name: 'Enable' }));
+      await waitFor(() => expect(apiMocks.upsertPushSubscription).toHaveBeenCalled());
+      await user.click(screen.getByRole('button', { name: 'Appearance' }));
+      await user.click(screen.getByRole('button', { name: 'Notifications' }));
+      expect(screen.getByRole('button', { name: 'Enable' })).toBeDisabled();
+      await act(async () => { finish(); });
+      expect(await screen.findByText('Notifications enabled.')).toBeVisible();
+    } finally { finish?.(); restore(); }
+  });
 });

@@ -6,6 +6,7 @@ export type ChatReadState = {
   head: { runId: string; messageId: string | null; reason: 'complete' | 'aborted' | 'error' } | null;
   seen: boolean | null;
 };
+export type NativeCompletion = { bindingId: string; threadId: string; runId: string; reason: 'complete' | 'aborted' | 'error' };
 export type ChatSeenAcknowledgment = {
   bindingId: string; threadId: string; epoch: string; revision: number; runId: string;
 };
@@ -13,7 +14,7 @@ export type ChatSeenResult = { outcome: 'accepted' | 'conflict'; state: ChatRead
 
 /** One live terminal witness per native binding/thread, never reconstructed from
  * history or idle state. A new service epoch intentionally starts unknown. */
-export function createChatReadState(epoch: string, changed: (bindingId: string, threadId: string) => void) {
+export function createChatReadState(epoch: string, changed: (bindingId: string, threadId: string) => void, terminal?: (event: NativeCompletion) => void) {
   const bindings = new Map<string, Map<string, ChatReadState>>();
   const sessions = new Map<NativeSession, () => void>();
   const runtimes = new Map<ProjectRuntime, () => void>();
@@ -48,6 +49,7 @@ export function createChatReadState(epoch: string, changed: (bindingId: string, 
       // A provider failure before answering may leave the input signal here.
       // That native user row is not a visible terminal assistant witness.
       write(bindingId, threadId, { runId, messageId: message?.role === 'assistant' ? message.id : null, reason }, false);
+      terminal?.({ bindingId, threadId, runId, reason });
     }));
   }
   return {

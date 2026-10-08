@@ -33,6 +33,7 @@ export function createChatNotifications(options: {
   return {
     catalogSnapshot,
     replaceChatPresence: presence.replace,
+    isViewed: presence.isViewed,
     async getUnreadBadge(signal?: AbortSignal): Promise<UnreadBadge> {
       const snapshot = await catalogSnapshot(signal);
       // Catalog chats are the full ordinary inventory; pins do not add native

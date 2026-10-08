@@ -1,3 +1,4 @@
+import { readPushConfig } from './push-sender.js';
 import { shutdownBackend } from './shutdown.js';
 import { homedir } from 'node:os';
 import { createTerminalService } from './terminal-service.js';
@@ -37,7 +38,7 @@ settings.models.goalMaxTurns = Number.MAX_SAFE_INTEGER;
 settings.backgroundTools.enabled = true;
 saveSettings(settings, profile.settingsPath);
 const service: ChatService = createChatService({
-  profile, ...config,
+  profile, ...config, push: { config: readPushConfig(process.env) },
   runtimeFactory: async options => {
     let runtime!: ProjectRuntime;
     runtime = await createProjectRuntime({ ...options, disableMcp: false,
@@ -50,8 +51,9 @@ const service: ChatService = createChatService({
   },
 });
 await service.initializeAutomations();
+await service.push();
 const terminals = createTerminalService({ defaultCwd: homedir(), projectCwd: id => service.terminalProjectCwd(id) });
-const server = await serveRouter(createGatewayRouter(service, terminals), port, service, terminals);
+const server = await serveRouter(createGatewayRouter(service, terminals), port, service, terminals, { frontendDir: process.env.KODEX_FRONTEND_DIST });
 console.log(`Kodex Mastra spike: ${server.url} (localhost only)`);
 console.log(`Profile: ${profile.root}; projects: ${config.projects.map(project => project.path).join(', ')}`);
 let stopping = false;

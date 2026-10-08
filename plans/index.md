@@ -151,3 +151,5 @@ Focused subsystem replacements are encouraged wherever they reduce maintained co
 - Every workflow or convention change must update `AGENTS.md`.
 - Public API contract changes must be reflected in backend DTOs and regenerated OpenAPI artifacts.
 - New plans must be added here before implementation starts.
+
+Mastra current checkpoint (2026-10-09): native-only read-state limitation reaffirmed; Push transport and extension characterization reviewed, combined backend20/20 passing. Built frontend/PWA and two-tab notification proof passed in all three layouts, with builds/trim/review green; provider-wake characterization and final audit remain, overall port active. See [parity log](mastra-frontend-parity.md).

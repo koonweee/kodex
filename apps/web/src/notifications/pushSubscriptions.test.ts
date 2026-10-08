@@ -334,3 +334,29 @@ describe("disableBrowserPushNotifications", () => {
     expect(mockedDeleteCurrentPushSubscription).not.toHaveBeenCalled();
   });
 });
+
+
+describe('injected Push subscription transport', () => {
+  it('reads, enables and disables through the supplied transport in shared browser order', async () => {
+    const events: string[] = [];
+    const subscription = { endpoint: 'https://push.example/native', unsubscribe: vi.fn(async () => { events.push('unsubscribe'); return true; }) } as unknown as PushSubscription;
+    const registration = { pushManager: { getSubscription: vi.fn().mockResolvedValue(subscription) } };
+    installPushGlobals({ getRegistration: vi.fn().mockResolvedValue(registration) });
+    mockedGetServiceWorkerRegistration.mockResolvedValue(registration as unknown as ServiceWorkerRegistration);
+    const transport = {
+      current: vi.fn(async () => ({ configured: true, subscribed: true })),
+      upsert: vi.fn(async () => { events.push('upsert'); }),
+      disable: vi.fn(async () => { events.push('disable'); }),
+    };
+    await expect(loadBrowserPushNotificationState(undefined, transport)).resolves.toMatchObject({ subscribed: true, endpoint: subscription.endpoint });
+    await enableBrowserPushNotifications('AQIDBA', transport);
+    await disableBrowserPushNotifications(transport);
+    expect(transport.current).toHaveBeenCalledWith(subscription.endpoint, undefined);
+    expect(transport.upsert).toHaveBeenCalledWith(subscription);
+    expect(transport.disable).toHaveBeenCalledWith(subscription.endpoint);
+    expect(events).toEqual(['upsert', 'disable', 'unsubscribe']);
+    expect(mockedGetCurrentPushSubscriptionStatus).not.toHaveBeenCalled();
+    expect(mockedUpsertPushSubscription).not.toHaveBeenCalled();
+    expect(mockedDeleteCurrentPushSubscription).not.toHaveBeenCalled();
+  });
+});

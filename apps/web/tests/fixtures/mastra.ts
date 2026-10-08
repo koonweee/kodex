@@ -3,8 +3,8 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { once } from 'node:events';
 import { resolve } from 'node:path';
 
-export async function startBackend(root: string, seed?: string) {
-  const child = spawn(process.execPath, ['--import', 'tsx', 'test/fixtures/browser-server.ts', root, '18789', ...(seed ? [seed] : [])], {
+export async function startBackend(root: string, seed?: string, frontendDir?: string) {
+  const child = spawn(process.execPath, ['--import', 'tsx', 'test/fixtures/browser-server.ts', root, '18789', seed ?? '', ...(frontendDir ? [frontendDir] : [])], {
     cwd: resolve('../../spikes/mastra-code-sdk'), stdio: 'pipe',
     ...(seed?.startsWith('mcp') && { env: { ...process.env, HOME: root } }),
   });

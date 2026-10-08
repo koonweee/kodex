@@ -128,3 +128,20 @@ test('terminal identity belongs to the consumed run even when the native produce
   f.session('thread').end('complete', 'consumed', 'finished-answer', 'assistant', 'next-running');
   assert.deepEqual(tracker.read('binding', 'thread').head, { runId: 'consumed', messageId: 'finished-answer', reason: 'complete' });
 });
+
+test('notification capture names native terminal events only, independently of seen and invalidation writes', () => {
+  const f = fixture(), terminals: unknown[] = [];
+  const tracker = createChatReadState('epoch', () => {}, event => terminals.push(event));
+  tracker.observeRuntime(f.runtime, 'binding'); const session = f.session('thread');
+  session.end('suspended'); session.end('error', null);
+  assert.deepEqual(terminals, []);
+  session.end('complete', 'native-run', 'answer');
+  assert.deepEqual(terminals, [{ bindingId: 'binding', threadId: 'thread', runId: 'native-run', reason: 'complete' }]);
+  const state = tracker.read('binding', 'thread');
+  tracker.acknowledge({ bindingId: 'binding', threadId: 'thread', epoch: state.epoch, revision: state.revision, runId: 'native-run' });
+  tracker.forget('binding', ['thread']);
+  assert.equal(terminals.length, 1);
+  session.end('error', 'failed-before-answer', 'input', 'signal');
+  assert.deepEqual(terminals[1], { bindingId: 'binding', threadId: 'thread', runId: 'failed-before-answer', reason: 'error' });
+  tracker.dispose(); session.end('complete', 'after-disposal'); assert.equal(terminals.length, 2);
+});

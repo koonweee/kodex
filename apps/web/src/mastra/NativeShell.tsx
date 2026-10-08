@@ -23,6 +23,7 @@ import { NativeArchiveReconciliation } from './NativeArchiveReconciliation';
 import { NativeThreadPane } from './NativeThreadPane';
 import { NativeAccountMenu } from './NativeAccountMenu';
 import { NativeMcpPreferencesPanel } from './NativeMcpPreferencesPanel';
+import { useNativeNotificationsPreferencesPanel } from './NativeNotificationsPreferencesPanel';
 import { NativePluginsPreferencesPanel } from './NativePluginsPreferencesPanel';
 import { NativeExecutionPreferencesPanel } from './NativeExecutionPreferencesPanel';
 import { useNativeAccount } from './useNativeAccount';
@@ -58,6 +59,7 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
   const [showDebugEvents, setShowDebugEvents] = useState(false);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferencesSection, setPreferencesSection] = useState<PreferenceSection>('appearance');
+  const notificationsPanel = useNativeNotificationsPreferencesPanel(preferencesOpen && preferencesSection === 'notifications');
   const [projectFormOpen, setProjectFormOpen] = useState(false);
   const [markdownPreview, setMarkdownPreview] = useState<MarkdownPreviewRequest | null>(null);
   const [lightbox, setLightbox] = useState<ImageLightboxImage | null>(null);
@@ -140,7 +142,7 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
       <NativeWorkspaceShellView isDraftThreadSelected={!route.threadId} isSidebarResizing={resize.isSidebarResizing}
         mainPane={mainPane} mobilePanel={mobilePanel} sidebarCollapsed={resize.sidebarCollapsed} useSingleThreadWorkspace={singlePane}
         workspaceSelectedThreadPaneId={mainPane === 'thread' ? routeThreadPaneId : null}
-        preferencesProps={{ executionPanel: <NativeExecutionPreferencesPanel />, mcpPanel: <NativeMcpPreferencesPanel />, pluginsPanel: <NativePluginsPreferencesPanel />, opened: preferencesOpen, activeSection: preferencesSection, resolvedSchemeId: colorSchemeId, preferences: appearance, onClose: () => setPreferencesOpen(false), onSectionChange: setPreferencesSection, onModeChange: onAppearanceModeChange, onThemeChange }}
+        preferencesProps={{ notificationsPanel, executionPanel: <NativeExecutionPreferencesPanel />, mcpPanel: <NativeMcpPreferencesPanel />, pluginsPanel: <NativePluginsPreferencesPanel />, opened: preferencesOpen, activeSection: preferencesSection, resolvedSchemeId: colorSchemeId, preferences: appearance, onClose: () => setPreferencesOpen(false), onSectionChange: setPreferencesSection, onModeChange: onAppearanceModeChange, onThemeChange }}
         projectPaneProps={{ project: projects.find(project => project.id === route.projectId) ?? null, onDeleted: () => createDraft(), actions: projectActions, onShowMobileSidebar: () => setMobilePanel('threads') }}
         automationsPaneProps={{ mode: 'calendar', targetReadOnly: false, renderRuns: id => <NativeAutomationRuns automationId={id} />, automations: automations.rows, defaultThreadId: route.threadId, isLoading: automations.isLoading,
           onCreateAutomation: automations.create, onDeleteAutomation: automations.remove, onPauseAutomation: automations.pause, onResumeAutomation: automations.resume, onUpdateAutomation: automations.update,

@@ -2,10 +2,22 @@ import {
   deleteCurrentPushSubscription,
   getCurrentPushSubscriptionStatus,
   upsertPushSubscription,
+  type CurrentPushSubscriptionStatusResponse,
 } from "../api/client";
 import { getServiceWorkerRegistration, pwaGatewayIsSameOrigin } from "../pwa/registerServiceWorker";
 import { notificationPermission } from "./browserNotifications";
 import type { BrowserNotificationPermission } from "./notificationTypes";
+
+export type BrowserPushSubscriptionTransport = {
+  current: (endpoint: string, signal?: AbortSignal) => Promise<Pick<CurrentPushSubscriptionStatusResponse, "configured" | "subscribed">>;
+  upsert: (subscription: PushSubscription) => Promise<unknown>;
+  disable: (endpoint: string) => Promise<unknown>;
+};
+const defaultTransport: BrowserPushSubscriptionTransport = {
+  current: getCurrentPushSubscriptionStatus,
+  upsert: upsertPushSubscription,
+  disable: deleteCurrentPushSubscription,
+};
 
 export type BrowserPushNotificationState = {
   configured: boolean;
@@ -37,7 +49,7 @@ export function applicationServerKeyBytes(key: string): ArrayBuffer {
   return bytes.buffer;
 }
 
-export async function loadBrowserPushNotificationState(signal?: AbortSignal): Promise<BrowserPushNotificationState> {
+export async function loadBrowserPushNotificationState(signal?: AbortSignal, transport: BrowserPushSubscriptionTransport = defaultTransport): Promise<BrowserPushNotificationState> {
   const supported = browserPushNotificationsSupported();
   const permission = notificationPermission();
   if (!supported || permission !== "granted") {
@@ -65,7 +77,7 @@ export async function loadBrowserPushNotificationState(signal?: AbortSignal): Pr
     };
   }
 
-  const status = await getCurrentPushSubscriptionStatus(endpoint, signal);
+  const status = await transport.current(endpoint, signal);
   return {
     configured: status.configured,
     endpoint,
@@ -76,7 +88,7 @@ export async function loadBrowserPushNotificationState(signal?: AbortSignal): Pr
   };
 }
 
-export async function enableBrowserPushNotifications(vapidPublicKey: string): Promise<PushSubscription> {
+export async function enableBrowserPushNotifications(vapidPublicKey: string, transport: BrowserPushSubscriptionTransport = defaultTransport): Promise<PushSubscription> {
   if (!browserPushNotificationsSupported()) {
     throw new Error("Push notifications are not supported in this browser.");
   }
@@ -91,15 +103,15 @@ export async function enableBrowserPushNotifications(vapidPublicKey: string): Pr
       applicationServerKey: applicationServerKeyBytes(vapidPublicKey),
       userVisibleOnly: true,
     }));
-  await upsertPushSubscription(subscription);
+  await transport.upsert(subscription);
   return subscription;
 }
 
-export async function disableBrowserPushNotifications(): Promise<void> {
+export async function disableBrowserPushNotifications(transport: BrowserPushSubscriptionTransport = defaultTransport): Promise<void> {
   const subscription = await currentBrowserPushSubscription();
   const endpoint = subscription?.endpoint ?? null;
   if (endpoint) {
-    await deleteCurrentPushSubscription(endpoint);
+    await transport.disable(endpoint);
   }
   try {
     await subscription?.unsubscribe();

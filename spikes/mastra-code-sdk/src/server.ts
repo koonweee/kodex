@@ -1,5 +1,6 @@
 import { connectTerminalSocket, type TerminalSocketManager } from './terminal-websocket.js';
 import { handleFilePreview } from './file-preview-http.js';
+import { createFrontendHttp } from './frontend-http.js';
 import type { ChatService } from './chat-service.js';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
@@ -9,7 +10,8 @@ import { RPCHandler as WebsocketHandler } from '@orpc/server/websocket';
 import { WebSocketServer } from 'ws';
 
 /** Dedicated localhost backend. Unported routes fail here; no upstream fallback. */
-export async function serveRouter(router: AnyRouter, port = 8789, files?: Pick<ChatService, 'previewFile'>, terminals?: TerminalSocketManager) {
+export async function serveRouter(router: AnyRouter, port = 8789, files?: Pick<ChatService, 'previewFile'>, terminals?: TerminalSocketManager, options: { frontendDir?: string } = {}) {
+  const frontend = options.frontendDir === undefined ? undefined : await createFrontendHttp(options.frontendDir);
   const websocketHandler = new WebsocketHandler(router);
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 1_048_576 });
   const terminalSockets = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 * 1024 });
@@ -24,7 +26,7 @@ export async function serveRouter(router: AnyRouter, port = 8789, files?: Pick<C
     const pending = (async () => {
       if (files && await handleFilePreview(request, response, files)) return;
       const { matched } = await selectedHandler.handle(request, response, { prefix: '/rpc', context: {} });
-      if (!matched) {
+      if (!matched && !(frontend && await frontend(request, response))) {
         response.writeHead(404, { 'content-type': 'application/json' });
         response.end(JSON.stringify({ error: { message: 'Route not found on the Mastra backend.' } }));
       }

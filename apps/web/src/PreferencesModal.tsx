@@ -1,26 +1,12 @@
-import { Alert, Badge, Box, Button, Group, Loader, Modal, Stack, Text } from "@mantine/core";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Box, Button, Modal, Stack } from "@mantine/core";
 import type { ReactNode } from "react";
-import { Bell, BellOff, Send } from "lucide-react";
 
-import {
-  getNotificationStatus,
-  sendTestNotification,
-} from "./api/client";
-import { queryKeys } from "./api/queryKeys";
 import { McpPreferencesPanel } from "./mcp/McpPreferencesPanel";
+import { useNotificationsPreferencesPanel } from "./preferences/NotificationsPreferencesPanel";
 import { usePluginsPreferencesPanel } from "./preferences/PluginsPreferencesPanel";
 import { ExecutionPreferencesPanel } from "./preferences/ExecutionPreferencesPanel";
 import { AppearancePreferencesPanel } from "./preferences/AppearancePreferencesPanel";
 import type { AppearanceMode, AppearancePreferences } from "./theme/appearancePreferences";
-import { requestKodexNotificationPermission } from "./notifications/browserNotifications";
-import {
-  browserPushNotificationsSupported,
-  type BrowserPushNotificationState,
-  disableBrowserPushNotifications,
-  enableBrowserPushNotifications,
-  loadBrowserPushNotificationState,
-} from "./notifications/pushSubscriptions";
 import type { KodexColorSchemeId } from "./theme";
 
 export type PreferenceSection = "appearance" | "execution" | "notifications" | "plugins" | "mcp";
@@ -37,6 +23,7 @@ export type PreferencesModalProps = {
   executionPanel?: ReactNode;
   mcpPanel?: ReactNode;
   pluginsPanel?: ReactNode;
+  notificationsPanel?: ReactNode;
 };
 
 export function PreferencesModal({
@@ -51,51 +38,10 @@ export function PreferencesModal({
   executionPanel,
   mcpPanel,
   pluginsPanel,
+  notificationsPanel,
 }: PreferencesModalProps) {
-  const queryClient = useQueryClient();
   const defaultPluginsPanel = usePluginsPreferencesPanel(opened && activeSection === "plugins" && pluginsPanel == null);
-  const notificationStatusQuery = useQuery({
-    enabled: opened && activeSection === "notifications",
-    queryFn: ({ signal }) => getNotificationStatus(signal),
-    queryKey: queryKeys.notificationStatus,
-  });
-  const currentPushStateQuery = useQuery({
-    enabled: opened && activeSection === "notifications",
-    queryFn: ({ signal }) => loadBrowserPushNotificationState(signal),
-    queryKey: ["notifications", "current-device"],
-  });
-  const enableNotificationsMutation = useMutation({
-    mutationFn: async () => {
-      const status = notificationStatusQuery.data ?? (await getNotificationStatus());
-      if (!status.vapidPublicKey) {
-        throw new Error("Notifications are not configured");
-      }
-      const permission = await requestKodexNotificationPermission();
-      if (permission !== "granted") {
-        return permission;
-      }
-      await enableBrowserPushNotifications(status.vapidPublicKey);
-      return permission;
-    },
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.notificationStatus }),
-        queryClient.invalidateQueries({ queryKey: ["notifications", "current-device"] }),
-      ]);
-    },
-  });
-  const disableNotificationsMutation = useMutation({
-    mutationFn: disableBrowserPushNotifications,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["notifications", "current-device"] });
-    },
-  });
-  const testNotificationMutation = useMutation({
-    mutationFn: sendTestNotification,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["notifications", "current-device"] });
-    },
-  });
+  const defaultNotificationsPanel = useNotificationsPreferencesPanel(opened && activeSection === "notifications" && notificationsPanel == null);
 
   return (
     <Modal
@@ -167,27 +113,7 @@ export function PreferencesModal({
         ) : activeSection === "execution" ? (
           executionPanel ?? <ExecutionPreferencesPanel />
         ) : activeSection === "notifications" ? (
-          <NotificationsPreferencesPanel
-            disableError={disableNotificationsMutation.error}
-            disableSuccess={disableNotificationsMutation.isSuccess && currentPushStateQuery.data?.subscribed === false && !currentPushStateQuery.error}
-            disabling={disableNotificationsMutation.isPending}
-            enableError={enableNotificationsMutation.error}
-            enableSuccess={enableNotificationsMutation.isSuccess && enableNotificationsMutation.data === "granted" && currentPushStateQuery.data?.subscribed === true && !currentPushStateQuery.error}
-            enabling={enableNotificationsMutation.isPending}
-            onDisable={() => disableNotificationsMutation.mutate()}
-            onEnable={() => enableNotificationsMutation.mutate()}
-            onTest={() => testNotificationMutation.mutate()}
-            pushState={currentPushStateQuery.data}
-            pushStateError={currentPushStateQuery.error}
-            pushStateLoading={currentPushStateQuery.isLoading}
-            status={notificationStatusQuery.data}
-            statusError={notificationStatusQuery.error}
-            statusLoading={notificationStatusQuery.isLoading}
-            testError={testNotificationMutation.error}
-            testResult={testNotificationMutation.data}
-            testSuccess={testNotificationMutation.isSuccess}
-            testing={testNotificationMutation.isPending}
-          />
+          notificationsPanel ?? defaultNotificationsPanel
         ) : activeSection === "plugins" ? (
           pluginsPanel ?? defaultPluginsPanel
         ) : (
@@ -195,167 +121,5 @@ export function PreferencesModal({
         )}
       </Box>
     </Modal>
-  );
-}
-
-function NotificationsPreferencesPanel({
-  disableError,
-  disableSuccess,
-  disabling,
-  enableError,
-  enableSuccess,
-  enabling,
-  onDisable,
-  onEnable,
-  onTest,
-  pushState,
-  pushStateError,
-  pushStateLoading,
-  status,
-  statusError,
-  statusLoading,
-  testError,
-  testResult,
-  testSuccess,
-  testing,
-}: {
-  disableError: Error | null;
-  disableSuccess: boolean;
-  disabling: boolean;
-  enableError: Error | null;
-  enableSuccess: boolean;
-  enabling: boolean;
-  onDisable: () => void;
-  onEnable: () => void;
-  onTest: () => void;
-  pushState?: BrowserPushNotificationState;
-  pushStateError: Error | null;
-  pushStateLoading: boolean;
-  status?: Awaited<ReturnType<typeof getNotificationStatus>>;
-  statusError: Error | null;
-  statusLoading: boolean;
-  testError: Error | null;
-  testResult?: Awaited<ReturnType<typeof sendTestNotification>>;
-  testSuccess: boolean;
-  testing: boolean;
-}) {
-  const pushSupported = pushState?.supported ?? browserPushNotificationsSupported();
-  const pushEnabled = pushState?.subscribed === true;
-  const permission = pushState?.permission ?? "default";
-  const unavailable =
-    !pushSupported ||
-    permission === "unsupported" ||
-    permission === "denied" ||
-    status?.subscriptionsEnabled === false ||
-    status?.configured === false;
-  const checking = statusLoading || pushStateLoading;
-  const stateError = statusError ?? pushStateError;
-  const statusText = checking
-    ? "Checking"
-    : stateError
-      ? "Unavailable"
-      : pushEnabled
-        ? "Enabled"
-        : unavailable
-          ? "Unavailable"
-          : "Available";
-
-  return (
-    <Stack className="kodex-preferences-panel" gap={14}>
-      <Group justify="space-between" wrap="nowrap">
-        <Text className="kodex-preferences-panel-title" fw={650}>
-          Notifications
-        </Text>
-        <Badge data-tone={pushEnabled ? "success" : unavailable ? "neutral" : "info"}>{statusText}</Badge>
-      </Group>
-      <Text c="dimmed" size="sm">
-        Your device’s notification settings also control alerts and app badges.
-      </Text>
-
-      <Stack className="kodex-preferences-setting" gap={10}>
-        {checking ? (
-          <Group gap="xs">
-            <Loader size="xs" />
-            <Text c="dimmed" size="sm">
-              Checking notification status
-            </Text>
-          </Group>
-        ) : null}
-        {stateError ? (
-          <Alert color="red" variant="light">
-            {stateError.message}
-          </Alert>
-        ) : null}
-        {enableError ? (
-          <Alert color="red" variant="light">
-            {enableError.message}
-          </Alert>
-        ) : null}
-        {disableError ? (
-          <Alert color="red" variant="light">
-            {disableError.message}
-          </Alert>
-        ) : null}
-        {testError ? (
-          <Alert color="red" variant="light">
-            {testError.message}
-          </Alert>
-        ) : null}
-        {enableSuccess ? (
-          <Alert color="green" variant="light">
-            Notifications enabled.
-          </Alert>
-        ) : null}
-        {disableSuccess ? (
-          <Alert color="green" variant="light">
-            Notifications disabled.
-          </Alert>
-        ) : null}
-        {testSuccess && testResult?.enqueued ? (
-          <Alert color="green" variant="light">
-            Test notification sent.
-          </Alert>
-        ) : null}
-        {testSuccess && testResult && !testResult.enqueued ? (
-          <Alert color="yellow" variant="light">
-            No active notification subscriptions.
-          </Alert>
-        ) : null}
-        <Group gap="xs">
-          <Button
-            disabled={checking || unavailable || enabling || pushEnabled}
-            leftSection={<Bell size={15} />}
-            loading={enabling}
-            onClick={onEnable}
-            type="button"
-            variant="light"
-          >
-            Enable
-          </Button>
-          <Button
-            disabled={checking || disabling || !pushEnabled}
-            leftSection={<BellOff size={15} />}
-            loading={disabling}
-            onClick={onDisable}
-            type="button"
-            variant="subtle"
-          >
-            Disable
-          </Button>
-          {pushEnabled ? (
-            <Button
-              disabled={testing}
-              leftSection={<Send size={15} />}
-              loading={testing}
-              onClick={onTest}
-              type="button"
-              variant="subtle"
-            >
-              Test
-            </Button>
-          ) : null}
-        </Group>
-      </Stack>
-    </Stack>
   );
 }
