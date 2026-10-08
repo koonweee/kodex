@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { EventEnvelope } from "../api/client";
-import { applyLiveTimelineUpdate, canApplyThreadViewItemDelta } from "./reducer";
+import type { EventEnvelope, ThreadViewResponse } from "../api/client";
+import { applyLiveTimelineUpdate, applyTimelineHistoryWindow, applyTimelineSnapshot, canApplyThreadViewItemDelta } from "./reducer";
 import { indexesForState, type TimelineRow, type TimelineState } from "./state";
 import { timelineItem, timelineState } from "./testBuilders";
 
@@ -55,6 +55,53 @@ describe("canonical text delta index updates", () => {
       expect(second.items[index]).toBe(before.items[index]);
     }
   });
+
+  it("marks only the latest live append range without mutating earlier states", () => {
+    const before = historyState(0);
+    const first = applyLiveTimelineUpdate(before, delta());
+    const second = applyLiveTimelineUpdate(first, delta(3));
+
+    expect(before.items[0]).not.toHaveProperty("textDeltaStart");
+    expect(first.items[0]).toMatchObject({ text: "Seed next", textDeltaStart: 4 });
+    expect(second.items[0]).toMatchObject({ text: "Seed next next", textDeltaStart: 9 });
+  });
+
+  it.each(["snapshot", "reset_window", "full_snapshot", "row_delta"] as const)(
+    "clears live append provenance when an append-like %s replaces canonical text", (replacement) => {
+      const live = applyLiveTimelineUpdate(historyState(0), delta());
+      const text = "Seed next restored";
+      const snapshot = {
+        thread: { id: "thread-1" },
+        timeline: {
+          viewRevision: 3, activeTurnId: "turn-live", liveState: "streaming",
+          rows: [{
+            id: "item-projection-answer", kind: "assistant_message", turnId: "turn-live",
+            displayOrder: 0, status: "running",
+            item: {
+              id: "projection-answer", itemId: "native-answer", turnId: "turn-live",
+              itemType: "agentMessage", status: "running", displayOrder: 0,
+              payload: { item: { text } },
+            },
+          }],
+        },
+        historyPage: { resetWindow: true },
+      } as ThreadViewResponse;
+      const restored = replacement === "snapshot" ? applyTimelineSnapshot(live, snapshot)
+        : replacement === "reset_window" ? applyTimelineHistoryWindow(live, snapshot)
+        : applyLiveTimelineUpdate(live, {
+          ...delta(3), kind: "thread_view.patch",
+          payload: { ...snapshot.timeline, scope: replacement, affectedTurnIds: ["turn-live"] },
+        });
+
+      expect(live.items[0]).toMatchObject({ text: "Seed next", textDeltaStart: 4 });
+      expect(restored.items).toHaveLength(1);
+      expect(restored.items[0].text).toBe(text);
+      expect(restored.items[0]).not.toHaveProperty("textDeltaStart");
+      expect(applyLiveTimelineUpdate(restored, delta(4)).items[0]).toMatchObject({
+        text: `${text} next`, textDeltaStart: text.length,
+      });
+    },
+  );
 
   it.each(["activity", "work"] as const)("keeps %s targets and their item indexes synchronized", (type) => {
     const before = historyState(0);

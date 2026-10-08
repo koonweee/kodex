@@ -33,7 +33,7 @@ A Rust gateway manages Codex and local capabilities, while a responsive React PW
 
 ## What Kodex provides
 
-- A project and thread workspace with draggable, resizable panes, live timelines, queued follow-ups, approvals, native pins, and unread state.
+- A project and thread workspace with draggable, resizable panes, live timelines, queued follow-ups, approvals, native pins, and unread state. Live assistant text fades in softly; reduced motion, restored history and selected text remain immediate.
 - A responsive, installable web app for desktop, tablet, and phone browsers.
 - Host terminals, local file previews, and uploads.
 - Codex account, model, MCP server, plugin, skill, and app-surface controls.

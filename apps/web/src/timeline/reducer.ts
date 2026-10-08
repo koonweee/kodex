@@ -446,6 +446,7 @@ function appendDeltaToItem(item: TimelineItem, target: ItemDeltaTarget): Timelin
   return {
     ...item,
     text: `${item.text}${target.delta}`,
+    textDeltaStart: item.text.length,
   };
 }
 

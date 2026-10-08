@@ -39,6 +39,8 @@ export type TimelineItem = {
   kind: string;
   status: TimelineStatus;
   text: string;
+  // Presentation-only provenance for the latest canonical live append.
+  textDeltaStart?: number;
   turnId: string | null;
   displayOrder: number;
   timestampMs?: number;

@@ -176,7 +176,9 @@ export const AssistantMessageMarkdown = memo(
     return (
       <Box className="kodex-assistant-message-stack">
         <LazyMarkdownContent
+          key={`${threadId}:${item.turnId}:${item.id}`}
           className="kodex-assistant-markdown"
+          streaming={item.status === "running" ? { identity: `${threadId}:${item.turnId}:${item.id}`, deltaStart: item.textDeltaStart } : undefined}
           fallbackText={text}
           onImageOpen={onImageOpen}
           onMarkdownOpen={onMarkdownOpen}
@@ -201,6 +203,7 @@ export const AssistantMessageMarkdown = memo(
     prev.item.kind === next.item.kind &&
     prev.item.messagePhase === next.item.messagePhase &&
     prev.item.status === next.item.status &&
+    prev.item.textDeltaStart === next.item.textDeltaStart &&
     prev.onImageOpen === next.onImageOpen &&
     prev.onMarkdownOpen === next.onMarkdownOpen &&
     prev.threadId === next.threadId &&

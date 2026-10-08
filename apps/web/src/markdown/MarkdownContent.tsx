@@ -13,25 +13,29 @@ import type { ImageLightboxImage } from "../images/types";
 import { copyTextToClipboard } from "../shared/clipboard";
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 
+import { useStreamingText } from "./useStreamingText";
+
 const markdownRemarkPlugins = [remarkGfm, remarkBreaks];
 
 export type MarkdownContentProps = {
   className?: string;
+  streaming?: { identity: string; deltaStart?: number };
   onImageOpen?: (image: ImageLightboxImage) => void;
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   text: string;
   threadId?: string;
 };
 
-export function MarkdownContent({ className, onImageOpen, onMarkdownOpen, text, threadId }: MarkdownContentProps) {
+export function MarkdownContent({ className, onImageOpen, onMarkdownOpen, text, threadId, streaming }: MarkdownContentProps) {
+  const reveal = useStreamingText(text, streaming);
   const components = useMemo(
     () => markdownComponents(threadId, onImageOpen, onMarkdownOpen),
     [onImageOpen, onMarkdownOpen, threadId],
   );
 
   return (
-    <Box className={className}>
-      <ReactMarkdown remarkPlugins={markdownRemarkPlugins} skipHtml components={components}>
+    <Box className={className} ref={reveal.root}>
+      <ReactMarkdown remarkPlugins={markdownRemarkPlugins} rehypePlugins={reveal.plugins} skipHtml components={components}>
         {text}
       </ReactMarkdown>
     </Box>
