@@ -155,3 +155,30 @@ async fn active_send_now_with_uncertain_steer_never_falls_back_to_queue_start() 
         .all(|(method, _)| method != "thread/queue/start"));
     assert_retry_does_not_write(&state, &native).await;
 }
+
+#[tokio::test]
+async fn empty_native_front_dispatch_is_a_noop_for_active_and_idle_threads() {
+    for active in [None, Some(TURN.to_owned())] {
+        let (state, native) = fixture().await;
+        *native.active_turn.lock().unwrap() = active;
+        native.rows.lock().unwrap().clear();
+        let outcome = crate::queue_transfer::promote_first(&state, THREAD)
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(outcome).unwrap(),
+            json!({"status":"empty"})
+        );
+        assert!(native.writes().is_empty());
+        assert!(state
+            .store
+            .list_queue_transfers(None)
+            .await
+            .unwrap()
+            .is_empty());
+        // A selected row is an explicit identity; missing rows still report failure.
+        assert!(crate::queue_transfer::promote(&state, THREAD, ROW)
+            .await
+            .is_err());
+    }
+}

@@ -444,12 +444,12 @@ export async function submitThreadInput(
   input: UserInput[],
   attachments: TimelineFileAttachment[] = [],
   clientUserMessageId?: components["schemas"]["TurnStartRequest"]["clientUserMessageId"],
-  queueIfPending = false,
+  queuePolicy?: "ifPending" | "ifEmpty",
 ): Promise<components["schemas"]["ThreadInputResponse"]> {
   return unwrap(
     api.POST("/v1/threads/{threadId}/input", {
       params: { path: { threadId } },
-      body: { input, ...(queueIfPending ? { queueIfPending: true } : {}), ...(attachments.length > 0 ? { attachments } : {}), ...(clientUserMessageId !== undefined ? { clientUserMessageId } : {}) },
+      body: { input, ...(queuePolicy === "ifPending" ? { queueIfPending: true } : queuePolicy === "ifEmpty" ? { queueIfEmpty: true } : {}), ...(attachments.length > 0 ? { attachments } : {}), ...(clientUserMessageId !== undefined ? { clientUserMessageId } : {}) },
     }),
   );
 }

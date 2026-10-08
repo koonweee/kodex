@@ -30,7 +30,7 @@ export function useNativeQueue(threadId: string | null) {
   }
 
   function sendNow(queueId?: string) {
-    if (threadId === null || !query.data?.queuedInputs.length) return false;
+    if (threadId === null) return false;
     void mutate(() => queueId === undefined ? sendFirstQueuedInputNow(threadId) : sendQueuedInputNow(threadId, queueId));
     return true;
   }

@@ -63,6 +63,9 @@ pub struct ThreadInputRequest {
     /// Composer policy: append to existing native queued work before start-or-steer.
     #[serde(default)]
     pub queue_if_pending: bool,
+    /// Alternate composer policy: enqueue only when the native queue is empty.
+    #[serde(default)]
+    pub queue_if_empty: bool,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -119,9 +122,15 @@ pub async fn submit_thread_input(
     let ThreadInputRequest {
         submission: request,
         queue_if_pending,
+        queue_if_empty,
     } = request;
+    if queue_if_pending && queue_if_empty {
+        return Err(ApiError::BadRequest(
+            "queueIfPending and queueIfEmpty cannot both be enabled".into(),
+        ));
+    }
     request.options.validate()?;
-    if !queue_if_pending {
+    if !queue_if_pending && !queue_if_empty {
         let response = start_turn(State(state), Path(thread_id), Json(request))
             .await?
             .0;
@@ -133,10 +142,11 @@ pub async fn submit_thread_input(
     }
     let _submit_guard = state.thread_input_locks.lock(&thread_id).await;
     let client = app_server_api::client(&state.app_server);
-    // Read one current native queue row, never a browser or gateway cache. If
-    // its last row has begun before this read, native turn/start may steer it.
+    // Route from one current native queue row, never a browser or gateway cache.
+    // Native queue state may change after this read; turn/start still atomically
+    // chooses start or steering when the selected policy submits immediately.
     let queue = client.queue_list(thread_id.clone(), None, Some(1)).await?;
-    if !queue.data.is_empty() {
+    if (queue_if_pending && !queue.data.is_empty()) || (queue_if_empty && queue.data.is_empty()) {
         if serde_json::to_value(&request.options)?
             .as_object()
             .is_some_and(|options| !options.is_empty())

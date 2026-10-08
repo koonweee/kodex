@@ -48,7 +48,7 @@ for (const shape of [
         await expect(userMessages(first, "Correction queued during the first turn")).toHaveCount(1);
         await expect(userMessages(second, "Correction queued during the first turn")).toHaveCount(0);
 
-        // A pending receipt and an empty queue must not trigger a second action.
+        // Checking an empty native front must not replay a pending transfer.
         await composer(first).press("Meta+Enter");
         await composer(first).press("Meta+Enter");
         const connections = fixture.connections.get("second") ?? 0;
@@ -63,7 +63,7 @@ for (const shape of [
         expect(fixture.detail.timeline.rows).toHaveLength(1);
         expect(fixture.detail.timeline.rows[0]).toMatchObject({ turnId: "turn-3", item: { itemId: "native-older-receipt" } });
         expect(fixture.requests.filter((request) => request.key === `POST ${queuePath}/older-queue/steer`).map((request) => request.body)).toEqual([null]);
-        expect(fixture.requests.filter((request) => ["POST /v1/threads/settings-chat/input", `POST ${queuePath}`, `POST ${queuePath}/steer-first`].includes(request.key))).toHaveLength(0);
+        expect(fixture.requests.filter((request) => ["POST /v1/threads/settings-chat/input", `POST ${queuePath}`].includes(request.key))).toHaveLength(0);
       } finally { await fixture.close(); }
       expect(fixture.unexpected).toEqual([]);
       expect(fixture.errors).toEqual([]);

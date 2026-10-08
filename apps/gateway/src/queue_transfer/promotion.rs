@@ -90,6 +90,7 @@ async fn promote_locked(
                 }
                 cursor = Some(next);
             }
+            _ if native_queue_id.is_none() => return Ok(PromotionOutcome::Empty),
             _ => {
                 return Err(ApiError::Conflict(
                     "Native queued message is no longer available".into(),
@@ -261,14 +262,13 @@ async fn start_idle_locked(
     let selected = match native_queue_id {
         Some(id) => id.to_owned(),
         None => {
-            app_server_api::client(&state.app_server)
+            let page = app_server_api::client(&state.app_server)
                 .queue_list(thread_id.into(), None, Some(1))
-                .await?
-                .data
-                .into_iter()
-                .next()
-                .ok_or_else(|| ApiError::Conflict("Native queue is empty".into()))?
-                .id
+                .await?;
+            let Some(row) = page.data.into_iter().next() else {
+                return Ok(PromotionOutcome::Empty);
+            };
+            row.id
         }
     };
     if let Some(transfer) = state

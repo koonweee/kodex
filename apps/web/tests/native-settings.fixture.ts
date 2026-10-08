@@ -215,7 +215,8 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
       return respond(route, {}, 202);
     }
     if (key === "POST /v1/threads/settings-chat/input") {
-      if ((body as { queueIfPending?: boolean }).queueIfPending && queuedInputs.length) {
+      const policy = body as { queueIfPending?: boolean; queueIfEmpty?: boolean };
+      if ((policy.queueIfPending && queuedInputs.length > 0) || (policy.queueIfEmpty && queuedInputs.length === 0)) {
         const submitted = body as { input: QueuedInput["input"]; clientUserMessageId: string; attachments?: QueuedInput["attachments"] };
         const queued: QueuedInput = { id: `queued-${++nextQueueId}`, threadId: detail.thread.id, input: submitted.input, clientUserMessageId: submitted.clientUserMessageId, attachments: submitted.attachments ?? [], canSteer: Boolean(detail.timeline.activeTurnId) };
         queuedInputs.push(queued);
@@ -264,6 +265,7 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
     if (queuePath) {
       const index = steerFirst ? 0 : queuedInputs.findIndex((row) => row.id === queuePath[1]);
       const row = queuedInputs[index];
+      if (steerFirst && !row) return respond(route, { status: "empty" });
       if (row && request.method() === "PUT" && !queuePath[2]) {
         row.input = (body as { input: QueuedInput["input"] }).input;
         emit("turn_queue.changed", { threadId: detail.thread.id });

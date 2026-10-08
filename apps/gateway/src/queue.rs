@@ -279,7 +279,7 @@ pub async fn start_queued_input(
     Ok(Json(result?))
 }
 
-#[utoipa::path(post, path = "/v1/threads/{threadId}/queued-inputs/steer-first", responses((status = 200, body = PromotionOutcome), (status = 409, description = "Queue is empty or native lifecycle changed during send-now preflight")))]
+#[utoipa::path(post, path = "/v1/threads/{threadId}/queued-inputs/steer-first", responses((status = 200, body = PromotionOutcome), (status = 409, description = "Native lifecycle changed during send-now preflight")))]
 pub async fn steer_first_queued_input(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,

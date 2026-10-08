@@ -89,10 +89,11 @@ async fn native_http_steer_first_waits_for_other_clients_reorder_and_refills_bot
 }
 
 #[tokio::test]
-async fn native_http_steer_first_empty_queue_conflicts_without_native_mutations() {
+async fn native_http_steer_first_empty_queue_is_a_noop_without_native_mutations() {
     let (state, native) = state().await;
     let (status, body) = steer_first(&state).await;
-    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, json!({"status":"empty"}));
     assert!(native
         .requests
         .lock()

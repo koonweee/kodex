@@ -282,8 +282,8 @@ async fn finish(
 fn transfer(outcome: PromotionOutcome) -> QueueTransfer {
     match outcome {
         PromotionOutcome::Transfer { transfer } => transfer,
-        PromotionOutcome::Delivered { .. } => {
-            panic!("an RPC acknowledgement is not a native receipt")
+        PromotionOutcome::Delivered { .. } | PromotionOutcome::Empty => {
+            panic!("expected an unresolved transfer")
         }
     }
 }

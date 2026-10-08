@@ -2822,6 +2822,9 @@ export interface components {
             path: string;
         };
         PromotionOutcome: {
+            /** @enum {string} */
+            status: "empty";
+        } | {
             id: string;
             /** @enum {string} */
             status: "delivered";
@@ -3330,6 +3333,8 @@ export interface components {
         /** @enum {string} */
         ThreadInputDisposition: "submitted" | "queued";
         ThreadInputRequest: components["schemas"]["TurnStartRequest"] & {
+            /** @description Alternate composer policy: enqueue only when the native queue is empty. */
+            queueIfEmpty?: boolean;
             /** @description Composer policy: append to existing native queued work before start-or-steer. */
             queueIfPending?: boolean;
         };
@@ -6683,7 +6688,7 @@ export interface operations {
                     "application/json": components["schemas"]["PromotionOutcome"];
                 };
             };
-            /** @description Queue is empty or native lifecycle changed during send-now preflight */
+            /** @description Native lifecycle changed during send-now preflight */
             409: {
                 headers: {
                     [name: string]: unknown;

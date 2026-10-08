@@ -23,6 +23,8 @@ pub use promotion::{promote, promote_first};
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "status", rename_all = "camelCase")]
 pub enum PromotionOutcome {
+    /// The authoritative native queue has no front row to dispatch.
+    Empty,
     /// Acknowledged native queue-start, or a receipt-settled steer transfer.
     Delivered {
         id: String,

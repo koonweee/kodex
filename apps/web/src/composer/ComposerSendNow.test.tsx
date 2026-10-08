@@ -42,7 +42,7 @@ const base = "/v1/threads/chat";
 const queuedInput = { id: "queued", threadId: "chat", clientUserMessageId: "queued", input: [{ type: "text", text: "Waiting message" }], attachments: [], canSteer: true };
 afterEach(() => vi.restoreAllMocks());
 
-describe("composer send now", () => {
+describe("composer alternate submission", () => {
   it.each([
     { activeTurnId: null, touch: false },
     { activeTurnId: "active-turn", touch: false },
@@ -61,11 +61,35 @@ describe("composer send now", () => {
     await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
     await waitFor(() => expect(gateway.callsFor("POST", `${base}/input`)).toHaveLength(1));
     expect(await requestJson(gateway.callsFor("POST", `${base}/input`)[0])).toEqual({
-      input: [{ type: "text", text: "Act on this now" }], clientUserMessageId: expect.any(String),
+      queueIfEmpty: true, input: [{ type: "text", text: "Act on this now" }], clientUserMessageId: expect.any(String),
     });
     expect(gateway.callsFor("POST", `${base}/queued-inputs`)).toHaveLength(0);
     expect(screen.getByText("Waiting message", { exact: true })).toBeVisible();
     expect(field).toHaveValue("");
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { activeTurnId: null, touch: false },
+    { activeTurnId: "active-turn", touch: false },
+    { activeTurnId: null, touch: true },
+    { activeTurnId: "active-turn", touch: true },
+  ])("Cmd+Enter queues a draft when the native queue is empty (active $activeTurnId, touch $touch)", async ({ activeTurnId, touch }) => {
+    vi.spyOn(inputCapabilities, "isTouchInputDevice").mockReturnValue(touch);
+    const gateway = mockGateway({
+      [`GET ${base}/queued-inputs`]: { queuedInputs: [], transfers: [], nextCursor: null },
+      [`POST ${base}/input`]: { payload: {}, disposition: "queued", queuedInput },
+    });
+    const onError = composer(activeTurnId);
+    const field = screen.getByRole("textbox", { name: "Message composer" });
+    await userEvent.type(field, "Save this for later");
+    await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
+    await waitFor(() => expect(gateway.callsFor("POST", `${base}/input`)).toHaveLength(1));
+    expect(await requestJson(gateway.callsFor("POST", `${base}/input`)[0])).toEqual({
+      queueIfEmpty: true, input: [{ type: "text", text: "Save this for later" }], clientUserMessageId: expect.any(String),
+    });
+    expect(gateway.callsFor("POST", `${base}/queued-inputs`)).toHaveLength(0);
+    await waitFor(() => expect(field).toHaveValue(""));
     expect(onError).not.toHaveBeenCalled();
   });
 
@@ -83,7 +107,7 @@ describe("composer send now", () => {
     await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
     await waitFor(() => expect(gateway.callsFor("POST", `${base}/input`)).toHaveLength(1));
     expect(await requestJson(gateway.callsFor("POST", `${base}/input`)[0])).toEqual({
-      input: [{ type: "text", text: "First line\nSecond line" }], clientUserMessageId: expect.any(String),
+      queueIfEmpty: true, input: [{ type: "text", text: "First line\nSecond line" }], clientUserMessageId: expect.any(String),
     });
   });
 

@@ -69,13 +69,17 @@ describe("empty composer queue shortcut", () => {
     expect(fallback).toHaveBeenCalledOnce();
   });
 
-  it("does nothing with an empty queue", async () => {
-    const gateway = mockGateway({ [`GET ${base}`]: { queuedInputs: [], transfers: [], nextCursor: null } });
+  it("asks the gateway for the native front despite an empty cached queue and accepts empty as a no-op", async () => {
+    const gateway = mockGateway({
+      [`GET ${base}`]: { queuedInputs: [], transfers: [], nextCursor: null },
+      [`POST ${base}/steer-first`]: { status: "empty" },
+    });
     const fallback = composer();
     await waitFor(() => expect(gateway.callsFor("GET", base)).toHaveLength(1));
     shortcut();
-    expect(gateway.callsFor("POST", `${base}/steer-first`)).toHaveLength(0);
-    expect(fallback).toHaveBeenCalledOnce();
+    await waitFor(() => expect(gateway.callsFor("POST", `${base}/steer-first`)).toHaveLength(1));
+    expect(fallback).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("blocks repeated shortcuts while pending and keeps failed input queued without retry", async () => {

@@ -210,7 +210,7 @@ export function useComposerOrchestration({
             threadId: selectedThreadId,
           });
         }
-        const result = await submitThreadInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId, intent !== "sendNow");
+        const result = await submitThreadInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId, intent === "alternate" ? "ifEmpty" : "ifPending");
         if (result.disposition === "queued") {
           if (optimisticClientRequestId) onOptimisticUserMessageRemoved?.(optimisticClientRequestId);
           void refreshQueuedInputs(queryClient, selectedThreadId);

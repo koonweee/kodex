@@ -30,7 +30,7 @@ import { useThreadGoal } from "../goals/useThreadGoal";
 import { GoalModal } from "../goals/GoalModal";
 import type { GoalControls } from "../goals/GoalControls";
 import { useGoalCommand } from "../goals/useGoalCommand";
-import { isSendNowShortcut } from "./submissionIntent";
+import { isAlternateSubmitShortcut } from "./submissionIntent";
 
 export type ComposerDraftControls = {
   clearText: () => void;
@@ -269,7 +269,7 @@ export function ComposerPanel({
 
   function handleComposerKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
     const empty = !draftState.composerText.trim() && draftState.annotations.length === 0 && pendingAttachments.length === 0;
-    if (isSendNowShortcut(event) && empty && !isComposerControlsDisabled && queueDialogActive && nativeQueue.sendNow()) {
+    if (isAlternateSubmitShortcut(event) && empty && !isComposerControlsDisabled && queueDialogActive && nativeQueue.sendNow()) {
       event.preventDefault();
       return;
     }
