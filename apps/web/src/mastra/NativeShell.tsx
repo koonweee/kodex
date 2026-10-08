@@ -65,14 +65,17 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
   const projects = useMemo(() => (catalog.snapshot?.projects ?? []).map(project => ({ id: project.id, name: project.name, roots: project.roots.map(path => ({ path })) })), [catalog.snapshot?.projects]);
   const chats = catalog.snapshot?.chats ?? [];
   const entries = chats.map(chatListEntry);
-  const chatsById = new Map(chats.map(chat => [chat.id, chat]));
+  // Pinned descendants supply row/route metadata without joining ordinary
+  // project/chat inventory or automation target options.
+  const chatsById = new Map([...chats, ...(catalog.snapshot?.pinnedDescendants ?? [])].map(chat => [chat.id, chat]));
   const pinned = (catalog.snapshot?.pinnedChatIds ?? []).flatMap(id => {
     const chat = chatsById.get(id);
-    return chat ? [chatListEntry(chat)] : [];
+    if (!chat) return [];
+    return ['isRunning' in chat ? chatListEntry(chat) : { id: chat.id, name: chat.title, projectId: chat.projectId, pinned: chat.pinned }];
   });
   const threadsByProjectId = Object.fromEntries(projects.map(project => [project.id, chats.filter(chat => chat.projectId === project.id).map(chatListEntry)]));
   const standalone = chats.filter(chat => !projects.some(project => project.id === chat.projectId)).map(chatListEntry);
-  const selected = chats.find(chat => chat.id === route.threadId);
+  const selected = chatsById.get(route.threadId ?? '');
   const selectedProjectId = selected ? selected.projectId : route.projectId ?? null;
   useEffect(() => {
     const popstate = () => { const next = currentKodexRoute(); setRoute(next); setRouteThreadPaneId(next.threadId); setMobilePanel(next.panel ?? 'chat'); };

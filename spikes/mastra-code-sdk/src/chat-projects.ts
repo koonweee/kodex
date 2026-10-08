@@ -95,6 +95,10 @@ export function createChatProjects(options: ChatProjectOptions, assertActive: ()
           chats.push(describeChat(binding, thread, await readChatTitle(runtime, thread), byIdentity.get(identity)));
         }
       }
+      for (const entry of metadata.entries) if (entry.archived && !archivedChatIds.includes(entry.threadId)) {
+        const catalog = catalogs.find(row => row.binding.id === entry.bindingId);
+        if (catalog && resolveChatThreadRoute(catalog.binding, catalog.threads, entry.threadId)) archivedChatIds.push(entry.threadId);
+      }
       // Only pinned descendant rows need additional projection. Resolve against
       // the same native catalog read, including cross-binding ambiguity, rather
       // than adding descendants to ordinary project/chat membership.
@@ -135,7 +139,7 @@ export function createChatProjects(options: ChatProjectOptions, assertActive: ()
     }
     throw missing();
   }
-  async function resolveThreadRoute(chatId: string) {
+  async function resolveThreadRoute(chatId: string, includeArchived = false) {
     for (;;) {
       const metadata = await registryCall(store => store.chatMetadataSnapshot());
       const matches = [];
@@ -149,14 +153,14 @@ export function createChatProjects(options: ChatProjectOptions, assertActive: ()
         matches.push({ binding, runtime, ...route, archived });
       }
       const match = matches[0];
-      const chat = matches.length === 1 && match && !match.archived
+      const chat = matches.length === 1 && match && (!match.archived || includeArchived)
         ? describeChat(match.binding, match.thread, await readChatTitle(match.runtime, match.thread),
           metadata.entries.find(entry => entry.bindingId === match.binding.id && entry.threadId === chatId)) : null;
       assertActive();
       if ((await registryCall(store => store.snapshot())).revision !== metadata.revision) continue;
       if (matches.length > 1) throw new ORPCError('CONFLICT', { message: 'Chat identity is ambiguous.' });
       if (!match) throw missing();
-      if (match.archived) throw new ORPCError('CONFLICT', { message: 'This chat is archived.' });
+      if (match.archived && !includeArchived) throw new ORPCError('CONFLICT', { message: 'This chat is archived.' });
       return { ...match, chat: chat! };
     }
   }
@@ -199,7 +203,7 @@ export function createChatProjects(options: ChatProjectOptions, assertActive: ()
       }
     },
     async setChatNotifications(input: { chatId: string; enabled: boolean }) {
-      const current = await findThread(input.chatId);
+      const current = await resolveThreadRoute(input.chatId);
       await registryCall(store => store.setChatNotifications({ bindingId: current.binding.id, threadId: current.thread.id, enabled: input.enabled }));
     },
     async defaultsRuntime() { return runtimeFor(await executionBinding(null)); },

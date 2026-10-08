@@ -12,14 +12,19 @@ export function createChatLifecycle() {
     if (!current) { current = { closed: false, active: 0 }; states.set(chatId, current); }
     return current;
   }
+  // The caller supplies validated ancestry. Acquire the entire unique chain in
+  // one synchronous pass; a closed ancestor cannot leave partial admission.
+  async function admitMany<T>(chatIds: readonly string[], run: () => Promise<T>): Promise<T> {
+    const ids = [...new Set(chatIds)];
+    if (ids.some(id => states.get(id)?.closed)) throw new ORPCError('CONFLICT', { message: 'This chat is archived or being archived.' });
+    const admitted = ids.map(state);
+    for (const current of admitted) current.active++;
+    try { return await run(); }
+    finally { for (const current of admitted) if (--current.active === 0) current.drained?.(); }
+  }
   return {
-    async admit<T>(chatId: string, run: () => Promise<T>): Promise<T> {
-      const current = state(chatId);
-      if (current.closed) throw new ORPCError('CONFLICT', { message: 'This chat is archived or being archived.' });
-      current.active++;
-      try { return await run(); }
-      finally { if (--current.active === 0) current.drained?.(); }
-    },
+    admitMany,
+    admit<T>(chatId: string, run: () => Promise<T>): Promise<T> { return admitMany([chatId], run); },
     retire(chatId: string, run: () => Promise<void>): Promise<void> {
       const current = state(chatId);
       if (current.retirement) return current.retirement;

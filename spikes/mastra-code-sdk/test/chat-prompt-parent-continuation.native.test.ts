@@ -46,12 +46,12 @@ for (const yolo of [true, false]) test(`native service child completion after pa
     runtimeFactory: async input => {
       runtime = await createProjectRuntime({ ...input, modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }], extraTools: createChildTools({ getRuntime: () => runtime }) });
       const nativeCreate = runtime.createSession.bind(runtime);
-      runtime.createSession = async input => {
-        const session = await nativeCreate(input);
+      runtime.createSession = (input, initialize) => nativeCreate(input, async (session, assertActive) => {
         await session.state.set({ yolo });
         for (const toolName of ['ask_user', 'delegate_child']) await session.permissions.setForTool({ toolName, policy: 'allow' });
-        return session;
-      };
+        assertActive();
+        await initialize?.(session, assertActive);
+      });
       const register = runtime.mastra.__registerInternalWorkflow.bind(runtime.mastra), unregister = runtime.mastra.__unregisterInternalWorkflow.bind(runtime.mastra);
       t.mock.method(runtime.mastra, '__registerInternalWorkflow', (...args: Parameters<typeof register>) => {
         const result = register(...args); if (args[0].id === 'agentic-loop' && args[1]) producers.set(args[1], gate()); return result;
@@ -96,6 +96,8 @@ for (const yolo of [true, false]) test(`native service child completion after pa
   delegating = true;
   await service.send({ chatId: chat.id, text: 'DELEGATE_AFTER_QUESTION' });
   await childParked.promise; assert.ok(child);
+  assert.equal(child.resolveToolApproval('delegate_child'), 'deny', 'fixture permissions precede the actual child policy initializer');
+  assert.equal((await child.machinery.buildStreamOptions({})).disableBackgroundTasks, true);
   const relation = child.getTags(); childTaskId = String(relation.parentTaskId);
   await parentContinued.promise;
   assert.equal((await manager.getTask(childTaskId))?.status, 'running');

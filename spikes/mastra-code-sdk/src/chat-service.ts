@@ -13,13 +13,14 @@ import { randomUUID } from 'node:crypto';
 import { pinUnnamedChat, renameNativeChat } from './chat-titles.js';
 import { EventPublisher, ORPCError } from '@orpc/server';
 import type { NativeSession, ProjectRuntime } from './runtime.js';
-import { createChatProjects, ownsThread, type Chat, type ChatProjectOptions, type PinnedDescendant } from './chat-projects.js';
+import { createChatProjects, type Chat, type ChatProjectOptions, type PinnedDescendant } from './chat-projects.js';
 import type { ProductProject, ProjectPatch, RuntimeBinding } from './product-registry.js';
 import { assertProfileActive, type SpikeProfile } from './profile.js';
 import { createAccountService } from './account-service.js';
 import { captureChatFastRequestContext } from './chat-fast.js';
 import { createChatQueue, type ChatQueueInput, type ChatQueueSnapshot, type ChatQueueResult } from './chat-queue.js';
-import { abortNativeChat, retireChatDescendants } from './chat-archive.js';
+import { createChatRetirement } from './chat-retirement.js';
+import { applyChildSessionPolicy } from './child-policy.js';
 import { createChatLifecycle } from './chat-lifecycle.js';
 import { readChatHistory, type ChatHistory, type HistoryRequest } from './chat-history.js';
 import { createChatSubagents, type SubagentSelection } from './chat-subagents.js';
@@ -91,7 +92,7 @@ export function createChatService(options: ChatServiceOptions) {
     })),
   }));
   const subagents = createChatSubagents({ signal: lifetime.signal, async resolveParent(chatId) {
-    const parent = await projects.findThread(chatId, true);
+    const parent = await projects.resolveThreadRoute(chatId, true);
     const handle = await handles.get(`${parent.binding.id}:${chatId}`);
     return { ...parent, ...(handle && !handle.observers.signal.aborted && { session: handle.session }) };
   } });
@@ -134,14 +135,25 @@ export function createChatService(options: ChatServiceOptions) {
     pending.catch(() => { if (handles.get(key) === pending) handles.delete(key); });
     return pending;
   }
+  async function admitChat<T>(chatId: string, run: () => Promise<T>): Promise<T> {
+    const route = await projects.resolveThreadRoute(chatId);
+    return lifecycle.admitMany([...route.ancestors.map(row => row.id), chatId], run);
+  }
   async function handleFor(chatId: string) {
-    // Validate native inventory before createSession, which creates missing IDs.
-    const { binding, runtime, thread } = await projects.findThread(chatId);
+    // Validate ancestry before createSession, which creates missing IDs.
+    const { binding, runtime, thread, kind } = await projects.resolveThreadRoute(chatId);
     return cacheHandle(`${binding.id}:${chatId}`, async () => {
-      const session = await runtime.createSession({ resourceId: thread.resourceId, threadId: thread.id });
+      const scope = kind === 'fork'
+        ? runtime.sessionsForThread({ resourceId: thread.resourceId, threadId: thread.id })[0]?.scope ?? `kodex:thread:${thread.id}`
+        : undefined;
+      const session = await runtime.createSession({ resourceId: thread.resourceId, threadId: thread.id, scope },
+        kind === 'ordinary' ? undefined : async (session, assertActive) => { await applyChildSessionPolicy(session); assertActive(); });
       return bind(binding, runtime, session);
     });
   }
+  const retireChat = createChatRetirement({ projects, lifecycle, handles,
+    changed(chatId) { invalidateCatalog(); subagents.invalidate(chatId); },
+  });
 
   async function snapshot(handle: Handle, signal?: AbortSignal, initial?: SessionSnapshot, request: HistoryRequest = {}): Promise<ChatSnapshot> {
     let supplied = initial;
@@ -153,11 +165,12 @@ export function createChatService(options: ChatServiceOptions) {
       const current = supplied ?? await handle.projection.snapshot(signal, history);
       supplied = undefined;
       if (current.revision !== handle.revision) continue;
-      const thread = await handle.runtime.controller.queryThreadById({ threadId: handle.session.thread.requireId() });
+      const route = await projects.resolveThreadRoute(handle.session.thread.requireId());
+      const thread = route.thread;
       signal?.throwIfAborted();
       lifetime.signal.throwIfAborted();
       if (current.revision !== handle.revision) continue;
-      if (!thread || !ownsThread(handle.binding, thread)) throw missing();
+      if (route.binding.id !== handle.binding.id || thread.resourceId !== handle.session.identity.getResourceId()) throw missing();
       const publicSettings = await settings.readChat(handle.session);
       if (current.revision !== handle.revision) continue;
       const chat = await projects.describe(handle.binding.id, thread);
@@ -233,7 +246,7 @@ export function createChatService(options: ChatServiceOptions) {
     },
     async listSkills(input: { chatId?: string; projectId?: string | null }) {
       assertActive();
-      const binding = input.chatId ? (await projects.findThread(input.chatId)).binding : await projects.executionBinding(input.projectId ?? null);
+      const binding = input.chatId ? (await projects.resolveThreadRoute(input.chatId)).binding : await projects.executionBinding(input.projectId ?? null);
       try { return { skills: await readNativeSkills(binding.cwd, options.profile.homeDir) }; }
       catch { throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Skills could not be read.' }); }
     },
@@ -342,9 +355,11 @@ export function createChatService(options: ChatServiceOptions) {
       return snapshot(await handleFor(chatId), signal, undefined, history);
     },
     async *watchChat({ chatId, history }: { chatId: string; history?: HistoryRequest }, signal?: AbortSignal): AsyncGenerator<ChatSnapshot, void> {
-      const handle = await lifecycle.admit(chatId, () => handleFor(chatId));
+      const handle = await admitChat(chatId, () => handleFor(chatId));
       const combined = AbortSignal.any([lifetime.signal, handle.observers.signal, ...(signal ? [signal] : [])]);
-      for await (const current of handle.projection.watch(combined, history)) yield await snapshot(handle, combined, current);
+      try {
+        for await (const current of handle.projection.watch(combined, history)) yield await snapshot(handle, combined, current);
+      } catch (error) { if (!combined.aborted) throw error; }
     },
     async *watchCatalog(signal?: AbortSignal): AsyncGenerator<CatalogSnapshot, void> {
       const combined = AbortSignal.any([lifetime.signal, ...(signal ? [signal] : [])]);
@@ -361,12 +376,12 @@ export function createChatService(options: ChatServiceOptions) {
     },
     async previewFile({ chatId, path }: { chatId: string; path: string }) {
       assertActive();
-      const { binding } = await projects.findThread(chatId, true);
+      const { binding } = await projects.resolveThreadRoute(chatId, true);
       assertActive();
       return readChatFilePreview({ cwd: binding.cwd, path });
     },
     async uploadFile({ chatId, file }: { chatId: string; file: File }) {
-      const { binding } = await projects.findThread(chatId);
+      const { binding } = await projects.resolveThreadRoute(chatId);
       assertActive();
       try { return await uploadChatFile({ cwd: binding.cwd, chatId, file }); }
       catch (error) {
@@ -375,7 +390,7 @@ export function createChatService(options: ChatServiceOptions) {
       }
     },
     async uploadImage({ chatId, file }: { chatId: string; file: File }) {
-      await projects.findThread(chatId);
+      await projects.resolveThreadRoute(chatId);
       assertActive();
       try { return await uploadChatImage({ imageRoot, file }); }
       catch (error) {
@@ -392,18 +407,23 @@ export function createChatService(options: ChatServiceOptions) {
       return sendNative(handle, input);
     },
     async respondPrompt(input: ChatPromptResponse) {
-      const { binding, runtime, thread } = await projects.findThread(input.chatId);
+      const { binding, runtime, thread } = await projects.resolveThreadRoute(input.chatId);
+      const parent = { ...thread, metadata: { ...thread.metadata, projectPath: binding.cwd } };
       const targetThread = input.target.threadId === thread.id ? thread
-        : (await readChatDescendants({ runtime, parent: thread, projectPath: binding.cwd }))
+        : (await readChatDescendants({ runtime, parent, projectPath: binding.cwd }))
           .find(row => row.kind === 'child' && row.thread.id === input.target.threadId)?.thread;
       if (!targetThread || targetThread.resourceId !== input.target.resourceId) throw missing();
-      // A stale prompt cannot activate a dormant parent or child. Resume only the
-      // exact already-mounted native owner; native prompt claims arbitrate peers.
-      const session = await runtime.controller.getSessionByResource(targetThread.resourceId);
-      if (!session || session.identity.getId() !== input.target.sessionId || session.thread.getId() !== targetThread.id) {
-        throw new ORPCError('CONFLICT', { message: 'This native prompt is no longer available.' });
-      }
-      return respondNativePrompt(session, input, binding.cwd);
+      return admitChat(targetThread.id, async () => {
+        // A stale prompt cannot activate a dormant binding. Match the exact
+        // native owner, including a directly opened fork's distinct scope.
+        const session = runtime.sessionsForThread({ resourceId: targetThread.resourceId, threadId: targetThread.id })
+          .find(row => row.session.identity.getId() === input.target.sessionId)?.session
+          ?? await runtime.controller.getSessionByResource(targetThread.resourceId);
+        if (!session || session.identity.getId() !== input.target.sessionId || session.thread.getId() !== targetThread.id) {
+          throw new ORPCError('CONFLICT', { message: 'This native prompt is no longer available.' });
+        }
+        return respondNativePrompt(session, input, binding.cwd);
+      });
     },
     // Match main's nonblocking cards: replies are ordinary native user input,
     // with persisted correlation only (not an idempotency or prompt-state key).
@@ -420,27 +440,7 @@ export function createChatService(options: ChatServiceOptions) {
     async reconcileQueued(selection: QueuedSelection) { return queueCommand(selection, queue => queue.reconcile(selection)); },
     async dismissQueued(selection: QueuedSelection) { return queueCommand(selection, queue => queue.dismiss(selection)); },
     async archiveChat({ chatId }: { chatId: string }) {
-      await lifecycle.retire(chatId, async () => {
-        const { binding, runtime, thread } = await projects.findThread(chatId, true);
-        const key = `${binding.id}:${chatId}`;
-        const handle = await handles.get(key);
-        handle?.observers.abort();
-        const session = handle?.session ?? await runtime.controller.getSessionByResource(thread.resourceId);
-        if (session) {
-          await abortNativeChat(session);
-          handle?.queue.dispose();
-        }
-        handle?.unsubscribe();
-        handle?.projection.dispose();
-        handles.delete(key);
-        // Native deletion can clear/drop its Session before rejecting. A retry
-        // must consult native registration, never a cleared cached Session.
-        if (session) await runtime.releaseSession({ resourceId: thread.resourceId });
-        const descendantThreadIds = await retireChatDescendants(runtime, thread, binding.cwd);
-        await projects.archiveChat(binding.id, thread.id, descendantThreadIds);
-        invalidateCatalog();
-        subagents.invalidate(chatId);
-      });
+      await retireChat(chatId);
       return accepted();
     },
     async stop({ chatId }: { chatId: string }) {
@@ -467,7 +467,7 @@ export function createChatService(options: ChatServiceOptions) {
     },
   };
   function guarded<T extends { chatId: string }, Args extends unknown[], Result>(method: (input: T, ...args: Args) => Promise<Result>) {
-    return (input: T, ...args: Args) => lifecycle.admit(input.chatId, () => method(input, ...args));
+    return (input: T, ...args: Args) => admitChat(input.chatId, () => method(input, ...args));
   }
   return { ...service,
     updateGoal: guarded(service.updateGoal), clearGoal: guarded(service.clearGoal),
@@ -481,7 +481,7 @@ export function createChatService(options: ChatServiceOptions) {
     reorderQueued: guarded(service.reorderQueued), steerQueued: guarded(service.steerQueued),
     reconcileQueued: guarded(service.reconcileQueued), dismissQueued: guarded(service.dismissQueued),
     async listModels(input: { chatId?: string; projectId?: string | null }) {
-      return input.chatId ? lifecycle.admit(input.chatId, () => service.listModels(input)) : service.listModels(input);
+      return input.chatId ? admitChat(input.chatId, () => service.listModels(input)) : service.listModels(input);
     },
   };
 }

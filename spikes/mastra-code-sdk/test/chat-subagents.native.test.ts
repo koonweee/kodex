@@ -355,6 +355,7 @@ test('root observers inspect transitive native fork and fresh history without ac
     { id: 'ordinary-fork', resourceId: rootThread.resourceId, metadata: { parentThreadId: parent.id } },
     { id: 'invalid-bridge', resourceId: 'wrong-fork-resource', metadata: { forkedSubagent: true, parentThreadId: 'nested-fresh' } },
     { id: 'invalid-descendant', resourceId: 'invalid-descendant-resource', metadata: freshMetadata('invalid-bridge', 'wrong-fork-resource', 'invalid-task') },
+    { id: 'foreign-child', resourceId: 'foreign-child-resource', metadata: { ...freshMetadata(parent.id, rootThread.resourceId, 'foreign-task'), projectPath: join(root, 'foreign-project') } },
   ];
   for (const row of rows) await store.saveThread({ thread: { ...row, title: row.id, createdAt: now, updatedAt: now } });
   await store.saveMessages({ messages: ['nested-fork', 'nested-grandchild'].map(id => ({ id: `${id}-message`, threadId: id,
@@ -374,6 +375,23 @@ test('root observers inspect transitive native fork and fresh history without ac
   for (const id of ['ordinary-fork', 'invalid-bridge', 'invalid-descendant']) {
     await assert.rejects(first.openSubagent({ chatId: parent.id, kind: id === 'invalid-descendant' ? 'child' : 'fork', id }), { code: 'NOT_FOUND' });
   }
+  async function inspectDescendantParents(reopened = false) {
+    const childInventory = await first.listSubagents({ chatId: 'nested-fresh' });
+    assert.deepEqual(childInventory.forks.map(row => row.id), ['nested-fork']);
+    assert.deepEqual(childInventory.children.map(row => row.id).sort(), reopened ? ['nested-grandchild', 'nested-new-child'] : ['nested-grandchild']);
+    const forkInventory = await second.listSubagents({ chatId: 'nested-fork' });
+    assert.deepEqual(forkInventory.forks, []);
+    assert.deepEqual(forkInventory.children.map(row => row.id).sort(), reopened ? ['nested-grandchild', 'nested-new-child'] : ['nested-grandchild']);
+    for (const chatId of ['nested-fresh', 'nested-fork']) {
+      const saved = await second.openSubagent({ chatId, kind: 'child', id: 'nested-grandchild' });
+      assert.ok(JSON.stringify(saved.messages).includes('SAVED_nested-grandchild'));
+      await assert.rejects(first.openSubagent({ chatId, kind: 'child', id: 'nested-fresh' }), { code: 'NOT_FOUND' });
+    }
+    for (const chatId of ['ordinary-fork', 'invalid-bridge', 'invalid-descendant', 'foreign-child']) {
+      await assert.rejects(first.listSubagents({ chatId }), { code: 'NOT_FOUND' });
+    }
+  }
+  await inspectDescendantParents();
   assert.equal(activations, 0, 'transitive inspection never constructs a native Session');
   assert.equal(fixture.requests.length, requestCount);
   off();
@@ -392,6 +410,10 @@ test('root observers inspect transitive native fork and fresh history without ac
   await env.reopen(); first = env.client(); second = env.client();
   const resumed = await first.listSubagents({ chatId: parent.id });
   assert.equal(resumed.children.length, 3);
+  let reopenedActivations = 0;
+  const offReopened = env.runtime.controller.onSessionCreated(() => { reopenedActivations++; }); t.after(offReopened);
+  await inspectDescendantParents(true);
+  assert.equal(reopenedActivations, 0, 'descendant-parent reads remain dormant after runtime recreation');
   const dormant = await second.openSubagent({ chatId: parent.id, kind: 'child', id: 'nested-new-child' });
   assert.ok(JSON.stringify(dormant.messages).includes('NESTED_LIVE_EVIDENCE'));
   assert.equal(dormant.display, undefined);

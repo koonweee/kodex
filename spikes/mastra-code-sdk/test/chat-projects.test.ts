@@ -146,7 +146,7 @@ test('standalone creation and default settings work without projects; directory 
   await assert.rejects(server.first.listModels({ projectId: null, chatId: chat.id } as never), { code: 'BAD_REQUEST' });
 });
 
-test('native delegated child threads stay out of ordinary chat inventory and command admission after restart', { timeout: 60_000 }, async t => {
+test('validated native children reopen across restart while all child rows stay outside ordinary inventory', { timeout: 60_000 }, async t => {
   const env = await setup('child-admission');
   let service = env.makeService();
   let server = await serve(service);
@@ -160,18 +160,32 @@ test('native delegated child threads stay out of ordinary chat inventory and com
     parentSessionScope: '', parentTaskId: 'native-task-catalog',
   } });
   const childId = child.thread.requireId();
+  await child.thread.rename({ title: 'Validated child' });
   // Partial relations must not turn internal children into editable chats.
   const incomplete = await runtime.createSession({ resourceId: 'partial-child-resource', threadId: 'partial-child-thread', tags: { kodexChild: '1' } });
-  const internalIds = [childId, incomplete.thread.requireId()];
+  const malformed = await runtime.createSession({ resourceId: 'malformed-child-resource', threadId: 'malformed-child-thread', tags: {
+    kodexChild: '1', parentThreadId: parent.id, parentResourceId: 'foreign-parent-resource',
+    parentSessionScope: '', parentTaskId: 'malformed-native-task',
+  } });
+  const rejectedIds = [incomplete.thread.requireId(), malformed.thread.requireId()];
+  const internalIds = [childId, ...rejectedIds];
+  const requestsBefore = fixture.requests.length;
   async function assertAdmission() {
     for (const client of [server.first, server.second]) {
       const { chats } = await client.listChats();
       assert.ok(chats.some(chat => chat.id === parent.id));
-      for (const chatId of internalIds) {
-        assert.equal(chats.some(chat => chat.id === chatId), false, 'child is not a standalone sidebar chat');
+      for (const chatId of internalIds) assert.equal(chats.some(chat => chat.id === chatId), false, 'child is not an ordinary sidebar chat');
+      const opened = await client.openChat({ chatId: childId });
+      assert.equal(opened.chat.id, childId);
+      assert.equal(opened.chat.title, 'Validated child');
+      assert.equal(opened.chat.projectId, 'cli-seed');
+      assert.equal(opened.chat.cwd, env.old);
+      assert.equal(opened.display.isRunning, false);
+      for (const chatId of rejectedIds) {
         await assert.rejects(client.openChat({ chatId }), { code: 'NOT_FOUND' });
-        await assert.rejects(client.send({ chatId, text: 'must not create a second child run' }), { code: 'NOT_FOUND' });
+        await assert.rejects(client.send({ chatId, text: 'must not start a malformed child run' }), { code: 'NOT_FOUND' });
       }
+      assert.equal(fixture.requests.length, requestsBefore, 'editable reopen and rejected relations never start model work');
     }
   }
   await assertAdmission();

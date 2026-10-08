@@ -370,6 +370,7 @@ test('native file upload resolves the retained chat root without activating dorm
   const initial = makeService();
   const chat = await initial.createChat({ projectId: 'a' });
   await initial.dispose();
+  const retiredRuntimeCount = runtimes.length, requestsBefore = fixture.requests.length;
   const service = makeService();
   const server = await serve(service);
   t.after(async () => { await server.close(); await service.dispose(); });
@@ -380,7 +381,8 @@ test('native file upload resolves the retained chat root without activating dorm
   assert.equal(saved.sizeBytes, bytes.length);
   assert.equal(saved.absolutePath, join(await realpath(projects[0]!.path), saved.relativePath));
   assert.deepEqual(await readFile(saved.absolutePath), Buffer.from(bytes));
-  const runtime = runtimes.at(-1)!;
+  const runtime = runtimes.slice(retiredRuntimeCount).find(candidate => candidate.projectPath === chat.cwd);
+  assert.ok(runtime, 'select the current runtime by the authoritative chat execution root');
   const thread = await runtime.controller.queryThreadById({ threadId: chat.id }); assert.ok(thread);
   assert.equal(await runtime.controller.getSessionByResource(thread.resourceId), undefined);
   await assert.rejects(client.uploadFile({ chatId: 'missing', file: new File(['content'], 'notes.txt') }), { code: 'NOT_FOUND' });
@@ -391,6 +393,7 @@ test('native file upload resolves the retained chat root without activating dorm
   assert.deepEqual((await service.previewFile({ chatId: chat.id, path: saved.relativePath })).bytes, Buffer.from(bytes));
   assert.equal(await runtime.controller.getSessionByResource(thread.resourceId), undefined, 'archived previews stay dormant');
   await assert.rejects(client.uploadFile({ chatId: chat.id, file: new File(['content'], 'notes.txt') }), { code: 'CONFLICT' });
+  assert.equal(fixture.requests.length, requestsBefore, 'upload and archived previews do not request provider work');
 });
 
 test('native upload descriptors become saved image bytes and project references through typed Send', { timeout: 30_000 }, async t => {

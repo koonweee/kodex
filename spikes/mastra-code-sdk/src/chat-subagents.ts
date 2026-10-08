@@ -2,9 +2,10 @@ import { readNativePromptViews, type NativePrompt } from './chat-prompts.js';
 import { randomUUID } from 'node:crypto';
 import { readChildRelation } from './child-relation.js';
 import { readChatDescendants } from './chat-descendants.js';
+import { resolveChatThreadRoute, type ChatThreadRoute } from './chat-thread-route.js';
 import { EventPublisher, ORPCError } from '@orpc/server';
 import type { ActiveSubagentState } from '@mastra/core/agent-controller';
-import { ownsThread, type NativeThread } from './chat-projects.js';
+import type { NativeThread } from './chat-projects.js';
 import { readChatHistory, type ChatHistory, type HistoryBoundary, type HistoryRequest, type NativeHistoryMessage } from './chat-history.js';
 import type { RuntimeBinding } from './product-registry.js';
 import type { NativeSession, ProjectRuntime } from './runtime.js';
@@ -43,10 +44,9 @@ export interface SubagentSnapshot {
   display?: ReturnType<NativeSession['displayState']['get']>;
   history: HistoryBoundary;
 }
-interface Parent {
+interface Parent extends ChatThreadRoute {
   binding: RuntimeBinding;
   runtime: ProjectRuntime;
-  thread: NativeThread;
   session?: NativeSession;
 }
 const missing = () => new ORPCError('NOT_FOUND', { message: 'Subagent or parent chat not found.' });
@@ -142,13 +142,26 @@ export function createChatSubagents(options: { resolveParent: (chatId: string) =
     signal?.throwIfAborted(); options.signal.throwIfAborted();
     const parent = await options.resolveParent(chatId);
     signal?.throwIfAborted(); options.signal.throwIfAborted();
+    const route = resolveChatThreadRoute(parent.binding, [...parent.ancestors, parent.thread], chatId);
+    if (parent.thread.id !== chatId || !route) throw missing();
     observeRuntime(parent.runtime);
-    if (parent.thread.id !== chatId || !ownsThread(parent.binding, parent.thread)) throw missing();
     if (parent.session && (parent.session.thread.getId() !== chatId || parent.session.identity.getResourceId() !== parent.thread.resourceId)) throw missing();
     const roots = observedRoots.get(parent.runtime) ?? new Set<string>();
     roots.add(chatId); observedRoots.set(parent.runtime, roots);
     signal?.throwIfAborted(); options.signal.throwIfAborted();
-    return parent;
+    return { ...parent, ...route };
+  }
+  async function descendantsOf(parent: Parent, signal?: AbortSignal) {
+    // Native forks can omit projectPath. Read from their validated ordinary
+    // root, then retain only spawn edges below the selected parent.
+    const descendants = await readChatDescendants({ runtime: parent.runtime, parent: parent.root, projectPath: parent.binding.cwd }, signal);
+    if (parent.thread.id === parent.root.id) return descendants;
+    if (!descendants.some(row => row.thread.id === parent.thread.id)) throw missing();
+    const reachable = new Set([parent.thread.id]);
+    return descendants.filter(row => {
+      if (!reachable.has(row.parentThreadId)) return false;
+      reachable.add(row.thread.id); return true;
+    });
   }
   const liveOf = (parent: Parent) => structuredClone(parent.session?.displayState.get().activeSubagents ?? new Map<string, ActiveSubagentState>());
   async function list(input: { chatId: string; history?: HistoryRequest }, signal?: AbortSignal): Promise<SubagentList> {
@@ -158,7 +171,7 @@ export function createChatSubagents(options: { resolveParent: (chatId: string) =
       const parent = await parentFor(input.chatId, signal);
       const live = liveOf(parent);
       const history = await readChatHistory(parent.runtime.controller, { threadId: parent.thread.id, resourceId: parent.thread.resourceId }, request, signal);
-      const descendants = await readChatDescendants({ runtime: parent.runtime, parent: parent.thread, projectPath: parent.binding.cwd }, signal);
+      const descendants = await descendantsOf(parent, signal);
       const fresh = await Promise.all(descendants.filter(row => row.kind === 'child').map(async ({ thread: child }) => {
         const session = await liveChild(parent, child);
         return { id: child.id, title: child.title ?? 'Delegated child', active: session?.displayState.get().isRunning ?? false,
@@ -185,7 +198,7 @@ export function createChatSubagents(options: { resolveParent: (chatId: string) =
     for (;;) {
       const startedAt = revisionOf(input.chatId);
       const parent = await parentFor(input.chatId, signal);
-      const descendants = await readChatDescendants({ runtime: parent.runtime, parent: parent.thread, projectPath: parent.binding.cwd }, signal);
+      const descendants = await descendantsOf(parent, signal);
       const child = descendants.find(row => row.kind === input.kind && row.thread.id === input.id)?.thread;
       if (!child) throw missing();
       const live = input.kind === 'child' ? await liveChild(parent, child) : undefined;

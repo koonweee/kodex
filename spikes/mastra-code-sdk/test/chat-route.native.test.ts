@@ -47,7 +47,6 @@ test('metadata route resolves native descendants across peers and restart withou
         assert.equal(route.rootChatId, 'parent'); assert.equal(route.parentThreadId, parentThreadId);
         assert.equal(route.chat.id, id); assert.equal(route.chat.cwd, root);
         assert.deepEqual(await second.readChatRoute({ chatId: id }), route);
-        await assert.rejects(first.openChat({ chatId: id }));
       }
       await assert.rejects(first.readChatRoute({ chatId: 'foreign' }));
       await assert.rejects(first.readChatRoute({ chatId: 'missing' }));

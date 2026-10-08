@@ -52,6 +52,12 @@ const model = await startModelFixture(async request => {
   if (!request.stream) return { text: 'Browser test chat' };
   const user = lastUserText(request);
   const serialized = JSON.stringify(request.messages);
+  if (user.startsWith('DIRECT_CHILD_FOLLOWUP:') || user.startsWith('DIRECT_FORK_FOLLOWUP:')) {
+    const saved = user.startsWith('DIRECT_CHILD_FOLLOWUP:') ? 'BROWSER_FRESH_RESULT' : 'BROWSER_CHILD_RESULT_FORKED';
+    if (!serialized.includes(saved)) throw new Error('Direct descendant input lost its saved native result');
+    if (request.tools?.some(tool => ['delegate_child', 'message_child', 'subagent'].includes(tool.function.name))) throw new Error('Direct descendant exposed nested operation tools');
+    return { text: `DIRECT_NATIVE_RESULT:${user}` };
+  }
   if (process.argv[4] === 'control' && user.startsWith('CONTROL_NATIVE:')) {
     const command = JSON.parse(user.slice('CONTROL_NATIVE:'.length)) as { name: string; arguments: Record<string, unknown> };
     if (request.messages.at(-1)?.role === 'tool') return { text: `CONTROL_DONE:${command.name}` };
@@ -174,21 +180,21 @@ const service = createChatService({
       modes: [{ id: 'build', defaultModelId: 'fixture/chat', metadata: { default: true } }, ...(process.argv[4] === 'plans' ? [{ id: 'plan', defaultModelId: 'fixture/chat' }] : [])] });
     if (process.argv[4] === 'approvals') {
       const create = runtime.createSession.bind(runtime);
-      runtime.createSession = async input => {
-        const session = await create(input);
+      runtime.createSession = (input, initialize) => create(input, async (session, assertActive) => {
         await session.state.set({ yolo: false });
         await session.permissions.setForTool({ toolName: 'prompt_approval', policy: 'ask' });
         for (const toolName of ['ask_user', 'delegate_child']) await session.permissions.setForTool({ toolName, policy: 'allow' });
-        return session;
-      };
+        assertActive();
+        await initialize?.(session, assertActive);
+      });
     }
     if (process.argv[4] === 'plans') {
       const create = runtime.createSession.bind(runtime);
-      runtime.createSession = async input => {
-        const session = await create(input);
+      runtime.createSession = (input, initialize) => create(input, async (session, assertActive) => {
         await session.mode.switch({ modeId: 'plan' });
-        return session;
-      };
+        assertActive();
+        await initialize?.(session, assertActive);
+      });
     }
     runtimes.push(runtime); return runtime;
   },

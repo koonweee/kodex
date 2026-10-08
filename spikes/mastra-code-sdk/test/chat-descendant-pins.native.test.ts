@@ -155,7 +155,7 @@ test('a pinned descendant title read overlapping ancestor archive refills withou
 });
 
 
-test('pin command rechecks its child ancestor after an unrelated before-target title read overlaps archive', { timeout: 30_000 }, async t => {
+test('parent archive waits for an admitted child pin command before hiding the completed pin', { timeout: 30_000 }, async t => {
   const env = await setup(t);
   await env.client().setChatPinned({ chatId: 'peer', pinned: true });
   const store = await env.runtime.storage.getStore('memory'); assert.ok(store);
@@ -170,12 +170,20 @@ test('pin command rechecks its child ancestor after an unrelated before-target t
     return result;
   });
   const command = env.client().setChatPinned({ chatId: 'child', pinned: true, beforeChatId: 'peer' });
-  const rejected = assert.rejects(command, { code: 'CONFLICT' });
   await entered.promise;
-  await env.client().archiveChat({ chatId: 'parent' }); resume.release(); await rejected;
+  let archived = false;
+  const retirement = env.client().archiveChat({ chatId: 'parent' }).then(() => { archived = true; });
+  let fenced = false;
+  for (let attempt = 0; attempt < 20 && !fenced; attempt++) {
+    try { await env.client().readChatRoute({ chatId: 'parent' }); }
+    catch (error) { assert.equal((error as { code: string }).code, 'CONFLICT'); fenced = true; }
+  }
+  assert.equal(fenced, true, 'the parent has closed new admission');
+  assert.equal(archived, false, 'retirement waits for already admitted short metadata work');
+  resume.release(); await command; await retirement;
   const registry = await openProductRegistry(env.registryProfile); t.after(() => registry.close());
   const metadata = await registry.chatMetadataSnapshot();
-  assert.equal(metadata.entries.find(entry => entry.threadId === 'child')?.pinPosition, null);
+  assert.equal(metadata.entries.find(entry => entry.threadId === 'child')?.archived, true);
   assert.deepEqual((await env.client().listChats()).pinnedChatIds, ['peer']);
   assert.equal(env.mounts, 0); assert.equal(env.fixture.requests.length, 0);
 });
