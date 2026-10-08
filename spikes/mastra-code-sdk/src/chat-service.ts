@@ -319,6 +319,13 @@ export function createChatService(options: ChatServiceOptions) {
         return created.chat;
       });
     },
+    async readChatRoute({ chatId }: { chatId: string }) {
+      const route = await projects.resolveThreadRoute(chatId);
+      const chat = route.chat;
+      assertActive();
+      return route.kind === 'ordinary' ? { kind: 'ordinary' as const, chat }
+        : { kind: route.kind, chat, rootChatId: route.root.id, parentThreadId: route.ancestors.at(-1)!.id };
+    },
     async readControlChat({ chatId }: { chatId: string }): Promise<Chat> {
       const { binding, thread } = await projects.findThread(chatId);
       const chat = await projects.describe(binding.id, thread);
@@ -464,7 +471,7 @@ export function createChatService(options: ChatServiceOptions) {
   }
   return { ...service,
     updateGoal: guarded(service.updateGoal), clearGoal: guarded(service.clearGoal),
-    readControlChat: guarded(service.readControlChat), readControlHistory: guarded(service.readControlHistory),
+    readChatRoute: guarded(service.readChatRoute), readControlChat: guarded(service.readControlChat), readControlHistory: guarded(service.readControlHistory),
     openChat: guarded(service.openChat), getChatSettings: guarded(service.getChatSettings),
     updateChatSettings: guarded(service.updateChatSettings), renameChat: guarded(service.renameChat),
     setChatPinned: guarded(service.setChatPinned), setChatNotifications: guarded(service.setChatNotifications),

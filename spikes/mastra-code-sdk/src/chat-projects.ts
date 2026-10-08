@@ -1,5 +1,6 @@
+import { ownsThread, resolveChatThreadRoute } from './chat-thread-route.js';
+export { ownsThread } from './chat-thread-route.js';
 import { basename } from 'node:path';
-import { isChildThread } from './child-relation.js';
 import { readChatName, readChatTitle } from './chat-titles.js';
 import { homedir } from 'node:os';
 import { ORPCError } from '@orpc/server';
@@ -18,7 +19,6 @@ export interface ChatProjectOptions {
   runtimeFactory?: typeof createProjectRuntime;
 }
 const missing = () => new ORPCError('NOT_FOUND', { message: 'Chat or project not found.' });
-export const ownsThread = (binding: RuntimeBinding, thread: NativeThread) => thread.metadata?.projectPath === binding.cwd && thread.metadata?.forkedSubagent !== true && !isChildThread(thread.metadata);
 const describeChat = (binding: RuntimeBinding, thread: NativeThread, title: string, metadata?: ChatMetadata): Chat => ({ id: thread.id, projectId: binding.projectId, title, name: readChatName(thread), cwd: binding.cwd, pinned: metadata?.pinPosition !== undefined && metadata.pinPosition !== null, notificationsEnabled: metadata?.notificationsEnabled ?? true });
 
 /** Product membership is read from the registry. Native runtimes remain attached
@@ -112,11 +112,36 @@ export function createChatProjects(options: ChatProjectOptions, assertActive: ()
     }
     throw missing();
   }
+  async function resolveThreadRoute(chatId: string) {
+    for (;;) {
+      const metadata = await registryCall(store => store.chatMetadataSnapshot());
+      const matches = [];
+      for (const binding of await listBindings()) {
+        const runtime = await runtimeFor(binding);
+        const rows = await runtime.controller.queryThreads({ includeForkedSubagents: true });
+        const route = resolveChatThreadRoute(binding, rows, chatId);
+        if (!route) continue;
+        const ancestry = new Set([...route.ancestors, route.thread].map(thread => thread.id));
+        const archived = metadata.entries.some(entry => entry.bindingId === binding.id && ancestry.has(entry.threadId) && entry.archived);
+        matches.push({ binding, runtime, ...route, archived });
+      }
+      const match = matches[0];
+      const chat = matches.length === 1 && match && !match.archived
+        ? describeChat(match.binding, match.thread, await readChatTitle(match.runtime, match.thread),
+          metadata.entries.find(entry => entry.bindingId === match.binding.id && entry.threadId === chatId)) : null;
+      assertActive();
+      if ((await registryCall(store => store.snapshot())).revision !== metadata.revision) continue;
+      if (matches.length > 1) throw new ORPCError('CONFLICT', { message: 'Chat identity is ambiguous.' });
+      if (!match) throw missing();
+      if (match.archived) throw new ORPCError('CONFLICT', { message: 'This chat is archived.' });
+      return { ...match, chat: chat! };
+    }
+  }
   async function canonicalRoots(paths: string[]) {
     return Promise.all(paths.map(async path => (await listProjectDirectories({ home, path })).path));
   }
   return {
-    runtimeFor, executionBinding, currentBinding, inventory, findThread,
+    runtimeFor, executionBinding, currentBinding, inventory, findThread, resolveThreadRoute,
     async nativeRuntimes() {
       const values: ProjectRuntime[] = [];
       for (const binding of await listBindings()) values.push(await runtimeFor(binding));

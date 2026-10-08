@@ -65,6 +65,7 @@ export function createChatRouter(service: ChatService) {
     getAccountUsage: os.handler(({ signal }) => service.getAccountUsage(signal)),
     watchAccount: os.output(eventIterator(schemaType<AccountSnapshot>())).handler(({ signal }) => service.watchAccount(signal)),
     listChats: os.handler(() => service.listChats()),
+    readChatRoute: os.input(chatInput).handler(({ input }) => service.readChatRoute(input)),
     listSubagents: os.input(historyInput).handler(({ input, signal }) => service.listSubagents(input, signal)),
     watchSubagents: os.input(historyInput).output(eventIterator(schemaType<SubagentList>())).handler(({ input, signal }) => service.watchSubagents(input, signal)),
     openSubagent: os.input(subagentInput).handler(({ input, signal }) => service.openSubagent(input, signal)),
