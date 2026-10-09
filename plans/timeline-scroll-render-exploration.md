@@ -2,7 +2,7 @@
 
 ## Status and objective
 
-Proposed on 2026-10-09. Planning only; execution and deployment have not started.
+Active as an implementation exploration on 2026-10-09. Execution has started; deployment remains separate and has not been requested.
 
 Make thread scrolling predictable through streaming, history loading, disclosures, completion, pane resizing and composer changes. Reduce maintained scroll machinery and unnecessary render work. Explore a small replacement of the current scroll adapter around Virtuoso before considering a library change.
 
@@ -52,7 +52,7 @@ Each retained implementation chunk gets relevant checks, independent read-only r
 
 ## Stage 1: Reproduce and establish a baseline
 
-Status: Pending.
+Status: Active.
 
 Freeze the starting commit and production bundle. Reuse canonical fixtures and existing browser helpers; create only a small deterministic replay harness where existing coverage is insufficient. Prove genuine running assistant text and valid canonical patch scopes rather than animating a static snapshot. Keep original production behavior available for matched comparisons.
 
@@ -154,4 +154,8 @@ Update this plan and the index with results, checks, review outcomes and artifac
 
 ## Experiment log
 
-Populate during execution: candidate, hypothesis, baseline/candidate commits, scenario, result, keep/revise/reject, evidence and next step.
+Stage 1 remains active while the broader failure inventory and production-build baseline are assembled. The first confirmed failure had a sufficiently small, independently testable correction, so it was evaluated early rather than leaving a known defect in later baseline work.
+
+| Candidate | Hypothesis and scenario | Result and disposition | Evidence and next step |
+| --- | --- | --- | --- |
+| Observe the real scroll viewport and keep Virtuoso height notifications imperative | A pinned thread loses the bottom when composer growth reduces `clientHeight`; a `ResizeObserver` on the scroll parent can route that geometry change through the existing coalesced follow owner. Keeping list height out of React state removes a redundant render without changing policy. | Retain provisionally. Before the change, the focused Chromium test remained 113 px above bottom. After it, composer and viewport resize stay within the 3 px test tolerance; an intentionally unpinned reader remains anchored. This is a bounded Stage 2 fix plus the directly coupled Stage 4 state removal, not the final ownership decision. | Focused timeline tests, responsive/build/trim checks and isolated Chromium resize/reading suites pass. Continue Stage 1 baseline capture, then test input races and prepend anchoring. Compare production-build render/measurement counts before making a performance claim. |

@@ -35,7 +35,6 @@ export function useBottomPinnedVirtuosoTimeline({
   const userScrollIntentUntilRef = useRef(0);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [initialBottomAligned, setInitialBottomAligned] = useState(false);
-  const [totalListHeight, setTotalListHeight] = useState(0);
 
   const setScrollToBottomVisible = useCallback((visible: boolean) => {
     showScrollToBottomRef.current = visible;
@@ -166,10 +165,15 @@ export function useBottomPinnedVirtuosoTimeline({
     [cancelPendingBottomFollow, rowCount, scrollParentElement, setScrollToBottomVisible, syncScrollPolicyFromParent],
   );
 
-  // Use the native measurement to follow after its DOM update commits.
-  const handleTotalListHeightChanged = useCallback((height: number) => {
-    setTotalListHeight(height);
-  }, []);
+  // Virtuoso has committed its measurement by the time this fires. Keep the
+  // value out of React state: only the scroll policy needs to react to it.
+  const handleTotalListHeightChanged = useCallback(() => {
+    if (isPinnedToBottomRef.current) {
+      scheduleBottomFollow("auto");
+    } else {
+      syncScrollPolicyFromParent();
+    }
+  }, [scheduleBottomFollow, syncScrollPolicyFromParent]);
 
   useEffect(() => () => {
     cancelPendingBottomFollow();
@@ -239,6 +243,22 @@ export function useBottomPinnedVirtuosoTimeline({
   }, [cancelPendingBottomFollow, clearAutoScrollMarker, markUserScrollIntent, onOverflowAboveChange, scrollParentElement, syncScrollPolicyFromParent]);
 
   useEffect(() => {
+    const scrollElement = scrollParentElement;
+    if (!scrollElement || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      if (isPinnedToBottomRef.current) {
+        scheduleBottomFollow("auto");
+      } else {
+        syncScrollPolicyFromParent();
+      }
+    });
+    observer.observe(scrollElement);
+    return () => observer.disconnect();
+  }, [scheduleBottomFollow, scrollParentElement, syncScrollPolicyFromParent]);
+
+  useEffect(() => {
     if (initialBottomAligned) {
       return;
     }
@@ -282,17 +302,16 @@ export function useBottomPinnedVirtuosoTimeline({
       return;
     }
     if (isPinnedToBottomRef.current) {
-      scrollToTimelineBottom("auto");
+      scheduleBottomFollow("auto");
     } else {
       syncScrollPolicyFromParent();
     }
   }, [
     initialBottomAligned,
     rowCount,
-    scrollToTimelineBottom,
+    scheduleBottomFollow,
     syncScrollPolicyFromParent,
     timelineLastSeq,
-    totalListHeight,
   ]);
 
   return {

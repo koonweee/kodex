@@ -89,11 +89,86 @@ for (const shape of [
   });
 }
 
-async function scrollingFixture(context: Parameters<typeof nativeSettingsFixture>[0]) {
+test.describe("bottom follow geometry", () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+
+  test("keeps a pinned timeline at the bottom when its viewport gets shorter", async ({ context }) => {
+    const fixture = await scrollingFixture(context, 40);
+    try {
+      const page = await fixture.page("viewport-resize", "/threads/settings-chat");
+      const pane = page.locator(".kodex-thread-pane-existing");
+      const scroll = pane.locator(".kodex-timeline-scroll");
+      await expect(pane.locator('[data-initial-bottom-aligned="true"]')).toBeVisible();
+      await expect.poll(async () => (await metrics(scroll)).bottom).toBeLessThan(3);
+
+      await page.setViewportSize({ width: 1280, height: 600 });
+
+      await expect.poll(async () => (await metrics(scroll)).bottom).toBeLessThan(3);
+      await expect(pane.getByRole("button", { name: "Scroll to bottom", exact: true })).toBeHidden();
+    } finally {
+      await fixture.close();
+    }
+    expect(fixture.errors).toEqual([]);
+    expect(fixture.unexpected).toEqual([]);
+  });
+
+  test("keeps a pinned timeline at the bottom when the composer grows", async ({ context }) => {
+    const fixture = await scrollingFixture(context, 40);
+    try {
+      const page = await fixture.page("composer-resize", "/threads/settings-chat");
+      const pane = page.locator(".kodex-thread-pane-existing");
+      const scroll = pane.locator(".kodex-timeline-scroll");
+      await expect(pane.locator('[data-initial-bottom-aligned="true"]')).toBeVisible();
+      await expect.poll(async () => (await metrics(scroll)).bottom).toBeLessThan(3);
+
+      await pane.locator("textarea").fill(Array.from({ length: 7 }, (_, index) => `Draft line ${index}`).join("\n"));
+
+      await expect.poll(async () => (await metrics(scroll)).bottom).toBeLessThan(3);
+      await expect(pane.getByRole("button", { name: "Scroll to bottom", exact: true })).toBeHidden();
+    } finally {
+      await fixture.close();
+    }
+    expect(fixture.errors).toEqual([]);
+    expect(fixture.unexpected).toEqual([]);
+  });
+
+  test("preserves a reading position when the composer grows", async ({ context }) => {
+    const fixture = await scrollingFixture(context, 40);
+    try {
+      const page = await fixture.page("composer-resize-reading", "/threads/settings-chat");
+      const pane = page.locator(".kodex-thread-pane-existing");
+      const scroll = pane.locator(".kodex-timeline-scroll");
+      await expect(pane.locator('[data-initial-bottom-aligned="true"]')).toBeVisible();
+      await settle(page, scroll);
+      await scroll.evaluate(el => {
+        el.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -400 }));
+        el.scrollTop = Math.floor((el.scrollHeight - el.clientHeight) / 2);
+      });
+      await expect(pane.getByRole("button", { name: "Scroll to bottom", exact: true })).toBeVisible();
+      await settle(page, scroll);
+      const before = await visibleAnchor(scroll);
+
+      await pane.locator("textarea").fill(Array.from({ length: 7 }, (_, index) => `Draft line ${index}`).join("\n"));
+
+      await settle(page, scroll);
+      const after = await visibleAnchor(scroll);
+      expect(after.key).toBe(before.key);
+      expect(Math.abs(after.offset - before.offset)).toBeLessThan(2);
+      expect((await metrics(scroll)).bottom).toBeGreaterThan(60);
+      await expect(pane.getByRole("button", { name: "Scroll to bottom", exact: true })).toBeVisible();
+    } finally {
+      await fixture.close();
+    }
+    expect(fixture.errors).toEqual([]);
+    expect(fixture.unexpected).toEqual([]);
+  });
+});
+
+async function scrollingFixture(context: Parameters<typeof nativeSettingsFixture>[0], rowCount = 80) {
   const fixture = await nativeSettingsFixture(context);
   fixture.detail.timeline = { ...fixture.detail.timeline,
-    rows: Array.from({ length: 80 }, (_, i) => historyRow(i)),
-    turns: Array.from({ length: 80 }, (_, i) => ({ id: `turn-${i}`, status: "completed" })),
+    rows: Array.from({ length: rowCount }, (_, i) => historyRow(i)),
+    turns: Array.from({ length: rowCount }, (_, i) => ({ id: `turn-${i}`, status: "completed" })),
   };
   return fixture;
 }
@@ -133,6 +208,22 @@ async function settle(page: Page, scroll: Locator) {
 
 async function metrics(scroll: Locator) {
   return scroll.evaluate(el => ({ top: el.scrollTop, bottom: el.scrollHeight - el.clientHeight - el.scrollTop }));
+}
+
+async function visibleAnchor(scroll: Locator) {
+  const anchor = await scroll.evaluate(el => {
+    const viewport = el.getBoundingClientRect();
+    const row = [...el.querySelectorAll<HTMLElement>(".kodex-timeline-virtual-row")].find(candidate => {
+      const bounds = candidate.getBoundingClientRect();
+      return bounds.bottom > viewport.top && bounds.top < viewport.bottom;
+    });
+    return row ? {
+      key: row.dataset.index,
+      offset: row.getBoundingClientRect().top - viewport.top,
+    } : null;
+  });
+  if (!anchor) throw new Error("Expected a visible timeline anchor");
+  return anchor;
 }
 
 function historyRow(index: number): ThreadTimelineRow {
