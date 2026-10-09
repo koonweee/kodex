@@ -20,7 +20,7 @@
   display: flex;
   align-items: center;
   min-width: 0;
-  padding: 6px 12px;
+  padding-inline: 12px;
   cursor: pointer;
   list-style: none;
 }
@@ -92,7 +92,7 @@
 
 .kodex-file-change-summary {
   min-width: 0;
-  padding: 6px 12px;
+  padding-inline: 12px;
 }
 
 .kodex-file-change-action {

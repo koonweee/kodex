@@ -15,6 +15,15 @@
   padding-block: 0;
 }
 
+/* Interactive intermediate rows share one density contract. Renderers may
+   own their horizontal layout, borders and typography, but vertical inset and
+   minimum hit-area height belong here so activity and file rows cannot drift. */
+.kodex-timeline-intermediate-summary {
+  box-sizing: border-box;
+  min-height: 32px;
+  padding-block: 6px;
+}
+
 /* Timeline rows share one outer spacing owner. Item and work renderers retain
    their standalone padding outside TimelineView without doubling it here. */
 .kodex-turn-group > .kodex-timeline-item,

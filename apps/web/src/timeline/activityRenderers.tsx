@@ -54,7 +54,7 @@ function TimelineActivityGroupRendererImpl({
 
   return (
     <details className="kodex-activity-group">
-      <summary>
+      <summary className="kodex-timeline-intermediate-summary">
         <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
           <Terminal size={15} />
           <ActivityGroupSummary items={items} />
@@ -267,7 +267,7 @@ const ActivityItemRenderer = memo(function ActivityItemRenderer({
     const status = commandStatusMeta(item.status);
     return (
       <details className="kodex-activity-item" onToggle={handleToggle}>
-        <summary>
+        <summary className="kodex-timeline-intermediate-summary">
           <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
             <Terminal size={15} />
             <Text size="xs" c="dimmed" className="kodex-activity-title" title={commandSummary(item)}>
@@ -292,7 +292,7 @@ const ActivityItemRenderer = memo(function ActivityItemRenderer({
 
   return (
     <details className="kodex-activity-item" onToggle={handleToggle}>
-      <summary>
+      <summary className="kodex-timeline-intermediate-summary">
         <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
           <TimelineIcon kind={item.kind} />
           <Text size="xs" c="dimmed" className="kodex-activity-title" title={activityItemSummary(item)}>

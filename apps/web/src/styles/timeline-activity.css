@@ -221,10 +221,3 @@
   margin-top: 0;
   margin-bottom: 0;
 }
-
-@media (any-pointer: coarse) {
-  .kodex-activity-group > summary,
-  .kodex-activity-item > summary {
-    min-height: 32px;
-  }
-}
