@@ -10,7 +10,7 @@ Future iterations may add inline Markdown handling, code, logs, or other text-li
 
 ## Status
 
-Complete.
+Active: HTML/video implementation is delivered and reviewed; broad frontend validation remains open on the baseline failures below. The original image/Markdown/PDF/download implementation is complete.
 
 ## Source Of Truth
 
@@ -203,3 +203,24 @@ Exit conditions:
 - Added image content sniffing, Markdown UTF-8 validation, `415 Unsupported Media Type`, generated OpenAPI/frontend types, and README documentation for the local/VPN-only file-serving tradeoff.
 - Updated timeline rendering so local image activity paths use the preview route, local Markdown links remain download links through the preview route, and raw `image_generation_call` items normalize to generated image timeline rows.
 - Verified with `cargo fmt --check`, `cargo test -p kodex-gateway`, focused frontend timeline tests, `cd apps/web && npm test`, `cd apps/web && npm run build`, and an independent review/fix loop ending with no major issues.
+
+## HTML galleries and video playback extension (2026-10-09)
+
+Existing local Markdown file links must open HTML and WebM/MP4 previews in a new tab without requiring model-specific URLs or regenerated artifacts. HTML requests redirect to a directory-aware content route so ordinary relative video, image, stylesheet, classic script and nested-page references resolve. The content route validates the native thread, canonicalizes paths, rejects directory targets and symlink escapes, and bounds asset lookup to the encoded directory. Directory encodings are routing context, not credentials or public filesystem authorization.
+
+HTML responses enforce a CSP sandbox with scripts enabled and an opaque origin. Local assets are limited to the document-directory URL prefix and inline controls are allowed; fetch/WebSocket connections, form submissions, popups, embedding and Kodex browser storage access are restricted. SVGs remain images, with scripts disabled by response headers on both file routes. This is a static document preview, not a generated MCP App bridge or a general web application host. Network-backed dashboards, external assets and module scripts needing CORS are outside this extension.
+
+Video responses stream through the existing HTTP filesystem service with correct WebM/MP4 MIME types, HEAD and byte-range semantics. Existing image, Markdown, PDF and generic download behavior remains covered. Public routes and responses must appear in generated OpenAPI and frontend types.
+
+Exit checks: failing regression tests before implementation; route and frontend link coverage; real bundled-Chromium proof of relative assets, playback/seek, nested navigation and enforced restrictions; existing gallery smoke when local artifacts exist; build, trim and independent review. Shared lifecycle state is unaffected: previews are read-only and browser presentation belongs to each tab. Deployment is separate.
+
+### Extension validation
+
+- Backend library: 690 passed, 3 ignored. Preview suite with Chromium: 12 passed, including all 12 recordings in the existing streaming-animation gallery.
+- Focused frontend preview/attachment/Markdown/PDF/download checks plus the isolated queue test: 53 passed. Frontend build/typecheck, frontend trim and backend trim passed. OpenAPI and frontend types are regenerated.
+- The installed Tailscale 1.102.4 HTTP proxy preserves the incoming Host for TCP-backed Serve targets, verified against its [pinned official source](https://github.com/tailscale/tailscale/blob/bbcd7d1fc2054b9189ebc1531acf74bd880ca0c8/ipn/ipnlocal/serve.go#L895-L913). The policy supports that host with HTTPS termination at Serve and HTTP internally.
+- Independent read-only review found and verified fixes for content-directory CSP sources, scripted SVG navigation, HTTP/2 authority and the documented `400` response. No material findings remain.
+- Full frontend suite: 1280 passed, 1 skipped, 3 failed. The activity labels in `App.test.tsx` (`bounds mounted nested activity items in activity-heavy timelines`) and `App.mvp.timeline.test.tsx` (`groups command and search activity into nested timeline collapsibles`) also fail in an isolated copy of baseline commit `a33f37e`, before these preview changes. The queue-menu failure passes on that baseline and on isolated rerun with the preview checks. These unrelated failures keep broad-suite exit validation open; no timeline/queue behavior was changed for this extension.
+- `agent-browser` is unavailable in this environment. Browser evidence uses Playwright's bundled Chromium against the actual Rust file-serving routes, with disposable in-memory gateway state. The running service was not updated.
+
+HTML is limited to 2 MiB and videos to 100 MiB per file. The headers apply when serving existing files; model-generated links and artifacts need no migration.

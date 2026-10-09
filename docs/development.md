@@ -186,3 +186,9 @@ Keep the configured Codex binary version aligned with `apps/gateway/app-server-s
 - Keep local/private-network assumptions explicit in features and documentation.
 
 Contributor workflow and detailed implementation constraints live in [`AGENTS.md`](../AGENTS.md). Active and completed implementation plans are indexed in [`plans/index.md`](../plans/index.md).
+
+### Static HTML and video preview browser proof
+
+Run `KODEX_BROWSER_TESTS=1 cargo test -p kodex-gateway file_preview_browser --lib -- --nocapture` after installing the web dependencies and Playwright's bundled Chromium. The test starts a disposable loopback gateway with recorded native metadata, generates a small real WebM in Chromium, and checks existing-link redirects, relative assets, new-tab opening, playback/seek, nested navigation/reload and enforced API/storage/form restrictions. It does not touch the running service or use a personal Codex account.
+
+Optionally set `KODEX_EXISTING_GALLERY_PATH=/absolute/path/to/index.html` to smoke an existing local gallery with videos and a `.start` playback control through the same test gateway; this does not modify its HTML or recordings. This optional check is tailored to the streaming-animation artifact, while the deterministic proof covers general static HTML previews.

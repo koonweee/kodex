@@ -7,7 +7,10 @@ pub mod composer_settings;
 mod config_writes;
 pub mod directories;
 pub mod events;
+pub(crate) mod file_content;
 pub mod file_preview;
+#[cfg(test)]
+mod file_preview_tests;
 pub mod frontend_updates;
 pub mod health;
 pub mod kodex_control_plugin;
@@ -1515,6 +1518,7 @@ mod tests {
             "/v1/queue-transfers/{transferId}/reconcile",
             "/v1/threads/{threadId}/queued-inputs/{queueId}/steer",
             "/v1/threads/{threadId}/files/preview",
+            "/v1/threads/{threadId}/files/content/{directory}/{filePath}",
             "/v1/threads/{threadId}/uploads/files",
             "/v1/uploads/images",
             "/v1/approvals",

@@ -1543,6 +1543,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/threads/{threadId}/files/content/{directory}/{filePath}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a local HTML preview or one of its relative assets
+         * @description Directory-aware static file serving for localhost or trusted VPN deployments. The base64url directory is routing context, not an authorization token. HTML uses an opaque-origin CSP sandbox. Relative assets cannot escape the directory through parent paths or symlinks.
+         */
+        get: operations["thread_file_content"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/threads/{threadId}/files/preview": {
         parameters: {
             query?: never;
@@ -6374,6 +6394,66 @@ export interface operations {
             };
         };
     };
+    thread_file_content: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Thread id for native metadata validation */
+                threadId: string;
+                /** @description Base64url encoded absolute preview directory */
+                directory: string;
+                /** @description Relative asset path; may include nested path segments */
+                filePath: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Inline HTML, local asset, or download bytes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Requested file byte range */
+            206: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid or missing request authority for an HTML preview */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Thread or file not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unsupported or oversized preview */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Requested range is not satisfiable */
+            416: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     preview_thread_file: {
         parameters: {
             query: {
@@ -6395,6 +6475,20 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Requested video byte range */
+            206: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description HTML redirect to its relative asset context */
+            307: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Thread or preview path was not found */
             404: {
                 headers: {
@@ -6404,6 +6498,13 @@ export interface operations {
             };
             /** @description Preview path exists but is not a supported preview type */
             415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Requested video range is not satisfiable */
+            416: {
                 headers: {
                     [name: string]: unknown;
                 };

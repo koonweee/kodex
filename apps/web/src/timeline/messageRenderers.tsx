@@ -124,7 +124,7 @@ function UserFileAttachmentTile({
       </button>
     );
   }
-  if (action.kind === "pdf") {
+  if (action.kind === "browser") {
     return (
       <a
         aria-label={`Open ${attachment.fileName}`}

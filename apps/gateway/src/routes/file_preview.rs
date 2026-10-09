@@ -4,8 +4,11 @@ use axum::{
     body::Body,
     extract::{Path, Query, State},
     http::{
-        header::{CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_TYPE},
-        HeaderValue, Response,
+        header::{
+            CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_SECURITY_POLICY,
+            CONTENT_TYPE, X_CONTENT_TYPE_OPTIONS,
+        },
+        HeaderValue, Request, Response,
     },
     routing::get,
     Router,
@@ -15,11 +18,17 @@ use tokio::fs;
 use tokio::io::AsyncReadExt;
 use utoipa::{IntoParams, ToSchema};
 
+use super::file_content;
+
 use crate::{
     api::AppState,
     app_server_api,
     error::{ApiError, ApiResult},
 };
+
+pub(super) const SVG_POLICY: &str = "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+
+const MAX_HTML_BYTES: u64 = 2 * 1024 * 1024;
 
 const MAX_IMAGE_BYTES: u64 = 25 * 1024 * 1024;
 const MAX_MARKDOWN_BYTES: u64 = 2 * 1024 * 1024;
@@ -27,10 +36,12 @@ const MAX_PDF_BYTES: u64 = 50 * 1024 * 1024;
 const MAX_DOWNLOAD_BYTES: u64 = 100 * 1024 * 1024;
 
 pub fn router() -> Router<AppState> {
-    Router::new().route(
-        "/v1/threads/{thread_id}/files/preview",
-        get(preview_thread_file),
-    )
+    Router::new()
+        .route(
+            "/v1/threads/{thread_id}/files/preview",
+            get(preview_thread_file),
+        )
+        .merge(file_content::router())
 }
 
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
@@ -49,6 +60,9 @@ pub struct FilePreviewQuery {
     ),
     responses(
         (status = 200, description = "Local file preview or download bytes"),
+        (status = 206, description = "Requested video byte range"),
+        (status = 307, description = "HTML redirect to its relative asset context"),
+        (status = 416, description = "Requested video range is not satisfiable"),
         (status = 404, description = "Thread or preview path was not found"),
         (status = 415, description = "Preview path exists but is not a supported preview type")
     )
@@ -57,6 +71,7 @@ pub async fn preview_thread_file(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
     Query(query): Query<FilePreviewQuery>,
+    request: Request<Body>,
 ) -> ApiResult<Response<Body>> {
     let thread = read_preview_thread(&state, &thread_id).await?;
     let path = canonical_thread_preview_path(&query.path, FsPath::new(&thread.cwd)).await?;
@@ -66,6 +81,12 @@ pub async fn preview_thread_file(
     }
 
     let kind = classify_preview_file(&path, metadata.len()).await?;
+    if matches!(kind, PreviewKind::Html) {
+        return file_content::redirect_html(&thread_id, &path);
+    }
+    if matches!(kind, PreviewKind::Video(_)) {
+        return file_content::stream_preview(kind, &path, request).await;
+    }
     let bytes = fs::read(&path).await.map_err(|_| preview_not_found())?;
     kind.validate_bytes(&bytes)?;
     preview_response(kind, path.as_path(), bytes)
@@ -89,7 +110,7 @@ pub async fn preview_local_image_file(path: &str) -> ApiResult<Response<Body>> {
     preview_response(kind, path.as_path(), bytes)
 }
 
-async fn read_preview_thread(
+pub(super) async fn read_preview_thread(
     state: &AppState,
     thread_id: &str,
 ) -> ApiResult<app_server_api::ThreadSummary> {
@@ -109,7 +130,10 @@ async fn read_preview_thread(
     Ok(response)
 }
 
-async fn canonical_thread_preview_path(path: &str, thread_cwd: &FsPath) -> ApiResult<PathBuf> {
+pub(super) async fn canonical_thread_preview_path(
+    path: &str,
+    thread_cwd: &FsPath,
+) -> ApiResult<PathBuf> {
     if path.trim().is_empty() {
         return Err(preview_not_found());
     }
@@ -159,8 +183,42 @@ fn safe_relative_path(path: &FsPath) -> bool {
         .all(|component| matches!(component, Component::Normal(_)))
 }
 
-async fn classify_preview_file(path: &FsPath, size_bytes: u64) -> ApiResult<PreviewKind> {
+pub(super) async fn classify_preview_file(
+    path: &FsPath,
+    size_bytes: u64,
+) -> ApiResult<PreviewKind> {
     let header = read_header(path).await?;
+    let extension = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase);
+    if matches!(extension.as_deref(), Some("html" | "htm")) {
+        if size_bytes > MAX_HTML_BYTES {
+            return Err(ApiError::UnsupportedMediaType(
+                "unsupported preview type".into(),
+            ));
+        }
+        return Ok(PreviewKind::Html);
+    }
+    if matches!(extension.as_deref(), Some("webm" | "mp4")) {
+        let valid = match extension.as_deref() {
+            Some("webm") => header.starts_with(b"\x1a\x45\xdf\xa3"),
+            Some("mp4") => header.get(4..8) == Some(b"ftyp".as_slice()),
+            _ => false,
+        };
+        if size_bytes > MAX_DOWNLOAD_BYTES || !valid {
+            return Err(ApiError::UnsupportedMediaType(
+                "unsupported preview type".into(),
+            ));
+        }
+        return Ok(PreviewKind::Video(
+            if extension.as_deref() == Some("webm") {
+                "video/webm"
+            } else {
+                "video/mp4"
+            },
+        ));
+    }
     if let Some(image) = sniff_image_type(&header) {
         if size_bytes > MAX_IMAGE_BYTES {
             return Err(ApiError::UnsupportedMediaType(
@@ -256,7 +314,11 @@ fn preview_response(kind: PreviewKind, path: &FsPath, bytes: Vec<u8>) -> ApiResu
     let mut builder = Response::builder()
         .header(CONTENT_TYPE, kind.content_type())
         .header(CACHE_CONTROL, "private")
+        .header(X_CONTENT_TYPE_OPTIONS, "nosniff")
         .header(CONTENT_LENGTH, content_length);
+    if matches!(kind, PreviewKind::Image(ImagePreviewType::Svg)) {
+        builder = builder.header(CONTENT_SECURITY_POLICY, SVG_POLICY);
+    }
     if let Some(content_disposition) = kind.content_disposition(path) {
         builder = builder.header(CONTENT_DISPOSITION, content_disposition);
     }
@@ -276,38 +338,43 @@ fn content_disposition(disposition: &str, path: &FsPath, fallback_file_name: &st
     )
 }
 
-fn preview_not_found() -> ApiError {
+pub(super) fn preview_not_found() -> ApiError {
     ApiError::NotFound("file preview".to_string())
 }
 
 #[derive(Debug, Clone, Copy)]
-enum PreviewKind {
+pub(super) enum PreviewKind {
     Image(ImagePreviewType),
     Markdown,
     Pdf,
+    Html,
+    Video(&'static str),
+    Asset(&'static str),
     Download,
 }
 
 impl PreviewKind {
-    fn content_type(self) -> &'static str {
+    pub(super) fn content_type(self) -> &'static str {
         match self {
             Self::Image(image) => image.content_type(),
             Self::Markdown => "text/markdown; charset=utf-8",
             Self::Pdf => "application/pdf",
+            Self::Html => "text/html; charset=utf-8",
+            Self::Video(content_type) | Self::Asset(content_type) => content_type,
             Self::Download => "application/octet-stream",
         }
     }
 
-    fn content_disposition(self, path: &FsPath) -> Option<String> {
+    pub(super) fn content_disposition(self, path: &FsPath) -> Option<String> {
         match self {
-            Self::Image(_) => None,
+            Self::Image(_) | Self::Html | Self::Video(_) | Self::Asset(_) => None,
             Self::Markdown => Some(content_disposition("attachment", path, "preview.md")),
             Self::Pdf => Some(content_disposition("inline", path, "preview.pdf")),
             Self::Download => Some(content_disposition("attachment", path, "download")),
         }
     }
 
-    fn validate_bytes(self, bytes: &[u8]) -> ApiResult<()> {
+    pub(super) fn validate_bytes(self, bytes: &[u8]) -> ApiResult<()> {
         match self {
             Self::Image(image) => {
                 if sniff_image_type(bytes) == Some(image) {
@@ -318,7 +385,7 @@ impl PreviewKind {
                     ))
                 }
             }
-            Self::Markdown => std::str::from_utf8(bytes).map(|_| ()).map_err(|_| {
+            Self::Markdown | Self::Html => std::str::from_utf8(bytes).map(|_| ()).map_err(|_| {
                 ApiError::UnsupportedMediaType("unsupported preview type".to_string())
             }),
             Self::Pdf => {
@@ -330,13 +397,13 @@ impl PreviewKind {
                     ))
                 }
             }
-            Self::Download => Ok(()),
+            Self::Download | Self::Video(_) | Self::Asset(_) => Ok(()),
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ImagePreviewType {
+pub(super) enum ImagePreviewType {
     Png,
     Jpeg,
     Gif,
@@ -345,7 +412,7 @@ enum ImagePreviewType {
 }
 
 impl ImagePreviewType {
-    fn content_type(self) -> &'static str {
+    pub(super) fn content_type(self) -> &'static str {
         match self {
             Self::Png => "image/png",
             Self::Jpeg => "image/jpeg",

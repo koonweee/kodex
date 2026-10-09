@@ -268,6 +268,7 @@ impl AppState {
         crate::queue::steer_first_queued_input,
         crate::queue::delete_queued_input,
         crate::routes::file_preview::preview_thread_file,
+        crate::routes::file_content::thread_file_content,
         crate::routes::uploads::upload_images,
         crate::routes::uploads::upload_thread_files,
         crate::routes::approvals::list_approvals,

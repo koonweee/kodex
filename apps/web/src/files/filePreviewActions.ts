@@ -3,7 +3,7 @@ import type { MarkdownPreviewRequest } from "./types";
 
 export type FilePreviewAction =
   | { kind: "markdown"; request: MarkdownPreviewRequest }
-  | { kind: "pdf"; href: string }
+  | { kind: "browser"; href: string }
   | { kind: "download"; href: string; fileName: string };
 
 export type FilePreviewTarget = {
@@ -40,8 +40,8 @@ export function filePreviewActionForTarget(threadId: string, target: FilePreview
       },
     };
   }
-  if (extension === "pdf") {
-    return { kind: "pdf", href };
+  if (["pdf", "html", "htm", "webm", "mp4"].includes(extension)) {
+    return { kind: "browser", href };
   }
   return { kind: "download", fileName, href };
 }
