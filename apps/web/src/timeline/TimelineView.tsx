@@ -129,7 +129,6 @@ export function TimelineView({
     onOverflowAboveChange,
     rowCount,
     scrollParentElement,
-    timelineLastSeq: timeline.lastSeq,
   });
   usePrependAnchorCorrection({
     isLoadingOlderHistory: timeline.isLoadingOlderHistory,
@@ -195,7 +194,7 @@ export function TimelineView({
         // The real scroll parent has one follow owner, including reading pauses.
         followOutput={virtuosoScrollParent ? false : followOutput}
         firstItemIndex={virtualPosition.firstItemIndex}
-        increaseViewportBy={{ top: 720, bottom: 720 }}
+        increaseViewportBy={{ top: 360, bottom: 360 }}
         totalListHeightChanged={handleTotalListHeightChanged}
         {...virtuosoInitialPositionProps}
         itemContent={(index, renderRow = visibleRows[index - virtualPosition.firstItemIndex]) => renderRow ? (

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FollowOutput, VirtuosoHandle } from "react-virtuoso";
 import {
   getDistanceFromBottom,
@@ -16,13 +16,11 @@ export function useBottomPinnedVirtuosoTimeline({
   onOverflowAboveChange,
   rowCount,
   scrollParentElement,
-  timelineLastSeq,
 }: {
   onReady: () => void;
   onOverflowAboveChange?: (hasOverflowAbove: boolean) => void;
   rowCount: number;
   scrollParentElement: HTMLDivElement | null;
-  timelineLastSeq: number;
 }) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const isPinnedToBottomRef = useRef(true);
@@ -322,23 +320,6 @@ export function useBottomPinnedVirtuosoTimeline({
     scheduleBottomFollow,
     setScrollToBottomVisible,
     syncScrollPolicyFromParent,
-  ]);
-
-  useLayoutEffect(() => {
-    if (!initialBottomAligned || rowCount === 0) {
-      return;
-    }
-    if (isPinnedToBottomRef.current) {
-      scheduleBottomFollow("auto");
-    } else {
-      syncScrollPolicyFromParent();
-    }
-  }, [
-    initialBottomAligned,
-    rowCount,
-    scheduleBottomFollow,
-    syncScrollPolicyFromParent,
-    timelineLastSeq,
   ]);
 
   return {
