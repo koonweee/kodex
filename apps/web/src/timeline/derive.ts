@@ -38,6 +38,9 @@ export function getTimelineRowApprovals(row: TimelineRow, approvalIndex: Timelin
 }
 
 export function getUnanchoredApprovals(rows: TimelineRow[], approvalIndex: TimelineApprovalIndex): Approval[] {
+  if (approvalIndex.approvals.length === 0) {
+    return [];
+  }
   const renderedItemIds = new Set(rows.flatMap((row) => timelineRowItemIds(row)));
   return approvalIndex.approvals.filter((approval) => !hasApprovalItemAnchor(approval) || !renderedItemIds.has(approval.itemId));
 }

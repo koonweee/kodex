@@ -100,9 +100,12 @@ describe("timeline file renderers", () => {
       </MantineProvider>,
     );
 
-    expect(screen.getByText("Modified timeline-rendering-feedback.md")).toBeInTheDocument();
+    expect(screen.queryByText("Modified timeline-rendering-feedback.md")).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/file diff for timeline-rendering-feedback\.md/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/item\/completed/i)).not.toBeInTheDocument();
+
+    openDetails(container.querySelector("details.kodex-activity-group") as HTMLDetailsElement);
+    expect(screen.getByText("Modified timeline-rendering-feedback.md")).toBeInTheDocument();
 
     const activityDetails = container.querySelector("details.kodex-activity-item") as HTMLDetailsElement;
     openDetails(activityDetails);

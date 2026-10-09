@@ -63,7 +63,7 @@ describe("timeline activity renderers", () => {
   });
 
   it("marks failed command activity in collapsed and expanded command renderings", () => {
-    render(
+    const { container } = render(
       <MantineProvider>
         <TimelineActivityGroupRenderer
           items={[
@@ -78,6 +78,7 @@ describe("timeline activity renderers", () => {
       </MantineProvider>,
     );
 
+    openDetails(container.querySelector("details.kodex-activity-group") as HTMLDetailsElement);
     const commandDetails = document.querySelector("details.kodex-activity-item");
     expect(commandDetails).toBeInTheDocument();
     expect(within(commandDetails as HTMLElement).getAllByText(/failed/i)).not.toHaveLength(0);
@@ -118,7 +119,7 @@ describe("timeline activity renderers", () => {
     expect(screen.queryByText(/"query"/i)).not.toBeInTheDocument();
   });
 
-  it("renders supporting timeline activity as a nested collapsible group", () => {
+  it("defers supporting activity until the group is first expanded", () => {
     const { container } = render(
       <MantineProvider><ThreadDeliveryProvider includeCommandOutputs>
         <TimelineActivityGroupRenderer
@@ -163,6 +164,10 @@ describe("timeline activity renderers", () => {
 
     expect(container.querySelector(".kodex-activity-group")).not.toHaveAttribute("open");
     expect(screen.getByText("Searched web, used 1 agent, generated 1 image, ran 2 commands")).toBeInTheDocument();
+    expect(screen.queryByText("Ran pwd")).not.toBeInTheDocument();
+
+    openDetails(container.querySelector("details.kodex-activity-group") as HTMLDetailsElement);
+
     expect(screen.getByText("Ran pwd")).toBeInTheDocument();
     expect(screen.getByText("Listed files")).toBeInTheDocument();
     expect(screen.getAllByText("Finished waiting").length).toBeGreaterThan(0);
@@ -177,6 +182,38 @@ describe("timeline activity renderers", () => {
     expect(screen.getByText("$ pwd")).toBeInTheDocument();
     expect(screen.getByText("/home/example/kodex")).toBeInTheDocument();
     expect(screen.getAllByText("Shell")).not.toHaveLength(0);
+  });
+
+  it("keeps revealed activity and open command details when new activity appends", async () => {
+    const commands = (count: number) => Array.from({ length: count }, (_, index) => item({
+      id: `cmd-${index + 1}`,
+      kind: "command_execution",
+      command: `command-${index + 1}`,
+      output: `output-${index + 1}`,
+    }));
+    const tree = (count: number) => (
+      <MantineProvider><ThreadDeliveryProvider includeCommandOutputs>
+        <TimelineActivityGroupRenderer items={commands(count)} />
+      </ThreadDeliveryProvider></MantineProvider>
+    );
+    const view = render(tree(100));
+    openDetails(view.container.querySelector("details.kodex-activity-group") as HTMLDetailsElement);
+    fireEvent.click(screen.getByRole("button", { name: "Show 20 more" }));
+    const command95 = screen.getByText("Ran command-95").closest("details") as HTMLDetailsElement;
+    openDetails(command95);
+    expect(screen.getByText("output-95")).toBeInTheDocument();
+
+    view.rerender(tree(101));
+
+    expect(screen.getByText("Ran command-95")).toBeInTheDocument();
+    expect(screen.getByText("output-95")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show 1 more" })).toBeInTheDocument();
+
+    const group = view.container.querySelector("details.kodex-activity-group") as HTMLDetailsElement;
+    group.open = false;
+    fireEvent(group, new Event("toggle"));
+    openDetails(group);
+    expect(screen.getByText("output-95")).toBeInTheDocument();
   });
 
   it("renders structured collaboration activity with Markdown result previews", async () => {
@@ -266,6 +303,7 @@ describe("timeline activity renderers", () => {
     );
 
     expect(screen.getByText("Used 2 agents")).toBeInTheDocument();
+    openDetails(container.querySelector("details.kodex-activity-group") as HTMLDetailsElement);
     expect(screen.getByText("Spawned Lorentz [explorer]")).toBeInTheDocument();
     expect(screen.getByText("Finished waiting")).toBeInTheDocument();
     expect(container).not.toHaveTextContent("thread-lorentz");
@@ -475,6 +513,7 @@ describe("timeline activity renderers", () => {
       </MantineProvider>,
     );
 
+    openDetails(container.querySelector("details.kodex-activity-group") as HTMLDetailsElement);
     expect(screen.getByText("Ran sed -n '960,1140p' apps/web/src/App.tsx")).toHaveAttribute(
       "title",
       "Ran sed -n '960,1140p' apps/web/src/App.tsx",

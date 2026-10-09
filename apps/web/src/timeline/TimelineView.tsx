@@ -476,6 +476,9 @@ function isTimestampedMessage(item: TimelineItem): boolean {
 
 function buildTimelineRowApprovalMap(rows: TimelineRow[], approvalIndex: ReturnType<typeof buildApprovalIndex>) {
   const approvalsByRowKey = new Map<string, Approval[]>();
+  if (approvalIndex.byItemId.size === 0) {
+    return approvalsByRowKey;
+  }
   for (const row of rows) {
     const rowApprovals = getTimelineRowApprovals(row, approvalIndex);
     if (rowApprovals.length > 0) {

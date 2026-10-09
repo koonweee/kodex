@@ -1,6 +1,6 @@
 import { Badge, Box, Button, Code, Group, Stack, Text } from "@mantine/core";
 import { Terminal } from "lucide-react";
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useState } from "react";
 import type { SyntheticEvent } from "react";
 
 import type { MarkdownPreviewRequest } from "../files/types";
@@ -44,44 +44,46 @@ function TimelineActivityGroupRendererImpl({
   showDebug = false,
   threadId,
 }: TimelineActivityGroupRendererProps) {
-  const itemIdentity = useMemo(() => items.map((item) => item.id).join("\u0000"), [items]);
+  const [hasOpened, setHasOpened] = useState(false);
   const [visibleItemCount, setVisibleItemCount] = useState(ACTIVITY_ITEM_RENDER_CHUNK);
-  useEffect(() => {
-    setVisibleItemCount(ACTIVITY_ITEM_RENDER_CHUNK);
-  }, [itemIdentity]);
   const visibleItems = items.slice(0, visibleItemCount);
   const remainingItemCount = Math.max(0, items.length - visibleItems.length);
+  const handleToggle = (event: SyntheticEvent<HTMLDetailsElement>) => {
+    if (event.currentTarget.open) setHasOpened(true);
+  };
 
   return (
-    <details className="kodex-activity-group">
+    <details className="kodex-activity-group" onToggle={handleToggle}>
       <summary className="kodex-timeline-intermediate">
         <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
           <Terminal size={15} />
           <ActivityGroupSummary items={items} />
         </Group>
       </summary>
-      <Stack gap={4}>
-        {visibleItems.map((item) => (
-          <ActivityItemRenderer
-            imagePreviewUrlsByPath={imagePreviewUrlsByPath}
-            item={item}
-            key={item.id}
-            onImageOpen={onImageOpen}
-            onMarkdownOpen={onMarkdownOpen}
-            showDebug={showDebug}
-            threadId={threadId}
-          />
-        ))}
-        {remainingItemCount > 0 ? (
-          <Button
-            size="xs"
-            variant="subtle"
-            onClick={() => setVisibleItemCount((count) => Math.min(items.length, count + ACTIVITY_ITEM_RENDER_CHUNK))}
-          >
-            Show {Math.min(ACTIVITY_ITEM_RENDER_CHUNK, remainingItemCount)} more
-          </Button>
-        ) : null}
-      </Stack>
+      {hasOpened ? (
+        <Stack className="kodex-activity-contents" gap={4}>
+          {visibleItems.map((item) => (
+            <ActivityItemRenderer
+              imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+              item={item}
+              key={item.id}
+              onImageOpen={onImageOpen}
+              onMarkdownOpen={onMarkdownOpen}
+              showDebug={showDebug}
+              threadId={threadId}
+            />
+          ))}
+          {remainingItemCount > 0 ? (
+            <Button
+              size="xs"
+              variant="subtle"
+              onClick={() => setVisibleItemCount((count) => Math.min(items.length, count + ACTIVITY_ITEM_RENDER_CHUNK))}
+            >
+              Show {Math.min(ACTIVITY_ITEM_RENDER_CHUNK, remainingItemCount)} more
+            </Button>
+          ) : null}
+        </Stack>
+      ) : null}
     </details>
   );
 }

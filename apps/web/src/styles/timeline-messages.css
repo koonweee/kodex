@@ -189,6 +189,15 @@
   min-width: 0;
 }
 
+.kodex-assistant-message-footer {
+  opacity: 1;
+  transition: opacity 140ms ease-out;
+}
+
+.kodex-assistant-message-footer[inert] {
+  opacity: 0;
+}
+
 .kodex-message-toolbar {
   display: flex;
   align-items: center;
@@ -396,5 +405,11 @@
 
   .kodex-assistant-markdown a:hover {
     text-decoration: underline;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kodex-assistant-message-footer {
+    transition: none;
   }
 }
