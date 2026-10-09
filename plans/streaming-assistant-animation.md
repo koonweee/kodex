@@ -2,7 +2,7 @@
 
 ## Status and objective
 
-Complete after a performance follow-up. Retain bounded four-group word fades with 48 ms event batching. The follow-up reduced transient animation work while preserving the reviewed visual result; slower batching did not earn its added latency. Not deployed.
+Complete after a performance follow-up. Retain bounded four-group word fades with 48 ms event batching. The follow-up reduced transient animation work while preserving the reviewed visual result; slower batching did not earn its added latency. Subsequently deployed from main commit `c68e6ff`, including optimization `7ce8a8d`, through the frontend-only service update. Served bundle `index-DgrcFpwm.js` was verified and gateway PID 93002 stayed unchanged. Undeployed references below describe the earlier validation boundary.
 
 Make arriving assistant text feel fluid, using the user's 2026-10-08 ChatGPT screen recording as a visual reference. The observed effect is a pale leading edge that settles to solid text while older content remains stable. Match the useful visual qualities, not an assumed ChatGPT implementation or exact timing.
 
