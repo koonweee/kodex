@@ -160,19 +160,31 @@ The host owns terminal processes independently of Mastra sessions, as the Rust g
 
 ### Built frontend and Web Push
 
-Build the web app with `cd apps/web && VITE_KODEX_BACKEND=mastra npm run build` from the repository root. Set `KODEX_FRONTEND_DIST` to that build's absolute `apps/web/dist` path when launching this backend to serve the app and native API on the same localhost origin. Unset keeps API-only development serving. The configured directory must contain a readable index.html; updated assets are read without restarting this optional static server. This does not change the local/VPN-only deployment assumption or deploy the production service.
+For a persistent local/Tailscale instance, deploy a committed frontend snapshot from the repository root:
 
-After replacing the served build, publish its revision through the existing typed native `frontendUpdated({revision})` command. For the default port and the build path above, run this from the repository root:
+```sh
+node tools/mastra-frontend.mjs
+# Then start this backend with:
+KODEX_FRONTEND_DIST="$HOME/.kodex/mastra-spike/frontend" npm run serve:built
+```
+
+The serve command runs from `spikes/mastra-code-sdk`. The deployment tool accepts `--profile /absolute/profile` and `--url http://127.0.0.1:8789`. It builds committed HEAD in a temporary checkout using the installed frontend/spike dependencies, forces the Mastra backend and same-origin API, and copies assets to `<profile>/frontend`. Uncommitted edits are excluded. It preserves older hashed assets for open tabs and publishes index.html before the new service worker to keep its precache consistent. Concurrent deployments are rejected by a profile-local lock; after an interrupted command, verify no deploy is running before removing `.frontend-deploy-lock`.
+
+**Never serve a persistent instance from `apps/web/dist`.** Ordinary and native validation builds both write there. The deployed directory is separate and changes only through this explicit command; no backend restart is needed for subsequent frontend deployments. The command publishes the typed frontend-update signal when the backend is reachable. An initial switch from the old build directory requires restarting only the Mastra backend with the new `KODEX_FRONTEND_DIST`. This remains trusted local/VPN serving, not a managed service or an update to the installed Rust gateway. API-only development may leave the variable unset. Disposable PWA tests can continue using their own build output.
+
+The deployment command already publishes the update signal. To retry only that notification for the default profile and port, run this from the repository root:
 
 ```sh
 cd spikes/mastra-code-sdk
 node --input-type=module <<'NODE'
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { createORPCClient } from '@orpc/client';
 import { RPCLink } from '@orpc/client/fetch';
 const client = createORPCClient(new RPCLink({ url: 'http://127.0.0.1:8789/rpc' }));
-const revision = createHash('sha256').update(await readFile('../../apps/web/dist/index.html')).digest('hex');
+const revision = createHash('sha256').update(await readFile(join(homedir(), '.kodex/mastra-spike/frontend/index.html'))).digest('hex');
 await client.frontendUpdated({ revision });
 NODE
 ```

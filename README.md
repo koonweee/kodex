@@ -173,3 +173,7 @@ Kodex is available under the [MIT License](LICENSE). See [Third-Party Notices](T
 Kodex is an independent, unofficial project. It is not affiliated with or endorsed by OpenAI. Third-party names and marks belong to their respective owners.
 
 Browser builds carry an API compatibility epoch. After an incompatible gateway update, versioned browser writes are rejected and the UI asks for an explicit reload while keeping open drafts mounted. Save unsent work before accepting an update; passive tabs are not automatically reloaded. Older bundles shipped before this check require an initial manual update. Generate frontend API types from the checkout with `cd apps/web && npm run generate:api`; no running server is used.
+
+### Isolated Mastra frontend deployment
+
+For the opt-in Mastra instance, run `node tools/mastra-frontend.mjs` to build committed HEAD and publish to `~/.kodex/mastra-spike/frontend`. Set `KODEX_FRONTEND_DIST` to that directory when starting its backend. Do not serve a persistent instance from `apps/web/dist`; validation builds overwrite that directory. This command does not update or restart the installed app-server Kodex service. See [Mastra setup](spikes/mastra-code-sdk/README.md#built-frontend-and-web-push).
