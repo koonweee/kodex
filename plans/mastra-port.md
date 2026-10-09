@@ -2,7 +2,7 @@
 
 Status: Active. Authorized 2026-10-07. Current scope, workflow inventory and exit conditions: [frontend parity plan](mastra-frontend-parity.md).
 
-Current checkpoint (2026-10-09): normal chat and retained UI slices through Push/PWA are committed and validated. Native extension characterization and frozen-reference UI corrections are validated; arbitrary plugins are now explicitly deferred. Scope alignment on the categorized later-main delta remains. Entries below retain historical findings; a later acceptance checkpoint supersedes its earlier investigation.
+Current checkpoint (2026-10-09): normal chat and retained UI slices through Push/PWA are committed and validated. Native extension characterization and frozen-reference UI corrections are validated; arbitrary plugins are now explicitly deferred. User authorized the categorized later-main integration at84b0ebc; the refresh is now active. Entries below retain historical findings; a later acceptance checkpoint supersedes its earlier investigation.
 
 ## Fixed reference and scope
 
@@ -946,3 +946,5 @@ Next fixture-only proof: two projects/two concurrent native Sessions with global
 2026-10-09 frozen UI corrections validated: centered drafts and explicit panel URL/reload/Back behavior now match the frozen reference while preserving native thread IDs. Focused56/browser3/typecheck/build/trim and independent review pass; no CSS fork or backend semantic change. Full earlier suite426/1388 and later targeted evidence are distinguished in parity log. Finalmain84b0ebc categorization recorded; current user question is tools-only plugins versus defer, with later-main scope alignment to follow one decision at a time. Overall goal active, no deployment.
 
 2026-10-09 user decision: defer arbitrary plugins entirely. Keep plugin loading and existing hooks disabled; built-in Control remains supported. Native fixture evidence is retained for future work, not a port blocker. Remaining alignment is the material later-main delta at84b0ebc. No implementation or deployment change.
+
+2026-10-09 user authorized integrating newer main now. Target remains pinned84b0ebc7d75cc49efa577511bf2f741e6d624749; preserve accepted native semantics and injection seams, defer arbitrary plugins, and do not deploy. Merge/conflict resolution, native queue/output/PWA mappings and refreshed browser validation follow the parity plan.

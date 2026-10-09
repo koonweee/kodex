@@ -35,7 +35,7 @@ Proceed autonomously on implementation, routine design choices, tests, fixes, re
 
 ## Progress
 
-- Frozen main merged; normal chat, settings, projects, history/tools, child sessions, prompts, attachments/skills, goals, automations, terminal, MCP and Control slices have validation checkpoints below. Native-only read state is committed. Foreground presence/badges, Web Push preferences/delivery and built same-origin PWA are validated. Native extension wake/tools-only boot characterization and frozen-reference UI audit are complete. Arbitrary plugins are explicitly deferred. Scope alignment remains for integrating the material later-main delta pinned at84b0ebc.
+- Frozen main merged; normal chat, settings, projects, history/tools, child sessions, prompts, attachments/skills, goals, automations, terminal, MCP and Control slices have validation checkpoints below. Native-only read state is committed. Foreground presence/badges, Web Push preferences/delivery and built same-origin PWA are validated. Native extension wake/tools-only boot characterization and frozen-reference UI audit are complete. Arbitrary plugins are explicitly deferred. User authorized integrating the material later-main delta pinned at84b0ebc; that refresh is now active.
 
 ## Workflow inventory against the frozen reference
 
@@ -1002,3 +1002,10 @@ Current outstanding decisions: native tool plugins versus continued arbitrary-pl
 User selected “Defer arbitrary plugins entirely.” Keep native arbitrary-plugin loading disabled; do not enable the characterized tools-only composition or build provider routing. Existing disabled hooks remain unchanged. Built-in Kodex Control, native skills and configured MCP tools retain their current supported behavior. The fixture proofs remain capability evidence for future work, not an unfinished requirement for this port. This supersedes the earlier CLI/config plugin-installation plan and resolves the plugin-scope question.
 
 Next single decision is later-main scope: the categorized final reference84b0ebc contains material UI and command/delivery changes beyond the original small-discrepancy expectation. No later-main imports or production deployment have occurred.
+
+
+### Newer-main integration authorized (2026-10-09)
+
+User selected “Integrate newer main now (Recommended).” Integrate the already reviewed/pinned84b0ebc7d75cc49efa577511bf2f741e6d624749 into this worktree, preserving all accepted Mastra semantics and native injection points. This explicitly authorizes the categorized larger refresh; no need to ask again about its size. Keep arbitrary plugins deferred, no SDK patches, no app-server fallback and no production deployment. Do not chase further main changes during this integration.
+
+Sequence: merge the pinned snapshot and resolve shared-component conflicts; restore coherent typecheck/build/tests; map changed queue intents, optional command-output/debug delivery and native PWA update triggers using existing native/host primitives; validate responsive composer/docking/timeline behavior with actual browser and same-user convergence where shared state is involved. Preserve native command/history/settings/queue/goal/preferences and external workspace transport seams. Retain native Stop rather than silently inheriting new app-server goal-pausing semantics. Escalate only a newly demonstrated native limitation requiring an unresolved product choice. The previous frozen-reference validation remains evidence for that snapshot, not proof of the new merge.
