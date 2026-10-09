@@ -33,6 +33,7 @@
   --dv-spacing-padding: 4px;
   --dv-tab-border-radius: var(--kodex-radius-lg);
   --kodex-tab-content-inset: 16px;
+  --kodex-tab-control-inset: 8px;
   --dv-tab-close-icon-size: 10px;
   --dv-tab-divider-color: var(--kodex-border-subtle);
   --dv-tab-font-size: 0.75rem;
@@ -55,6 +56,11 @@
 .kodex-workspace-dock .dv-tabs-container > .dv-tab {
   border-radius: var(--dv-tab-border-radius);
   padding-inline: var(--kodex-tab-content-inset);
+}
+
+/* Header controls extend into the tab padding; title ink clips separately. */
+.kodex-workspace-dock .dv-tabs-container > .dv-tab > .dv-react-part {
+  overflow: visible;
 }
 
 .kodex-workspace-dock .dv-tabs-container > .dv-tab.dv-active-tab {
@@ -204,7 +210,6 @@
 .kodex-workspace-dock .dv-tab .dv-default-tab .dv-default-tab-action,
 .kodex-workspace-tab > .kodex-workspace-pane-title-adornment {
   position: absolute;
-  right: 0;
   top: 50%;
   transform: translateY(-50%);
   width: 24px;
@@ -214,9 +219,14 @@
   border-radius: var(--kodex-radius-md);
 }
 
+/* The close control is positioned within the padded content box. */
+.kodex-workspace-dock .dv-tab .dv-default-tab .dv-default-tab-action {
+  right: calc(var(--kodex-tab-control-inset) - var(--kodex-tab-content-inset));
+}
+
 .kodex-workspace-tab > .kodex-workspace-pane-title-adornment {
   /* Match the close control's inset within the outer tab. */
-  right: var(--kodex-tab-content-inset);
+  right: var(--kodex-tab-control-inset);
   pointer-events: none;
 }
 
@@ -260,6 +270,6 @@
   }
   .kodex-workspace-dock .dv-tabs-container > .dv-tab [data-inline-adornment] > .kodex-workspace-pane-title-adornment {
     opacity: 1;
-    right: calc(var(--kodex-tab-content-inset) + 28px);
+    right: calc(var(--kodex-tab-control-inset) + 28px);
   }
 }

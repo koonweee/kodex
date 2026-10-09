@@ -62,7 +62,13 @@ test("unread and close share a stable slot while native close remains actionable
     const titleBounds = await tab.locator(".dv-default-tab-content").boundingBox();
     const closeBounds = await close.boundingBox();
     expect(titleBounds!.x + titleBounds!.width).toBeGreaterThan(closeBounds!.x + 8);
-    await close.click();
+    // The padded tab renderer must not clip the outside edge of the close target.
+    await expect.poll(() => close.evaluate(el => {
+      const bounds = el.getBoundingClientRect();
+      const target = document.elementFromPoint(bounds.right - 2, bounds.top + bounds.height / 2);
+      return target !== null && el.contains(target);
+    })).toBe(true);
+    await close.click({ position: { x: closeBounds!.width - 2, y: closeBounds!.height / 2 } });
     await expect(tab).toHaveCount(0);
   } finally { await fixture.close(); }
   expect(fixture.errors).toEqual([]);
