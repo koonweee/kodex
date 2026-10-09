@@ -4,6 +4,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { NARROW_WORKSPACE_QUERY } from "../shared/layoutBreakpoints";
+
 import type { Project, ThreadSummary } from "../api/client";
 import * as instanceBoundary from "../api/GatewayInstanceBoundary";
 import { createInstanceStorage } from "../api/instanceStorage";
@@ -454,7 +456,7 @@ describe("WorkspaceSidebar project reorder", () => {
 
   it("keeps compact density at the sidebar root on narrow fine-pointer viewports", async () => {
     const matchMedia = vi.spyOn(window, "matchMedia").mockImplementation((query: string): MediaQueryList => ({
-      matches: query === "(max-width: 900px)" || query === "(hover: hover) and (pointer: fine)",
+      matches: query === NARROW_WORKSPACE_QUERY || query === "(hover: hover) and (pointer: fine)",
       media: query,
       onchange: null,
       addEventListener: vi.fn(),
@@ -482,7 +484,7 @@ describe("WorkspaceSidebar project reorder", () => {
 
   it("applies shared touch density at the sidebar root on narrow coarse-pointer devices", async () => {
     const matchMedia = vi.spyOn(window, "matchMedia").mockImplementation((query: string): MediaQueryList => ({
-      matches: query === "(max-width: 900px)" || query === "(any-pointer: coarse)",
+      matches: query === NARROW_WORKSPACE_QUERY || query === "(any-pointer: coarse)",
       media: query,
       onchange: null,
       addEventListener: vi.fn(),

@@ -1,6 +1,6 @@
 import { useMediaQuery } from "@mantine/hooks";
 
-export const NARROW_WORKSPACE_QUERY = "(max-width: 900px)";
+export const NARROW_WORKSPACE_QUERY = "(max-width: 768px)";
 const COMPACT_DIALOG_QUERY = "(max-width: 700px)";
 
 export function readNarrowWorkspace() {

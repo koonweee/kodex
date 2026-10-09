@@ -1,6 +1,8 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { NARROW_WORKSPACE_QUERY } from "./layoutBreakpoints";
+
 import {
   ANY_COARSE_POINTER_QUERY,
   COARSE_POINTER_QUERY,
@@ -49,7 +51,7 @@ describe("input capabilities", () => {
     vi.stubGlobal(
       "matchMedia",
       mediaMatcher({
-        "(max-width: 900px)": true,
+        [NARROW_WORKSPACE_QUERY]: true,
         [FINE_HOVER_QUERY]: true,
       }),
     );

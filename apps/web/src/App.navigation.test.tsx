@@ -2,6 +2,8 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { NARROW_WORKSPACE_QUERY } from "./shared/layoutBreakpoints";
+
 import {
   App,
   FakeEventSource,
@@ -26,7 +28,7 @@ function emitPopstate(path: string) {
 
 function stubNarrowViewport() {
   vi.stubGlobal("matchMedia", (query: string): MediaQueryList => ({
-    matches: query === "(max-width: 900px)",
+    matches: query === NARROW_WORKSPACE_QUERY,
     media: query,
     onchange: null,
     addEventListener: () => undefined,

@@ -246,7 +246,7 @@
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 768px) {
   .kodex-sidebar,
   .kodex-main {
     box-sizing: border-box;
@@ -300,7 +300,9 @@
     display: inline-flex;
     margin-left: -4px;
   }
+}
 
+@media (max-width: 900px) {
   .kodex-queued-steer-row {
     grid-template-columns: minmax(0, 1fr) auto auto;
   }
@@ -352,13 +354,13 @@
   }
 }
 
-@media (max-width: 900px) and (pointer: coarse), (max-width: 900px) and (any-pointer: coarse) {
+@media (max-width: 768px) and (pointer: coarse), (max-width: 768px) and (any-pointer: coarse) {
   .kodex-sidebar {
     padding-top: calc(4px + var(--kodex-mobile-safe-area-top, 0px)) !important;
   }
 }
 
-@media (max-width: 900px) and (any-pointer: coarse) {
+@media (max-width: 768px) and (any-pointer: coarse) {
   .kodex-shell {
     --kodex-mobile-safe-area-top: env(safe-area-inset-top);
     --kodex-mobile-safe-area-right: env(safe-area-inset-right);

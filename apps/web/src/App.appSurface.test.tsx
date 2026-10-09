@@ -2,6 +2,8 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { NARROW_WORKSPACE_QUERY } from "./shared/layoutBreakpoints";
+
 import {
   App,
   FakeEventSource,
@@ -24,7 +26,7 @@ describe("app surface pane integration", () => {
 
   it("opens the selected thread app surface as a narrow workspace pane", async () => {
     vi.stubGlobal("matchMedia", (query: string): MediaQueryList => ({
-      matches: query === "(max-width: 900px)",
+      matches: query === NARROW_WORKSPACE_QUERY,
       media: query,
       onchange: null,
       addEventListener: () => undefined,

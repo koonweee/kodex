@@ -2,6 +2,8 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { NARROW_WORKSPACE_QUERY } from "./shared/layoutBreakpoints";
+
 import {
   App,
   FakeEventSource,
@@ -37,7 +39,7 @@ function mockClipboardWriteText() {
 
 function stubNarrowViewport() {
   vi.stubGlobal("matchMedia", (query: string): MediaQueryList => ({
-    matches: query === "(max-width: 900px)",
+    matches: query === NARROW_WORKSPACE_QUERY,
     media: query,
     onchange: null,
     addEventListener: () => undefined,

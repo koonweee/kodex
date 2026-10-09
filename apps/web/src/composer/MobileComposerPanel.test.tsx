@@ -5,6 +5,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps, FormEvent, RefObject } from "react";
 
+import { NARROW_WORKSPACE_QUERY } from "../shared/layoutBreakpoints";
+
 import { listSkills } from "../api/client";
 import { createKodexQueryClient } from "../api/queryClient";
 import type { SkillMetadata } from "../api/client";
@@ -636,7 +638,7 @@ function setMobileViewport(matches: boolean, options: { touch?: boolean } = {}) 
   const isTouchDevice = options.touch ?? true;
   vi.stubGlobal("matchMedia", (query: string): MediaQueryList => ({
     matches:
-      query === "(max-width: 900px)"
+      query === NARROW_WORKSPACE_QUERY
         ? matches
         : query === "(any-pointer: coarse)" || query === "(pointer: coarse)"
           ? isTouchDevice

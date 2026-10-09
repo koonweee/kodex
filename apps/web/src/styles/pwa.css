@@ -22,7 +22,7 @@
    excludes boxes <=10px tall. Reserve a real painted surface, not a 1px probe.
    https://github.com/WebKit/WebKit/blob/main/Source/WebCore/page/LocalFrameView.cpp
    Match the existing compact touch safe-area owner; wide layouts stay intact. */
-@media (display-mode: standalone) and (max-width: 900px) and (any-pointer: coarse) {
+@media (display-mode: standalone) and (max-width: 768px) and (any-pointer: coarse) {
   .kodex-shell {
     --kodex-pwa-header-height: max(12px, env(safe-area-inset-top, 0px));
     --kodex-mobile-safe-area-top: var(--kodex-pwa-header-height);
@@ -32,7 +32,7 @@
 
 /* Match the visible compact workspace header. Sidebar and fullscreen composer
    use the shell surface, so retain the default there. */
-@media (display-mode: standalone) and (max-width: 900px) {
+@media (display-mode: standalone) and (max-width: 768px) {
   .kodex-shell[data-mobile-panel="chat"]:has(.kodex-workspace-shell[data-single-pane="true"]):not(:has(.kodex-thread-pane[data-workspace-pane-active="true"] .kodex-mobile-composer-expanded)) > .kodex-pwa-safe-area {
     background: var(--kodex-workspace-header-bg);
   }
