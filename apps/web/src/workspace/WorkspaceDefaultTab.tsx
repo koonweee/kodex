@@ -1,7 +1,6 @@
 import { Tooltip } from "@mantine/core";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { DockviewDefaultTab, type IDockviewPanelHeaderProps } from "dockview";
-import { useSynchronizedAnimation } from "../ui/useSynchronizedAnimation";
 import type { WorkspacePane } from "./paneTypes";
 import { useWorkspace } from "./WorkspaceProvider";
 import { ThreadStatusIndicator } from "../threads/ThreadStatusIndicator";
@@ -13,11 +12,8 @@ export function WorkspaceDefaultTab(props: IDockviewPanelHeaderProps<DockviewPan
   const { paneHeaderAdornmentsById, paneTabStatusById } = useWorkspace();
   const pane = props.params.pane;
   const indicatorState = useWorkspacePaneIndicatorState(pane);
-  const animationRef = useSynchronizedAnimation<HTMLSpanElement>(indicatorState);
   const syncing = paneHeaderAdornmentsById[props.api.id];
-  const headerAdornment = indicatorState === "running"
-    ? <span ref={animationRef} className="kodex-workspace-tab-running" aria-label="Thread in progress" role="status" />
-    : indicatorState ? <ThreadStatusIndicator state={indicatorState} />
+  const headerAdornment = indicatorState ? <ThreadStatusIndicator state={indicatorState} />
     : syncing ? <span aria-label="Pane syncing" role="status" title="Pane syncing">{syncing}</span> : null;
   const terminalStatus = pane.kind === "terminal" ? paneTabStatusById[props.api.id] : undefined;
   const tabClassName = [
@@ -68,16 +64,15 @@ export function WorkspaceDefaultTab(props: IDockviewPanelHeaderProps<DockviewPan
     };
   }, [title, indicatorState, syncing, measureTitle]);
 
-  const inlineAdornment = headerAdornment && indicatorState !== "running";
   const unread = indicatorState === "unread";
   const tooltipLabel = titleClipped && title
     ? <>{title}{unread ? <><br />Unread completed agent turn</> : null}</>
     : "Unread completed agent turn";
   return (
     <Tooltip label={tooltipLabel} disabled={!titleClipped && !unread} multiline maw="min(480px, calc(100vw - 24px))">
-      <div data-pane-id={props.api.id} ref={tabRef} onMouseEnter={measureTitle} onMouseLeave={measureTitle} className={tabClassName} data-inline-adornment={inlineAdornment ? "true" : undefined} data-unread={indicatorState === "unread" ? "true" : undefined}>
+      <div data-pane-id={props.api.id} ref={tabRef} onMouseEnter={measureTitle} onMouseLeave={measureTitle} className={tabClassName} data-inline-adornment={headerAdornment ? "true" : undefined} data-unread={indicatorState === "unread" ? "true" : undefined}>
         <DockviewDefaultTab {...props} />
-        {inlineAdornment ? <span className="kodex-workspace-pane-title-adornment">{headerAdornment}</span> : headerAdornment}
+        {headerAdornment ? <span className="kodex-workspace-pane-title-adornment">{headerAdornment}</span> : null}
       </div>
     </Tooltip>
   );

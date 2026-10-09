@@ -69,66 +69,6 @@
   outline-offset: -1px;
 }
 
-/* Running tabs get a restrained surface shimmer. It occupies no layout space,
-   never intercepts tab/close/drag gestures, and moves only a composited layer. */
-.kodex-workspace-dock .kodex-workspace-tab:has(.kodex-workspace-tab-running) {
-  position: static;
-}
-
-.kodex-workspace-tab-running {
-  position: absolute;
-  inset: 1px;
-  overflow: hidden;
-  border-radius: calc(var(--dv-tab-border-radius) - 1px);
-  pointer-events: none;
-}
-
-.kodex-workspace-tab-running::before {
-  content: "";
-  position: absolute;
-  top: -50%;
-  bottom: -50%;
-  left: -45%;
-  width: 40%;
-  opacity: 0;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    color-mix(in srgb, var(--kodex-accent) 14%, transparent),
-    transparent
-  );
-  transform: translate3d(0, 0, 0) skewX(-16deg);
-  animation: kodex-tab-running-shimmer 4s linear infinite;
-  will-change: transform, opacity;
-}
-
-@keyframes kodex-tab-running-shimmer {
-  0% {
-    opacity: 0;
-    transform: translate3d(0, 0, 0) skewX(-16deg);
-  }
-  6% { opacity: 1; }
-  87.5% {
-    opacity: 1;
-    transform: translate3d(365%, 0, 0) skewX(-16deg);
-  }
-  100% {
-    opacity: 0;
-    transform: translate3d(365%, 0, 0) skewX(-16deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .kodex-workspace-tab-running {
-    box-shadow: inset 0 0 0 1px var(--kodex-border-accent);
-  }
-
-  .kodex-workspace-tab-running::before {
-    animation: none;
-    opacity: 0;
-  }
-}
-
 /* Pointer selection uses the pill surface, not Dockview's rectangular focus box. */
 .kodex-workspace-dock .dv-tabs-container > .dv-tab::after {
   content: none;
@@ -245,7 +185,7 @@
   }
 }
 
-/* On hover-capable devices the unread dot shares the native close slot. */
+/* On hover-capable devices the status indicator shares the native close slot. */
 @media (hover: hover) and (pointer: fine) {
   .kodex-workspace-dock .dv-tabs-container > .dv-tab .dv-default-tab .dv-default-tab-action {
     visibility: hidden;
