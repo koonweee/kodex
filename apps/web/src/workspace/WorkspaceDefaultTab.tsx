@@ -4,19 +4,15 @@ import { DockviewDefaultTab, type IDockviewPanelHeaderProps } from "dockview";
 import { useSynchronizedAnimation } from "../ui/useSynchronizedAnimation";
 import type { WorkspacePane } from "./paneTypes";
 import { useWorkspace } from "./WorkspaceProvider";
-import { ThreadStatusIndicator, threadIndicatorState } from "../threads/ThreadStatusIndicator";
+import { ThreadStatusIndicator } from "../threads/ThreadStatusIndicator";
+import { useWorkspacePaneIndicatorState } from "./WorkspacePaneIndicator";
 
 type DockviewPaneParams = { activePaneId: string | null; pane: WorkspacePane };
 
 export function WorkspaceDefaultTab(props: IDockviewPanelHeaderProps<DockviewPaneParams>) {
-  const { paneHeaderAdornmentsById, paneTabStatusById, threadSummariesById, paneThreadContextsById } = useWorkspace();
+  const { paneHeaderAdornmentsById, paneTabStatusById } = useWorkspace();
   const pane = props.params.pane;
-  const thread = pane.kind === "thread" && pane.target.mode === "existing"
-    ? threadSummariesById[pane.target.threadId] : undefined;
-  const paneContext = paneThreadContextsById[props.api.id];
-  const indicatorState = thread ? threadIndicatorState(thread)
-    : pane.kind === "thread" && pane.target.mode === "existing" && paneContext?.id === pane.target.threadId
-      ? paneContext.indicatorState : null;
+  const indicatorState = useWorkspacePaneIndicatorState(pane);
   const animationRef = useSynchronizedAnimation<HTMLSpanElement>(indicatorState);
   const syncing = paneHeaderAdornmentsById[props.api.id];
   const headerAdornment = indicatorState === "running"

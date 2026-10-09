@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 import { paneTitle } from "./paneTypes";
+import { WorkspacePaneIndicator } from "./WorkspacePaneIndicator";
 import { useWorkspace } from "./WorkspaceProvider";
 
 export function WorkspaceSinglePaneHeader({ onClosePane }: { onClosePane?: (paneId: string, nextActivePaneId: string | null) => void }) {
@@ -13,7 +14,6 @@ export function WorkspaceSinglePaneHeader({ onClosePane }: { onClosePane?: (pane
     closePane,
     focusPane,
     onShowMobileSidebar,
-    paneHeaderAdornmentsById,
     paneHeaderActionsById,
     workspace,
   } = useWorkspace();
@@ -25,7 +25,6 @@ export function WorkspaceSinglePaneHeader({ onClosePane }: { onClosePane?: (pane
     return workspace.panes[0] ?? null;
   }, [workspace.activePaneId, workspace.panes]);
   const activePaneTitle = activePane ? paneTitle(activePane) : "Workspace";
-  const activePaneAdornment = activePane ? paneHeaderAdornmentsById[activePane.id] ?? null : null;
   const activePaneActions = activePane ? paneHeaderActionsById[activePane.id] : null;
   const recentPanes = useMemo(() => [...workspace.panes].reverse(), [workspace.panes]);
   const nextActivePaneId = useMemo(() => {
@@ -71,16 +70,7 @@ export function WorkspaceSinglePaneHeader({ onClosePane }: { onClosePane?: (pane
               <Text className="kodex-workspace-single-pane-title-text" component="span" truncate>
                 {activePaneTitle}
               </Text>
-              {activePaneAdornment ? (
-                <span
-                  aria-label="Pane syncing"
-                  className="kodex-workspace-pane-title-adornment"
-                  role="status"
-                  title="Pane syncing"
-                >
-                  {activePaneAdornment}
-                </span>
-              ) : null}
+              <WorkspacePaneIndicator pane={activePane} />
             </span>
           </Button>
           <Drawer.Root
@@ -123,6 +113,7 @@ export function WorkspaceSinglePaneHeader({ onClosePane }: { onClosePane?: (pane
                           <Text className="kodex-workspace-pane-manager-title-text" component="span" truncate>
                             {title}
                           </Text>
+                          <WorkspacePaneIndicator pane={pane} />
                           {isActivePane ? (
                             <span aria-hidden="true" className="kodex-workspace-pane-manager-active-icon">
                               <Check size={16} strokeWidth={2.4} />

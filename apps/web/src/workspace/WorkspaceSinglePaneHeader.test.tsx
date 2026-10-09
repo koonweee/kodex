@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { useEffect } from "react";
 import { describe, expect, it, vi } from "vitest";
 
+import type { ThreadSummary } from "../api/client";
 import { createMemoryWorkspacePaneStore } from "./paneStore";
 import type { WorkspacePane, WorkspacePaneState } from "./paneTypes";
 import { WorkspaceProvider, useWorkspace } from "./WorkspaceProvider";
@@ -126,6 +127,70 @@ describe("WorkspaceSinglePaneHeader", () => {
     expect(await screen.findByRole("toolbar", { name: "Pane actions" })).toBeInTheDocument();
     expect(within(screen.getByRole("toolbar", { name: "Pane actions" })).queryByRole("button", { name: "Close pane" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Thread overflow" })).toBeInTheDocument();
+  });
+
+  it("updates running and unread indicators in the selector and pane list ahead of syncing", async () => {
+    const store = createMemoryWorkspacePaneStore(workspaceState([
+      threadPane("one", "thread-1", "First thread"),
+      threadPane("two", "thread-2", "Second thread"),
+      draftThreadPane("draft", "New chat"),
+    ], "one"));
+    const shell = (status: string, unread: boolean) => (
+      <MantineProvider><WorkspaceProvider paneStore={store} threadSummariesById={{
+        "thread-1": { id: "thread-1", status, unreadCompletedAgentTurn: unread } as ThreadSummary,
+        "thread-2": { id: "thread-2", status: "idle", unreadCompletedAgentTurn: true } as ThreadSummary,
+      }}>
+        <PaneAdornmentHarness paneId="one" />
+        <WorkspaceSinglePaneHeader />
+      </WorkspaceProvider></MantineProvider>
+    );
+    const view = render(shell("active", true));
+    const switcher = screen.getByRole("button", { name: "Switch workspace pane" });
+    expect(within(switcher).getByRole("status", { name: "Thread in progress" })).toBeInTheDocument();
+    expect(within(switcher).queryByRole("status", { name: "Pane syncing" })).not.toBeInTheDocument();
+    expect(within(switcher).queryByRole("img", { name: "Unread completed agent turn" })).not.toBeInTheDocument();
+    fireEvent.click(switcher);
+    const manager = await screen.findByRole("dialog", { name: "Active panes" });
+    const first = within(manager).getByRole("button", { name: /^First thread/ });
+    const second = within(manager).getByRole("button", { name: /^Second thread/ });
+    expect(within(first).getByRole("status", { name: "Thread in progress" })).toBeInTheDocument();
+    expect(within(second).getByRole("img", { name: "Unread completed agent turn" })).toBeInTheDocument();
+    expect(within(manager).getByRole("button", { name: "New chat" })).toBeInTheDocument();
+    view.rerender(shell("idle", true));
+    expect(within(switcher).getByRole("img", { name: "Unread completed agent turn" })).toBeInTheDocument();
+    expect(within(first).getByRole("img", { name: "Unread completed agent turn" })).toBeInTheDocument();
+    expect(within(first).queryByRole("status", { name: "Thread in progress" })).not.toBeInTheDocument();
+    view.rerender(shell("idle", false));
+    expect(within(switcher).getByRole("status", { name: "Pane syncing" })).toBeInTheDocument();
+    expect(within(first).getByRole("status", { name: "Pane syncing" })).toBeInTheDocument();
+    fireEvent.click(second);
+    expect(store.getState().activePaneId).toBe("two");
+    expect(within(switcher).getByRole("img", { name: "Unread completed agent turn" })).toBeInTheDocument();
+  });
+
+  it("uses the mounted pane status for unlisted chats and ignores stale contexts", async () => {
+    const store = createMemoryWorkspacePaneStore(workspaceState([
+      threadPane("one", "unlisted", "Unlisted chat"),
+    ]));
+    function Projection({ threadId, state }: { threadId: string; state: "running" | "unread" }) {
+      const { setPaneThreadContext } = useWorkspace();
+      useEffect(() => {
+        setPaneThreadContext("one", { id: threadId, projectId: null, cwd: "/", indicatorState: state });
+      }, [setPaneThreadContext, threadId, state]);
+      return <WorkspaceSinglePaneHeader />;
+    }
+    const shell = (threadId: string, state: "running" | "unread") => (
+      <MantineProvider><WorkspaceProvider paneStore={store}>
+        <Projection threadId={threadId} state={state} />
+      </WorkspaceProvider></MantineProvider>
+    );
+    const view = render(shell("unlisted", "running"));
+    const switcher = screen.getByRole("button", { name: "Switch workspace pane" });
+    expect(within(switcher).getByRole("status", { name: "Thread in progress" })).toBeInTheDocument();
+    view.rerender(shell("unlisted", "unread"));
+    expect(within(switcher).getByRole("img", { name: "Unread completed agent turn" })).toBeInTheDocument();
+    view.rerender(shell("old-thread", "unread"));
+    expect(within(switcher).queryByRole("img", { name: "Unread completed agent turn" })).not.toBeInTheDocument();
   });
 
   it("renders registered pane title adornments beside the mobile pane name", async () => {
