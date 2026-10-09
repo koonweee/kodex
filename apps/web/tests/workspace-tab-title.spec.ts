@@ -45,7 +45,7 @@ test("tooltip tracks title clipping when the tab resizes and ignores fitting tit
       el.style.maxWidth = `${value}px`;
     }, width);
     await resize(380);
-    await tab.hover({ position: { x: 10, y: 12 } });
+    await tab.locator(".dv-default-tab-content").hover({ position: { x: 2, y: 2 } });
     await expect(page.getByRole("tooltip")).toBeHidden();
     await resize(120);
     await expect(page.getByRole("tooltip")).toHaveText(fixture.detail.thread.name!);
@@ -59,8 +59,13 @@ test("tooltip tracks title clipping when the tab resizes and ignores fitting tit
       range.selectNodeContents(el);
       return range.getBoundingClientRect().width;
     });
-    await resize(Math.ceil(textWidth + 20));
-    await tab.hover({ position: { x: 10, y: 12 } });
+    const horizontalPadding = await tab.evaluate(el => {
+      const style = getComputedStyle(el);
+      return Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight);
+    });
+    await resize(Math.ceil(textWidth + horizontalPadding + 4));
+    await expect.poll(() => tab.locator(".dv-default-tab-content").evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await tab.locator(".dv-default-tab-content").hover();
     await expect(page.getByRole("tooltip")).toHaveText(fixture.detail.thread.name!);
   } finally { await fixture.close(); }
   expect(fixture.errors).toEqual([]);
