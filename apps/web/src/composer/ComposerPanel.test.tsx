@@ -659,7 +659,7 @@ describe("ComposerPanel", () => {
     const onProjectChange = vi.fn();
 
     renderWithQueryProvider(
-      <MantineProvider>
+      <MantineProvider env="test">
         <ComposerPanel
           activeSelectedTurnId={null}
           attachmentInputRef={attachmentInputRef}

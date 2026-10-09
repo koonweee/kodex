@@ -41,6 +41,7 @@ for (const shape of [
         expect(box!.x + box!.width).toBeLessThanOrEqual(shape.width);
         if (shape.hasTouch) expect(action!.height).toBeGreaterThanOrEqual(44);
         const composer = page.locator(".kodex-thread-pane-existing").getByRole("textbox", { name: "Message composer", exact: true });
+        if (shape.hasTouch) await composer.tap();
         await composer.fill("Keep my draft while an update waits.");
         await expect(composer).toHaveValue("Keep my draft while an update waits.");
         await page.screenshot({ path: info.outputPath("compact-update-notice.png"), animations: "disabled" });

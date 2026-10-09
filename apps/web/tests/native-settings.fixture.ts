@@ -69,7 +69,7 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
 
   function emit(kind: string, payload: unknown, client?: string, eventSeq = seq + 1) {
     seq = Math.max(seq, eventSeq);
-    const event: EventEnvelope = { id: `${eventSeq}-${kind}`, seq: eventSeq, kind, threadId: ["config.changed", "mcp.oauth_login_completed", "mcp.server_status_updated", "thread.subagents_changed", "automation.run_updated"].includes(kind) ? null : detail.thread.id, payload, receivedAt: "2026-10-04T00:00:00Z" };
+    const event: EventEnvelope = { id: `${eventSeq}-${kind}`, seq: eventSeq, kind, threadId: ["frontend.updated", "config.changed", "mcp.oauth_login_completed", "mcp.server_status_updated", "thread.subagents_changed", "automation.run_updated"].includes(kind) ? null : detail.thread.id, payload, receivedAt: "2026-10-04T00:00:00Z" };
     for (const [stream, id] of streams) {
       if (!client || client === id) {
         const delivery = options.payloadDelivery && kind === "thread_view.patch"
@@ -331,6 +331,7 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
       goal = value;
       emit("thread.goal_changed", { threadId: detail.thread.id }, client);
     },
+    frontendUpdated() { emit("frontend.updated", {}); },
     goalChanged(client?: string) { emit("thread.goal_changed", { threadId: detail.thread.id }, client); },
     detail, badge, queuedInputs, transfers, deliveredTransfers, automations, automationRuns,
     receiveQueuedTransfer(id: string, nativeItemId: string, client?: string) {

@@ -23,7 +23,7 @@ const pwa = vi.hoisted(() => ({
 
 vi.mock("./client", () => ({ attachThread: vi.fn(), getCapabilities: vi.fn(), getProject: vi.fn(), getThreadDetail: vi.fn() }));
 vi.mock("../pwa/registerServiceWorker", () => ({
-  getPwaUpdateState: () => ({ needRefresh: pwa.needRefresh, updateServiceWorker: pwa.update }),
+  getPwaUpdateState: () => ({ needRefresh: pwa.needRefresh, updateRevision: pwa.needRefresh ? 1 : 0, updateServiceWorker: pwa.update }),
   registerPwaServiceWorker: pwa.register,
   requestPwaUpdateCheck: pwa.check,
   subscribeToPwaUpdates: () => () => undefined,

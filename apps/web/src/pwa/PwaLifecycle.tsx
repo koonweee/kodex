@@ -1,4 +1,4 @@
-import { Button, CloseButton, Group, Paper, Text } from "@mantine/core";
+import { Button, CloseButton, Group, Paper, Switch, Text } from "@mantine/core";
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -9,8 +9,12 @@ import {
   type PwaUpdateState,
 } from "./registerServiceWorker";
 
+import { useInterfacePreferences } from "../preferences/useInterfacePreferences";
+import { AnimatedNumericText } from "../ui/AnimatedNumericText";
+import { usePwaUpdateCountdown } from "./usePwaUpdateCountdown";
+
 export function PwaLifecycle() {
-  const [dismissed, setDismissed] = useState(false);
+  const { preferences, setAutoUpdatePwa } = useInterfacePreferences();
   const [updateState, setUpdateState] = useState<PwaUpdateState>(getPwaUpdateState);
 
   useEffect(() => {
@@ -18,6 +22,8 @@ export function PwaLifecycle() {
     void registerPwaServiceWorker().catch(() => undefined);
     return unsubscribe;
   }, []);
+
+  const { countdown, dismissed, updating, error, update, dismiss } = usePwaUpdateCountdown(updateState, preferences.autoUpdatePwa);
 
   if (!updateState.needRefresh || dismissed) {
     return null;
@@ -29,13 +35,15 @@ export function PwaLifecycle() {
         <Group align="center" gap="xs" wrap="nowrap">
           <RefreshCw className="kodex-pwa-lifecycle-icon" size={18} aria-hidden="true" />
           <Text className="kodex-pwa-lifecycle-copy" size="sm" fw={600}>
-            Update available
+            <AnimatedNumericText text={updating ? "Updating…" : countdown !== null ? `Updating in ${countdown}s` : "Update available"} />
           </Text>
-          <Button onClick={() => void updateState.updateServiceWorker?.()} size="compact-sm" variant="light">
+          <Button onClick={() => void update()} disabled={updating || !updateState.updateServiceWorker} size="compact-sm" variant="light">
             Update
           </Button>
-          <CloseButton aria-label="Dismiss update notice" onClick={() => setDismissed(true)} size="sm" />
+          <CloseButton aria-label="Dismiss update notice" onClick={dismiss} disabled={updating} size="sm" />
         </Group>
+        <Switch className="kodex-pwa-auto-update" label="Auto-update" size="xs" checked={preferences.autoUpdatePwa} onChange={event => setAutoUpdatePwa(event.currentTarget.checked)} />
+        {error ? <Text size="xs" role="alert">{error}</Text> : null}
       </Paper>
     </div>
   );

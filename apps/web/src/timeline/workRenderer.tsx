@@ -1,3 +1,4 @@
+import { AnimatedNumericText } from "../ui/AnimatedNumericText";
 import { Alert, Box, Text } from "@mantine/core";
 import { ChevronRight } from "lucide-react";
 import { memo, useEffect, useState } from "react";
@@ -26,7 +27,7 @@ function TimelineWorkRowRendererImpl({
     return (
       <Box className="kodex-work-row" data-state="running">
         <Text size="xs" c="dimmed">
-          {label}
+          <AnimatedNumericText text={label} />
         </Text>
         <WorkHeaderDivider />
       </Box>
@@ -34,7 +35,7 @@ function TimelineWorkRowRendererImpl({
   }
 
   const failure = row.state === "failed" || (row.state === "interrupted" && row.errorMessage) ? (
-    <Alert color={row.state === "failed" ? "red" : "yellow"} title={label} role="alert">
+    <Alert color={row.state === "failed" ? "red" : "yellow"} title={<AnimatedNumericText text={label} />} role="alert">
       {row.errorMessage || "The turn failed. No error details are available."}
     </Alert>
   ) : null;
@@ -42,7 +43,7 @@ function TimelineWorkRowRendererImpl({
   if (row.collapsedRows.length === 0) {
     return (
       <Box className="kodex-work-row" data-state={row.state}>
-        {failure || <Text size="xs" c="dimmed">{label}</Text>}
+        {failure || <Text size="xs" c="dimmed"><AnimatedNumericText text={label} /></Text>}
         <WorkHeaderDivider />
       </Box>
     );
@@ -60,7 +61,7 @@ function TimelineWorkRowRendererImpl({
         <summary>
           <Box className="kodex-work-summary-content">
             <Text size="xs" c="dimmed">
-              {label}
+              <AnimatedNumericText text={label} />
             </Text>
             <ChevronRight size={16} className="kodex-work-caret" aria-hidden="true" />
           </Box>

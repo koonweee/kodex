@@ -2,11 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 export type InterfacePreferences = {
   fullscreenComposerOnTouch: boolean;
+  autoUpdatePwa: boolean;
 };
 
 export const INTERFACE_PREFERENCES_STORAGE_KEY = "kodex-interface";
 export const DEFAULT_INTERFACE_PREFERENCES: InterfacePreferences = {
   fullscreenComposerOnTouch: true,
+  autoUpdatePwa: false,
 };
 
 const INTERFACE_PREFERENCES_CHANGE_EVENT = "kodex-interface-preferences-change";
@@ -18,6 +20,7 @@ function parseInterfacePreferences(stored: string | null): InterfacePreferences 
   try {
     const value = JSON.parse(stored) as Partial<InterfacePreferences> | null;
     return {
+      autoUpdatePwa: typeof value?.autoUpdatePwa === "boolean" ? value.autoUpdatePwa : DEFAULT_INTERFACE_PREFERENCES.autoUpdatePwa,
       fullscreenComposerOnTouch:
         typeof value?.fullscreenComposerOnTouch === "boolean"
           ? value.fullscreenComposerOnTouch
@@ -92,12 +95,14 @@ export function useInterfacePreferences() {
     };
   }, []);
 
-  const setFullscreenComposerOnTouch = useCallback((fullscreenComposerOnTouch: boolean) => {
-    const next = { ...preferencesRef.current, fullscreenComposerOnTouch };
+  const updatePreferences = useCallback((changes: Partial<InterfacePreferences>) => {
+    const next = { ...preferencesRef.current, ...changes };
     preferencesRef.current = next;
     setPreferences(next);
     writeStoredInterfacePreferences(next);
   }, []);
 
-  return { preferences, setFullscreenComposerOnTouch };
+  const setFullscreenComposerOnTouch = useCallback((value: boolean) => updatePreferences({ fullscreenComposerOnTouch: value }), [updatePreferences]);
+  const setAutoUpdatePwa = useCallback((value: boolean) => updatePreferences({ autoUpdatePwa: value }), [updatePreferences]);
+  return { preferences, setFullscreenComposerOnTouch, setAutoUpdatePwa };
 }

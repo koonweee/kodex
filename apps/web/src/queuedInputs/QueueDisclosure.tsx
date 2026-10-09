@@ -1,3 +1,4 @@
+import { AnimatedNumericText } from "../ui/AnimatedNumericText";
 import { Box, Button } from "@mantine/core";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
@@ -16,7 +17,7 @@ export function QueueDisclosure({ count, partial, children }: { count: number; p
         aria-expanded={!collapsed} aria-controls={contentId}
         rightSection={collapsed ? <ChevronUp size={16} /> : undefined}
         onClick={() => setChoice(!collapsed)}>
-        {collapsed ? `${count}${partial ? "+" : ""} queued messages` : <ChevronDown size={16} />}
+        {collapsed ? <AnimatedNumericText text={`${count}${partial ? "+" : ""} queued messages`} /> : <ChevronDown size={16} />}
       </Button>
     </div> : null}
     <div id={contentId}>{collapsed ? null : children}</div>

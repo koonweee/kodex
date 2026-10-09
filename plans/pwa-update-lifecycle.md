@@ -118,6 +118,12 @@
 ## Risks And Open Questions
 
 - Service-worker update behavior is browser-dependent, especially for installed iOS/iPadOS PWAs. The implementation should rely on standard waiting-worker activation and include manual PWA smoke coverage rather than assuming identical timing across browsers.
-- The update prompt should not auto-reload because Kodex may have active drafts, panes, terminal state, or local modal state. If future bundle/API compatibility requires a forced reload, that should be a separate gateway/frontend compatibility design.
+- The default update prompt remains manual. The device-local opt-in described below permits automatic reload and intentionally discards drafts and other transient browser state.
 - The banner placement must account for existing fixed layers: terminal drawer, mobile composer, image lightbox, and shell toasts. CSS should be validated visually rather than assumed from z-index alone.
 - Existing `apps/web/src/pwa/registerServiceWorker.ts` tests may be renamed or replaced if the helper is renamed. Keep the public intent stable even if the file name changes.
+
+## Device-local automatic updates follow-up (complete)
+
+The banner now includes an off-by-default Auto-update switch in the existing interface preference store. Changes propagate across tabs on the same browser origin. Turning it on fences the current notice as manual and applies to future ready bundles. Each distinct waiting worker receives a local revision; duplicate SSE checks and passive activation in another tab do not restart its countdown. Visible eligible notices display 3→2→1, then invoke the existing single-owner activation/reload path. Dismiss, disable and unmount cancel the timer; hidden tabs restart at three seconds upon foreground. Failures require explicit retry, and obsolete failures cannot disturb newer notices. Unsent drafts are intentionally discarded on reload, as accepted by the user.
+
+Coverage includes preference persistence and two-tab convergence, cancellation and visibility, worker identity, failures and activation ownership, desktop/touch browser countdowns through frontend.updated SSE, real built waiting-worker activation, build and trim. Numeric countdowns share the same 150ms reduced-motion-safe roll used by activity totals and work durations. No polling timer, gateway/API change or draft persistence was added.

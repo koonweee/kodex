@@ -334,7 +334,7 @@ describe("TimelineView debug rendering", () => {
     expect(container.querySelector(".kodex-work-collapsed-rows")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Implement Review Loop skill")).toBeInTheDocument();
 
-    await user.click(screen.getByText(/Worked for/));
+    await user.click(screen.getByText(/Worked for \d/));
     expect(screen.getByText("2 files changed")).toBeInTheDocument();
 
     rerender(

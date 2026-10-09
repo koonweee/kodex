@@ -31,6 +31,7 @@ async function mountSummary(page: Page, initialCount: number) {
         for (const [name, value] of Object.entries(scheme.rootVariables)) document.documentElement.style.setProperty(name, value);
         const theme = createKodexMantineTheme(scheme);
         const { ActivityGroupSummary } = await import('/src/timeline/ActivityGroupSummary.tsx');
+        const { TimelineWorkRowRenderer } = await import('/src/timeline/workRenderer.tsx');
         const root = createRoot(document.getElementById('root'));
         window.setCommandCount = count => flushSync(() => root.render(
           React.createElement(MantineProvider, { theme, forceColorScheme: scheme.mode },
@@ -43,6 +44,12 @@ async function mountSummary(page: Page, initialCount: number) {
             )
           )
         ));
+        window.setWorkSeconds = seconds => flushSync(() => root.render(
+          React.createElement(MantineProvider, { theme, forceColorScheme: scheme.mode },
+            React.createElement(TimelineWorkRowRenderer, { row: {
+              kind: 'work', id: 'work', turnId: 'turn', state: 'completed',
+              startedAtMs: 0, completedAtMs: seconds * 1000, collapsedRows: [],
+            }}))));
         window.setCommandCount(${initialCount});
       </script>
     </body></html>`,
@@ -77,8 +84,8 @@ async function snapshot(page: Page, count?: number) {
         movingProperties: [...new Set(effect.getKeyframes().flatMap((frame) => Object.keys(frame)
           .filter((key) => !["offset", "computedOffset", "easing", "composite"].includes(key))))] };
     });
-    const old = summary.querySelector<HTMLElement>(".kodex-command-count-old");
-    const current = summary.querySelector<HTMLElement>(".kodex-command-count-new");
+    const old = summary.querySelector<HTMLElement>(".kodex-animated-number-old");
+    const current = summary.querySelector<HTMLElement>(".kodex-animated-number-new");
     return { animations, suffixRect, oldText: old?.textContent ?? null, currentText: current?.textContent ?? null,
       oldVisible: !!old && getComputedStyle(old).display !== "none" && getComputedStyle(old).visibility !== "hidden" };
   }, count);
@@ -91,7 +98,7 @@ for (const shape of [
 ]) {
   test.describe(shape.name, () => {
     test.use({ viewport: { width: shape.width, height: 844 }, hasTouch: shape.hasTouch, isMobile: shape.isMobile });
-    test("only an increasing count rolls, with stable text and the latest accessible value", async ({ page }, testInfo) => {
+    test("changing counts roll, with stable text and the latest accessible value", async ({ page }, testInfo) => {
       const errors = await mountSummary(page, 9);
       const initial = await snapshot(page);
       expect(initial.animations).toEqual([]);
@@ -109,24 +116,28 @@ for (const shape of [
         expect(animation.duration).toBeLessThanOrEqual(200);
         expect(animation.movingProperties.sort()).toEqual(["opacity", "transform"]);
       }
-      expect(increased.suffixRect).toEqual(initial.suffixRect);
+      // Digit growth changes natural width immediately; the suffix never rolls.
+      expect((await snapshot(page)).suffixRect).toEqual(increased.suffixRect);
       await expect(page.locator("summary")).toHaveAccessibleName("Ran 10 commands");
       const rapid = await page.evaluate(() => {
         const update = (window as unknown as { setCommandCount(count: number): void }).setCommandCount;
         update(11); update(14); update(17);
-        return [...document.querySelectorAll(".kodex-command-count-new")].map((node) => node.textContent);
+        return [...document.querySelectorAll(".kodex-animated-number-new")].map((node) => node.textContent);
       });
       expect(rapid).toEqual(["17"]);
       await expect(page.locator("summary")).toHaveAccessibleName("Ran 17 commands");
       await expect.poll(async () => (await snapshot(page)).animations.length).toBe(0);
       expect((await snapshot(page)).oldText).toBeNull();
       const decreased = await snapshot(page, 9);
-      expect(decreased.animations).toEqual([]);
+      expect(decreased.animations).toHaveLength(2);
+      await expect(page.locator("summary")).toHaveAccessibleName("Ran 9 commands");
       await snapshot(page, 99);
       await expect.poll(async () => (await snapshot(page)).animations.length).toBe(0);
       const twoDigits = await snapshot(page);
       const threeDigits = await snapshot(page, 100);
-      expect(threeDigits.suffixRect).toEqual(twoDigits.suffixRect);
+      expect(threeDigits.suffixRect!.x).toBeGreaterThanOrEqual(twoDigits.suffixRect!.x);
+      await expect.poll(async () => (await snapshot(page)).animations.length).toBe(0);
+      expect((await snapshot(page)).suffixRect).toEqual(threeDigits.suffixRect);
       await expect(page.locator("summary")).toHaveAccessibleName("Ran 100 commands");
       expect(errors).toEqual([]);
     });
@@ -159,3 +170,25 @@ for (const shape of [
     });
   });
 }
+
+test("work durations roll seconds across minute and hour boundaries", async ({ page }, info) => {
+  const errors = await mountSummary(page, 2);
+  const work = page.locator(".kodex-work-row p");
+  const setSeconds = async (seconds: number) => page.evaluate(seconds => {
+    (window as unknown as { setWorkSeconds(seconds: number): void }).setWorkSeconds(seconds);
+    const work = document.querySelector(".kodex-work-row")!;
+    return work.getAnimations({ subtree: true }).map(animation => (animation.effect as KeyframeEffect).target?.textContent);
+  }, seconds);
+  expect(await setSeconds(59)).toEqual([]);
+  expect((await setSeconds(60)).sort()).toEqual(["00", "59"]);
+  await expect(work).toContainText("Worked for 1m 00s");
+  await work.screenshot({ path: info.outputPath("worked-duration-boundary.png"), animations: "allow" });
+  await expect.poll(() => work.evaluate(node => node.getAnimations({ subtree: true }).length)).toBe(0);
+  expect((await setSeconds(61)).sort()).toEqual(["00", "01"]);
+  await expect.poll(() => work.evaluate(node => node.getAnimations({ subtree: true }).length)).toBe(0);
+  await setSeconds(3599);
+  await expect.poll(() => work.evaluate(node => node.getAnimations({ subtree: true }).length)).toBe(0);
+  expect((await setSeconds(3600)).sort()).toEqual(["00", "00", "59", "59"]);
+  await expect(work).toContainText("Worked for 1h 00m 00s");
+  expect(errors).toEqual([]);
+});

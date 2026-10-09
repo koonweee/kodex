@@ -39,6 +39,7 @@ describe("AppearancePreferencesPanel", () => {
     expect(toggle).not.toBeChecked();
     expect(JSON.parse(window.localStorage.getItem(INTERFACE_PREFERENCES_STORAGE_KEY)!)).toEqual({
       fullscreenComposerOnTouch: false,
+      autoUpdatePwa: false,
     });
   });
 

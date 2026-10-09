@@ -429,7 +429,7 @@ describe("timeline activity renderers", () => {
       </MantineProvider>,
     );
 
-    expect(screen.getByText(/Working for/)).toBeInTheDocument();
+    expect(screen.getByText(/Working for \d/)).toBeInTheDocument();
     expect(container.querySelector(".kodex-work-header-divider")).toBeInTheDocument();
   });
 

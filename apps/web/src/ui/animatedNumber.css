@@ -1,4 +1,4 @@
-.kodex-command-count {
+.kodex-animated-number {
   display: inline-grid;
   overflow: hidden;
   vertical-align: bottom;
@@ -6,20 +6,20 @@
   font-variant-numeric: tabular-nums;
 }
 
-.kodex-command-count > span {
+.kodex-animated-number > span {
   grid-area: 1 / 1;
 }
 
-.kodex-command-count-old {
+.kodex-animated-number-old {
   visibility: hidden;
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .kodex-command-count-new {
+  .kodex-animated-number-new {
     animation: kodex-count-in 150ms ease-out both;
   }
 
-  .kodex-command-count-old {
+  .kodex-animated-number-old {
     visibility: visible;
     animation: kodex-count-out 150ms ease-out both;
   }

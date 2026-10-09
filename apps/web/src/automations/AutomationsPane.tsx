@@ -1,3 +1,4 @@
+import { AnimatedNumericText } from "../ui/AnimatedNumericText";
 import { Badge, Box, Button, Group, Loader, Paper, Table, Text, Title, Tooltip } from "@mantine/core";
 import {
   flexRender,
@@ -137,7 +138,7 @@ export function AutomationsPane({
             </Text>
           ) : (
             <Text c="dimmed" size="sm">
-              {row.original.consecutiveFailureCount}
+              <AnimatedNumericText text={String(row.original.consecutiveFailureCount)} />
             </Text>
           ),
       },

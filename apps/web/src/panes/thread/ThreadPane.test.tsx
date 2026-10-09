@@ -215,14 +215,15 @@ it("commits one editable-pane refill in StrictMode and queues one newer repair b
   await waitFor(() => expect(signals).toHaveLength(initialReads + 1));
   expect(signals[initialReads].aborted).toBe(false);
   act(() => stream.emit(delta(" B", 4)));
-  expect(await screen.findByText("Base B")).toBeInTheDocument();
+  const liveAnswer = (_: string, element: Element | null) => element?.tagName === "P" && element.textContent === "Base B";
+  await waitFor(() => expect(screen.getByText(liveAnswer)).toBeInTheDocument());
   // Editable panes retain the current read, then perform one queued newer read.
   expect(signals).toHaveLength(initialReads + 1);
   let releaseNewer!: (value: ThreadViewResponse) => void;
   reply = new Promise<ThreadViewResponse>((resolve) => { releaseNewer = resolve; });
   await act(async () => releaseEarlier(snapshot("Base A", 3)));
   await waitFor(() => expect(signals).toHaveLength(initialReads + 2));
-  expect(screen.getByText("Base B")).toBeInTheDocument();
+  expect(screen.getByText(liveAnswer)).toBeInTheDocument();
   expect(signals[initialReads + 1].aborted).toBe(false);
   await act(async () => releaseNewer(snapshot("Base A B", 4)));
   expect(await screen.findByText("Base A B")).toBeInTheDocument();

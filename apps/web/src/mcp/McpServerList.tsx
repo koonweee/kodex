@@ -1,3 +1,4 @@
+import { AnimatedNumericText } from "../ui/AnimatedNumericText";
 import { Badge, Box, Button, Group, Stack, Text } from "@mantine/core";
 
 import type { McpServerStatus } from "../api/client";
@@ -44,7 +45,7 @@ export function McpServerList({ onSelect, selectedName, servers }: McpServerList
             </Group>
             <Text c="dimmed" size="xs">
               {server.runtime
-                ? `${server.runtime.toolsError ? "Tools unavailable" : `${Object.keys(server.runtime.tools).length} tools`} · ${server.runtime.resources.length} resources · ${server.runtime.resourceTemplates.length} templates`
+                ? <AnimatedNumericText text={`${server.runtime.toolsError ? "Tools unavailable" : `${Object.keys(server.runtime.tools).length} tools`} · ${server.runtime.resources.length} resources · ${server.runtime.resourceTemplates.length} templates`} />
                 : transportLabel(server.configured)}
             </Text>
           </Box>

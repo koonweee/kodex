@@ -118,6 +118,7 @@ describe("registerKodexServiceWorker", () => {
     let registerOptions: RegisterSWOptions | undefined;
     const updateServiceWorker = vi.fn().mockResolvedValue(undefined);
     const listener = vi.fn();
+    const registration = { scope: "/", waiting: null as ServiceWorker | null };
     const controllerChangeListeners: Array<() => void> = [];
     const originalServiceWorker = navigator.serviceWorker;
     const originalSecureContext = window.isSecureContext;
@@ -137,7 +138,7 @@ describe("registerKodexServiceWorker", () => {
     setRegisterSWLoaderForTests(() =>
       Promise.resolve((options) => {
         registerOptions = options;
-        options?.onRegisteredSW?.("/sw.js", { scope: "/" } as ServiceWorkerRegistration);
+        options?.onRegisteredSW?.("/sw.js", registration as ServiceWorkerRegistration);
         return updateServiceWorker;
       }),
     );
@@ -146,12 +147,21 @@ describe("registerKodexServiceWorker", () => {
     await registerPwaServiceWorker();
     controllerChangeListeners[0]();
     expect(getPwaUpdateState().needRefresh).toBe(false);
+    registration.waiting = {} as ServiceWorker;
     registerOptions?.onNeedRefresh?.();
+    expect(getPwaUpdateState().updateRevision).toBe(1);
+    registerOptions?.onNeedRefresh?.();
+    expect(getPwaUpdateState().updateRevision).toBe(1);
+    registration.waiting = {} as ServiceWorker;
+    registerOptions?.onNeedRefresh?.();
+    expect(getPwaUpdateState().updateRevision).toBe(2);
+    expect(getPwaUpdateState().updateRevision).toBe(2);
     await getPwaUpdateState().updateServiceWorker?.();
 
     expect(registerOptions?.immediate).toBe(true);
     expect(listener).toHaveBeenLastCalledWith({
       needRefresh: true,
+      updateRevision: 2,
       updateServiceWorker: expect.any(Function),
     });
     expect(updateServiceWorker).toHaveBeenCalledWith(true);

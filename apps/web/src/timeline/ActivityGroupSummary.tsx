@@ -1,5 +1,5 @@
-import { Text, VisuallyHidden } from "@mantine/core";
-import { ActivityCommandCount } from "./ActivityCommandCount";
+import { Text } from "@mantine/core";
+import { AnimatedNumericText } from "../ui/AnimatedNumericText";
 import { sentenceCase } from "./rendererShared";
 import type { TimelineItem } from "./reducer";
 
@@ -26,14 +26,7 @@ export function ActivityGroupSummary({ items }: { items: TimelineItem[] }) {
   const summary = commandCount ? `${prefix}${commandCount}${suffix}` : prefix;
   return (
     <Text size="xs" c="var(--kodex-text-secondary)" fw={700} className="kodex-activity-group-title" title={summary}>
-      {commandCount > 0 ? (
-        <>
-          <VisuallyHidden>{summary}</VisuallyHidden>
-          <span aria-hidden="true">
-            {prefix}<ActivityCommandCount value={commandCount} />{suffix}
-          </span>
-        </>
-      ) : summary}
+      <AnimatedNumericText text={summary} />
     </Text>
   );
 }

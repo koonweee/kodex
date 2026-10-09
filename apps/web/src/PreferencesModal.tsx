@@ -1,3 +1,4 @@
+import { AnimatedNumericText } from "./ui/AnimatedNumericText";
 import { Alert, Badge, Box, Button, Group, Loader, Modal, Stack, Text } from "@mantine/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, BellOff, Package, RefreshCw, Send } from "lucide-react";
@@ -442,7 +443,7 @@ function PluginsPreferencesPanel({
           ) : null}
           {status ? (
             <Text c="dimmed" size="xs">
-              {status.skills.length} skills · {status.mcpServers.length} MCP servers
+              <AnimatedNumericText text={`${status.skills.length} skills · ${status.mcpServers.length} MCP servers`} />
             </Text>
           ) : null}
           {errorMessage ? (

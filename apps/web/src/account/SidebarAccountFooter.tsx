@@ -1,3 +1,4 @@
+import { AnimatedNumericText } from "../ui/AnimatedNumericText";
 import { Box, Menu } from "@mantine/core";
 import { Bug, Check, CircleUserRound, Clock, LogIn, LogOut, Palette, Terminal } from "lucide-react";
 import { useState } from "react";
@@ -112,8 +113,8 @@ function SettingsMenu({
             data-testid="sidebar-usage-limits"
             role="presentation"
           >
-            <span>{usageLimitLines.primary}</span>
-            {usageLimitLines.secondary ? <span>{usageLimitLines.secondary}</span> : null}
+            <span><AnimatedNumericText text={usageLimitLines.primary} /></span>
+            {usageLimitLines.secondary ? <span><AnimatedNumericText text={usageLimitLines.secondary} /></span> : null}
           </Box>
         ) : null}
         <Menu.Item

@@ -1,3 +1,4 @@
+import { AnimatedNumericText } from "../ui/AnimatedNumericText";
 import { Box, Button, Group, Text, Textarea } from "@mantine/core";
 import { ChevronDown, MessageSquareQuote, X } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEventHandler, type PointerEventHandler } from "react";
@@ -43,7 +44,7 @@ export function ComposerAnnotations({ draftState, disabled, collapseByDefault = 
         aria-expanded={expanded} aria-controls={listId}
         leftSection={<MessageSquareQuote size={16} />} rightSection={<ChevronDown size={14} className="kodex-composer-annotation-chevron" aria-hidden="true" />}
         onClick={() => setChoice(!expanded)}>
-        {draftState.annotations.length} {draftState.annotations.length === 1 ? "annotation" : "annotations"}
+        <AnimatedNumericText text={`${draftState.annotations.length} ${draftState.annotations.length === 1 ? "annotation" : "annotations"}`} />
       </Button>
       <Box ref={listRef} id={listId} hidden={!expanded} className="kodex-composer-annotation-list">
         {draftState.annotations.map((annotation, index) => (

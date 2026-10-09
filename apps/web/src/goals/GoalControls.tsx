@@ -1,3 +1,4 @@
+import { AnimatedNumericText } from "../ui/AnimatedNumericText";
 import { Box, Text } from "@mantine/core";
 import { AlertCircle, Pause, Pencil, Play, Target, Trash2 } from "lucide-react";
 
@@ -26,7 +27,7 @@ export function GoalBar({ controls }: { controls: GoalControls }) {
       <Target size={17} aria-hidden="true" />
       <Box className="kodex-goal-bar-summary">
         <Text className="kodex-goal-objective" title={goal.objective} size="sm">{goal.objective}</Text>
-        <Text className="kodex-goal-usage" size="xs" c="dimmed">{goalStatusLabel(goal)} · {goalUsageLabel(goal)}</Text>
+        <Text className="kodex-goal-usage" size="xs" c="dimmed"><AnimatedNumericText text={`${goalStatusLabel(goal)} · ${goalUsageLabel(goal)}`} /></Text>
       </Box>
       <AdaptiveIconButton label="Delete goal" disabled={pending || !controls.ready} onClick={controls.onDelete}><Trash2 /></AdaptiveIconButton>
       <AdaptiveIconButton label={`Manage goal: ${goalStatusLabel(goal)}`} onClick={onOpen} tooltip="Edit goal"><Pencil /></AdaptiveIconButton>

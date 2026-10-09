@@ -64,7 +64,7 @@ describe("deep link navigation", () => {
     const main = screen.getByRole("main", { name: /thread/i });
     expect(within(main).queryByText(/no thread selected/i)).not.toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toBeEnabled();
-    expect(screen.getByRole("button", { name: /project: no project/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /project: no project/i })).toBeInTheDocument();
     expect(gateway.callsFor("POST", "/v1/threads/thread-1/attach")).toHaveLength(0);
   });
 

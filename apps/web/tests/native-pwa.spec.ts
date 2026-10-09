@@ -136,6 +136,43 @@ test.describe("real built PWA", () => {
     }
   });
 
+  test("device opt-in automatically activates a real waiting worker and reloads both tabs once", async ({ context }, info) => {
+    test.setTimeout(90_000);
+    const fixture = await nativeTerminalFixture(context);
+    try {
+      const first = await fixture.page();
+      await expect.poll(() => first.evaluate(() => navigator.serviceWorker.controller?.state)).toBe("activated");
+      await first.evaluate(() => localStorage.setItem("kodex-interface", JSON.stringify({ autoUpdatePwa: true })));
+      await first.reload();
+      const second = await fixture.page();
+      await second.getByRole("navigation", { name: "Workspace", exact: true }).getByRole("button", { name: "Chats", exact: true }).click();
+      await second.getByRole("button", { name: "New chat", exact: true }).click();
+      await second.getByRole("textbox", { name: "Message composer", exact: true }).fill("This draft is intentionally discarded by auto-update.");
+      const reloads = [0, 0];
+      const pages = [first, second];
+      for (const [index, page] of pages.entries()) page.on("framenavigated", frame => {
+        if (frame === page.mainFrame() && frame.url().startsWith(fixture.baseUrl)) reloads[index]++;
+      });
+      const loaded = pages.map(page => page.waitForEvent("load"));
+      await appendFile(join(fixture.frontendDist, "sw.js"), "\n// Disposable automatic update proof.\n");
+      await first.evaluate(async () => { await (await navigator.serviceWorker.getRegistration())!.update(); });
+      for (const page of pages) {
+        await expect(page.getByRole("status")).toContainText("Updating in");
+        await expect(page.getByRole("switch", { name: "Auto-update" })).toBeChecked();
+      }
+      await first.screenshot({ path: info.outputPath("real-auto-update.png") });
+      await Promise.all(loaded);
+      for (const page of pages) {
+        await expect(page.getByRole("button", { name: "Update", exact: true })).toHaveCount(0);
+        expect(await page.evaluate(() => JSON.parse(localStorage.getItem("kodex-interface")!).autoUpdatePwa)).toBe(true);
+        await expect.poll(() => page.evaluate(() => navigator.serviceWorker.controller?.state)).toBe("activated");
+      }
+      expect(reloads).toEqual([1, 1]);
+      await expect(second.getByRole("textbox", { name: "Message composer", exact: true })).toHaveValue("");
+      await fixture.assertClean();
+    } finally { await fixture.close(); }
+  });
+
   test("handles a browser-dispatched Push and reads the current zero badge without a subscription", async ({ context }, testInfo) => {
     test.setTimeout(60_000);
     const fixture = await nativeTerminalFixture(context);

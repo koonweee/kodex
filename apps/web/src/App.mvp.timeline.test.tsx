@@ -330,7 +330,8 @@ describe("MVP timeline flows", () => {
 
     await screen.findByRole("heading", { name: /^implement frontend$/i });
     const timeline = await screen.findByRole("main", { name: /thread/i });
-    expect(await within(timeline).findByText("Searched web, ran 1 command")).toBeInTheDocument();
+    const activitySummary = await within(timeline).findByText("Searched web, ran 1 command");
+    await userEvent.click(activitySummary);
     expect(within(timeline).getByText("Ran pwd")).toBeInTheDocument();
     const commandDetails = Array.from(timeline.querySelectorAll("details.kodex-activity-item")).find((details) =>
       within(details as HTMLElement).queryByText("Ran pwd"),

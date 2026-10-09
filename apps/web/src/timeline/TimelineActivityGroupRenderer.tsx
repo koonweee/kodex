@@ -1,3 +1,4 @@
+import { AnimatedNumericText } from "../ui/AnimatedNumericText";
 import { Badge, Box, Button, Group, Stack, Text } from "@mantine/core";
 import { Terminal } from "lucide-react";
 import { memo, useState } from "react";
@@ -110,7 +111,7 @@ function TimelineActivityGroupRendererImpl({
           ))}
           {remainingItemCount > 0 ? (
             <Button size="xs" variant="subtle" onClick={revealMoreItems}>
-              Show {Math.min(ACTIVITY_ITEM_RENDER_CHUNK, remainingItemCount)} more
+              <AnimatedNumericText text={`Show ${Math.min(ACTIVITY_ITEM_RENDER_CHUNK, remainingItemCount)} more`} />
             </Button>
           ) : null}
         </Stack>
@@ -181,7 +182,8 @@ const ActivityItemRenderer = memo(function ActivityItemRenderer({
         <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
           <TimelineIcon kind={item.kind} />
           <Text size="xs" c="dimmed" className="kodex-activity-title" title={activityItemSummary(item)}>
-            {activityItemSummary(item)}
+            {item.kind === "web_search_group" || (item.kind === "collab_agent_tool_call" && item.toolName === "wait" && item.status === "running")
+              ? <AnimatedNumericText text={activityItemSummary(item)} /> : activityItemSummary(item)}
           </Text>
         </Group>
       </summary>

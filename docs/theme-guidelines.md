@@ -139,3 +139,9 @@ Disabled transparent controls passed rendered surface, border, inherited icon, h
 ## Shared rounding validation: 7 October 2026
 
 The styling-only snapshot passed 1,048 unit/component tests, production build/typecheck, trim, all 41 rendered contrast/live-theme checks and 80 diagnostic browser capture flows across the 40-theme catalog. The [rounding gallery](../artifacts/rounding-audit/index.html) contains 560 captures, including hover, keyboard focus, menus, tooltips, popovers, dialogs, chat and narrow fine-pointer/touch preferences. Light/dark button galleries and representative contact sheets were visually reviewed; independent code and screenshot review found no material issues. Existing context-specific and physical-device coverage limits above still apply.
+
+### Updating numeric UI copy
+
+Use `ui/AnimatedNumber` for standalone live counts and `ui/AnimatedNumericText` for numeric UI labels. Activity totals, Working/Worked durations, update countdowns, queue/annotation/tab overflow totals, goal usage, account limits, context usage and plugin/MCP totals share the existing 150ms roll. Each changed number keeps at most one outgoing value and animates only transform and opacity; reduced motion shows the current value directly. No animation timer or frame-by-frame layout work is added. Complete current labels remain available to assistive technology; outgoing values are hidden. Duration chunks anchor from the right so seconds retain their slot when minutes or hours appear.
+
+Keep editable inputs, user/tool content, timestamps, identifiers, paths, immutable diff line/count data and submitted attachment labels plain. Animating these would add noise or unnecessary work across large transcripts.

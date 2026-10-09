@@ -1,3 +1,4 @@
+import { AnimatedNumber } from "../ui/AnimatedNumber";
 import { Menu } from "@mantine/core";
 import type { IDockviewHeaderActionsProps } from "dockview";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -88,7 +89,7 @@ export function WorkspaceTabOverflowActions({ activePanel, panels }: IDockviewHe
       <Menu opened={opened && !empty} onChange={setOpened} position="bottom-start" withinPortal>
         <Menu.Target>
           <button ref={buttonRef} aria-label="More tabs" className="kodex-workspace-tab-overflow-button" disabled={empty} type="button">
-            +{overflowPanels.length}
+            +<AnimatedNumber value={overflowPanels.length} />
           </button>
         </Menu.Target>
         <Menu.Dropdown aria-label="More tabs" className="kodex-workspace-tab-overflow-menu">

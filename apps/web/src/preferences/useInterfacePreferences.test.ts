@@ -26,6 +26,7 @@ describe("interface preferences", () => {
     act(() => result.current.setFullscreenComposerOnTouch(false));
     expect(JSON.parse(window.localStorage.getItem(INTERFACE_PREFERENCES_STORAGE_KEY)!)).toEqual({
       fullscreenComposerOnTouch: false,
+      autoUpdatePwa: false,
     });
     unmount();
     expect(renderHook(() => useInterfacePreferences()).result.current.preferences.fullscreenComposerOnTouch).toBe(false);
@@ -45,6 +46,19 @@ describe("interface preferences", () => {
     })));
     expect(first.result.current.preferences.fullscreenComposerOnTouch).toBe(true);
     expect(second.result.current.preferences.fullscreenComposerOnTouch).toBe(true);
+  });
+
+  it("persists auto updates without replacing the composer choice and converges across consumers", () => {
+    const first = renderHook(() => useInterfacePreferences());
+    const second = renderHook(() => useInterfacePreferences());
+    act(() => first.result.current.setFullscreenComposerOnTouch(false));
+    act(() => first.result.current.setAutoUpdatePwa(true));
+    expect(second.result.current.preferences).toEqual({ fullscreenComposerOnTouch: false, autoUpdatePwa: true });
+    first.unmount();
+    expect(renderHook(() => useInterfacePreferences()).result.current.preferences.autoUpdatePwa).toBe(true);
+    localStorage.setItem(INTERFACE_PREFERENCES_STORAGE_KEY, JSON.stringify({ fullscreenComposerOnTouch: false, autoUpdatePwa: false }));
+    act(() => window.dispatchEvent(new StorageEvent("storage", { key: INTERFACE_PREFERENCES_STORAGE_KEY })));
+    expect(second.result.current.preferences.autoUpdatePwa).toBe(false);
   });
 
   it("returns to defaults when storage is cleared or malformed", () => {

@@ -6,6 +6,7 @@ export type ServiceWorkerRegistrationResult =
 
 export type PwaUpdateState = {
   needRefresh: boolean;
+  updateRevision: number;
   updateServiceWorker: (() => Promise<void>) | null;
 };
 
@@ -28,6 +29,9 @@ let registrationStarted = false;
 let registrationPromise: Promise<ServiceWorkerRegistrationResult> | null = null;
 let serviceWorkerRegistrationPromise: Promise<ServiceWorkerRegistration> | null = null;
 let needRefresh = false;
+let updateRevision = 0;
+let waitingWorker: ServiceWorker | null = null;
+let registeredWorker: ServiceWorkerRegistration | null = null;
 let updateServiceWorker: (() => Promise<void>) | null = null;
 let updateCheckPromise: Promise<void> | null = null;
 let updateCheckQueued = false;
@@ -61,6 +65,15 @@ function serviceWorkersSecure(): boolean {
 function emitUpdateState() {
   const state = getPwaUpdateState();
   listeners.forEach((listener) => listener(state));
+}
+
+function markUpdateReady(worker: ServiceWorker | null) {
+  if (!needRefresh || (worker && worker !== waitingWorker)) {
+    updateRevision += 1;
+    waitingWorker = worker;
+  }
+  needRefresh = true;
+  emitUpdateState();
 }
 
 function failedRegistrationResult(error: unknown): ServiceWorkerRegistrationResult {
@@ -136,6 +149,7 @@ async function activeServiceWorkerRegistration(): Promise<ServiceWorkerRegistrat
 export function getPwaUpdateState(): PwaUpdateState {
   return {
     needRefresh,
+    updateRevision,
     updateServiceWorker,
   };
 }
@@ -185,8 +199,9 @@ export async function registerPwaServiceWorker(
               window.location.reload();
             } else {
               reloadAvailable = true;
-              needRefresh = true;
-              emitUpdateState();
+              // Activating the already-announced worker must not restart another tab's countdown.
+              if (!needRefresh) markUpdateReady(workerContainer.controller);
+              else emitUpdateState();
             }
           };
           workerContainer.addEventListener?.("controllerchange", onControllerChange);
@@ -218,24 +233,27 @@ export async function registerPwaServiceWorker(
             update = registerSW({
               immediate: true,
               onNeedRefresh() {
-                needRefresh = true;
-                emitUpdateState();
+                markUpdateReady(registeredWorker?.waiting ?? null);
               },
               // Workbox captures isUpdate at first registration, so its reload
               // callback misses a later update in the initially uncontrolled tab.
               // Use one controllerchange owner and suppress the plugin's default.
-              // Each tab still requires explicit acceptance to preserve its drafts.
+              // Each tab owns acceptance, including its device-local auto-update countdown.
               onNeedReload() {},
               onOfflineReady() {
                 options.onOfflineReady?.();
               },
               onRegisteredSW(_scriptUrl, registration) {
                 if (registration) {
+                  registeredWorker = registration;
                   settle({ registered: true, registration });
                   return;
                 }
                 void activeServiceWorkerRegistration()
-                  .then((activeRegistration) => settle({ registered: true, registration: activeRegistration }))
+                  .then((activeRegistration) => {
+                    registeredWorker = activeRegistration;
+                    settle({ registered: true, registration: activeRegistration });
+                  })
                   .catch(settleFailed);
               },
               onRegisterError(error) {
@@ -315,6 +333,9 @@ export function resetPwaServiceWorkerStateForTests(): void {
   registrationPromise = null;
   serviceWorkerRegistrationPromise = null;
   needRefresh = false;
+  updateRevision = 0;
+  waitingWorker = null;
+  registeredWorker = null;
   updateServiceWorker = null;
   updateCheckPromise = null;
   updateCheckQueued = false;

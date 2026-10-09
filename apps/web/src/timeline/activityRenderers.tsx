@@ -1,3 +1,4 @@
+import { AnimatedNumericText } from "../ui/AnimatedNumericText";
 import { Badge, Box, Code, Group, Stack, Text } from "@mantine/core";
 
 import type { MarkdownPreviewRequest } from "../files/types";
@@ -25,7 +26,7 @@ export function ReasoningBlock({ item }: { item: TimelineItem }) {
 export function WebSearchBlock({ actions }: { actions: WebSearchAction[] }) {
   return (
     <details className="kodex-timeline-disclosure">
-      <summary>{actions.length === 1 ? "1 action" : `${actions.length} actions`}</summary>
+      <summary><AnimatedNumericText text={actions.length === 1 ? "1 action" : `${actions.length} actions`} /></summary>
       <Stack gap={6} mt={6}>
         {actions.map((action, index) => (
           <Text size="sm" key={`${action.kind}-${index}`} className="kodex-timeline-inline-row">

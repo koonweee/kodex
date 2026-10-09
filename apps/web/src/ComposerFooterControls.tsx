@@ -1,3 +1,4 @@
+import { AnimatedNumericText } from "./ui/AnimatedNumericText";
 import { Box, Button, Group, Menu, Switch, Text, Tooltip } from "@mantine/core";
 import { AlertCircle, ArrowLeft, Brain, Check, ChevronRight, Gauge, X } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
@@ -296,7 +297,7 @@ function ContextUsageIndicator({ usage }: { usage?: ContextUsage | null }) {
         : "Context usage unavailable";
 
   return (
-    <Tooltip label={label}>
+    <Tooltip label={<AnimatedNumericText text={label} />}>
       <Box
         component="span"
         aria-label={label}
