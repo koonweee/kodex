@@ -2,7 +2,7 @@
 
 ## Status and objective
 
-Proposed. This plan covers an exploratory implementation pass; execution has not started. Deployment is separate.
+Active. Baseline harness and fixture work started on 2026-10-09. Deployment is separate.
 
 Make a normal chat turn feel composed from Send through progress, intermediate output, disclosures and completion. Reduce unnecessary rendering and avoidable layout shifts first. Use subtle motion where movement remains useful or unavoidable, without delaying content, controls or authoritative state.
 
@@ -51,7 +51,7 @@ Each retained chunk gets independent review, relevant passing checks, updated ev
 
 ## Stage 1 Establish a full-turn baseline
 
-Status: Pending.
+Status: Active; baseline fixture and measurements are in progress.
 
 Build a small reproducible turn sequence through the real canonical frontend path: compose, Send, optimistic display, acknowledgment, Working, intermediate commentary, tool/file activity, final response and completion consolidation. Include one disclosure interaction while output continues. Use a production build and fixed payloads/timing; do not create a benchmark platform.
 
