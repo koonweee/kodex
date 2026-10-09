@@ -210,7 +210,7 @@ export function TimelineView({
         atBottomStateChange={handleAtBottomStateChange}
         atBottomThreshold={60}
         components={TIMELINE_VIRTUOSO_COMPONENTS}
-        computeItemKey={(index, row) => row?.key ?? visibleRows[index]?.key ?? index}
+        computeItemKey={(index, row) => row?.key ?? visibleRows[index - virtualPosition.firstItemIndex]?.key ?? index}
         context={virtualContext}
         customScrollParent={virtuosoScrollParent ?? undefined}
         data={visibleRows}
@@ -221,7 +221,7 @@ export function TimelineView({
         increaseViewportBy={{ top: 720, bottom: 720 }}
         totalListHeightChanged={handleTotalListHeightChanged}
         {...virtuosoInitialPositionProps}
-        itemContent={(index, renderRow = visibleRows[index]) => renderRow ? (
+        itemContent={(index, renderRow = visibleRows[index - virtualPosition.firstItemIndex]) => renderRow ? (
           <Box className="kodex-timeline-virtual-row kodex-thread-column" data-index={index} data-row-key={renderRow.key}>
             <TimelineRowView
               approvals={approvalsByRowKey.get(renderRow.row.key) ?? EMPTY_APPROVALS}

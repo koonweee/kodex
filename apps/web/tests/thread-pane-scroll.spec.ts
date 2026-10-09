@@ -162,6 +162,135 @@ test.describe("bottom follow geometry", () => {
     expect(fixture.errors).toEqual([]);
     expect(fixture.unexpected).toEqual([]);
   });
+
+  test("a small upward wheel pauses following before more live text arrives", async ({ context }) => {
+    const fixture = await scrollingFixture(context, 40);
+    const liveRow = markLastRowStreaming(fixture);
+    try {
+      const page = await fixture.page("small-upward-wheel", "/threads/settings-chat");
+      const pane = page.locator(".kodex-thread-pane-existing");
+      const scroll = pane.locator(".kodex-timeline-scroll");
+      await expect(pane.locator('[data-initial-bottom-aligned="true"]')).toBeVisible();
+      await expect.poll(async () => (await metrics(scroll)).bottom).toBeLessThan(3);
+
+      await scroll.evaluate(el => {
+        el.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -24 }));
+        el.scrollTop -= 24;
+      });
+
+      await expect(pane.getByRole("button", { name: "Scroll to bottom", exact: true })).toBeVisible();
+      const before = await metrics(scroll);
+      fixture.publishCanonicalEvent({
+        kind: "thread_view.item_delta",
+        seq: 30,
+        payload: {
+          threadId: "settings-chat",
+          turnId: liveRow.turnId,
+          itemId: liveRow.item.itemId!,
+          delta: `\n\n${"New live text must not reclaim the reader. ".repeat(20)}`,
+          viewRevision: 3,
+        },
+      }, "small-upward-wheel");
+      await expect(pane.locator(".kodex-assistant-markdown").filter({ hasText: "New live text must not reclaim" })).toBeAttached();
+      await page.waitForTimeout(300);
+
+      const after = await metrics(scroll);
+      expect(Math.abs(after.top - before.top)).toBeLessThan(2);
+      expect(after.bottom).toBeGreaterThan(before.bottom);
+      await expect(pane.getByRole("button", { name: "Scroll to bottom", exact: true })).toBeVisible();
+    } finally {
+      await fixture.close();
+    }
+    expect(fixture.errors).toEqual([]);
+    expect(fixture.unexpected).toEqual([]);
+  });
+
+  test("selection pause clears an earlier touch gesture before a near-bottom scroll", async ({ context }) => {
+    const fixture = await scrollingFixture(context, 40);
+    try {
+      const page = await fixture.page("touch-selection-pause", "/threads/settings-chat");
+      const pane = page.locator(".kodex-thread-pane-existing");
+      const scroll = pane.locator(".kodex-timeline-scroll");
+      await expect(pane.locator('[data-initial-bottom-aligned="true"]')).toBeVisible();
+      await expect.poll(async () => (await metrics(scroll)).bottom).toBeLessThan(3);
+
+      await scroll.evaluate(el => {
+        el.dispatchEvent(new TouchEvent("touchstart", { bubbles: true, touches: [] }));
+        el.dispatchEvent(new Event("selectstart", { bubbles: true }));
+        el.scrollTop -= 24;
+      });
+
+      await expect(pane.getByRole("button", { name: "Scroll to bottom", exact: true })).toBeVisible();
+      expect((await metrics(scroll)).bottom).toBeGreaterThan(0);
+    } finally {
+      await fixture.close();
+    }
+    expect(fixture.errors).toEqual([]);
+    expect(fixture.unexpected).toEqual([]);
+  });
+
+  test("pointer-driven scrollbar movement pauses without scrollbar-width hit testing", async ({ context }) => {
+    const fixture = await scrollingFixture(context, 40);
+    try {
+      const page = await fixture.page("pointer-scrollbar", "/threads/settings-chat");
+      const pane = page.locator(".kodex-thread-pane-existing");
+      const scroll = pane.locator(".kodex-timeline-scroll");
+      await expect(pane.locator('[data-initial-bottom-aligned="true"]')).toBeVisible();
+      await expect.poll(async () => (await metrics(scroll)).bottom).toBeLessThan(3);
+
+      await scroll.evaluate(el => {
+        el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "mouse" }));
+        el.scrollTop -= 24;
+        document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerType: "mouse" }));
+      });
+
+      await expect(pane.getByRole("button", { name: "Scroll to bottom", exact: true })).toBeVisible();
+      expect((await metrics(scroll)).bottom).toBeGreaterThan(0);
+    } finally {
+      await fixture.close();
+    }
+    expect(fixture.errors).toEqual([]);
+    expect(fixture.unexpected).toEqual([]);
+  });
+
+  test("keyboard navigation outside an inactive timeline does not pause its follow state", async ({ context }) => {
+    const fixture = await scrollingFixture(context, 40);
+    const liveRow = markLastRowStreaming(fixture);
+    try {
+      const page = await fixture.page("inactive-keyboard", "/threads/settings-chat");
+      const pane = page.locator(".kodex-thread-pane-existing");
+      const scroll = pane.locator(".kodex-timeline-scroll");
+      await expect(pane.locator('[data-initial-bottom-aligned="true"]')).toBeVisible();
+      await expect.poll(async () => (await metrics(scroll)).bottom).toBeLessThan(3);
+
+      const sidebar = page.getByRole("navigation", { name: "Workspace", exact: true });
+      await sidebar.getByRole("button", { name: "Chats", exact: true }).click();
+      const newChat = sidebar.getByRole("button", { name: "New chat", exact: true });
+      await newChat.click();
+      await expect(pane).not.toHaveAttribute("data-workspace-pane-active", "true");
+      await newChat.focus();
+      await page.keyboard.press("ArrowUp");
+
+      fixture.publishCanonicalEvent({
+        kind: "thread_view.item_delta",
+        seq: 30,
+        payload: {
+          threadId: "settings-chat",
+          turnId: liveRow.turnId,
+          itemId: liveRow.item.itemId!,
+          delta: `\n\n${"Inactive pinned content should continue following. ".repeat(20)}`,
+          viewRevision: 3,
+        },
+      }, "inactive-keyboard");
+      await expect(pane.locator(".kodex-assistant-markdown").filter({ hasText: "Inactive pinned content should continue" })).toBeAttached();
+      await expect.poll(async () => (await metrics(scroll)).bottom).toBeLessThan(3);
+      await expect(pane.getByRole("button", { name: "Scroll to bottom", exact: true })).toBeHidden();
+    } finally {
+      await fixture.close();
+    }
+    expect(fixture.errors).toEqual([]);
+    expect(fixture.unexpected).toEqual([]);
+  });
 });
 
 async function scrollingFixture(context: Parameters<typeof nativeSettingsFixture>[0], rowCount = 80) {
@@ -171,6 +300,25 @@ async function scrollingFixture(context: Parameters<typeof nativeSettingsFixture
     turns: Array.from({ length: rowCount }, (_, i) => ({ id: `turn-${i}`, status: "completed" })),
   };
   return fixture;
+}
+
+function markLastRowStreaming(fixture: Awaited<ReturnType<typeof scrollingFixture>>) {
+  const liveRow = fixture.detail.timeline.rows.at(-1)!;
+  fixture.detail.thread.status = "active";
+  fixture.detail.liveState = "streaming";
+  fixture.detail.timeline = {
+    ...fixture.detail.timeline,
+    activeTurnId: liveRow.turnId,
+    liveState: "streaming",
+    rows: fixture.detail.timeline.rows.map((entry) => entry.id === liveRow.id
+      ? { ...entry, status: "inProgress", item: { ...entry.item, status: "inProgress", codexMethod: "item/started" } }
+      : entry),
+    turns: fixture.detail.timeline.turns.map((turn) => turn.id === liveRow.turnId
+      ? { ...turn, status: "inProgress" }
+      : turn),
+    viewRevision: 2,
+  };
+  return liveRow;
 }
 
 async function settle(page: Page, scroll: Locator) {

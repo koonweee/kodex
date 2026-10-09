@@ -9,9 +9,7 @@ import {
   type TimelineScrollBehavior,
 } from "./scrollPolicy";
 
-const TIMELINE_USER_SCROLL_INTENT_WINDOW_MS = 500;
-const TIMELINE_AUTO_SCROLL_SETTLE_MS = 120;
-type TimelineScrollPolicySource = "measure" | "user";
+type TimelineScrollPolicySource = "away" | "measure" | "toward" | "user";
 
 export function useBottomPinnedVirtuosoTimeline({
   onReady,
@@ -28,11 +26,10 @@ export function useBottomPinnedVirtuosoTimeline({
 }) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const isPinnedToBottomRef = useRef(true);
-  const autoScrollClearTimeoutRef = useRef<number | null>(null);
-  const autoScrollInProgressRef = useRef(false);
+  const activeUserScrollRef = useRef<Exclude<TimelineScrollPolicySource, "measure"> | null>(null);
   const pendingBottomFollowFrame = useRef<number | null>(null);
   const showScrollToBottomRef = useRef(false);
-  const userScrollIntentUntilRef = useRef(0);
+  const touchYRef = useRef<number | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [initialBottomAligned, setInitialBottomAligned] = useState(false);
 
@@ -48,30 +45,6 @@ export function useBottomPinnedVirtuosoTimeline({
     }
   }, []);
 
-  const clearAutoScrollMarker = useCallback(() => {
-    if (autoScrollClearTimeoutRef.current !== null) {
-      window.clearTimeout(autoScrollClearTimeoutRef.current);
-      autoScrollClearTimeoutRef.current = null;
-    }
-    autoScrollInProgressRef.current = false;
-  }, []);
-
-  const markAutoScrollInProgress = useCallback(() => {
-    autoScrollInProgressRef.current = true;
-    if (autoScrollClearTimeoutRef.current !== null) {
-      window.clearTimeout(autoScrollClearTimeoutRef.current);
-    }
-    autoScrollClearTimeoutRef.current = window.setTimeout(() => {
-      autoScrollClearTimeoutRef.current = null;
-      autoScrollInProgressRef.current = false;
-    }, TIMELINE_AUTO_SCROLL_SETTLE_MS);
-  }, []);
-
-  const markUserScrollIntent = useCallback(() => {
-    clearAutoScrollMarker();
-    userScrollIntentUntilRef.current = Date.now() + TIMELINE_USER_SCROLL_INTENT_WINDOW_MS;
-  }, [clearAutoScrollMarker]);
-
   const syncScrollPolicyFromParent = useCallback((source: TimelineScrollPolicySource = "measure") => {
     const scrollElement = scrollParentElement;
     if (!scrollElement) {
@@ -83,14 +56,14 @@ export function useBottomPinnedVirtuosoTimeline({
     const distanceFromBottom = getDistanceFromBottom(scrollElement);
     const isNearBottom = isTimelineNearBottom(scrollElement);
 
-    if (isNearBottom && (source === "user" || isPinnedToBottomRef.current)) {
+    if (isNearBottom && source !== "away" && (source !== "measure" || isPinnedToBottomRef.current)) {
       isPinnedToBottomRef.current = true;
       setScrollToBottomVisible(false);
       onOverflowAboveChange?.(Boolean(rowCount > 0 && scrollElement.scrollTop > 8));
       return true;
     }
 
-    if (source === "user" || !isPinnedToBottomRef.current || showScrollToBottomRef.current) {
+    if (source !== "measure" || !isPinnedToBottomRef.current || showScrollToBottomRef.current) {
       isPinnedToBottomRef.current = false;
       cancelPendingBottomFollow();
       setScrollToBottomVisible(rowCount > 0 && distanceFromBottom > 0);
@@ -110,13 +83,12 @@ export function useBottomPinnedVirtuosoTimeline({
     if (scrollParentElement && behavior === "auto" && !shouldScrollElementToBottom(scrollParentElement)) {
       return;
     }
-    markAutoScrollInProgress();
     if (scrollParentElement) {
       scrollElementToBottom(scrollParentElement, behavior);
     } else {
       virtuosoRef.current?.scrollToIndex({ index: "LAST", align: "end", behavior });
     }
-  }, [markAutoScrollInProgress, rowCount, scrollParentElement]);
+  }, [rowCount, scrollParentElement]);
 
   const scheduleBottomFollow = useCallback(
     (behavior: TimelineScrollBehavior = "auto") => {
@@ -144,6 +116,7 @@ export function useBottomPinnedVirtuosoTimeline({
   }, [onReady, scrollToTimelineBottom]);
 
   const scrollToBottom = useCallback(() => {
+    activeUserScrollRef.current = null;
     isPinnedToBottomRef.current = true;
     setScrollToBottomVisible(false);
     cancelPendingBottomFollow();
@@ -177,8 +150,7 @@ export function useBottomPinnedVirtuosoTimeline({
 
   useEffect(() => () => {
     cancelPendingBottomFollow();
-    clearAutoScrollMarker();
-  }, [cancelPendingBottomFollow, clearAutoScrollMarker]);
+  }, [cancelPendingBottomFollow]);
 
   const followOutput = useCallback<Exclude<FollowOutput, boolean | string>>(
     () => timelineFollowOutputBehavior(isPinnedToBottomRef.current && !showScrollToBottomRef.current),
@@ -192,22 +164,66 @@ export function useBottomPinnedVirtuosoTimeline({
     }
 
     syncScrollPolicyFromParent();
+    let lastScrollTop = scrollElement.scrollTop;
+    let pointerIntentClearFrame: number | null = null;
+    const cancelPointerIntentClear = () => {
+      if (pointerIntentClearFrame !== null) cancelAnimationFrame(pointerIntentClearFrame);
+      pointerIntentClearFrame = null;
+    };
     const handleScroll = () => {
-      const hasRecentUserIntent = Date.now() <= userScrollIntentUntilRef.current;
-      const source: TimelineScrollPolicySource = hasRecentUserIntent && !autoScrollInProgressRef.current ? "user" : "measure";
+      const currentScrollTop = scrollElement.scrollTop;
+      const activeSource = activeUserScrollRef.current;
+      const source = activeSource === "user"
+        ? currentScrollTop < lastScrollTop ? "away" : currentScrollTop > lastScrollTop ? "toward" : "user"
+        : activeSource ?? "measure";
+      lastScrollTop = currentScrollTop;
       syncScrollPolicyFromParent(source);
     };
-    const handlePointerDown = (event: PointerEvent) => {
-      if (isPointerOnScrollbar(event, scrollElement)) {
-        markUserScrollIntent();
-      }
+    const clearUserScrollIntent = () => {
+      cancelPointerIntentClear();
+      activeUserScrollRef.current = null;
+      touchYRef.current = null;
+    };
+    const handlePointerDown = () => {
+      cancelPointerIntentClear();
+      lastScrollTop = scrollElement.scrollTop;
+      activeUserScrollRef.current = "user";
+    };
+    const handlePointerEnd = (event: PointerEvent) => {
+      if (event.pointerType === "touch") return;
+      if (pointerIntentClearFrame !== null) cancelAnimationFrame(pointerIntentClearFrame);
+      pointerIntentClearFrame = requestAnimationFrame(() => {
+        pointerIntentClearFrame = null;
+        activeUserScrollRef.current = null;
+        touchYRef.current = null;
+      });
     };
     const pauseForReading = () => {
+      cancelPointerIntentClear();
+      activeUserScrollRef.current = null;
+      touchYRef.current = null;
       isPinnedToBottomRef.current = false;
-      userScrollIntentUntilRef.current = 0;
       cancelPendingBottomFollow();
-      clearAutoScrollMarker();
       syncScrollPolicyFromParent();
+    };
+    const handleWheel = (event: WheelEvent) => {
+      cancelPointerIntentClear();
+      activeUserScrollRef.current = event.deltaY < 0 ? "away" : event.deltaY > 0 ? "toward" : "user";
+      if (activeUserScrollRef.current === "away") pauseForReading();
+    };
+    const handleTouchStart = (event: TouchEvent) => {
+      cancelPointerIntentClear();
+      touchYRef.current = event.touches[0]?.clientY ?? null;
+      activeUserScrollRef.current = "user";
+    };
+    const handleTouchMove = (event: TouchEvent) => {
+      const currentY = event.touches[0]?.clientY;
+      const previousY = touchYRef.current;
+      if (currentY === undefined || previousY === null) return;
+      cancelPointerIntentClear();
+      activeUserScrollRef.current = currentY > previousY ? "away" : currentY < previousY ? "toward" : "user";
+      touchYRef.current = currentY;
+      if (activeUserScrollRef.current === "away") pauseForReading();
     };
     const handleDisclosureClick = (event: MouseEvent) => {
       if (event.target instanceof Element && event.target.closest("summary, button[aria-expanded]")) {
@@ -215,32 +231,43 @@ export function useBottomPinnedVirtuosoTimeline({
       }
     };
     const handleKeyboardScrollIntent = (event: KeyboardEvent) => {
-      if (isEditableKeyboardTarget(event.target) || !isTimelineScrollKey(event.key)) {
+      if (!isTimelineKeyboardTarget(event.target, scrollElement) || isEditableKeyboardTarget(event.target)) {
         return;
       }
-      markUserScrollIntent();
+      const direction = getTimelineKeyboardScrollDirection(event);
+      if (!direction) return;
+      cancelPointerIntentClear();
+      activeUserScrollRef.current = direction;
+      if (direction === "away") pauseForReading();
     };
     // Capture before a disclosure changes height; measurements must not repin it.
     scrollElement.addEventListener("click", handleDisclosureClick, true);
     scrollElement.addEventListener("selectstart", pauseForReading);
     scrollElement.addEventListener("scroll", handleScroll, { passive: true });
-    scrollElement.addEventListener("wheel", markUserScrollIntent, { passive: true });
-    scrollElement.addEventListener("touchstart", markUserScrollIntent, { passive: true });
-    scrollElement.addEventListener("touchmove", markUserScrollIntent, { passive: true });
+    scrollElement.addEventListener("scrollend", clearUserScrollIntent);
+    scrollElement.addEventListener("wheel", handleWheel, { passive: true });
+    scrollElement.addEventListener("touchstart", handleTouchStart, { passive: true });
+    scrollElement.addEventListener("touchmove", handleTouchMove, { passive: true });
     scrollElement.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("pointercancel", handlePointerEnd);
+    document.addEventListener("pointerup", handlePointerEnd);
     document.addEventListener("keydown", handleKeyboardScrollIntent);
     return () => {
       scrollElement.removeEventListener("click", handleDisclosureClick, true);
       scrollElement.removeEventListener("selectstart", pauseForReading);
       scrollElement.removeEventListener("scroll", handleScroll);
-      scrollElement.removeEventListener("wheel", markUserScrollIntent);
-      scrollElement.removeEventListener("touchstart", markUserScrollIntent);
-      scrollElement.removeEventListener("touchmove", markUserScrollIntent);
+      scrollElement.removeEventListener("scrollend", clearUserScrollIntent);
+      scrollElement.removeEventListener("wheel", handleWheel);
+      scrollElement.removeEventListener("touchstart", handleTouchStart);
+      scrollElement.removeEventListener("touchmove", handleTouchMove);
       scrollElement.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("pointercancel", handlePointerEnd);
+      document.removeEventListener("pointerup", handlePointerEnd);
       document.removeEventListener("keydown", handleKeyboardScrollIntent);
+      cancelPointerIntentClear();
       onOverflowAboveChange?.(false);
     };
-  }, [cancelPendingBottomFollow, clearAutoScrollMarker, markUserScrollIntent, onOverflowAboveChange, scrollParentElement, syncScrollPolicyFromParent]);
+  }, [cancelPendingBottomFollow, onOverflowAboveChange, scrollParentElement, syncScrollPolicyFromParent]);
 
   useEffect(() => {
     const scrollElement = scrollParentElement;
@@ -341,27 +368,10 @@ function scrollElementToBottom(scrollElement: HTMLElement, behavior: TimelineScr
   scrollElement.scrollTop = top;
 }
 
-function isPointerOnScrollbar(event: PointerEvent, scrollElement: HTMLElement) {
-  const rect = scrollElement.getBoundingClientRect();
-  const verticalScrollbarWidth = scrollElement.offsetWidth - scrollElement.clientWidth;
-  const horizontalScrollbarHeight = scrollElement.offsetHeight - scrollElement.clientHeight;
-  const isOnVerticalScrollbar =
-    verticalScrollbarWidth > 0 &&
-    event.clientX >= rect.right - verticalScrollbarWidth &&
-    event.clientX <= rect.right &&
-    event.clientY >= rect.top &&
-    event.clientY <= rect.bottom;
-  const isOnHorizontalScrollbar =
-    horizontalScrollbarHeight > 0 &&
-    event.clientY >= rect.bottom - horizontalScrollbarHeight &&
-    event.clientY <= rect.bottom &&
-    event.clientX >= rect.left &&
-    event.clientX <= rect.right;
-  return isOnVerticalScrollbar || isOnHorizontalScrollbar;
-}
-
-function isTimelineScrollKey(key: string) {
-  return ["ArrowDown", "ArrowLeft", "ArrowRight", "ArrowUp", "End", "Home", "PageDown", "PageUp", " "].includes(key);
+function getTimelineKeyboardScrollDirection(event: KeyboardEvent): "away" | "toward" | null {
+  if (["ArrowUp", "Home", "PageUp"].includes(event.key) || (event.key === " " && event.shiftKey)) return "away";
+  if (["ArrowDown", "End", "PageDown", " "].includes(event.key)) return "toward";
+  return null;
 }
 
 function isEditableKeyboardTarget(target: EventTarget | null) {
@@ -369,4 +379,12 @@ function isEditableKeyboardTarget(target: EventTarget | null) {
     return false;
   }
   return target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName);
+}
+
+function isTimelineKeyboardTarget(target: EventTarget | null, scrollElement: HTMLElement) {
+  if (!(target instanceof Element)) return false;
+  if (scrollElement.contains(target)) return true;
+  if (target !== document.body && target !== document.documentElement) return false;
+  return scrollElement.matches(".kodex-thread-pane-scroll")
+    && scrollElement.closest('[data-workspace-pane-active="true"]') !== null;
 }

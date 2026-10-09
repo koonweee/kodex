@@ -1217,8 +1217,14 @@ describe("App shell", () => {
 
     renderApp();
 
+    expect(screen.queryAllByText("Shell")).toHaveLength(0);
+    await screen.findAllByText("Ran 300 commands");
+    const activityGroup = document.querySelector("details.kodex-activity-group") as HTMLDetailsElement;
+    activityGroup.open = true;
+    fireEvent(activityGroup, new Event("toggle"));
     expect(await screen.findByText("Ran echo command-0")).toBeInTheDocument();
-    expect(screen.queryByText("Ran echo command-299")).not.toBeInTheDocument();
+    expect(screen.getByText("Ran echo command-79")).toBeInTheDocument();
+    expect(screen.queryByText("Ran echo command-80")).not.toBeInTheDocument();
     expect(screen.queryAllByText("Shell")).toHaveLength(0);
   });
 });
