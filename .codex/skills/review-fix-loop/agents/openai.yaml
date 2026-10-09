@@ -1,4 +1,4 @@
 interface:
   display_name: "Review Fix Loop"
   short_description: "Review/fix loop to clear major blockers."
-  default_prompt: "Run a review/fix subagent loop for this repo until no major issues remain."
+  default_prompt: "Use $review-fix-loop with read-only review subagents and main-agent fixes until no major issues remain."
