@@ -52,7 +52,7 @@ export type ComposerPanelProps = {
   composerResetToken: number;
   goalThreadId?: string | null;
   queueThreadId?: string | null;
-  queueDialogActive?: boolean;
+  paneActive?: boolean;
   composerDraftKey?: string;
   composerDraftStore?: ComposerDraftStore;
   onDraftDisposableChange?: (disposable: boolean) => void;
@@ -104,7 +104,7 @@ export function ComposerPanel({
   composerResetToken,
   goalThreadId = null,
   queueThreadId,
-  queueDialogActive = true,
+  paneActive = true,
   composerDraftKey,
   composerDraftStore,
   onDraftDisposableChange,
@@ -181,7 +181,7 @@ export function ComposerPanel({
   const isComposerBusy = isComposerSubmitting || goalCommand.pending;
   const isEntryPending = selectedThreadPresent && !isSelectedTimelineReady && !isDraftComposerTransitioning;
   const isComposerDisabled = !canCompose || isComposerBusy;
-  const isComposerControlsDisabled = isComposerDisabled || isEntryPending;
+  const isComposerControlsDisabled = !paneActive || isComposerDisabled || isEntryPending;
   const canSubmitComposer =
     !isComposerControlsDisabled && (Boolean(draftState.composerText.trim()) || draftState.annotations.length > 0 || pendingAttachments.length > 0);
   const shouldShowStopAction = activeSelectedTurnId !== null && !canSubmitComposer && !isComposerSubmitting;
@@ -270,7 +270,7 @@ export function ComposerPanel({
 
   function handleComposerKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
     const empty = !draftState.composerText.trim() && draftState.annotations.length === 0 && pendingAttachments.length === 0;
-    if (isAlternateSubmitShortcut(event) && empty && !isComposerControlsDisabled && queueDialogActive && nativeQueue.sendNow()) {
+    if (isAlternateSubmitShortcut(event) && empty && !isComposerControlsDisabled && paneActive && nativeQueue.sendNow()) {
       event.preventDefault();
       return;
     }
@@ -357,7 +357,7 @@ export function ComposerPanel({
     }
   }, [composerShellRef]);
 
-  const queuePanel = queueThreadId ? <NativeQueuePanel key={queueThreadId} threadId={queueThreadId} queue={nativeQueue} isActive={queueDialogActive}
+  const queuePanel = queueThreadId ? <NativeQueuePanel key={queueThreadId} threadId={queueThreadId} queue={nativeQueue} isActive={paneActive}
     canRestoreText={!draftState.composerText && draftState.annotations.length === 0 && pendingAttachments.length === 0 && !isComposerBusy}
     onRestoreText={(text) => draftState.updateComposerText(text, null)} /> : null;
 
@@ -427,7 +427,7 @@ export function ComposerPanel({
         if (pointerType === "touch") setAnnotationTouchOpenRevision((revision) => revision + 1);
       }} />
     <ExpandedComposerPanel {...representationProps} annotationTouchOpenRevision={annotationTouchOpenRevision} />
-    {goalThreadId && goalEditorThreadId === goalThreadId ? (
+    {paneActive && goalThreadId && goalEditorThreadId === goalThreadId ? (
       <GoalModal key={goalThreadId} goal={threadGoal.goal} pending={threadGoal.pending} error={threadGoal.error}
         ready={threadGoal.ready} onReload={threadGoal.reload} onClose={() => setGoalEditorThreadId((current) => current === goalThreadId ? null : current)}
         onUpdate={threadGoal.update} onClear={threadGoal.clear} />

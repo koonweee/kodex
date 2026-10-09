@@ -27,6 +27,16 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe("Send hold to queue", () => {
+  it("removes its portalled attachment menu in the disabling render", () => {
+    const submit = vi.fn();
+    const rendered = render(view(submit));
+    fireEvent.click(screen.getByRole("button", { name: "Open attachment menu" }));
+    expect(screen.getByRole("menu", { hidden: true })).toBeInTheDocument();
+
+    rendered.rerender(view(submit, { disabled: true }));
+    expect(screen.queryByRole("menu", { hidden: true })).not.toBeInTheDocument();
+  });
+
   it.each(["touch", "mouse", "pen"])("queues once after a sustained %s press and suppresses the release click", (pointerType) => {
     const submit = vi.fn(); render(view(submit));
     pointer(send(), "pointerdown", { pointerType });

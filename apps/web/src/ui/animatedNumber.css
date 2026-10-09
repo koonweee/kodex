@@ -11,7 +11,7 @@
 }
 
 .kodex-animated-number-old {
-  visibility: hidden;
+  opacity: 0;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -20,7 +20,6 @@
   }
 
   .kodex-animated-number-old {
-    visibility: visible;
     animation: kodex-count-out 150ms ease-out both;
   }
 }

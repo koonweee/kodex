@@ -117,8 +117,9 @@ export function InlineComposerPanel({
   const [editingActive, setEditingActive] = useState(false);
   const [composerFocused, setComposerFocused] = useState(false);
   const [toolbarMenuOpen, setToolbarMenuOpen] = useState(false);
+  const [draftProjectMenuOpen, setDraftProjectMenuOpen] = useState(false);
   const [alternateSubmitPreview, setAlternateSubmitPreview] = useState(false);
-  const focusSessionActive = composerFocused || toolbarMenuOpen;
+  const focusSessionActive = composerFocused || toolbarMenuOpen || draftProjectMenuOpen;
   const focusRevision = useRef(0);
   useEffect(() => () => { focusRevision.current += 1; }, []);
   useLayoutEffect(() => {
@@ -160,6 +161,9 @@ export function InlineComposerPanel({
   useLayoutEffect(() => {
     if (isComposerBusy) setEditingActive(false);
   }, [isComposerBusy]);
+  useEffect(() => {
+    if (isComposerControlsDisabled) setDraftProjectMenuOpen(false);
+  }, [isComposerControlsDisabled]);
   // Keep the empty row stable through attachment and settings loading.
   const useIdlePresentation = density === "compact" || hasTouchInput;
   const draftContentEmpty = draftState.composerText.length === 0 && draftState.annotations.length === 0 &&
@@ -347,11 +351,12 @@ export function InlineComposerPanel({
         <Box className="kodex-composer-underbar" aria-label="Draft thread toolbar" role="toolbar">
           <Group className="kodex-composer-underbar-left" gap={10} wrap="nowrap">
             {draftProjectSelector ? (
-              <Menu position="top-start" withinPortal>
+              <Menu position="top-start" withinPortal opened={!isComposerControlsDisabled && draftProjectMenuOpen} onChange={setDraftProjectMenuOpen}>
                 <Menu.Target>
                   <button
                     aria-label={`${COMPOSER_TEXT.projectSelector}: ${draftProjectSelectorLabel}`}
                     className="kodex-composer-underbar-item kodex-composer-underbar-button"
+                    disabled={isComposerControlsDisabled}
                     type="button"
                   >
                     {selectedDraftProject ? <Folder size={15} /> : <MessageSquare size={15} />}

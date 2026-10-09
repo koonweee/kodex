@@ -550,7 +550,7 @@ function ExistingThreadPane({
       <Title className="kodex-thread-pane-accessible-title" order={3} size="h5" title={title}>
         {title}
       </Title>
-      <Modal centered onClose={closeRenameModal} opened={renameModalOpen && thread !== null} title="Rename thread">
+      <Modal centered onClose={closeRenameModal} opened={isActive && renameModalOpen && thread !== null} title="Rename thread">
         <Box component="form" onSubmit={handleRenameSubmit}>
           <TextInput
             autoFocus

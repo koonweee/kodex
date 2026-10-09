@@ -69,6 +69,10 @@ export const ComposerToolbar = memo(function ComposerToolbar({
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   useEffect(() => {
+    if (!disabled) return;
+    setAttachmentMenuOpen(false);
+  }, [disabled]);
+  useEffect(() => {
     onMenuOpenChange?.(attachmentMenuOpen || modelMenuOpen);
   }, [attachmentMenuOpen, modelMenuOpen, onMenuOpenChange]);
   function changeAttachmentMenuOpen(opened: boolean) {
@@ -98,7 +102,7 @@ export const ComposerToolbar = memo(function ComposerToolbar({
   return (
     <Group className="kodex-composer-toolbar" gap={4} justify="space-between" wrap="wrap">
       <Group className="kodex-composer-toolbar-left" gap={4} wrap="nowrap">
-        <Menu position="top-start" withinPortal returnFocus={false} opened={attachmentMenuOpen} onChange={changeAttachmentMenuOpen}>
+        <Menu position="top-start" withinPortal returnFocus={false} opened={!disabled && attachmentMenuOpen} onChange={changeAttachmentMenuOpen}>
           <span ref={attachmentTargetRef} className="kodex-composer-attachment-target">
             <Menu.Target>
               <AdaptiveIconButton

@@ -2,7 +2,7 @@ import { AnimatedNumericText } from "./ui/AnimatedNumericText";
 import { Box, Button, Group, Menu, Switch, Text, Tooltip } from "@mantine/core";
 import { AlertCircle, ArrowLeft, Brain, Check, ChevronRight, Gauge, X } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
-import { Children, isValidElement, useLayoutEffect, useRef, useState } from "react";
+import { Children, isValidElement, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useCompactDialog } from "./shared/layoutBreakpoints";
 import { usePaneLayout } from "./shared/PaneLayout";
@@ -67,6 +67,14 @@ export function ComposerFooterControls({
   const reasoningSubmenuRef = useRef<HTMLButtonElement>(null);
   const returnToRef = useRef<"model" | "reasoning" | null>(null);
 
+  useEffect(() => {
+    if (!disabled || !modelMenuOpened) return;
+    setModelMenuOpened(false);
+    setSubmenu(null);
+    returnToRef.current = null;
+    onMenuOpenChange?.(false);
+  }, [disabled, modelMenuOpened, onMenuOpenChange]);
+
   useLayoutEffect(() => {
     if (!modelMenuOpened) {
       return;
@@ -124,7 +132,7 @@ export function ComposerFooterControls({
         </Tooltip>
       ) : null}
 
-      <Menu position="top-start" withinPortal returnFocus={false} opened={modelMenuOpened} onChange={changeMenuOpened} middlewares={{ flip: true, shift: { padding: 10, crossAxis: true } }}>
+      <Menu position="top-start" withinPortal returnFocus={false} opened={!disabled && modelMenuOpened} onChange={changeMenuOpened} middlewares={{ flip: true, shift: { padding: 10, crossAxis: true } }}>
           <Tooltip label={modelControlLabel} disabled={!compact || modelMenuOpened}>
             <Menu.Target>
               <Button

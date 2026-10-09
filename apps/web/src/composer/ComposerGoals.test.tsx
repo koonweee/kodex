@@ -59,6 +59,15 @@ describe("composer goals", () => {
     expect(clearThreadGoal).toHaveBeenCalledWith("thread-1");
   });
 
+  it("does not leave the goal portal visible after its pane becomes inactive", async () => {
+    const rendered = composer();
+    await userEvent.click(await screen.findByRole("button", { name: "Manage goal: Active" }));
+    expect(screen.getByRole("dialog", { name: "Goal" })).toBeInTheDocument();
+
+    rendered.changeProps({ paneActive: false });
+    expect(screen.queryByRole("dialog", { name: "Goal" })).not.toBeInTheDocument();
+  });
+
   it("deletes a completed goal directly from the bar and refills native state", async () => {
     vi.mocked(getThreadGoal).mockResolvedValue({ goal: { ...goal, status: "complete" } });
     const onSubmitTurn = vi.fn();

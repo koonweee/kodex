@@ -657,8 +657,7 @@ describe("ComposerPanel", () => {
   it("lets draft composers choose between chats and projects from the underbar", async () => {
     const attachmentInputRef = { current: null } as RefObject<HTMLInputElement | null>;
     const onProjectChange = vi.fn();
-
-    renderWithQueryProvider(
+    const panel = (paneActive = true) => (
       <MantineProvider env="test">
         <ComposerPanel
           activeSelectedTurnId={null}
@@ -690,15 +689,22 @@ describe("ComposerPanel", () => {
           onRemovePendingAttachment={vi.fn()}
           onStopTurn={vi.fn()}
           onSubmitTurn={noopSubmit}
+          paneActive={paneActive}
           pendingAttachments={[]}
           selectedThreadPresent={false}
         />
-      </MantineProvider>,
+      </MantineProvider>
     );
+    const rendered = renderWithQueryProvider(panel());
 
     await userEvent.click(screen.getByRole("button", { name: /project: no project/i }));
     await userEvent.click(await screen.findByRole("menuitem", { name: /kodex/i }));
-
     expect(onProjectChange).toHaveBeenCalledWith("project-1");
+
+    await userEvent.click(screen.getByRole("button", { name: /project: no project/i }));
+    expect(await screen.findByRole("menu", { hidden: true })).toBeInTheDocument();
+    rendered.rerender(panel(false));
+    expect(screen.queryByRole("menu", { hidden: true })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /project: no project/i })).toBeDisabled();
   });
 });

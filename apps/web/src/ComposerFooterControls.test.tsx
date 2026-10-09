@@ -40,6 +40,21 @@ const settings: ComposerSettings = {
 };
 
 describe("ComposerFooterControls", () => {
+  it("removes its portalled menu when its pane becomes inactive", async () => {
+    const onMenuOpenChange = vi.fn();
+    const controls = (disabled: boolean) => (
+      <ComposerFooterControls disabled={disabled} models={[reasoningModel]} settings={settings}
+        onSettingsChange={vi.fn()} onMenuOpenChange={onMenuOpenChange} />
+    );
+    const { rerender } = renderWithProvider(controls(false));
+    await userEvent.click(screen.getByRole("button", { name: "Model: gpt-5.4, medium" }));
+    expect(await screen.findByRole("menu", { hidden: true })).toBeInTheDocument();
+
+    rerender(<MantineProvider>{controls(true)}</MantineProvider>);
+    expect(screen.getByRole("menu", { hidden: true })).not.toBeVisible();
+    await waitFor(() => expect(onMenuOpenChange).toHaveBeenLastCalledWith(false));
+  });
+
   it("reports menu opening and closing after selection and keyboard dismissal", async () => {
     const focusAtClose: (Element | null)[] = [];
     const onMenuOpenChange = vi.fn((opened: boolean) => {

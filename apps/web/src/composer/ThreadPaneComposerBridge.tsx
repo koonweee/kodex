@@ -235,7 +235,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
       pendingAttachments={orchestration.pendingAttachments}
       goalThreadId={inputStateReadable ? existingThreadId : null}
       queueThreadId={inputStateReadable ? existingThreadId : null}
-      queueDialogActive={paneState.isActive}
+      paneActive={paneState.isActive}
       selectedThreadPresent={!isDraftPane}
     />
     </>

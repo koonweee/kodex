@@ -219,6 +219,14 @@
   overflow: hidden;
 }
 
+/* Dockview keeps inactive panes mounted and hides their overlay with
+   visibility. Descendants can override inherited visibility (animations and
+   high-z controls have done so), so also suppress the composited pane as one
+   unit. Opacity cannot be escaped by descendant visibility or stacking. */
+.kodex-workspace-dock .dv-render-overlay[style*="visibility: hidden"] {
+  opacity: 0;
+}
+
 .kodex-workspace-dock .dv-content-container {
   height: 100%;
   min-height: 0;
