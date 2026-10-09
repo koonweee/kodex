@@ -2,7 +2,7 @@
 
 ## Status and objective
 
-Complete. Retain bounded word fades with 48 ms event batching. Implementation, comparison videos, repeated performance measurements and independent review are complete. Not deployed.
+Complete after a performance follow-up. Retain bounded four-group word fades with 48 ms event batching. The follow-up reduced transient animation work while preserving the reviewed visual result; slower batching did not earn its added latency. Not deployed.
 
 Make arriving assistant text feel fluid, using the user's 2026-10-08 ChatGPT screen recording as a visual reference. The observed effect is a pale leading edge that settles to solid text while older content remains stable. Match the useful visual qualities, not an assumed ChatGPT implementation or exact timing.
 
@@ -131,6 +131,7 @@ Append concise entries during execution; link local recordings/traces when avail
 | Experiment / date | Method and hypothesis | Visual result | Performance vs baseline | Decision / next step |
 | --- | --- | --- | --- | --- |
 | Planning, 2026-10-09 | Reference inspection and current render-path evaluation | Pale leading edge observed in supplied recording | No candidate measurements yet | Proposed; start with baseline, then fades and cadence comparison |
+| Performance follow-up, 2026-10-09 | Start from the retained 48 ms/eight-group word fade; compare four-group variants and allow a few milliseconds of extra delivery latency | Four groups preserve the pale leading edge; 56 ms has no obvious visual seam | Burst animations 8→4; steady 16→13. Aggregate task work is noisy; mixed Markdown is unchanged | Retain 48 ms/four groups; 56/64 ms add latency without a demonstrated stress benefit |
 
 Final evidence and recommendation follow below.
 
@@ -150,21 +151,23 @@ Execution note: `$agent-browser` is not installed in the available skills or loc
 
 ### Recommendation and implementation
 
-Retain the lightly staggered word-run fade and reduce ordinary canonical-event batching from 64 to **48 ms**. It produces a softer leading edge than one fade per chunk and improves receipt-to-DOM latency without the higher update cost of 32 ms. This is a visual judgment supported by matched recordings, not a claim to reproduce ChatGPT internals.
+Retain the lightly staggered word-run fade with **48 ms** ordinary canonical-event batching and at most **four groups per incoming batch**. It produces a softer leading edge than one fade per chunk, improves receipt-to-DOM latency over the original 64 ms baseline, and halves the burst animation count of the first eight-group version. This is a visual judgment supported by matched recordings, not a claim to reproduce ChatGPT internals.
 
-The implementation adds two focused Markdown helpers, no dependencies and no transport changes. A canonical delta supplies a disposable source offset; a prefix check and Markdown source positions identify eligible new text. Native Web Animations fade opacity from 0.25 to 1 over 240 ms, with up to 49 ms of word-group stagger. There is no artificial text queue, per-frame React update, adaptive scheduler or custom parser. At most 16 source ranges are retained, with new decoration limited to the last 1,000 characters; a range can span multiple Markdown text nodes. The measured maximum was 20 simultaneous animations in one pane and 40 in two. Completion, replacement and unmount remove effects; stalled messages retain only inert bounded spans and perform no quiet-period cleanup render.
+The implementation adds two focused Markdown helpers, no dependencies and no transport changes. A canonical delta supplies a disposable source offset; a prefix check and Markdown source positions identify eligible new text. Native Web Animations fade opacity from 0.25 to 1 over 240 ms, with up to 21 ms of word-group stagger per batch. There is no artificial text queue, per-frame React update, adaptive scheduler or custom parser. At most 16 source ranges are retained, with new decoration limited to the last 1,000 characters; a range can span multiple Markdown text nodes. Completion, replacement and unmount remove effects; stalled messages retain only inert bounded spans and perform no quiet-period cleanup render.
 
 Keep immediate rendering for code/tables, transformed source such as entities, unsafe grapheme splits, first mount/history/refill, non-append corrections, reduced motion and foreground recovery. Selection cancels motion and preserves selected nodes until deselection, even across completion. First text replacing the existing empty-message placeholder also appears immediately. No backend lifecycle, authoritative state or API contract changed.
 
 ### Videos and reproducibility
 
-Open the [comparison gallery](../artifacts/streaming-animation/index.html). It contains matched baseline/final steady and bursty clips, three meaningful alternatives, throttled long Markdown, narrow-pane scrolling, reading-position preservation and adjacent compact/regular panes with typing. Controls support matched playback and scrubbing; content offsets are approximate, not frame-exact synchronization.
+This section records the first exploration's eight-group candidate. Open its [comparison gallery](../artifacts/streaming-animation/index.html) for matched baseline/final steady and bursty clips, three meaningful alternatives, throttled long Markdown, narrow-pane scrolling, reading-position preservation and adjacent compact/regular panes with typing. The later four-group recommendation has its own comparison under “Performance follow-up” below. Controls support matched playback and scrubbing; content offsets are approximate, not frame-exact synchronization.
 
 Direct clips: [baseline steady](../artifacts/streaming-animation/baseline-final-steady-cpu1.webm), [recommended steady](../artifacts/streaming-animation/final-steady-cpu1.webm), [recommended bursts](../artifacts/streaming-animation/final-bursty-cpu1.webm), [long Markdown at 4× CPU](../artifacts/streaming-animation/final-slow-mixed-long-cpu4.webm), [narrow pane](../artifacts/streaming-animation/final-narrow-mixed-long-cpu1.webm), [reading older content](../artifacts/streaming-animation/final-reading-mixed-long-cpu1.webm), [two panes and typing](../artifacts/streaming-animation/final-two-video-steady-cpu4.webm).
 
 [Reproduction notes](../artifacts/streaming-animation/reproduction.md), raw summaries/profiles linked in the gallery, and the [40-theme contact sheet](../artifacts/streaming-animation/themes/contact-sheet.html) accompany the videos. These are local generated artifacts, intentionally not committed; essential findings remain in this plan. The gallery was smoke-tested in bundled Chromium: all 12 videos decode, all 34 relative links resolve, playback/pause/seek work, and no console errors occur.
 
 ### Measurements and decision
+
+The tables through “Validation and review” describe the first retained 48 ms/eight-group implementation. They explain why the animation/cadence design was retained; the four-group follow-up supersedes only its transient grouping and is measured separately below.
 
 Environment: Apple M4, macOS arm64, production Vite builds, Playwright bundled Chromium 147.0.7727.15. Measurements ran sequentially without competing test/build/browser jobs. Ordinary viewport 1280×900; two panes 1440×900 with approximately 350/790 px content widths. Three runs per table row. Prose is 1,710 characters/73 chunks, delivered every 45 ms or eight chunks every 360 ms; mixed Markdown grows from 11,078 to 14,708 characters in 56 chunks. CPU throttle is a stress simulation, not physical-device proof.
 
@@ -216,3 +219,15 @@ Peak measured message DOM was 616 nodes versus 601 settled nodes for the long fi
 - Production build/typecheck and frontend trim pass. Existing bundle-size advisory remains; no new dependency. No fixture, unexpected API or console errors in recorded comparisons.
 - Independent review covered provenance/reconciliation, Unicode and Markdown, selected-node lifetime, visibility recovery, timer removal, scheduler consumers, final performance evidence and gallery playback. Findings were fixed and relevant checks rerun. Review accepts the measured work tradeoff, with no outstanding material correctness finding.
 - No deployment, backend change, API/schema change, persistent setting, production profiling hook or experimental switch. Before deployment, the user can judge the supplied motion clips; deployment remains a separate task. Real-device battery/thermal behavior and non-Chromium browser performance are unmeasured.
+
+### Performance follow-up: four animation groups
+
+The user accepted a few milliseconds of extra arrival latency if it reduced cost, so a second pass compared the reviewed 48 ms/eight-group build with 48, 56 and 64 ms variants capped at four groups. The [optimization comparison](../artifacts/streaming-animation/optimization/index.html) contains direct matched videos, a normal-speed temporal contact sheet, raw summaries and the exact included/excluded measurement sets.
+
+All four-group variants retained the same pale leading edge and stable older text. At 48 ms, the measured steady peak fell from 16 to 13 active animations (17→14 message nodes), and bursty delivery fell from 8 to 4 animations (9→5 nodes). The five-shape browser test now sends a ten-word-plus live delta and verifies at most four running animations while content is translucent, then verifies full settling and no idle mutations.
+
+The initial CPU4/light screen used three runs per steady and mixed-Markdown case. Steady task medians were 744 ms for 48/eight groups, 673 ms for 48/four, 622 ms for 56/four and 623 ms for 64/four, but the reference range was wide (589–1,352 ms), so this is not evidence for a precise CPU percentage. Steady script medians were 407→337 ms for the selected change, receipt-to-DOM medians 54→52 ms, and frame p95 27→27 ms. Mixed-Markdown task medians were effectively unchanged at 943→946 ms, with frame p95 27.1→27.3 ms and the same 15 DOM mutations. Mixed long-task counts were noisily worse at 2/1/2→4/2/3, with one final frame above 50 ms versus none in the reference runs; the later host-contended recheck could not resolve that spread. The selected claim is therefore limited to the directly measured reduction in transient animations and nodes. The screen establishes neither a task-duration improvement nor a stable aggregate regression.
+
+The 56 ms build provided no mixed-Markdown work benefit and added about 8 ms to median receipt-to-DOM latency; 64 ms added another 8 ms without further steady-work improvement. Both were rejected. Later alternating rechecks were contaminated by sustained unrelated compiler load: both reference and candidate progressively degraded to triple-digit frame p95. Those runs are preserved and explicitly excluded in the optimization artifact rather than attributed to a candidate. No optimized two-pane performance rerun was made under that contention; the grouping-only change preserves the already-tested shared cadence and reduces, rather than increases, per-batch animation objects.
+
+Final follow-up validation: focused streaming/canonical tests pass, the 17-test bundled-Chromium streaming/reading/footer suite passes across five viewport/input shapes and two-tab recovery, build/typecheck and frontend trim pass, and independent review found no correctness or state-ownership issue. The reviewer required the resource-bound browser assertion and careful performance wording; both are reflected above. The all-theme capture was not repeated because opacity, colors and settled rendering are unchanged. The optimization remains undeployed.

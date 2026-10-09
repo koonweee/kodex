@@ -56,12 +56,13 @@ async function animationCount(target: Locator) {
 // Observe the first committed frame, so CI delays after an assertion cannot hide a short fade.
 async function watchAppearance(target: Locator) {
   await target.evaluate(el => {
-    type ProofElement = HTMLElement & { streamProof?: { animated: boolean; translucent: boolean } };
+    type ProofElement = HTMLElement & { streamProof?: { animated: boolean; translucent: boolean; peakAnimations: number } };
     const root = el as ProofElement;
-    root.streamProof = { animated: false, translucent: false };
+    root.streamProof = { animated: false, translucent: false, peakAnimations: 0 };
     const observe = () => {
-      for (const animation of root.getAnimations({ subtree: true })) {
-        if (animation.playState !== "running") continue;
+      const animations = root.getAnimations({ subtree: true }).filter(animation => animation.playState === "running");
+      root.streamProof!.peakAnimations = Math.max(root.streamProof!.peakAnimations, animations.length);
+      for (const animation of animations) {
         root.streamProof!.animated = true;
         const target = animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
         if (target instanceof Element && Number(getComputedStyle(target).opacity) < 1) root.streamProof!.translucent = true;
@@ -124,7 +125,7 @@ for (const shape of [
         await expect.poll(() => fixture.connected("appearance")).toBe(true);
         expect(await animationCount(target)).toBe(0);
         await watchAppearance(target);
-        const text = append(fixture, "Fresh words arrive smoothly.", ["appearance"]);
+        const text = append(fixture, "Fresh words arrive smoothly across the pane without disturbing earlier readable content.", ["appearance"]);
         await expect(target).toHaveText(text);
         await target.evaluate(el => {
           const root = el as HTMLElement & { quietMutations?: number; quietObserver?: MutationObserver };
@@ -132,7 +133,8 @@ for (const shape of [
           root.quietObserver = new MutationObserver(records => { root.quietMutations! += records.length; });
           root.quietObserver.observe(root, { subtree: true, childList: true, characterData: true, attributes: true });
         });
-        await expect.poll(() => target.evaluate(el => (el as HTMLElement & { streamProof?: { animated: boolean; translucent: boolean } }).streamProof)).toEqual({ animated: true, translucent: true });
+        await expect.poll(() => target.evaluate(el => (el as HTMLElement & { streamProof?: { animated: boolean; translucent: boolean; peakAnimations: number } }).streamProof)).toMatchObject({ animated: true, translucent: true });
+        expect(await target.evaluate(el => (el as HTMLElement & { streamProof?: { peakAnimations: number } }).streamProof?.peakAnimations)).toBeLessThanOrEqual(4);
         await expect.poll(() => animationCount(target)).toBe(0);
         // A stalled stream stays fully visible without recurring animation or DOM cleanup.
         await page.waitForTimeout(350);

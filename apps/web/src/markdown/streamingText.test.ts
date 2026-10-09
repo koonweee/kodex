@@ -19,6 +19,17 @@ describe("streaming Markdown decoration", () => {
     expect(Math.min(...next.map(run => run.from))).toBeGreaterThan(8000);
   });
 
+  it("bounds animation groups while covering each incoming batch contiguously", () => {
+    for (const wordCount of [1, 4, 10, 100]) {
+      const source = Array.from({ length: wordCount }, (_, index) => `word${index}`).join(" ");
+      const runs = appendStreamingRuns([], source, 0, 100);
+      expect(runs.length).toBeLessThanOrEqual(4);
+      expect(runs[0]).toMatchObject({ from: 0 });
+      expect(runs.at(-1)).toMatchObject({ to: source.length });
+      expect(runs.slice(1).every((run, index) => run.from === runs[index].to)).toBe(true);
+    }
+  });
+
   it("renders transformed text and code immediately instead of guessing source offsets", () => {
     const source = "&amp; code";
     const tree = { children: [

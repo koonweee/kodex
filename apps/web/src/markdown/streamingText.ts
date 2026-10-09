@@ -7,14 +7,16 @@ export type StreamingRun = { from: number; to: number; born: number };
 export const STREAM_FADE_MS = 240;
 const MAX_RUNS = 16;
 const MAX_TAIL = 1000;
+const MAX_GROUPS_PER_BATCH = 4;
 const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 export function appendStreamingRuns(previous: StreamingRun[], text: string, from: number, now: number): StreamingRun[] {
   const start = Math.max(from, text.length - MAX_TAIL);
   const runs = previous.filter(run => run.born + STREAM_FADE_MS > now && run.to > start - MAX_TAIL);
-  // At most eight runs per batch; grapheme safety is checked against the parsed text below.
+  // Keep each batch coarse enough to bound transient DOM and animation work while
+  // retaining a phrase-like leading edge. Grapheme safety is checked below.
   const words = [...text.slice(start).matchAll(/\S+\s*/gu)];
-  const groupSize = Math.max(1, Math.ceil(words.length / 8));
+  const groupSize = Math.max(1, Math.ceil(words.length / MAX_GROUPS_PER_BATCH));
   for (let i = 0; i < words.length; i += groupSize) {
     runs.push({ from: i === 0 ? start : start + words[i].index!,
       to: i + groupSize < words.length ? start + words[i + groupSize].index! : text.length,
