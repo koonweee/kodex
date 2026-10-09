@@ -16,6 +16,7 @@ use crate::{
             APP_SURFACE_MODEL_CONTEXT_UPDATED_EVENT, APP_SURFACE_PRESENTATION_REQUESTED_EVENT,
             APP_SURFACE_UPSERTED_EVENT,
         },
+        frontend_updates::FRONTEND_UPDATED_EVENT,
         pins::THREAD_PINS_UPDATED_EVENT,
         thread_goals::THREAD_GOAL_CHANGED_EVENT,
         thread_settings::THREAD_SETTINGS_UPDATED_EVENT,
@@ -97,6 +98,7 @@ pub(crate) fn is_operational_replay_event(event: &EventEnvelope) -> bool {
             | ACCOUNT_UPDATED_EVENT
             | ACCOUNT_LOGIN_COMPLETED_EVENT
             | PROJECT_CHANGED_EVENT
+            | FRONTEND_UPDATED_EVENT
             | THREAD_PROJECT_UPDATED_EVENT
             | THREAD_SETTINGS_UPDATED_EVENT
             | THREAD_GOAL_CHANGED_EVENT
@@ -222,6 +224,8 @@ mod tests {
             exclude_thread_id: None,
             include_global: None,
             thread_ids: None,
+            include_debug_events: None,
+            include_command_outputs: None,
         };
         let replay = workspace_sse_replay_events(
             vec![
@@ -256,6 +260,8 @@ mod tests {
             exclude_thread_id: None,
             include_global: Some(true),
             thread_ids: Some("thread-1,thread-1, thread-2".to_string()),
+            include_debug_events: None,
+            include_command_outputs: None,
         };
 
         let replay = workspace_sse_replay_events(
@@ -293,6 +299,8 @@ mod tests {
             exclude_thread_id: None,
             include_global: Some(true),
             thread_ids: Some("thread-1".to_string()),
+            include_debug_events: None,
+            include_command_outputs: None,
         };
 
         let replay = workspace_sse_replay_events(
@@ -324,6 +332,8 @@ mod tests {
             exclude_thread_id: None,
             include_global: Some(true),
             thread_ids: Some("thread-1,thread-1,thread-2".to_string()),
+            include_debug_events: None,
+            include_command_outputs: None,
         };
 
         let replay = workspace_sse_replay_events(

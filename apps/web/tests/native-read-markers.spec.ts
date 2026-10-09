@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../src/test/canonicalPayloadFixture";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import type { ThreadRead, ThreadTimelineRow } from "../src/api/client";
@@ -135,7 +136,7 @@ function read(latest: string, seen: string | null, revision: number): ThreadRead
 
 function row(turnId: string): ThreadTimelineRow {
   const id = `answer-${turnId}`;
-  return { id, turnId, kind: "assistant_message", status: "completed", displayOrder: 1, items: [], collapsedRows: [], fileChanges: [],
+  return { id, turnId, kind: "assistant_message", status: "completed", displayOrder: 1,
     item: { id, threadId: "settings-chat", turnId, itemId: id, itemType: "agentMessage", status: "completed", displayOrder: 1, codexMethod: "item/completed",
-      payload: { source: "appServerSnapshot", turnId, itemId: id, itemSnapshot: { id, itemType: "agentMessage" }, item: { id, type: "agentMessage", phase: "final_answer", text: `Native answer ${turnId}` } } } };
+      payload: compactCanonicalPayload({ id, type: "agentMessage", phase: "final_answer", text: `Native answer ${turnId}` }, { id, itemType: "agentMessage" }) } };
 }

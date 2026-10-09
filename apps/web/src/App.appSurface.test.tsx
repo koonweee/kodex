@@ -43,13 +43,10 @@ describe("app surface pane integration", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
-    expect(document.querySelector(".kodex-workspace-dock")).not.toBeInTheDocument();
     await userEvent.click(await screen.findByRole("button", { name: /open app surface/i }));
 
     expect(await screen.findByTitle(/app surface: generated mockups/i)).toBeInTheDocument();
-    expect(document.querySelector(".kodex-workspace-dock")).not.toBeInTheDocument();
-    expect(document.querySelector(".dockview")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/message composer/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: /message composer/i })).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /switch workspace pane/i }));
     const paneManager = await screen.findByRole("dialog", { name: /active panes/i });

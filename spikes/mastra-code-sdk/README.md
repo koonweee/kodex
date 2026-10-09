@@ -162,6 +162,23 @@ The host owns terminal processes independently of Mastra sessions, as the Rust g
 
 Build the web app with `cd apps/web && VITE_KODEX_BACKEND=mastra npm run build` from the repository root. Set `KODEX_FRONTEND_DIST` to that build's absolute `apps/web/dist` path when launching this backend to serve the app and native API on the same localhost origin. Unset keeps API-only development serving. The configured directory must contain a readable index.html; updated assets are read without restarting this optional static server. This does not change the local/VPN-only deployment assumption or deploy the production service.
 
+After replacing the served build, publish its revision through the existing typed native `frontendUpdated({revision})` command. For the default port and the build path above, run this from the repository root:
+
+```sh
+cd spikes/mastra-code-sdk
+node --input-type=module <<'NODE'
+import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { createORPCClient } from '@orpc/client';
+import { RPCLink } from '@orpc/client/fetch';
+const client = createORPCClient(new RPCLink({ url: 'http://127.0.0.1:8789/rpc' }));
+const revision = createHash('sha256').update(await readFile('../../apps/web/dist/index.html')).digest('hex');
+await client.frontendUpdated({ revision });
+NODE
+```
+
+Connected tabs observe `watchFrontendUpdates()` and ask the shared PWA lifecycle to check the worker. Reconnect also checks, recovering missed publications and backend restarts. The host keeps only its current volatile marker; it does not watch files or persist a deployment history. The shared Update available notice requires explicit acceptance before reload, preserving current drafts. Bootstrap failures keep those shared update controls available. This publication command does not add integration with the installed production service controller or a deployment subsystem.
+
 Web Push uses `KODEX_VAPID_PUBLIC_KEY`, `KODEX_VAPID_PRIVATE_KEY` and `KODEX_VAPID_SUBJECT`; all three are required. Optional `KODEX_NOTIFICATIONS_RECHECK_DELAY_MS` defaults to 2000. Device subscriptions and delivery attempts live in the dedicated profile's app-data `push.db`, separate from native memory and volatile completion/read knowledge. Restart can resume captured transport jobs, but cannot recover unread status. Notifications preferences reuses Enable, Disable and Test with native typed API calls. Browser HTTPS is required outside localhost; use the existing local/VPN deployment setup.
 
 After a native production build, run `cd apps/web && npx playwright test --config playwright.mastra-pwa.config.ts` from the repo root for disposable same-origin browser verification. It installs the real built worker and mocks only provider/device delivery APIs. Actual OS/provider delivery is manual; this suite does not send to a real provider.

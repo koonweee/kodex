@@ -213,7 +213,8 @@ it('clears accepted uncertain Queue input without restoring a duplicate draft an
   rpc.queue.mockResolvedValue({ accepted: false, outcome: 'uncertain', rowId: 'saved', snapshot: saved });
   const view = renderComposer({ id: 'pane', kind: 'thread', target: { mode: 'existing', threadId: 'chat' } }, initial);
   await userEvent.type(screen.getByLabelText('Message composer'), 'Saved native input');
-  await userEvent.keyboard('{Meta>}{Enter}{/Meta}');
+  await userEvent.click(screen.getByRole('button', { name: 'Open attachment menu' }));
+  await userEvent.click(screen.getByRole('menuitem', { name: 'Queue message' }));
   await waitFor(() => expect(rpc.queue).toHaveBeenCalledWith({ chatId: 'chat', text: 'Saved native input' }));
   await waitFor(() => expect(screen.getByLabelText('Message composer')).toHaveValue(''));
   expect(onError).not.toHaveBeenCalled();
@@ -229,7 +230,8 @@ it('restores the existing composer draft after a lost Queue reply with an explic
   const current = snapshot(); const initial = { ...current, display: { ...current.display, isRunning: true } };
   renderComposer({ id: 'pane', kind: 'thread', target: { mode: 'existing', threadId: 'chat' } }, initial);
   await userEvent.type(screen.getByLabelText('Message composer'), 'Keep this input');
-  await userEvent.keyboard('{Meta>}{Enter}{/Meta}');
+  await userEvent.click(screen.getByRole('button', { name: 'Open attachment menu' }));
+  await userEvent.click(screen.getByRole('menuitem', { name: 'Queue message' }));
   await waitFor(() => expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('Delivery could not be confirmed') })));
   expect(screen.getByLabelText('Message composer')).toHaveValue('Keep this input');
   expect(rpc.queue).toHaveBeenCalledTimes(1);
@@ -440,4 +442,17 @@ it('uses the native catalog for shared skill selection without legacy skills req
   await userEvent.keyboard('{Enter}'); expect(composer).toHaveValue('$native-review ');
   expect(rpc.listSkills).toHaveBeenCalledWith({ chatId: 'chat' }, { signal: expect.any(AbortSignal) });
   expect(gateway.callsFor('GET', '/v1/skills')).toHaveLength(0);
+});
+
+it.each([false, true])('uses native alternate routing for filled CmdEnter with pending queue %s', async pending => {
+  setup();
+  const current = snapshot();
+  const queued = { ...nativeQueueFixture(), nativeCount: 1, rows: [{ id: 'row', nativeSignalId: 'signal', status: 'queued' as const, input: { text: 'Waiting input' } }] };
+  renderComposer({ id: 'pane', kind: 'thread', target: { mode: 'existing', threadId: 'chat' } }, { ...current, queue: pending ? queued : current.queue });
+  await userEvent.type(screen.getByLabelText('Message composer'), 'Alternate native input');
+  await userEvent.keyboard('{Meta>}{Enter}{/Meta}');
+  await waitFor(() => expect(rpc.send).toHaveBeenCalledWith({ chatId: 'chat', queueIfEmpty: true, text: 'Alternate native input' }));
+  expect(rpc.queue).not.toHaveBeenCalled();
+  expect(onError).not.toHaveBeenCalled();
+  expect(screen.getByLabelText('Message composer')).toHaveValue('');
 });

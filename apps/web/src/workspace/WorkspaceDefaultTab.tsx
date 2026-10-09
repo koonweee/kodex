@@ -1,19 +1,12 @@
+import { Tooltip } from "@mantine/core";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { DockviewDefaultTab, type IDockviewPanelHeaderProps } from "dockview";
-import { X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type HTMLAttributes, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { useSynchronizedAnimation } from "../ui/useSynchronizedAnimation";
 import type { WorkspacePane } from "./paneTypes";
 import { useWorkspace } from "./WorkspaceProvider";
 import { ThreadStatusIndicator, threadIndicatorState } from "../threads/ThreadStatusIndicator";
 
 type DockviewPaneParams = { activePaneId: string | null; pane: WorkspacePane };
-
-type DockviewTabRuntimeProps = IDockviewPanelHeaderProps<DockviewPaneParams> & {
-  closeActionOverride?: () => void;
-  hideClose?: boolean;
-  onPointerDown?: (event: PointerEvent<HTMLDivElement>) => void;
-  onPointerLeave?: (event: PointerEvent<HTMLDivElement>) => void;
-  onPointerUp?: (event: PointerEvent<HTMLDivElement>) => void;
-};
 
 export function WorkspaceDefaultTab(props: IDockviewPanelHeaderProps<DockviewPaneParams>) {
   const { paneHeaderAdornmentsById, paneTabStatusById, threadSummariesById, paneThreadContextsById } = useWorkspace();
@@ -24,9 +17,10 @@ export function WorkspaceDefaultTab(props: IDockviewPanelHeaderProps<DockviewPan
   const indicatorState = thread ? threadIndicatorState(thread)
     : pane.kind === "thread" && pane.target.mode === "existing" && paneContext?.id === pane.target.threadId
       ? paneContext.indicatorState : null;
+  const animationRef = useSynchronizedAnimation<HTMLSpanElement>(indicatorState);
   const syncing = paneHeaderAdornmentsById[props.api.id];
   const headerAdornment = indicatorState === "running"
-    ? <span className="kodex-workspace-tab-running" aria-label="Thread in progress" role="status" />
+    ? <span ref={animationRef} className="kodex-workspace-tab-running" aria-label="Thread in progress" role="status" />
     : indicatorState ? <ThreadStatusIndicator state={indicatorState} />
     : syncing ? <span aria-label="Pane syncing" role="status" title="Pane syncing">{syncing}</span> : null;
   const terminalStatus = pane.kind === "terminal" ? paneTabStatusById[props.api.id] : undefined;
@@ -34,119 +28,61 @@ export function WorkspaceDefaultTab(props: IDockviewPanelHeaderProps<DockviewPan
     "kodex-workspace-tab",
     pane.kind === "terminal" ? "kodex-workspace-terminal-tab" : null,
     terminalStatus ? `kodex-workspace-terminal-tab-${terminalStatus}` : null,
-    headerAdornment ? "kodex-workspace-tab-with-adornment" : null,
   ].filter(Boolean).join(" ");
 
-  if (!headerAdornment) {
-    return <DockviewDefaultTab {...props} className={tabClassName} />;
-  }
+  const tabRef = useRef<HTMLDivElement>(null);
+  const [title, setTitle] = useState(props.api.title ?? "");
+  const [titleClipped, setTitleClipped] = useState(false);
+  useLayoutEffect(() => {
+    setTitle(props.api.title ?? "");
+    const subscription = props.api.onDidTitleChange((event) => setTitle(event.title ?? ""));
+    return () => subscription.dispose();
+  }, [props.api]);
 
-  return (
-    <WorkspaceTabWithAdornment
-      {...props}
-      adornment={headerAdornment}
-      running={indicatorState === "running"}
-      className={tabClassName}
-    />
-  );
-}
-
-function WorkspaceTabWithAdornment({
-  adornment,
-  running,
-  className,
-  ...props
-}: IDockviewPanelHeaderProps<DockviewPaneParams> & { adornment: ReactNode; running: boolean; className: string }) {
-  const {
-    api,
-    closeActionOverride,
-    containerApi: _containerApi,
-    hideClose,
-    onPointerDown,
-    onPointerLeave,
-    onPointerUp,
-    params: _params,
-    tabLocation: _tabLocation,
-    ...rest
-  } = props as DockviewTabRuntimeProps;
-  const title = useDockviewPanelTitle(api);
-  const isMiddleMouseButton = useRef(false);
-  const restProps = rest as HTMLAttributes<HTMLDivElement>;
-  const mergedClassName = [restProps.className, className, "dv-default-tab"].filter(Boolean).join(" ");
-
-  const onClose = useCallback((event: MouseEvent<HTMLElement> | PointerEvent<HTMLElement>) => {
-    event.preventDefault();
-    if (closeActionOverride) {
-      closeActionOverride();
-      return;
+  const measureTitle = useCallback(() => {
+    const tab = tabRef.current;
+    const content = tab?.querySelector<HTMLElement>(".dv-default-tab-content");
+    if (!tab || !content) return;
+    let visibleRight = content.getBoundingClientRect().right;
+    // Native close controls and status adornments overlay the title's right edge.
+    for (const overlay of tab.querySelectorAll<HTMLElement>(".dv-default-tab-action, .kodex-workspace-pane-title-adornment")) {
+      const style = getComputedStyle(overlay);
+      const bounds = overlay.getBoundingClientRect();
+      if (style.visibility !== "hidden" && style.display !== "none" && Number(style.opacity) > 0 && bounds.width > 0) {
+        visibleRight = Math.min(visibleRight, bounds.left);
+      }
     }
-    api.close();
-  }, [api, closeActionOverride]);
-
-  const onClosePointerDown = useCallback((event: PointerEvent<HTMLElement>) => {
-    event.preventDefault();
+    const range = document.createRange();
+    range.selectNodeContents(content);
+    setTitleClipped((range.getBoundingClientRect?.().right ?? 0) > visibleRight + 0.5);
   }, []);
 
-  const handlePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    isMiddleMouseButton.current = event.button === 1;
-    onPointerDown?.(event);
-  }, [onPointerDown]);
+  useLayoutEffect(() => {
+    const tab = tabRef.current;
+    const content = tab?.querySelector<HTMLElement>(".dv-default-tab-content");
+    if (!tab || !content) return;
+    measureTitle();
+    const observer = new ResizeObserver(measureTitle);
+    observer.observe(tab);
+    observer.observe(content);
+    document.fonts?.addEventListener("loadingdone", measureTitle);
+    return () => {
+      observer.disconnect();
+      document.fonts?.removeEventListener("loadingdone", measureTitle);
+    };
+  }, [title, indicatorState, syncing, measureTitle]);
 
-  const handlePointerUp = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    if (isMiddleMouseButton.current && event.button === 1 && !hideClose) {
-      isMiddleMouseButton.current = false;
-      onClose(event);
-    }
-    onPointerUp?.(event);
-  }, [hideClose, onClose, onPointerUp]);
-
-  const handlePointerLeave = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    isMiddleMouseButton.current = false;
-    onPointerLeave?.(event);
-  }, [onPointerLeave]);
-
+  const inlineAdornment = headerAdornment && indicatorState !== "running";
+  const unread = indicatorState === "unread";
+  const tooltipLabel = titleClipped && title
+    ? <>{title}{unread ? <><br />Unread completed agent turn</> : null}</>
+    : "Unread completed agent turn";
   return (
-    <div
-      {...restProps}
-      className={mergedClassName}
-      data-testid="dockview-dv-default-tab"
-      onPointerDown={handlePointerDown}
-      onPointerLeave={handlePointerLeave}
-      onPointerUp={handlePointerUp}
-    >
-      {running ? adornment : null}
-      <span className="dv-default-tab-content kodex-workspace-tab-content">
-        <span className="kodex-workspace-tab-title">{title}</span>
-        {!running ? <span
-          className="kodex-workspace-pane-title-adornment"
-        >
-          {adornment}
-        </span> : null}
-      </span>
-      {!hideClose ? (
-        <div className="dv-default-tab-action" onClick={onClose} onPointerDown={onClosePointerDown}>
-          <span aria-hidden="true" className="dv-react-part kodex-workspace-tab-close-icon">
-            <X size={11} strokeWidth={2.2} />
-          </span>
-        </div>
-      ) : null}
-    </div>
+    <Tooltip label={tooltipLabel} disabled={!titleClipped && !unread} multiline maw="min(480px, calc(100vw - 24px))">
+      <div ref={tabRef} onMouseEnter={measureTitle} onMouseLeave={measureTitle} className={tabClassName} data-inline-adornment={inlineAdornment ? "true" : undefined} data-unread={indicatorState === "unread" ? "true" : undefined}>
+        <DockviewDefaultTab {...props} />
+        {inlineAdornment ? <span className="kodex-workspace-pane-title-adornment">{headerAdornment}</span> : headerAdornment}
+      </div>
+    </Tooltip>
   );
 }
-
-function useDockviewPanelTitle(api: IDockviewPanelHeaderProps<DockviewPaneParams>["api"]) {
-  const [title, setTitle] = useState(api.title);
-  useEffect(() => {
-    const disposable = api.onDidTitleChange((event) => {
-      setTitle(event.title);
-    });
-    if (title !== api.title) {
-      setTitle(api.title);
-    }
-    return () => {
-      disposable.dispose();
-    };
-  }, [api, title]);
-  return title;
-}
-

@@ -1,26 +1,21 @@
 import "../styles/workspace.css";
 
-import { ActionIcon, Alert, Button, Center, Drawer, Group, Loader, Stack, Text } from "@mantine/core";
+import { ActionIcon, Button, Drawer, Group, Stack, Text } from "@mantine/core";
 import { Check, PanelLeftOpen, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 import { paneTitle } from "./paneTypes";
-import { WorkspacePaneRenderer } from "./paneRegistry";
 import { useWorkspace } from "./WorkspaceProvider";
 
-export function WorkspaceSinglePaneShell() {
+export function WorkspaceSinglePaneHeader({ onClosePane }: { onClosePane?: (paneId: string, nextActivePaneId: string | null) => void }) {
   const {
     closePane,
     focusPane,
-    isLoading,
     onShowMobileSidebar,
-    onVisiblePaneIdsChange,
-    focusPulseByPaneId,
     paneHeaderAdornmentsById,
     paneHeaderActionsById,
     workspace,
-    workspaceError,
   } = useWorkspace();
   const [paneManagerOpened, setPaneManagerOpened] = useState(false);
   const activePane = useMemo(() => {
@@ -33,7 +28,6 @@ export function WorkspaceSinglePaneShell() {
   const activePaneAdornment = activePane ? paneHeaderAdornmentsById[activePane.id] ?? null : null;
   const activePaneActions = activePane ? paneHeaderActionsById[activePane.id] : null;
   const recentPanes = useMemo(() => [...workspace.panes].reverse(), [workspace.panes]);
-  const focusPulseToken = activePane ? focusPulseByPaneId[activePane.id] ?? 0 : 0;
   const nextActivePaneId = useMemo(() => {
     if (!activePane) {
       return null;
@@ -45,34 +39,14 @@ export function WorkspaceSinglePaneShell() {
     return workspace.panes[activeIndex + 1]?.id ?? workspace.panes[activeIndex - 1]?.id ?? null;
   }, [activePane?.id, workspace.panes]);
   const closeWorkspacePane = (paneId: string) => {
-    closePane(paneId, null, { nextActivePaneId: paneId === activePane?.id ? nextActivePaneId : null });
+    const nextPaneId = paneId === activePane?.id ? nextActivePaneId : null;
+    if (onClosePane) onClosePane(paneId, nextPaneId);
+    else closePane(paneId, null, { nextActivePaneId: nextPaneId });
   };
 
-  useEffect(() => {
-    onVisiblePaneIdsChange(activePane ? [activePane.id] : []);
-    return () => onVisiblePaneIdsChange([]);
-  }, [activePane?.id, onVisiblePaneIdsChange]);
-
-  if (isLoading) {
-    return (
-      <Center className="kodex-workspace-state" data-testid="workspace-loading">
-        <Loader size="sm" />
-      </Center>
-    );
-  }
-
-  if (workspaceError || !activePane) {
-    return (
-      <Center className="kodex-workspace-state">
-        <Alert color="red" title="Workspace unavailable">
-          {workspaceError?.message ?? "The workspace could not be loaded."}
-        </Alert>
-      </Center>
-    );
-  }
+  if (!activePane) return null;
 
   return (
-    <Stack className="kodex-workspace-single-pane-shell" data-testid="workspace-single-pane-shell" gap={0}>
       <Group className="kodex-workspace-single-pane-header" gap={6} wrap="nowrap">
         <AdaptiveIconButton
           className="kodex-workspace-single-pane-sidebar-button"
@@ -177,20 +151,5 @@ export function WorkspaceSinglePaneShell() {
           {activePaneActions}
         </div>
       </Group>
-      {workspace.panes.filter((pane) => pane.id === activePane.id || (pane.kind === "thread" && pane.target.mode === "draft")).map((pane) => (
-        <div
-          className="kodex-workspace-pane-host kodex-workspace-single-pane-host"
-          data-pane-kind={pane.kind}
-          hidden={pane.id !== activePane.id}
-          style={pane.id !== activePane.id ? { display: "none" } : undefined}
-          key={pane.id}
-        >
-          <WorkspacePaneRenderer pane={pane} isActive={pane.id === activePane.id} />
-          {pane.id === activePane.id && focusPulseToken ? (
-            <span aria-hidden="true" className="kodex-workspace-pane-focus-pulse" key={focusPulseToken} />
-          ) : null}
-        </div>
-      ))}
-    </Stack>
   );
 }

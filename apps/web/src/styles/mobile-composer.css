@@ -1,49 +1,155 @@
-.kodex-composer-shell[data-inline-density="mobile"] .kodex-composer {
+.kodex-composer-attachment-target {
+  display: flex;
+}
+
+.kodex-composer-shell[data-inline-density="compact"] .kodex-composer {
   border-radius: var(--kodex-radius-composer);
   padding: 10px 10px 8px;
 }
 
-.kodex-composer-shell[data-inline-density="mobile"] .kodex-composer-toolbar,
+.kodex-composer-shell[data-inline-density="compact"] .kodex-composer-toolbar,
 .kodex-mobile-composer-expanded .kodex-composer-toolbar {
   flex-wrap: nowrap;
 }
 
-.kodex-composer-shell[data-inline-density="mobile"] .kodex-composer-toolbar-left,
+.kodex-composer-shell[data-inline-density="compact"] .kodex-composer-toolbar-left,
 .kodex-mobile-composer-expanded .kodex-composer-toolbar-left {
   min-width: 0;
 }
 
-.kodex-composer-shell[data-inline-density="mobile"] .kodex-composer-footer-controls,
+.kodex-composer-shell[data-inline-density="compact"] .kodex-composer-footer-controls,
 .kodex-mobile-composer-expanded .kodex-composer-footer-controls {
   min-width: 0;
 }
 
-.kodex-composer-shell[data-inline-density="mobile"] .kodex-composer-control,
-.kodex-mobile-composer-expanded .kodex-composer-control {
-  max-width: 132px;
+/* A separate surface morphs while the native input and controls stay crisp. */
+.kodex-composer[data-inline-motion="true"] {
+  background: transparent;
+  box-shadow: none;
 }
 
-.kodex-composer-shell[data-inline-density="mobile"] .kodex-composer-textarea textarea {
-  min-height: 44px;
-  max-height: min(32dvh, 220px);
-  font-size: 16px;
-}
-
-.kodex-thread-pane-existing > .kodex-composer-shell[data-inline-density="mobile"]:not(.kodex-mobile-composer-expanded) {
-  margin-bottom: calc(var(--kodex-pane-edge-space) + 4px + env(safe-area-inset-bottom));
-}
-
-.kodex-mobile-composer-keyboard-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 29;
-  background: var(--kodex-bg-shell);
+.kodex-composer-shadow,
+.kodex-composer-surface {
+  position: absolute;
+  border-radius: inherit;
   pointer-events: none;
 }
 
-.kodex-composer-shell[data-inline-density="mobile"].kodex-mobile-composer-expanded {
-  position: fixed;
-  top: var(--kodex-mobile-visual-viewport-offset-top, 0px);
+.kodex-composer-shadow {
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: -2;
+  height: 100%;
+  box-shadow: var(--kodex-composer-shadow);
+}
+
+.kodex-composer-surface {
+  inset: 0;
+  z-index: -1;
+  background: var(--kodex-bg-raised);
+  transform-origin: left bottom;
+}
+
+/* Flatten only layout wrappers; the textarea and controls stay mounted. */
+.kodex-composer-shell .kodex-composer[data-idle-compact="true"] {
+  border-radius: var(--kodex-radius-composer-compact);
+  padding: 8px 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  grid-template-rows: auto;
+  align-items: center;
+  column-gap: 4px;
+}
+
+.kodex-composer[data-idle-compact="true"] .kodex-composer-toolbar,
+.kodex-composer[data-idle-compact="true"] .kodex-composer-toolbar-left {
+  display: contents;
+}
+
+.kodex-composer[data-idle-compact="true"] .kodex-composer-attachment-target {
+  grid-area: 1 / 1;
+}
+
+.kodex-composer[data-idle-compact="true"] .kodex-composer-textarea {
+  grid-area: 1 / 2;
+  min-width: 0;
+}
+
+.kodex-composer[data-idle-compact="true"] .kodex-composer-textarea textarea {
+  min-height: 32px;
+  max-height: 32px;
+  line-height: 32px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.kodex-composer[data-idle-compact="true"] .kodex-composer-footer-controls {
+  grid-area: 1 / 3;
+}
+
+.kodex-composer[data-idle-compact="true"] .kodex-composer-toolbar-left > .kodex-adaptive-icon-button:not(.kodex-composer-secondary-action) {
+  grid-area: 1 / 4;
+}
+
+.kodex-composer[data-idle-compact="true"] .kodex-composer-action {
+  grid-area: 1 / 5;
+}
+
+/* Keep a usable editable strip when every optional status slot is present. */
+@container kodex-composer (max-width: 320px) {
+  .kodex-composer[data-idle-compact="true"]:has(.kodex-composer-fast-indicator):has(.kodex-goal-icon)
+    .kodex-composer-control-slot:has(.kodex-context-usage) {
+    display: none;
+  }
+}
+
+/* Editable size and safe areas follow touch capability, independently of density. */
+@media (pointer: coarse), (any-pointer: coarse) {
+  .kodex-composer-textarea textarea {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .kodex-composer[data-idle-compact="true"] .kodex-composer-textarea textarea {
+    min-height: 44px;
+    max-height: 44px;
+    line-height: 44px;
+  }
+
+  .kodex-thread-pane-existing > .kodex-composer-shell:not(.kodex-mobile-composer-expanded) {
+    margin-bottom: calc(var(--kodex-pane-edge-space) + env(safe-area-inset-bottom));
+  }
+
+  .kodex-thread-pane-existing > .kodex-composer-shell[data-focus-session="true"]:not(.kodex-mobile-composer-expanded) {
+    margin-bottom: calc(
+      var(--kodex-pane-edge-space) + var(--kodex-mobile-inline-keyboard-inset, 0px) +
+        var(--kodex-mobile-bottom-safe-area, env(safe-area-inset-bottom))
+    );
+  }
+}
+
+/* Fullscreen composition owns single-pane workspace chrome. Keeping the
+   overlay inside its pane avoids escaping Dockview's containment and stacking. */
+.kodex-workspace-shell[data-single-pane="true"]:has(.kodex-mobile-composer-expanded)
+  > .kodex-workspace-single-pane-header {
+  display: none;
+}
+
+/* iOS keyboard chrome is translucent. Preserve the mounted timeline and its
+   scroll state, but leave only an opaque pane surface behind the keyboard. */
+.kodex-thread-pane-existing:has(> .kodex-mobile-composer-expanded) {
+  background: var(--kodex-bg-shell);
+}
+
+.kodex-thread-pane-existing:has(> .kodex-mobile-composer-expanded) > .kodex-thread-pane-status,
+.kodex-thread-pane-existing:has(> .kodex-mobile-composer-expanded) > .kodex-thread-content {
+  visibility: hidden;
+  opacity: 0;
+}
+
+.kodex-composer-shell.kodex-mobile-composer-expanded {
+  position: absolute;
+  top: var(--kodex-mobile-pane-viewport-offset-top, 0px);
   right: 0;
   bottom: var(--kodex-mobile-keyboard-inset, 0px);
   left: 0;
@@ -54,7 +160,7 @@
   justify-self: stretch;
   width: 100%;
   max-width: none;
-  max-height: var(--kodex-mobile-visual-viewport-height, 100dvh);
+  max-height: none;
   margin: 0;
   border: 0;
   border-radius: 0;
@@ -67,20 +173,17 @@
   grid-template-columns: 44px minmax(0, 1fr) 44px;
   align-items: center;
   min-height: 54px;
-  padding: calc(6px + max(0px, env(safe-area-inset-top) - var(--kodex-mobile-visual-viewport-offset-top, 0px)))
-    max(10px, env(safe-area-inset-right)) 6px max(10px, env(safe-area-inset-left));
+  padding: 6px 10px;
   border-bottom: 1px solid var(--kodex-border-subtle);
   text-align: center;
 }
 
-.kodex-composer-shell[data-inline-density="mobile"] .kodex-mobile-composer-expanded-body {
+.kodex-mobile-composer-expanded-body {
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-height: 0;
-  padding: 10px max(12px, env(safe-area-inset-right))
-    calc(12px + var(--kodex-mobile-bottom-safe-area, env(safe-area-inset-bottom)))
-    max(12px, env(safe-area-inset-left));
+  padding: 10px 12px calc(12px + var(--kodex-mobile-bottom-safe-area, env(safe-area-inset-bottom)));
   border-radius: 0;
   box-shadow: none;
   background: var(--kodex-bg-shell);
@@ -102,15 +205,21 @@
 }
 
 .kodex-mobile-composer-textarea .mantine-Textarea-wrapper {
+  display: flex;
   flex: 1 1 0;
   min-height: 0;
 }
 
-.kodex-composer-shell[data-inline-density="mobile"] .kodex-mobile-composer-textarea textarea {
-  /* Constrain autosize without replacing the focused textarea. */
-  min-height: 100%;
+.kodex-mobile-composer-textarea textarea {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100% !important;
+  min-height: 0;
   overscroll-behavior: contain;
   max-height: 100%;
+  overflow-y: auto !important;
   padding: 8px 2px;
   border: 0;
   background: transparent;
@@ -132,7 +241,7 @@
   -webkit-text-fill-color: var(--input-color);
 }
 
-.kodex-composer-shell[data-inline-density="mobile"] .kodex-attachment-tray,
+.kodex-composer-shell[data-inline-density="compact"] .kodex-attachment-tray,
 .kodex-mobile-composer-expanded .kodex-attachment-tray[data-compact="true"] {
   flex-wrap: nowrap;
   gap: 6px;
@@ -143,7 +252,7 @@
   -webkit-overflow-scrolling: touch;
 }
 
-.kodex-composer-shell[data-inline-density="mobile"] .kodex-attachment-thumb,
+.kodex-composer-shell[data-inline-density="compact"] .kodex-attachment-thumb,
 .kodex-mobile-composer-expanded .kodex-attachment-tray[data-compact="true"] .kodex-attachment-thumb {
   flex: 0 0 auto;
   width: 52px;

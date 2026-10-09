@@ -89,7 +89,7 @@ async fn identical_pending_messages_reconcile_only_the_echoed_client_identity() 
         before
             .items
             .iter()
-            .map(|item| item.payload.item.client_id.as_deref())
+            .map(|item| item.payload.client_id.as_deref())
             .collect::<Vec<_>>(),
         vec![Some("client-first"), Some("client-second")]
     );

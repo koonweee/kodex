@@ -2,6 +2,8 @@
 
 ## Status
 
+Historical implementation record. Responsive classification and activation guidance in this completed plan is superseded by the [responsive UI contract](responsive-ui-contract.md). That contract separates pane fit, workspace fit, input availability and actual touch opening; the results below describe the earlier implementation.
+
 Complete. Implemented shared input capability helpers, moved touch/coarse-pointer decisions out of feature-local `matchMedia` checks, split touch ergonomics from width-only layout in composer/sidebar/automations/Mantine styles, and updated contributor guidance in `AGENTS.md`.
 
 Verification completed:

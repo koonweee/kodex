@@ -8,6 +8,7 @@ mod config_writes;
 pub mod directories;
 pub mod events;
 pub mod file_preview;
+pub mod frontend_updates;
 pub mod health;
 pub mod kodex_control_plugin;
 pub mod mcp;
@@ -2328,10 +2329,7 @@ mod tests {
                 let items = serialized_timeline_items(&body["timeline"]);
                 assert_eq!(items.len(), 1);
                 assert_eq!(items[0]["itemId"], "native-control-user");
-                assert_eq!(
-                    items[0]["payload"]["itemSnapshot"]["clientId"],
-                    "control-client"
-                );
+                assert_eq!(items[0]["payload"]["clientId"], "control-client");
                 let requests = app_server.requests.lock().unwrap();
                 assert_eq!(
                     requests[0],
@@ -4448,7 +4446,7 @@ mod tests {
         assert_eq!(body["timeline"]["liveState"], "streaming");
         let items = serialized_timeline_items(&body["timeline"]);
         assert_eq!(items[0]["itemId"], "pending-user-fixture-pending");
-        assert_eq!(items[0]["payload"]["item"]["clientId"], "fixture-pending");
+        assert_eq!(items[0]["payload"]["clientId"], "fixture-pending");
         assert_eq!(
             items[0]["payload"]["item"]["content"][0]["text"],
             "Search Google for OpenAI news"
@@ -5869,6 +5867,11 @@ mod tests {
             .queued_responses
             .lock()
             .unwrap()
+            .push(json!({"goal":null}));
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
             .push(active_thread_read_response("thread-1", "fresh-turn"));
         app_server.queued_responses.lock().unwrap().push(
             json!({"data":[{"id":"fresh-turn", "status":"inProgress", "items":[]}],
@@ -5895,13 +5898,14 @@ mod tests {
         assert_eq!(body["disposition"], "interrupted");
         assert_eq!(body["interruptedTurnId"], "fresh-turn");
         let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests[0].0, "thread/read");
-        assert_eq!(requests[0].1["includeTurns"], false);
-        assert_eq!(requests[1].0, "thread/turns/list");
-        assert_eq!(requests[1].1["itemsView"], "notLoaded");
-        assert_eq!(requests[2].0, "turn/interrupt");
+        assert_eq!(requests[0].0, "thread/goal/get");
+        assert_eq!(requests[1].0, "thread/read");
+        assert_eq!(requests[1].1["includeTurns"], false);
+        assert_eq!(requests[2].0, "thread/turns/list");
+        assert_eq!(requests[2].1["itemsView"], "notLoaded");
+        assert_eq!(requests[3].0, "turn/interrupt");
         assert_eq!(
-            requests[2].1,
+            requests[3].1,
             json!({"threadId": "thread-1", "turnId": "fresh-turn"})
         );
     }
@@ -5909,6 +5913,11 @@ mod tests {
     #[tokio::test]
     async fn interrupt_current_turn_returns_idle_without_interrupting_stale_local_turn() {
         let (state, app_server) = test_state().await;
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(json!({"goal":null}));
         app_server
             .queued_responses
             .lock()
@@ -5930,8 +5939,9 @@ mod tests {
         assert_eq!(body["disposition"], "idle");
         assert_eq!(body["interruptedTurnId"], Value::Null);
         let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].0, "thread/goal/get");
+        assert_eq!(requests[1].0, "thread/read");
     }
 
     #[tokio::test]
@@ -8756,7 +8766,7 @@ mod tests {
 
         let response = app
             .oneshot(
-                Request::get("/v1/events?threadId=thread-2")
+                Request::get("/v1/events?threadId=thread-2&includeCommandOutputs=true")
                     .header("accept", "text/event-stream")
                     .body(Body::empty())
                     .unwrap(),

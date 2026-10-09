@@ -308,10 +308,7 @@ async fn native_revert_does_not_recreate_pending_input_from_a_late_accepted_ack(
         .filter(|row| row["kind"] == "user_message")
         .collect::<Vec<_>>();
     assert_eq!(rows.len(), 1);
-    assert_eq!(
-        rows[0]["item"]["payload"]["itemSnapshot"]["clientId"],
-        "new-client"
-    );
+    assert_eq!(rows[0]["item"]["payload"]["clientId"], "new-client");
     let calls = native.requests.lock().unwrap();
     assert_eq!(
         calls

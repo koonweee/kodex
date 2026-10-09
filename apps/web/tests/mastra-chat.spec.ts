@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pane, send, startBackend, stopBackend } from './fixtures/mastra';
+import { setNativeMenuPreference } from './fixtures/mastra-preferences';
 
 test('existing Kodex UI shares native streaming, queue/stop, tool history and restart state across two tabs', async ({ context, page }) => {
   const root = await mkdtemp(join(tmpdir(), 'kodex-mastra-browser-'));
@@ -84,7 +85,7 @@ test('existing Kodex UI shares native streaming, queue/stop, tool history and re
     for (const tab of [page, second]) await expect(pane(tab).getByText('fixture:AFTER_STOP_EDITED', { exact: true })).toBeVisible();
     await send(page, 'READ_MARKER');
     for (const tab of [page, second]) await expect(pane(tab).getByText('fixture:READ_MARKER', { exact: true })).toBeVisible();
-    await expect(pane(page).getByText('view', { exact: true })).toBeVisible();
+    await expect(pane(page).getByText('Read marker.txt', { exact: true })).toBeVisible();
     for (const tab of [page, second]) await expect(pane(tab).getByText(/BROWSER_TOOL_MARKER/)).toBeVisible();
     await second.reload();
     await expect(pane(second).getByText(/BROWSER_TOOL_MARKER/)).toBeVisible();
@@ -187,7 +188,7 @@ test('project controls share canonical membership while retained chats survive d
 async function openChatActions(page: Page) {
   const showThread = page.getByRole('button', { name: 'Show thread', exact: true });
   if (await showThread.isVisible()) await showThread.click();
-  const activeHost = page.locator('.dv-groupview.dv-active-group:visible, .kodex-workspace-single-pane-shell:visible');
+  const activeHost = page.locator('.dv-groupview.dv-active-group:visible, .kodex-workspace-single-pane-header:visible');
   await activeHost.getByRole('button', { name: 'Thread actions', exact: true }).click();
 }
 
@@ -468,6 +469,8 @@ test('native shell output uses main command rendering without an invented succes
     await pane(tab).locator('.kodex-activity-item > summary').click();
     await expect(pane(tab).getByText('Shell', { exact: true })).toBeVisible();
     await expect(pane(tab).locator('.kodex-command-panel')).toContainText("$ printf 'NATIVE_SHELL_OUTPUT");
+    await expect(pane(tab).locator('.kodex-timeline-output')).toHaveCount(0);
+    await setNativeMenuPreference(tab, 'Show command outputs', true);
     await expect(pane(tab).locator('.kodex-timeline-output')).toContainText('NATIVE_SHELL_OUTPUT');
     await expect(pane(tab).locator('.kodex-timeline-output')).toContainText('Exit code: 7');
     await expect(pane(tab).locator('.kodex-command-panel').getByText('Finished', { exact: true })).toBeVisible();

@@ -26,7 +26,7 @@ for (const shape of [
         fixture.publishTimeline({ ...fixture.detail.timeline, activeTurnId: null, liveState: "idle", turns: [{ id: "turn-1", status: "completed" }] });
         for (const page of [first, second]) {
           await expect(queueRows(page)).toHaveCount(1);
-          await expect(queueRows(page).getByRole("button", { name: "Steer", exact: true })).toHaveCount(0);
+          await expect(queueRows(page).getByRole("button", { name: "Send now", exact: true })).toBeEnabled();
         }
         fixture.publishTimeline({ ...fixture.detail.timeline, activeTurnId: "turn-2", liveState: "streaming", turns: [{ id: "turn-1", status: "completed" }, { id: "turn-2", status: "inProgress" }] });
         for (const page of [first, second]) await expect(queueRows(page).getByRole("button", { name: "Steer", exact: true })).toBeEnabled();
@@ -48,7 +48,7 @@ for (const shape of [
         await expect(userMessages(first, "Correction queued during the first turn")).toHaveCount(1);
         await expect(userMessages(second, "Correction queued during the first turn")).toHaveCount(0);
 
-        // A pending receipt and an empty queue must not trigger a second action.
+        // Checking an empty native front must not replay a pending transfer.
         await composer(first).press("Meta+Enter");
         await composer(first).press("Meta+Enter");
         const connections = fixture.connections.get("second") ?? 0;
@@ -63,7 +63,7 @@ for (const shape of [
         expect(fixture.detail.timeline.rows).toHaveLength(1);
         expect(fixture.detail.timeline.rows[0]).toMatchObject({ turnId: "turn-3", item: { itemId: "native-older-receipt" } });
         expect(fixture.requests.filter((request) => request.key === `POST ${queuePath}/older-queue/steer`).map((request) => request.body)).toEqual([null]);
-        expect(fixture.requests.filter((request) => ["POST /v1/threads/settings-chat/input", `POST ${queuePath}`, `POST ${queuePath}/steer-first`].includes(request.key))).toHaveLength(0);
+        expect(fixture.requests.filter((request) => ["POST /v1/threads/settings-chat/input", `POST ${queuePath}`].includes(request.key))).toHaveLength(0);
       } finally { await fixture.close(); }
       expect(fixture.unexpected).toEqual([]);
       expect(fixture.errors).toEqual([]);
@@ -81,6 +81,7 @@ for (const shape of [
         const second = await fixture.page("second");
         for (const page of [first, second]) await expect(row(page, "Queued correction")).toBeVisible();
         await expect.poll(() => fixture.connected("first") && fixture.connected("second")).toBe(true);
+        if (shape.hasTouch) await composer(first).tap();
         await composer(first).fill("Keep my unsent draft");
         if (shape.hasTouch) await click(first.getByRole("button", { name: "Collapse composer", exact: true }), true);
         await click(row(first, "Queued correction").getByRole("button", { name: "Steer", exact: true }), shape.hasTouch);
@@ -148,6 +149,7 @@ for (const shape of [
         await expect(queueRows(second)).toContainText(["Second queued correction", "First queued correction"]);
         await expect(queueRows(first)).toContainText(["First queued correction", "Second queued correction"]);
         await expect(composer(first)).toHaveValue("");
+        if (shape.hasTouch) await composer(first).tap();
         await composer(first).press("Meta+Enter");
         await expect.poll(() => fixture.transfers.length).toBe(1);
         expect(fixture.transfers[0].nativeQueueId).toBe("shortcut-2");
@@ -192,12 +194,7 @@ for (const shape of [
         }
         await expect.poll(() => calls("POST", "/v1/threads/settings-chat/input").length).toBe(2);
         expect(calls("POST", queuePath)).toHaveLength(0);
-        if (shape.hasTouch) {
-          await submit(first, "First queued work", "Queue message", true);
-        } else {
-          await composer(first).fill("First queued work");
-          await composer(first).press("Meta+Enter");
-        }
+        await submit(first, "First queued work", "Queue message", shape.hasTouch);
         for (const page of [first, second]) {
           await expect(queueRows(page)).toHaveCount(1);
           await expect(queueRows(page).getByRole("button", { name: "Reorder queued message", exact: true })).toHaveCount(0);
@@ -218,7 +215,7 @@ for (const shape of [
         // Editing one known text field retains unfamiliar native input unchanged.
         fixture.queuedInputs[0].input = [{ type: "text", text: "First queued work", nativeAnnotation: "preserve" }, { type: "futureInput", opaque: { keep: true } }];
         fixture.queueChanged();
-        await click(row(first, "First queued work").getByRole("button", { name: "Edit", exact: true }), shape.hasTouch);
+        await click(row(first, "First queued work").getByRole("button", { name: "Modify queued message: First queued work", exact: true }), shape.hasTouch);
         await first.getByLabel("Queued message text", { exact: true }).fill("Edited queued work");
         await click(first.getByRole("button", { name: "Save queued message", exact: true }), shape.hasTouch);
         await expect(row(second, "Edited queued work")).toBeVisible();

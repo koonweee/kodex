@@ -31,7 +31,7 @@ it('shows the native execution policy without legacy requests or misleading sele
   expect(screen.queryByRole('radio', { name: 'Auto review' })).not.toBeInTheDocument();
   expect(getComposerSettings).not.toHaveBeenCalled(); expect(listPermissionProfiles).not.toHaveBeenCalled();
   expect(persistComposerSettings).not.toHaveBeenCalled();
-  await userEvent.click(screen.getByRole('button', { name: 'Appearance' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Interface' }));
   expect(screen.queryByText('Ordinary tools run without per-action approval.')).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Execution' }));
   expect(screen.getByText('Ordinary tools run without per-action approval.')).toBeInTheDocument();

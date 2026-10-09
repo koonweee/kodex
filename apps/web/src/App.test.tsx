@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "./test/canonicalPayloadFixture";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { VirtuosoMockContext } from "react-virtuoso";
@@ -103,13 +104,7 @@ function timelineFromTurns(thread: Record<string, unknown>, turns: ReturnType<ty
         displayOrder,
         codexMethod: turn.status === "completed" ? "item/completed" : "item/upsert",
         timestampMs: displayOrder,
-        payload: {
-          source: "appServerSnapshot",
-          turnId: turn.id,
-          itemId: snapshot.id ?? `item-${displayOrder}`,
-          item: snapshot.rawPayload ?? item,
-          itemSnapshot: item,
-        },
+        payload: compactCanonicalPayload(snapshot.rawPayload ?? item, item),
       };
     }),
   );
@@ -149,17 +144,11 @@ function projectionPatchEvent({
     status: "running",
     timestampMs: displayOrder,
     codexMethod: "item/upsert",
-    payload: {
-      source: "gatewayStream",
-      turnId,
-      itemId,
-      item: { id: itemId, type: "agentMessage", text },
-      itemSnapshot: {
+    payload: compactCanonicalPayload({ id: itemId, type: "agentMessage", text }, {
         id: itemId,
         itemType: "agentMessage",
         rawPayload: { id: itemId, type: "agentMessage", text },
-      },
-    },
+      }),
   };
   return {
     id,
@@ -399,7 +388,7 @@ describe("App shell", () => {
     await userEvent.click(await screen.findByRole("menuitem", { name: /preferences/i }));
 
     expect(await screen.findByRole("dialog", { name: /preferences/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /appearance/i })).toHaveAttribute("data-active", "true");
+    expect(screen.getByRole("button", { name: /interface/i })).toHaveAttribute("data-active", "true");
     const mode = screen.getByRole("radiogroup", { name: "Appearance mode" });
     expect(within(mode).getByRole("radio", { name: "Auto" })).toBeChecked();
     await userEvent.click(within(screen.getByRole("radiogroup", { name: "Browse themes" })).getByRole("radio", { name: "Dark" }));

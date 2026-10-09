@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { buildKodexColorSchemeBootstrapScript, buildKodexColorSchemeCss } from "../src/themeRegistry";
 import { measureTheme } from "./theme-contrast.measure";
 import { nativeSettingsFixture } from "./native-settings.fixture";
 
@@ -9,6 +10,33 @@ async function openAppearance(page: Page) {
   await page.getByRole("menuitem", { name: "Preferences", exact: true }).click();
   return page.getByRole("dialog", { name: "Preferences", exact: true });
 }
+
+test("the inline theme bootstrap paints the saved theme before application styles load", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    localStorage.setItem("kodex-appearance", JSON.stringify({
+      mode: "dark",
+      lightThemeId: "paper-light",
+      darkThemeId: "dracula",
+    }));
+  });
+
+  await page.setContent(`<!doctype html>
+    <html lang="en">
+      <head>
+        <style>${buildKodexColorSchemeCss()}</style>
+        <script>${buildKodexColorSchemeBootstrapScript()}</script>
+      </head>
+      <body></body>
+    </html>`);
+
+  await expect(page.locator("html")).toHaveAttribute("data-kodex-color-scheme", "dracula");
+  await expect(page.locator("html")).toHaveCSS("background-color", "rgb(21, 23, 32)");
+  await expect(page.locator("html")).toHaveCSS("color", "rgb(248, 248, 242)");
+  await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
+  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(21, 23, 32)");
+  await expect(page.locator("body")).toHaveCSS("color", "rgb(248, 248, 242)");
+});
 
 test("Auto follows the system with saved light/dark choices and converges across tabs", async ({ context }) => {
   const fixture = await nativeSettingsFixture(context);
@@ -43,7 +71,7 @@ test("Auto follows the system with saved light/dark choices and converges across
     await composer.focus();
     await expect(composer).toBeFocused();
     const focus = await composer.evaluate(measureTheme);
-    expect(focus.samples[0].focusRatio).toBeGreaterThanOrEqual(3);
+    expect(focus.samples[0].ratio).toBeGreaterThanOrEqual(4.5);
     await first.screenshot({ path: test.info().outputPath("composer-focus.png") });
     expect(fixture.errors).toEqual([]);
     expect(fixture.unexpected).toEqual([]);

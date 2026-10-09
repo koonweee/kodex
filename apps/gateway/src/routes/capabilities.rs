@@ -54,7 +54,7 @@ pub async fn capabilities(State(state): State<AppState>) -> Json<CapabilitiesRes
 
     Json(CapabilitiesResponse {
         gateway: GatewayCapabilities {
-            api_version: crate::api_compatibility::ApiVersion::V2,
+            api_version: crate::api_compatibility::ApiVersion::V3,
             version: env!("CARGO_PKG_VERSION").to_string(),
             instance_id: state.config.instance.id.clone(),
             sse: true,

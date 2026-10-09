@@ -63,7 +63,7 @@ export function PreferencesModal({
             type="button"
             variant={activeSection === "appearance" ? "light" : "subtle"}
           >
-            Appearance
+            Interface
           </Button>
           <Button
             className="kodex-preferences-section-button"

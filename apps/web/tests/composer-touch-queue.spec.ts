@@ -18,7 +18,7 @@ test("touch hold explicitly queues once, clears the draft and converges in anoth
     await expect.poll(() => fixture.connected("first") && fixture.connected("second")).toBe(true);
     const composer = first.getByRole("textbox", { name: "Message composer", exact: true });
     await composer.fill("Queue this from touch");
-    await first.getByRole("button", { name: "Collapse composer", exact: true }).tap();
+    await expect(first.getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
     const cdp = await context.newCDPSession(first);
     await startTouch(cdp, first.getByRole("button", { name: "Send message", exact: true }));
     await expect.poll(() => fixture.queuedInputs.length).toBe(1);
@@ -40,7 +40,7 @@ test("moving a touch cancels the hold and a fresh short tap retains ordinary Sen
     const page = await fixture.page("touch");
     const composer = page.getByRole("textbox", { name: "Message composer", exact: true });
     await composer.fill("Keep this draft after dragging");
-    await page.getByRole("button", { name: "Collapse composer", exact: true }).tap();
+    await expect(page.getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
     const send = page.getByRole("button", { name: "Send message", exact: true });
     const cdp = await context.newCDPSession(page);
     const point = await startTouch(cdp, send);

@@ -201,3 +201,24 @@ test('a fresh gateway process loses volatile pending rows, retains completed nat
   assert.equal(JSON.stringify(snapshot.messages).includes('QUEUE_CRASH_WAITING'), false);
   assert.equal(fixture.requests.length, requestsBefore, 'fresh inventory/history reads never restart lost queued work');
 });
+
+test('alternate Send uses native empty-queue policy and converges another client without routing from its stale view', { timeout: 60_000 }, async t => {
+  const env = await setup('queue-alternate');
+  const hold = fixture.holdNext('ALTERNATE_HEAD');
+  t.after(async () => { hold.release(); await env.close(); });
+  const watch = await env.watch(); await watch.next();
+  await env.first.send({ chatId: env.chat.id, text: 'ALTERNATE_HEAD' }); await hold.reached;
+  const appended = await env.second.send({ chatId: env.chat.id, text: 'ALTERNATE_EMPTY_A', queueIfEmpty: true });
+  assert.equal(appended.accepted, true); assert.ok('outcome' in appended && appended.outcome === 'applied');
+  const queued = await until(watch, value => value.queue.rows.length === 1);
+  assert.equal(queued.queue.rows[0]!.input.text, 'ALTERNATE_EMPTY_A');
+  assert.deepEqual(await env.first.send({ chatId: env.chat.id, text: 'ALTERNATE_PENDING_B', queueIfEmpty: true }), { accepted: true });
+  assert.equal((await env.second.openChat({ chatId: env.chat.id })).queue.rows.length, 1);
+  await assert.rejects(env.first.send({ chatId: env.chat.id, text: 'INVALID_BOTH', queueIfPending: true, queueIfEmpty: true } as never), { code: 'BAD_REQUEST' });
+  await assert.rejects(env.first.send({ chatId: env.chat.id, text: 'INVALID_POLICY', queueIfEmpty: 'yes' } as never), { code: 'BAD_REQUEST' });
+  hold.release();
+  const finished = await until(watch, value => !value.display.isRunning && value.queue.rows.length === 0 && JSON.stringify(value.messages).includes('fixture:ALTERNATE_EMPTY_A'));
+  assert.ok(finished.messages.some(message => JSON.stringify(message.content).includes('ALTERNATE_PENDING_B')));
+  assert.equal(fixture.requests.filter(request => lastUserText(request) === 'ALTERNATE_EMPTY_A').length, 1);
+  assert.equal(fixture.requests.some(request => lastUserText(request).startsWith('INVALID_')), false);
+});

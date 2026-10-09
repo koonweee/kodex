@@ -3,9 +3,10 @@ import type { ThreadSubagentSummary, ThreadViewResponse } from "../src/api/clien
 import { nativeSettingsFixture } from "./native-settings.fixture";
 
 for (const shape of [
-  { name: "desktop", width: 1280, hasTouch: false, isMobile: false },
-  { name: "narrow fine pointer", width: 390, hasTouch: false, isMobile: false },
-  { name: "narrow touch", width: 390, hasTouch: true, isMobile: true },
+  { name: "desktop", width: 1920, hasTouch: false, isMobile: false, compactPane: false },
+  { name: "compact pane wide workspace", width: 1920, hasTouch: false, isMobile: false, compactPane: true },
+  { name: "narrow fine pointer", width: 390, hasTouch: false, isMobile: false, compactPane: false },
+  { name: "narrow touch", width: 390, hasTouch: true, isMobile: true, compactPane: false },
 ]) {
   test.describe(shape.name, () => {
     test.use({ viewport: { width: shape.width, height: 844 }, hasTouch: shape.hasTouch, isMobile: shape.isMobile });
@@ -57,14 +58,31 @@ for (const shape of [
         const first = await fixture.page("first");
         const second = await fixture.page("second");
         for (const page of [first, second]) {
+          const pane = page.locator('.kodex-thread-pane[data-workspace-pane-active="true"]');
+          if (shape.compactPane) {
+            await pane.evaluate((element) => { element.style.width = "440px"; });
+          }
+          const parentTranscript = pane.locator(".kodex-thread-scroll-frame");
+          await expect(parentTranscript).toBeVisible();
           await page.getByRole("button", { name: "Show subagents", exact: true }).click();
           const viewer = page.getByRole("complementary", { name: "Subagent thread viewer", exact: true });
           await expect(viewer).toContainText("Scout");
+          if (shape.compactPane || shape.width < 640) await expect(parentTranscript).not.toBeVisible();
+          else await expect(parentTranscript).toBeVisible();
+          const paneBounds = await pane.boundingBox();
+          const viewerBounds = await viewer.boundingBox();
+          expect(viewerBounds!.x).toBeGreaterThanOrEqual(paneBounds!.x - 1);
+          expect(viewerBounds!.x + viewerBounds!.width).toBeLessThanOrEqual(paneBounds!.x + paneBounds!.width + 1);
+          await page.getByRole("button", { name: "Hide subagents", exact: true }).click();
+          await expect(viewer).toHaveCount(0);
+          await expect(parentTranscript).toBeVisible();
+          await page.getByRole("button", { name: "Show subagents", exact: true }).click();
+          await expect(viewer).toBeVisible();
           await expect(viewer).toContainText("Not loaded");
           await viewer.getByRole("button", { name: "Load more subagents", exact: true }).click();
-          await viewer.getByLabel("Subagent", { exact: true }).click();
+          await viewer.getByRole("textbox", { name: "Subagent", exact: true }).click();
           await page.getByRole("option", { name: "Reviewer", exact: true }).click();
-          await expect(viewer.getByLabel("Subagent", { exact: true })).toHaveValue("Reviewer");
+          await expect(viewer.getByRole("textbox", { name: "Subagent", exact: true })).toHaveValue("Reviewer");
           await expect(viewer).toContainText("Read-only");
           await expect(viewer.getByLabel("Message composer", { exact: true })).toHaveCount(0);
         }
@@ -76,12 +94,13 @@ for (const shape of [
         const firstViewer = first.getByRole("complementary", { name: "Subagent thread viewer", exact: true });
         const secondViewer = second.getByRole("complementary", { name: "Subagent thread viewer", exact: true });
         await expect(firstViewer).toContainText("Scout");
-        await expect(firstViewer.getByLabel("Subagent", { exact: true })).toHaveValue("Scout [explorer]");
-        await expect(secondViewer.getByLabel("Subagent", { exact: true })).toHaveValue("Reviewer");
+        await expect(firstViewer.getByRole("textbox", { name: "Subagent", exact: true })).toHaveValue("Scout [explorer]");
+        // Foreground recovery may converge this client before reconnect; the
+        // forced reconnect below must independently recover the native list.
         const connections = fixture.connections.get("second") ?? 0;
         fixture.disconnect("second");
         await expect.poll(() => fixture.connections.get("second") ?? 0).toBeGreaterThan(connections);
-        await expect(secondViewer.getByLabel("Subagent", { exact: true })).toHaveValue("Scout [explorer]");
+        await expect(secondViewer.getByRole("textbox", { name: "Subagent", exact: true })).toHaveValue("Scout [explorer]");
         await expect(secondViewer).toContainText("Scout");
         expect(mutations).toEqual([]);
 

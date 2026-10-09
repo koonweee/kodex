@@ -7,19 +7,23 @@ import { RPCLink } from '@orpc/client/fetch';
 import type { RouterClient } from '@orpc/server';
 import type { GatewayRouter } from '../../../spikes/mastra-code-sdk/src/gateway-router';
 import { pane, startBackend, stopBackend } from './fixtures/mastra';
+import { observeNativeHistoryReads, setNativeMenuPreference } from './fixtures/mastra-preferences';
 
 test('native saved tool groups and debug payloads remain inspectable across peers and reload', async ({ context, page }, testInfo) => {
   const root = await mkdtemp(join(tmpdir(), 'kodex-mastra-timeline-browser-'));
-  const backend = await startBackend(root);
+  let backend: Awaited<ReturnType<typeof startBackend>> | undefined;
   const api: RouterClient<GatewayRouter> = createORPCClient(new RPCLink({ url: 'http://127.0.0.1:18789/rpc' }));
   const errors: string[] = [], legacy: string[] = [];
+  const historyReads = new Map<Page, ReturnType<typeof observeNativeHistoryReads>>();
   const observe = (tab: Page) => {
+    historyReads.set(tab, observeNativeHistoryReads(tab));
     tab.on('pageerror', error => errors.push(error.message));
     tab.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   };
   observe(page); context.on('page', observe);
   context.on('request', request => { if (new URL(request.url()).pathname.startsWith('/v1/')) legacy.push(request.url()); });
   try {
+    backend = await startBackend(root);
     const project = (await api.listChats()).projects[0]!;
     const chat = await api.createChat({ projectId: project.id });
     await api.renameChat({ chatId: chat.id, title: 'Timeline debug' });
@@ -33,25 +37,38 @@ test('native saved tool groups and debug payloads remain inspectable across peer
       await expect(group).not.toHaveAttribute('open', '');
       await group.locator(':scope > summary').click();
       await group.locator('.kodex-activity-item > summary').click();
-      await expect(group.locator('.kodex-timeline-output')).toBeVisible();
+      await expect(group.locator('.kodex-timeline-output')).toHaveCount(0);
     }
+    const reads = () => [historyReads.get(page)!(), historyReads.get(peer)!()];
+    const beforeToggle = reads();
+    expect(beforeToggle.every(count => count > 0)).toBe(true);
+    await setNativeMenuPreference(page, 'Show command outputs', true);
+    await expect(pane(page).locator('.kodex-timeline-output')).toContainText('NATIVE_SHELL_OUTPUT');
+    await expect(pane(peer).locator('.kodex-timeline-output')).toHaveCount(0);
+    expect(reads()).toEqual(beforeToggle);
+    await setNativeMenuPreference(page, 'Show command outputs', false);
+    await expect(pane(page).locator('.kodex-timeline-output')).toHaveCount(0);
+    expect(reads()).toEqual(beforeToggle);
+    for (const tab of [page, peer]) await setNativeMenuPreference(tab, 'Show command outputs', true);
+    for (const tab of [page, peer]) await expect(pane(tab).locator('.kodex-timeline-output')).toBeVisible();
+    expect(reads()).toEqual(beforeToggle);
     await peer.reload();
     const group = pane(peer).locator('.kodex-activity-group');
     await expect(group).toHaveCount(1);
     await group.locator(':scope > summary').click();
     await group.locator('.kodex-activity-item > summary').click();
+    await expect(group.locator('.kodex-timeline-output')).toHaveCount(0);
+    const afterReload = historyReads.get(peer)!();
+    expect(afterReload).toBeGreaterThan(beforeToggle[1]);
+    await setNativeMenuPreference(peer, 'Show command outputs', true);
     await expect(group.locator('.kodex-timeline-output')).toBeVisible();
-    const showSidebar = peer.getByRole('button', { name: 'Show sidebar', exact: true });
-    const narrowSidebar = await showSidebar.isVisible();
-    if (narrowSidebar) await showSidebar.click();
-    await peer.getByRole('button', { name: 'Account settings', exact: true }).click();
-    await peer.getByRole('menuitemcheckbox', { name: 'Show debug events', exact: true }).click();
-    if (narrowSidebar) await peer.getByRole('button', { name: 'Timeline debug', exact: true }).click();
+    expect(historyReads.get(peer)!()).toBe(afterReload);
+    await setNativeMenuPreference(peer, 'Show debug events', true);
     const debug = group.locator('.kodex-timeline-debug').first();
     await debug.locator(':scope > summary').click();
     await expect(debug.locator('pre')).toContainText('execute_command');
     await expect(debug.locator('pre')).toContainText('NATIVE_SHELL_OUTPUT');
     await peer.screenshot({ path: testInfo.outputPath('native-tool-group-debug.png'), fullPage: true, animations: 'disabled' });
     expect(errors).toEqual([]); expect(legacy).toEqual([]);
-  } finally { await context.close(); await stopBackend(backend); await rm(root, { recursive: true, force: true }); }
+  } finally { await context.close(); if (backend) await stopBackend(backend); await rm(root, { recursive: true, force: true }); }
 });

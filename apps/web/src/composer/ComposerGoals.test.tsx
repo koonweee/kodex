@@ -14,6 +14,9 @@ vi.mock("../api/client", async (importActual) => ({
   getThreadGoal: vi.fn(), updateThreadGoal: vi.fn(), clearThreadGoal: vi.fn(),
 }));
 
+const paneLayout = vi.hoisted(() => ({ compact: false, short: false }));
+vi.mock("../shared/PaneLayout", () => ({ usePaneLayout: () => paneLayout }));
+
 const goal: ThreadGoal = {
   threadId: "thread-1", objective: "Finish the dashboard", status: "active",
   tokenBudget: 20000, tokensUsed: 4000, timeUsedSeconds: 90, createdAt: 1, updatedAt: 2,
@@ -21,7 +24,7 @@ const goal: ThreadGoal = {
 
 function composer(props: Partial<ComponentProps<typeof ComposerPanel>> = {}) {
   const client = createKodexQueryClient();
-  const node = (overrides: Partial<ComponentProps<typeof ComposerPanel>>) => <QueryClientProvider client={client}><MantineProvider><ComposerPanel
+  const node = (overrides: Partial<ComponentProps<typeof ComposerPanel>>) => <QueryClientProvider client={client}><MantineProvider env="test"><ComposerPanel
     activeSelectedTurnId={null} attachmentInputRef={{ current: null }} canCompose composerResetToken={0}
     composerSettings={{ model: "gpt-5.4", fast: false }} composerSettingsError={null}
     goalThreadId="thread-1" isDraftThreadSelected={false} isDraftComposerTransitioning={false}
@@ -39,6 +42,7 @@ const originalMatchMedia = window.matchMedia;
 
 describe("composer goals", () => {
   beforeEach(() => {
+    paneLayout.compact = false;
     vi.mocked(getThreadGoal).mockReset().mockResolvedValue({ goal });
     vi.mocked(updateThreadGoal).mockReset().mockResolvedValue({ goal });
     vi.mocked(clearThreadGoal).mockReset().mockResolvedValue({ cleared: true });
@@ -68,7 +72,8 @@ describe("composer goals", () => {
   });
 
   it.each([false, true])("keeps a paused goal accessible through the narrow icon (touch=%s)", async (touch) => {
-    window.matchMedia = (query) => ({ ...originalMatchMedia(query), matches: query === "(max-width: 900px)" || (touch && query.includes("coarse")) });
+    paneLayout.compact = true;
+    window.matchMedia = (query) => ({ ...originalMatchMedia(query), matches: touch && query.includes("coarse") });
     vi.mocked(getThreadGoal).mockResolvedValue({ goal: { ...goal, status: "paused" } });
     composer();
     await screen.findByRole("button", { name: "Manage goal: Paused" });

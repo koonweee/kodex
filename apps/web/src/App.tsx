@@ -1,4 +1,5 @@
 import { usesMastraBackend } from "./mastra/client";
+import { ThreadDeliveryProvider } from "./timeline/ThreadDeliveryPreferences";
 import { SubagentPaneToggle } from "./threads/SubagentPaneToggle";
 import { CompatibilityNotice } from "./api/CompatibilityNotice";
 import { refreshUnreadBadge } from "./notifications/unreadBadge";
@@ -69,6 +70,7 @@ import type { MarkdownPreviewRequest } from "./files/types";
 import type { ImageLightboxImage } from "./images/types";
 import { useKodexNotifications } from "./notifications/useKodexNotifications";
 import { PwaLifecycle } from "./pwa/PwaLifecycle";
+import { handlePwaLiveEvent } from "./pwa/liveUpdates";
 import type { PreferenceSection } from "./PreferencesModal";
 import {
   applyKodexColorScheme,
@@ -97,10 +99,11 @@ import { useSidebarThreadCaches } from "./threads/useSidebarThreadCaches";
 import { useSidebarThreadsSnapshot } from "./threads/useSidebarThreadsSnapshot";
 import { useThreadMetadata } from "./threads/useThreadMetadata";
 import { mergeThreadReadState, preserveNewerThreadReadState } from "./threads/readState";
-import { threadReadUpdateFromEvent } from "./threads/events";
+import { archivedThreadIdFromEvent, threadReadUpdateFromEvent, unarchivedThreadIdFromEvent } from "./threads/events";
 import { useThreadViewPresence } from "./threads/useThreadViewPresence";
 import { errorMessageFrom } from "./shared/values";
-import { KodexShellView, useNarrowThreadWorkspace } from "./shell/KodexShellView";
+import { KodexShellView } from "./shell/KodexShellView";
+import { useNarrowWorkspace } from "./shared/layoutBreakpoints";
 import {
   currentKodexRoute,
   isThemeWorkbenchRoute,
@@ -209,11 +212,12 @@ function KodexShell({
 }) {
   const [initialRoute] = useState(() => currentKodexRoute());
   const queryClientForShell = useQueryClient();
-  const useSingleThreadWorkspace = useNarrowThreadWorkspace();
+  const useSingleThreadWorkspace = useNarrowWorkspace();
   const [pendingTitleThreadIds, setPendingTitleThreadIds] = useState<Set<string>>(new Set());
   const [materializingThreadIds, setMaterializingThreadIds] = useState<Set<string>>(new Set());
   const [projectFormOpen, setProjectFormOpen] = useState(false);
   const [showDebugEvents, setShowDebugEvents] = useState(false);
+  const [showCommandOutputs, setShowCommandOutputs] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lightboxImage, setLightboxImage] = useState<ImageLightboxImage | null>(null);
   const [markdownPreview, setMarkdownPreview] = useState<MarkdownPreviewRequest | null>(null);
@@ -635,6 +639,13 @@ function KodexShell({
   });
 
   const handleWorkspaceLiveEvent = useEventCallback((event: EventEnvelope) => {
+    handlePwaLiveEvent(event);
+    const archivedThreadId = archivedThreadIdFromEvent(event);
+    if (archivedThreadId) {
+      handleArchivedThreadProjection(archivedThreadId, { clearSelection: false });
+    } else if (unarchivedThreadIdFromEvent(event)) {
+      void refreshProjectState(queryClientForShell);
+    }
     routeGlobalLiveEvent(event, liveRouteHandlers);
   });
   const handleVisibleThreadIdsChange = useEventCallback((threadIds: string[]) => {
@@ -720,13 +731,24 @@ function KodexShell({
     if (!threadId) {
       return;
     }
+    await archiveThreadMutation.mutateAsync(threadId);
+    handleArchivedThreadProjection(threadId, { refillSidebar: false });
+  }
+
+  function handleArchivedThreadProjection(
+    threadId: string,
+    { clearSelection = true, refillSidebar = true }: { clearSelection?: boolean; refillSidebar?: boolean } = {},
+  ) {
     const archivedSelectedThreadId = selectedThreadIdRef.current;
     const shouldSelectDraftAfterArchive = threadId === archivedSelectedThreadId;
     const draftProjectId = selectedProjectIdRef.current;
-    await archiveThreadMutation.mutateAsync(threadId);
     void refreshUnreadBadge(queryClientForShell);
     removeThreadEverywhere(queryClientForShell, threadId);
+    if (refillSidebar) {
+      void refreshProjectState(queryClientForShell);
+    }
     if (
+      clearSelection &&
       shouldSelectDraftAfterArchive &&
       (selectedThreadIdRef.current === archivedSelectedThreadId || selectedThreadIdRef.current === null)
     ) {
@@ -795,6 +817,7 @@ function KodexShell({
   }
 
   const handleArchiveThreadById = useEventCallback((threadId: string) => void handleArchiveThread(threadId));
+  const handleThreadArchived = useEventCallback((threadId: string) => handleArchivedThreadProjection(threadId));
   const handleCloseLightbox = useEventCallback(() => setLightboxImage(null));
   const handleCloseMarkdownPreview = useEventCallback(() => setMarkdownPreview(null));
   const handleOpenMarkdownPreview = useEventCallback((request: MarkdownPreviewRequest) => setMarkdownPreview(request));
@@ -1032,7 +1055,7 @@ function KodexShell({
     [selectedThreadId, subagents.error, subagents.open, subagents.subagents.length, subagents.toggle],
   );
   return (
-    <>
+    <ThreadDeliveryProvider includeDebugEvents={showDebugEvents} includeCommandOutputs={showCommandOutputs}>
       <WorkspaceProvider
         approvals={approvals}
         errorMessage={errorMessage}
@@ -1044,6 +1067,7 @@ function KodexShell({
         onLiveEvent={handleWorkspaceLiveEvent}
         onMarkdownOpen={handleOpenMarkdownPreview}
         onShowMobileSidebar={handleShowMobileSidebar}
+        onThreadArchived={handleThreadArchived}
         onThreadSnapshotLoadFailed={handleThreadPaneSnapshotLoadFailed}
         onThreadSnapshotLoaded={handleThreadPaneSnapshotLoaded}
         onVisibleThreadIdsChange={handleVisibleThreadIdsChange}
@@ -1103,7 +1127,7 @@ function KodexShell({
           onOpenPreferences: handleOpenPreferences, onOpenTerminal: gatewayTerminalAvailable ? handleShowWorkspace : undefined,
           onMoveProject: handleMoveProject, onSelectChatThread: stableHandleSelectChatThread,
           onSelectAutomations: stableHandleSelectAutomations, onSelectPinnedThread: stableHandleSelectPinnedThread, onSelectProjectSettings: stableHandleSelectProjectSettings, onSelectThread: stableHandleSelectThread, onUnpinThread: stableHandleUnpinThread,
-          onShowThread: handleShowMobileThread, onShowDebugEventsChange: setShowDebugEvents, onSidebarCollapseClick: handleSidebarCollapseClick,
+          onShowThread: handleShowMobileThread, onShowDebugEventsChange: setShowDebugEvents, onShowCommandOutputsChange: setShowCommandOutputs, onSidebarCollapseClick: handleSidebarCollapseClick,
           onSidebarExpandClick: handleSidebarExpandClick, onThreadActionHoverChange: setHoveredThreadActionId,
           pinnedThreads,
           pinnedThreadsHasMore: nativePinned.hasMore, pinnedThreadsPaginationState: nativePinned.paginationState,
@@ -1112,7 +1136,7 @@ function KodexShell({
           projectThreadHasMoreById: Object.fromEntries(Object.entries(projectThreadNextCursors).map(([projectId, cursor]) => [projectId, cursor !== null])),
           projectThreadPaginationStateById,
           projects: orderedProjects, selectedMainPane, selectedProjectId, selectedThreadId: selectedMainPane === "thread" ? selectedThreadId : null,
-          showDebugEvents, sidebarWidth, threadsByProjectId, usageLimitLines,
+          showDebugEvents, showCommandOutputs, sidebarWidth, threadsByProjectId, usageLimitLines,
         }}
         workspaceSelectedThreadPaneId={
           selectedMainPane === "thread" && !isSelectedThreadSnapshotDeferred ? routeThreadPaneId ?? unavailableThreadId : null
@@ -1130,6 +1154,6 @@ function KodexShell({
           <MarkdownPreviewPane preview={markdownPreview} threadId={selectedThreadId ?? undefined} onClose={handleCloseMarkdownPreview} />
         </Suspense>
       ) : null}
-    </>
+    </ThreadDeliveryProvider>
   );
 }

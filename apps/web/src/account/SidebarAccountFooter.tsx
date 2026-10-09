@@ -10,7 +10,9 @@ export function SidebarAccountMenu({
   onSelectAutomations,
   onOpenPreferences,
   onShowDebugEventsChange,
+  onShowCommandOutputsChange,
   showDebugEvents,
+  showCommandOutputs = false,
   usageLimitLines,
 }: {
   account: AccountResponse | null;
@@ -18,7 +20,9 @@ export function SidebarAccountMenu({
   onSelectAutomations: () => void;
   onOpenPreferences: () => void;
   onShowDebugEventsChange: (value: boolean) => void;
+  onShowCommandOutputsChange?: (value: boolean) => void;
   showDebugEvents: boolean;
+  showCommandOutputs?: boolean;
   usageLimitLines?: UsageLimitLines | null;
 }) {
   const loginFlow = useDeviceCodeLogin(account);
@@ -33,6 +37,8 @@ export function SidebarAccountMenu({
         onOpenPreferences={onOpenPreferences}
         onShowDebugEventsChange={onShowDebugEventsChange}
         showDebugEvents={showDebugEvents}
+        onShowCommandOutputsChange={onShowCommandOutputsChange}
+        showCommandOutputs={showCommandOutputs}
         usageLimitLines={usageLimitLines}
       />
       <DeviceCodeLoginDialog flow={loginFlow} />

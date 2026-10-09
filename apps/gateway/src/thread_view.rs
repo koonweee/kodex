@@ -598,7 +598,8 @@ impl ThreadView {
                 item_id: item_snapshot.id.clone(),
                 item: compact_timeline_item_payload(&item),
                 item_snapshot,
-            },
+            }
+            .into(),
         };
         replace_or_push(&mut self.items, key, next_item);
         if self.terminal_turn_ids.contains(turn_id) {

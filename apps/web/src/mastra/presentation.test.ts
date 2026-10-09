@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
+import { ThreadDeliveryProvider } from '../timeline/ThreadDeliveryPreferences';
 import { TimelineItemRenderer } from '../timeline/renderers';
 import { defaultDisplayState } from '../../../../spikes/mastra-code-sdk/node_modules/@mastra/core/dist/agent-controller/index.js';
 import { acceptsSnapshot, chatListEntry, timelinePresentation } from './presentation';
@@ -131,12 +132,12 @@ describe('native chat presentation', () => {
     value.messages[1].content.parts = [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'shell', toolName: 'execute_command', state: 'call', args: { command: 'false' } } }];
     value.display.activeTools.set('shell', { name: 'execute_command', args: { command: 'false' }, status: 'running', shellOutput: 'partial output' });
     const toolItem = () => presentationItems(value).filter(item => item.id === 'shell');
-    const rendered = render(createElement(MantineProvider, null, createElement(TimelineItemRenderer, { item: toolItem()[0] })));
+    const rendered = render(createElement(MantineProvider, null, createElement(ThreadDeliveryProvider, { includeCommandOutputs: true, children: createElement(TimelineItemRenderer, { item: toolItem()[0] }) })));
     expect(screen.getByText(/partial output/)).toBeVisible();
     value.display.activeTools.set('shell', { name: 'execute_command', args: { command: 'false' }, status: 'completed', shellOutput: 'partial output', result: 'partial output\nExit code: 1' });
     expect(toolItem()).toHaveLength(1);
     expect(toolItem()[0].output).toBe('partial output\nExit code: 1');
-    rendered.rerender(createElement(MantineProvider, null, createElement(TimelineItemRenderer, { item: toolItem()[0] })));
+    rendered.rerender(createElement(MantineProvider, null, createElement(ThreadDeliveryProvider, { includeCommandOutputs: true, children: createElement(TimelineItemRenderer, { item: toolItem()[0] }) })));
     expect(screen.getByText(/Exit code: 1/)).toBeVisible();
     expect(screen.queryByText('Success', { exact: true })).not.toBeInTheDocument();
   });
@@ -214,7 +215,7 @@ describe('native chat presentation', () => {
     const value = snapshot();
     value.messages[1].content.parts = [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'shell', toolName: 'execute_command', state: 'result', args: { command: 'exit 7' }, result: 'Exit code: 7' } }];
     const item = () => presentationItems(value).filter(item => item.id === 'shell')[0];
-    const rendered = render(createElement(MantineProvider, null, createElement(TimelineItemRenderer, { item: item() })));
+    const rendered = render(createElement(MantineProvider, null, createElement(ThreadDeliveryProvider, { includeCommandOutputs: true, children: createElement(TimelineItemRenderer, { item: item() }) })));
     expect(screen.getByText('Shell')).toBeInTheDocument();
     expect(screen.getByText('$ exit 7')).toBeInTheDocument();
     expect(screen.getByText('Exit code: 7')).toBeInTheDocument();
@@ -225,7 +226,7 @@ describe('native chat presentation', () => {
     expect(item().command).toBe('exit 7');
     expect(item().output).toBe('Exit code: 7');
     value.display.activeTools.get('shell')!.isError = true;
-    rendered.rerender(createElement(MantineProvider, null, createElement(TimelineItemRenderer, { item: item() })));
+    rendered.rerender(createElement(MantineProvider, null, createElement(ThreadDeliveryProvider, { includeCommandOutputs: true, children: createElement(TimelineItemRenderer, { item: item() }) })));
     expect(screen.getByText('Failed')).toBeInTheDocument();
   });
   it('rejects stale snapshots within an epoch and accepts restarted sessions', () => {

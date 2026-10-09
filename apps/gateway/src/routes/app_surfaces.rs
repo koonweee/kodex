@@ -346,6 +346,7 @@ async fn bridge_message(
         Path(session.thread_id.clone()),
         Json(ThreadInputRequest {
             queue_if_pending: false,
+            queue_if_empty: false,
             submission: TurnStartRequest {
                 client_user_message_id: None,
                 input: vec![UserInput::Text {

@@ -31,6 +31,14 @@ test('built native PWA installs its worker and shares Push preferences across ta
   // execution, bundle assets and all Kodex transports use the real built app.
   await context.addInitScript(({ endpoint }) => {
     if (typeof ServiceWorkerRegistration === 'undefined') return; // New tabs begin on about:blank.
+    const observed = window as Window & { fixtureWorkerChecks: number; fixturePendingWorkerChecks: number };
+    observed.fixtureWorkerChecks = 0; observed.fixturePendingWorkerChecks = 0;
+    const update = ServiceWorkerRegistration.prototype.update;
+    ServiceWorkerRegistration.prototype.update = function () {
+      observed.fixtureWorkerChecks++;
+      observed.fixturePendingWorkerChecks++;
+      return update.call(this).finally(() => { observed.fixturePendingWorkerChecks--; }); // Execute the real browser update.
+    };
     Object.defineProperty(Notification, 'permission', { configurable: true, get: () => 'granted' });
     Notification.requestPermission = async () => 'granted';
     const subscription = { endpoint, toJSON: () => ({ endpoint, keys: { p256dh: 'fixture', auth: 'fixture' } }),
@@ -65,6 +73,19 @@ test('built native PWA installs its worker and shares Push preferences across ta
     const peer = await context.newPage(); await peer.goto('/');
     const other = await notifications(peer);
     await expect(other.getByText('Enabled', { exact: true })).toBeVisible();
+    const checks = (tab: Page) => tab.evaluate(() => (window as Window & { fixtureWorkerChecks: number }).fixtureWorkerChecks);
+    for (const tab of [page, peer]) {
+      await expect.poll(() => checks(tab)).toBeGreaterThan(0);
+      await expect.poll(() => tab.evaluate(async () => {
+        const registration = await navigator.serviceWorker.ready;
+        return (window as Window & { fixturePendingWorkerChecks: number }).fixturePendingWorkerChecks === 0 && !registration.installing;
+      })).toBe(true);
+    }
+    const before = await Promise.all([checks(page), checks(peer)]);
+    await api.frontendUpdated({ revision: 'browser-publication-proof' });
+    for (const [index, tab] of [page, peer].entries()) await expect.poll(() => checks(tab)).toBeGreaterThan(before[index]);
+    // A check alone does not reload the open application or dismiss its UI.
+    await expect(dialog).toBeVisible(); await expect(other).toBeVisible();
     await other.getByRole('button', { name: 'Test', exact: true }).click();
     await expect(other.getByText('Test notification sent.', { exact: true })).toBeVisible();
     await expect.poll(async () => (await deliveries()).some(row => row.kind === 'test')).toBe(true);

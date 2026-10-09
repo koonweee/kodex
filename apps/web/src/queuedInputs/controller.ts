@@ -1,5 +1,5 @@
 /** Presentation only; backend-native payloads and write versions stay in adapters. */
-export interface QueueRowView { id: string; input: unknown[]; attachmentCount: number; canSteer: boolean; disabled?: boolean; editDisabled?: boolean }
+export interface QueueRowView { id: string; input: unknown[]; attachmentCount: number; canSteer: boolean; canSendNow?: boolean; sendDisabled?: boolean; disabled?: boolean; editDisabled?: boolean }
 export interface QueueRecoveryView { id: string; input: unknown[]; status: 'uncertain' | 'recoverable'; savedInput?: unknown; error?: string | null }
 export interface QueueController {
   rows: QueueRowView[]; recovery: QueueRecoveryView[]; busy: boolean; error: string | null;

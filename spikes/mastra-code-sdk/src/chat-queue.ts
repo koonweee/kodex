@@ -289,9 +289,9 @@ export function createChatQueue(session: NativeSession, options: { epoch: string
         record.prepared = undefined;
         try {
           const messageInput = typeof message === 'string' || Array.isArray(message) ? { contents: message } : message;
-          // Match native hard steering: abort preserves other queued signals,
-          // and Session.sendSignal owns the abort-aware multipart startup.
-          session.abort();
+          // Active native work keeps hard steering; idle Send now needs no
+          // interruption. Session owns startup with the captured row context.
+          if (session.displayState.get().isRunning) session.abort();
           const native = session.sendSignal({ type: 'user', ...messageInput }, { requestContext: context, requireDelivery: true });
           const settled = native.accepted.then(decision => {
             if (decision.action !== 'wake' && decision.action !== 'deliver') throw new Error('Native steering was not admitted.');

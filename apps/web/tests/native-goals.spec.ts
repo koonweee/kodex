@@ -91,6 +91,37 @@ for (const shape of [
   });
 }
 
+test("Stop pauses the native goal and interrupts the turn across tabs with one command", async ({ context }) => {
+  const fixture = await nativeSettingsFixture(context);
+  const stopPath = "/v1/threads/settings-chat/interrupt-current";
+  try {
+    const first = await fixture.page("first");
+    const second = await fixture.page("second");
+    await expect.poll(() => fixture.connected("first") && fixture.connected("second")).toBe(true);
+    fixture.setGoal(structuredClone(createdGoal));
+    fixture.publishTimeline({ ...fixture.detail.timeline, activeTurnId: "goal-turn", liveState: "streaming",
+      turns: [{ id: "goal-turn", status: "inProgress" }] });
+    for (const page of [first, second]) {
+      await expect(manageGoal(page, "Active")).toBeVisible();
+      await expect(pane(page).getByRole("button", { name: "Stop turn", exact: true })).toBeVisible();
+    }
+
+    await pane(first).getByRole("button", { name: "Stop turn", exact: true }).click();
+
+    for (const page of [first, second]) {
+      await expect(manageGoal(page, "Paused")).toBeVisible();
+      await expect(pane(page).getByRole("button", { name: "Stop turn", exact: true })).toHaveCount(0);
+      await expect(pane(page).getByRole("button", { name: "Send message", exact: true })).toBeVisible();
+    }
+    expect(fixture.requests.filter((entry) => entry.key === `POST ${stopPath}`).map((entry) => entry.client)).toEqual(["first"]);
+    expect(mutations(fixture)).toEqual([]);
+    expect(fixture.goal).toMatchObject({ ...createdGoal, status: "paused" });
+    expect(fixture.detail.timeline).toMatchObject({ activeTurnId: null, liveState: "idle", turns: [{ id: "goal-turn", status: "interrupted" }] });
+  } finally { await fixture.close(); }
+  expect(fixture.unexpected).toEqual([]);
+  expect(fixture.errors).toEqual([]);
+});
+
 test("model-created goals, stale reads, and missed goal events converge without reload", async ({ context }) => {
   const fixture = await nativeSettingsFixture(context);
   const reads = (client: string) => fixture.requests.filter((entry) => entry.client === client && entry.key === `GET ${goalPath}`).length;

@@ -35,7 +35,7 @@ export function NativeComposer({ pane, snapshot, ready, isActive, draftStore, on
     modelScope: chatId ? undefined : JSON.stringify([catalog?.epoch, project?.roots ?? null]),
   });
   const goal = useMastraGoal(chatId, snapshot, ready, onQueueReload);
-  const queue = useMastraQueue(chatId, snapshot?.queue ?? null, onError, onQueueReload);
+  const queue = useMastraQueue(chatId, snapshot?.queue ?? null, onError, onQueueReload, snapshot?.display.isRunning ?? false);
   const submitNative = async (action: () => Promise<unknown>) => {
     try { return await action(); } catch (failure) {
       if (failure instanceof ORPCError && ['BAD_REQUEST', 'CONFLICT', 'NOT_FOUND', 'UNAUTHORIZED', 'FORBIDDEN', 'UNPROCESSABLE_CONTENT', 'TOO_MANY_REQUESTS', 'PRECONDITION_FAILED'].includes(failure.code)) throw failure;
@@ -58,6 +58,10 @@ export function NativeComposer({ pane, snapshot, ready, isActive, draftStore, on
       send: async (id, input, attachments, images, mentions) => {
         const value = nativeComposerInput(input, attachments, images, mentions);
         return submitNative(() => mastraClient.send({ chatId: id, queueIfPending: true, ...value }));
+      },
+      alternate: async (id, input, attachments, images, mentions) => {
+        const value = nativeComposerInput(input, attachments, images, mentions);
+        return submitNative(() => mastraClient.send({ chatId: id, queueIfEmpty: true, ...value }));
       },
       queue: async (id, input, attachments, images, mentions) => {
         const value = nativeComposerInput(input, attachments, images, mentions);

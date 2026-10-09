@@ -40,6 +40,8 @@
   position: relative;
   z-index: 1;
   contain: layout style;
+  container-name: kodex-composer;
+  container-type: inline-size;
   display: grid;
   grid-template-rows: auto auto auto;
   gap: 0;
@@ -112,7 +114,7 @@
   outline-offset: -6px;
 }
 
-.kodex-composer-shell[data-drag-active="true"] .kodex-composer > :not(.kodex-composer-drop-hint) {
+.kodex-composer-shell[data-drag-active="true"] .kodex-composer > :not(.kodex-composer-drop-hint, .kodex-composer-shadow, .kodex-composer-surface) {
   opacity: 0.35;
 }
 
@@ -226,6 +228,11 @@
   line-height: 1.5;
   overflow-y: auto;
   resize: none;
+}
+
+/* Deliberately quieter composer hint; entered text keeps its normal contrast. */
+.kodex-composer-textarea textarea::placeholder {
+  opacity: 0.5;
 }
 
 .kodex-composer-textarea textarea:focus,
@@ -415,7 +422,6 @@
 .kodex-composer-toolbar {
   min-height: 30px;
   margin-top: 6px;
-  gap: 8px;
 }
 
 .kodex-composer-toolbar-left {
@@ -425,22 +431,23 @@
 
 .kodex-composer-footer-controls {
   flex: 1 1 auto;
-  justify-content: space-between;
+  justify-content: flex-end;
   min-width: 0;
 }
 
-.kodex-composer-footer-left,
-.kodex-composer-footer-right {
-  min-width: 0;
-}
-
-.kodex-composer-footer-right {
-  margin-left: auto;
+.kodex-composer-control-slot:has(.kodex-composer-settings-error) {
+  margin-right: auto;
 }
 
 .kodex-composer-action,
 .kodex-composer-secondary-action {
   border-radius: var(--kodex-radius-round);
+}
+
+/* Inset Send and Stop circles while preserving the shared action hit area. */
+.kodex-composer-action:is([data-action-state="idle"], [data-action-state="active"]) {
+  padding: 1px;
+  background-clip: content-box;
 }
 
 .kodex-composer-control {
@@ -493,9 +500,8 @@
   display: inline-grid;
   place-items: center;
   flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
-  margin-right: -3px;
+  width: 100%;
+  height: 100%;
   border-radius: var(--kodex-radius-round);
   color: var(--kodex-text-secondary);
 }
@@ -530,8 +536,8 @@
 .kodex-context-usage {
   display: inline-grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 100%;
+  height: 100%;
   border-radius: var(--kodex-radius-round);
   color: var(--kodex-text-secondary);
 }
@@ -563,12 +569,10 @@
   opacity: 0.65;
 }
 
-@media (max-width: 700px) {
-  .kodex-composer-hero-stage {
-    margin-bottom: 24px;
-  }
+.kodex-composer-shell[data-inline-density="compact"] .kodex-composer-hero-stage {
+  margin-bottom: 24px;
+}
 
-  .kodex-composer-hero {
-    font-size: 30px;
-  }
+.kodex-composer-shell[data-inline-density="compact"] .kodex-composer-hero {
+  font-size: 30px;
 }

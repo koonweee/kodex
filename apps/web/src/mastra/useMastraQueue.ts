@@ -10,7 +10,7 @@ function queueInputView(input: Snapshot['rows'][number]['input']): unknown[] {
     ...(input.images ?? []).map(image => ({ type: 'localImage', path: image.path })),
     ...(input.files ?? []).map(file => ({ type: 'file', path: file.relativePath }))];
 }
-export function useMastraQueue(chatId: string | null, snapshot: Snapshot | null, onError: (error: unknown) => void, onReload?: () => void): QueueController {
+export function useMastraQueue(chatId: string | null, snapshot: Snapshot | null, onError: (error: unknown) => void, onReload?: () => void, isRunning = false): QueueController {
   const scope = JSON.stringify([chatId, snapshot?.epoch]);
   const active = useRef(scope); active.current = scope;
   const generation = useRef(0);
@@ -42,7 +42,7 @@ export function useMastraQueue(chatId: string | null, snapshot: Snapshot | null,
   const rows = snapshot?.rows ?? [];
   const controller: QueueController = {
     rows: rows.filter(row => row.status === 'queued' || row.status === 'steering').map(row => ({ id: row.id,
-      input: queueInputView(row.input), attachmentCount: (row.input.images?.length ?? 0) + (row.input.files?.length ?? 0), canSteer: row.status === 'queued', disabled: row.status === 'steering', editDisabled: snapshot?.partial })),
+      input: queueInputView(row.input), attachmentCount: (row.input.images?.length ?? 0) + (row.input.files?.length ?? 0), canSteer: row.status === 'queued' && isRunning, canSendNow: row.status === 'queued' && !isRunning, disabled: row.status === 'steering', editDisabled: snapshot?.partial })),
     recovery: rows.filter(row => row.status === 'uncertain' || row.status === 'recoverable').map(row => ({ id: row.id,
       input: queueInputView(row.input), savedInput: row.input, status: row.status as 'uncertain' | 'recoverable' })),
     busy: operation?.scope === scope && operation.busy,

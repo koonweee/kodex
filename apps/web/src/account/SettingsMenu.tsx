@@ -1,5 +1,5 @@
 import { Box, Menu } from "@mantine/core";
-import { Bug, Check, CircleUserRound, Clock, LogIn, LogOut, Palette } from "lucide-react";
+import { Bug, Check, CircleUserRound, Clock, LogIn, LogOut, Palette, Terminal } from "lucide-react";
 import { useState } from "react";
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 import { CheckboxMenuItem } from "../ui/CheckboxMenuItem";
@@ -7,6 +7,7 @@ import type { UsageLimitLines } from "./rateLimits";
 
 const ACCOUNT_TEXT = {
   debugEvents: "Show debug events",
+  commandOutputs: "Show command outputs",
   automations: "Automations",
   logout: "Logout",
   preferences: "Preferences",
@@ -22,7 +23,9 @@ export function SettingsMenu({
   onSelectAutomations,
   onOpenPreferences,
   onShowDebugEventsChange,
+  onShowCommandOutputsChange,
   showDebugEvents,
+  showCommandOutputs = false,
   usageLimitLines,
 }: {
   accountLabel: string | null;
@@ -33,7 +36,9 @@ export function SettingsMenu({
   onSelectAutomations: () => void;
   onOpenPreferences: () => void;
   onShowDebugEventsChange: (value: boolean) => void;
+  onShowCommandOutputsChange?: (value: boolean) => void;
   showDebugEvents: boolean;
+  showCommandOutputs?: boolean;
   usageLimitLines?: UsageLimitLines | null;
 }) {
   const [opened, setOpened] = useState(false);
@@ -118,6 +123,13 @@ export function SettingsMenu({
           onChange={onShowDebugEventsChange}
         >
           {ACCOUNT_TEXT.debugEvents}
+        </CheckboxMenuItem>
+        <CheckboxMenuItem
+          checked={showCommandOutputs}
+          leftSection={showCommandOutputs ? <Check size={14} /> : <Terminal size={14} />}
+          onChange={(value) => onShowCommandOutputsChange?.(value)}
+        >
+          {ACCOUNT_TEXT.commandOutputs}
         </CheckboxMenuItem>
       </Menu.Dropdown>
     </Menu>

@@ -5,7 +5,7 @@ import type { AccountResponse, Capabilities, EventEnvelope, LoginStartResponse }
 
 test("device-code sign-in and native account changes converge across two tabs", async ({ context }) => {
   const capabilities: Capabilities = {
-    gateway: { apiVersion: "2", instanceId: "native-account-fixture", version: "test", sse: true, approvals: true, gatewayAuth: false, trustedNetworkOnly: true },
+    gateway: { apiVersion: "3", instanceId: "native-account-fixture", version: "test", sse: true, approvals: true, gatewayAuth: false, trustedNetworkOnly: true },
     appServer: { ready: true, experimentalApi: true, schemaVersion: "0.160.0", detectedVersion: "0.160.0", detectedVersionMatchesSchema: true },
   };
   let account: AccountResponse = { account: null, requiresOpenaiAuth: true, rawPayload: {} };

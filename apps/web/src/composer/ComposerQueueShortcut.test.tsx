@@ -27,13 +27,13 @@ function composer(props: Partial<ComponentProps<typeof ComposerPanel>> = {}) {
 const shortcut = (init = {}) => fireEvent.keyDown(screen.getByRole("textbox", { name: "Message composer" }), { key: "Enter", metaKey: true, ...init });
 
 describe("empty composer queue shortcut", () => {
-  it("delegates current first-row selection to the gateway and refills native order", async () => {
+  it.each([null, "turn"])("delegates send now and current first-row selection to the gateway (active turn %s)", async (activeSelectedTurnId) => {
     let rows = [row("a"), row("b")];
     const gateway = mockGateway({
       [`GET ${base}`]: () => ({ queuedInputs: rows, transfers: [], nextCursor: null }),
       [`POST ${base}/steer-first`]: () => { rows = [row("a")]; return { status: "delivered", id: "promotion-b" }; },
     });
-    const fallback = composer();
+    const fallback = composer({ activeSelectedTurnId });
     await screen.findByText("b", { exact: true });
     // This tab misses another client's reorder. No cached ID may be submitted.
     rows.reverse();
@@ -45,7 +45,7 @@ describe("empty composer queue shortcut", () => {
     expect(screen.getByRole("textbox", { name: "Message composer" })).toHaveValue("");
   });
 
-  it.each(["text", "annotation", "attachment", "submitting", "unready", "read-only"])("does not steer queued input when composer has %s", async (kind) => {
+  it.each(["text", "annotation", "attachment", "submitting", "unready", "read-only"])("does not send queued input when composer has %s", async (kind) => {
     const gateway = mockGateway({ [`GET ${base}`]: { queuedInputs: [row("a")], transfers: [], nextCursor: null } });
     const props: Partial<ComponentProps<typeof ComposerPanel>> = kind === "annotation" ? {
       composerDraftKey: "draft", composerDraftStore: new Map([["draft", { composerText: "", skillBindings: [], annotations: [{ id: "quote", text: "Selected text", comment: "" }] }]]),
@@ -69,13 +69,17 @@ describe("empty composer queue shortcut", () => {
     expect(fallback).toHaveBeenCalledOnce();
   });
 
-  it("does nothing with an empty queue", async () => {
-    const gateway = mockGateway({ [`GET ${base}`]: { queuedInputs: [], transfers: [], nextCursor: null } });
+  it("asks the gateway for the native front despite an empty cached queue and accepts empty as a no-op", async () => {
+    const gateway = mockGateway({
+      [`GET ${base}`]: { queuedInputs: [], transfers: [], nextCursor: null },
+      [`POST ${base}/steer-first`]: { status: "empty" },
+    });
     const fallback = composer();
     await waitFor(() => expect(gateway.callsFor("GET", base)).toHaveLength(1));
     shortcut();
-    expect(gateway.callsFor("POST", `${base}/steer-first`)).toHaveLength(0);
-    expect(fallback).toHaveBeenCalledOnce();
+    await waitFor(() => expect(gateway.callsFor("POST", `${base}/steer-first`)).toHaveLength(1));
+    expect(fallback).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("blocks repeated shortcuts while pending and keeps failed input queued without retry", async () => {

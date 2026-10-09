@@ -139,7 +139,7 @@ async fn native_skill_history_uses_structured_content_without_scanning_plain_tex
     let snapshot = |id: &str| {
         rows.iter()
             .find(|row| row["item"]["itemId"] == id)
-            .unwrap_or_else(|| panic!("missing {id}: {body}"))["item"]["payload"]["itemSnapshot"]
+            .unwrap_or_else(|| panic!("missing {id}: {body}"))["item"]["payload"]
             .clone()
     };
     assert!(snapshot("plain")

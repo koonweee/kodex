@@ -116,8 +116,10 @@ describe("deep link navigation", () => {
 
     const main = screen.getByRole("main", { name: /thread/i });
     expect(await within(main).findByRole("heading", { name: /^second thread$/i })).toBeInTheDocument();
-    expect(main.querySelector(".kodex-workspace-dock")).not.toBeInTheDocument();
-    expect(main.querySelector(".kodex-workspace-single-pane-shell")).toBeInTheDocument();
+    const selectedPane = main.querySelector<HTMLElement>('.kodex-thread-pane[data-workspace-pane-active="true"]')!;
+    expect(within(selectedPane).getByRole("heading", { name: /^second thread$/i })).toBeInTheDocument();
+    expect(within(selectedPane).getByRole("textbox", { name: /message composer/i })).toBeEnabled();
+    expect(main.querySelectorAll('.kodex-thread-pane[data-workspace-pane-active="true"]')).toHaveLength(1);
   });
 
   it("shows representative timeline skeleton rows while a selected thread snapshot loads", async () => {

@@ -1,3 +1,5 @@
+import { createFrontendUpdates } from './frontend-updates.js';
+import { frontendUpdateRouter } from './frontend-updates-router.js';
 import { connectTerminalSocket, type TerminalSocketManager } from './terminal-websocket.js';
 import { handleFilePreview } from './file-preview-http.js';
 import { createFrontendHttp } from './frontend-http.js';
@@ -12,20 +14,23 @@ import { WebSocketServer } from 'ws';
 /** Dedicated localhost backend. Unported routes fail here; no upstream fallback. */
 export async function serveRouter(router: AnyRouter, port = 8789, files?: Pick<ChatService, 'previewFile'>, terminals?: TerminalSocketManager, options: { frontendDir?: string } = {}) {
   const frontend = options.frontendDir === undefined ? undefined : await createFrontendHttp(options.frontendDir);
-  const websocketHandler = new WebsocketHandler(router);
+  const frontendUpdates = createFrontendUpdates();
+  const context = { frontendUpdates };
+  const hostRouter = { ...router, ...frontendUpdateRouter };
+  const websocketHandler = new WebsocketHandler(hostRouter);
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 1_048_576 });
   const terminalSockets = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 * 1024 });
   const messages = new Set<Promise<void>>();
   let closing: Promise<void> | undefined;
-  const handler = new RPCHandler(router, { plugins: [new BodyLimitPlugin({ maxBodySize: 1_048_576 })] });
+  const handler = new RPCHandler(hostRouter, { plugins: [new BodyLimitPlugin({ maxBodySize: 1_048_576 })] });
   // Native oRPC multipart encoding handles one uploaded File per request. Keep
   // large bodies off the shared socket and leave ordinary command limits intact.
-  const uploadHandler = new RPCHandler(router, { plugins: [new BodyLimitPlugin({ maxBodySize: 26 * 1024 * 1024 })] });
+  const uploadHandler = new RPCHandler(hostRouter, { plugins: [new BodyLimitPlugin({ maxBodySize: 26 * 1024 * 1024 })] });
   const server = createServer((request, response) => {
     const selectedHandler = ['/rpc/uploadFile', '/rpc/uploadImage'].includes(request.url?.split('?')[0] ?? '') ? uploadHandler : handler;
     const pending = (async () => {
       if (files && await handleFilePreview(request, response, files)) return;
-      const { matched } = await selectedHandler.handle(request, response, { prefix: '/rpc', context: {} });
+      const { matched } = await selectedHandler.handle(request, response, { prefix: '/rpc', context });
       if (!matched && !(frontend && await frontend(request, response))) {
         response.writeHead(404, { 'content-type': 'application/json' });
         response.end(JSON.stringify({ error: { message: 'Route not found on the Mastra backend.' } }));
@@ -62,7 +67,7 @@ export async function serveRouter(router: AnyRouter, port = 8789, files?: Pick<C
     socket.on('message', (data, binary) => {
       // Use the public native message/close API so malformed transport errors
       // are contained here instead of the convenience adapter's raw logger.
-      const pending = websocketHandler.message(socket, binary ? data as ArrayBuffer : data.toString(), { context: {} }).catch(() => {
+      const pending = websocketHandler.message(socket, binary ? data as ArrayBuffer : data.toString(), { context }).catch(() => {
         if (socket.readyState === socket.OPEN) socket.close(1002, 'Invalid RPC message');
       });
       messages.add(pending);
@@ -84,6 +89,7 @@ export async function serveRouter(router: AnyRouter, port = 8789, files?: Pick<C
     url: `http://127.0.0.1:${address.port}`,
     close() {
       return closing ??= (async () => {
+        frontendUpdates.dispose();
         for (const socket of sockets.clients) { websocketHandler.close(socket); socket.terminate(); }
         for (const socket of terminalSockets.clients) socket.terminate();
         await Promise.all([

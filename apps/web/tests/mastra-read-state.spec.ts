@@ -51,7 +51,10 @@ test('native read heads converge across tabs and stale acknowledgments cannot co
     // asserting that the next completion was not visible to either client.
     for (const tab of [page, peer]) {
       const targetTab = tab.getByTestId('dockview-dv-default-tab').filter({ hasText: 'Read target' });
-      if (await targetTab.isVisible()) await targetTab.locator('.dv-default-tab-action').click();
+      if (await targetTab.isVisible()) {
+        await targetTab.hover();
+        await targetTab.locator('.dv-default-tab-action').click();
+      }
       await expect(tab.locator(`.kodex-thread-pane[data-thread-id="${target.id}"]`)).toBeHidden();
     }
     await api.send({ chatId: target.id, text: 'READ_SECOND' });

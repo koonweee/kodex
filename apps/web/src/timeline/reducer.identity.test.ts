@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../test/canonicalPayloadFixture";
 import { describe, expect, it } from "vitest";
 
 import type { EventEnvelope, ThreadTimelineRow, ThreadViewResponse } from "../api/client";
@@ -19,11 +20,7 @@ function userRow(itemId: string, clientId?: string | null, text = "Identical mes
     id: `row-${itemId}`, kind: "user_message", status: "completed", turnId: "turn-1", displayOrder: 1,
     item: {
       id: itemId, itemId, itemType: "userMessage", threadId: "thread-1", turnId: "turn-1", status: "completed", displayOrder: 1, codexMethod: "item/completed",
-      payload: {
-        source: "appServerSnapshot", turnId: "turn-1", itemId,
-        item: { id: itemId, type: "userMessage", clientId, content: [{ type: "text", text }] },
-        itemSnapshot: { id: itemId, itemType: "userMessage", clientId },
-      },
+      payload: compactCanonicalPayload({ id: itemId, type: "userMessage", clientId, content: [{ type: "text", text }] }, { id: itemId, itemType: "userMessage", clientId }),
     },
     items: [], collapsedRows: [], fileChanges: [],
   };

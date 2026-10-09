@@ -36,6 +36,33 @@ describe("annotation input focus", () => {
     expect(first).not.toHaveFocus();
   });
 
+  it("preserves deliberate disclosure and the focused comment while density changes", async () => {
+    const view = render(<AnnotationComposer collapsed />);
+    await userEvent.click(screen.getByRole("button", { name: "Add annotation" }));
+    const comment = screen.getByRole("textbox", { name: "Annotation 1 comment" });
+    await userEvent.keyboard("Still editing");
+    view.rerender(<AnnotationComposer collapsed={false} />);
+    view.rerender(<AnnotationComposer collapsed />);
+    expect(comment).toHaveFocus();
+    expect(comment).toHaveValue("Still editing");
+    expect(screen.getByRole("textbox", { name: "Annotation 1 comment" })).toBe(comment);
+    await userEvent.click(screen.getByRole("button", { name: "1 annotation" }));
+    view.rerender(<AnnotationComposer collapsed={false} />);
+    expect(screen.queryByRole("textbox", { name: "Annotation 1 comment" })).not.toBeInTheDocument();
+  });
+
+  it("keeps a restored annotation being edited open when its pane becomes compact", async () => {
+    const store: ComposerDraftStore = new Map([["one", {
+      composerText: "", skillBindings: [], annotations: [{ id: "saved", text: "Saved excerpt", comment: "Saved comment" }],
+    }]]);
+    const view = render(<AnnotationComposer store={store} />);
+    const comment = screen.getByRole("textbox", { name: "Annotation 1 comment" });
+    await userEvent.click(comment);
+    view.rerender(<AnnotationComposer store={store} collapsed />);
+    expect(comment).toHaveFocus();
+    expect(screen.getByRole("textbox", { name: "Annotation 1 comment" })).toBe(comment);
+  });
+
   it("does not take focus when a stored annotation draft is restored or switched", async () => {
     const store: ComposerDraftStore = new Map(["one", "two"].map((key) => [key, {
       composerText: "", skillBindings: [], annotations: [{ id: key, text: "Saved excerpt", comment: "Saved comment" }],

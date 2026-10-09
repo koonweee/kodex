@@ -34,6 +34,7 @@ export function UserMessageBubble({
   const copyText = parsedAnnotations ? annotationMessageCopyText(parsedAnnotations) : item.text;
   const images = item.images ?? [];
   const fileAttachments = item.fileAttachments ?? [];
+  const statusText = optimisticStatusText(item);
   return (
     <Box className="kodex-user-message-row">
       <Box className="kodex-user-message-stack">
@@ -71,9 +72,9 @@ export function UserMessageBubble({
               : <InlineSkillMentionText text={item.text} skillMentions={item.skillMentions} />}
           </Text>
         ) : null}
-        {item.confirmationState && item.confirmationState !== "sent" ? (
+        {statusText ? (
           <Text size="xs" className="kodex-user-message-status" data-state={item.confirmationState}>
-            {optimisticStatusText(item)}
+            {statusText}
           </Text>
         ) : null}
         {item.text ? <MessageToolbar align="end" text={copyText} timestampMs={toolbarTimestampMs} /> : null}
@@ -175,7 +176,9 @@ export const AssistantMessageMarkdown = memo(
     return (
       <Box className="kodex-assistant-message-stack">
         <LazyMarkdownContent
+          key={`${threadId}:${item.turnId}:${item.id}`}
           className="kodex-assistant-markdown"
+          streaming={item.status === "running" ? { identity: `${threadId}:${item.turnId}:${item.id}`, deltaStart: item.textDeltaStart } : undefined}
           fallbackText={text}
           onImageOpen={onImageOpen}
           onMarkdownOpen={onMarkdownOpen}
@@ -200,6 +203,7 @@ export const AssistantMessageMarkdown = memo(
     prev.item.kind === next.item.kind &&
     prev.item.messagePhase === next.item.messagePhase &&
     prev.item.status === next.item.status &&
+    prev.item.textDeltaStart === next.item.textDeltaStart &&
     prev.onImageOpen === next.onImageOpen &&
     prev.onMarkdownOpen === next.onMarkdownOpen &&
     prev.threadId === next.threadId &&
@@ -228,9 +232,6 @@ function userMessageImageSrc(
 function optimisticStatusText(item: TimelineItem): string {
   if (item.confirmationState === "uploading") {
     return "Uploading";
-  }
-  if (item.confirmationState === "sending") {
-    return "Sending";
   }
   if (item.confirmationState === "failed") {
     return item.error ? `Failed: ${item.error}` : "Failed";
@@ -333,9 +334,8 @@ function formatMessageToolbarTime(date: Date): string {
   const hours = date.getHours();
   const displayHours = hours % 12 || 12;
   const minutes = String(date.getMinutes()).padStart(2, "0");
-  const seconds = String(date.getSeconds()).padStart(2, "0");
   const meridiem = hours < 12 ? "AM" : "PM";
-  return `${displayHours}:${minutes}:${seconds} ${meridiem}`;
+  return `${displayHours}:${minutes} ${meridiem}`;
 }
 
 function localDayStart(date: Date): Date {

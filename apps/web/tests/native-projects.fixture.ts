@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../src/test/canonicalPayloadFixture";
 import type { BrowserContext, Page, Route } from "@playwright/test";
 import { createServer, type ServerResponse } from "node:http";
 
@@ -32,7 +33,7 @@ export async function nativeProjectsFixture(context: BrowserContext) {
   let failFirstCreate = false;
   let seq = 0;
   const capabilities: Capabilities = {
-    gateway: { apiVersion: "2", instanceId: "native-project-fixture", version: "test", sse: true, approvals: true, terminals: { enabled: true }, gatewayAuth: false, trustedNetworkOnly: true },
+    gateway: { apiVersion: "3", instanceId: "native-project-fixture", version: "test", sse: true, approvals: true, terminals: { enabled: true }, gatewayAuth: false, trustedNetworkOnly: true },
     appServer: { ready: true, experimentalApi: true, schemaVersion: "0.160.0", detectedVersion: "0.160.0", detectedVersionMatchesSchema: true },
   };
   // Keep native notifications independent of refills caused by reconnects.
@@ -263,14 +264,11 @@ function detail(thread: ThreadSummary): ThreadViewResponse {
   const item: ThreadTimelineSnapshotItem = {
     id: `${thread.id}-history`, threadId: thread.id, turnId: "turn-1", itemId: "answer", itemType: "agentMessage", status: "completed",
     codexMethod: "item/completed", displayOrder: 1, timestampMs: 1,
-    payload: {
-      item: payload, itemId: "answer", turnId: "turn-1", source: "appServerSnapshot",
-      itemSnapshot: { id: "answer", itemType: "agentMessage" },
-    },
+    payload: compactCanonicalPayload(payload, { id: "answer", itemType: "agentMessage" }),
   };
   return { thread, liveState: "idle", timeline: {
     viewRevision: 1, liveState: "idle", activeTurnId: null, pendingApprovalRequests: [], pendingUserInputRequests: [],
     turns: [{ id: "turn-1", status: "completed" }],
-    rows: [{ id: "answer", kind: "assistant_message", turnId: "turn-1", status: "completed", displayOrder: 1, item, items: [], fileChanges: [], collapsedRows: [] }],
+    rows: [{ id: "answer", kind: "assistant_message", turnId: "turn-1", status: "completed", displayOrder: 1, item }],
   } };
 }

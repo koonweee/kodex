@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../src/test/canonicalPayloadFixture";
 import type { BrowserContext, Page, Route } from "@playwright/test";
 
 import type { AppSurfaceBridgeRequest, AppSurfaceSession, ThreadTimelineSnapshotItem } from "../src/api/client";
@@ -33,13 +34,11 @@ export async function nativeAppSurfacesFixture(context: BrowserContext) {
     const clientId = `native-bridge-generated-client-${receiptCount}`;
     const item: ThreadTimelineSnapshotItem = {
       id: `row-${id}`, threadId, turnId, itemId: id, itemType: "userMessage", status: "completed", codexMethod: "item/completed", displayOrder: receiptCount,
-      payload: { source: "gatewayStream", turnId, itemId: id,
-        item: { id, type: "userMessage", clientId, content: [{ type: "text", text: "Pick mockup A" }] },
-        itemSnapshot: { id, clientId, itemType: "userMessage" } },
+      payload: compactCanonicalPayload({ id, type: "userMessage", clientId, content: [{ type: "text", text: "Pick mockup A" }] }, { id, clientId, itemType: "userMessage" }),
     };
     fixture.publishTimeline({ activeTurnId: turnId, liveState: "streaming", pendingApprovalRequests: [], pendingUserInputRequests: [],
       viewRevision: fixture.detail.timeline.viewRevision + 1, turns: [{ id: turnId, status: "inProgress" }],
-      rows: [...fixture.detail.timeline.rows, { id: item.id, turnId, kind: "user_message", status: "completed", displayOrder: receiptCount, item, items: [], collapsedRows: [], fileChanges: [] }] });
+      rows: [...fixture.detail.timeline.rows, { id: item.id, turnId, kind: "user_message", status: "completed", displayOrder: receiptCount, item }] });
   }
   await context.route(/\/v1\/(?:threads\/settings-chat\/app-surface|app-surfaces\/[^/]+\/(?:document|bridge))(?:\?.*)?$/, async (route) => {
     const request = route.request();

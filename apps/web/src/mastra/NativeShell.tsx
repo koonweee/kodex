@@ -1,6 +1,6 @@
 import { Alert, Group } from '@mantine/core';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNarrowThreadWorkspace } from '../shell/KodexShellView';
+import { useNarrowWorkspace } from '../shared/layoutBreakpoints';
 import { currentKodexRoute, pushKodexRoute, replaceKodexRoute } from '../shell/browserRouting';
 import { useSidebarResize } from '../shell/useSidebarResize';
 import type { AppearancePreferences } from '../theme/appearancePreferences';
@@ -17,6 +17,7 @@ import { useNativeHost } from './NativeHostBoundary';
 import { useNativeCatalog } from './useNativeSnapshots';
 import { useThreadViewPresence } from '../threads/useThreadViewPresence';
 import { nativePresenceTransport } from './nativePresenceTransport';
+import { ThreadDeliveryProvider } from '../timeline/ThreadDeliveryPreferences';
 import { useNativeUnreadBadge } from './useNativeUnreadBadge';
 import { chatListEntry } from './presentation';
 import { NativeArchiveReconciliation } from './NativeArchiveReconciliation';
@@ -57,6 +58,8 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
   const [error, setError] = useState<string | null>(null);
   const [hoveredThreadActionId, setHoveredThreadActionId] = useState<string | null>(null);
   const [showDebugEvents, setShowDebugEvents] = useState(false);
+  // Native watches retain full snapshots; visibility changes do not reopen history.
+  const [showCommandOutputs, setShowCommandOutputs] = useState(false);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferencesSection, setPreferencesSection] = useState<PreferenceSection>('appearance');
   const notificationsPanel = useNativeNotificationsPreferencesPanel(preferencesOpen && preferencesSection === 'notifications');
@@ -66,7 +69,7 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
   const drafts = useRef<ComposerDraftStore>(new Map());
   const emptyPendingTitles = useMemo(() => new Set<string>(), []);
   const resize = useSidebarResize();
-  const singlePane = useNarrowThreadWorkspace();
+  const singlePane = useNarrowWorkspace();
   const mainPane = route.view ?? 'thread';
   const reportError = useCallback((failure: unknown) => setError(errorMessageFrom(failure)), []);
   const perform = useCallback((operation: Promise<unknown>) => { void operation.catch(reportError); }, [reportError]);
@@ -130,7 +133,7 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
     const project = await mastraClient.createProject({ createKey: fields.idempotencyKey, path: fields.roots[0].path });
     return { ...project, roots: project.roots.map(path => ({ path })) };
   }, []);
-  return <NativeCatalogProvider snapshot={catalog.snapshot}>
+  return <ThreadDeliveryProvider includeDebugEvents={showDebugEvents} includeCommandOutputs={showCommandOutputs}><NativeCatalogProvider snapshot={catalog.snapshot}>
     <WorkspaceProvider liveTransport="external" terminalSessionApi={nativeTerminalApi} paneStore={workspacePaneStore} errorMessage={displayError}
       onVisibleThreadIdsChange={setVisibleThreadIds} isVisible={mainPane === 'thread' && (!singlePane || mobilePanel === 'chat')} onFocusThreadPane={reportWorkspaceFocus}
       onShowMobileSidebar={showMobileSidebar} onImageOpen={setLightbox}
@@ -153,7 +156,8 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
           onShowMobileSidebar: showMobileSidebar, threadOptions: entries.map(chat => ({ value: chat.id, label: chat.name ?? 'New thread' })) }}
         workspaceSidebarProps={{ account: null, accountMenu: <NativeAccountMenu state={account}
           onSelectAutomations={() => navigate({ threadId: null, view: 'automations', panel: null })}
-          onOpenPreferences={() => setPreferencesOpen(true)} onShowDebugEventsChange={setShowDebugEvents} showDebugEvents={showDebugEvents} />, approvals: [], chatThreads: standalone, projects, threadsByProjectId,
+          onOpenPreferences={() => setPreferencesOpen(true)} onShowDebugEventsChange={setShowDebugEvents} showDebugEvents={showDebugEvents}
+          onShowCommandOutputsChange={setShowCommandOutputs} showCommandOutputs={showCommandOutputs} />, approvals: [], chatThreads: standalone, projects, threadsByProjectId,
           pinnedThreads: pinned, onMovePinnedThread: metadata.movePinned, pinPending: metadata.pinPending, pendingTitleThreadIds: emptyPendingTitles, hoveredThreadActionId,
           dataState: { projects: chatDataState, chatThreads: chatDataState, pinnedThreads: chatDataState, projectThreadsById: Object.fromEntries(projects.map(project => [project.id, chatDataState])) },
           sidebarSnapshotStatus: { failed: Boolean(catalog.error), retrying: !catalog.snapshot && !catalog.error, onRetry: catalog.retry },
@@ -172,5 +176,5 @@ export function NativeShell({ colorSchemeId, appearance, onAppearanceModeChange,
     </WorkspaceProvider>
     {markdownPreview ? <Suspense fallback={null}><MarkdownPreviewPane preview={markdownPreview} threadId={route.threadId ?? undefined} onClose={() => setMarkdownPreview(null)} /></Suspense> : null}
     {lightbox ? <Suspense fallback={<Group />}><ImageLightbox image={lightbox} onClose={() => setLightbox(null)} /></Suspense> : null}
-  </NativeCatalogProvider>;
+  </NativeCatalogProvider></ThreadDeliveryProvider>;
 }

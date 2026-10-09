@@ -1,14 +1,14 @@
 import { Box, Group, Menu, Textarea } from "@mantine/core";
 import { ChevronDown, Folder, MessageSquare } from "lucide-react";
-import { useId } from "react";
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject, PointerEventHandler } from "react";
 
 import type { SkillMetadata } from "../api/client";
+import { useInputCapabilities } from "../shared/inputCapabilities";
 import { AttachmentTray } from "./AttachmentTray";
 import { ComposerAnnotations } from "./ComposerAnnotations";
 import type { ComposerPanelProps } from "./ComposerPanel";
 import { GoalBar, type GoalControls } from "../goals/GoalControls";
-import { useCompactComposer } from "./useCompactComposer";
 import { ComposerToolbar } from "./ComposerToolbar";
 import { SlashCommandPopup } from "./SlashCommandPopup";
 import { SkillMentionPopup } from "./SkillMentionPopup";
@@ -16,12 +16,14 @@ import { shouldSyncComposerCursorOnKeyUp } from "./keyEvents";
 import type { SlashCommandItem } from "./slashCommands";
 import type { ComposerDraftState } from "./useComposerDraftState";
 import type { SkillCatalogState } from "./useSkillCatalog";
+import { useInlineComposerMotion } from "./useInlineComposerMotion";
 
 const COMPOSER_TEXT = {
   addAttachment: "Add attachment",
   disabledPlaceholder: "Select a thread to start composing",
   dropImages: "Drop images to attach",
   placeholder: "type clever thing here",
+  compactPlaceholder: "build thing",
   projectSelector: "Project",
   noProject: "No project",
 };
@@ -31,8 +33,9 @@ type InlineComposerPanelProps = ComposerPanelProps & {
   queuePanel?: ReactNode;
   queueOnSubmit?: boolean;
   canSubmitComposer: boolean;
-  density?: "desktop" | "mobile";
-  expanded?: { header: ReactNode; style: CSSProperties };
+  density?: "regular" | "compact";
+  expanded?: { header: ReactNode };
+  keyboardViewportStyle?: CSSProperties;
   draftState: ComposerDraftState;
   filteredSkills: SkillMetadata[];
   filteredSlashCommands: SlashCommandItem[];
@@ -41,8 +44,8 @@ type InlineComposerPanelProps = ComposerPanelProps & {
   isComposerControlsDisabled: boolean;
   isComposerDisabled: boolean;
   isEntryPending: boolean;
-  onExpandComposer?: () => void;
-  onFocusComposer?: () => void;
+  onEditablePointerDown?: PointerEventHandler<HTMLTextAreaElement>;
+  onFocusSessionChange?: (focused: boolean) => void;
   renderSkillSuggestions?: () => ReactNode;
   selectSkill: (skillIndex?: number) => void;
   selectSlashCommand: (commandIndex?: number) => void;
@@ -63,8 +66,9 @@ export function InlineComposerPanel({
   composerSettingsError,
   contextUsage,
   currentProjectName,
-  density = "desktop",
+  density = "regular",
   expanded,
+  keyboardViewportStyle,
   draftProjectSelector,
   draftState,
   goalControls,
@@ -87,8 +91,8 @@ export function InlineComposerPanel({
   onComposerKeyDown,
   onComposerPaste,
   onComposerSettingsChange,
-  onExpandComposer,
-  onFocusComposer,
+  onEditablePointerDown,
+  onFocusSessionChange,
   onImageOpen,
   onRemovePendingAttachment,
   onStopTurn,
@@ -107,16 +111,77 @@ export function InlineComposerPanel({
   renderSkillSuggestions,
   textareaRef,
 }: InlineComposerPanelProps) {
+  const { hasTouchInput } = useInputCapabilities();
   const formId = useId();
+  const formRef = useRef<HTMLFormElement>(null);
+  const [editingActive, setEditingActive] = useState(false);
+  const [composerFocused, setComposerFocused] = useState(false);
+  const [toolbarMenuOpen, setToolbarMenuOpen] = useState(false);
+  const [alternateSubmitPreview, setAlternateSubmitPreview] = useState(false);
+  const focusSessionActive = composerFocused || toolbarMenuOpen;
+  const focusRevision = useRef(0);
+  useEffect(() => () => { focusRevision.current += 1; }, []);
+  useLayoutEffect(() => {
+    onFocusSessionChange?.(focusSessionActive);
+  }, [focusSessionActive, onFocusSessionChange]);
+  useEffect(() => {
+    if (!focusSessionActive || !selectedThreadPresent) {
+      setAlternateSubmitPreview(false);
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Meta") setAlternateSubmitPreview(true);
+    };
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.key === "Meta") setAlternateSubmitPreview(false);
+    };
+    const clearPreview = () => setAlternateSubmitPreview(false);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") clearPreview();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", clearPreview);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", clearPreview);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [focusSessionActive, selectedThreadPresent]);
+  useEffect(() => {
+    if (composerFocused || toolbarMenuOpen) return;
+    // Let focus and menu state settle before ending the editing session.
+    const frame = requestAnimationFrame(() => setEditingActive(false));
+    return () => cancelAnimationFrame(frame);
+  }, [composerFocused, toolbarMenuOpen]);
+  useLayoutEffect(() => {
+    if (isComposerBusy) setEditingActive(false);
+  }, [isComposerBusy]);
+  // Keep the empty row stable through attachment and settings loading.
+  const useIdlePresentation = density === "compact" || hasTouchInput;
+  const draftContentEmpty = draftState.composerText.length === 0 && draftState.annotations.length === 0 &&
+    draftState.skillBindings.length === 0;
+  // Busy state still owns submission and disabled controls after the captured
+  // draft clears; it does not need the expanded inline presentation.
+  const busyOwnsClearedDraft = isComposerBusy && draftContentEmpty;
+  const idleCompact = useIdlePresentation && selectedThreadPresent && !isDraftThreadSelected &&
+    !isDraftComposerTransitioning && !expanded && (!editingActive || busyOwnsClearedDraft) && draftContentEmpty &&
+    (pendingAttachments.length === 0 || busyOwnsClearedDraft) && !skillPopupOpen && !slashPopupOpen &&
+    !isComposerDragActive && !composerSettingsError;
+  const inlineMotion = useIdlePresentation && selectedThreadPresent && !isDraftThreadSelected && !isDraftComposerTransitioning && !expanded;
+  useInlineComposerMotion(formRef, inlineMotion, idleCompact);
   const draftHeroText = greetingForDate(new Date());
   const shouldShowDraftHero = !expanded && (isDraftThreadSelected || isDraftComposerTransitioning);
-  const compactComposer = useCompactComposer(textareaRef);
   const selectedDraftProject =
     draftProjectSelector?.projects.find((project) => project.id === draftProjectSelector.value) ?? null;
   const draftProjectSelectorLabel = selectedDraftProject?.name ?? COMPOSER_TEXT.noProject;
   const draftProjectToolbarName =
     isDraftThreadSelected && !draftProjectSelector && currentProjectName ? currentProjectName : null;
   const hasUnderbar = isDraftThreadSelected && (draftProjectSelector !== undefined || Boolean(draftProjectToolbarName));
+  const toolbarGoalControls = expanded && goalControls ? { ...goalControls, compact: true } : goalControls;
 
   return (
     <Box
@@ -124,7 +189,8 @@ export function InlineComposerPanel({
       className={`kodex-composer-shell kodex-thread-column${expanded ? " kodex-mobile-composer-expanded" : ""}`}
       role={expanded ? "dialog" : undefined}
       aria-label={expanded ? "Compose" : undefined}
-      style={expanded?.style}
+      style={keyboardViewportStyle}
+      data-focus-session={focusSessionActive ? "true" : undefined}
       data-inline-density={density}
       data-entry-ready={isEntryPending ? "false" : "true"}
       data-drag-active={isComposerDragActive ? "true" : "false"}
@@ -141,12 +207,31 @@ export function InlineComposerPanel({
           <Box className="kodex-composer-hero">{draftHeroText}</Box>
         </Box>
       ) : null}
-      {goalControls && !goalControls.compact ? <GoalBar controls={goalControls} /> : null}
+      {!expanded && goalControls && !goalControls.compact ? <GoalBar controls={goalControls} /> : null}
       {expanded ? null : queuePanel}
       <Box
         component="form"
+        ref={formRef}
         id={formId}
         className={`kodex-composer${expanded ? " kodex-mobile-composer-expanded-body" : ""}`}
+        data-idle-compact={idleCompact ? "true" : "false"}
+        data-inline-motion={inlineMotion ? "true" : undefined}
+        onFocusCapture={(event) => {
+          focusRevision.current += 1;
+          // Footer controls alone do not move under a pointer opening their menu.
+          setComposerFocused(true);
+          if ((event.target as HTMLElement) === textareaRef.current) setEditingActive(true);
+        }}
+        onBlurCapture={() => {
+          const revision = ++focusRevision.current;
+          // React focus events include portalled menus. Wait for the next focus
+          // before ending editing, rather than using DOM containment across portals.
+          queueMicrotask(() => {
+            if (focusRevision.current === revision) {
+              setComposerFocused(false);
+            }
+          });
+        }}
         data-skill-command-open={expanded && (skillPopupOpen || slashPopupOpen) ? "true" : undefined}
         onSubmit={(event) =>
           onSubmitTurn(
@@ -159,7 +244,12 @@ export function InlineComposerPanel({
           )
         }
       >
+        {inlineMotion ? <>
+          <Box className="kodex-composer-shadow" aria-hidden="true" />
+          <Box className="kodex-composer-surface" aria-hidden="true" />
+        </> : null}
         {selectedThreadPresent ? <button type="submit" hidden data-submit-intent="queue" disabled={!canSubmitComposer} /> : null}
+        <button type="submit" hidden data-submit-intent="alternate" disabled={!canSubmitComposer} />
         {skillPopupOpen || slashPopupOpen ? (
           renderSkillSuggestions ? renderSkillSuggestions() : skillPopupOpen ? (
             <SkillMentionPopup
@@ -190,21 +280,21 @@ export function InlineComposerPanel({
         />
         {pendingAttachments.length > 0 && !isComposerBusy ? (
           <AttachmentTray
-            compact={Boolean(expanded)}
+            compact={density === "compact" || Boolean(expanded)}
             attachments={pendingAttachments}
             onImageOpen={onImageOpen}
             onRemove={onRemovePendingAttachment}
           />
         ) : null}
         <ComposerAnnotations draftState={draftState} disabled={isComposerControlsDisabled}
-          collapseByDefault={density === "mobile"} onFocus={onFocusComposer} onKeyDown={onComposerKeyDown} />
+          collapseByDefault={density === "compact"} onPointerDown={onEditablePointerDown} onKeyDown={onComposerKeyDown} />
         <Textarea
           ref={textareaRef}
           aria-label="Message composer"
           className={`kodex-composer-textarea${expanded ? " kodex-mobile-composer-textarea" : ""}`}
-          placeholder={canCompose ? COMPOSER_TEXT.placeholder : COMPOSER_TEXT.disabledPlaceholder}
-          minRows={expanded ? 3 : density === "mobile" || compactComposer ? 2 : 4}
-          maxRows={expanded ? 16 : compactComposer ? 5 : 10}
+          placeholder={canCompose ? (idleCompact ? COMPOSER_TEXT.compactPlaceholder : COMPOSER_TEXT.placeholder) : COMPOSER_TEXT.disabledPlaceholder}
+          minRows={expanded ? 3 : idleCompact ? 1 : 2}
+          maxRows={expanded ? 16 : idleCompact ? 1 : 5}
           autosize
           value={draftState.composerText}
           onChange={(event) => {
@@ -213,11 +303,7 @@ export function InlineComposerPanel({
             }
           }}
           onClick={(event) => draftState.updateComposerText(event.currentTarget.value, event.currentTarget.selectionStart)}
-          onFocus={() => {
-            if (!isComposerDisabled) {
-              onFocusComposer?.();
-            }
-          }}
+          onPointerDown={isComposerDisabled ? undefined : onEditablePointerDown}
           onKeyUp={(event) => {
             if (shouldSyncComposerCursorOnKeyUp(event.key)) {
               draftState.updateComposerText(event.currentTarget.value, event.currentTarget.selectionStart);
@@ -235,15 +321,16 @@ export function InlineComposerPanel({
         ) : null}
         {expanded && (skillPopupOpen || slashPopupOpen) ? null : (
           <ComposerToolbar
+            onMenuOpenChange={setToolbarMenuOpen}
             queueOnSubmit={queueOnSubmit}
-            goalControls={goalControls}
+            alternateSubmitPreview={selectedThreadPresent && alternateSubmitPreview}
+            goalControls={toolbarGoalControls}
             formId={formId}
             attachmentInputRef={attachmentInputRef}
             canSubmitComposer={canSubmitComposer}
             contextUsage={contextUsage}
             disabled={isComposerControlsDisabled}
             models={models}
-            onExpandComposer={onExpandComposer}
             onSettingsChange={onComposerSettingsChange}
             onStopTurn={onStopTurn}
             selectedThreadPresent={selectedThreadPresent}

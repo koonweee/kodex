@@ -63,7 +63,7 @@ MCP environment and HTTP header values are stored in local Codex configuration r
 
 The web app is installable as a progressive web app. Its service worker precaches built static assets only; API traffic, SSE, OpenAPI, uploads, and file previews remain network-owned.
 
-Long-running tabs may show a compact, theme-matched notice when a new static bundle is waiting. Dismissing it defers the update until the app is reopened. Applying it activates the bundle and reloads the page. App badge updates use gateway-owned unread completed-turn state and silently no-op when the browser lacks the Badging API.
+Long-running tabs receive frontend deployment markers through the existing global SSE stream and ask their service worker to check for the new static bundle without a polling timer. They may then show a compact, theme-matched notice when that bundle is waiting. Dismissing it defers the update until the app is reopened. Applying it activates the bundle and reloads the page. App badge updates use gateway-owned unread completed-turn state and silently no-op when the browser lacks the Badging API.
 
 ## Terminal lifetime
 

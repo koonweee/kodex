@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../src/test/canonicalPayloadFixture";
 import { expect, test, type Page } from "@playwright/test";
 import type { ThreadTimelineRow } from "../src/api/client";
 import type { components } from "../src/api/generated/schema";
@@ -120,6 +121,33 @@ function replyRow(id: string, text: string, clientId: string, order: number): Th
 }
 function row(id: string, itemType: string, raw: Record<string, unknown>, order: number): ThreadTimelineRow {
   return { id: `row-${id}`, turnId: "turn-1", kind: itemType === "agentMessage" ? "assistant_message" : "user_message", status: "completed", displayOrder: order,
-    item: { id: `row-${id}`, threadId: "settings-chat", turnId: "turn-1", itemId: id, itemType, status: "completed", codexMethod: "item/completed", displayOrder: order, payload: { source: "appServerSnapshot", turnId: "turn-1", itemId: id, item: raw, itemSnapshot: { id, itemType, clientId: raw.clientId ?? null } } },
-    items: [], collapsedRows: [], fileChanges: [] };
+    item: { id: `row-${id}`, threadId: "settings-chat", turnId: "turn-1", itemId: id, itemType, status: "completed", codexMethod: "item/completed", displayOrder: order, payload: compactCanonicalPayload(raw, { id, itemType, clientId: raw.clientId ?? null }) },
+  };
 }
+
+test("question choices follow their pane width in a wide workspace", async ({ context }) => {
+  const fixture = await nativeSettingsFixture(context);
+  fixture.detail.timeline = { ...fixture.detail.timeline, rows: [questionRow()], turns: [{ id: "turn-1", status: "inProgress" }], activeTurnId: "turn-1", liveState: "streaming" };
+  try {
+    const page = await fixture.page("pane-fit");
+    await page.setViewportSize({ width: 1920, height: 900 });
+    const questionCard = card(page);
+    const first = questionCard.getByRole("button", { name: options[0], exact: true });
+    const second = questionCard.getByRole("button", { name: options[1], exact: true });
+    await expect(first).toBeVisible();
+    await expect.poll(async () => Math.abs((await first.boundingBox())!.y - (await second.boundingBox())!.y)).toBeLessThan(2);
+    const reply = questionCard.getByRole("textbox", { name: "Reply to question 1", exact: true });
+    await reply.fill("Keep my answer while resizing");
+    await pane(page).evaluate(el => { el.style.maxWidth = "360px"; });
+    await expect.poll(async () => (await second.boundingBox())!.y - (await first.boundingBox())!.y).toBeGreaterThan(30);
+    await expect(reply).toBeFocused();
+    await expect(reply).toHaveValue("Keep my answer while resizing");
+    expect(await questionCard.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await page.screenshot({ path: test.info().outputPath("compact-question-wide-workspace.png") });
+    await pane(page).evaluate(el => { el.style.maxWidth = ""; });
+    await expect.poll(async () => Math.abs((await first.boundingBox())!.y - (await second.boundingBox())!.y)).toBeLessThan(2);
+    await expect(reply).toHaveValue("Keep my answer while resizing");
+  } finally { await fixture.close(); }
+  expect(fixture.unexpected).toEqual([]);
+  expect(fixture.errors).toEqual([]);
+});

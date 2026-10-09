@@ -1,3 +1,20 @@
+.kodex-composer-control-slot {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+}
+
+.kodex-composer-control-slot:has(.kodex-composer-model-control:not([data-icon-only])) {
+  width: auto;
+}
+
+.kodex-composer-model-control[data-icon-only] {
+  width: var(--kodex-adaptive-icon-button-size);
+  border-radius: var(--kodex-radius-round);
+}
+
 .kodex-run-settings-menu {
   max-height: min(420px, calc(100dvh - 20px));
   overflow-y: auto;
@@ -45,29 +62,32 @@
 }
 
 @media (pointer: coarse), (any-pointer: coarse) {
+  .kodex-composer-control-slot {
+    width: 44px;
+    height: 44px;
+  }
+
   .kodex-run-settings-menu [data-menu-item] {
     min-height: 44px;
   }
 }
 
-@media (max-width: 700px) and (pointer: coarse), (max-width: 700px) and (any-pointer: coarse) {
-  .kodex-run-settings-menu {
-    position: fixed !important;
-    top: auto !important;
-    right: 12px !important;
-    bottom: calc(12px + env(safe-area-inset-bottom)) !important;
-    left: 12px !important;
-    width: auto !important;
-    min-width: 0 !important;
-    max-width: none !important;
-    max-height: min(420px, calc(100dvh - 24px - env(safe-area-inset-bottom)));
-    border-radius: var(--kodex-radius-menu);
-    padding: 8px;
-  }
+.kodex-run-settings-menu[data-presentation="sheet"] {
+  position: fixed !important;
+  top: auto !important;
+  right: 12px !important;
+  bottom: calc(12px + env(safe-area-inset-bottom)) !important;
+  left: 12px !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  max-height: min(420px, calc(100dvh - 24px - env(safe-area-inset-bottom)));
+  border-radius: var(--kodex-radius-menu);
+  padding: 8px;
+}
 
-  .kodex-run-settings-header {
-    display: flex;
-    min-height: 44px;
-    padding: 0 2px 6px 8px;
-  }
+.kodex-run-settings-menu[data-presentation="sheet"] .kodex-run-settings-header {
+  display: flex;
+  min-height: 44px;
+  padding: 0 2px 6px 8px;
 }

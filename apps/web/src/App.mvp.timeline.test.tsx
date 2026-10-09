@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "./test/canonicalPayloadFixture";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -939,13 +940,7 @@ describe("MVP timeline flows", () => {
       status: "completed",
       codexMethod: "item/completed",
       timestampMs: 2,
-      payload: {
-        source: "appServerSnapshot",
-        turnId: "turn-2",
-        itemId: "agent-2",
-        item: { id: "agent-2", type: "agentMessage", text: "External recovered snapshot" },
-        itemSnapshot: { id: "agent-2", itemType: "agentMessage" },
-      },
+      payload: compactCanonicalPayload({ id: "agent-2", type: "agentMessage", text: "External recovered snapshot" }, { id: "agent-2", itemType: "agentMessage" }),
     } satisfies ThreadTimelineSnapshotItem;
     act(() => {
       workspaceStream.emit({
@@ -1107,17 +1102,11 @@ function terminalProjectionEvent({
     displayOrder: seq,
     codexMethod: "item/completed",
     timestampMs: seq,
-    payload: {
-      source: "gatewayStream",
-      turnId,
-      itemId,
-      item: rawItem,
-      itemSnapshot: {
+    payload: compactCanonicalPayload(rawItem, {
         id: itemId,
         itemType: "agentMessage",
         skillMentions: [],
-      },
-    },
+      }),
   } satisfies ThreadTimelineSnapshotItem;
   return {
     id: `terminal-projection-${seq}`,

@@ -11,13 +11,15 @@ import { startBackend, stopBackend } from './fixtures/mastra';
 const client = (): RouterClient<GatewayRouter> => createORPCClient(new RPCLink({ url: 'http://127.0.0.1:18789/rpc' }));
 const dialog = (page: Page) => page.getByRole('dialog');
 async function prompt(page: Page, text: string) {
+  await expect(dialog(page)).toBeVisible();
   const tab = dialog(page).getByRole('tab', { name: 'Prompt', exact: true });
-  if (await tab.isVisible()) await tab.click();
+  if (await tab.count()) await tab.click();
   await dialog(page).getByRole('textbox', { name: 'Automation prompt', exact: true }).fill(text);
 }
 async function details(page: Page) {
+  await expect(dialog(page)).toBeVisible();
   const tab = dialog(page).getByRole('tab', { name: 'Details', exact: true });
-  if (await tab.isVisible()) await tab.click();
+  if (await tab.count()) await tab.click();
 }
 async function target(page: Page, name: string) {
   await details(page);

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EventEnvelope } from "../api/client";
 import {
@@ -10,9 +10,44 @@ import {
 } from "./liveDiagnostics";
 
 describe("live diagnostics", () => {
-  beforeEach(() => resetLiveDiagnosticsForTest());
+  beforeEach(() => {
+    delete window.__KODEX_LIVE_DIAGNOSTICS_PAYLOAD_BYTES__;
+    resetLiveDiagnosticsForTest();
+  });
+  afterEach(() => delete window.__KODEX_LIVE_DIAGNOSTICS_PAYLOAD_BYTES__);
+
+  it("keeps stream counters without serializing payloads by default", () => {
+    const toJSON = vi.fn(() => ({ scope: "turn", text: "secret prompt text" }));
+    recordLiveEvent("global", event({
+      kind: "thread_view.patch",
+      payload: { scope: "turn", toJSON },
+    }));
+
+    expect(toJSON).not.toHaveBeenCalled();
+    expect(getLiveDiagnosticsSnapshot()).toMatchObject({
+      eventsByStream: { global: 1 },
+      eventsByStreamAndKind: { "global:thread_view.patch": 1 },
+      patchBytesByScope: {},
+    });
+  });
+
+  it("counts UTF-8 payload bytes only while explicitly enabled", () => {
+    const toJSON = vi.fn(() => ({ scope: "turn", text: "é" }));
+    const patch = event({ kind: "thread_view.patch", payload: { scope: "turn", toJSON } });
+    window.__KODEX_LIVE_DIAGNOSTICS_PAYLOAD_BYTES__ = true;
+    recordLiveEvent("global", patch);
+    window.__KODEX_LIVE_DIAGNOSTICS_PAYLOAD_BYTES__ = false;
+    recordLiveEvent("global", patch);
+
+    expect(toJSON).toHaveBeenCalledTimes(1);
+    expect(getLiveDiagnosticsSnapshot()).toMatchObject({
+      eventsByStream: { global: 2 },
+      patchBytesByScope: { turn: 28 },
+    });
+  });
 
   it("records stream counters and patch bytes without storing payload text", () => {
+    window.__KODEX_LIVE_DIAGNOSTICS_PAYLOAD_BYTES__ = true;
     recordLiveEvent("global", event({
       kind: "thread_view.patch",
       payload: {

@@ -321,6 +321,18 @@ describe("WorkspaceSidebar project reorder", () => {
     expect(screen.getByRole("button", { name: "Thread 1" })).toBeInTheDocument();
   });
 
+  it("does not render a disclosure caret for a project without threads", () => {
+    renderSidebar({
+      projects: [projectSummary("project-1", "Empty project")],
+      threadsByProjectId: { "project-1": [] },
+    });
+
+    const project = screen.getByRole("group", { name: "Empty project" });
+    expect(project.querySelector(".kodex-sidebar-row-disclosure")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Collapse Empty project" })).not.toBeInTheDocument();
+    expect(screen.getByText("Empty project")).toBeInTheDocument();
+  });
+
   it("collapses and expands the Projects section from the section row", () => {
     renderSidebar({
       projects: [projectSummary("project-1", "Project")],

@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../src/test/canonicalPayloadFixture";
 import { expect, test, type Page } from "@playwright/test";
 import type { SkillsCatalogResponse, ThreadTimelineSnapshotItem, UserInput } from "../src/api/client";
 import { nativeSettingsFixture } from "./native-settings.fixture";
@@ -65,8 +66,8 @@ for (const shape of [
           await submit(first, queued, shape.hasTouch);
           await expect.poll(() => attempts.length).toBe(2);
           expect(attempts).toEqual([
-            { input, clientUserMessageId: expect.any(String) },
-            { input, clientUserMessageId: expect.any(String) },
+            { input, clientUserMessageId: expect.any(String), ...(!queued ? { queueIfPending: true } : {}) },
+            { input, clientUserMessageId: expect.any(String), ...(!queued ? { queueIfPending: true } : {}) },
           ]);
           expect((attempts[0] as {clientUserMessageId:string}).clientUserMessageId).not.toBe((attempts[1] as {clientUserMessageId:string}).clientUserMessageId);
 
@@ -76,9 +77,9 @@ for (const shape of [
           // sees its canonical patch; the second must recover from the snapshot.
           const item: ThreadTimelineSnapshotItem = {
             id: "native-skill-item", itemId: "native-user", threadId: "settings-chat", turnId: "skill-turn", itemType: "userMessage", status: "completed", codexMethod: "item/completed", displayOrder: 1,
-            payload: { source: "appServerSnapshot", turnId: "skill-turn", itemId: "native-user", item: { id: "native-user", type: "userMessage", content: input }, itemSnapshot: { id: "native-user", itemType: "userMessage", skillMentions: [{ start: 2, end: 13, name: "review-fix", path: "/skills/review-fix/SKILL.md" }] } },
+            payload: compactCanonicalPayload({ id: "native-user", type: "userMessage", content: input }, { id: "native-user", itemType: "userMessage", skillMentions: [{ start: 2, end: 13, name: "review-fix", path: "/skills/review-fix/SKILL.md" }] }),
           };
-          fixture.publishTimeline({ activeTurnId: null, liveState: "idle", pendingApprovalRequests: [], pendingUserInputRequests: [], viewRevision: 5, turns: [{ id: "skill-turn", status: "completed" }], rows: [{ id: "native-skill-row", kind: "user_message", status: "completed", turnId: "skill-turn", displayOrder: 1, item, items: [], collapsedRows: [], fileChanges: [] }] }, "first");
+          fixture.publishTimeline({ activeTurnId: null, liveState: "idle", pendingApprovalRequests: [], pendingUserInputRequests: [], viewRevision: 5, turns: [{ id: "skill-turn", status: "completed" }], rows: [{ id: "native-skill-row", kind: "user_message", status: "completed", turnId: "skill-turn", displayOrder: 1, item }] }, "first");
           await expect(activePane(first).getByLabel("$review-fix skill", { exact: true })).toBeVisible();
           await expect(activePane(second).getByLabel("$review-fix skill", { exact: true })).toHaveCount(0);
           const connections = fixture.connections.get("second") ?? 0;

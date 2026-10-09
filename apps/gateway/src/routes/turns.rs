@@ -9,8 +9,8 @@ use utoipa::ToSchema;
 use crate::{
     api::AppState,
     app_server_api::{
-        self, CodexClient, RawAppServerResponse, ThreadStatus, TimelineFileAttachment,
-        TurnStartOptions, UserInput,
+        self, CodexClient, RawAppServerResponse, ThreadGoalSetRequest, ThreadGoalStatus,
+        ThreadStatus, TimelineFileAttachment, TurnStartOptions, UserInput,
     },
     error::{ApiError, ApiResult},
     turn_lifecycle,
@@ -63,6 +63,9 @@ pub struct ThreadInputRequest {
     /// Composer policy: append to existing native queued work before start-or-steer.
     #[serde(default)]
     pub queue_if_pending: bool,
+    /// Alternate composer policy: enqueue only when the native queue is empty.
+    #[serde(default)]
+    pub queue_if_empty: bool,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -119,9 +122,15 @@ pub async fn submit_thread_input(
     let ThreadInputRequest {
         submission: request,
         queue_if_pending,
+        queue_if_empty,
     } = request;
+    if queue_if_pending && queue_if_empty {
+        return Err(ApiError::BadRequest(
+            "queueIfPending and queueIfEmpty cannot both be enabled".into(),
+        ));
+    }
     request.options.validate()?;
-    if !queue_if_pending {
+    if !queue_if_pending && !queue_if_empty {
         let response = start_turn(State(state), Path(thread_id), Json(request))
             .await?
             .0;
@@ -133,10 +142,11 @@ pub async fn submit_thread_input(
     }
     let _submit_guard = state.thread_input_locks.lock(&thread_id).await;
     let client = app_server_api::client(&state.app_server);
-    // Read one current native queue row, never a browser or gateway cache. If
-    // its last row has begun before this read, native turn/start may steer it.
+    // Route from one current native queue row, never a browser or gateway cache.
+    // Native queue state may change after this read; turn/start still atomically
+    // chooses start or steering when the selected policy submits immediately.
     let queue = client.queue_list(thread_id.clone(), None, Some(1)).await?;
-    if !queue.data.is_empty() {
+    if (queue_if_pending && !queue.data.is_empty()) || (queue_if_empty && queue.data.is_empty()) {
         if serde_json::to_value(&request.options)?
             .as_object()
             .is_some_and(|options| !options.is_empty())
@@ -332,22 +342,32 @@ pub async fn interrupt_turn(
     ))
 }
 
+/// Pause an active native goal and interrupt the current native turn.
 #[utoipa::path(post, path = "/v1/threads/{threadId}/interrupt-current", responses((status = 200, body = ThreadInterruptCurrentResponse)))]
 pub async fn interrupt_current_turn(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
 ) -> ApiResult<Json<ThreadInterruptCurrentResponse>> {
+    let client = app_server_api::client(&state.app_server);
+    // Pause first so native goal continuation cannot replace the turn selected for Stop.
+    // A goal failure must still allow us to interrupt, then surface the failed pause.
+    let pause_result = match pause_active_goal(&client, &thread_id).await {
+        Err(error) if goal_unavailable(&error, &thread_id) => Ok(()),
+        result => result,
+    };
     let Some(active_turn_id) = turn_lifecycle::refreshed_active_turn_id(&state, &thread_id).await?
     else {
+        pause_result?;
         return Ok(Json(ThreadInterruptCurrentResponse {
             disposition: ThreadInterruptCurrentDisposition::Idle,
             interrupted_turn_id: None,
             raw_payload: None,
         }));
     };
-    let response = app_server_api::client(&state.app_server)
+    let response = client
         .turn_interrupt(thread_id, active_turn_id.clone())
         .await?;
+    pause_result?;
     Ok(Json(ThreadInterruptCurrentResponse {
         disposition: ThreadInterruptCurrentDisposition::Interrupted,
         interrupted_turn_id: Some(active_turn_id),
@@ -355,6 +375,39 @@ pub async fn interrupt_current_turn(
     }))
 }
 
+async fn pause_active_goal(client: &CodexClient, thread_id: &str) -> ApiResult<()> {
+    let Some(goal) = client.thread_goal_get(thread_id.to_string()).await?.goal else {
+        return Ok(());
+    };
+    if goal.thread_id != thread_id {
+        return Err(ApiError::BadGateway(
+            "native Stop goal returned a different thread".into(),
+        ));
+    }
+    if matches!(goal.status, ThreadGoalStatus::Active) {
+        client
+            .thread_goal_set(
+                thread_id.to_string(),
+                ThreadGoalSetRequest {
+                    status: Some(Some(ThreadGoalStatus::Paused)),
+                    ..Default::default()
+                },
+            )
+            .await?;
+    }
+    Ok(())
+}
+
+fn goal_unavailable(error: &ApiError, thread_id: &str) -> bool {
+    matches!(error, ApiError::NativeRpc(error) if error.code == -32600
+        && (error.message == "goals feature is disabled"
+            || error.message == format!("ephemeral thread does not support goals: {thread_id}")))
+}
+
 #[cfg(test)]
 #[path = "turns_input_tests.rs"]
 mod input_tests;
+
+#[cfg(test)]
+#[path = "turns_stop_tests.rs"]
+mod stop_tests;

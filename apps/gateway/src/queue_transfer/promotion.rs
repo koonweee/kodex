@@ -9,8 +9,8 @@ use crate::{
     store::QueueTransferPhase,
 };
 
-/// One explicit handoff targets the native turn active during this request.
-/// Queue age and enqueue-time runtime context do not determine eligibility.
+/// Send one native queued row now: start it when idle, or target the native turn
+/// active during this request. Queue age does not determine eligibility.
 pub async fn promote(
     state: &AppState,
     thread_id: &str,
@@ -46,6 +46,9 @@ async fn promote_locked(
     let client = app_server_api::client(&state.app_server);
     client.check_direct_input_capability(thread_id).await?;
     let current = active_turn(&client, thread_id).await?;
+    if current.is_none() {
+        return start_idle_locked(state, thread_id, native_queue_id, &probe).await;
+    }
     let claim = state
         .queue_steer_guards
         .capture_after_probe(probe, current.as_deref())
@@ -87,6 +90,7 @@ async fn promote_locked(
                 }
                 cursor = Some(next);
             }
+            _ if native_queue_id.is_none() => return Ok(PromotionOutcome::Empty),
             _ => {
                 return Err(ApiError::Conflict(
                     "Native queued message is no longer available".into(),
@@ -245,4 +249,35 @@ async fn promote_locked(
             .await
         }
     }
+}
+
+async fn start_idle_locked(
+    state: &AppState,
+    thread_id: &str,
+    native_queue_id: Option<&str>,
+    probe: &crate::queue_steer_guard::QueueSteerProbe,
+) -> ApiResult<PromotionOutcome> {
+    // The first-row shortcut selects under the same input lock used by queue
+    // edits and reordering; never skip a front row with an unresolved transfer.
+    let selected = match native_queue_id {
+        Some(id) => id.to_owned(),
+        None => {
+            let page = app_server_api::client(&state.app_server)
+                .queue_list(thread_id.into(), None, Some(1))
+                .await?;
+            let Some(row) = page.data.into_iter().next() else {
+                return Ok(PromotionOutcome::Empty);
+            };
+            row.id
+        }
+    };
+    if let Some(transfer) = state
+        .store
+        .get_queue_transfer_for_row(thread_id, &selected)
+        .await?
+    {
+        return Ok(PromotionOutcome::Transfer { transfer });
+    }
+    super::start_locked(state, thread_id, &selected, probe).await?;
+    Ok(PromotionOutcome::Delivered { id: selected })
 }

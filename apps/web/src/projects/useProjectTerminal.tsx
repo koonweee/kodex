@@ -53,7 +53,7 @@ export function useProjectTerminal({ projects, selectedMainPane, selectedProject
           open(cwd);
         }}>
           <Stack>
-            <Autocomplete label="Working directory" description="Choose where this chat's terminal starts." value={directory} onChange={setDirectory} required />
+            <Autocomplete label="Working directory" value={directory} onChange={setDirectory} required />
             <Button type="submit" disabled={!directory.trim()}>Open terminal</Button>
           </Stack>
         </form>

@@ -406,12 +406,14 @@ export function createChatService(options: ChatServiceOptions) {
         throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Image could not be uploaded.' });
       }
     },
-    async send({ chatId, queueIfPending = false, ...input }: ChatInput & { chatId: string; queueIfPending?: boolean }) {
+    async send({ chatId, queueIfPending = false, queueIfEmpty = false, ...input }: ChatInput & { chatId: string; queueIfPending?: boolean; queueIfEmpty?: boolean }) {
+      if (queueIfPending && queueIfEmpty) throw new ORPCError('BAD_REQUEST', { message: 'Queue policies cannot both be enabled.' });
       const handle = await handleFor(chatId);
       // Read authoritative native pending work, including input submitted by
       // native extensions. A concurrent drain can still let Send interject into
       // the new active run; the browser never chooses start/steer routing.
-      if (queueIfPending && handle.session.displayState.get().queuedFollowUps > 0) return enqueueNative(handle, input);
+      const pending = handle.session.displayState.get().queuedFollowUps > 0;
+      if ((queueIfPending && pending) || (queueIfEmpty && !pending)) return enqueueNative(handle, input);
       return sendNative(handle, input);
     },
     async respondPrompt(input: ChatPromptResponse) {

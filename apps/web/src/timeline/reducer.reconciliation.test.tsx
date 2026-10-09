@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../test/canonicalPayloadFixture";
 import { act, renderHook } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -25,11 +26,7 @@ function snapshot(text: string, viewRevision: number): ThreadViewResponse {
         item: {
           id: "answer", itemId: "answer", itemType: "agentMessage", threadId: "thread-1", turnId: "turn-1",
           status: "inProgress", displayOrder: 1, codexMethod: "item/started",
-          payload: {
-            source: "gatewayStream", turnId: "turn-1", itemId: "answer",
-            item: { id: "answer", type: "agentMessage", text },
-            itemSnapshot: { id: "answer", itemType: "agentMessage" },
-          },
+          payload: compactCanonicalPayload({ id: "answer", type: "agentMessage", text }, { id: "answer", itemType: "agentMessage" }),
         },
         items: [], fileChanges: [], collapsedRows: [],
       }],

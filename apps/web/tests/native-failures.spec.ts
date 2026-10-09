@@ -12,9 +12,9 @@ test("failed turns remain visible across live delivery, missed events and reload
       turns: [{ id: "failed-turn", status: "failed", errorMessage: "Sign in to continue." }],
       rows: [{
         id: "work-failed-turn", kind: "work", turnId: "failed-turn", displayOrder: 1,
-        status: "failed", timestampMs: null, item: null, items: [], fileChanges: [],
+        status: "failed",
         work: { state: "failed", startedAt: null, completedAt: null, errorMessage: "Sign in to continue." },
-        collapsedRows: [], dividerBefore: null,
+
       }],
     };
     fixture.publishTimeline(fixture.detail.timeline, "first");

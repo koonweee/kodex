@@ -13,3 +13,7 @@ export function numberValue(value: unknown): number | null {
 export function errorMessageFrom(error: unknown): string {
   return error instanceof Error ? error.message : "Gateway request failed";
 }
+
+export function unixSecondsToMs(value: number | null | undefined): number | undefined {
+  return typeof value === "number" ? value * 1000 : undefined;
+}

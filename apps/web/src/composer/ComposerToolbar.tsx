@@ -1,6 +1,6 @@
 import { Group, Loader, Menu } from "@mantine/core";
-import { ArrowUp, ListPlus, Maximize2, Paperclip, Plus, Square, Target } from "lucide-react";
-import { memo } from "react";
+import { ArrowUp, ListPlus, Paperclip, Plus, Square, Target } from "lucide-react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 
 import { ComposerFooterControls } from "../ComposerFooterControls";
@@ -13,15 +13,16 @@ import "./touchQueueHold.css";
 const COMPOSER_TOOLBAR_TEXT = {
   addAttachment: "Add attachment",
   attachments: "Attachment options",
-  expand: "Expand composer",
   openAttachments: "Open attachment menu",
   send: "Send message",
+  sendNow: "Send now",
   addToQueue: "Add to queue",
   sending: "Sending message",
   stop: "Stop turn",
 };
 
 type ComposerToolbarProps = {
+  alternateSubmitPreview?: boolean;
   goalControls?: GoalControls;
   formId: string;
   attachmentInputRef: RefObject<HTMLInputElement | null>;
@@ -29,8 +30,8 @@ type ComposerToolbarProps = {
   contextUsage?: ContextUsage | null;
   disabled: boolean;
   models: ComposerModelChoice[];
-  onExpandComposer?: () => void;
   onSettingsChange: (settings: ComposerSettingsChange) => void;
+  onMenuOpenChange?: (opened: boolean) => void;
   onStopTurn: () => void;
   selectedThreadPresent: boolean;
   queueOnSubmit?: boolean;
@@ -43,6 +44,7 @@ type ComposerToolbarProps = {
 };
 
 export const ComposerToolbar = memo(function ComposerToolbar({
+  alternateSubmitPreview = false,
   formId,
   goalControls,
   attachmentInputRef,
@@ -50,8 +52,8 @@ export const ComposerToolbar = memo(function ComposerToolbar({
   contextUsage,
   disabled,
   models,
-  onExpandComposer,
   onSettingsChange,
+  onMenuOpenChange,
   onStopTurn,
   selectedThreadPresent,
   queueOnSubmit = false,
@@ -62,6 +64,18 @@ export const ComposerToolbar = memo(function ComposerToolbar({
   isSubmitting,
   showContextUsage = true,
 }: ComposerToolbarProps) {
+  const attachmentTargetRef = useRef<HTMLSpanElement>(null);
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  useEffect(() => {
+    onMenuOpenChange?.(attachmentMenuOpen || modelMenuOpen);
+  }, [attachmentMenuOpen, modelMenuOpen, onMenuOpenChange]);
+  function changeAttachmentMenuOpen(opened: boolean) {
+    if (!opened && attachmentMenuOpen) {
+      attachmentTargetRef.current?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+    }
+    setAttachmentMenuOpen(opened);
+  }
   const queueHold = useTouchQueueHold({
     enabled: selectedThreadPresent && canSubmitComposer && !disabled && !isSubmitting && !shouldShowStopAction,
     onQueue: () => {
@@ -70,26 +84,32 @@ export const ComposerToolbar = memo(function ComposerToolbar({
       if (submitter && !submitter.disabled) form?.requestSubmit(submitter);
     },
   });
+  const previewQueueAction = alternateSubmitPreview !== queueOnSubmit;
+  const previewSendNowAction = alternateSubmitPreview && queueOnSubmit;
   const actionLabel = isSubmitting
     ? COMPOSER_TOOLBAR_TEXT.sending
     : shouldShowStopAction
       ? COMPOSER_TOOLBAR_TEXT.stop
-      : queueOnSubmit ? COMPOSER_TOOLBAR_TEXT.addToQueue : COMPOSER_TOOLBAR_TEXT.send;
+      : previewQueueAction
+        ? COMPOSER_TOOLBAR_TEXT.addToQueue
+        : previewSendNowAction ? COMPOSER_TOOLBAR_TEXT.sendNow : COMPOSER_TOOLBAR_TEXT.send;
 
   return (
-    <Group className="kodex-composer-toolbar" justify="space-between" wrap="wrap">
-      <Group className="kodex-composer-toolbar-left" gap={6} wrap="nowrap">
-        <Menu position="top-start" withinPortal>
-          <Menu.Target>
-            <AdaptiveIconButton
-              className="kodex-composer-secondary-action"
-              disabled={disabled}
-              label={COMPOSER_TOOLBAR_TEXT.openAttachments}
-              tooltip={false}
-            >
-              <Plus />
-            </AdaptiveIconButton>
-          </Menu.Target>
+    <Group className="kodex-composer-toolbar" gap={4} justify="space-between" wrap="wrap">
+      <Group className="kodex-composer-toolbar-left" gap={4} wrap="nowrap">
+        <Menu position="top-start" withinPortal returnFocus={false} opened={attachmentMenuOpen} onChange={changeAttachmentMenuOpen}>
+          <span ref={attachmentTargetRef} className="kodex-composer-attachment-target">
+            <Menu.Target>
+              <AdaptiveIconButton
+                className="kodex-composer-secondary-action"
+                disabled={disabled}
+                label={COMPOSER_TOOLBAR_TEXT.openAttachments}
+                tooltip={false}
+              >
+                <Plus />
+              </AdaptiveIconButton>
+            </Menu.Target>
+          </span>
           <Menu.Dropdown aria-label={COMPOSER_TOOLBAR_TEXT.attachments}>
             <Menu.Item
               disabled={disabled}
@@ -111,7 +131,7 @@ export const ComposerToolbar = memo(function ComposerToolbar({
                 type="submit"
                 form={formId}
                 data-submit-intent="queue"
-                title="Queue message (⌘Enter on desktop)"
+                title="Queue message"
               >
                 Queue message
               </Menu.Item>
@@ -119,6 +139,7 @@ export const ComposerToolbar = memo(function ComposerToolbar({
           </Menu.Dropdown>
         </Menu>
         <ComposerFooterControls
+          onMenuOpenChange={setModelMenuOpen}
           contextUsage={contextUsage}
           disabled={disabled || settingsDisabled}
           models={models}
@@ -129,16 +150,6 @@ export const ComposerToolbar = memo(function ComposerToolbar({
         />
         {goalControls && (goalControls.compact || (goalControls.error && !goalControls.goal)) ? <GoalButton controls={goalControls} /> : null}
       </Group>
-      {onExpandComposer ? (
-        <AdaptiveIconButton
-          className="kodex-composer-secondary-action kodex-composer-expand-action"
-          disabled={disabled}
-          label={COMPOSER_TOOLBAR_TEXT.expand}
-          onClick={onExpandComposer}
-        >
-          <Maximize2 />
-        </AdaptiveIconButton>
-      ) : null}
       {isSubmitting ? (
         <AdaptiveIconButton
           className="kodex-composer-action"
@@ -167,9 +178,10 @@ export const ComposerToolbar = memo(function ComposerToolbar({
           label={actionLabel}
           tooltip={selectedThreadPresent ? `${actionLabel} · Hold to queue on touch` : actionLabel}
           type="submit"
+          data-submit-intent={alternateSubmitPreview ? "alternate" : undefined}
           {...queueHold.handlers}
         >
-          {queueOnSubmit ? <ListPlus /> : <ArrowUp />}
+          {previewQueueAction ? <ListPlus /> : <ArrowUp />}
           {queueHold.holding ? <span className="kodex-composer-hold-progress" aria-hidden="true">
             <svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" pathLength="100" /></svg>
           </span> : null}

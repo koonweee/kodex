@@ -11,8 +11,8 @@ vi.mock('./client', () => ({ mastraClient: rpc }));
 type Snapshot = ChatSnapshot['queue'];
 const queued = (text = 'Original', revision = 1): Snapshot => ({ epoch: 'epoch', revision, nativeCount: 1, partial: false, rows: [{ id: 'row', nativeSignalId: 'native', status: 'queued', input: { text } }] });
 const restore = vi.fn();
-function Panel({ snapshot, label = 'client' }: { snapshot: Snapshot; label?: string }) {
-  const queue = useMastraQueue('chat', snapshot, vi.fn(), vi.fn());
+function Panel({ snapshot, label = 'client', isRunning = true }: { snapshot: Snapshot; label?: string; isRunning?: boolean }) {
+  const queue = useMastraQueue('chat', snapshot, vi.fn(), vi.fn(), isRunning);
   return <section aria-label={label}><QueuePanel controller={queue} canRestoreText onRestoreText={restore} /></section>;
 }
 const wrap = (children: React.ReactNode) => <MantineProvider env="test">{children}</MantineProvider>;
@@ -181,4 +181,17 @@ it('preserves selected skill identity in recovery instead of restoring only its 
   await userEvent.click(screen.getByRole('button', { name: 'Saved input' }));
   expect(screen.getByLabelText('Saved native input JSON')).toHaveValue(JSON.stringify(value.rows[0].input, null, 2));
   expect(restore).not.toHaveBeenCalled();
+});
+
+it('labels idle Send now and active Steer from native snapshots but sends the same exact versioned command', async () => {
+  rpc.steerQueued.mockResolvedValue({ outcome: 'applied' });
+  const current = queued();
+  const view = render(wrap(<Panel snapshot={current} isRunning={false} />));
+  await userEvent.click(screen.getByRole('button', { name: 'Send now' }));
+  await waitFor(() => expect(rpc.steerQueued).toHaveBeenLastCalledWith({ chatId: 'chat', epoch: 'epoch', revision: 1, id: 'row' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Send now' })).toBeEnabled());
+  view.rerender(wrap(<Panel snapshot={queued('Waiting input', 2)} isRunning />));
+  expect(screen.queryByRole('button', { name: 'Send now' })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Steer' }));
+  await waitFor(() => expect(rpc.steerQueued).toHaveBeenLastCalledWith({ chatId: 'chat', epoch: 'epoch', revision: 2, id: 'row' }));
 });

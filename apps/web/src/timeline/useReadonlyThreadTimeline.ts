@@ -1,3 +1,4 @@
+import { useThreadDeliveryPreferences } from "./ThreadDeliveryPreferences";
 import { useEffect, useRef, useState } from "react";
 
 import type { ThreadSummary } from "../api/client";
@@ -25,6 +26,8 @@ export function useReadonlyThreadTimeline({
   onSnapshotThread?: (thread: ThreadSummary) => void;
   threadId: string | null;
 }) {
+  const { includeDebugEvents, includeCommandOutputs, getOptions: getDeliveryOptions } = useThreadDeliveryPreferences();
+  const deliveryStreamRef = useRef<ReturnType<typeof createEventStreamClient> | null>(null);
   const validateInstance = useGatewayInstanceValidation();
   const handleStreamConnected = useGatewayStreamConnected();
   const [timeline, setTimeline] = useState<TimelineState>(() => createTimelineState());
@@ -95,7 +98,7 @@ export function useReadonlyThreadTimeline({
         markRefreshing(currentThreadId);
       }
       try {
-        const snapshot = await getThreadDetail(currentThreadId, controller.signal);
+        const snapshot = await getThreadDetail(currentThreadId, controller.signal, getDeliveryOptions());
         if (controller.signal.aborted || cancelled || streamToken.current !== currentToken) {
           return false;
         }
@@ -124,8 +127,9 @@ export function useReadonlyThreadTimeline({
         beforeConnect: validateInstance,
         cursor,
         threadId: currentThreadId,
-        onStatusChange: (status) => {
-          if (status === "connected") handleStreamConnected?.();
+        ...getDeliveryOptions(),
+        onStatusChange: (status, reason) => {
+          if (status === "connected" && reason !== "delivery_options") handleStreamConnected?.();
           if (status === "reconnecting" && streamToken.current === currentToken) {
             refetchSnapshot();
           }
@@ -152,6 +156,7 @@ export function useReadonlyThreadTimeline({
           enqueueTimelineEvent(event);
         },
       });
+      deliveryStreamRef.current = client;
       client.connect();
       closeStream = client.close;
     };
@@ -175,10 +180,15 @@ export function useReadonlyThreadTimeline({
       snapshotController?.abort();
       streamToken.current += 1;
       closeStream?.();
+      deliveryStreamRef.current = null;
       cancelQueuedTimelineEvents();
       requestTimelineRefresh.current = null;
     };
-  }, [cancelQueuedTimelineEvents, enqueueTimelineEvent, handleStreamConnected, threadId, validateInstance]);
+  }, [cancelQueuedTimelineEvents, enqueueTimelineEvent, handleStreamConnected, threadId, validateInstance, getDeliveryOptions]);
+
+  useEffect(() => {
+    deliveryStreamRef.current?.updateDeliveryOptions({ includeDebugEvents, includeCommandOutputs });
+  }, [includeDebugEvents, includeCommandOutputs]);
 
   return {
     isLoading: timelineEntry.phase === "loadingSnapshot",

@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../src/test/canonicalPayloadFixture";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { appendResponseAnnotations } from "../src/composer/annotations";
@@ -38,6 +39,8 @@ for (const shape of [
         const bubbleBounds = await add.boundingBox();
         expect(bubbleBounds!.y + bubbleBounds!.height).toBeLessThanOrEqual(selectionTop + 2);
         await first.screenshot({ path: test.info().outputPath("annotation-selection.png") });
+        const layoutViewportHeight = await first.evaluate(() => innerHeight);
+        if (shape.hasTouch) await setVisualViewport(first, layoutViewportHeight - 300);
         await click(add, shape.hasTouch);
         const annotationToggle = activePane(first).getByRole("button", { name: "1 annotation", exact: true });
         await expect(annotationToggle).toBeVisible();
@@ -53,16 +56,29 @@ for (const shape of [
         await comment.press("Backspace");
         await expect(comment).toBeFocused();
         await first.screenshot({ path: test.info().outputPath("annotation-comment-focused.png") });
+        const composeDialog = activePane(first).getByRole("dialog", { name: "Compose", exact: true });
         if (shape.hasTouch) {
           const originalComment = await comment.elementHandle();
-          await first.setViewportSize({ width: shape.width, height: 420 });
+          await expect(composeDialog).toBeVisible();
           await expect(comment).toBeFocused();
           await expect(comment).toHaveValue(firstComment);
-          await expect(comment).toBeInViewport();
+          const visualBottom = await first.evaluate(() =>
+            (visualViewport?.offsetTop ?? 0) + (visualViewport?.height ?? innerHeight));
+          for (const control of [comment, activePane(first).getByRole("button", { name: "Send message", exact: true })]) {
+            const bounds = await control.boundingBox();
+            expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(visualBottom);
+          }
           expect(await originalComment!.evaluate((element) => element.isConnected && element === document.activeElement)).toBe(true);
+          await click(activePane(first).getByRole("button", { name: "Open attachment menu", exact: true }), true);
+          await expect(first.getByRole("menuitem", { name: "Add attachment", exact: true })).toBeVisible();
+          const composerBounds = await activePane(first).locator(":scope > .kodex-composer-shell").boundingBox();
+          expect(composerBounds!.y + composerBounds!.height).toBeLessThanOrEqual(visualBottom);
+          await first.keyboard.press("Escape");
           await first.screenshot({ path: test.info().outputPath("annotation-keyboard-viewport.png") });
-          await first.setViewportSize({ width: shape.width, height: 844 });
+          await setVisualViewport(first, layoutViewportHeight);
           await collapseTouchComposer(first, shape.hasTouch);
+        } else {
+          await expect(composeDialog).toHaveCount(0);
         }
 
         await click(annotationToggle, shape.hasTouch);
@@ -110,7 +126,8 @@ for (const shape of [
           "</annotation2>", "</response_annotations>",
         ].join("\n");
         const submitted = fixture.requests.find((request) => request.key === inputKey)!.body as { input: unknown; clientUserMessageId: string };
-        expect(submitted).toEqual({ input: [{ type: "text", text: submittedText }], clientUserMessageId: expect.any(String) });
+        expect(submitted).toEqual({ input: [{ type: "text", text: submittedText }], clientUserMessageId: expect.any(String),
+          ...(shape.hasTouch ? { queueIfEmpty: true } : { queueIfPending: true }) });
         await expect(activePane(first).getByRole("button", { name: /^\d+ annotations?$/ })).toHaveCount(0);
         await expect(composer(first)).toHaveValue("");
 
@@ -241,8 +258,15 @@ for (const shape of [
         const queuedText = ["<response_annotations>", "<annotation1>", `Assistant text: ${JSON.stringify(secondQuote)}`, "</annotation1>", "</response_annotations>"].join("\n");
         expect(fixture.requests.find((request) => request.key === queueKey)!.body).toEqual({ input: [{ type: "text", text: queuedText }], clientUserMessageId: expect.any(String) });
         for (const page of [first, second]) {
-          await expect(activePane(page).getByRole("group", { name: "Queued message", exact: true })).toContainText(secondQuote);
+          const queued = activePane(page).getByRole("group", { name: "Queued message", exact: true });
+          await expect(queued).toContainText("Quoted message");
           await expect(page.getByRole("button", { name: /^\d+ annotations?$/ })).toHaveCount(0);
+          await click(queued.getByRole("button", { name: "Edit", exact: true }), shape.hasTouch);
+          const editor = page.getByRole("dialog", { name: "Edit queued message", exact: true });
+          await expect(editor.locator("blockquote")).toHaveText(secondQuote);
+          await expect(editor.getByRole("textbox", { name: "Queued message text", exact: true })).toHaveValue("");
+          await page.keyboard.press("Escape");
+          await expect(editor).toBeHidden();
         }
         expect(fixture.requests.filter((request) => request.key === "POST /v1/threads/settings-chat/input")).toHaveLength(0);
         await first.screenshot({ path: test.info().outputPath("annotation-queued.png") });
@@ -253,10 +277,72 @@ for (const shape of [
   });
 }
 
+test.describe("annotation composer activation policy", () => {
+  test.use({ viewport: { width: 1024, height: 844 }, hasTouch: true, isMobile: true });
+
+  test("uses the opening pointer instead of touch capability or viewport width", async ({ context }) => {
+    const fixture = await nativeSettingsFixture(context);
+    fixture.detail.timeline = {
+      ...fixture.detail.timeline,
+      rows: [assistantRow()],
+      turns: [{ id: "turn-answer", status: "completed" }],
+    };
+    try {
+      const page = await fixture.page("activation-policy");
+      await expect(answer(page)).toContainText(firstQuote);
+
+      await selectExcerpt(page, firstQuote, true);
+      await page.getByRole("button", { name: "Add to chat", exact: true }).tap();
+      const firstCommentInput = activePane(page).getByRole("textbox", { name: "Annotation 1 comment", exact: true });
+      const firstCommentNode = await firstCommentInput.elementHandle();
+      await expect(firstCommentInput).toBeFocused();
+      await expect(activePane(page).getByRole("dialog", { name: "Compose", exact: true })).toBeVisible();
+
+      await page.setViewportSize({ width: 390, height: 844 });
+      await expect(activePane(page)).toHaveAttribute("data-pane-width", "compact");
+      await expect(activePane(page).getByRole("dialog", { name: "Compose", exact: true })).toBeVisible();
+      expect(await firstCommentNode!.evaluate((element) => element.isConnected && element === document.activeElement)).toBe(true);
+      await collapseTouchComposer(page, true);
+      await activePane(page).getByRole("button", { name: "Remove annotation 1", exact: true }).tap();
+
+      await selectExcerpt(page, secondQuote, true);
+      const keyboardAdd = page.getByRole("button", { name: "Add to chat", exact: true });
+      await keyboardAdd.focus();
+      await keyboardAdd.press("Enter");
+      await expect(activePane(page).getByRole("textbox", { name: "Annotation 1 comment", exact: true })).toBeFocused();
+      await expect(activePane(page).getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
+      await activePane(page).getByRole("button", { name: "Remove annotation 1", exact: true }).tap();
+
+      await selectExcerpt(page, discardedQuote, true);
+      await page.getByRole("button", { name: "Add to chat", exact: true }).click();
+      await expect(activePane(page).getByRole("textbox", { name: "Annotation 1 comment", exact: true })).toBeFocused();
+      await expect(activePane(page).getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
+    } finally {
+      await fixture.close();
+    }
+    expect(fixture.unexpected).toEqual([]);
+    expect(fixture.errors).toEqual([]);
+  });
+});
+
 function activePane(page: Page) { return page.locator('.kodex-thread-pane[data-workspace-pane-active="true"]'); }
 function answer(page: Page) { return activePane(page).locator(".kodex-assistant-markdown"); }
 function composer(page: Page) { return activePane(page).getByLabel("Message composer", { exact: true }); }
 async function click(locator: Locator, touch: boolean) { if (touch) await locator.tap(); else await locator.click(); }
+async function setVisualViewport(page: Page, height: number) {
+  await page.evaluate((nextHeight) => {
+    type TestVisualViewport = EventTarget & { height: number; offsetLeft: number; offsetTop: number; width: number };
+    const owner = window as typeof window & { __kodexTestVisualViewport?: TestVisualViewport };
+    if (!owner.__kodexTestVisualViewport) {
+      owner.__kodexTestVisualViewport = Object.assign(new EventTarget(), {
+        height: nextHeight, offsetLeft: 0, offsetTop: 0, width: innerWidth,
+      });
+      Object.defineProperty(window, "visualViewport", { configurable: true, value: owner.__kodexTestVisualViewport });
+    }
+    owner.__kodexTestVisualViewport.height = nextHeight;
+    owner.__kodexTestVisualViewport.dispatchEvent(new Event("resize"));
+  }, height);
+}
 async function expectSentAnnotations(page: Page) {
   const bubble = activePane(page).locator(".kodex-user-message-bubble").filter({ hasText: "Review these." });
   await expect(bubble).toHaveCount(1);
@@ -340,15 +426,15 @@ async function selectExcerpt(page: Page, text: string, touch: boolean) {
 
 function assistantRow(): ThreadTimelineRow {
   return { id: "answer", turnId: "turn-answer", kind: "assistant_message", status: "completed", displayOrder: 1,
-    items: [], collapsedRows: [], fileChanges: [],
+
     item: { id: "answer", threadId: "settings-chat", turnId: "turn-answer", itemId: "answer", itemType: "agentMessage", status: "completed", displayOrder: 1, codexMethod: "item/completed",
-      payload: { source: "appServerSnapshot", turnId: "turn-answer", itemId: "answer", itemSnapshot: { id: "answer", itemType: "agentMessage" }, item: { id: "answer", type: "agentMessage", phase: "final_answer", text: assistantText } } },
+      payload: compactCanonicalPayload({ id: "answer", type: "agentMessage", phase: "final_answer", text: assistantText }, { id: "answer", itemType: "agentMessage" }) },
   };
 }
 function submittedRow(text: string, clientId: string): ThreadTimelineRow {
   return { id: "submitted", turnId: "turn-1", kind: "user_message", status: "completed", displayOrder: 2,
-    items: [], collapsedRows: [], fileChanges: [],
+
     item: { id: "submitted", threadId: "settings-chat", turnId: "turn-1", itemId: "submitted", itemType: "userMessage", status: "completed", displayOrder: 2, codexMethod: "item/completed",
-      payload: { source: "appServerSnapshot", turnId: "turn-1", itemId: "submitted", itemSnapshot: { id: "submitted", itemType: "userMessage", clientId }, item: { id: "submitted", type: "userMessage", clientId, content: [{ type: "text", text }] } } },
+      payload: compactCanonicalPayload({ id: "submitted", type: "userMessage", clientId, content: [{ type: "text", text }] }, { id: "submitted", itemType: "userMessage", clientId }) },
   };
 }

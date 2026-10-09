@@ -1,4 +1,4 @@
-//! Narrow coordination for the retained queued-row Steer action. Ordinary
+//! Narrow coordination for the retained queued-row Send now action. Ordinary
 //! queue contents, ordering and dispatch remain native-owned. Public commands
 //! and retained producers share this coordinator; there is no ordinary drainer.
 
@@ -23,8 +23,45 @@ pub use promotion::{promote, promote_first};
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "status", rename_all = "camelCase")]
 pub enum PromotionOutcome {
-    Delivered { id: String },
-    Transfer { transfer: QueueTransfer },
+    /// The authoritative native queue has no front row to dispatch.
+    Empty,
+    /// Acknowledged native queue-start, or a receipt-settled steer transfer.
+    Delivered {
+        id: String,
+    },
+    Transfer {
+        transfer: QueueTransfer,
+    },
+}
+
+/// Shared explicit native queue-start dispatch. The caller holds the thread
+/// input lock and checks native capability and unresolved row transfers first.
+pub(crate) async fn start_locked(
+    state: &AppState,
+    thread_id: &str,
+    native_queue_id: &str,
+    probe: &crate::queue_steer_guard::QueueSteerProbe,
+) -> ApiResult<app_server_api::RawAppServerResponse> {
+    crate::automations::observe_queue_handoff_pending(state, thread_id, native_queue_id).await?;
+    if !state.queue_steer_guards.is_probe_current(probe) {
+        return Err(ApiError::Conflict(
+            "Native lifecycle changed; queued message was left untouched".into(),
+        ));
+    }
+    // Native queue-start owns atomic row consumption. Never delete/resubmit,
+    // switch to steer on failure, or retry an unconfirmed start.
+    let ack = app_server_api::client(&state.app_server)
+        .queue_start(thread_id.into(), Some(native_queue_id.into()))
+        .await?;
+    if let Some(turn) = ack.payload.pointer("/turn/id").and_then(Value::as_str) {
+        if let Err(error) =
+            crate::automations::observe_promoted_receipt(state, thread_id, native_queue_id, turn)
+                .await
+        {
+            tracing::warn!(%error, "failed to record acknowledged automation dispatch");
+        }
+    }
+    Ok(ack)
 }
 
 /// Shared native queue submission for composer, Control and automation producers.

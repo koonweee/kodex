@@ -1,3 +1,4 @@
+import { PaneLayout } from "../shared/PaneLayout";
 import { AsyncQuestionReplyProvider } from '../composer/AsyncQuestionReplyProvider';
 import { mastraClient } from './client';
 import { Alert, Badge, Box, Group, Loader, Title } from '@mantine/core';
@@ -114,14 +115,14 @@ export function NativeThreadPane({ pane, draftStore, onError }: { pane: Workspac
       if (renameGeneration.current === generation) setRenamePending(false);
     }
   }
-  if (!chatId) return <section className="kodex-thread-pane kodex-thread-pane-empty" data-workspace-pane-active={isActive ? "true" : undefined}>
+  if (!chatId) return <PaneLayout component="section" className="kodex-thread-pane kodex-thread-pane-empty" data-workspace-pane-active={isActive ? "true" : undefined}>
     <Title className="kodex-thread-pane-accessible-title" order={3} size="h5">Draft thread</Title>
     <div className="kodex-thread-pane-empty-body">
       {isActive && errorMessage ? <Badge className="kodex-thread-column kodex-thread-pane-error" color="red" data-tone="danger" leftSection={<AlertCircle size={12} />} role="alert" variant="light">{errorMessage}</Badge> : null}
       <NativeComposer pane={pane} snapshot={null} ready isActive={isActive} draftStore={draftStore} onError={onError} onQueueReload={retry} />
     </div>
-  </section>;
-  return <section className="kodex-thread-pane kodex-thread-pane-existing" data-workspace-pane-active={isActive ? "true" : undefined} data-thread-id={chatId ?? undefined} aria-label={title}>
+  </PaneLayout>;
+  return <PaneLayout component="section" className="kodex-thread-pane kodex-thread-pane-existing" data-workspace-pane-active={isActive ? "true" : undefined} data-thread-id={chatId ?? undefined} aria-label={title}>
     <Title className="kodex-thread-pane-accessible-title" order={3} size="h5" title={title}>{title}</Title>
     <RenameThreadDialog opened={renameOpen && Boolean(nativeChatId)} title={title} name={name} pending={renamePending}
       error={renameError} onClose={closeRename} onSubmit={submitRename}
@@ -136,5 +137,5 @@ export function NativeThreadPane({ pane, draftStore, onError }: { pane: Workspac
         onImageOpen={onImageOpen} onMarkdownOpen={onMarkdownOpen} showDebug={showDebugEvents} /> : null}
     </Box>}
     {!isUnavailable && <NativeComposer pane={pane} snapshot={snapshot} ready={!chatId || Boolean(snapshot)} isActive={isActive} draftStore={draftStore} onError={onError} onQueueReload={retry} />}
-  </section>;
+  </PaneLayout>;
 }

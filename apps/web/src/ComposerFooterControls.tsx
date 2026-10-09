@@ -1,8 +1,14 @@
 import { Box, Button, Group, Menu, Switch, Text, Tooltip } from "@mantine/core";
-import { AlertCircle, ArrowLeft, Check, ChevronRight, Gauge, X } from "lucide-react";
-import type { CSSProperties } from "react";
-import { useLayoutEffect, useRef, useState } from "react";
+import { AlertCircle, ArrowLeft, Brain, Check, ChevronRight, Gauge, X } from "lucide-react";
+import type { CSSProperties, ReactNode } from "react";
+import { Children, isValidElement, useLayoutEffect, useRef, useState } from "react";
 
+import { useCompactDialog } from "./shared/layoutBreakpoints";
+import { usePaneLayout } from "./shared/PaneLayout";
+import { useInputCapabilities } from "./shared/inputCapabilities";
+import { composerSettingsPresentation } from "./composer/presentationPolicy";
+
+import { AdaptiveIcon } from "./ui/AdaptiveIcon";
 import { AdaptiveIconButton } from "./ui/AdaptiveIconButton";
 import { CheckboxMenuItem } from "./ui/CheckboxMenuItem";
 
@@ -37,6 +43,7 @@ type ComposerFooterControlsProps = {
   settingsError?: string | null;
   settings: ComposerSettings | null;
   onSettingsChange: (settings: ComposerSettingsChange) => void;
+  onMenuOpenChange?: (opened: boolean) => void;
 };
 
 export function ComposerFooterControls({
@@ -47,16 +54,23 @@ export function ComposerFooterControls({
   settingsError,
   settings,
   onSettingsChange,
+  onMenuOpenChange,
 }: ComposerFooterControlsProps) {
+  const compactDialog = useCompactDialog();
+  const { compact } = usePaneLayout();
+  const { hasAnyCoarsePointer } = useInputCapabilities();
+  const menuPresentation = composerSettingsPresentation(compactDialog, hasAnyCoarsePointer);
   const defaultModel = models.find((model) => model.isDefault) ?? models[0] ?? null;
   const selectedModel = settings?.model ? models.find((model) => model.id === settings.model) ?? null : defaultModel;
   const selectedModelLabel = selectedModel ? modelFullLabel(selectedModel) : settings?.model ?? "Model";
   const selectedModelShortLabel = selectedModelLabel.replace(/^gpt-/i, "");
   const selectedEffort = settings?.effort ?? selectedModel?.defaultReasoningEffort ?? null;
+  const modelControlLabel = settings ? `Model: ${selectedModelLabel}${selectedEffort ? `, ${selectedEffort}` : ""}` : settingsError ? "Chat settings unavailable" : "Loading chat settings";
   const supportedEfforts = selectedModel?.supportedReasoningEfforts ?? [];
   const [modelMenuOpened, setModelMenuOpened] = useState(false);
   const [submenu, setSubmenu] = useState<"model" | "reasoning" | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const modelTriggerRef = useRef<HTMLButtonElement>(null);
   const modelSubmenuRef = useRef<HTMLButtonElement>(null);
   const reasoningSubmenuRef = useRef<HTMLButtonElement>(null);
   const returnToRef = useRef<"model" | "reasoning" | null>(null);
@@ -78,6 +92,10 @@ export function ComposerFooterControls({
 
   function changeMenuOpened(opened: boolean) {
     setModelMenuOpened(opened);
+    if (!opened && modelMenuOpened) {
+      modelTriggerRef.current?.focus({ preventScroll: true });
+    }
+    onMenuOpenChange?.(opened);
     if (!opened) {
       setSubmenu(null);
       returnToRef.current = null;
@@ -99,48 +117,54 @@ export function ComposerFooterControls({
   }
 
   return (
-    <Group className="kodex-composer-footer-controls" gap={6} wrap="nowrap">
-      <Group className="kodex-composer-footer-left" gap={6} wrap="nowrap">
-        {settingsError ? (
-          <AdaptiveIconButton color="red" label={settingsError}>
-            <AlertCircle />
-          </AdaptiveIconButton>
-        ) : null}
-      </Group>
+    <ComposerControlSlots>
+      {settingsError ? (
+        <AdaptiveIconButton className="kodex-composer-settings-error" color="red" label={settingsError}>
+          <AlertCircle />
+        </AdaptiveIconButton>
+      ) : null}
+      {showContextUsage ? <ContextUsageIndicator usage={contextUsage} /> : null}
+      {settings?.fast ? (
+        <Tooltip label="Fast responses enabled">
+          <Box aria-label="Fast responses enabled" className="kodex-composer-fast-indicator" component="span" role="img">
+            <SolidBoltIcon />
+          </Box>
+        </Tooltip>
+      ) : null}
 
-      <Group className="kodex-composer-footer-right" gap={6} wrap="nowrap">
-        {showContextUsage ? <ContextUsageIndicator usage={contextUsage} /> : null}
-        {settings?.fast ? (
-          <Tooltip label="Fast responses enabled">
-            <Box aria-label="Fast responses enabled" className="kodex-composer-fast-indicator" component="span" role="img">
-              <SolidBoltIcon />
-            </Box>
+      <Menu position="top-start" withinPortal returnFocus={false} opened={modelMenuOpened} onChange={changeMenuOpened} middlewares={{ flip: true, shift: { padding: 10, crossAxis: true } }}>
+          <Tooltip label={modelControlLabel} disabled={!compact || modelMenuOpened}>
+            <Menu.Target>
+              <Button
+                aria-label={modelControlLabel}
+                className={`kodex-composer-control kodex-composer-model-control${compact ? " kodex-adaptive-icon-button" : ""}`}
+                data-icon-only={compact || undefined}
+                disabled={disabled || settings === null || models.length === 0}
+                px={compact ? 0 : undefined}
+                ref={modelTriggerRef}
+                size="compact-sm"
+                type="button"
+                variant="subtle"
+              >
+                {compact ? <AdaptiveIcon color="inherit"><Brain /></AdaptiveIcon> : (
+                  <>
+                    <span className="kodex-composer-model-name">{settings ? selectedModelShortLabel : settingsError ? "Settings unavailable" : "Loading settings"}</span>
+                    {settings && selectedEffort ? (
+                      <>
+                        {" "}
+                        <span className="kodex-composer-model-effort">{reasoningEffortLabel(selectedEffort)}</span>
+                      </>
+                    ) : null}
+                  </>
+                )}
+              </Button>
+            </Menu.Target>
           </Tooltip>
-        ) : null}
-
-        <Menu position="top-start" withinPortal opened={modelMenuOpened} onChange={changeMenuOpened} middlewares={{ flip: true, shift: { padding: 10, crossAxis: true } }}>
-          <Menu.Target>
-            <Button
-              aria-label={settings ? `Model: ${selectedModelLabel}${selectedEffort ? `, ${selectedEffort}` : ""}` : settingsError ? "Chat settings unavailable" : "Loading chat settings"}
-              className="kodex-composer-control kodex-composer-model-control"
-              disabled={disabled || settings === null || models.length === 0}
-              size="compact-sm"
-              type="button"
-              variant="subtle"
-            >
-              <span className="kodex-composer-model-name">{settings ? selectedModelShortLabel : settingsError ? "Settings unavailable" : "Loading settings"}</span>
-              {settings && selectedEffort ? (
-                <>
-                  {" "}
-                  <span className="kodex-composer-model-effort">{reasoningEffortLabel(selectedEffort)}</span>
-                </>
-              ) : null}
-            </Button>
-          </Menu.Target>
           <Menu.Dropdown
             aria-label={submenu === "model" ? "Model" : submenu === "reasoning" ? "Reasoning" : "Model and speed controls"}
             aria-labelledby=""
             className="kodex-composer-menu kodex-run-settings-menu"
+            data-presentation={menuPresentation}
             ref={dropdownRef}
             onKeyDown={(event) => {
               if (submenu && event.key === "ArrowLeft") {
@@ -150,7 +174,7 @@ export function ComposerFooterControls({
               }
             }}
           >
-            <MobileMenuHeader title={submenu === "model" ? "Model" : submenu === "reasoning" ? "Reasoning" : "Run settings"} onClose={() => changeMenuOpened(false)} />
+            <SettingsMenuHeader title={submenu === "model" ? "Model" : submenu === "reasoning" ? "Reasoning" : "Run settings"} onClose={() => changeMenuOpened(false)} />
             {submenu ? (
               <>
                 <Menu.Item closeMenuOnClick={false} leftSection={<ArrowLeft size={14} />} onClick={goBack}>Back</Menu.Item>
@@ -233,13 +257,25 @@ export function ComposerFooterControls({
               </>
             )}
           </Menu.Dropdown>
-        </Menu>
-      </Group>
+      </Menu>
+    </ComposerControlSlots>
+  );
+}
+
+function ComposerControlSlots({ children }: { children: ReactNode }) {
+  const controls = Children.toArray(children).filter(isValidElement);
+  return (
+    <Group className="kodex-composer-footer-controls" gap={4} wrap="nowrap">
+      {controls.map((control) => (
+        <Box component="span" className="kodex-composer-control-slot" key={control.key}>
+          {control}
+        </Box>
+      ))}
     </Group>
   );
 }
 
-function MobileMenuHeader({ onClose, title }: { onClose: () => void; title: string }) {
+function SettingsMenuHeader({ onClose, title }: { onClose: () => void; title: string }) {
   return (
     <Group className="kodex-run-settings-header" justify="space-between" wrap="nowrap">
       <Text fw={700} size="sm">

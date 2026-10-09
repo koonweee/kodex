@@ -1,10 +1,10 @@
 # Main frontend on the Mastra backend
 
-Status: Active. Authorized 2026-10-07. Running log: [Mastra port](mastra-port.md).
+Status: Complete against pinned84b0ebc on 2026-10-09. Authorized 2026-10-07. Running log: [Mastra port](mastra-port.md).
 
 ## Fixed reference and scope
 
-Initial main reference: `00d22832cb43a2784826b1eb9a25689d4b1e5eba`. Merge this exact commit into `codex/mastra-sdk-spike` once, then use it as the visual and interaction acceptance baseline. Main may advance independently; defer later-main discrepancies to a bounded final comparison. Do not change the main checkout or deploy the production service.
+Current acceptance reference: `84b0ebc7d75cc49efa577511bf2f741e6d624749`, explicitly authorized on 2026-10-09 after the final drift comparison. The initial `00d22832cb43a2784826b1eb9a25689d4b1e5eba` merge and validation remain historical evidence. Integrate this pinned newer snapshot into `codex/mastra-sdk-spike`; do not chase further main changes. Do not change the main checkout or deploy the production service.
 
 Deliver basically the Kodex frontend from this reference working end-to-end with the new TypeScript/oRPC/Mastra Code SDK backend. Preserve layout, controls, navigation and workflows with very little UI change. Reuse main's actual components rather than a separately reconstructed native shell/pane wherever practical. The extra in-pane thread title is an accidental difference to remove. Unimplemented features are work remaining, not evidence of native incapability.
 
@@ -23,7 +23,7 @@ Proceed autonomously on implementation, routine design choices, tests, fixes, re
 3. Port in reviewable slices: native settings/model/auth display and composer; project/chat metadata and sidebar; history/live tools/approvals/questions/queue operations; goals/automations; file previews, terminal and Control; retained PWA/read state/notifications. Refine ordering from the inventory and native capabilities.
 4. Reuse established frameworks/native primitives and infer oRPC wire types from the backend. Keep presentation transformations in named modules. Shared state must converge across tabs/reload/reconnect/restart; browser-local drafts and layout remain local.
 5. Validate each slice with risk-appropriate failing tests first, real SDK fixtures, independent review and the reference UI/browser flows. Use bundled Chromium for desktop fine pointer, narrow fine pointer and touch as appropriate. Preserve meaningful existing tests; update tests only for explicit accepted semantic differences.
-6. At the end, compare later main changes once and reconcile small discrepancies without reopening the entire baseline. Escalate genuinely material new scope rather than silently broadening work.
+6. The final later-main comparison is complete and its material delta is explicitly authorized at pinned84b0ebc. Finish this refresh and validate against that fixed snapshot; do not perform another moving-main comparison during this milestone.
 
 ## Exit conditions
 
@@ -35,7 +35,7 @@ Proceed autonomously on implementation, routine design choices, tests, fixes, re
 
 ## Progress
 
-- Frozen main merged; normal chat, settings, projects, history/tools, child sessions, prompts, attachments/skills, goals, automations, terminal, MCP and Control slices have validation checkpoints below. Native-only read state is committed. Foreground presence/badges, Web Push preferences/delivery and built same-origin PWA are validated. Native extension wake/tools-only boot characterization and frozen-reference UI audit are complete. Arbitrary plugins are explicitly deferred. User authorized integrating the material later-main delta pinned at84b0ebc; that refresh is now active.
+- Pinned newer-main84b0ebc is integrated and validated with the retained native Mastra workflows. Full frontend/backend gates, two-client/restart browser matrix, built PWA and theme checks pass; independent reviews accepted. Accepted native limitations and deferrals remain explicit below. No production deployment or later-main drift is included.
 
 ## Workflow inventory against the frozen reference
 
@@ -43,7 +43,7 @@ The reference UI path is App → KodexShellView → WorkspaceProvider → Thread
 
 | Workflow | Current Mastra status | Remaining work / native ownership |
 | --- | --- | --- |
-| Bootstrap, deep links, docking, appearance | Shared main shell and native wiring validated | Centered draft layout and explicit panel route/reload/Back parity corrected with actual browser checks; native retained thread URLs remain accepted. Browser-local drafts/layout preserved. Later-main responsive/docking work remains pending scope alignment. |
+| Bootstrap, deep links, docking, appearance | Shared main shell and native wiring validated | Centered draft layout and explicit panel route/reload/Back parity corrected with actual browser checks; native retained thread URLs remain accepted. Browser-local drafts/layout preserved. Later-main responsive/docking integration is validated across desktop, narrow fine-pointer, narrow touch, wide touch and hybrid input. |
 | Projects and directory picker | Main controls connected and native browser checks pass | Durable product registry, root/name/order, browse/create/update/delete and canonical cross-tab updates. Existing chats retain cwd/history; standalone chats work with no seeded projects. Final checkpoint checks recorded below. |
 | Sidebar/chat metadata | Native rename, bounded input previews, product pins/order and notification preferences validated | Archive lifecycle, native live activity and volatile native-only read state are validated. Catalog currently reads the full retained native inventory. Standalone/project identity and canonical peer updates retained. |
 | Models, reasoning, settings and composer | Native catalog/pickers, sparse shared settings, local draft choices working | Captured-version profile defaults service implemented. Native Fast setting is persisted and captured per submission; actual Responses-wire, canonical picker and draft tests pass. Automatic memory management accepted; context usage explicitly unavailable. Native attachment Send/Queue/edit/steer and image rendering are validated; generic-file cards/previews/downloads and native skill selection/invocation are validated across peers/restart. |
@@ -1009,3 +1009,44 @@ Next single decision is later-main scope: the categorized final reference84b0ebc
 User selected “Integrate newer main now (Recommended).” Integrate the already reviewed/pinned84b0ebc7d75cc49efa577511bf2f741e6d624749 into this worktree, preserving all accepted Mastra semantics and native injection points. This explicitly authorizes the categorized larger refresh; no need to ask again about its size. Keep arbitrary plugins deferred, no SDK patches, no app-server fallback and no production deployment. Do not chase further main changes during this integration.
 
 Sequence: merge the pinned snapshot and resolve shared-component conflicts; restore coherent typecheck/build/tests; map changed queue intents, optional command-output/debug delivery and native PWA update triggers using existing native/host primitives; validate responsive composer/docking/timeline behavior with actual browser and same-user convergence where shared state is involved. Preserve native command/history/settings/queue/goal/preferences and external workspace transport seams. Retain native Stop rather than silently inheriting new app-server goal-pausing semantics. Escalate only a newly demonstrated native limitation requiring an unresolved product choice. The previous frozen-reference validation remains evidence for that snapshot, not proof of the new merge.
+
+
+### Pinned newer-main merge checkpoint (2026-10-09)
+
+All 20 textual merge conflicts resolved. Shared main responsive pane/input policies, unified workspace shell, animation, queue and optional-output UI retained with native injection points; no SDK patches or fallback. Independent cross-review accepted composer/queue and workspace/layout resolutions; parent review accepted shared account/status/activity resolutions. Typecheck passed after removing seven duplicated test properties introduced by automatic merging. Native panes now own the shared PaneLayout boundary. The first focused run was 279/285: two changed alternate-submit tests, three output-default tests, and the renamed Interface preference label identified; follow-up mappings/tests are in progress, not waived.
+
+Native queue follow-up: authoritative queueIfEmpty implements filled alternate submission; idle selected-row Send now uses existing native admission/transfer with its captured context, without aborting an idle session. No custom queue drainer/pause/persistence added. Backend queue/service28 and real native steering3 checks pass; source review accepted. Frontend output visibility and host PWA update publication are separate follow-ups. New browser coverage will check actual draft/focus/selection continuity across width changes and touch expansion. Full merged validation and merge commit remain pending.
+
+
+Newer-main validation progress: full Mastra backend432/432, imported Rust688 passed/30 intentionally ignored across suites, isolated service-controller59/59, Rust trim pass. Full frontend first run1550 passed/5 failed/1 skipped; three obsolete Appearance labels, an automatically merged acknowledgment order, and a hidden animated dropdown test were corrected. The goal-menu fixture now uses Mantine's test environment, matching neighboring component tests; production goal behavior is unchanged. Focused correction68/68 passes. The full frontend rerun, builds/trim and browser suite are pending.
+
+Optional-output mapping uses shared per-tab visibility and retains status truth; toggles do not initiate native history reads. Unlike newer app-server selective delivery, native canonical snapshots still carry retained output/debug data. Server-side bandwidth trimming is an unimplemented optimization, not a claim of native incapability or a missing user control. Native PWA updates use a typed host marker and shared worker check on publication/reconnect, independent of chat activation or storage. README documents manual frontend publication; no installed production-controller migration or deployment is implied. Independent queue, output and PWA source reviews pass.
+
+
+Merged frontend regression gate now passes:214 files,1555 tests,1 existing skipped test. A subsequent full run exposed a main streaming-animation fixture expecting one text node; rendered DOM already contained the exact expected paragraph split across animation spans. The test now compares exact paragraph text through each live/stale/canonical/replay phase, retaining all read-count and abort/revision checks; focused11/11 and final full suite pass. Default and Mastra production builds plus full frontend trim (including responsive ownership audit) pass. Mastra check/built output and Rust trim also pass. Native browser suite103 cases is running; no browser completion or merge commit claimed yet.
+
+
+Newer-main browser checkpoint: first broad native run stopped at its5-failure cap after33 passes/1 intentional skip,64 not run. Five failures reduce to four stale fixture assumptions: raw view tool label versus retained Read marker.txt summary (two configurations), Appearance→Interface, hover-only tab close, and probing optional automation Prompt tab before its dialog entered. Corrections preserve tool output, read-state and two-tab assertions; no product workaround. Three corrected desktop workflows pass3/3. Exact native tool data remains visible. Native desktop draft and shell screenshots were inspected; shared main appearance is retained.
+
+Built native PWA passes3/3 with real installed workers, native publication→real update checks in both tabs after initial checks settle, no forced reload, and shared Push preferences. This is update-check proof, not changed-worker activation or real Push-provider proof. Native remaining narrow/touch/wide/hybrid suite70 cases and rendered theme gate are running. Source/fixture independent reviews accepted; merge not committed yet.
+
+
+Rendered theme-contrast gate passes41/41, including live dark/light recomputation. Corrected narrow automation dialog proof passes. Remaining native matrix currently exposes only stale selectors for the removed single-pane shell in two test helpers (pin/archive/direct-child action flows); rendered Thread actions is present in the shared single-pane header. Correct those helpers and verify affected variants after the current browser run. No corresponding application change is indicated.
+
+
+### Pinned-main frontend parity accepted (2026-10-09)
+
+The authorized84b0ebc refresh and active end-to-end parity scope are complete. All20 conflicts preserve shared main presentation and native domain wiring. Newer queue alternate/idle Send now, per-tab command-output visibility, responsive pane ownership and host PWA update signals are connected; existing accepted Mastra Stop, queued settings, native persistence, child workflows and plugin deferrals remain intact. No SDK patch, generic adapter, legacy runtime fallback or production deployment.
+
+Final validation:
+
+- Frontend214 files:1555 passed,1 existing skip. Both default and Mastra production builds, full frontend trim/responsive ownership audit pass.
+- Mastra backend432/432, typecheck and built JavaScript pass. Imported Rust688 passed/30 intentionally ignored; Rust fmt/trim and service-controller59/59 pass.
+- Actual SDK native browser matrix:101 passing cases and2 intentional duplicate cold-calendar skips, covering all103 listed variants across the combined bounded runs. The last33-case run passes33/33. Earlier failures were stale fixture selectors/transition assumptions and remain recorded above; this is complete combined coverage, not a claim of a single clean103-case invocation.
+- Built native PWA3/3: installed worker, two-tab native update-check publication and Push preferences. Real external Push-provider proof remains manual; changed-worker activation is not claimed by this new check proof.
+- Rendered theme contrast41/41, including live theme changes. Desktop and narrow-touch screenshots inspected. Native navigation additionally covers wide touch and hybrid input, actual draft/focus/selection/textarea continuity and touch expansion.
+- Independent reviews accepted merge resolutions, native queue/PWA/output integrations and fixture corrections. Final diff checks pass. Source mutations were held while browser validation ran.
+
+Evidence logs: `/tmp/kodex-new-main-frontend-green.log`, `-backend-suite.log`, `-rust-tests.log`, `-service-tests.log`, `-default-build.log`, `-native-build.log`, `-frontend-trim.log`, `-rust-trim.log`, `-native-browser.log`, `-browser-fixes.log`, `-native-remaining.log`, `-native-final.log`, `-pwa-browser.log`, `-theme-browser.log` (same `/tmp/kodex-new-main` prefix). Browser matrix reconciliation used `-native-list.log`: no unaccounted variants.
+
+Remaining out-of-scope distinctions: native snapshots still transmit hidden output/debug data; optional transport trimming is a performance follow-up. Native PWA publication has a documented typed CLI example, not an installed service-controller migration. Arbitrary plugins/MCP Apps, context-usage display/manual compaction, sandbox/token budgets, and durable restart read-head reconstruction retain their explicit accepted deferrals/limitations. No new product decision is pending for this milestone.

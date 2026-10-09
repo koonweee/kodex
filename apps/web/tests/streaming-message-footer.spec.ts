@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../src/test/canonicalPayloadFixture";
 import { expect, test } from "@playwright/test";
 import type { ThreadTimelineRow } from "../src/api/client";
 import { nativeSettingsFixture } from "./native-settings.fixture";
@@ -15,10 +16,10 @@ for (const shape of [
         const status = done ? "completed" : "inProgress";
         const row: ThreadTimelineRow = {
           id: "answer", turnId: "turn-answer", kind: "assistant_message", status, displayOrder: 1,
-          items: [], collapsedRows: [], fileChanges: [],
+
           item: { id: "answer", threadId: "settings-chat", turnId: "turn-answer", itemId: "answer", itemType: "agentMessage", status, displayOrder: 1,
             timestampMs: 1779000000000,
-            payload: { source: "gatewayStream", turnId: "turn-answer", itemId: "answer", itemSnapshot: { id: "answer", itemType: "agentMessage" }, item: { id: "answer", type: "agentMessage", phase: "final_answer", text } } },
+            payload: compactCanonicalPayload({ id: "answer", type: "agentMessage", phase: "final_answer", text }, { id: "answer", itemType: "agentMessage" }) },
         };
         fixture.publishTimeline({ ...fixture.detail.timeline, rows: [row], turns: [{ id: "turn-answer", status }], activeTurnId: done ? null : "turn-answer", liveState: done ? "idle" : "streaming" });
       };

@@ -239,6 +239,8 @@ fn query(workspace: bool) -> EventsQuery {
         exclude_thread_id: None,
         include_global: workspace.then_some(true),
         thread_ids: workspace.then(|| THREAD.into()),
+        include_debug_events: None,
+        include_command_outputs: None,
     }
 }
 

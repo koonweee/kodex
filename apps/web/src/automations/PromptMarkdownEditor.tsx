@@ -1,8 +1,11 @@
 import { Box, Tabs, Textarea } from "@mantine/core";
-import { useMediaQuery } from "@mantine/hooks";
+import { useState } from "react";
+
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
+
+import { PaneLayout, usePaneLayout } from "../shared/PaneLayout";
 
 export function PromptMarkdownEditor({
   onChange,
@@ -11,7 +14,15 @@ export function PromptMarkdownEditor({
   onChange: (value: string) => void;
   value: string;
 }) {
-  const isCompact = useMediaQuery("(max-width: 760px)");
+  return <PaneLayout className="kodex-automation-prompt-editor"><PromptMarkdownEditorContent onChange={onChange} value={value} /></PaneLayout>;
+}
+
+function PromptMarkdownEditorContent({ onChange, value }: {
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  const { compact } = usePaneLayout();
+  const [selectedTab, setSelectedTab] = useState<string | null>("write");
   const textarea = (
     <Textarea
       aria-label="Automation prompt"
@@ -19,6 +30,7 @@ export function PromptMarkdownEditor({
       className="kodex-automation-prompt-textarea"
       minRows={10}
       onChange={(event) => onChange(event.currentTarget.value)}
+      onFocus={() => setSelectedTab("write")}
       value={value}
     />
   );
@@ -33,26 +45,21 @@ export function PromptMarkdownEditor({
   );
 
   return (
-    <Box className="kodex-automation-prompt-editor">
-      {isCompact ? (
-        <Tabs defaultValue="write" keepMounted={false}>
-          <Tabs.List>
-            <Tabs.Tab value="write">Write</Tabs.Tab>
-            <Tabs.Tab value="preview">Preview</Tabs.Tab>
-          </Tabs.List>
-          <Tabs.Panel value="write">{textarea}</Tabs.Panel>
-          <Tabs.Panel value="preview">{preview}</Tabs.Panel>
-        </Tabs>
-      ) : (
-        <div className="kodex-automation-prompt-split">
-          <Box className="kodex-automation-prompt-pane" data-pane="write">
-            {textarea}
-          </Box>
-          <Box className="kodex-automation-prompt-pane" data-pane="preview">
-            {preview}
-          </Box>
-        </div>
-      )}
-    </Box>
+    <Tabs value={selectedTab} onChange={setSelectedTab} keepMounted>
+      <Tabs.List style={!compact ? { display: "none" } : undefined}>
+        <Tabs.Tab value="write">Write</Tabs.Tab>
+        <Tabs.Tab value="preview">Preview</Tabs.Tab>
+      </Tabs.List>
+      <div className={`kodex-automation-prompt-panels${!compact ? " kodex-automation-prompt-split" : ""}`}>
+        <Tabs.Panel value="write" className="kodex-automation-prompt-pane" data-pane="write"
+          style={!compact ? { display: "block" } : undefined}>
+          {textarea}
+        </Tabs.Panel>
+        <Tabs.Panel value="preview" className="kodex-automation-prompt-pane" data-pane="preview"
+          style={!compact ? { display: "block" } : undefined}>
+          {preview}
+        </Tabs.Panel>
+      </div>
+    </Tabs>
   );
 }

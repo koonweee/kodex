@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../../test/canonicalPayloadFixture";
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -123,10 +124,7 @@ function row(id: string, displayOrder: number): ThreadTimelineRow {
   const turnId = `turn-${id}`;
   return {
     id, turnId, kind: "user_message", status: "completed", displayOrder, items: [], collapsedRows: [], fileChanges: [],
-    item: { id, threadId: "revert-chat", turnId, itemId: id, itemType: "userMessage", status: "completed", displayOrder, codexMethod: "item/completed", payload: {
-      source: "appServerSnapshot", turnId, itemId: id, itemSnapshot: { id, itemType: "userMessage" },
-      item: { id, type: "userMessage", content: [{ type: "text", text: `Native ${id} history` }] },
-    } },
+    item: { id, threadId: "revert-chat", turnId, itemId: id, itemType: "userMessage", status: "completed", displayOrder, codexMethod: "item/completed", payload: compactCanonicalPayload({ id, type: "userMessage", content: [{ type: "text", text: `Native ${id} history` }] }, { id, itemType: "userMessage" }) },
   };
 }
 

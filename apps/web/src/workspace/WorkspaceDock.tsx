@@ -1,19 +1,19 @@
 import { WorkspaceRightHeaderActions } from "./WorkspaceRightHeaderActions";
 import { WorkspaceDefaultTab } from "./WorkspaceDefaultTab";
-import { Menu } from "@mantine/core";
+import { WorkspaceTabOverflowActions } from "./WorkspaceTabOverflowActions";
 import {
   DockviewReact,
   themeAbyss,
   type DockviewApi,
-  type IDockviewHeaderActionsProps,
   type DockviewReadyEvent,
   type DockviewTheme,
   type BuiltInContextMenuItem,
   type ReactContextMenuItemConfig,
   type IDockviewPanelProps,
 } from "dockview";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 
+import { applyResponsiveWorkspaceMode, serializeWorkspaceDock, type ResponsiveDockviewSession } from "./responsiveDockview";
 import { panelPlacementOptions } from "./autoPanelPlacement";
 import { focusWorkspaceDockPanel } from "./focusWorkspaceDockPanel";
 import type { WorkspaceModel, WorkspacePane } from "./paneTypes";
@@ -29,6 +29,8 @@ type DockviewPaneParams = {
 };
 
 type WorkspaceDockProps = {
+  singlePane?: boolean;
+  onApiReady?: (api: DockviewApi) => void;
   onActivePaneChange: (paneId: string | null) => void;
   onLayoutChange: (layout: unknown, activePaneId: string | null) => void;
   onPaneClose: (paneId: string, layout: unknown) => void;
@@ -53,6 +55,8 @@ export const kodexDockviewTheme = {
 } satisfies DockviewTheme;
 
 export function WorkspaceDock({
+  singlePane = false,
+  onApiReady,
   onActivePaneChange,
   onLayoutChange,
   onPaneClose,
@@ -63,7 +67,11 @@ export function WorkspaceDock({
 }: WorkspaceDockProps) {
   const { openDraftThreadPane, paneThreadContextsById, threadProjectIdsById } = useWorkspace();
   const apiRef = useRef<DockviewApi | null>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
   const suppressEventsRef = useRef(false);
+  const singlePaneRef = useRef(singlePane);
+  singlePaneRef.current = singlePane;
+  const responsiveSession = useRef<ResponsiveDockviewSession>({ active: false, previousMaximizedPanelId: null, restoreSize: null });
   const debounceRef = useRef<number | null>(null);
   const disposablesRef = useRef<Array<{ dispose: () => void }>>([]);
 
@@ -76,7 +84,7 @@ export function WorkspaceDock({
 
   const scheduleLayoutChange = useCallback(
     (api: DockviewApi) => {
-      if (suppressEventsRef.current) {
+      if (suppressEventsRef.current || singlePaneRef.current) {
         return;
       }
       const livePanelIds = new Set(api.panels.map((panel) => panel.id));
@@ -87,7 +95,9 @@ export function WorkspaceDock({
         window.clearTimeout(debounceRef.current);
       }
       debounceRef.current = window.setTimeout(() => {
-        onLayoutChange(api.toJSON(), api.activePanel?.id ?? null);
+        debounceRef.current = null;
+        if (suppressEventsRef.current || singlePaneRef.current) return;
+        onLayoutChange(serializeWorkspaceDock(api, responsiveSession.current), api.activePanel?.id ?? null);
       }, 350);
     },
     [onLayoutChange, workspace.panes],
@@ -102,6 +112,7 @@ export function WorkspaceDock({
   const handleReady = useCallback(
     (event: DockviewReadyEvent) => {
       apiRef.current = event.api;
+      onApiReady?.(event.api);
       syncWorkspaceIntoDockview(
         event.api,
         workspace,
@@ -109,7 +120,9 @@ export function WorkspaceDock({
         onLayoutChange,
         panePlacementHintsById,
         onPanePlacementHintsConsumed,
+        () => serializeWorkspaceDock(event.api, responsiveSession.current),
       );
+      applyResponsiveWorkspaceMode(event.api, singlePaneRef.current, responsiveSession.current);
       reportVisiblePaneIds(event.api);
       disposablesRef.current = [
         event.api.onDidLayoutChange(() => {
@@ -117,6 +130,7 @@ export function WorkspaceDock({
           reportVisiblePaneIds(event.api);
         }),
         event.api.onDidActivePanelChange((panel) => {
+          applyResponsiveWorkspaceMode(event.api, singlePaneRef.current, responsiveSession.current);
           if (!suppressEventsRef.current) {
             onActivePaneChange(panel?.id ?? null);
           }
@@ -124,7 +138,7 @@ export function WorkspaceDock({
         }),
         event.api.onDidRemovePanel((panel) => {
           if (!suppressEventsRef.current) {
-            onPaneClose(panel.id, event.api.toJSON());
+            onPaneClose(panel.id, serializeWorkspaceDock(event.api, responsiveSession.current));
           }
           reportVisiblePaneIds(event.api);
         }),
@@ -132,10 +146,12 @@ export function WorkspaceDock({
         event.api.onDidAddGroup(() => reportVisiblePaneIds(event.api)),
         event.api.onDidRemoveGroup(() => reportVisiblePaneIds(event.api)),
         event.api.onDidMovePanel(() => reportVisiblePaneIds(event.api)),
+        event.api.onDidMaximizedGroupChange(() => reportVisiblePaneIds(event.api)),
       ];
     },
     [
       onActivePaneChange,
+      onApiReady,
       onPaneClose,
       onPanePlacementHintsConsumed,
       panePlacementHintsById,
@@ -171,13 +187,35 @@ export function WorkspaceDock({
         onLayoutChange,
         panePlacementHintsById,
         onPanePlacementHintsConsumed,
+        () => serializeWorkspaceDock(api, responsiveSession.current),
       );
+      applyResponsiveWorkspaceMode(api, singlePaneRef.current, responsiveSession.current);
       reportVisiblePaneIds(api);
     }
   }, [onLayoutChange, onPanePlacementHintsConsumed, panePlacementHintsById, reportVisiblePaneIds, workspace]);
 
+  useLayoutEffect(() => {
+    const api = apiRef.current;
+    if (!api) return;
+    if (singlePane && debounceRef.current !== null) {
+      window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    if (!singlePane && responsiveSession.current.active) {
+      const dock = dockRef.current;
+      // Dockview defers automatic sizing to an animation frame. Restore wide
+      // geometry before native maximize reveals the hidden split groups.
+      if (dock && dock.clientWidth > 0 && dock.clientHeight > 0) {
+        api.layout(dock.clientWidth, dock.clientHeight);
+      }
+    }
+    applyResponsiveWorkspaceMode(api, singlePane, responsiveSession.current);
+    reportVisiblePaneIds(api);
+  }, [singlePane, reportVisiblePaneIds]);
+
   useEffect(
     () => () => {
+      apiRef.current = null;
       if (debounceRef.current) {
         window.clearTimeout(debounceRef.current);
       }
@@ -190,16 +228,18 @@ export function WorkspaceDock({
   );
 
   return (
-    <div className="kodex-workspace-dock" data-testid="workspace-dock">
+    <div ref={dockRef} className="kodex-workspace-dock" data-testid="workspace-dock">
       <DockviewReact
         components={components}
         defaultTabComponent={WorkspaceDefaultTab}
         disableTabsOverflowList
+        disableDnd={singlePane}
+        locked={singlePane}
         disableFloatingGroups
         getTabContextMenuItems={getTabContextMenuItems}
-        leftHeaderActionsComponent={WorkspaceTabOverflowActions}
+        leftHeaderActionsComponent={singlePane ? undefined : WorkspaceTabOverflowActions}
         onReady={handleReady}
-        rightHeaderActionsComponent={WorkspaceRightHeaderActions}
+        rightHeaderActionsComponent={singlePane ? undefined : WorkspaceRightHeaderActions}
         theme={kodexDockviewTheme}
       />
     </div>
@@ -246,88 +286,10 @@ function projectIdForWorkspacePane(pane: WorkspacePane, threadProjectIdsById: Re
   return threadProjectIdsById[pane.target.threadId] ?? null;
 }
 
-export function WorkspaceTabOverflowActions({ activePanel, panels }: IDockviewHeaderActionsProps) {
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const [overflowPanelIds, setOverflowPanelIds] = useState<string[]>([]);
-  const measureOverflow = useCallback(() => {
-    const root = rootRef.current;
-    const header = root?.closest(".dv-tabs-and-actions-container");
-    const tabsContainer = header?.querySelector<HTMLElement>(".dv-tabs-container");
-    if (!tabsContainer) {
-      setOverflowPanelIds([]);
-      return;
-    }
-    const containerRect = tabsContainer.getBoundingClientRect();
-    const tabElements = Array.from(tabsContainer.querySelectorAll<HTMLElement>(":scope > .dv-tab"));
-    const nextIds = panels.flatMap((panel, index) => {
-      const tabElement = tabElements[index];
-      if (!tabElement) {
-        return [];
-      }
-      const tabRect = tabElement.getBoundingClientRect();
-      return tabRect.right <= containerRect.left || tabRect.left >= containerRect.right ? [panel.id] : [];
-    });
-    setOverflowPanelIds((current) =>
-      current.length === nextIds.length && current.every((id, index) => id === nextIds[index])
-        ? current
-        : nextIds,
-    );
-  }, [panels]);
-
-  useEffect(() => {
-    const root = rootRef.current;
-    const header = root?.closest(".dv-tabs-and-actions-container");
-    const tabsContainer = header?.querySelector<HTMLElement>(".dv-tabs-container");
-    const frame = window.requestAnimationFrame(measureOverflow);
-    if (!header || !tabsContainer || typeof ResizeObserver === "undefined") {
-      return () => window.cancelAnimationFrame(frame);
-    }
-    const observer = new ResizeObserver(measureOverflow);
-    observer.observe(tabsContainer);
-    observer.observe(header);
-    tabsContainer.addEventListener("scroll", measureOverflow, { passive: true });
-    window.addEventListener("resize", measureOverflow);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      observer.disconnect();
-      tabsContainer.removeEventListener("scroll", measureOverflow);
-      window.removeEventListener("resize", measureOverflow);
-    };
-  }, [measureOverflow]);
-
-  const overflowPanels = panels.filter((panel) => overflowPanelIds.includes(panel.id));
-  return (
-    <div className="kodex-workspace-tab-overflow" ref={rootRef}>
-      {overflowPanels.length > 0 ? (
-        <Menu position="bottom-start" withinPortal>
-          <Menu.Target>
-            <button aria-label="More tabs" className="kodex-workspace-tab-overflow-button" type="button">
-              +{overflowPanels.length}
-            </button>
-          </Menu.Target>
-          <Menu.Dropdown aria-label="More tabs" className="kodex-workspace-tab-overflow-menu">
-            {overflowPanels.map((panel) => (
-              <Menu.Item
-                aria-current={panel.id === activePanel?.id ? "page" : undefined}
-                className="kodex-workspace-tab-overflow-item"
-                key={panel.id}
-                onClick={() => {
-                  panel.focus();
-                }}
-              >
-                {panel.title ?? panel.id}
-              </Menu.Item>
-            ))}
-          </Menu.Dropdown>
-        </Menu>
-      ) : null}
-    </div>
-  );
-}
-
 export function visibleDockviewPanelIds(api: Pick<DockviewApi, "groups" | "activePanel">): string[] {
   const panelIds = new Set<string>();
   for (const group of api.groups) {
+    if (group.api?.isVisible === false) continue;
     const panelId = group.activePanel?.id;
     if (panelId) {
       panelIds.add(panelId);
@@ -367,6 +329,7 @@ export function syncWorkspaceIntoDockview(
   onReconciledLayout?: (layout: unknown, activePaneId: string | null) => void,
   panePlacementHintsById: WorkspacePanePlacementHintsById = {},
   onPanePlacementHintsConsumed?: (paneIds: string[]) => void,
+  serializeLayout: () => unknown = () => api.toJSON(),
 ) {
   suppressEventsRef.current = true;
   let shouldPersistLiveLayout = false;
@@ -412,7 +375,7 @@ export function syncWorkspaceIntoDockview(
         onPanePlacementHintsConsumed?.([...consumedPlacementHintIds]);
       }
       if (shouldPersistLiveLayout) {
-        onReconciledLayout?.(api.toJSON(), api.activePanel?.id ?? workspace.activePaneId ?? null);
+        onReconciledLayout?.(serializeLayout(), api.activePanel?.id ?? workspace.activePaneId ?? null);
       }
     }, 0);
   }

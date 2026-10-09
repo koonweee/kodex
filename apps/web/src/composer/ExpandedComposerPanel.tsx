@@ -1,8 +1,11 @@
 import { Box, Text } from "@mantine/core";
 import { Minimize2 } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from "react";
 
+import { usePaneLayout } from "../shared/PaneLayout";
+import { useInterfacePreferences } from "../preferences/useInterfacePreferences";
+import { shouldExpandComposerOnTouch } from "./presentationPolicy";
 import type { SkillMetadata } from "../api/client";
 import type { GoalControls } from "../goals/GoalControls";
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
@@ -15,12 +18,13 @@ import type { ComposerDraftState } from "./useComposerDraftState";
 import { useComposerKeyboardViewport } from "./useComposerKeyboardViewport";
 import type { SkillCatalogState } from "./useSkillCatalog";
 
-const MOBILE_COMPOSER_TEXT = {
+const EXPANDED_COMPOSER_TEXT = {
   collapse: "Collapse composer",
   compose: "Compose",
 };
 
-type MobileComposerPanelProps = ComposerPanelProps & {
+type ExpandedComposerPanelProps = ComposerPanelProps & {
+  annotationTouchOpenRevision: number;
   goalControls?: GoalControls;
   queuePanel?: ReactNode;
   queueOnSubmit?: boolean;
@@ -43,7 +47,8 @@ type MobileComposerPanelProps = ComposerPanelProps & {
   textareaRef: RefObject<HTMLTextAreaElement | null>;
 };
 
-export function MobileComposerPanel({
+export function ExpandedComposerPanel({
+  annotationTouchOpenRevision,
   attachmentInputRef,
   canCompose,
   canSubmitComposer,
@@ -79,15 +84,31 @@ export function MobileComposerPanel({
   slashPopupOpen,
   textareaRef,
   ...inlineComposerProps
-}: MobileComposerPanelProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const keyboardViewport = useComposerKeyboardViewport();
-  const expandedStyle = {
-    "--kodex-mobile-keyboard-inset": `${keyboardViewport.keyboardInset}px`,
-    "--kodex-mobile-visual-viewport-offset-top": `${keyboardViewport.viewportOffsetTop}px`,
+}: ExpandedComposerPanelProps) {
+  const { compact } = usePaneLayout();
+  const { preferences: interfacePreferences } = useInterfacePreferences();
+  const [expansionRequested, setIsExpanded] = useState(false);
+  const handledAnnotationTouchOpenRevision = useRef(0);
+  const [focusSessionActive, setFocusSessionActive] = useState(false);
+  const [composerShellNode, setLocalComposerShellNode] = useState<HTMLDivElement | null>(null);
+  const isExpanded = expansionRequested;
+  useLayoutEffect(() => {
+    if (!annotationTouchOpenRevision || handledAnnotationTouchOpenRevision.current === annotationTouchOpenRevision) return;
+    handledAnnotationTouchOpenRevision.current = annotationTouchOpenRevision;
+    if (interfacePreferences.fullscreenComposerOnTouch) setIsExpanded(true);
+  }, [annotationTouchOpenRevision, interfacePreferences.fullscreenComposerOnTouch]);
+  const keyboardViewport = useComposerKeyboardViewport(isExpanded || focusSessionActive, composerShellNode);
+  const keyboardViewportStyle = {
+    "--kodex-mobile-keyboard-inset": `${keyboardViewport.inlineKeyboardInset}px`,
+    "--kodex-mobile-inline-keyboard-inset": `${keyboardViewport.inlineKeyboardInset}px`,
+    "--kodex-mobile-pane-viewport-offset-top": `${keyboardViewport.inlineViewportOffsetTop}px`,
     "--kodex-mobile-visual-viewport-height": `${keyboardViewport.viewportHeight}px`,
     "--kodex-mobile-bottom-safe-area": keyboardViewport.keyboardInset > 0 ? "0px" : undefined,
   } as CSSProperties;
+  const handleComposerShellNode = useCallback((node: HTMLDivElement | null) => {
+    setLocalComposerShellNode(node);
+    setComposerShellNode(node);
+  }, [setComposerShellNode]);
   function renderSkillCommandSheet() {
     if (skillPopupOpen) {
       return (
@@ -118,7 +139,6 @@ export function MobileComposerPanel({
   // it and focusing a new input after the tap can dismiss the iOS keyboard.
   return (
     <>
-      {isExpanded ? <Box aria-hidden="true" className="kodex-mobile-composer-keyboard-mask" /> : null}
       <InlineComposerPanel
         {...inlineComposerProps}
         attachmentInputRef={attachmentInputRef}
@@ -128,14 +148,13 @@ export function MobileComposerPanel({
         composerSettingsDisabled={composerSettingsDisabled}
         composerSettingsError={composerSettingsError}
         contextUsage={contextUsage}
-        density="mobile"
+        density={compact ? "compact" : "regular"}
         expanded={isExpanded ? {
-          style: expandedStyle,
           header: (
             <Box className="kodex-mobile-composer-expanded-header">
               <span aria-hidden="true" />
-              <Text fw={700} size="sm">{MOBILE_COMPOSER_TEXT.compose}</Text>
-              <AdaptiveIconButton label={MOBILE_COMPOSER_TEXT.collapse} onClick={() => setIsExpanded(false)}>
+              <Text fw={700} size="sm">{EXPANDED_COMPOSER_TEXT.compose}</Text>
+              <AdaptiveIconButton label={EXPANDED_COMPOSER_TEXT.collapse} onClick={() => setIsExpanded(false)}>
                 <Minimize2 />
               </AdaptiveIconButton>
             </Box>
@@ -154,7 +173,21 @@ export function MobileComposerPanel({
         onAttachmentInputChange={onAttachmentInputChange}
         onComposerPaste={onComposerPaste}
         onComposerSettingsChange={onComposerSettingsChange}
-        onFocusComposer={() => setIsExpanded(true)}
+        onEditablePointerDown={(event) => {
+          if (!isComposerDisabled && shouldExpandComposerOnTouch(
+            interfacePreferences.fullscreenComposerOnTouch,
+            event.pointerType,
+          )) {
+            if (!isExpanded) {
+              // Focus within the touch gesture; prevent native pointer defaults
+              // from disturbing focus while fullscreen geometry moves the field.
+              event.preventDefault();
+              event.currentTarget.focus({ preventScroll: true });
+            }
+            setIsExpanded(true);
+          }
+        }}
+        onFocusSessionChange={setFocusSessionActive}
         onImageOpen={onImageOpen}
         onRemovePendingAttachment={onRemovePendingAttachment}
         onStopTurn={onStopTurn}
@@ -165,15 +198,16 @@ export function MobileComposerPanel({
           }
         }}
         pendingAttachments={pendingAttachments}
+        keyboardViewportStyle={keyboardViewportStyle}
         selectedThreadPresent={selectedThreadPresent}
         selectSkill={selectSkill}
         selectSlashCommand={selectSlashCommand}
-        setComposerShellNode={setComposerShellNode}
+        setComposerShellNode={handleComposerShellNode}
         shouldShowStopAction={shouldShowStopAction}
         skillCatalog={skillCatalog}
         skillPopupOpen={skillPopupOpen}
         slashPopupOpen={slashPopupOpen}
-        renderSkillSuggestions={renderSkillCommandSheet}
+        renderSkillSuggestions={compact || isExpanded ? renderSkillCommandSheet : undefined}
         textareaRef={textareaRef}
       />
     </>

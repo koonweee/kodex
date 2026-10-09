@@ -31,15 +31,12 @@ const emptySnapshot = (): LiveDiagnosticsSnapshot => ({
 let snapshot = emptySnapshot();
 
 export function recordLiveEvent(stream: LiveStreamName, event: EventEnvelope) {
-  if (!liveDiagnosticsEnabled()) {
-    return;
-  }
   snapshot.eventsByStream[stream] += 1;
   increment(snapshot.eventsByStreamAndKind, `${stream}:${event.kind}`);
   if (event.kind === "thread_view.refresh_required") {
     snapshot.refreshRequiredCount += 1;
   }
-  if (event.kind === "thread_view.patch") {
+  if (event.kind === "thread_view.patch" && payloadByteCountingEnabled()) {
     const scope = stringValue(asRecord(event.payload).scope) ?? "unknown";
     snapshot.patchBytesByScope[scope] = (snapshot.patchBytesByScope[scope] ?? 0) + payloadByteLength(event.payload);
   }
@@ -47,7 +44,7 @@ export function recordLiveEvent(stream: LiveStreamName, event: EventEnvelope) {
 }
 
 export function recordReducerBatch(eventCount: number, durationMs: number) {
-  if (!liveDiagnosticsEnabled() || eventCount === 0) {
+  if (eventCount === 0) {
     return;
   }
   snapshot.reducerBatchCount += 1;
@@ -57,16 +54,12 @@ export function recordReducerBatch(eventCount: number, durationMs: number) {
 }
 
 export function recordCacheInvalidation(family: string) {
-  if (!liveDiagnosticsEnabled()) {
-    return;
-  }
   increment(snapshot.cacheInvalidationsByFamily, family);
   publishSnapshot();
 }
 
 export function installLiveLongTaskObserver(): () => void {
   if (
-    !liveDiagnosticsEnabled() ||
     typeof PerformanceObserver === "undefined" ||
     !PerformanceObserver.supportedEntryTypes?.includes("longtask")
   ) {
@@ -92,8 +85,8 @@ export function resetLiveDiagnosticsForTest() {
   publishSnapshot();
 }
 
-function liveDiagnosticsEnabled() {
-  return true;
+function payloadByteCountingEnabled() {
+  return typeof window !== "undefined" && window.__KODEX_LIVE_DIAGNOSTICS_PAYLOAD_BYTES__ === true;
 }
 
 function increment(target: Record<string, number>, key: string) {
@@ -136,6 +129,8 @@ function publishSnapshot() {
 declare global {
   interface Window {
     __KODEX_LIVE_DIAGNOSTICS__?: () => LiveDiagnosticsSnapshot;
+    // Enable in the browser console to measure subsequent patch payloads; serialization can affect timings.
+    __KODEX_LIVE_DIAGNOSTICS_PAYLOAD_BYTES__?: boolean;
   }
 }
 

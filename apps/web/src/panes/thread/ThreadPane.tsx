@@ -1,3 +1,5 @@
+import { useThreadDeliveryPreferences } from "../../timeline/ThreadDeliveryPreferences";
+import { PaneLayout } from "../../shared/PaneLayout";
 import { threadIndicatorState } from "../../threads/ThreadStatusIndicator";
 import { AsyncQuestionReplyProvider } from "../../composer/AsyncQuestionReplyProvider";
 import { refreshUnreadBadge } from "../../notifications/unreadBadge";
@@ -15,7 +17,7 @@ import { AlertCircle, Sparkles } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import type { EventEnvelope, ThreadRead, ThreadSummary } from "../../api/client";
-import { attachThread, getThreadAppSurface, getThreadTimelinePage } from "../../api/client";
+import { attachThread, GatewayRequestError, getThreadAppSurface, getThreadTimelinePage } from "../../api/client";
 import { projectEventInvalidatesThread } from "../../projects/cache";
 import { queryKeys } from "../../api/queryKeys";
 import { recordReducerBatch } from "../../events/liveDiagnostics";
@@ -91,9 +93,11 @@ function ExistingThreadPane({
   paneTitle: string | null;
   threadId: string;
 }) {
+  const { getOptions: getDeliveryOptions } = useThreadDeliveryPreferences();
   const {
     approvals,
     errorMessage: appErrorMessage,
+    handleThreadArchived,
     imagePreviewUrlsByPath,
     onImageOpen,
     onMarkdownOpen,
@@ -177,7 +181,7 @@ function ExistingThreadPane({
         : { phase: "loadingSnapshot", threadId },
     );
     try {
-      const snapshot = await attachThread(threadId, controller.signal);
+      const snapshot = await attachThread(threadId, controller.signal, getDeliveryOptions());
       controller.signal.throwIfAborted();
       if (requestId !== refreshRequestIdRef.current || requestThreadId !== latestThreadIdRef.current) {
         return;
@@ -195,6 +199,10 @@ function ExistingThreadPane({
       if (requestId !== refreshRequestIdRef.current || requestThreadId !== latestThreadIdRef.current) {
         return;
       }
+      if (error instanceof GatewayRequestError && error.code === "thread_archived") {
+        handleThreadArchived(threadId);
+        return;
+      }
       setEntry({ phase: "error", threadId });
       setPaneErrorMessage(errorMessageFrom(error));
       onThreadSnapshotLoadFailed(threadId);
@@ -209,7 +217,7 @@ function ExistingThreadPane({
         void refreshSnapshot();
       }
     }
-  }, [onThreadSnapshotLoadFailed, onThreadSnapshotLoaded, threadId]);
+  }, [getDeliveryOptions, handleThreadArchived, onThreadSnapshotLoadFailed, onThreadSnapshotLoaded, threadId]);
 
   useThreadReadState({
     thread,
@@ -391,7 +399,7 @@ function ExistingThreadPane({
     historyControllerRef.current = controller;
     const snapshotRequestId = refreshRequestIdRef.current;
     setTimeline((current) => setTimelineOlderHistoryLoading(current, true));
-    void getThreadTimelinePage(threadId, { cursor, signal: controller.signal })
+    void getThreadTimelinePage(threadId, { cursor, signal: controller.signal, ...getDeliveryOptions() })
       .then((snapshot) => {
         if (controller.signal.aborted || snapshotRequestId !== refreshRequestIdRef.current || threadId !== latestThreadIdRef.current) return;
         setTimeline((current) => applyTimelineHistoryWindow(current, snapshot));
@@ -406,7 +414,7 @@ function ExistingThreadPane({
       .finally(() => {
         if (historyControllerRef.current === controller) historyControllerRef.current = null;
       });
-  }, [threadId, timeline.isLoadingOlderHistory, timeline.olderCursor]);
+  }, [getDeliveryOptions, threadId, timeline.isLoadingOlderHistory, timeline.olderCursor]);
   const threadApprovals = approvals.filter((approval) => approval.threadId === threadId);
   const isReady = entry.phase === "streamingLive" || entry.phase === "refreshingSnapshot";
   const isInitialSnapshotLoading = (entry.phase === "loadingSnapshot" || entry.phase === "refreshingSnapshot") && !thread;
@@ -540,7 +548,7 @@ function ExistingThreadPane({
   }
 
   return (
-    <section className="kodex-thread-pane kodex-thread-pane-existing" data-workspace-pane-active={isActive ? "true" : undefined}>
+    <PaneLayout component="section" className="kodex-thread-pane kodex-thread-pane-existing" data-workspace-pane-active={isActive ? "true" : undefined}>
       <Title className="kodex-thread-pane-accessible-title" order={3} size="h5" title={title}>
         {title}
       </Title>
@@ -604,7 +612,7 @@ function ExistingThreadPane({
         selectedThreadPresent: true,
         thread,
       })}
-    </section>
+    </PaneLayout>
   );
 }
 
@@ -656,7 +664,7 @@ function DraftThreadPane({
   isActive: boolean;
 }) {
   return (
-    <section className="kodex-thread-pane kodex-thread-pane-empty" data-workspace-pane-active={isActive ? "true" : undefined}>
+    <PaneLayout component="section" className="kodex-thread-pane kodex-thread-pane-empty" data-workspace-pane-active={isActive ? "true" : undefined}>
       <Title className="kodex-thread-pane-accessible-title" order={3} size="h5">
         Draft thread
       </Title>
@@ -664,7 +672,7 @@ function DraftThreadPane({
         {errorMessage ? <ThreadPaneErrorMessage message={errorMessage} /> : null}
         {composer}
       </div>
-    </section>
+    </PaneLayout>
   );
 }
 

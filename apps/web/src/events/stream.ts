@@ -1,4 +1,4 @@
-import type { EventEnvelope } from "../api/client";
+import type { EventEnvelope, ThreadDeliveryOptions } from "../api/client";
 
 type EventSourceLike = {
   addEventListener?: (type: string, listener: (event: MessageEvent<string>) => void) => void;
@@ -10,7 +10,7 @@ type EventSourceLike = {
 
 type EventSourceCtor = new (url: string) => EventSourceLike;
 
-type EventStreamClientOptions = {
+type EventStreamClientOptions = ThreadDeliveryOptions & {
   EventSourceCtor?: EventSourceCtor;
   beforeConnect?: () => Promise<boolean>;
   cursor?: number;
@@ -20,7 +20,7 @@ type EventStreamClientOptions = {
   threadId?: string;
   threadIds?: string[];
   onEvent: (event: EventEnvelope) => void;
-  onStatusChange?: (status: "connected" | "reconnecting" | "closed") => void;
+  onStatusChange?: (status: "connected" | "reconnecting" | "closed", reason?: "delivery_options") => void;
 };
 
 const GATEWAY_SSE_EVENT_TYPES = [
@@ -36,6 +36,7 @@ const GATEWAY_SSE_EVENT_TYPES = [
   "automation.item_deleted",
   "automation.item_upsert",
   "automation.run_updated",
+  "frontend.updated",
   "gateway.error",
   "gateway.warning",
   "app_surface.bridge_call",
@@ -70,6 +71,8 @@ export function createEventStreamClient({
   cursor,
   excludeThreadId,
   includeGlobal,
+  includeDebugEvents = false,
+  includeCommandOutputs = false,
   reconnectDelayMs = 1000,
   threadId,
   threadIds,
@@ -82,6 +85,9 @@ export function createEventStreamClient({
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let connectionAttempt = 0;
   let hasStarted = false;
+  let hasConnected = false;
+  let recoveryPending = false;
+  let deliveryOptions = { includeDebugEvents, includeCommandOutputs };
 
   function scheduleReconnect() {
     if (closed) return;
@@ -92,7 +98,7 @@ export function createEventStreamClient({
     }, reconnectDelayMs);
   }
 
-  function connect() {
+  function connect(reason?: "delivery_options") {
     if (closed || !EventSourceCtor) {
       return;
     }
@@ -102,16 +108,21 @@ export function createEventStreamClient({
     function openStream() {
       if (!isCurrent() || !EventSourceCtor) return;
       // Snapshot recovery callbacks must also wait until the instance is confirmed.
-      if (hasStarted) onStatusChange?.("reconnecting");
+      if (hasStarted && reason !== "delivery_options") onStatusChange?.("reconnecting");
       if (!isCurrent()) return;
       eventSource?.close();
       const source = new EventSourceCtor(
-        eventStreamUrl({ cursor: lastSeq, excludeThreadId, includeGlobal, threadId, threadIds }),
+        eventStreamUrl({ cursor: lastSeq, excludeThreadId, includeGlobal, threadId, threadIds, ...deliveryOptions }),
       );
       eventSource = source;
       hasStarted = true;
       source.onopen = () => {
-        if (isCurrent() && eventSource === source) onStatusChange?.("connected");
+        if (!isCurrent() || eventSource !== source) return;
+        const deliveryOnly = reason === "delivery_options" && hasConnected && lastSeq !== undefined && !recoveryPending;
+        recoveryPending = false;
+        hasConnected = true;
+        if (deliveryOnly) onStatusChange?.("connected", "delivery_options");
+        else onStatusChange?.("connected");
       };
 
       const handleMessage = (message: MessageEvent<string>) => {
@@ -130,6 +141,7 @@ export function createEventStreamClient({
         if (!isCurrent() || eventSource !== source) return;
         source.close();
         eventSource = null;
+        recoveryPending = true;
         scheduleReconnect();
       };
     }
@@ -160,19 +172,35 @@ export function createEventStreamClient({
     onStatusChange?.("closed");
   }
 
-  return { close, connect };
+  function updateDeliveryOptions(next: ThreadDeliveryOptions) {
+    const normalized = { includeDebugEvents: next.includeDebugEvents ?? false, includeCommandOutputs: next.includeCommandOutputs ?? false };
+    if (closed || (normalized.includeDebugEvents === deliveryOptions.includeDebugEvents && normalized.includeCommandOutputs === deliveryOptions.includeCommandOutputs)) return;
+    deliveryOptions = normalized;
+    if (!hasStarted) return;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    eventSource?.close();
+    eventSource = null;
+    connect(recoveryPending ? undefined : "delivery_options");
+  }
+
+  return { close, connect, updateDeliveryOptions };
 }
 
 function eventStreamUrl({
   cursor,
   excludeThreadId,
   includeGlobal,
+  includeDebugEvents,
+  includeCommandOutputs,
   threadId,
   threadIds,
 }: {
   cursor?: number;
   excludeThreadId?: string | null;
   includeGlobal?: boolean;
+  includeDebugEvents?: boolean;
+  includeCommandOutputs?: boolean;
   threadId?: string;
   threadIds?: string[];
 }): string {
@@ -185,6 +213,8 @@ function eventStreamUrl({
   if (typeof includeGlobal === "boolean") {
     url.searchParams.set("includeGlobal", String(includeGlobal));
   }
+  if (includeDebugEvents) url.searchParams.set("includeDebugEvents", "true");
+  if (includeCommandOutputs) url.searchParams.set("includeCommandOutputs", "true");
   const uniqueThreadIds = Array.from(
     new Set((threadIds ?? []).map((id) => id.trim()).filter(Boolean)),
   );

@@ -76,7 +76,7 @@
   align-items: center;
   background: transparent;
   border: 0;
-  border-radius: var(--kodex-radius-xs);
+  border-radius: var(--kodex-radius-md);
   color: var(--kodex-text-secondary);
   cursor: pointer;
   display: inline-flex;
@@ -125,7 +125,6 @@
   white-space: nowrap;
 }
 
-.kodex-workspace-dock .kodex-workspace-tab-content,
 .kodex-workspace-single-pane-title {
   align-items: center;
   display: inline-flex;
@@ -134,7 +133,6 @@
   max-width: 100%;
 }
 
-.kodex-workspace-tab-title,
 .kodex-workspace-single-pane-title-text {
   min-width: 0;
   overflow: hidden;
@@ -144,8 +142,7 @@
 
 /* Fade only title ink; padding keeps fitting names outside the fade region.
    Status indicators and close controls remain fully opaque. */
-.kodex-workspace-dock .dv-tabs-container .dv-default-tab-content:not(.kodex-workspace-tab-content),
-.kodex-workspace-dock .dv-tabs-container .kodex-workspace-tab-title {
+.kodex-workspace-dock .dv-tabs-container .dv-default-tab-content {
   padding-right: 16px;
   text-overflow: clip;
   mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
@@ -164,12 +161,6 @@
 
 .kodex-workspace-pane-title-adornment .kodex-thread-pane-title-spinner {
   display: block;
-}
-
-.kodex-workspace-tab-close-icon {
-  align-items: center;
-  display: inline-flex;
-  justify-content: center;
 }
 
 .kodex-workspace-terminal-tab .dv-default-tab-content {
@@ -212,7 +203,7 @@
 }
 
 .kodex-workspace-dock .dv-tabs-overflow-dropdown-default {
-  border-radius: var(--kodex-radius-xs);
+  border-radius: var(--kodex-radius-md);
   min-width: 44px;
 }
 
@@ -302,11 +293,9 @@
   min-height: 320px;
 }
 
-.kodex-workspace-single-pane-shell {
-  height: 100%;
-  min-height: 0;
-  overflow: hidden;
-  background: var(--kodex-pane-bg);
+/* Narrow navigation changes chrome while native Dockview keeps each editor. */
+.kodex-workspace-shell[data-single-pane="true"] .dv-tabs-and-actions-container {
+  display: none;
 }
 
 .kodex-workspace-single-pane-header {
@@ -320,7 +309,7 @@
   min-height: 44px;
   border-bottom: 1px solid var(--kodex-border-subtle);
   padding: 4px 8px;
-  background: color-mix(in srgb, var(--kodex-pane-bg) 86%, var(--kodex-bg-shell));
+  background: var(--kodex-workspace-header-bg);
 }
 
 .kodex-workspace-single-pane-sidebar-button {
@@ -378,7 +367,7 @@
   width: min(480px, calc(100vw - 24px));
   height: auto;
   max-height: min(80dvh, 100dvh);
-  border-radius: 0 0 18px 18px;
+  border-radius: var(--kodex-radius-menu);
   margin-inline: auto;
   background: color-mix(in srgb, var(--kodex-bg-panel) 92%, var(--kodex-bg-shell));
 }
@@ -451,22 +440,7 @@
   color: var(--kodex-text-secondary);
 }
 
-.kodex-workspace-single-pane-host {
-  flex: 1 1 auto;
-  min-height: 0;
-}
 
-.kodex-workspace-single-pane-host .kodex-terminal-host {
-  position: relative;
-  inset: auto;
-  z-index: auto;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-}
 
 .kodex-workspace-placeholder-pane {
   align-items: center;
@@ -580,7 +554,7 @@
 .kodex-thread-pane-scroll {
   min-height: 0;
   overflow: auto;
-  padding: var(--kodex-pane-edge-space) var(--kodex-pane-edge-space) 20px;
+  padding: var(--kodex-pane-edge-space) var(--kodex-pane-edge-space) 16px;
 }
 
 .kodex-thread-pane-existing > .kodex-thread-content {

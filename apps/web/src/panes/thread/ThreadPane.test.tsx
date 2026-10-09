@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../../test/canonicalPayloadFixture";
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -174,10 +175,7 @@ it("commits one editable-pane refill in StrictMode and queues one newer repair b
         item: {
           id: "answer", itemId: "answer", itemType: "agentMessage", threadId: "shared", turnId: "turn-1",
           status: "inProgress", displayOrder: 1, codexMethod: "item/started",
-          payload: {
-            source: "gatewayStream", turnId: "turn-1", itemId: "answer",
-            item: { id: "answer", type: "agentMessage", text }, itemSnapshot: { id: "answer", itemType: "agentMessage" },
-          },
+          payload: compactCanonicalPayload({ id: "answer", type: "agentMessage", text }, { id: "answer", itemType: "agentMessage" }),
         },
       }],
     },
@@ -195,7 +193,10 @@ it("commits one editable-pane refill in StrictMode and queues one newer repair b
   render(<StrictMode><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <MantineProvider><WorkspaceProvider paneStore={store}><ActiveThreadPane /></WorkspaceProvider></MantineProvider>
   </QueryClientProvider></StrictMode>);
-  expect(await screen.findByText("Base")).toBeInTheDocument();
+  // Streaming decoration may split a paragraph across text nodes.
+  const messageText = (text: string) => (_content: string, element: Element | null) =>
+    element?.tagName === "P" && element.textContent === text;
+  expect(await screen.findByText(messageText("Base"))).toBeInTheDocument();
   const initialReads = signals.length;
   const stream = UnopenedEventSource.instances.at(-1)!;
   let releaseEarlier!: (value: ThreadViewResponse) => void;
@@ -217,24 +218,24 @@ it("commits one editable-pane refill in StrictMode and queues one newer repair b
   await waitFor(() => expect(signals).toHaveLength(initialReads + 1));
   expect(signals[initialReads].aborted).toBe(false);
   act(() => stream.emit(delta(" B", 4)));
-  expect(await screen.findByText("Base B")).toBeInTheDocument();
+  expect(await screen.findByText(messageText("Base B"))).toBeInTheDocument();
   // Editable panes retain the current read, then perform one queued newer read.
   expect(signals).toHaveLength(initialReads + 1);
   let releaseNewer!: (value: ThreadViewResponse) => void;
   reply = new Promise<ThreadViewResponse>((resolve) => { releaseNewer = resolve; });
   await act(async () => releaseEarlier(snapshot("Base A", 3)));
   await waitFor(() => expect(signals).toHaveLength(initialReads + 2));
-  expect(screen.getByText("Base B")).toBeInTheDocument();
+  expect(screen.getByText(messageText("Base B"))).toBeInTheDocument();
   expect(signals[initialReads + 1].aborted).toBe(false);
   await act(async () => releaseNewer(snapshot("Base A B", 4)));
-  expect(await screen.findByText("Base A B")).toBeInTheDocument();
+  expect(await screen.findByText(messageText("Base A B"))).toBeInTheDocument();
   await act(async () => {
     stream.emit(delta(" A", 2));
     stream.emit(delta(" B", 4));
     await new Promise((resolve) => setTimeout(resolve, 40));
   });
   expect(signals).toHaveLength(initialReads + 2);
-  expect(screen.getAllByText("Base A B")).toHaveLength(1);
+  expect(screen.getAllByText(messageText("Base A B"))).toHaveLength(1);
   expect(gateway.callsFor("GET", "/v1/threads/shared")).toHaveLength(0);
 });
 
@@ -275,6 +276,131 @@ it("shows a native attach failure without a prose-based retry loop and recovers 
   act(() => UnopenedEventSource.instances.at(-1)?.onopen?.());
   expect(await screen.findByRole("heading", { name: "Recovered chat" })).toBeInTheDocument();
   expect(gateway.callsFor("POST", "/v1/threads/unavailable/attach")).toHaveLength(2);
+});
+
+it("closes a cold-restored archived pane without showing the unavailable state", async () => {
+  vi.stubGlobal("EventSource", UnopenedEventSource);
+  mockGateway({
+    "POST /v1/threads/archived/attach": new Response(
+      JSON.stringify({ code: "thread_archived", message: "Thread archived", retryable: false }),
+      { status: 410, headers: { "Content-Type": "application/json" } },
+    ),
+  });
+  const onArchived = vi.fn();
+  const onFailed = vi.fn();
+  const store = createMemoryWorkspacePaneStore({
+    schemaVersion: 1,
+    activePaneId: "archived-pane",
+    dockviewLayout: null,
+    panes: [{ id: "archived-pane", kind: "thread", target: { mode: "existing", threadId: "archived" } }],
+  });
+
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <MantineProvider><WorkspaceProvider
+      onThreadArchived={onArchived}
+      onThreadSnapshotLoadFailed={onFailed}
+      paneStore={store}
+      renderThreadComposer={() => <div>Draft ready</div>}
+    ><ActiveThreadPane /></WorkspaceProvider></MantineProvider>
+  </QueryClientProvider>);
+
+  await waitFor(() => expect(onArchived).toHaveBeenCalledOnce());
+  expect(await screen.findByText("Draft ready")).toBeInTheDocument();
+  expect(store.getState().panes).toHaveLength(1);
+  expect(store.getState().panes[0]).toMatchObject({ kind: "thread", target: { mode: "draft" } });
+  expect(screen.queryByRole("heading", { name: "Thread not found or unavailable" })).not.toBeInTheDocument();
+  expect(onArchived).toHaveBeenCalledWith("archived");
+  expect(onFailed).not.toHaveBeenCalled();
+});
+
+it("closes the same archived thread in two workspace clients after native confirmation", async () => {
+  vi.stubGlobal("EventSource", UnopenedEventSource);
+  const snapshot: ThreadViewResponse = {
+    thread: {
+      id: "shared-archive", name: "Shared archive", projectId: null, cwd: "/native", status: "idle",
+      notificationsEnabled: true, pinned: false, latestCompletedTurnId: null, seenCompletedTurnId: null,
+      readRevision: 0, readStateKnown: false, unreadCompletedAgentTurn: false, createdAt: 1, updatedAt: 2,
+      parentThreadId: null, canAcceptDirectInput: true,
+    },
+    liveState: "idle",
+    timeline: { liveState: "idle", pendingApprovalRequests: [], pendingUserInputRequests: [], rows: [], turns: [], viewRevision: 1 },
+  };
+  let archived = false;
+  mockGateway({
+    "POST /v1/threads/shared-archive/attach": () => archived
+      ? new Response(
+          JSON.stringify({ code: "thread_archived", message: "Thread shared-archive is archived", retryable: false }),
+          { status: 410, headers: { "Content-Type": "application/json" } },
+        )
+      : snapshot,
+    "GET /v1/threads/shared-archive/app-surface": { session: null },
+  });
+  const stores = ["first", "second"].map((id) => createMemoryWorkspacePaneStore({
+    schemaVersion: 1,
+    activePaneId: `${id}-pane`,
+    dockviewLayout: null,
+    panes: [{ id: `${id}-pane`, kind: "thread", target: { mode: "existing", threadId: "shared-archive" } }],
+  }));
+  stores.forEach((store, index) => render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MantineProvider><WorkspaceProvider paneStore={store} renderThreadComposer={() => <div>{index}: draft</div>}>
+        <ActiveThreadPane />
+      </WorkspaceProvider></MantineProvider>
+    </QueryClientProvider>,
+  ));
+  await waitFor(() => expect(screen.getAllByRole("heading", { name: "Shared archive" })).toHaveLength(2));
+  const streams = UnopenedEventSource.instances.slice();
+  expect(streams).toHaveLength(2);
+
+  archived = true;
+  act(() => streams.forEach((stream, index) => stream.emit(threadCatalogEvent("thread/archived", index + 1))));
+
+  await waitFor(() => stores.forEach((store) => {
+    expect(store.getState().panes).toHaveLength(1);
+    expect(store.getState().panes[0]).toMatchObject({ kind: "thread", target: { mode: "draft" } });
+  }));
+});
+
+it("keeps an available pane open across replayed archive and unarchive markers", async () => {
+  vi.stubGlobal("EventSource", UnopenedEventSource);
+  const snapshot: ThreadViewResponse = {
+    thread: {
+      id: "replayed", name: "Available again", projectId: null, cwd: "/native", status: "idle",
+      notificationsEnabled: true, pinned: false, latestCompletedTurnId: null, seenCompletedTurnId: null,
+      readRevision: 0, readStateKnown: false, unreadCompletedAgentTurn: false, createdAt: 1, updatedAt: 2,
+      parentThreadId: null, canAcceptDirectInput: true,
+    },
+    liveState: "idle",
+    timeline: { liveState: "idle", pendingApprovalRequests: [], pendingUserInputRequests: [], rows: [], turns: [], viewRevision: 1 },
+  };
+  const gateway = mockGateway({
+    "POST /v1/threads/replayed/attach": snapshot,
+    "GET /v1/threads/replayed/app-surface": { session: null },
+  });
+  const onArchived = vi.fn();
+  const store = createMemoryWorkspacePaneStore({
+    schemaVersion: 1,
+    activePaneId: "replayed-pane",
+    dockviewLayout: null,
+    panes: [{ id: "replayed-pane", kind: "thread", target: { mode: "existing", threadId: "replayed" } }],
+  });
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <MantineProvider><WorkspaceProvider onThreadArchived={onArchived} paneStore={store}>
+      <ActiveThreadPane />
+    </WorkspaceProvider></MantineProvider>
+  </QueryClientProvider>);
+  expect(await screen.findByRole("heading", { name: "Available again" })).toBeInTheDocument();
+  const stream = UnopenedEventSource.instances.at(-1)!;
+
+  act(() => {
+    stream.emit(threadCatalogEvent("thread/archived", 1, "replayed"));
+    stream.emit(threadCatalogEvent("thread/unarchived", 2, "replayed"));
+  });
+
+  await waitFor(() => expect(gateway.callsFor("POST", "/v1/threads/replayed/attach").length).toBeGreaterThan(1));
+  expect(store.getState().panes[0]).toMatchObject({ kind: "thread", target: { mode: "existing", threadId: "replayed" } });
+  expect(screen.getByRole("heading", { name: "Available again" })).toBeInTheDocument();
+  expect(onArchived).not.toHaveBeenCalled();
 });
 
 it("keeps direct-input capability owned by canonical detail when older sidebar and metadata summaries arrive", async () => {
@@ -401,4 +527,19 @@ it.each([false, true])("closes an unavailable pane and keeps a usable workspace 
 function ActiveThreadPane() {
   const { workspace } = useWorkspace();
   return <ThreadPane isActive pane={workspace.panes[0]} />;
+}
+
+function threadCatalogEvent(method: "thread/archived" | "thread/unarchived", seq: number, threadId = "shared-archive"): EventEnvelope {
+  return {
+    codexMethod: method,
+    id: `${method}-${seq}`,
+    itemId: null,
+    kind: "thread.subagents_changed",
+    payload: { changedThreadId: threadId },
+    projectId: null,
+    receivedAt: "2026-10-08T00:00:00Z",
+    seq,
+    threadId: null,
+    turnId: null,
+  };
 }

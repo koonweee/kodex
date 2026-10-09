@@ -31,7 +31,6 @@ vi.mock('../threads/WorkspaceSidebar', () => ({
   </>,
 }));
 vi.mock('../workspace/WorkspaceShell', () => ({ WorkspaceShell: WorkspaceProbe }));
-vi.mock('../workspace/WorkspaceSinglePaneShell', () => ({ WorkspaceSinglePaneShell: WorkspaceProbe }));
 function WorkspaceProbe() {
   const { workspace, focusPane, threadActions, errorMessage, onShowMobileSidebar } = useWorkspace();
   return <>

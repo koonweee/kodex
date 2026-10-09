@@ -1,3 +1,4 @@
+import type { ThreadTimelineRow } from "./api/client";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -170,7 +171,7 @@ describe("MVP composer input flows", () => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
     });
     expect(within(timelineElement(container)).getByText("Ship it")).toBeInTheDocument();
-    expect(within(timelineElement(container)).getByText("Sending")).toBeInTheDocument();
+    expect(within(timelineElement(container)).queryByText("Sending")).not.toBeInTheDocument();
     const sendingButton = screen.getByRole("button", { name: /sending message/i });
     expect(sendingButton).toBeDisabled();
     expect(sendingButton).toHaveAttribute("data-action-state", "submitting");
@@ -195,8 +196,9 @@ describe("MVP composer input flows", () => {
       expect(selectedThreadStream).toBeDefined();
       expect(selectedThreadStream?.onmessage).toBeTypeOf("function");
     });
+    const submittedInput = await requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0]);
     act(() => {
-      selectedThreadStream?.emitNamed("thread_view.patch", projectionPatchEvent({
+      const receipt = projectionPatchEvent({
         id: "projection-sent-user",
         seq: 3,
         threadId: thread.id,
@@ -206,7 +208,9 @@ describe("MVP composer input flows", () => {
         text: "Ship it",
         displayOrder: 3,
         status: "running",
-      }));
+      });
+      (receipt.payload.rows as ThreadTimelineRow[])[0].item!.payload.clientId = submittedInput.clientUserMessageId;
+      selectedThreadStream?.emitNamed("thread_view.patch", receipt);
     });
     await waitFor(() => expect(within(timelineElement(container)).getAllByText("Ship it")).toHaveLength(1));
     await waitFor(() => {
@@ -583,24 +587,25 @@ describe("MVP composer input flows", () => {
     const firstThreadRow = firstThreadButton.closest(".kodex-thread-list-button");
     expect(firstThreadRow).toBeInTheDocument();
     await within(activeThreadPane()).findByRole("heading", { name: /^implement frontend$/i, hidden: true });
+    const firstPane = threadPaneByHeading(/^implement frontend$/i);
     await userEvent.type(composerInThreadPane(/^implement frontend$/i), "sleep 5s, then send hello");
     await userEvent.click(sendButtonInThreadPane(/^implement frontend$/i));
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
+      expect(within(firstPane).getByRole("button", { name: /sending message/i })).toBeDisabled();
     });
     expect(firstThreadRow?.querySelector(".kodex-thread-progress-indicator")).not.toBeInTheDocument();
-    act(() => resolveTurn({ payload: { turnId: "turn-3" } }));
-    await waitFor(() => expect(firstThreadRow?.querySelector(".kodex-thread-progress-indicator")).toBeInTheDocument());
 
     await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /^second thread$/i }));
     await waitFor(() => {
       expect(within(activeThreadPane()).getByText(/second thread snapshot/i)).toBeInTheDocument();
     });
-    const currentFirstThreadRow = within(workspaceNavigation())
-      .getByRole("button", { name: /^implement frontend$/i })
-      .closest(".kodex-thread-list-button");
-    expect(currentFirstThreadRow?.querySelector(".kodex-thread-progress-indicator")).toBeInTheDocument();
+    expect(firstPane).toBeInTheDocument();
+    expect(within(firstPane).getByRole("button", { name: /sending message/i, hidden: true })).toBeDisabled();
+    // Native admission may arrive after the user leaves this pane.
+    act(() => resolveTurn({ payload: { turnId: "turn-3" } }));
+    await waitFor(() => expect(firstThreadRow?.querySelector(".kodex-thread-progress-indicator")).toBeInTheDocument());
 
     firstThreadTurns = [
       snapshotTurn("turn-3", [
@@ -695,7 +700,7 @@ describe("MVP composer input flows", () => {
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(2);
-      expect(screen.queryByText("Sending")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /sending message/i })).not.toBeInTheDocument();
     });
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
     expect(within(timelineElement(container)).getAllByText("Retry text")).toHaveLength(1);

@@ -2,6 +2,7 @@ import { Alert, Badge, Box, Button, Group, Loader, Select, Stack, Text } from "@
 import { Bot } from "lucide-react";
 import type { ReactNode, Ref } from "react";
 import type { ThreadSubagentSummary } from "../api/client";
+import { PaneLayout } from "../shared/PaneLayout";
 import { errorMessageFrom } from "../shared/values";
 
 export type SubagentViewerEntry = Pick<ThreadSubagentSummary,
@@ -29,7 +30,7 @@ export function SubagentViewerView({ subagents, selectedSubagentId, onSelectSuba
   const selectedSubagent = subagents.find(entry => entry.id === selectedSubagentId) ?? subagents[0] ?? null;
   const selectorData = subagents.map(subagent => ({ label: subagentLabel(subagent), value: subagent.id }));
   return (
-    <aside aria-label="Subagent thread viewer" className="kodex-subagent-viewer">
+    <PaneLayout component="aside" aria-label="Subagent thread viewer" className="kodex-subagent-viewer">
       <Stack className="kodex-subagent-viewer-inner" gap="sm">
         {error ? (
           <Alert color="red" title="Subagents could not be loaded">
@@ -52,6 +53,7 @@ export function SubagentViewerView({ subagents, selectedSubagentId, onSelectSuba
         <Select
             label="Subagent"
             className="kodex-subagent-selector"
+            comboboxProps={{ floatingStrategy: "fixed" }}
             data={selectorData}
             onChange={(id) => { if (id) onSelectSubagent(id); }}
             allowDeselect={false}
@@ -83,7 +85,7 @@ export function SubagentViewerView({ subagents, selectedSubagentId, onSelectSuba
         </>}
         {hasMore ? <Button variant="subtle" size="compact-sm" onClick={onLoadMore} loading={loadingMore}>Load more subagents</Button> : null}
       </Stack>
-    </aside>
+    </PaneLayout>
   );
 }
 

@@ -1,17 +1,17 @@
 import { expect, test } from "@playwright/test";
 import { nativeSettingsFixture } from "./native-settings.fixture";
 
-test("composer row limits follow pane height and preserve text during resizing", async ({ context }) => {
+test("composer keeps two to five rows and preserves text during resizing", async ({ context }) => {
   const fixture = await nativeSettingsFixture(context);
   try {
     const page = await fixture.page("height", "/");
     await page.setViewportSize({ width: 1280, height: 900 });
     const input = page.getByRole("textbox", { name: "Message composer", exact: true });
     const rows = () => input.evaluate(el => el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight));
-    await expect.poll(rows).toBeCloseTo(4, 0);
+    await expect.poll(rows).toBeCloseTo(2, 0);
     const text = Array.from({ length: 14 }, (_, i) => `Line ${i}`).join("\n");
     await input.fill(text);
-    await expect.poll(rows).toBeCloseTo(10, 0);
+    await expect.poll(rows).toBeCloseTo(5, 0);
     await page.setViewportSize({ width: 1280, height: 500 });
     await expect.poll(rows).toBeCloseTo(5, 0);
     await expect(input).toHaveValue(text);
@@ -19,13 +19,13 @@ test("composer row limits follow pane height and preserve text during resizing",
     await input.fill("");
     await expect.poll(rows).toBeCloseTo(2, 0);
     await page.setViewportSize({ width: 1280, height: 900 });
-    await expect.poll(rows).toBeCloseTo(4, 0);
+    await expect.poll(rows).toBeCloseTo(2, 0);
   } finally { await fixture.close(); }
   expect(fixture.errors).toEqual([]);
   expect(fixture.unexpected).toEqual([]);
 });
 
-test("short split panes use compact rows while neighboring tall panes retain normal rows", async ({ context }) => {
+test("short and tall split panes use the same starting rows", async ({ context }) => {
   const fixture = await nativeSettingsFixture(context);
   try {
     const page = await fixture.page("split-height", "/");
@@ -42,14 +42,14 @@ test("short split panes use compact rows while neighboring tall panes retain nor
     await expect.poll(() => page.locator(".kodex-thread-pane").evaluateAll(panes => panes.map(pane => {
       const input = pane.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message composer"]')!;
       return { short: pane.getBoundingClientRect().height < 600, rows: Math.round(input.getBoundingClientRect().height / parseFloat(getComputedStyle(input).lineHeight)) };
-    }))).toEqual([{ short: false, rows: 4 }, { short: false, rows: 4 }, { short: true, rows: 2 }, { short: true, rows: 2 }]);
+    }))).toEqual([{ short: false, rows: 2 }, { short: false, rows: 2 }, { short: true, rows: 2 }, { short: true, rows: 2 }]);
   } finally { await fixture.close(); }
   expect(fixture.errors).toEqual([]);
   expect(fixture.unexpected).toEqual([]);
 });
 
 test("mobile inline composer keeps two starting rows in tall and short panes", async ({ browser }) => {
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, baseURL: "http://127.0.0.1:5174" });
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, baseURL: test.info().project.use.baseURL });
   const fixture = await nativeSettingsFixture(context);
   try {
     const page = await fixture.page("mobile-height", "/");

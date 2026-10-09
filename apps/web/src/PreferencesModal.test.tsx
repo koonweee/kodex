@@ -248,7 +248,7 @@ describe("PreferencesModal plugins tab", () => {
     expect(screen.getByRole("button", { name: /^install$/i })).toBeDisabled();
   });
 
-  it("keeps appearance and plugins tab navigation separate", async () => {
+  it("keeps interface and plugins tab navigation separate", async () => {
     apiMocks.getKodexControlPluginStatus.mockResolvedValue({
       appServerReady: true,
       appsNeedingAuth: [],
@@ -612,7 +612,7 @@ describe('PreferencesModal Plugins panel extension', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Plugins' }));
     expect(screen.getByText('Built-in native Control')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Install|Reinstall|Refresh plugins/ })).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Appearance' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Interface' }));
     expect(screen.queryByText('Built-in native Control')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Plugins' }));
     expect(screen.getByText('Built-in native Control')).toBeInTheDocument();
@@ -627,7 +627,7 @@ it('preserves an app-server plugin installation in progress across section navig
   apiMocks.installKodexControlPlugin.mockReset().mockImplementation(() => new Promise((_resolve, reject) => { finish = () => reject(new Error('Installation failed')); }));
   renderPreferences('plugins');
   await userEvent.click(await screen.findByRole('button', { name: 'Reinstall' }));
-  await userEvent.click(screen.getByRole('button', { name: 'Appearance' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Interface' }));
   await userEvent.click(screen.getByRole('button', { name: 'Plugins' }));
   expect(screen.getByRole('button', { name: 'Reinstall' })).toBeDisabled();
   await act(async () => finish());
@@ -661,7 +661,7 @@ describe('PreferencesModal Notifications panel extension', () => {
       renderPreferences('notifications');
       await user.click(await screen.findByRole('button', { name: 'Enable' }));
       await waitFor(() => expect(apiMocks.upsertPushSubscription).toHaveBeenCalled());
-      await user.click(screen.getByRole('button', { name: 'Appearance' }));
+      await user.click(screen.getByRole('button', { name: 'Interface' }));
       await user.click(screen.getByRole('button', { name: 'Notifications' }));
       expect(screen.getByRole('button', { name: 'Enable' })).toBeDisabled();
       await act(async () => { finish(); });

@@ -4,11 +4,12 @@ import { useEffect, useId, useRef, useState, type PointerEvent } from "react";
 
 import type { QueueRowView } from "./controller";
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
+import { QueueDisclosure } from "./QueueDisclosure";
 import { queueInputPreview } from "./input";
 
 type Drag = { id: string; ids: string[]; pointerId: number; startY: number; y: number; target: number; moved: boolean };
 
-export function QueuedMessageList({ rows, busy, partial, isActive, reorderDisabled = false, version, onReorder, onSteer, onEdit, onRemove }: {
+type QueuedMessageListProps = {
   rows: QueueRowView[];
   busy: boolean;
   partial: boolean;
@@ -19,7 +20,15 @@ export function QueuedMessageList({ rows, busy, partial, isActive, reorderDisabl
   onSteer: (row: QueueRowView) => void;
   onEdit: (row: QueueRowView) => void;
   onRemove: (row: QueueRowView) => void;
-}) {
+};
+
+export function QueuedMessageList(props: QueuedMessageListProps) {
+  return <QueueDisclosure count={props.rows.length} partial={props.partial}>
+    <QueueRows {...props} />
+  </QueueDisclosure>;
+}
+
+function QueueRows({ rows, busy, partial, isActive, reorderDisabled = false, version, onReorder, onSteer, onEdit, onRemove }: QueuedMessageListProps) {
   const instructionsId = useId();
   const list = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
@@ -97,7 +106,7 @@ export function QueuedMessageList({ rows, busy, partial, isActive, reorderDisabl
     move(current.id, current.target);
   }
 
-  return <Box role="region" aria-label="Queued messages" className="kodex-queued-messages">
+  return <>
     <VisuallyHidden id={instructionsId}>Drag to reorder, or use the up and down arrow keys. Escape cancels dragging.</VisuallyHidden>
     <VisuallyHidden role="status">{announcement}</VisuallyHidden>
     {partial ? <Text size="xs" className="kodex-queue-notice">Only part of the queue is shown. Reordering is unavailable.</Text> : null}
@@ -131,12 +140,13 @@ export function QueuedMessageList({ rows, busy, partial, isActive, reorderDisabl
                 event.preventDefault(); cancel(); move(row.id, index + (event.key === "ArrowUp" ? -1 : 1));
               }
             }}><GripVertical /></AdaptiveIconButton> : null}
-          <div className="kodex-queue-preview" title={text}>
-            <Text truncate className="kodex-queue-text">{text}</Text>
-            {row.attachmentCount > 0 ? <Text size="xs" className="kodex-queue-attachments">{row.attachmentCount} attached file(s)</Text> : null}
-          </div>
+          <button type="button" className="kodex-queue-preview" title={text} disabled={busy || row.disabled || row.editDisabled}
+            aria-label={`Modify queued message: ${text}`} onClick={() => onEdit(row)}>
+            <Text component="span" truncate className="kodex-queue-text">{text}</Text>
+            {row.attachmentCount > 0 ? <Text component="span" size="xs" className="kodex-queue-attachments">{row.attachmentCount} attached file(s)</Text> : null}
+          </button>
           <div className="kodex-queue-actions">
-            {row.canSteer ? <AdaptiveIconButton density="compact" label="Steer" disabled={busy || row.disabled}
+            {row.canSteer || row.canSendNow ? <AdaptiveIconButton density="compact" label={row.canSteer ? "Steer" : "Send now"} disabled={busy || row.disabled || row.sendDisabled}
               onClick={() => onSteer(row)}><CornerDownRight /></AdaptiveIconButton> : null}
             <AdaptiveIconButton density="compact" label="Remove" disabled={busy || row.disabled} onClick={() => onRemove(row)}><Trash2 /></AdaptiveIconButton>
             <AdaptiveIconButton density="compact" label="Edit" disabled={busy || row.disabled || row.editDisabled} onClick={() => onEdit(row)}><Pencil /></AdaptiveIconButton>
@@ -144,5 +154,5 @@ export function QueuedMessageList({ rows, busy, partial, isActive, reorderDisabl
         </Box>;
       })}
     </div>
-  </Box>;
+  </>;
 }

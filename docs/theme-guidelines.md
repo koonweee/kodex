@@ -13,7 +13,7 @@ The registry and its bootstrap generation remain the single source of theme valu
 
 ## Corner shapes
 
-`styles/ui.css` owns the shared corner scale: 6/10/12/16/20px for xs through xl. Mantine's radius scale maps directly to those variables in `theme.ts`. Standard buttons, icon actions, tooltips, inputs and selectable menu rows use 12px corners; dense custom rows use 10px. Menus and popovers use 18px outer corners, with 20px dialogs and the existing 24px composer/28px shell hierarchy. Hover, selected, disabled and keyboard-focus states retain the same component shape.
+`styles/ui.css` owns the shared corner scale: 6/10/12/16/20px for xs through xl. Mantine's radius scale maps directly to those variables in `theme.ts`. Standard buttons, icon actions, tooltips, inputs and selectable menu rows use 12px corners; dense custom rows use 10px. Menus and popovers use 18px outer corners, with 20px dialogs and 24px composers, 32px idle compact composers and 28px shells. Hover, selected, disabled and keyboard-focus states retain the same component shape.
 
 Use the explicit round token for circles and capsules, including touch-size icon actions, switches and progress bars. Small checkboxes use 6px corners so they remain distinct from radio controls. Preserve square edges on full-screen mobile surfaces and joined composer seams. Feature CSS should consume the shared scale instead of adding literal corner sizes.
 
@@ -95,6 +95,10 @@ For a focused disabled-transparent control matrix, set `KODEX_DISABLED_AUDIT_DIR
 The contact-sheet builder needs Pillow in the chosen Python environment. Captures use the existing disposable Playwright Vite server on localhost:5174 and synthetic native-settings fixtures; they do not inspect or mutate the running gateway or user chats. Without `KODEX_THEME_AUDIT_DIR`, diagnostic capture tests skip; the contrast gate still runs. The builder rejects missing required captures. New runs write per-theme manifests; the gallery includes every captured theme and paginates PNG comparisons into groups of four. Give a new evidence run a separate output directory when preserving an earlier comparison.
 
 ## Measurement and review limits
+
+The message composer hint is an explicit visual exception: its placeholder uses the existing muted token at 50% opacity. The field retains its accessible name and entered text keeps its normal contrast. Other placeholders follow the readable-text rules below.
+
+Live assistant text uses a brief opacity animation on a bounded newly arrived suffix, then returns to its unchanged semantic foreground. This transient entrance effect is not a de-emphasis role: settled text keeps normal contrast, and reduced motion, restored history and text selection bypass the animation. Do not reuse the fade opacity for persistent readable content.
 
 Normal readable text, including placeholders and helper text, needs ≥4.5:1. Aim above the threshold for small or light-weight text. Large text may use ≥3:1 under the WCAG size/weight definition. Essential icons, control boundaries and state/focus indicators need ≥3:1 against applicable adjacent colors. Disabled controls and decorative separators have different applicability; identify them explicitly. Disabled transparent buttons and icon actions retain a transparent surface and border, including hover, with their icons inheriting the disabled foreground. Evaluate unrounded ratios and composite alpha before calculating contrast.
 

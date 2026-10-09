@@ -6,6 +6,8 @@ for (const shape of [
   { name: "desktop", width: 1280, hasTouch: false, isMobile: false },
   { name: "narrow fine pointer", width: 390, hasTouch: false, isMobile: false },
   { name: "narrow touch", width: 390, hasTouch: true, isMobile: true },
+  { name: "wide touch", width: 1280, hasTouch: true, isMobile: false },
+  { name: "hybrid touch and mouse", width: 390, hasTouch: true, isMobile: false },
 ]) {
   test.describe(shape.name, () => {
     test.use({ viewport: { width: shape.width, height: 844 }, hasTouch: shape.hasTouch, isMobile: shape.isMobile });
@@ -21,18 +23,51 @@ for (const shape of [
         await expect(pane.getByRole("toolbar", { name: /composer context|draft thread toolbar/i })).toHaveCount(0);
         await expect(pane.getByText("main", { exact: true })).toHaveCount(0);
         const originalTextarea = await textarea.elementHandle();
+        const expandsOnTouch = shape.hasTouch;
+        // Touch capability must never make an ordinary mouse click expand.
+        await textarea.click();
+        await expect(pane.getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
         if (shape.hasTouch) await textarea.tap();
         else await textarea.click();
         await expect(textarea).toBeFocused();
         expect(await originalTextarea!.evaluate((element) => element.isConnected && element === document.activeElement)).toBe(true);
         const dialog = pane.getByRole("dialog", { name: "Compose", exact: true });
-        await expect(dialog).toHaveCount(shape.hasTouch ? 1 : 0);
-        if (shape.hasTouch) {
+        await expect(dialog).toHaveCount(expandsOnTouch ? 1 : 0);
+        if (expandsOnTouch) {
+          const threadContent = pane.locator(":scope > .kodex-thread-content");
+          await expect(threadContent).toHaveCSS("visibility", "hidden");
+          await expect(threadContent).toHaveCSS("opacity", "0");
           const dialogBounds = await dialog.boundingBox();
-          expect(dialogBounds!.y).toBeLessThan(64);
+          const paneBounds = await pane.boundingBox();
+          expect(dialogBounds!.y).toBeCloseTo(
+            paneBounds!.y + await page.evaluate(() => visualViewport?.offsetTop ?? 0),
+            0,
+          );
+          await expect(page.locator(".kodex-workspace-single-pane-header")).toBeHidden();
+          await expect(dialog.locator(".kodex-mobile-composer-expanded-header")).toBeVisible();
+          expect(await dialog.evaluate(el => {
+            const bounds = el.getBoundingClientRect();
+            return el.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + 10));
+          })).toBe(true);
           expect(dialogBounds!.height).toBeGreaterThan(750);
+          if (shape.width <= 900) {
+            const shell = page.locator(".kodex-shell");
+            await shell.evaluate(el => (el as HTMLElement).style.setProperty("--kodex-mobile-safe-area-top", "24px"));
+            await dialog.evaluate(el => el.style.setProperty("--kodex-mobile-pane-viewport-offset-top", "16px"));
+            await expect.poll(async () => (await dialog.boundingBox())!.y).toBeCloseTo(40, 0);
+            await dialog.evaluate(el => el.style.setProperty("--kodex-mobile-pane-viewport-offset-top", "0px"));
+            await shell.evaluate(el => (el as HTMLElement).style.removeProperty("--kodex-mobile-safe-area-top"));
+          }
         }
         await textarea.fill("A draft that survives viewport changes");
+        if (expandsOnTouch) {
+          const shortDraftScroll = await textarea.evaluate(el => {
+            el.scrollTop = 100;
+            return { overflow: el.scrollHeight - el.clientHeight, scrollTop: el.scrollTop };
+          });
+          expect(shortDraftScroll.overflow).toBeLessThanOrEqual(1);
+          expect(shortDraftScroll.scrollTop).toBe(0);
+        }
         await page.screenshot({ path: test.info().outputPath("composer-full-height.png") });
 
         await page.setViewportSize({ width: shape.width, height: 420 });
@@ -44,7 +79,7 @@ for (const shape of [
         const bounds = await send.boundingBox();
         expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(420);
         await page.screenshot({ path: test.info().outputPath("composer-reduced-height.png") });
-        if (shape.hasTouch) {
+        if (expandsOnTouch) {
           const longDraft = Array.from({ length: 80 }, (_, i) => `Draft line ${i}`).join("\n");
           await textarea.fill(longDraft);
           const wrapper = pane.locator(".kodex-mobile-composer-textarea");
@@ -57,9 +92,31 @@ for (const shape of [
           await expect(pane.getByRole("button", { name: "Collapse composer", exact: true })).toBeInViewport();
           await textarea.fill("A draft that survives viewport changes");
         }
-        if (shape.hasTouch) {
+        if (expandsOnTouch) {
+          await textarea.evaluate(el => el.setSelectionRange(2, 8));
+          await page.setViewportSize({ width: 1280, height: 844 });
+          await expect(dialog).toHaveCount(1);
+          await expect(textarea).toBeFocused();
+          expect(await originalTextarea!.evaluate(element => element === document.activeElement && element.isConnected)).toBe(true);
+          expect(await textarea.evaluate(el => [el.selectionStart, el.selectionEnd])).toEqual([2, 8]);
+          await pane.getByRole("button", { name: "Collapse composer", exact: true }).tap();
+          await expect(dialog).toHaveCount(0);
+          await page.setViewportSize({ width: shape.width, height: 420 });
+          await expect(dialog).toHaveCount(0);
+          await textarea.tap();
+          await expect(dialog).toHaveCount(1);
           await pane.getByRole("button", { name: "Collapse composer", exact: true }).tap();
           await expect(pane.getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
+          await expect(pane.locator(":scope > .kodex-thread-content")).toHaveCSS("visibility", "visible");
+          await expect(pane.locator(":scope > .kodex-thread-content")).toHaveCSS("opacity", "1");
+          if (shape.width <= 900) {
+            const switcher = page.getByRole("button", { name: "Switch workspace pane", exact: true });
+            await expect(switcher).toBeInViewport();
+            expect(await switcher.evaluate(el => {
+              const bounds = el.getBoundingClientRect();
+              return el.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2));
+            })).toBe(true);
+          }
           expect(await originalTextarea!.evaluate((element) => element.isConnected)).toBe(true);
           await expect(textarea).toHaveValue("A draft that survives viewport changes");
         }
@@ -71,3 +128,346 @@ for (const shape of [
     });
   });
 }
+
+test("fullscreen touch preference updates every tab on this browser", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 768, height: 844 }, hasTouch: true,
+    baseURL: test.info().project.use.baseURL });
+  const fixture = await nativeSettingsFixture(context);
+  try {
+    const first = await fixture.page("preference-first");
+    const second = await fixture.page("preference-second");
+    const openInterfacePreferences = async () => {
+      const sidebar = first.getByRole("navigation", { name: "Workspace", exact: true });
+      if (!await sidebar.isVisible()) await first.getByRole("button", { name: "Show sidebar", exact: true }).tap();
+      await sidebar.getByRole("button", { name: "Account settings", exact: true }).tap();
+      await first.getByRole("menuitem", { name: "Preferences", exact: true }).tap();
+      return first.getByRole("dialog", { name: "Preferences", exact: true });
+    };
+
+    let preferences = await openInterfacePreferences();
+    await expect(preferences.getByRole("button", { name: "Interface", exact: true })).toHaveAttribute("data-active", "true");
+    const toggle = preferences.getByRole("switch", { name: "Open composer fullscreen when using touch", exact: true });
+    await expect(toggle).toBeChecked();
+    await toggle.tap();
+    await expect(toggle).not.toBeChecked();
+    await first.keyboard.press("Escape");
+
+    const secondPane = second.locator('.kodex-thread-pane[data-workspace-pane-active="true"]');
+    const secondInput = secondPane.getByLabel("Message composer", { exact: true });
+    await expect(secondPane).toHaveAttribute("data-pane-width", "regular");
+    await expect(secondInput.locator("xpath=ancestor::form")).toHaveAttribute("data-idle-compact", "true");
+    await secondInput.tap();
+    await expect(secondPane.getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
+
+    preferences = await openInterfacePreferences();
+    const restoredToggle = preferences.getByRole("switch", { name: "Open composer fullscreen when using touch", exact: true });
+    await expect(restoredToggle).not.toBeChecked();
+    await restoredToggle.tap();
+    await first.keyboard.press("Escape");
+    await secondInput.tap();
+    await expect(secondPane.getByRole("dialog", { name: "Compose", exact: true })).toBeVisible();
+  } finally {
+    await fixture.close();
+    await context.close();
+  }
+  expect(fixture.errors).toEqual([]);
+  expect(fixture.unexpected).toEqual([]);
+});
+
+test("fullscreen submit collapses directly to a disabled idle row", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true,
+    baseURL: test.info().project.use.baseURL });
+  const fixture = await nativeSettingsFixture(context);
+  try {
+    const client = "fullscreen-submit";
+    const page = await fixture.page(client);
+    const pane = page.locator('.kodex-thread-pane[data-workspace-pane-active="true"]');
+    const input = pane.getByLabel("Message composer", { exact: true });
+    await input.tap();
+    await input.fill("Send without an inline flash");
+    const form = input.locator("xpath=ancestor::form");
+    await form.evaluate((element) => {
+      const shell = element.closest(".kodex-composer-shell")!;
+      const testWindow = window as typeof window & {
+        __composerCollapsedIdleObserver?: MutationObserver;
+        __composerCollapsedIdleStates?: string[];
+      };
+      testWindow.__composerCollapsedIdleStates = [];
+      testWindow.__composerCollapsedIdleObserver = new MutationObserver(() => {
+        if (!shell.classList.contains("kodex-mobile-composer-expanded")) {
+          testWindow.__composerCollapsedIdleStates!.push(element.getAttribute("data-idle-compact") ?? "missing");
+        }
+      });
+      testWindow.__composerCollapsedIdleObserver.observe(shell, { attributes: true, subtree: true });
+    });
+    fixture.holdNext(client, "input", "submit");
+    await pane.getByRole("button", { name: "Send message", exact: true }).tap();
+    await expect.poll(() => fixture.isHeld(client, "input", "submit")).toBe(true);
+
+    await expect(pane.getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
+    await expect(form).toHaveAttribute("data-idle-compact", "true");
+    const collapsedIdleStates = await page.evaluate(() => {
+      const testWindow = window as typeof window & {
+        __composerCollapsedIdleObserver?: MutationObserver;
+        __composerCollapsedIdleStates?: string[];
+      };
+      testWindow.__composerCollapsedIdleObserver?.disconnect();
+      return testWindow.__composerCollapsedIdleStates ?? [];
+    });
+    expect(collapsedIdleStates.length).toBeGreaterThan(0);
+    expect(collapsedIdleStates).not.toContain("false");
+    await expect(input).toHaveValue("");
+    await expect(input).toBeDisabled();
+    await expect(pane.getByRole("button", { name: "Sending message", exact: true })).toBeDisabled();
+
+    await fixture.release(client, "input", "submit");
+    await expect(pane.getByRole("button", { name: "Stop turn", exact: true })).toBeVisible();
+    await expect(form).toHaveAttribute("data-idle-compact", "true");
+  } finally {
+    await fixture.close();
+    await context.close();
+  }
+  expect(fixture.errors).toEqual([]);
+  expect(fixture.unexpected).toEqual([]);
+});
+
+test("fullscreen keeps timeline paint out of the keyboard viewport gap", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true,
+    baseURL: test.info().project.use.baseURL });
+  const fixture = await nativeSettingsFixture(context);
+  try {
+    const page = await fixture.page("keyboard-gap");
+    await page.evaluate(() => {
+      const events = new EventTarget();
+      Object.defineProperty(window, "visualViewport", { configurable: true, value: {
+        addEventListener: events.addEventListener.bind(events),
+        height: 544,
+        offsetTop: 0,
+        removeEventListener: events.removeEventListener.bind(events),
+      } });
+    });
+    const pane = page.locator('.kodex-thread-pane[data-workspace-pane-active="true"]');
+    const threadContent = pane.locator(":scope > .kodex-thread-content");
+    await threadContent.evaluate((element) => {
+      const probe = document.createElement("span");
+      probe.dataset.keyboardBleedProbe = "true";
+      probe.style.visibility = "visible";
+      element.append(probe);
+    });
+    const contentHandle = await threadContent.elementHandle();
+    await pane.getByLabel("Message composer", { exact: true }).tap();
+    const dialog = pane.getByRole("dialog", { name: "Compose", exact: true });
+    await expect(dialog).toBeVisible();
+    await expect.poll(async () => {
+      const dialogBounds = await dialog.boundingBox();
+      const paneBounds = await pane.boundingBox();
+      return Math.round((paneBounds ? paneBounds.y + paneBounds.height : 0) -
+        (dialogBounds ? dialogBounds.y + dialogBounds.height : 0));
+    }).toBe(300);
+    await expect(threadContent).toHaveCSS("visibility", "hidden");
+    await expect(threadContent).toHaveCSS("opacity", "0");
+    const probe = threadContent.locator('[data-keyboard-bleed-probe="true"]');
+    await expect(probe).toHaveCSS("visibility", "visible");
+    expect(await probe.evaluate((element) => {
+      let effectiveOpacity = 1;
+      for (let current: Element | null = element; current; current = current.parentElement) {
+        effectiveOpacity *= Number.parseFloat(getComputedStyle(current).opacity);
+      }
+      return effectiveOpacity;
+    })).toBe(0);
+    await pane.getByRole("button", { name: "Collapse composer", exact: true }).tap();
+    await expect(dialog).toHaveCount(0);
+    expect(await contentHandle!.evaluate(element => element.isConnected)).toBe(true);
+    await expect(threadContent).toHaveCSS("visibility", "visible");
+    await expect(threadContent).toHaveCSS("opacity", "1");
+  } finally { await fixture.close(); await context.close(); }
+  expect(fixture.errors).toEqual([]);
+  expect(fixture.unexpected).toEqual([]);
+});
+
+test("fullscreen only reserves the visual viewport overlap inside its owning pane", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, hasTouch: true,
+    baseURL: test.info().project.use.baseURL });
+  const fixture = await nativeSettingsFixture(context);
+  try {
+    const page = await fixture.page("fullscreen-pane-above-keyboard");
+    const activeInput = () => page.locator('.kodex-thread-pane[data-workspace-pane-active="true"]')
+      .getByLabel("Message composer", { exact: true });
+    await activeInput().fill("Keep the original pane");
+    for (let index = 0; index < 3; index++) {
+      const nav = page.getByRole("navigation", { name: "Workspace", exact: true });
+      await nav.getByRole("button", { name: "Chats", exact: true }).click();
+      await nav.getByRole("button", { name: "New chat", exact: true }).click();
+      await activeInput().fill(`Keep split draft ${index}`);
+    }
+    await expect(page.locator(".dv-groupview:visible")).toHaveCount(4);
+    const panes = page.locator(".kodex-thread-pane");
+    const paneIndex = await panes.evaluateAll(elements => elements.findIndex((element) => {
+      const bounds = element.getBoundingClientRect();
+      return bounds.height < 600 && bounds.bottom <= 544;
+    }));
+    expect(paneIndex).toBeGreaterThanOrEqual(0);
+    const pane = panes.nth(paneIndex);
+    await page.evaluate(() => {
+      const events = new EventTarget();
+      Object.defineProperty(window, "visualViewport", { configurable: true, value: {
+        addEventListener: events.addEventListener.bind(events),
+        height: 424,
+        offsetTop: 120,
+        removeEventListener: events.removeEventListener.bind(events),
+      } });
+    });
+
+    await pane.getByLabel("Message composer", { exact: true }).tap();
+    const dialog = pane.getByRole("dialog", { name: "Compose", exact: true });
+    await expect(dialog).toBeVisible();
+    const paneBounds = await pane.boundingBox();
+    await expect.poll(async () => {
+      const dialogBounds = await dialog.boundingBox();
+      return {
+        bottom: Math.round(dialogBounds!.y + dialogBounds!.height),
+        top: Math.round(dialogBounds!.y),
+      };
+    }).toEqual({
+      bottom: Math.round(paneBounds!.y + paneBounds!.height),
+      top: 120,
+    });
+  } finally {
+    await fixture.close();
+    await context.close();
+  }
+  expect(fixture.errors).toEqual([]);
+  expect(fixture.unexpected).toEqual([]);
+});
+
+test("inline composer does not reserve keyboard space above the visual viewport bottom", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true,
+    baseURL: test.info().project.use.baseURL });
+  const fixture = await nativeSettingsFixture(context);
+  try {
+    const page = await fixture.page("inline-pane-above-keyboard");
+    const pane = page.locator('.kodex-thread-pane[data-workspace-pane-active="true"]');
+    const shell = pane.locator(":scope > .kodex-composer-shell");
+    const input = pane.getByLabel("Message composer", { exact: true });
+    await input.fill("Keep the inline composer active");
+    await input.evaluate((element: HTMLTextAreaElement) => element.blur());
+    await expect(shell).not.toHaveAttribute("data-focus-session", "true");
+    await pane.evaluate((element) => { (element as HTMLElement).style.height = "480px"; });
+    await page.evaluate(() => {
+      const events = new EventTarget();
+      Object.defineProperty(window, "visualViewport", { configurable: true, value: {
+        addEventListener: events.addEventListener.bind(events),
+        height: 544,
+        offsetTop: 0,
+        removeEventListener: events.removeEventListener.bind(events),
+      } });
+    });
+    const before = await shell.boundingBox();
+    await input.evaluate((element: HTMLTextAreaElement) => element.focus({ preventScroll: true }));
+    await expect(input).toBeFocused();
+    await expect(pane.getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
+    await expect(shell).toHaveAttribute("data-focus-session", "true");
+    await expect.poll(async () => (await shell.boundingBox())!.y).toBeCloseTo(before!.y, 0);
+    const paneBounds = await pane.boundingBox();
+    expect(paneBounds!.y + paneBounds!.height).toBeLessThanOrEqual(544);
+  } finally { await fixture.close(); await context.close(); }
+  expect(fixture.errors).toEqual([]);
+  expect(fixture.unexpected).toEqual([]);
+});
+
+test("fullscreen regular pane keeps its active goal in the composer toolbar", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 768, height: 844 }, hasTouch: true,
+    baseURL: test.info().project.use.baseURL });
+  const fixture = await nativeSettingsFixture(context);
+  fixture.setGoal({ threadId: fixture.detail.thread.id, objective: "Finish the dashboard", status: "active",
+    tokenBudget: null, tokensUsed: 0, timeUsedSeconds: 0, createdAt: 1, updatedAt: 1 });
+  try {
+    const page = await fixture.page("fullscreen-goal");
+    const pane = page.locator('.kodex-thread-pane[data-workspace-pane-active="true"]');
+    const input = pane.getByLabel("Message composer", { exact: true });
+    await expect(pane.getByRole("region", { name: "Chat goal", exact: true })).toBeVisible();
+    await input.tap();
+    const dialog = pane.getByRole("dialog", { name: "Compose", exact: true });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("region", { name: "Chat goal", exact: true })).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: "Manage goal: Active", exact: true })).toBeVisible();
+    const layout = await dialog.evaluate(element => {
+      const header = element.querySelector(".kodex-mobile-composer-expanded-header")!.getBoundingClientRect();
+      const form = element.querySelector(".kodex-mobile-composer-expanded-body")!.getBoundingClientRect();
+      const dialog = element.getBoundingClientRect();
+      return { dialogBottom: dialog.bottom, formBottom: form.bottom, formTop: form.top, headerBottom: header.bottom };
+    });
+    expect(layout.formTop).toBeCloseTo(layout.headerBottom, 0);
+    expect(layout.formBottom).toBeCloseTo(layout.dialogBottom, 0);
+  } finally { await fixture.close(); await context.close(); }
+  expect(fixture.errors).toEqual([]);
+  expect(fixture.unexpected).toEqual([]);
+});
+
+
+test("compact desktop pane keeps its input and actions while a spacious sibling stays regular", async ({ context }) => {
+  const fixture = await nativeSettingsFixture(context);
+  fixture.setGoal({ threadId: fixture.detail.thread.id, objective: "Finish the dashboard", status: "active", tokenBudget: null,
+    tokensUsed: 0, timeUsedSeconds: 0, createdAt: 1, updatedAt: 1 });
+  try {
+    const page = await fixture.page("pane-fit");
+    await page.setViewportSize({ width: 1920, height: 900 });
+    const original = page.locator('.kodex-thread-pane-existing');
+    const input = original.getByRole("textbox", { name: "Message composer", exact: true });
+    await expect(input).toBeEnabled({ timeout: 15000 });
+    await expect(original.getByRole("region", { name: "Chat goal" })).toBeVisible();
+    const nav = page.getByRole("navigation", { name: "Workspace", exact: true });
+    await nav.getByRole("button", { name: "Chats", exact: true }).click();
+    await nav.getByRole("button", { name: "New chat", exact: true }).click();
+    await expect(page.locator(".dv-groupview:visible")).toHaveCount(2);
+    const sibling = page.locator('.kodex-thread-pane-empty');
+    const siblingHero = sibling.locator(".kodex-composer-hero");
+    await expect(siblingHero).toBeVisible();
+    const regularHeadingSize = await siblingHero.evaluate(el => getComputedStyle(el).fontSize);
+    await original.getByLabel("Add attachment", { exact: true }).setInputFiles([
+      { name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("A local draft attachment") },
+    ]);
+    await input.fill("Draft in a narrow desktop column");
+    await input.evaluate(el => { el.focus(); el.setSelectionRange(2, 7); });
+    const handle = await input.elementHandle();
+    await original.evaluate(el => { el.style.maxWidth = "360px"; });
+    await expect(original.getByRole("region", { name: "Chat goal" })).toHaveCount(0);
+    await expect(original.getByRole("button", { name: "Manage goal: Active" })).toBeVisible();
+    await expect(original.getByRole("button", { name: "Remove notes.txt" })).toBeVisible();
+    await expect(original.getByRole("button", { name: "Send message", exact: true })).toBeInViewport();
+    await expect(original.getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
+    expect(await handle!.evaluate(el => el.isConnected && document.activeElement === el)).toBe(true);
+    expect(await input.evaluate(el => [el.selectionStart, el.selectionEnd])).toEqual([2, 7]);
+    expect(await siblingHero.evaluate(el => getComputedStyle(el).fontSize)).toBe(regularHeadingSize);
+    expect(await original.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+    await original.getByRole("button", { name: /Model:/ }).click();
+    const settings = page.getByRole("menu", { name: "Model and speed controls" });
+    await expect(settings).toBeVisible();
+    await expect(settings.getByRole("button", { name: "Close Run settings" })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await page.screenshot({ path: test.info().outputPath("compact-pane-spacious-sibling.png") });
+    await input.focus();
+    await original.evaluate(el => { el.style.maxWidth = ""; });
+    await expect(original.getByRole("region", { name: "Chat goal" })).toBeVisible();
+    expect(await handle!.evaluate(el => el.isConnected && document.activeElement === el)).toBe(true);
+    await expect(input).toHaveValue("Draft in a narrow desktop column");
+    await expect(original.getByRole("button", { name: "Remove notes.txt" })).toBeVisible();
+    const proportions = await page.locator(".dv-groupview:visible").evaluateAll(groups => groups.map(group => group.getBoundingClientRect().width));
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByRole("button", { name: "Switch workspace pane", exact: true })).toContainText("Native settings chat");
+    await expect(page.locator(".dv-groupview:visible")).toHaveCount(1);
+    expect(await handle!.evaluate(el => el.isConnected && document.activeElement === el)).toBe(true);
+    await expect(original.getByRole("button", { name: "Remove notes.txt" })).toBeVisible();
+    await expect(original.getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
+    await page.setViewportSize({ width: 1920, height: 900 });
+    await expect(page.locator(".dv-groupview:visible")).toHaveCount(2);
+    expect(await handle!.evaluate(el => el.isConnected && document.activeElement === el)).toBe(true);
+    await expect(input).toHaveValue("Draft in a narrow desktop column");
+    for (let index = 0; index < proportions.length; index++) {
+      await expect.poll(() => page.locator(".dv-groupview:visible").nth(index).evaluate(group => group.getBoundingClientRect().width))
+        .toBeCloseTo(proportions[index], -1);
+    }
+  } finally { await fixture.close(); }
+  expect(fixture.errors).toEqual([]);
+  expect(fixture.unexpected).toEqual([]);
+});

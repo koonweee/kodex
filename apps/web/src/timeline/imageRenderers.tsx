@@ -29,7 +29,7 @@ export function ImageActivityBlock({
         </Box>
       ) : (
         <ImagePreviewUnavailable
-          path={item.path ? undefined : previewPath ?? undefined}
+          path={item.kind === "image_generation" && !item.path ? previewPath ?? undefined : undefined}
           title={item.text || "Image activity"}
         />
       )}
@@ -44,7 +44,7 @@ export function ImageActivityBlock({
 
 function imageActivityMetadata(item: TimelineItem): Array<{ label: string; value: string }> {
   return [
-    item.path ? { label: "Path", value: item.path } : null,
+    item.kind === "image_generation" && item.path ? { label: "Path", value: item.path } : null,
     item.resultSummary ? { label: "Prompt", value: item.resultSummary } : null,
     item.output ? { label: "Result", value: item.output } : null,
   ].filter((entry): entry is { label: string; value: string } => entry !== null);

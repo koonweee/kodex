@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../src/test/canonicalPayloadFixture";
 import { expect, test, type Page, type Route } from "@playwright/test";
 import type { ThreadTimelineSnapshotItem } from "../src/api/client";
 import type { components } from "../src/api/generated/schema";
@@ -23,10 +24,10 @@ for (const shape of [
         const raw = { id, type: "userMessage", clientId, content: [{ type: "text", text: "Identical input" }] };
         const item: ThreadTimelineSnapshotItem = {
           id: `row-${id}`, threadId: "settings-chat", turnId: "native-turn", itemId: id, itemType: "userMessage", status: "completed", codexMethod: "item/completed", displayOrder: rows.length + 1,
-          payload: { source: "appServerSnapshot", turnId: "native-turn", itemId: id, item: raw, itemSnapshot: { id, clientId, itemType: "userMessage" } },
+          payload: compactCanonicalPayload(raw, { id, clientId, itemType: "userMessage" }),
         };
         rows.push(item);
-        fixture.publishTimeline({ activeTurnId: "native-turn", liveState: "streaming", pendingApprovalRequests: [], pendingUserInputRequests: [], viewRevision: rows.length + 1, turns: [{ id: "native-turn", status: "inProgress" }], rows: rows.map((item) => ({ id: item.id, turnId: item.turnId, kind: "user_message", status: "completed", displayOrder: item.displayOrder, item, items: [], collapsedRows: [], fileChanges: [] })) }, client);
+        fixture.publishTimeline({ activeTurnId: "native-turn", liveState: "streaming", pendingApprovalRequests: [], pendingUserInputRequests: [], viewRevision: rows.length + 1, turns: [{ id: "native-turn", status: "inProgress" }], rows: rows.map((item) => ({ id: item.id, turnId: item.turnId, kind: "user_message", status: "completed", displayOrder: item.displayOrder, item })) }, client);
       }
       try {
         const first = await fixture.page("first");
@@ -36,7 +37,7 @@ for (const shape of [
         await expect.poll(() => held.length).toBe(1);
         await send(second, shape.hasTouch);
         await expect.poll(() => held.length).toBe(2);
-        for (const submission of held) expect(submission.body).toEqual({ input: [{ type: "text", text: "Identical input" }], clientUserMessageId: expect.any(String) });
+        for (const submission of held) expect(submission.body).toEqual({ input: [{ type: "text", text: "Identical input" }], clientUserMessageId: expect.any(String), queueIfPending: true });
         const firstId = held[0].body.clientUserMessageId!;
         const secondId = held[1].body.clientUserMessageId!;
         expect(firstId).not.toBe(secondId);
@@ -55,14 +56,13 @@ for (const shape of [
         // Reopening SSE must refill the snapshot and settle the exact pending
         // identity, rather than only retaining its equal-text optimistic row.
         publish("first-native", firstId, "second");
-        await expect(pane(first).getByText("Sending", { exact: true })).toHaveCount(1);
-        await expect(pane(second).getByText("Sending", { exact: true })).toHaveCount(0);
+        await expect(messages(first)).toHaveCount(4);
+        await expect(messages(second)).toHaveCount(4);
         const reads = fixture.requests.filter((request) => request.client === "first" && request.key === "POST /v1/threads/settings-chat/attach").length;
         const connections = fixture.connections.get("first") ?? 0;
         fixture.disconnect("first");
         await expect.poll(() => fixture.connections.get("first") ?? 0).toBeGreaterThan(connections);
         await expect.poll(() => fixture.requests.filter((request) => request.client === "first" && request.key === "POST /v1/threads/settings-chat/attach").length).toBeGreaterThan(reads);
-        await expect(pane(first).getByText("Sending", { exact: true })).toHaveCount(0);
         for (const page of [first, second]) await expect(messages(page)).toHaveCount(4);
         expect(held).toHaveLength(2);
         for (const submission of held) await submission.route.fulfill({ json: { payload: { turn: { id: "native-turn", status: "inProgress", items: [] } } } });

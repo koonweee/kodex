@@ -1,11 +1,15 @@
+import { compactCanonicalPayload } from "../src/test/canonicalPayloadFixture";
 import type { BrowserContext, Page, Route } from "@playwright/test";
+import { projectPayloadDelivery } from "./native-payload-delivery.fixture";
 import { createServer, type ServerResponse } from "node:http";
 
 import type { components } from "../src/api/generated/schema";
 
 import type { AppSurfaceSession, Automation, AutomationRun, Capabilities, EventEnvelope, MarkThreadSeenRequest, QueuedInput, QueueTransfer, ThreadRead, ThreadSettingsResponse, UnreadBadgeResponse, ThreadSettingsUpdateRequest, ThreadViewPatch, ThreadViewResponse } from "../src/api/client";
 
-export async function nativeSettingsFixture(context: BrowserContext, options: { queuedSteerClient?: string } = {}) {
+type HeldRequestKind = "settings" | "snapshot" | "seen" | "badge" | "queue" | "runs" | "goal" | "input";
+
+export async function nativeSettingsFixture(context: BrowserContext, options: { queuedSteerClient?: string; payloadDelivery?: boolean } = {}) {
   let goal: components["schemas"]["ThreadGoal"] | null = null;
   const settings: ThreadSettingsResponse = { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null };
   const detail: ThreadViewResponse = {
@@ -15,13 +19,15 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
   };
   const badge: UnreadBadgeResponse = { count: 0, readRevision: 0 };
   const capabilities: Capabilities = {
-    gateway: { apiVersion: "2", instanceId: "native-settings-fixture", version: "test", sse: true, approvals: true, terminals: { enabled: false }, gatewayAuth: false, trustedNetworkOnly: true },
+    gateway: { apiVersion: "3", instanceId: "native-settings-fixture", version: "test", sse: true, approvals: true, terminals: { enabled: false }, gatewayAuth: false, trustedNetworkOnly: true },
     appServer: { ready: true, experimentalApi: true, schemaVersion: "0.160.0", detectedVersion: "0.160.0", detectedVersionMatchesSchema: true },
   };
   const clients = new Map<Page, string>();
   const streams = new Map<ServerResponse, string>();
+  const streamUrls = new Map<ServerResponse, URL>();
+  const streamRequests: Array<{ client: string; url: string }> = [];
   const connections = new Map<string, number>();
-  const requests: Array<{ client: string; key: string; body: unknown; failure: () => string | null }> = [];
+  const requests: Array<{ client: string; key: string; url: string; body: unknown; failure: () => string | null }> = [];
   const pending: ThreadSettingsUpdateRequest[] = [];
   const automations: Automation[] = [];
   const automationRuns = new Map<string, AutomationRun[]>();
@@ -52,8 +58,10 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
     response.writeHead(200, { "Content-Type": "text/event-stream", "Access-Control-Allow-Origin": "*" });
     response.flushHeaders();
     streams.set(response, client);
+    streamUrls.set(response, url);
+    streamRequests.push({ client, url: url.href });
     connections.set(client, (connections.get(client) ?? 0) + 1);
-    response.on("close", () => streams.delete(response));
+    response.on("close", () => { streams.delete(response); streamUrls.delete(response); });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
@@ -63,7 +71,11 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
     seq = Math.max(seq, eventSeq);
     const event: EventEnvelope = { id: `${eventSeq}-${kind}`, seq: eventSeq, kind, threadId: ["config.changed", "mcp.oauth_login_completed", "mcp.server_status_updated", "thread.subagents_changed", "automation.run_updated"].includes(kind) ? null : detail.thread.id, payload, receivedAt: "2026-10-04T00:00:00Z" };
     for (const [stream, id] of streams) {
-      if (!client || client === id) stream.write(`id: ${eventSeq}\nevent: ${kind}\ndata: ${JSON.stringify(event)}\n\n`);
+      if (!client || client === id) {
+        const delivery = options.payloadDelivery && kind === "thread_view.patch"
+          ? { ...event, payload: projectPayloadDelivery(event.payload, streamUrls.get(stream)!) } : event;
+        stream.write(`id: ${eventSeq}\nevent: ${kind}\ndata: ${JSON.stringify(delivery)}\n\n`);
+      }
     }
   }
   function applyRead(read: ThreadRead) {
@@ -92,9 +104,8 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
       id: `row-${itemId}`, kind: "user_message", turnId, status, displayOrder: detail.timeline.rows.length + 1,
       item: { id: itemId, itemId, itemType: "userMessage", threadId: detail.thread.id, turnId, status,
         displayOrder: detail.timeline.rows.length + 1, codexMethod: nativeItemId ? "item/completed" : "item/upsert",
-        payload: { source: "gatewayStream", turnId, itemId, item: rawItem,
-          itemSnapshot: { id: itemId, itemType: "userMessage", clientId: transfer.id } } },
-      items: [], collapsedRows: [], fileChanges: [],
+        payload: compactCanonicalPayload(rawItem, { id: itemId, itemType: "userMessage", clientId: transfer.id }) },
+
     };
     detail.timeline = { ...detail.timeline,
       rows: [...detail.timeline.rows.filter((entry) => entry.item?.itemId !== pendingItemId && entry.item?.itemId !== itemId), row] };
@@ -118,7 +129,7 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
     const key = `${request.method()} ${url.pathname}`;
     const client = clients.get(request.frame().page()) ?? "";
     const body = request.postData() ? request.postDataJSON() as unknown : null;
-    requests.push({ client, key, body, failure: () => request.failure()?.errorText ?? null });
+    requests.push({ client, key, url: url.href, body, failure: () => request.failure()?.errorText ?? null });
     if (key === "GET /v1/events") {
       url.searchParams.set("client", client);
       return route.continue({ url: `http://127.0.0.1:${address.port}${url.pathname}${url.search}` });
@@ -134,7 +145,7 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
       "GET /v1/models": { models: [{ id: "gpt-5.4", model: "gpt-5.4", displayName: "GPT-5.4", description: "Test model", defaultReasoningEffort: "medium", isDefault: true, hidden: false, inputModalities: ["text"], supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced" }, { reasoningEffort: "high", description: "Deeper reasoning" }], rawPayload: {} }], rawPayload: {} },
       "GET /v1/composer-settings": {},
       "GET /v1/permission-profiles": { profiles: [] },
-      "GET /v1/threads/settings-chat": detail,
+      "GET /v1/threads/settings-chat": options.payloadDelivery ? projectPayloadDelivery(detail, url) : detail,
       "GET /v1/threads/settings-chat/app-surface": { session: null },
       "GET /v1/threads/settings-chat/subagents": { subagents: [] },
       "PUT /v1/thread-view-presence": { ok: true },
@@ -161,7 +172,26 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
       emit("thread.read_updated", read);
       return respond(route, read, 200, `seen:${client}`);
     }
-    if (key === "POST /v1/threads/settings-chat/attach") return respond(route, detail, 200, `snapshot:${client}`);
+    if (key === "POST /v1/threads/settings-chat/attach") return respond(route, options.payloadDelivery ? projectPayloadDelivery(detail, url) : detail, 200, `snapshot:${client}`);
+    if (options.payloadDelivery && key === "GET /v1/threads/settings-chat/timeline/pages") return respond(route, projectPayloadDelivery(detail, url));
+    if (key === "POST /v1/threads/settings-chat/interrupt-current") {
+      if (goal?.status === "active") {
+        goal = { ...goal, status: "paused" };
+        emit("thread.goal_changed", { threadId: detail.thread.id });
+      }
+      const turnId = detail.timeline.activeTurnId;
+      if (!turnId) return respond(route, { disposition: "idle", interruptedTurnId: null, rawPayload: null } satisfies components["schemas"]["ThreadInterruptCurrentResponse"]);
+      const revision = Math.max(seq, detail.timeline.viewRevision ?? 0) + 1;
+      detail.timeline = { ...detail.timeline, activeTurnId: null, liveState: "idle", viewRevision: revision,
+        turns: detail.timeline.turns.map((turn) => turn.id === turnId ? { ...turn, status: "interrupted" } : turn) };
+      detail.liveState = "idle";
+      detail.thread.status = "idle";
+      const patch: ThreadViewPatch = { ...detail.timeline, scope: "full_snapshot", threadId: detail.thread.id,
+        affectedTurnIds: detail.timeline.turns.map((turn) => turn.id) };
+      emit("thread_view.patch", patch, undefined, revision);
+      emit("turn_queue.changed", { threadId: detail.thread.id });
+      return respond(route, { disposition: "interrupted", interruptedTurnId: turnId, rawPayload: {} } satisfies components["schemas"]["ThreadInterruptCurrentResponse"]);
+    }
     if (key === "GET /v1/threads/settings-chat/goal") return respond(route, { goal }, 200, `goal:${client}`);
     if (key === "PATCH /v1/threads/settings-chat/goal") {
       const update = body as components["schemas"]["ThreadGoalSetRequest"];
@@ -187,12 +217,13 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
       return respond(route, {}, 202);
     }
     if (key === "POST /v1/threads/settings-chat/input") {
-      if ((body as { queueIfPending?: boolean }).queueIfPending && queuedInputs.length) {
+      const policy = body as { queueIfPending?: boolean; queueIfEmpty?: boolean };
+      if ((policy.queueIfPending && queuedInputs.length > 0) || (policy.queueIfEmpty && queuedInputs.length === 0)) {
         const submitted = body as { input: QueuedInput["input"]; clientUserMessageId: string; attachments?: QueuedInput["attachments"] };
         const queued: QueuedInput = { id: `queued-${++nextQueueId}`, threadId: detail.thread.id, input: submitted.input, clientUserMessageId: submitted.clientUserMessageId, attachments: submitted.attachments ?? [], canSteer: Boolean(detail.timeline.activeTurnId) };
         queuedInputs.push(queued);
         emit("turn_queue.changed", { threadId: detail.thread.id });
-        return respond(route, { payload: {}, disposition: "queued", queuedInput: queued });
+        return respond(route, { payload: {}, disposition: "queued", queuedInput: queued }, 200, `input:${client}`);
       }
 
       detail.thread.status = "active";
@@ -205,7 +236,7 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
       };
       emit("thread_view.patch", patch, undefined, revision);
       emit("turn_queue.changed", { threadId: detail.thread.id });
-      return respond(route, { payload: {turn: {id:"turn-1",status:"inProgress"}} });
+      return respond(route, { payload: {turn: {id:"turn-1",status:"inProgress"}} }, 200, `input:${client}`);
     }
     if (key === "POST /v1/threads/settings-chat/queued-inputs") {
       const submitted = body as { input: QueuedInput["input"]; clientUserMessageId: string };
@@ -236,6 +267,7 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
     if (queuePath) {
       const index = steerFirst ? 0 : queuedInputs.findIndex((row) => row.id === queuePath[1]);
       const row = queuedInputs[index];
+      if (steerFirst && !row) return respond(route, { status: "empty" });
       if (row && request.method() === "PUT" && !queuePath[2]) {
         row.input = (body as { input: QueuedInput["input"] }).input;
         emit("turn_queue.changed", { threadId: detail.thread.id });
@@ -248,8 +280,21 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
       }
       if (request.method() === "POST" && (queuePath[2] === "/steer" || steerFirst)) {
         const expectedTurnId = detail.timeline.activeTurnId;
-        if (!row || !expectedTurnId || !canSteerQueuedInput(row.id)) return respond(route, { code: "conflict", message: "The queued message cannot be steered", retryable: false }, 409);
+        if (!row || transfers.some((transfer) => transfer.nativeQueueId === row.id)) return respond(route, { code: "conflict", message: "The queued message cannot be sent now", retryable: false }, 409);
         queuedInputs.splice(index, 1);
+        if (!expectedTurnId) {
+          const turnId = `queue-start-${row.id}`;
+          const revision = Math.max(seq, detail.timeline.viewRevision ?? 0) + 1;
+          detail.thread.status = "active";
+          detail.liveState = "streaming";
+          detail.timeline = { ...detail.timeline, activeTurnId: turnId, liveState: "streaming", viewRevision: revision,
+            turns: [...detail.timeline.turns, { id: turnId, status: "inProgress" }] };
+          const patch: ThreadViewPatch = { ...detail.timeline, scope: "full_snapshot", threadId: detail.thread.id,
+            affectedTurnIds: detail.timeline.turns.map((turn) => turn.id) };
+          emit("thread_view.patch", patch, undefined, revision);
+          emit("turn_queue.changed", { threadId: detail.thread.id });
+          return respond(route, { status: "delivered", id: row.id });
+        }
         const transfer: QueueTransfer = { id: `transfer-${++nextTransferId}`, threadId: detail.thread.id, nativeQueueId: row.id, clientUserMessageId: row.clientUserMessageId, expectedTurnId, input: row.input, phase: "accepted", error: null, createdAt: "2026-10-05T00:00:00Z", updatedAt: "2026-10-05T00:00:00Z" };
         transfers.push(transfer);
         emit("turn_queue.changed", { threadId: detail.thread.id });
@@ -280,7 +325,7 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
     return respond(route, { code: "not_found", message: key, retryable: false }, 404);
   });
   return {
-    settings, requests, pending, connections, unexpected, errors, settingsChanged,
+    settings, requests, streamRequests, pending, connections, unexpected, errors, settingsChanged,
     get goal() { return goal; },
     setGoal(value: components["schemas"]["ThreadGoal"] | null, client?: string) {
       goal = value;
@@ -348,10 +393,10 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
       Object.assign(settings, update);
       settingsChanged(client);
     },
-    holdNext(client: string, kind: "settings" | "snapshot" | "seen" | "badge" | "queue" | "runs" | "goal" = "settings", label = "") { holds.set(`${kind}:${client}`, `${kind}:${client}:${label}`); },
-    isHeld(client: string, kind: "settings" | "snapshot" | "seen" | "badge" | "queue" | "runs" | "goal" = "settings", label = "") { return held.has(`${kind}:${client}:${label}`); },
-    wasAborted(client: string, kind: "settings" | "snapshot" | "seen" | "badge" | "queue" | "runs" | "goal" = "settings", label = "") { return held.get(`${kind}:${client}:${label}`)?.aborted() ?? false; },
-    async release(client: string, kind: "settings" | "snapshot" | "seen" | "badge" | "queue" | "runs" | "goal" = "settings", label = "") {
+    holdNext(client: string, kind: HeldRequestKind = "settings", label = "") { holds.set(`${kind}:${client}`, `${kind}:${client}:${label}`); },
+    isHeld(client: string, kind: HeldRequestKind = "settings", label = "") { return held.has(`${kind}:${client}:${label}`); },
+    wasAborted(client: string, kind: HeldRequestKind = "settings", label = "") { return held.get(`${kind}:${client}:${label}`)?.aborted() ?? false; },
+    async release(client: string, kind: HeldRequestKind = "settings", label = "") {
       const key = `${kind}:${client}:${label}`;
       const reply = held.get(key);
       if (!reply) throw new Error(`No held ${kind} read for ${client}`);

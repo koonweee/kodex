@@ -77,13 +77,21 @@
   overflow: hidden;
 }
 
+/* This editor measures its own allocation inside the global dialog. */
+.kodex-automation-prompt-editor[data-pane-width="compact"] .kodex-automation-prompt-panels {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .kodex-automation-prompt-split {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   min-height: 260px;
 }
 
-.kodex-automation-prompt-pane[data-pane="write"] {
+.kodex-automation-prompt-split > .kodex-automation-prompt-pane[data-pane="write"] {
   border-right: 1px solid var(--kodex-border-subtle);
 }
 
@@ -161,6 +169,10 @@
     display: none;
   }
 
+}
+
+/* Global automation dialog fit follows the shared compact-dialog boundary. */
+@media (max-width: 700px) {
   .kodex-automation-modal .kodex-mantine-modal-content {
     display: flex;
     height: 100dvh;

@@ -11,6 +11,20 @@ export type ThreadUpsert =
   | { scope: "project"; projectId: string; thread: ThreadSummary }
   | { scope: "chat"; thread: ThreadSummary };
 
+export function archivedThreadIdFromEvent(event: EventEnvelope): string | null {
+  if (event.kind !== "thread.subagents_changed" || event.codexMethod !== "thread/archived") {
+    return null;
+  }
+  return stringValue(asRecord(event.payload).changedThreadId);
+}
+
+export function unarchivedThreadIdFromEvent(event: EventEnvelope): string | null {
+  if (event.kind !== "thread.subagents_changed" || event.codexMethod !== "thread/unarchived") {
+    return null;
+  }
+  return stringValue(asRecord(event.payload).changedThreadId);
+}
+
 export function threadUpsertFromEvent(event: EventEnvelope): ThreadUpsert | null {
   if (event.kind !== "thread.upserted") {
     return null;

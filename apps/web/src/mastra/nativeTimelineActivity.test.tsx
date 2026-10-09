@@ -2,6 +2,7 @@ import { MantineProvider } from '@mantine/core';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it } from 'vitest';
 import { defaultDisplayState } from '../../../../spikes/mastra-code-sdk/node_modules/@mastra/core/dist/agent-controller/index.js';
+import { ThreadDeliveryProvider } from '../timeline/ThreadDeliveryPreferences';
 import { TimelineActivityGroupRenderer } from '../timeline/renderers';
 import type { ChatSnapshot } from './client';
 import { timelinePresentation } from './presentation';
@@ -55,7 +56,7 @@ it('applies overlays before grouping, exposes pending prompts, and converges liv
 it('uses the shared collapsed disclosure and reveals native command output on explicit opening', async () => {
   const value = rows([message('shell', [tool('command', 'execute_command', { command: 'exit 7' }, 'Exit code: 7')])]);
   expect(value[0].type).toBe('activity'); if (value[0].type !== 'activity') throw new Error('Expected native activity');
-  const view = render(<MantineProvider><TimelineActivityGroupRenderer items={value[0].items} /></MantineProvider>);
+  const view = render(<MantineProvider><ThreadDeliveryProvider includeCommandOutputs><TimelineActivityGroupRenderer items={value[0].items} /></ThreadDeliveryProvider></MantineProvider>);
   const details = view.container.querySelector('details')!;
   expect(details.open).toBe(false); expect(screen.getByText('Ran 1 command')).toBeVisible(); expect(screen.queryByText('Exit code: 7')).not.toBeInTheDocument();
   fireEvent.click(screen.getByText('Ran 1 command'));

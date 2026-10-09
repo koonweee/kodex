@@ -13,25 +13,29 @@ import type { ImageLightboxImage } from "../images/types";
 import { copyTextToClipboard } from "../shared/clipboard";
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 
+import { useStreamingText } from "./useStreamingText";
+
 const markdownRemarkPlugins = [remarkGfm, remarkBreaks];
 
 export type MarkdownContentProps = {
   className?: string;
+  streaming?: { identity: string; deltaStart?: number };
   onImageOpen?: (image: ImageLightboxImage) => void;
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   text: string;
   threadId?: string;
 };
 
-export function MarkdownContent({ className, onImageOpen, onMarkdownOpen, text, threadId }: MarkdownContentProps) {
+export function MarkdownContent({ className, onImageOpen, onMarkdownOpen, text, threadId, streaming }: MarkdownContentProps) {
+  const reveal = useStreamingText(text, streaming);
   const components = useMemo(
     () => markdownComponents(threadId, onImageOpen, onMarkdownOpen),
     [onImageOpen, onMarkdownOpen, threadId],
   );
 
   return (
-    <Box className={className}>
-      <ReactMarkdown remarkPlugins={markdownRemarkPlugins} skipHtml components={components}>
+    <Box className={className} ref={reveal.root}>
+      <ReactMarkdown remarkPlugins={markdownRemarkPlugins} rehypePlugins={reveal.plugins} skipHtml components={components}>
         {text}
       </ReactMarkdown>
     </Box>
@@ -44,6 +48,10 @@ function markdownComponents(
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void,
 ): Components {
   return {
+    img: ({ alt, src, title }) => {
+      const preview = localImagePreviewHref(threadId, src);
+      return <img alt={alt} className="kodex-markdown-image" src={preview?.href ?? src} title={title} />;
+    },
     a: ({ children, href, title }) => {
       const imagePreview = localImagePreviewHref(threadId, href);
       const filePreview = localFilePreviewHref(threadId, href);
@@ -247,10 +255,13 @@ function localFilePreviewActionTarget(href: string): {
 
 function localImagePreviewTarget(href: string): { path: string } | null {
   const { path } = localFilePreviewTarget(href);
-  if (!isLocalImagePath(path)) {
-    return null;
+  let decodedPath = path;
+  try {
+    decodedPath = decodeURIComponent(path);
+  } catch {
+    // Files can contain a literal percent character rather than a URL escape.
   }
-  return { path };
+  return isLocalImagePath(decodedPath) ? { path: decodedPath } : null;
 }
 
 function localFilePreviewTarget(href: string): { fragment: string; path: string } {

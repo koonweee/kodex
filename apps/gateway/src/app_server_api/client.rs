@@ -167,6 +167,9 @@ impl CodexClient {
             }),
         ).await {
             Ok(payload) => payload,
+            Err(error) if is_thread_archived_error(&error, &thread_id) => {
+                return Err(ApiError::ThreadArchived(thread_id));
+            }
             // The pinned native runtime cannot resume a fresh loaded shell
             // before persistence. A native read must independently prove that
             // it exists; never fabricate an empty view from this rejection.
@@ -710,6 +713,18 @@ fn is_thread_rollout_missing_error(error: &ApiError, thread_id: &str) -> bool {
     native_invalid_request_matches(
         error,
         &format!("no rollout found for thread id {thread_id}"),
+    )
+}
+
+fn is_thread_archived_error(error: &ApiError, thread_id: &str) -> bool {
+    // Upstream app-server 0.160.0 reports archived resume attempts through the
+    // generic -32600 code with no structured discriminator. Keep this exact
+    // pinned string match at the native boundary until upstream distinguishes it.
+    native_invalid_request_matches(
+        error,
+        &format!(
+            "session {thread_id} is archived. Run `codex unarchive {thread_id}` to unarchive it first."
+        ),
     )
 }
 

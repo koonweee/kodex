@@ -84,6 +84,7 @@ describe("timeline image renderers", () => {
     const expectedSrc =
       "http://localhost:3000/v1/threads/thread%2Fwith%20spaces/files/preview?path=%2FUsers%2Fexample%2Fkodex%2Fpreview%20image.png";
     expect(document.querySelector(".kodex-activity-image-preview img")).toHaveAttribute("src", expectedSrc);
+    expect(screen.queryByText(/Path:/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /open \/users\/example\/kodex\/preview image\.png/i }));
     expect(onImageOpen).toHaveBeenCalledWith({
       alt: "",
@@ -109,7 +110,7 @@ describe("timeline image renderers", () => {
     fireEvent.error(document.querySelector(".kodex-activity-image-preview img") as HTMLImageElement);
 
     expect(screen.getByText("Preview unavailable")).toBeInTheDocument();
-    expect(screen.getByText(/\/Users\/example\/kodex\/missing\.png/)).toBeInTheDocument();
+    expect(screen.queryByText(/\/Users\/example\/kodex\/missing\.png/)).not.toBeInTheDocument();
   });
 
   it("renders generated image data URLs without showing raw base64 output", () => {

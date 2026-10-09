@@ -84,6 +84,13 @@ impl QueueSteerGuards {
         })
     }
 
+    /// Idle queue-start preflight has no active turn to bind. Keep its probe
+    /// registered until dispatch so lifecycle changes still fence stale reads.
+    pub fn is_probe_current(&self, probe: &QueueSteerProbe) -> bool {
+        Weak::ptr_eq(&probe.registry, &Arc::downgrade(&self.operations))
+            && matches!(*probe.operation.phase.lock().unwrap(), Phase::Probing)
+    }
+
     pub fn is_current(&self, token: &QueueSteerToken) -> bool {
         Weak::ptr_eq(&token.registry, &Arc::downgrade(&self.operations))
             && matches!(

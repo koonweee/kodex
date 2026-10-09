@@ -32,7 +32,7 @@ import {
   revokeObjectUrl,
 } from "./attachmentUtils";
 import type { ComposerDraftControls } from "./ComposerPanel";
-import { isTouchInputDevice } from "../shared/inputCapabilities";
+import { composerSubmissionIntent, submitComposerFromKeyDown } from "./submissionIntent";
 import { createClientRequestId } from "../shared/id";
 import type { PendingAttachment } from "./types";
 import { buildTurnPayload, type ComposerUploads } from "./buildTurnPayload";
@@ -40,12 +40,15 @@ import { buildTurnPayload, type ComposerUploads } from "./buildTurnPayload";
 type DraftThreadCreateRequest = { composerSettings?: ComposerSettings; firstMessageText: string; projectId?: string };
 type DraftThreadCreateResult = { threadId: string };
 
+type ComposerInputCommand = (threadId: string, input: UserInput[], attachments: TimelineFileAttachment[], images: ImageUpload[], skillMentions: TimelineSkillMention[]) => Promise<unknown>;
+
 type UseComposerOrchestrationParams = {
   activeSelectedTurnId: string | null;
   isRunning?: boolean;
   commands?: {
-    send: (threadId: string, input: UserInput[], attachments: TimelineFileAttachment[], images: ImageUpload[], skillMentions: TimelineSkillMention[]) => Promise<unknown>;
-    queue: (threadId: string, input: UserInput[], attachments: TimelineFileAttachment[], images: ImageUpload[], skillMentions: TimelineSkillMention[]) => Promise<unknown>;
+    send: ComposerInputCommand;
+    alternate?: ComposerInputCommand;
+    queue: ComposerInputCommand;
     stop: (threadId: string) => Promise<unknown>;
     compact: (threadId: string) => Promise<unknown>;
     uploads: ComposerUploads;
@@ -144,8 +147,7 @@ export function useComposerOrchestration({
     skillMentions: TimelineSkillMention[] = [],
   ) {
     event.preventDefault();
-    const submitter = "submitter" in event.nativeEvent ? event.nativeEvent.submitter : null;
-    const queueRequested = submitter instanceof HTMLElement && submitter.dataset.submitIntent === "queue";
+    const intent = composerSubmissionIntent(event);
     const canSubmitComposer =
       currentCanCompose() &&
       !isComposerSubmitting &&
@@ -184,6 +186,11 @@ export function useComposerOrchestration({
       return;
     }
 
+    if (commands && selectedThreadId && intent === "alternate" && !commands.alternate) {
+      onError(new Error("The alternate queue action is not supported by this backend."));
+      return;
+    }
+
     const clientUserMessageId = createClientRequestId();
     const attachments = pendingAttachments;
     let startedThreadId: string | null = null;
@@ -204,7 +211,7 @@ export function useComposerOrchestration({
           threadId: selectedThreadId, text, attachments, skillInputs, skillTextElements,
           updateAttachments, rememberImagePreviewUrls,
         });
-        if (queueRequested) {
+        if (intent === "queue") {
           try {
             if (commands) await commands.queue(selectedThreadId, payload.input, payload.attachments, payload.images, skillMentions);
             else await createQueuedInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId);
@@ -226,9 +233,10 @@ export function useComposerOrchestration({
           });
         }
         if (commands) {
-          await commands.send(selectedThreadId, payload.input, payload.attachments, payload.images, skillMentions);
+          const action = intent === "alternate" ? commands.alternate! : commands.send;
+          await action(selectedThreadId, payload.input, payload.attachments, payload.images, skillMentions);
         } else {
-          const result = await submitThreadInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId, true);
+          const result = await submitThreadInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId, intent === "alternate" ? "ifEmpty" : "ifPending");
           if (result.disposition === "queued") {
             if (optimisticClientRequestId) onOptimisticUserMessageRemoved?.(optimisticClientRequestId);
             void refreshQueuedInputs(queryClient, selectedThreadId);
@@ -363,22 +371,7 @@ export function useComposerOrchestration({
   }
 
   function handleComposerKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
-      return;
-    }
-    const mobileInput = usesMobileComposerInput();
-    if (mobileInput && !event.metaKey) {
-      return;
-    }
-
-    event.preventDefault();
-    const form = event.currentTarget.form;
-    if (event.metaKey && !mobileInput && selectedThreadId) {
-      const queueSubmitter = form?.querySelector<HTMLButtonElement>('button[data-submit-intent="queue"]');
-      if (queueSubmitter && !queueSubmitter.disabled) form?.requestSubmit(queueSubmitter);
-      return;
-    }
-    form?.requestSubmit();
+    submitComposerFromKeyDown(event);
   }
 
   function currentActiveSelectedTurnId() {
@@ -463,10 +456,6 @@ export function useComposerOrchestration({
     pendingAttachments,
     removePendingAttachment,
   };
-}
-
-function usesMobileComposerInput(): boolean {
-  return isTouchInputDevice();
 }
 
 function isImageFile(file: File): boolean {

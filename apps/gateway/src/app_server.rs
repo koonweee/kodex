@@ -374,6 +374,7 @@ fn api_error_classification(error: &ApiError) -> &'static str {
         ApiError::BadRequest(_) => "bad_request",
         ApiError::UnsupportedMediaType(_) => "unsupported_media_type",
         ApiError::Conflict(_) => "conflict",
+        ApiError::ThreadArchived(_) => "thread_archived",
         ApiError::NativeConfigWrite(_) => "config_write_error",
         ApiError::AppServerUnavailable => "unavailable",
         ApiError::Retryable(_) => "retryable",
@@ -1127,6 +1128,7 @@ done
             "thread/list" => json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
             "thread/loaded/list" => json!({"data": [], "nextCursor": null}),
             "thread/queue/list" => json!({"data": [], "nextCursor": null}),
+            "thread/goal/get" => json!({"goal": null}),
             "thread/queue/start" => json!({"turn": {
                 "id":"native-queue-turn", "items":[], "itemsView":"notLoaded",
                 "status":"inProgress", "error":null, "startedAt":null,

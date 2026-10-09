@@ -1,3 +1,7 @@
+.kodex-shell {
+  --kodex-workspace-header-bg: color-mix(in srgb, var(--kodex-bg-panel) 86%, var(--kodex-bg-shell));
+}
+
 .kodex-sidebar {
   border-color: transparent;
   border-inline-end: 0;
@@ -31,6 +35,12 @@
   background: var(--kodex-bg-panel);
   box-shadow: none;
   overflow: hidden;
+}
+
+/* Dockview owns the full surface; pane-local spacing keeps content inset.
+   The outer radius clips the grid without positioning-dependent edge rules. */
+.kodex-main-stack:has(> .kodex-workspace-shell) {
+  padding: 0;
 }
 
 .kodex-thread-column {
@@ -162,6 +172,7 @@
   z-index: 4;
   height: 32px;
   pointer-events: none;
+  opacity: 0.8;
   background: linear-gradient(
     to bottom,
     var(--kodex-pane-bg, var(--kodex-bg-panel)),
@@ -179,6 +190,7 @@
   z-index: 4;
   height: 48px;
   pointer-events: none;
+  opacity: 0.8;
   background: linear-gradient(
     to bottom,
     transparent,
@@ -190,8 +202,8 @@
 
 .kodex-subagent-viewer {
   box-sizing: border-box;
-  flex: 0 0 clamp(320px, 32vw, 460px);
-  width: clamp(320px, 32vw, 460px);
+  flex: 0 0 clamp(240px, 42%, 460px);
+  width: clamp(240px, 42%, 460px);
   min-width: 0;
   min-height: 0;
   border-left: 1px solid var(--kodex-border-subtle);
@@ -235,17 +247,15 @@
   min-height: 160px;
 }
 
-@media (max-width: 900px) {
-  .kodex-thread-content[data-subagent-sidebar="open"] > .kodex-thread-scroll-frame {
-    display: none;
-  }
+.kodex-thread-pane[data-pane-width="compact"] .kodex-thread-content[data-subagent-sidebar="open"] > .kodex-thread-scroll-frame {
+  display: none;
+}
 
-  .kodex-subagent-viewer {
-    flex-basis: 100%;
-    width: 100%;
-    border-left: 0;
-    padding-left: 0;
-  }
+.kodex-thread-pane[data-pane-width="compact"] .kodex-subagent-viewer {
+  flex: 1 1 0;
+  width: 0;
+  border-left: 0;
+  padding-left: 0;
 }
 
 .kodex-timeline-loading {

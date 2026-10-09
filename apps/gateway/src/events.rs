@@ -79,6 +79,8 @@ pub struct EventsQuery {
     pub exclude_thread_id: Option<String>,
     pub include_global: Option<bool>,
     pub thread_ids: Option<String>,
+    pub include_debug_events: Option<bool>,
+    pub include_command_outputs: Option<bool>,
 }
 
 impl EventsQuery {
@@ -602,22 +604,29 @@ async fn event_stream(
 }
 
 fn event_for_sse_query(mut event: EventEnvelope, query: &EventsQuery) -> EventEnvelope {
-    if !query.has_thread_subscriptions() && event.kind == THREAD_VIEW_PATCH_EVENT_KIND {
-        if let Ok(patch) =
-            serde_json::from_value::<thread_view::ThreadViewPatch>(event.payload.clone())
-        {
-            let mut lifecycle = thread_view::ThreadViewPatch::lifecycle(
-                patch.view_revision,
-                patch.thread_id,
-                patch.active_turn_id,
-                patch.live_state,
-                patch.pending_approval_requests,
-                patch.pending_user_input_requests,
-            );
-            lifecycle.thread_status = patch.thread_status;
-            if let Ok(payload) = serde_json::to_value(lifecycle) {
-                event.payload = payload;
-            }
+    if event.kind != THREAD_VIEW_PATCH_EVENT_KIND {
+        return event;
+    }
+    if query.has_thread_subscriptions() {
+        crate::thread_view_delivery::ThreadViewDeliveryQuery {
+            include_debug_events: query.include_debug_events.unwrap_or(false),
+            include_command_outputs: query.include_command_outputs.unwrap_or(false),
+        }
+        .project_patch_payload(&mut event.payload);
+    } else if let Ok(patch) =
+        serde_json::from_value::<thread_view::ThreadViewPatch>(event.payload.clone())
+    {
+        let mut lifecycle = thread_view::ThreadViewPatch::lifecycle(
+            patch.view_revision,
+            patch.thread_id,
+            patch.active_turn_id,
+            patch.live_state,
+            patch.pending_approval_requests,
+            patch.pending_user_input_requests,
+        );
+        lifecycle.thread_status = patch.thread_status;
+        if let Ok(payload) = serde_json::to_value(lifecycle) {
+            event.payload = payload;
         }
     }
     event

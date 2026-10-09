@@ -35,10 +35,10 @@
   --dv-tab-close-icon-size: 10px;
   --dv-tab-divider-color: var(--kodex-border-subtle);
   --dv-tab-font-size: 0.75rem;
-  --dv-tab-margin: 4px 3px;
+  --dv-tab-margin: 8px 3px 4px;
   --dv-tabs-and-actions-container-background-color: var(--kodex-pane-bg);
   --dv-tabs-and-actions-container-font-size: 0.75rem;
-  --dv-tabs-and-actions-container-height: 40px;
+  --dv-tabs-and-actions-container-height: 44px;
   --dv-scrollbar-background-color: var(--kodex-scrollbar-thumb);
   --dv-tabs-container-scrollbar-color: var(--kodex-scrollbar-thumb);
   --dv-transition-duration: 120ms;
@@ -61,50 +61,63 @@
   outline-offset: -1px;
 }
 
-/* One small motion-path highlight follows the native tab's rounded rectangle.
-   It occupies no layout space and never intercepts tab/close/drag gestures. */
+/* Running tabs get a restrained surface shimmer. It occupies no layout space,
+   never intercepts tab/close/drag gestures, and moves only a composited layer. */
 .kodex-workspace-dock .kodex-workspace-tab:has(.kodex-workspace-tab-running) {
   position: static;
 }
 
 .kodex-workspace-tab-running {
   position: absolute;
-  inset: 0;
+  inset: 1px;
+  overflow: hidden;
+  border-radius: calc(var(--dv-tab-border-radius) - 1px);
   pointer-events: none;
 }
 
-.kodex-workspace-dock .dv-tabs-container .kodex-workspace-tab-running::after {
+.kodex-workspace-tab-running::before {
   content: "";
   position: absolute;
-  top: 1px;
-  left: 50%;
-  width: 24px;
-  height: 3px;
-  border-radius: var(--kodex-radius-round);
-  background: radial-gradient(ellipse, color-mix(in srgb, var(--kodex-accent) 65%, transparent), transparent 75%);
-  pointer-events: none;
+  top: -50%;
+  bottom: -50%;
+  left: -45%;
+  width: 40%;
+  opacity: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--kodex-accent) 14%, transparent),
+    transparent
+  );
+  transform: translate3d(0, 0, 0) skewX(-16deg);
+  animation: kodex-tab-running-shimmer 4s linear infinite;
+  will-change: transform, opacity;
 }
 
-@supports (offset-path: inset(1px round 12px)) {
-  .kodex-workspace-dock .dv-tabs-container .kodex-workspace-tab-running::after {
-    top: 0;
-    left: 0;
-    offset-path: inset(1px round calc(var(--dv-tab-border-radius) - 1px));
-    offset-distance: 0%;
-    /* Keep the tiny moving highlight on its own layer instead of repainting. */
-    will-change: transform;
-    animation: kodex-tab-perimeter-pulse 5s linear infinite;
+@keyframes kodex-tab-running-shimmer {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0) skewX(-16deg);
+  }
+  6% { opacity: 1; }
+  87.5% {
+    opacity: 1;
+    transform: translate3d(365%, 0, 0) skewX(-16deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(365%, 0, 0) skewX(-16deg);
   }
 }
 
-@keyframes kodex-tab-perimeter-pulse {
-  to { offset-distance: 100%; }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .kodex-workspace-dock .dv-tabs-container .kodex-workspace-tab-running::after {
+  .kodex-workspace-tab-running {
+    box-shadow: inset 0 0 0 1px var(--kodex-border-accent);
+  }
+
+  .kodex-workspace-tab-running::before {
     animation: none;
-    will-change: auto;
+    opacity: 0;
   }
 }
 
@@ -165,4 +178,100 @@
 .kodex-workspace-dock .dv-default-tab-action svg {
   width: var(--dv-tab-close-icon-size);
   height: var(--dv-tab-close-icon-size);
+}
+
+/* Keep the native title full-width; indicators and close controls overlay it. */
+.kodex-workspace-tab {
+  height: 100%;
+  width: 100%;
+  min-width: 0;
+}
+
+.kodex-workspace-dock .dv-tab {
+  --kodex-tab-overlay-bg: var(--kodex-pane-bg);
+}
+
+.kodex-workspace-dock .kodex-workspace-tab > .dv-default-tab > .dv-default-tab-content {
+  margin-right: 0;
+  padding-right: 0;
+  width: 100%;
+}
+
+/* Match Dockview's full selector specificity so its hardcoded 2px hover
+   radius cannot replace the app's shared control radius. */
+.kodex-workspace-dock .dv-tab .dv-default-tab .dv-default-tab-action,
+.kodex-workspace-tab > .kodex-workspace-pane-title-adornment {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  box-sizing: border-box;
+  background: var(--kodex-tab-overlay-bg);
+  border-radius: var(--kodex-radius-md);
+}
+
+.kodex-workspace-tab > .kodex-workspace-pane-title-adornment {
+  /* Match the native close control's inset within the outer tab. */
+  right: 8px;
+  pointer-events: none;
+}
+
+.kodex-workspace-tab .dv-default-tab-action::before,
+.kodex-workspace-tab > .kodex-workspace-pane-title-adornment::before {
+  content: "";
+  position: absolute;
+  inset: 0 100% 0 -12px;
+  background: linear-gradient(to right, transparent, var(--kodex-tab-overlay-bg));
+  pointer-events: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kodex-workspace-dock .dv-tab.dv-inactive-tab:hover {
+    --kodex-tab-overlay-bg: var(--kodex-bg-button-hover);
+  }
+}
+
+/* On hover-capable devices the unread dot shares the native close slot. */
+@media (hover: hover) and (pointer: fine) {
+  .kodex-workspace-dock .dv-tabs-container > .dv-tab .dv-default-tab .dv-default-tab-action {
+    visibility: hidden;
+  }
+
+  .kodex-workspace-dock .dv-tabs-container > .dv-tab:hover .dv-default-tab .dv-default-tab-action,
+  .kodex-workspace-dock .dv-tabs-container > .dv-tab:focus-visible .dv-default-tab .dv-default-tab-action {
+    visibility: visible;
+  }
+
+  .kodex-workspace-dock .dv-tab:hover [data-inline-adornment] > .kodex-workspace-pane-title-adornment,
+  .kodex-workspace-dock .dv-tab:focus-visible [data-inline-adornment] > .kodex-workspace-pane-title-adornment {
+    opacity: 0;
+  }
+}
+
+@media (hover: none), (pointer: coarse), (any-pointer: coarse) {
+  .kodex-workspace-dock .dv-tabs-container > .dv-tab .dv-default-tab .dv-default-tab-action {
+    visibility: visible;
+    width: 28px;
+    height: 28px;
+  }
+  .kodex-workspace-dock .dv-tabs-container > .dv-tab [data-inline-adornment] > .kodex-workspace-pane-title-adornment {
+    opacity: 1;
+    right: 36px;
+  }
+}
+
+.kodex-workspace-dock .dv-tabs-container {
+  --kodex-tabs-fade-left: 0px;
+  --kodex-tabs-fade-right: 0px;
+  mask-image: linear-gradient(to right, transparent, #000 var(--kodex-tabs-fade-left), #000 calc(100% - var(--kodex-tabs-fade-right)), transparent);
+}
+
+.kodex-workspace-dock .dv-tabs-container[data-overflow-left] {
+  --kodex-tabs-fade-left: 20px;
+}
+
+.kodex-workspace-dock .dv-tabs-container[data-overflow-right] {
+  --kodex-tabs-fade-right: 20px;
 }

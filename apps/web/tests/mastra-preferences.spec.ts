@@ -25,7 +25,7 @@ test('native Execution and Plugins preferences describe built-in behavior withou
     await expect(dialog.getByRole('radio', { name: 'Auto review', exact: true })).toHaveCount(0);
     await expect(dialog.getByRole('alert')).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath('native-execution-preferences.png'), fullPage: true, animations: 'disabled' });
-    await dialog.getByRole('button', { name: 'Appearance', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Interface', exact: true }).click();
     await expect(dialog.getByText('Ordinary tools run without per-action approval.', { exact: true })).toHaveCount(0);
     await dialog.getByRole('button', { name: 'Execution', exact: true }).click();
     await expect(dialog.getByText('Ordinary tools run without per-action approval.', { exact: true })).toBeVisible();
@@ -35,7 +35,7 @@ test('native Execution and Plugins preferences describe built-in behavior withou
     await expect(dialog.getByRole('button', { name: /^(Install|Reinstall)$/ })).toHaveCount(0);
     await expect(dialog.getByRole('alert')).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath('native-plugins-preferences.png'), fullPage: true, animations: 'disabled' });
-    await dialog.getByRole('button', { name: 'Appearance', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Interface', exact: true }).click();
     await expect(dialog.getByText('Kodex Control', { exact: true })).toHaveCount(0);
     await dialog.getByRole('button', { name: 'Plugins', exact: true }).click();
     await expect(dialog.getByText('Kodex Control', { exact: true })).toBeVisible();

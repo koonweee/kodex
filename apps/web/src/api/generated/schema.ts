@@ -373,6 +373,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/frontend-updates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["publish_frontend_update"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/kodex-control-plugin": {
         parameters: {
             query?: never;
@@ -1604,6 +1620,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Pause an active native goal and interrupt the current native turn. */
         post: operations["interrupt_current_turn"];
         delete?: never;
         options?: never;
@@ -1965,7 +1982,7 @@ export interface components {
             retryable: boolean;
         };
         /** @enum {string} */
-        ApiVersion: "2";
+        ApiVersion: "3";
         AppServerCapabilities: {
             detectedVersion?: string | null;
             detectedVersionMatchesSchema?: boolean | null;
@@ -2241,6 +2258,16 @@ export interface components {
             /** Format: int32 */
             start: number;
         };
+        /**
+         * @description A canonical item has one identity envelope and normalized user-input metadata.
+         *     Native source/raw item state remains internal for projection reconciliation.
+         */
+        CanonicalTimelineItemPayload: {
+            clientId?: string | null;
+            fileAttachments?: components["schemas"]["TimelineFileAttachment"][];
+            item: components["schemas"]["TimelineDisplayItemPayload"];
+            skillMentions?: components["schemas"]["TimelineSkillMention"][];
+        };
         CapabilitiesResponse: {
             appServer: components["schemas"]["AppServerCapabilities"];
             gateway: components["schemas"]["GatewayCapabilities"];
@@ -2417,6 +2444,9 @@ export interface components {
         };
         FileUploadResponse: {
             files: components["schemas"]["TimelineFileAttachment"][];
+        };
+        FrontendUpdateRequest: {
+            revision: string;
         };
         GatewayCapabilities: {
             apiVersion: components["schemas"]["ApiVersion"];
@@ -2811,6 +2841,9 @@ export interface components {
             path: string;
         };
         PromotionOutcome: {
+            /** @enum {string} */
+            status: "empty";
+        } | {
             id: string;
             /** @enum {string} */
             status: "delivered";
@@ -2875,7 +2908,10 @@ export interface components {
         QueueTransferPhase: "deleting" | "deleted" | "steering" | "accepted" | "uncertain";
         QueuedInput: {
             attachments: components["schemas"]["TimelineFileAttachment"][];
-            /** @description Current native active-turn hint. The command captures and revalidates its target at request time. */
+            /**
+             * @description Active-turn presentation hint. Send now remains available when idle;
+             *     the gateway captures and revalidates native routing at request time.
+             */
             canSteer: boolean;
             clientUserMessageId: string;
             id: string;
@@ -3316,6 +3352,8 @@ export interface components {
         /** @enum {string} */
         ThreadInputDisposition: "submitted" | "queued";
         ThreadInputRequest: components["schemas"]["TurnStartRequest"] & {
+            /** @description Alternate composer policy: enqueue only when the native queue is empty. */
+            queueIfEmpty?: boolean;
             /** @description Composer policy: append to existing native queued work before start-or-steer. */
             queueIfPending?: boolean;
         };
@@ -3479,18 +3517,20 @@ export interface components {
         };
         ThreadTimelinePageQuery: {
             cursor?: string | null;
+            includeCommandOutputs?: boolean | null;
+            includeDebugEvents?: boolean | null;
             /** Format: int32 */
             limit?: number | null;
         };
         ThreadTimelineRow: {
-            collapsedRows: components["schemas"]["ThreadTimelineWorkDetailRow"][];
+            collapsedRows?: components["schemas"]["ThreadTimelineWorkDetailRow"][];
             /** Format: int64 */
             displayOrder: number;
             dividerBefore?: string | null;
-            fileChanges: components["schemas"]["ThreadTimelineFileChangeEntry"][];
+            fileChanges?: components["schemas"]["ThreadTimelineFileChangeEntry"][];
             id: string;
             item?: null | components["schemas"]["ThreadTimelineSnapshotItem"];
-            items: components["schemas"]["ThreadTimelineSnapshotItem"][];
+            items?: components["schemas"]["ThreadTimelineSnapshotItem"][];
             kind: string;
             status: string;
             /** Format: int64 */
@@ -3515,7 +3555,7 @@ export interface components {
             id: string;
             itemId: string;
             itemType: string;
-            payload: components["schemas"]["TimelineItemUpsertPayload"];
+            payload: components["schemas"]["CanonicalTimelineItemPayload"];
             status: string;
             threadId: string;
             /** Format: int64 */
@@ -3545,10 +3585,10 @@ export interface components {
             /** Format: int64 */
             displayOrder: number;
             dividerBefore?: string | null;
-            fileChanges: components["schemas"]["ThreadTimelineFileChangeEntry"][];
+            fileChanges?: components["schemas"]["ThreadTimelineFileChangeEntry"][];
             id: string;
             item?: null | components["schemas"]["ThreadTimelineSnapshotItem"];
-            items: components["schemas"]["ThreadTimelineSnapshotItem"][];
+            items?: components["schemas"]["ThreadTimelineSnapshotItem"][];
             kind: string;
             status: string;
             /** Format: int64 */
@@ -4349,6 +4389,8 @@ export interface operations {
                 excludeThreadId?: string | null;
                 includeGlobal?: boolean | null;
                 threadIds?: string | null;
+                includeDebugEvents?: boolean | null;
+                includeCommandOutputs?: boolean | null;
             };
             header?: never;
             path?: never;
@@ -4411,6 +4453,8 @@ export interface operations {
                 excludeThreadId?: string | null;
                 includeGlobal?: boolean | null;
                 threadIds?: string | null;
+                includeDebugEvents?: boolean | null;
+                includeCommandOutputs?: boolean | null;
             };
             header?: never;
             path?: never;
@@ -4425,6 +4469,28 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["EventListResponse"];
                 };
+            };
+        };
+    };
+    publish_frontend_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FrontendUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Frontend update published */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -5321,6 +5387,8 @@ export interface operations {
                 excludeThreadId?: string | null;
                 includeGlobal?: boolean | null;
                 threadIds?: string | null;
+                includeDebugEvents?: boolean | null;
+                includeCommandOutputs?: boolean | null;
             };
             header?: never;
             path?: never;
@@ -5487,7 +5555,10 @@ export interface operations {
     };
     get_self_control_thread: {
         parameters: {
-            query?: never;
+            query?: {
+                includeDebugEvents?: boolean;
+                includeCommandOutputs?: boolean;
+            };
             header?: never;
             path: {
                 threadId: string;
@@ -5629,7 +5700,10 @@ export interface operations {
     };
     attach_self_control_thread: {
         parameters: {
-            query?: never;
+            query?: {
+                includeDebugEvents?: boolean;
+                includeCommandOutputs?: boolean;
+            };
             header?: never;
             path: {
                 threadId: string;
@@ -5926,6 +6000,8 @@ export interface operations {
             query?: {
                 cursor?: string | null;
                 limit?: number | null;
+                includeDebugEvents?: boolean | null;
+                includeCommandOutputs?: boolean | null;
             };
             header?: never;
             path: {
@@ -6172,7 +6248,10 @@ export interface operations {
     };
     get_thread: {
         parameters: {
-            query?: never;
+            query?: {
+                includeDebugEvents?: boolean;
+                includeCommandOutputs?: boolean;
+            };
             header?: never;
             path: {
                 threadId: string;
@@ -6235,7 +6314,10 @@ export interface operations {
     };
     attach_thread: {
         parameters: {
-            query?: never;
+            query?: {
+                includeDebugEvents?: boolean;
+                includeCommandOutputs?: boolean;
+            };
             header?: never;
             path: {
                 threadId: string;
@@ -6250,6 +6332,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadViewResponse"];
+                };
+            };
+            /** @description Thread is archived */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
                 };
             };
         };
@@ -6647,7 +6738,7 @@ export interface operations {
                     "application/json": components["schemas"]["PromotionOutcome"];
                 };
             };
-            /** @description Queue is empty or its first message cannot be steered */
+            /** @description Native lifecycle changed during send-now preflight */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -6853,6 +6944,8 @@ export interface operations {
             query?: {
                 cursor?: string | null;
                 limit?: number | null;
+                includeDebugEvents?: boolean | null;
+                includeCommandOutputs?: boolean | null;
             };
             header?: never;
             path: {

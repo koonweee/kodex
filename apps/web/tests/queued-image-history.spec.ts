@@ -35,6 +35,16 @@ test("queued images decode after a native receipt, missed events and reload in a
     await first.getByRole("group", { name: "Queued message", exact: true }).filter({ hasText: "Inspect this image" })
       .getByRole("button", { name: "Steer", exact: true }).click();
     await expectDecodedImage(first);
+    await first.setViewportSize({ width: 1920, height: 900 });
+    const image = first.locator(".kodex-user-image-grid img");
+    const imagePane = first.locator('.kodex-thread-pane-existing');
+    await expect(imagePane).toHaveAttribute("data-pane-width", "regular");
+    const regularWidth = (await image.boundingBox())!.width;
+    await imagePane.evaluate(el => { el.style.maxWidth = "360px"; });
+    await expect.poll(async () => (await image.boundingBox())!.width).toBeLessThan(regularWidth);
+    expect(await imagePane.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await imagePane.evaluate(el => { el.style.maxWidth = ""; });
+    await expect.poll(async () => (await image.boundingBox())!.width).toBe(regularWidth);
     await expect.poll(() => fixture.transfers.length).toBe(1);
     fixture.receiveQueuedTransfer(fixture.transfers[0].id, "native-image-message", "first");
     await expectDecodedImage(first);

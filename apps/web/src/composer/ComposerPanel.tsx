@@ -17,10 +17,8 @@ import {
 } from "../ComposerFooterControls";
 import type { TextElement, TimelineSkillMention, UserInput } from "../api/client";
 import type { ImageLightboxImage } from "../images/types";
-import { useInputCapabilities } from "../shared/inputCapabilities";
-import { NARROW_WORKSPACE_QUERY } from "../shared/layoutBreakpoints";
-import { InlineComposerPanel } from "./InlineComposerPanel";
-import { MobileComposerPanel } from "./MobileComposerPanel";
+import { usePaneLayout } from "../shared/PaneLayout";
+import { ExpandedComposerPanel } from "./ExpandedComposerPanel";
 import { filterSlashCommands, replaceSlashCommandToken, slashCommandItems } from "./slashCommands";
 import { filterSkillsForQuery } from "./skillMentions";
 import type { PendingAttachment } from "./types";
@@ -35,6 +33,7 @@ import { GoalModal } from "../goals/GoalModal";
 import type { GoalController } from "../goals/controller";
 import type { GoalControls } from "../goals/GoalControls";
 import { useGoalCommand } from "../goals/useGoalCommand";
+import { isAlternateSubmitShortcut } from "./submissionIntent";
 
 export type ComposerDraftControls = {
   clearText: () => void;
@@ -148,14 +147,13 @@ export function ComposerPanel({
 }: ComposerPanelProps) {
   const nativeQueue = useNativeQueue(queueController ? null : queueThreadId ?? null);
   const draftState = useComposerDraftState(composerResetToken, composerDraftKey, composerDraftStore);
+  const [annotationTouchOpenRevision, setAnnotationTouchOpenRevision] = useState(0);
   const draftDisposable = draftState.composerText.length === 0 && draftState.annotations.length === 0 &&
     pendingAttachments.length === 0 && !isComposerSubmitting && !isDraftComposerTransitioning;
   useLayoutEffect(() => {
     onDraftDisposableChange?.(draftDisposable);
   }, [draftDisposable, onDraftDisposableChange]);
-  const isNarrowComposer = useIsNarrowComposer();
-  const inputCapabilities = useInputCapabilities();
-  const isMobileComposer = isNarrowComposer && inputCapabilities.hasTouchInput;
+  const { compact } = usePaneLayout();
   const legacyGoal = useThreadGoal(goalController ? null : goalThreadId);
   const threadGoal = goalController ?? legacyGoal;
   const currentGoalThreadId = useRef(goalThreadId);
@@ -174,7 +172,7 @@ export function ComposerPanel({
     ready: threadGoal.ready,
     pending: threadGoal.pending,
     error: threadGoal.error,
-    compact: isNarrowComposer,
+    compact,
     onOpen: openGoalEditor,
     onReload: threadGoal.reload,
     onDelete: () => {
@@ -285,8 +283,8 @@ export function ComposerPanel({
 
   function handleComposerKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
     const empty = !draftState.composerText.trim() && draftState.annotations.length === 0 && pendingAttachments.length === 0;
-    if (event.key === "Enter" && event.metaKey && !event.shiftKey && !event.nativeEvent.isComposing &&
-        empty && !isComposerControlsDisabled && queueDialogActive && (queueController ?? nativeQueue).steerFirst()) {
+    if (isAlternateSubmitShortcut(event) && empty && !isComposerControlsDisabled && queueDialogActive &&
+        (queueController ? queueController.steerFirst() : nativeQueue.sendNow())) {
       event.preventDefault();
       return;
     }
@@ -438,41 +436,15 @@ export function ComposerPanel({
     {goalCommand.error ? <Alert color="red" role="alert">{goalCommand.error}</Alert> : null}
     <AssistantSelectionAction composerShellRef={internalComposerShellRef}
       disabled={isComposerControlsDisabled || !selectedThreadPresent} draftKey={composerDraftKey}
-      onAdd={draftState.addAnnotation} />
-    {isMobileComposer ? (
-    <MobileComposerPanel {...representationProps} />
-  ) : (
-    <InlineComposerPanel {...representationProps} />
-  )}
+      onAdd={(text, pointerType) => {
+        draftState.addAnnotation(text);
+        if (pointerType === "touch") setAnnotationTouchOpenRevision((revision) => revision + 1);
+      }} />
+    <ExpandedComposerPanel {...representationProps} annotationTouchOpenRevision={annotationTouchOpenRevision} />
     {goalThreadId && goalEditorThreadId === goalThreadId ? (
       <GoalModal key={goalThreadId} goal={threadGoal.goal} pending={threadGoal.pending} error={threadGoal.error}
         supportsTokenBudget={goalController?.supportsTokenBudget} ready={threadGoal.ready} onReload={threadGoal.reload} onClose={() => setGoalEditorThreadId((current) => current === goalThreadId ? null : current)}
         onUpdate={threadGoal.update} onClear={threadGoal.clear} />
     ) : null}
   </>;
-}
-
-function useIsNarrowComposer() {
-  const [isNarrow, setIsNarrow] = useState(() => readIsNarrowComposer());
-
-  useEffect(() => {
-    if (typeof window.matchMedia !== "function") {
-      return;
-    }
-
-    const mediaQuery = window.matchMedia(NARROW_WORKSPACE_QUERY);
-    function updateNarrowComposer() {
-      setIsNarrow(mediaQuery.matches);
-    }
-
-    updateNarrowComposer();
-    mediaQuery.addEventListener("change", updateNarrowComposer);
-    return () => mediaQuery.removeEventListener("change", updateNarrowComposer);
-  }, []);
-
-  return isNarrow;
-}
-
-function readIsNarrowComposer() {
-  return typeof window.matchMedia === "function" && window.matchMedia(NARROW_WORKSPACE_QUERY).matches;
 }

@@ -85,13 +85,14 @@ export function AssistantSelectionAction({
   composerShellRef: RefObject<HTMLDivElement | null>;
   disabled: boolean;
   draftKey?: string;
-  onAdd: (text: string) => void;
+  onAdd: (text: string, pointerType: string | null) => void;
 }) {
   const { hasTouchInput } = useInputCapabilities();
   const toolbarRef = useRef<HTMLDivElement>(null);
   const capturedRef = useRef<CapturedSelection | null>(null);
   const dismissedRef = useRef<CapturedSelection | null>(null);
   const actionPointerRef = useRef(false);
+  const activationPointerTypeRef = useRef<string | null>(null);
   const sizeRef = useRef({ width: 112, height: hasTouchInput ? 44 : 32 });
   const repositionRef = useRef<() => void>(() => undefined);
   const [position, setPosition] = useState<Position | null>(null);
@@ -103,6 +104,7 @@ export function AssistantSelectionAction({
     dismissedRef.current = capturedRef.current ?? captureSelection(pane, draftKey);
     capturedRef.current = null;
     actionPointerRef.current = false;
+    activationPointerTypeRef.current = null;
     setPosition(null);
     if (disabled) return;
 
@@ -110,6 +112,7 @@ export function AssistantSelectionAction({
       dismissedRef.current = capturedRef.current ?? captureSelection(pane, draftKey);
       capturedRef.current = null;
       actionPointerRef.current = false;
+      activationPointerTypeRef.current = null;
       setPosition(null);
     };
     const reposition = () => {
@@ -212,10 +215,17 @@ export function AssistantSelectionAction({
       <div ref={toolbarRef} className="kodex-assistant-selection-action" data-touch={hasTouchInput || undefined} style={position}>
         <Button
           size="compact-sm"
+          onPointerDown={(event) => { activationPointerTypeRef.current = event.pointerType; }}
+          onPointerCancel={() => { activationPointerTypeRef.current = null; }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") activationPointerTypeRef.current = null;
+          }}
           onMouseDown={(event) => { if (event.button === 0) event.preventDefault(); }}
           onClick={() => {
             const captured = capturedRef.current;
             const pane = composerShellRef.current?.closest(".kodex-thread-pane");
+            const pointerType = activationPointerTypeRef.current;
+            activationPointerTypeRef.current = null;
             if (!captured || !pane || !isCurrent(captured, pane)) {
               capturedRef.current = null;
               setPosition(null);
@@ -226,7 +236,7 @@ export function AssistantSelectionAction({
             actionPointerRef.current = false;
             setPosition(null);
             window.getSelection()?.removeAllRanges();
-            onAdd(captured.text);
+            onAdd(captured.text, pointerType);
           }}
         >Add to chat</Button>
       </div>

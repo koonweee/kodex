@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../src/test/canonicalPayloadFixture";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import type { ThreadTimelineRow } from "../src/api/client";
 import { nativeSettingsFixture } from "./native-settings.fixture";
@@ -141,7 +142,7 @@ function historyRow(index: number): ThreadTimelineRow {
   return {
     id, turnId, kind: "assistant_message", status: "completed", displayOrder: index,
     item: { id, threadId: "settings-chat", turnId, itemId: id, itemType: "agentMessage", status: "completed", codexMethod: "item/completed", displayOrder: index,
-      payload: { source: "appServerSnapshot", turnId, itemId: id, itemSnapshot: { id, itemType: "agentMessage" }, item: { id, type: "agentMessage", text } } },
-    items: [], collapsedRows: [], fileChanges: [],
+      payload: compactCanonicalPayload({ id, type: "agentMessage", text }, { id, itemType: "agentMessage" }) },
+
   };
 }

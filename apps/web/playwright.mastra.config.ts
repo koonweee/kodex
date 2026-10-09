@@ -18,5 +18,7 @@ export default defineConfig({
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
     { name: 'narrow-fine', use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 } } },
     { name: 'narrow-touch', use: { ...devices['iPhone 13'], browserName: 'chromium' } },
+    { name: 'wide-touch', testMatch: 'mastra-navigation.spec.ts', use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 900 }, hasTouch: true } },
+    { name: 'hybrid', testMatch: 'mastra-navigation.spec.ts', use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 900 }, hasTouch: true } },
   ],
 });

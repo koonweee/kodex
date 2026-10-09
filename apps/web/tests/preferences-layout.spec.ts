@@ -18,7 +18,7 @@ for (const shape of [
         await sidebar.getByRole("button", { name: "Account settings", exact: true }).click();
         await page.getByRole("menuitem", { name: "Preferences", exact: true }).click();
         const dialog = page.getByRole("dialog", { name: "Preferences", exact: true });
-        for (const name of ["Appearance", "Execution", "Notifications", "Plugins", "MCP"]) {
+        for (const name of ["Interface", "Execution", "Notifications", "Plugins", "MCP"]) {
           const button = dialog.getByRole("button", { name, exact: true });
           await expect(button).toBeInViewport();
           expect(await button.evaluate((element) => {
@@ -45,7 +45,7 @@ for (const shape of [
         const last = themes.getByRole("radio").last();
         await expect(last).toBeFocused();
         await expect(last).toBeInViewport();
-        expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth), "Appearance must not overflow horizontally").toBe(true);
+        expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth), "Interface must not overflow horizontally").toBe(true);
         await page.screenshot({ path: test.info().outputPath("preferences-appearance.png") });
         await dialog.getByRole("button", { name: "Notifications", exact: true }).click();
         await page.screenshot({ path: test.info().outputPath("preferences-notifications.png") });

@@ -315,6 +315,19 @@ class Service:
             time.sleep(0.5)
         raise ServiceError(f'Health check failed at {endpoint}; inspect kodex-service logs')
 
+    def notify_frontend_updated(self, revision):
+        endpoint = f"http://127.0.0.1:{self.config()['port']}/v1/frontend-updates"
+        request = urllib.request.Request(
+            endpoint,
+            data=json.dumps({'revision': revision}).encode(),
+            headers={'Content-Type': 'application/json'},
+            method='POST',
+        )
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(request, timeout=2) as response:
+            if response.status != 204:
+                raise ServiceError(f'Gateway rejected frontend update notification with HTTP {response.status}')
+
     def autostart(self, enabled):
         self.check_login_owner()
         if enabled:
@@ -383,6 +396,7 @@ class Service:
             shutil.copytree(repo / 'apps/web/dist', staged_frontend)
             if not (staged_frontend / 'index.html').is_file():
                 raise ServiceError('Frontend build has no index.html; service unchanged')
+            revision = hashlib.sha256((staged_frontend / 'index.html').read_bytes()).hexdigest()
             self.health(release, expected_pid=pid, api_version=version[1])
             if (self.root / 'current').resolve(strict=True) != release:
                 raise ServiceError('Current release changed during frontend build; service unchanged')
@@ -406,6 +420,10 @@ class Service:
                     raise
                 raise ServiceError('Frontend health failed and frontend was rolled back; '
                                    'no process was stopped or started') from error
+            try:
+                self.notify_frontend_updated(revision)
+            except Exception as error:
+                print(f'Frontend updated, but the live update notice failed: {error}', file=sys.stderr)
         finally:
             if not keep_backup:
                 shutil.rmtree(stage)

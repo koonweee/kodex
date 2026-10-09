@@ -10,7 +10,6 @@ import {
   Stack,
   Text,
 } from "@mantine/core";
-import { useMediaQuery } from "@mantine/hooks";
 import {
   Folder,
   FolderOpen,
@@ -42,7 +41,7 @@ import { useGatewayInstanceStorage } from "../api/GatewayInstanceBoundary";
 import type { UsageLimitLines } from "../account/rateLimits";
 import { SidebarAccountMenu } from "../account/SidebarAccountFooter";
 import { useInputCapabilities } from "../shared/inputCapabilities";
-import { NARROW_WORKSPACE_QUERY } from "../shared/layoutBreakpoints";
+import { useNarrowWorkspace } from "../shared/layoutBreakpoints";
 import { AdaptiveIcon } from "../ui/AdaptiveIcon";
 import { EmptyPanel } from "../ui/EmptyPanel";
 import {
@@ -123,6 +122,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onSelectThread,
   onShowThread = () => undefined,
   onShowDebugEventsChange,
+  onShowCommandOutputsChange,
   onSidebarCollapseClick,
   onSidebarExpandClick,
   onThreadActionHoverChange,
@@ -136,6 +136,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   selectedMainPane,
   selectedThreadId,
   showDebugEvents,
+  showCommandOutputs = false,
   sidebarCollapsed = false,
   sidebarWidth,
   threadsByProjectId,
@@ -171,6 +172,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onSelectThread: (projectId: string, threadId: string) => void;
   onShowThread?: () => void;
   onShowDebugEventsChange: (value: boolean) => void;
+  onShowCommandOutputsChange?: (value: boolean) => void;
   onSidebarCollapseClick: () => void;
   onSidebarExpandClick: () => void;
   onThreadActionHoverChange: (threadId: string | null) => void;
@@ -184,6 +186,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   selectedMainPane: "thread" | "automations" | "project";
   selectedThreadId: string | null;
   showDebugEvents: boolean;
+  showCommandOutputs?: boolean;
   sidebarCollapsed?: boolean;
   sidebarWidth: number;
   threadsByProjectId: Record<string, ThreadSummary[]>;
@@ -201,8 +204,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const [searchActive, setSearchActive] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sidebarScrollState, setSidebarScrollState] = useState({ bottom: false, stickyProjectHeader: false, top: false });
-  const isNarrowSidebar = useMediaQuery(NARROW_WORKSPACE_QUERY, false);
-  const { hasTouchInput: useTouchDensity, hasFineHover } = useInputCapabilities();
+  const isNarrowWorkspace = useNarrowWorkspace();
+  const { hasTouchInput: useTouchDensity, hasPrimaryFineHover } = useInputCapabilities();
   const projectGroupRefs = useRef<Map<string, HTMLElement>>(new Map());
   const pendingProjectAnimationRects = useRef<Map<string, DOMRect> | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -430,7 +433,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
       data-sidebar-scope={sidebarScope}
       style={{ width: sidebarWidth }}
     >
-      <SidebarPeek collapsed={sidebarCollapsed} enabled={hasFineHover && !isNarrowSidebar}
+      <SidebarPeek collapsed={sidebarCollapsed} enabled={hasPrimaryFineHover && !isNarrowWorkspace}
         rail={(handlers) => <CollapsedSidebarRail
           onExpand={onSidebarExpandClick}
           onExpandPointerEnter={handlers.onPointerEnter}
@@ -440,7 +443,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
           onSearch={handleCollapsedSearchClick}
           recentThreads={recentThreads}
         />}>
-        <Stack gap={isNarrowSidebar ? 8 : "lg"} h="100%">
+        <Stack gap={isNarrowWorkspace ? 8 : "lg"} h="100%">
             <Box className="kodex-sidebar-header">
               {accountMenu ?? <SidebarAccountMenu
                 account={account}
@@ -449,13 +452,15 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                 onOpenPreferences={onOpenPreferences}
                 onShowDebugEventsChange={onShowDebugEventsChange}
                 showDebugEvents={showDebugEvents}
+                onShowCommandOutputsChange={onShowCommandOutputsChange}
+                showCommandOutputs={showCommandOutputs}
                 usageLimitLines={usageLimitLines}
               />}
               {!sidebarCollapsed ? <SidebarIconButton
                 className="kodex-sidebar-header-action"
-                label={isNarrowSidebar ? SIDEBAR_TEXT.showThread : SIDEBAR_TEXT.collapseSidebar}
-                onClick={isNarrowSidebar ? onShowThread : onSidebarCollapseClick}
-                tooltipProps={{ position: isNarrowSidebar ? "bottom" : "right" }}
+                label={isNarrowWorkspace ? SIDEBAR_TEXT.showThread : SIDEBAR_TEXT.collapseSidebar}
+                onClick={isNarrowWorkspace ? onShowThread : onSidebarCollapseClick}
+                tooltipProps={{ position: isNarrowWorkspace ? "bottom" : "right" }}
               >
                 <PanelLeftClose size={16} />
               </SidebarIconButton> : null}
@@ -553,6 +558,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                             const projectCollapsed = collapsedProjectIds.has(project.id);
                             const showAllProjectThreads = expandedThreadProjectIds.has(project.id);
                             const projectThreadsHaveMore = projectThreadHasMoreById[project.id] === true;
+                            const projectHasDisclosure = projectThreads.length > 0 || projectThreadsHaveMore;
                             const projectThreadPaginationState = projectThreadPaginationStateById[project.id] ?? "idle";
                             const displayedProjectThreads = projectMatchesSearch ? projectThreads : visibleProjectThreads;
                             const collapsedProjectThreads = displayedProjectThreads.filter((thread) =>
@@ -580,10 +586,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                                 <SidebarActionDisclosureRow
                                   className="kodex-project-row"
                                   collapsed={projectCollapsed}
+                                  disclosureEnabled={projectHasDisclosure}
                                   disclosureLabel={`${projectCollapsed ? "Expand" : "Collapse"} ${project.name}`}
                                   label={project.name}
                                   leadingIcon={
-                                    projectCollapsed ? (
+                                    projectHasDisclosure && projectCollapsed ? (
                                       <AdaptiveIcon className="kodex-project-folder-icon" data-collapsed="true">
                                         <Folder />
                                       </AdaptiveIcon>

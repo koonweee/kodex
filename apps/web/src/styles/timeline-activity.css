@@ -49,23 +49,23 @@
   box-sizing: border-box;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
+  gap: 4px;
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  padding: 8px 0;
+  padding: 0;
 }
 
 .kodex-activity-group > summary,
 .kodex-activity-item > summary {
   display: inline-grid;
-  grid-template-columns: minmax(0, 1fr) 16px;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: 6px;
   width: fit-content;
   max-width: 100%;
   cursor: pointer;
-  color: var(--kodex-text-secondary);
+  color: var(--kodex-text-muted);
   list-style: none;
 }
 
@@ -74,24 +74,10 @@
   display: none;
 }
 
-.kodex-activity-caret {
-  width: 16px;
-  height: 16px;
-  color: var(--kodex-text-muted);
-  flex: 0 0 auto;
-  transform-origin: center;
-  transition: transform 120ms ease;
-}
-
-.kodex-activity-group[open] > summary .kodex-activity-caret,
-.kodex-activity-item[open] > summary .kodex-activity-caret {
-  transform: rotate(90deg);
-}
-
 .kodex-activity-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
+  gap: 4px;
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -234,4 +220,11 @@
 .kodex-collab-agent-markdown ol {
   margin-top: 0;
   margin-bottom: 0;
+}
+
+@media (any-pointer: coarse) {
+  .kodex-activity-group > summary,
+  .kodex-activity-item > summary {
+    min-height: 32px;
+  }
 }

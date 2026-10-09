@@ -1,14 +1,14 @@
+import { WorkspaceTabOverflowActions } from "./WorkspaceTabOverflowActions";
 import { WorkspaceRightHeaderActions } from "./WorkspaceRightHeaderActions";
 import { WorkspaceDefaultTab } from "./WorkspaceDefaultTab";
 import { MantineProvider, Menu } from "@mantine/core";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useEffect } from "react";
 import { describe, expect, it, vi } from "vitest";
-import type { DockviewApi } from "dockview";
+import { createDockview, type DockviewApi } from "dockview";
 
 import {
   WorkspaceDock,
-  WorkspaceTabOverflowActions,
   kodexDockviewTheme,
   syncWorkspaceIntoDockview,
   visibleDockviewPanelIds,
@@ -28,6 +28,52 @@ vi.mock("dockview", async (importOriginal) => ({
 }));
 
 describe("WorkspaceDock sync", () => {
+  it("restores native split proportions before the automatic wide resize arrives", async () => {
+    const dock = await responsiveDockHarness();
+    try {
+      const widths = dock.api.groups.map(group => group.api.width);
+      dock.setSinglePane(true);
+      act(() => dock.api.layout(390, 844));
+      expect(dock.api.groups.filter(group => group.api.isVisible)).toHaveLength(1);
+      // React has committed the wide container, but Dockview's resize observer
+      // has not delivered its animation-frame callback yet.
+      dock.setSinglePane(false);
+      act(() => dock.api.layout(1620, 900));
+      dock.api.groups.forEach((group, index) => expect(group.api.width).toBeCloseTo(widths[index], 0));
+    } finally { dock.close(); }
+  });
+
+  it.each([1620, 1440])("preserves native proportions through a transient wide container that settles at %ipx", async (finalWidth) => {
+    const dock = await responsiveDockHarness();
+    try {
+      const widths = dock.api.groups.map(group => group.api.width);
+      const initialTotal = widths.reduce((sum, width) => sum + width, 0);
+      dock.setSinglePane(true);
+      act(() => dock.api.layout(390, 844));
+      // The sidebar has not finished reclaiming its space when React widens.
+      dock.setSinglePane(false, 1912);
+      act(() => dock.api.layout(finalWidth, 900));
+      const finalTotal = dock.api.groups.reduce((sum, group) => sum + group.api.width, 0);
+      dock.api.groups.forEach((group, index) =>
+        expect(group.api.width / finalTotal).toBeCloseTo(widths[index] / initialTotal, 2));
+    } finally { dock.close(); }
+  });
+
+  it("cancels an older layout save before responsive maximize can be serialized while narrow", async () => {
+    const dock = await responsiveDockHarness();
+    try {
+      act(() => dock.api.getPanel("pane-chat")!.api.setSize({ width: 700 }));
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      dock.onLayoutChange.mockClear();
+      dock.setSinglePane(true);
+      act(() => dock.api.layout(390, 844));
+      const serialize = vi.spyOn(dock.api, "toJSON");
+      await act(() => vi.advanceTimersByTimeAsync(350));
+      expect(serialize).not.toHaveBeenCalled();
+      expect(dock.onLayoutChange).not.toHaveBeenCalled();
+    } finally { dock.close(); }
+  });
+
   it("persists the newly focused app pane with the current layout after an older layout timer", async () => {
     vi.useFakeTimers();
     const api = fakeDockviewApi(["pane-chat", "pane-app"]);
@@ -37,7 +83,7 @@ describe("WorkspaceDock sync", () => {
       onDidLayoutChange: (listener: () => void) => { emitLayout = listener; return subscribe(); },
       onDidActivePanelChange: subscribe, onDidRemovePanel: subscribe,
       onDidAddPanel: subscribe, onDidAddGroup: subscribe,
-      onDidRemoveGroup: subscribe, onDidMovePanel: subscribe,
+      onDidRemoveGroup: subscribe, onDidMovePanel: subscribe, onDidMaximizedGroupChange: subscribe,
     }) as unknown as DockviewApi;
     const panes = [
       pane("pane-chat", "thread", { mode: "existing", threadId: "chat" }),
@@ -102,7 +148,7 @@ describe("WorkspaceDock sync", () => {
         panes: [workspacePane],
         schemaVersion: 1,
       })}>
-        <PaneAdornmentHarness activePaneId="pane-thread" pane={workspacePane} />
+        <MantineProvider><PaneAdornmentHarness activePaneId="pane-thread" pane={workspacePane} /></MantineProvider>
       </WorkspaceProvider>,
     );
 
@@ -143,7 +189,7 @@ describe("WorkspaceDock sync", () => {
         <WorkspaceProvider paneStore={createMemoryWorkspacePaneStore({ activePaneId: "pane-thread", dockviewLayout: null, panes: [workspacePane], schemaVersion: 1 })} threadSummariesById={{ "thread-1": {
           id: "thread-1", status, unreadCompletedAgentTurn: unread,
         } as ThreadSummary }}>
-          <PaneAdornmentHarness activePaneId="pane-thread" pane={workspacePane} />
+          <MantineProvider><PaneAdornmentHarness activePaneId="pane-thread" pane={workspacePane} /></MantineProvider>
         </WorkspaceProvider>
       </MantineProvider>
     );
@@ -540,6 +586,53 @@ function domRect(left: number, right: number): DOMRect {
     width: right - left,
     x: left,
     y: 0,
+  };
+}
+
+async function responsiveDockHarness() {
+  vi.useFakeTimers();
+  const host = document.createElement("div");
+  document.body.append(host);
+  const api = createDockview(host, {
+    createComponent: () => ({ element: document.createElement("div"), init() {} }),
+    disableAutoResizing: true,
+    theme: { name: "responsive-test", className: "responsive-test", gap: 1 },
+  });
+  api.layout(1620, 900);
+  api.addPanel({ id: "pane-chat", component: "test" });
+  api.addPanel({ id: "pane-draft", component: "test", position: { referencePanel: "pane-chat", direction: "right" } });
+  dockHarness.api = api;
+  const panes = [
+    pane("pane-chat", "thread", { mode: "existing", threadId: "chat" }),
+    pane("pane-draft", "thread", { mode: "draft" }),
+  ];
+  const onLayoutChange = vi.fn();
+  const renderDock = (singlePane: boolean) => <WorkspaceProvider>
+    <WorkspaceDock workspace={workspaceModel(panes, "pane-chat")} singlePane={singlePane}
+      onLayoutChange={onLayoutChange} onActivePaneChange={vi.fn()} onPaneClose={vi.fn()} />
+  </WorkspaceProvider>;
+  const view = render(renderDock(false));
+  let width = 1620;
+  const wrapper = view.getByTestId("workspace-dock");
+  Object.defineProperties(wrapper, {
+    clientWidth: { get: () => width },
+    clientHeight: { get: () => width === 390 ? 844 : 900 },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Initialize test dock" }));
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  return {
+    api, onLayoutChange,
+    setSinglePane(singlePane: boolean, nextWidth = singlePane ? 390 : 1620) {
+      width = nextWidth;
+      view.rerender(renderDock(singlePane));
+    },
+    close() {
+      view.unmount();
+      api.dispose();
+      host.remove();
+      dockHarness.api = null;
+      vi.useRealTimers();
+    },
   };
 }
 

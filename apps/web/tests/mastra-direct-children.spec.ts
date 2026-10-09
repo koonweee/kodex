@@ -28,7 +28,7 @@ async function selectPinned(page: Page, title: string, id: string) {
 async function rename(page: Page, title: string) {
   const showThread = page.getByRole('button', { name: 'Show thread', exact: true });
   if (await showThread.isVisible()) await showThread.click();
-  await page.locator('.dv-groupview.dv-active-group:visible, .kodex-workspace-single-pane-shell:visible').getByRole('button', { name: 'Thread actions', exact: true }).click();
+  await page.locator('.dv-groupview.dv-active-group:visible, .kodex-workspace-single-pane-header:visible').getByRole('button', { name: 'Thread actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Rename thread', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Rename thread', exact: true });
   await dialog.getByRole('textbox', { name: 'Thread name', exact: true }).fill(title);

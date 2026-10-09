@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../src/test/canonicalPayloadFixture";
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { createServer, type ServerResponse } from "node:http";
 
@@ -56,10 +57,8 @@ type TestTurn = {
 function threadDetailBody(sourceThread: Record<string, unknown>, turns: TestTurn[] = [], liveState = "idle") {
   return {
     thread: sourceThread,
-    turns,
     liveState,
     timeline: timelineFromTurns(sourceThread, turns, liveState),
-    rawPayload: {},
   };
 }
 
@@ -79,13 +78,7 @@ function timelineFromTurns(sourceThread: Record<string, unknown>, turns: TestTur
         displayOrder,
         codexMethod: turn.status === "completed" ? "item/completed" : "item/upsert",
         timestampMs: displayOrder,
-        payload: {
-          source: "appServerSnapshot",
-          turnId: turn.id,
-          itemId: item.id,
-          item: item.rawPayload,
-          itemSnapshot: item,
-        },
+        payload: compactCanonicalPayload(item.rawPayload, item),
       };
     }),
   );
@@ -93,8 +86,10 @@ function timelineFromTurns(sourceThread: Record<string, unknown>, turns: TestTur
     viewRevision: 1,
     activeTurnId: activeTurn?.id ?? null,
     liveState,
+    pendingApprovalRequests: [],
+    pendingUserInputRequests: [],
     rows: canonicalRowsFromSnapshotItems(items),
-    items,
+    turns: turns.map(({ id, status }) => ({ id, status })),
   };
 }
 
@@ -155,12 +150,7 @@ function canonicalRowsFromSnapshotItems(items: TestTimelineItem[]) {
       displayOrder: first.displayOrder,
       status: first.status,
       timestampMs: first.timestampMs,
-      item: null,
       items: activityItems,
-      fileChanges: [],
-      work: null,
-      collapsedRows: [],
-      dividerBefore: null,
     });
     activityItems = [];
   };
@@ -176,12 +166,7 @@ function canonicalRowsFromSnapshotItems(items: TestTimelineItem[]) {
       displayOrder: first.displayOrder,
       status: first.status,
       timestampMs: first.timestampMs,
-      item: null,
-      items: [],
       fileChanges: fileItems.map(fileChangeEntryFromItem),
-      work: null,
-      collapsedRows: [],
-      dividerBefore: null,
     });
     fileItems = [];
   };
@@ -216,11 +201,6 @@ function canonicalItemRow(item: TestTimelineItem, kind = canonicalKind(item.item
     status: item.status,
     timestampMs: item.timestampMs,
     item,
-    items: [],
-    fileChanges: [],
-    work: null,
-    collapsedRows: [],
-    dividerBefore: null,
   };
 }
 
@@ -529,8 +509,11 @@ test("keeps long timeline content inside the thread viewer", async ({ page }) =>
     });
   });
 
-  await page.setViewportSize({ width: 720, height: 760 });
   await page.goto("/threads/thread-1");
+  await page.getByRole("button", { name: "Account settings", exact: true }).click();
+  await page.getByRole("menuitemcheckbox", { name: "Show command outputs", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 720, height: 760 });
   await expect(page.getByText(longWord)).toBeVisible();
 
   const viewer = page.locator(".kodex-timeline-scroll");
@@ -747,13 +730,7 @@ test("keeps large file changes and following skill messages from overlapping", a
         displayOrder,
         codexMethod: "item/completed",
         timestampMs: displayOrder,
-        payload: {
-          source: "appServerSnapshot",
-          turnId,
-          itemId: source.id,
-          item: source.rawPayload,
-          itemSnapshot: source,
-        },
+        payload: compactCanonicalPayload(source.rawPayload, source),
       };
     };
     return [
@@ -822,7 +799,6 @@ test("keeps large file changes and following skill messages from overlapping", a
       activeTurnId: null,
       liveState: "idle",
       rows: canonicalRowsFromSnapshotItems(timelineItems(fileCount)),
-      items: timelineItems(fileCount),
       pendingApprovalRequests: [],
       pendingUserInputRequests: [],
       turns: [
@@ -852,7 +828,6 @@ test("keeps large file changes and following skill messages from overlapping", a
         payload: {
           activeTurnId: null,
           rows: canonicalRowsFromSnapshotItems(timelineItems(23)),
-          items: timelineItems(23),
           liveState: "idle",
           pendingApprovalRequests: [],
           pendingUserInputRequests: [],
@@ -1099,7 +1074,7 @@ test("restores selected thread model settings when switching threads", async ({ 
         status: 200,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          gateway: { apiVersion: "2",
+          gateway: { apiVersion: "3",
             instanceId: "mvp-test-instance",
             version: "0.1.0",
             sse: true,
@@ -1523,7 +1498,7 @@ async function responseFor(key: string, route: Route, projects = [project], thre
   if (key === "GET /v1/capabilities") {
     return {
       body: {
-        gateway: { apiVersion: "2",
+        gateway: { apiVersion: "3",
           instanceId: "mvp-test-instance",
           version: "0.1.0",
           sse: true,

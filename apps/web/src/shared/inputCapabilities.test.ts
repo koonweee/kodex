@@ -20,8 +20,8 @@ describe("input capabilities", () => {
     vi.stubGlobal("matchMedia", mediaMatcher({}));
 
     expect(readInputCapabilities()).toEqual({
-      hasCoarsePointer: false,
-      hasFineHover: false,
+      hasAnyCoarsePointer: false,
+      hasPrimaryFineHover: false,
       hasTouchInput: true,
     });
     expect(isTouchInputDevice()).toBe(true);
@@ -38,8 +38,8 @@ describe("input capabilities", () => {
     );
 
     expect(readInputCapabilities()).toEqual({
-      hasCoarsePointer: true,
-      hasFineHover: true,
+      hasAnyCoarsePointer: true,
+      hasPrimaryFineHover: true,
       hasTouchInput: true,
     });
   });
@@ -55,8 +55,8 @@ describe("input capabilities", () => {
     );
 
     expect(readInputCapabilities()).toEqual({
-      hasCoarsePointer: false,
-      hasFineHover: true,
+      hasAnyCoarsePointer: false,
+      hasPrimaryFineHover: true,
       hasTouchInput: false,
     });
   });
@@ -73,8 +73,8 @@ describe("input capabilities", () => {
     const { result } = renderHook(() => useInputCapabilities());
 
     expect(result.current).toEqual({
-      hasCoarsePointer: false,
-      hasFineHover: true,
+      hasAnyCoarsePointer: false,
+      hasPrimaryFineHover: true,
       hasTouchInput: false,
     });
 
@@ -83,8 +83,8 @@ describe("input capabilities", () => {
     });
 
     expect(result.current).toEqual({
-      hasCoarsePointer: true,
-      hasFineHover: true,
+      hasAnyCoarsePointer: true,
+      hasPrimaryFineHover: true,
       hasTouchInput: true,
     });
   });
@@ -94,8 +94,8 @@ describe("input capabilities", () => {
     vi.stubGlobal("matchMedia", undefined);
 
     expect(readInputCapabilities()).toEqual({
-      hasCoarsePointer: false,
-      hasFineHover: false,
+      hasAnyCoarsePointer: false,
+      hasPrimaryFineHover: false,
       hasTouchInput: false,
     });
   });

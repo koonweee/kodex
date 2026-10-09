@@ -53,6 +53,12 @@ test.describe("automatic pane placement", () => {
       await newDraft(page, "Keep draft two");
       await expect(groups(page)).toHaveCount(3);
       const columns = (await groupBounds(page)).sort((a, b) => a.x - b.x);
+      const surface = await bounds(page.locator(".kodex-main-stack"));
+      const grid = await bounds(page.locator(".dv-grid-view.dv-dockview"));
+      for (const edge of ["x", "y", "width", "height"] as const) {
+        expect(Math.abs(grid[edge] - surface[edge])).toBeLessThan(1);
+      }
+
       for (const column of columns) {
         expect(column.width).toBeGreaterThanOrEqual(359);
         expect(column.height).toBeGreaterThanOrEqual(639);
@@ -115,7 +121,7 @@ test.describe("automatic pane placement", () => {
     const fixture = await nativeSettingsFixture(context);
     try {
       const page = await fixture.page("uneven-columns", "/");
-      await page.setViewportSize({ width: 1150, height: 900 });
+      await page.setViewportSize({ width: 1118, height: 900 });
       await activeDraft(page).getByRole("textbox", { name: /message composer/i }).fill("Keep the wide draft");
       await newDraft(page, "Keep the narrow neighbor");
       await expect(groups(page)).toHaveCount(2);
@@ -223,6 +229,8 @@ test.describe("automatic pane placement", () => {
     try {
       const page = await fixture.page("narrow-tiles", "/");
       await page.setViewportSize({ width: 910, height: 900 });
+      // Constrain the workspace independently of the viewport's single-pane breakpoint.
+      await page.addStyleTag({ content: ".kodex-main-stack { width: calc(100% - 32px); }" });
       await activeDraft(page).getByRole("textbox", { name: /message composer/i }).fill("Keep initial draft");
       const initial = await bounds(groups(page));
       expect(initial.width).toBeLessThan(606);
@@ -254,6 +262,7 @@ test.describe("automatic pane placement", () => {
     try {
       const page = await fixture.page("short-workspace", "/");
       await page.setViewportSize({ width: 910, height: 600 });
+      await page.addStyleTag({ content: ".kodex-main-stack { width: calc(100% - 32px); }" });
       await activeDraft(page).getByRole("textbox", { name: /message composer/i }).fill("Keep initial draft");
       const before = await bounds(groups(page));
       await newDraft(page, "A full-height tab");

@@ -1,3 +1,5 @@
+import { PwaLifecycle } from '../pwa/PwaLifecycle';
+import { useNativeFrontendUpdates } from './useNativeFrontendUpdates';
 import { Button, Center, MantineProvider, Stack, Text } from '@mantine/core';
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
@@ -21,12 +23,14 @@ export function NativeHostBoundary({ children, queryClient }: { children: ReactN
     void mastraClient.info(undefined, { signal: lifetime.signal }).then(async next => {
       if (lifetime.signal.aborted) return;
       await queryClient.cancelQueries();
+      if (lifetime.signal.aborted) return;
       queryClient.clear();
       setInfo(next); setError(null);
     }).catch(failure => { if (!lifetime.signal.aborted) setError(errorMessageFrom(failure)); });
     return () => lifetime.abort();
   }, [attempt, queryClient]);
+  useNativeFrontendUpdates(info?.instanceId ?? null);
   const storage = useMemo(() => info ? createInstanceStorage(info.instanceId) : null, [info?.instanceId]);
-  if (!info) return <MantineProvider><Center mih="100vh"><Stack align="center"><Text role={error ? 'alert' : undefined}>{error ?? 'Connecting to Kodex…'}</Text>{error ? <Button onClick={() => setAttempt(value => value + 1)}>Retry connection</Button> : null}</Stack></Center></MantineProvider>;
+  if (!info) return <MantineProvider><PwaLifecycle /><Center mih="100vh"><Stack align="center"><Text role={error ? 'alert' : undefined}>{error ?? 'Connecting to Kodex…'}</Text>{error ? <Button onClick={() => setAttempt(value => value + 1)}>Retry connection</Button> : null}</Stack></Center></MantineProvider>;
   return <NativeHostContext.Provider value={info}><InstanceStorageProvider storage={storage}>{children}</InstanceStorageProvider></NativeHostContext.Provider>;
 }

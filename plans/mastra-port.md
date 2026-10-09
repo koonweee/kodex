@@ -1,12 +1,12 @@
 # Mastra port running log
 
-Status: Active. Authorized 2026-10-07. Current scope, workflow inventory and exit conditions: [frontend parity plan](mastra-frontend-parity.md).
+Status: Complete for the authorized end-to-end frontend port at pinned84b0ebc (2026-10-09). Authorized 2026-10-07. Current scope, workflow inventory and exit conditions: [frontend parity plan](mastra-frontend-parity.md).
 
-Current checkpoint (2026-10-09): normal chat and retained UI slices through Push/PWA are committed and validated. Native extension characterization and frozen-reference UI corrections are validated; arbitrary plugins are now explicitly deferred. User authorized the categorized later-main integration at84b0ebc; the refresh is now active. Entries below retain historical findings; a later acceptance checkpoint supersedes its earlier investigation.
+Current checkpoint (2026-10-09): pinned newer-main84b0ebc integrated; end-to-end native frontend parity and all retained workflow exits pass. See the final acceptance checkpoint in the frontend parity plan for tests, complete browser-matrix accounting and accepted limitations. No deployment. Historical investigations below remain useful context and are superseded by later acceptance checkpoints.
 
 ## Fixed reference and scope
 
-Initial main reference: `00d22832cb43a2784826b1eb9a25689d4b1e5eba`. Merge this exact commit into `codex/mastra-sdk-spike` once, then use it as the visual and interaction acceptance baseline. Main may advance independently; defer later-main discrepancies to a bounded final comparison. Do not change the main checkout or deploy the production service.
+Current acceptance reference: `84b0ebc7d75cc49efa577511bf2f741e6d624749`, explicitly authorized after the final drift comparison. Initial reference00d2283 remains historical. No further moving-main comparison or production deployment is included.
 
 Deliver basically the Kodex frontend from this reference working end-to-end with the new TypeScript/oRPC/Mastra Code SDK backend. Preserve layout, controls, navigation and workflows with very little UI change. Reuse main's actual components rather than a separately reconstructed native shell/pane wherever practical. The extra in-pane thread title is an accidental difference to remove. Unimplemented features are work remaining, not evidence of native incapability.
 
@@ -948,3 +948,9 @@ Next fixture-only proof: two projects/two concurrent native Sessions with global
 2026-10-09 user decision: defer arbitrary plugins entirely. Keep plugin loading and existing hooks disabled; built-in Control remains supported. Native fixture evidence is retained for future work, not a port blocker. Remaining alignment is the material later-main delta at84b0ebc. No implementation or deployment change.
 
 2026-10-09 user authorized integrating newer main now. Target remains pinned84b0ebc7d75cc49efa577511bf2f741e6d624749; preserve accepted native semantics and injection seams, defer arbitrary plugins, and do not deploy. Merge/conflict resolution, native queue/output/PWA mappings and refreshed browser validation follow the parity plan.
+
+
+2026-10-09 newer-main integration: pinned84b0ebc merge conflicts resolved and typecheck passes; native queue mapping/backend checks accepted, optional command-output visibility and host update signals in progress. Current reference and validation evidence are tracked in [frontend parity](mastra-frontend-parity.md). No additional main drift or deployment.
+
+
+2026-10-09 final acceptance: pinned84b0ebc merge closes the authorized frontend port. Frontend1555, Mastra432, Rust688, service59, theme41 and built-PWA3 checks pass; native browser coverage101 passed/2 intentional skips accounts for all103 variants across bounded runs. Builds/trim/fmt and independent reviews pass. Full evidence and retained limitations: [frontend parity acceptance](mastra-frontend-parity.md#pinned-main-frontend-parity-accepted-2026-10-09).

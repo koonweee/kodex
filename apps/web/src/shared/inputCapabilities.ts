@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 
 export type InputCapabilities = {
-  hasCoarsePointer: boolean;
-  hasFineHover: boolean;
+  hasAnyCoarsePointer: boolean;
+  hasPrimaryFineHover: boolean;
   hasTouchInput: boolean;
 };
 
@@ -18,13 +18,13 @@ const INPUT_CAPABILITY_QUERIES = [
 
 export function readInputCapabilities(): InputCapabilities {
   const hasMaxTouchPoints = typeof navigator !== "undefined" && navigator.maxTouchPoints > 0;
-  const hasCoarsePointer =
+  const hasAnyCoarsePointer =
     mediaQueryMatches(ANY_COARSE_POINTER_QUERY) || mediaQueryMatches(COARSE_POINTER_QUERY);
-  const hasFineHover = mediaQueryMatches(FINE_HOVER_QUERY);
+  const hasPrimaryFineHover = mediaQueryMatches(FINE_HOVER_QUERY);
   return {
-    hasCoarsePointer,
-    hasFineHover,
-    hasTouchInput: hasMaxTouchPoints || hasCoarsePointer,
+    hasAnyCoarsePointer,
+    hasPrimaryFineHover,
+    hasTouchInput: hasMaxTouchPoints || hasAnyCoarsePointer,
   };
 }
 

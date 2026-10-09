@@ -9,14 +9,14 @@ function fixture(prepareInput?: (input: ChatInput) => Promise<AgentMessageInput>
   let next = 0, setting = 'old', fast = false, throwAfter = false, rejectAcceptance = false;
   let preparation: Promise<void> = Promise.resolve();
   let cancelledOnly: string[] | undefined;
-  let externalPending = 0;
+  let externalPending = 0, isRunning = true;
   let receipts: unknown[] = [];
   let receiptRead: Promise<void> = Promise.resolve();
   let throwCancel = false;
   let steering: Promise<void> = Promise.resolve();
   let action: 'deliver' | 'blocked' | 'persist' | 'discard' = 'deliver';
   const submitted: Array<{ id: string; text: AgentMessageInput; options: unknown }> = [];
-  const steered: unknown[] = []; let aborts = 0, cancellations = 0;
+  const steered: unknown[] = [], steerOptions: unknown[] = []; let aborts = 0, cancellations = 0;
   let changed: () => void = () => undefined;
   const pending = new Set<string>();
   const listeners = new Set<(event: { type: string; message?: { id: string }; count?: number }) => void>();
@@ -44,16 +44,17 @@ function fixture(prepareInput?: (input: ChatInput) => Promise<AgentMessageInput>
     machinery: { getAgent: () => agent, buildRequestContext: async () => { const values = new Map<string, unknown>(); return { set: (key: string, value: unknown) => values.set(key, value), get: (key: string) => values.get(key) }; },
       buildStreamOptions: async (args: { requestContext: unknown }) => { await preparation; return { setting, requestContext: args.requestContext }; } },
     ensureFollowUpBinding() {},
-    displayState: { get: () => ({ queuedFollowUps: pending.size + externalPending }) },
+    displayState: { get: () => ({ queuedFollowUps: pending.size + externalPending, isRunning }) },
     subscribe(callback: (event: { type: string; message?: { id: string }; count?: number }) => void) { listeners.add(callback); return () => listeners.delete(callback); },
     steer: () => steering,
     abort: () => { aborts++; },
-    sendSignal: (input: unknown) => { steered.push(input); return { id: 'native-steer', accepted: steering.then(() => ({ accepted: true, action: 'wake' })) }; },
+    sendSignal: (input: unknown, options: unknown) => { steered.push(input); steerOptions.push(options); return { id: 'native-steer', accepted: steering.then(() => ({ accepted: true, action: 'wake' })) }; },
   } as unknown as NativeSession;
   const queue = createChatQueue(session, { epoch: 'fixture', onChanged: () => changed(), ...(prepareInput && { prepareInput }) });
-  return { queue, submitted, steered, get aborts() { return aborts; }, get cancellations() { return cancellations; },
+  return { queue, submitted, steered, steerOptions, get aborts() { return aborts; }, get cancellations() { return cancellations; },
     nextChange() { return new Promise<void>(resolve => { changed = resolve; }); },
     admit(id: string) { pending.delete(id); for (const listener of listeners) listener({ type: 'message_start', message: { id } }); },
+    set isRunning(value: boolean) { isRunning = value; },
     set setting(value: string) { setting = value; }, set fast(value: boolean) { fast = value; },
     set steering(value: Promise<void>) { steering = value; },
     set action(value: 'deliver' | 'blocked' | 'persist' | 'discard') { action = value; }, set throwAfter(value: boolean) { throwAfter = value; },
@@ -351,4 +352,22 @@ test('skill reorder and steer retain prepared native selection without resolving
   assert.equal(steered.outcome, 'applied'); assert.equal(reads, 2);
   assert.deepEqual(f.steered, [{ type: 'user', ...captured as object }]);
   finish(); await Promise.resolve(); await Promise.resolve();
+});
+
+test('idle Send now transfers the captured row without aborting or consuming another queued row', async () => {
+  const f = fixture(); const a = await f.queue.enqueue(text('A')); await f.queue.enqueue(text('B'));
+  const before = f.queue.snapshot();
+  f.isRunning = false; f.setting = 'new'; f.fast = true;
+  let finish!: () => void; f.steering = new Promise<void>(resolve => { finish = resolve; });
+  const sent = await f.queue.steer({ id: a.rowId, revision: before.revision });
+  assert.equal(sent.outcome, 'applied');
+  assert.equal(f.aborts, 0, 'idle dispatch has no active work to interrupt');
+  assert.deepEqual(f.steered, [{ type: 'user', contents: 'A' }]);
+  assert.deepEqual(sent.snapshot.rows[1], before.rows[1]);
+  assert.equal(f.submitted.length, 2, 'transfer does not enqueue a replacement');
+  assert.equal((await f.queue.steer({ id: a.rowId, revision: before.revision })).outcome, 'conflict');
+  const captured = (f.steerOptions[0] as { requestContext: { get(key: string): unknown } }).requestContext;
+  assert.equal(captured.get('kodex.fast'), false, 'Send now retains submission-time native settings');
+  const settled = f.nextChange(); finish(); await settled;
+  assert.deepEqual(f.queue.snapshot().rows.map(row => row.input.text), ['B']);
 });

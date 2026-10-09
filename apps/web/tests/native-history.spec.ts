@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../src/test/canonicalPayloadFixture";
 import { expect, test, type Page } from "@playwright/test";
 import type { ThreadTimelineRow, ThreadViewPatch, ThreadViewResponse } from "../src/api/client";
 import type { LiveDiagnosticsSnapshot } from "../src/events/liveDiagnostics";
@@ -165,9 +166,9 @@ function answerTimeline(text: string, viewRevision: number): ThreadViewResponse[
     rows: [{
       id: "answer", kind: "assistant_message", status: "inProgress", turnId: "turn-answer", displayOrder: 1,
       item: { id: "answer", itemId: "answer", itemType: "agentMessage", threadId: "settings-chat", turnId: "turn-answer", status: "inProgress", displayOrder: 1, codexMethod: "item/started",
-        payload: { source: "gatewayStream", turnId: "turn-answer", itemId: "answer", item: { id: "answer", type: "agentMessage", text }, itemSnapshot: { id: "answer", itemType: "agentMessage" } },
+        payload: compactCanonicalPayload({ id: "answer", type: "agentMessage", text }, { id: "answer", itemType: "agentMessage" }),
       },
-      items: [], collapsedRows: [], fileChanges: [],
+
     }],
   };
 }
@@ -178,7 +179,7 @@ function row(id: string, displayOrder: number): ThreadTimelineRow {
   return {
     id: `row-${id}`, turnId, kind: "user_message", status: "completed", displayOrder,
     item: { id: itemId, threadId: "settings-chat", turnId, itemId, itemType: "userMessage", status: "completed", codexMethod: "item/completed", displayOrder,
-      payload: { source: "appServerSnapshot", turnId, itemId, itemSnapshot: { id: itemId, itemType: "userMessage", clientId: "reused-client" }, item: { id: itemId, type: "userMessage", clientId: "reused-client", content: [{ type: "text", text: "Repeated native history" }] } },
-    }, items: [], collapsedRows: [], fileChanges: [],
+      payload: compactCanonicalPayload({ id: itemId, type: "userMessage", clientId: "reused-client", content: [{ type: "text", text: "Repeated native history" }] }, { id: itemId, itemType: "userMessage", clientId: "reused-client" }),
+    },
   };
 }

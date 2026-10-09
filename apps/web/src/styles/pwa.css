@@ -1,6 +1,6 @@
-/* A real, opaque top-edge element gives iOS standalone chrome a stable
-   surface to sample. Keep a pixel when the OS reports no top inset.
-   This mitigates iOS 27's system blur; verify on a Home Screen install. */
+/* Opaque viewport-wide header surface for standalone chrome. The compact
+   touch layout reserves the same space below; larger hardware insets survive.
+   Physical iOS validation is required: this is not a blur-control API. */
 .kodex-pwa-safe-area {
   display: none;
 }
@@ -10,10 +10,31 @@
     display: block;
     position: fixed;
     inset: 0 0 auto;
-    height: max(1px, env(safe-area-inset-top, 0px));
+    height: var(--kodex-pwa-header-height, env(safe-area-inset-top, 0px));
     background: var(--kodex-bg-shell);
     pointer-events: none;
     z-index: 102;
+  }
+}
+
+
+/* WebKit samples 4px inside the edge and its direct background-color path
+   excludes boxes <=10px tall. Reserve a real painted surface, not a 1px probe.
+   https://github.com/WebKit/WebKit/blob/main/Source/WebCore/page/LocalFrameView.cpp
+   Match the existing compact touch safe-area owner; wide layouts stay intact. */
+@media (display-mode: standalone) and (max-width: 900px) and (any-pointer: coarse) {
+  .kodex-shell {
+    --kodex-pwa-header-height: max(12px, env(safe-area-inset-top, 0px));
+    --kodex-mobile-safe-area-top: var(--kodex-pwa-header-height);
+  }
+}
+
+
+/* Match the visible compact workspace header. Sidebar and fullscreen composer
+   use the shell surface, so retain the default there. */
+@media (display-mode: standalone) and (max-width: 900px) {
+  .kodex-shell[data-mobile-panel="chat"]:has(.kodex-workspace-shell[data-single-pane="true"]):not(:has(.kodex-thread-pane[data-workspace-pane-active="true"] .kodex-mobile-composer-expanded)) > .kodex-pwa-safe-area {
+    background: var(--kodex-workspace-header-bg);
   }
 }
 

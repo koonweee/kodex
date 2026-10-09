@@ -16,6 +16,7 @@ vi.mock("react-markdown", async (importOriginal) => {
   };
 });
 
+import { ThreadDeliveryProvider } from "./ThreadDeliveryPreferences";
 import { TimelineActivityGroupRenderer, TimelineItemRenderer, TimelineWorkRowRenderer } from "./renderers";
 import type { TimelineItem } from "./reducer";
 
@@ -51,12 +52,40 @@ describe("timeline activity renderers", () => {
     expect(screen.queryByText("Success")).not.toBeInTheDocument();
   });
 
+  it("keeps unreported native file operations distinct from confirmed changes in animated groups", () => {
+    const confirmed = item({ id: "confirmed", kind: "file_change", path: "confirmed.ts" });
+    const unreported = item({ id: "unreported", kind: "file_change", path: "requested.ts", fileChangeOutcomeKnown: false });
+    const command = item({ id: "command", kind: "command_execution", command: "pwd" });
+    const tree = (known: boolean) => <MantineProvider><TimelineActivityGroupRenderer items={[
+      confirmed, { ...unreported, fileChangeOutcomeKnown: known }, command,
+    ]} /></MantineProvider>;
+    const view = render(tree(false));
+    expect(screen.getByTitle("Changed 1 file, requested 1 file operation, ran 1 command")).toBeInTheDocument();
+    expect(screen.queryByTitle("Changed 2 files, ran 1 command")).not.toBeInTheDocument();
+    view.rerender(tree(true));
+    expect(screen.getByTitle("Changed 2 files, ran 1 command")).toBeInTheDocument();
+  });
+
   afterEach(() => {
     vi.useRealTimers();
   });
 
   beforeEach(() => {
     reactMarkdownRenderSpy.mockClear();
+  });
+
+  it("hides retained command outputs when off and reveals them only while enabled", () => {
+    const command = item({ kind: "command_execution", command: "pwd", output: "saved output", status: "failed" });
+    const tree = (enabled: boolean) => <MantineProvider><ThreadDeliveryProvider includeCommandOutputs={enabled}><TimelineItemRenderer item={command} /></ThreadDeliveryProvider></MantineProvider>;
+    const view = render(tree(false));
+    expect(screen.getByText("$ pwd")).toBeInTheDocument();
+    expect(screen.getAllByText("Failed")[0]).toBeInTheDocument();
+    expect(screen.queryByText("saved output")).not.toBeInTheDocument();
+    view.rerender(tree(true));
+    expect(screen.getByText("saved output")).toBeInTheDocument();
+    view.rerender(tree(false));
+    expect(screen.queryByText("saved output")).not.toBeInTheDocument();
+    expect(screen.getByText("$ pwd")).toBeInTheDocument();
   });
 
   it("marks failed command activity in collapsed and expanded command renderings", () => {
@@ -117,7 +146,7 @@ describe("timeline activity renderers", () => {
 
   it("renders supporting timeline activity as a nested collapsible group", () => {
     const { container } = render(
-      <MantineProvider>
+      <MantineProvider><ThreadDeliveryProvider includeCommandOutputs>
         <TimelineActivityGroupRenderer
           items={[
             item({
@@ -155,7 +184,7 @@ describe("timeline activity renderers", () => {
             }),
           ]}
         />
-      </MantineProvider>,
+      </ThreadDeliveryProvider></MantineProvider>,
     );
 
     expect(container.querySelector(".kodex-activity-group")).not.toHaveAttribute("open");

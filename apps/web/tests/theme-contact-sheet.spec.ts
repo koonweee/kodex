@@ -1,3 +1,4 @@
+import { compactCanonicalPayload } from "../src/test/canonicalPayloadFixture";
 import { test, expect } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -89,7 +90,7 @@ for (const scheme of KODEX_COLOR_SCHEMES) {
       await dialog.getByRole("button", { name: "Notifications", exact: true }).click();
       await expect(dialog.getByText("Your device’s notification settings also control alerts and app badges.")).toBeVisible();
       await capture("10-notifications");
-      await dialog.getByRole("button", { name: "Appearance", exact: true }).click();
+      await dialog.getByRole("button", { name: "Interface", exact: true }).click();
       await page.setViewportSize({ width: 390, height: 844 });
       await capture("11-preferences-narrow");
       await writeFile(path.join(directory, "measurements.json"), JSON.stringify(measurements, null, 2));
@@ -101,8 +102,8 @@ for (const scheme of KODEX_COLOR_SCHEMES) {
 function message(role: "user" | "assistant", text: string, displayOrder: number): ThreadTimelineRow {
   const id = `audit-${role}`, itemType = role === "user" ? "userMessage" : "agentMessage";
   const item = role === "user" ? { id, type: itemType, content: [{ type: "text", text }] } : { id, type: itemType, phase: "final_answer", text };
-  return { id, turnId: "audit-turn", kind: role === "user" ? "user_message" : "assistant_message", status: "completed", displayOrder, items: [], collapsedRows: [], fileChanges: [],
-    item: { id, itemId: id, turnId: "audit-turn", threadId: "settings-chat", itemType, status: "completed", displayOrder, timestampMs: Date.UTC(2026, 9, 6), codexMethod: "item/completed", payload: { source: "appServerSnapshot", itemId: id, turnId: "audit-turn", itemSnapshot: { id, itemType }, item } } };
+  return { id, turnId: "audit-turn", kind: role === "user" ? "user_message" : "assistant_message", status: "completed", displayOrder,
+    item: { id, itemId: id, turnId: "audit-turn", threadId: "settings-chat", itemType, status: "completed", displayOrder, timestampMs: Date.UTC(2026, 9, 6), codexMethod: "item/completed", payload: compactCanonicalPayload(item, { id, itemType }) } };
 }
 
 test.describe("touch", () => {

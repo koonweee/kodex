@@ -210,6 +210,7 @@ class LifecycleTests(unittest.TestCase):
         old, previous, repo = self.frontend_fixture()
         with patch.object(self.app, 'health', return_value=42) as health, \
              patch.object(self.app, 'job', return_value={'pid': 42}), \
+             patch.object(self.app, 'notify_frontend_updated') as notify, \
              patch.object(service, 'swap_directories', side_effect=self.fake_swap), \
              patch.object(service, 'run') as commands, \
              patch.object(service, 'acquire_native') as native, \
@@ -232,6 +233,7 @@ class LifecycleTests(unittest.TestCase):
         for call in health.call_args_list:
             self.assertEqual(call.kwargs['expected_pid'], 42)
             self.assertEqual(call.kwargs['api_version'], '1')
+        notify.assert_called_once_with(hashlib.sha256(b'new frontend').hexdigest())
 
     def test_frontend_failed_health_rolls_back_only_frontend_and_keeps_new_chunks(self):
         old, previous, repo = self.frontend_fixture()
@@ -249,6 +251,43 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual((self.app.root / 'previous').resolve(), previous)
         stop.assert_not_called()
         start.assert_not_called()
+
+    def test_frontend_update_notice_failure_does_not_rollback_valid_assets(self):
+        old, _, repo = self.frontend_fixture()
+        errors = io.StringIO()
+        with patch.object(self.app, 'health', return_value=42), \
+             patch.object(self.app, 'job', return_value={'pid': 42}), \
+             patch.object(self.app, 'notify_frontend_updated', side_effect=OSError('offline')), \
+             patch.object(service, 'swap_directories', side_effect=self.fake_swap) as swap, \
+             patch.object(service, 'run'), patch.object(service.sys, 'stderr', errors):
+            self.app.update_frontend(repo)
+        self.assertEqual(swap.call_count, 1)
+        self.assertEqual((old / 'frontend/index.html').read_text(), 'new frontend')
+        self.assertIn('live update notice failed: offline', errors.getvalue())
+
+    def test_frontend_update_notice_posts_revision_to_local_gateway(self):
+        captured = []
+
+        class Response:
+            status = 204
+            def __enter__(self):
+                return self
+            def __exit__(self, *_):
+                return False
+
+        class Opener:
+            def open(self, request, timeout):
+                captured.append((request, timeout))
+                return Response()
+
+        with patch.object(service.urllib.request, 'build_opener', return_value=Opener()):
+            self.app.notify_frontend_updated('build-123')
+
+        request, timeout = captured[0]
+        self.assertEqual(request.full_url, 'http://127.0.0.1:18787/v1/frontend-updates')
+        self.assertEqual(request.get_method(), 'POST')
+        self.assertEqual(json.loads(request.data), {'revision': 'build-123'})
+        self.assertEqual(timeout, 2)
 
     def test_frontend_build_failure_leaves_index_and_assets_unchanged(self):
         old, _, repo = self.frontend_fixture()

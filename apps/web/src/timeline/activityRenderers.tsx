@@ -1,12 +1,14 @@
 import { Badge, Box, Button, Code, Group, Stack, Text } from "@mantine/core";
-import { ChevronRight, Terminal } from "lucide-react";
+import { Terminal } from "lucide-react";
 import { memo, useEffect, useMemo, useState } from "react";
 import type { SyntheticEvent } from "react";
 
 import type { MarkdownPreviewRequest } from "../files/types";
 import type { ImageLightboxImage } from "../images/types";
+import { useThreadDeliveryPreferences } from "./ThreadDeliveryPreferences";
+import { ActivityGroupSummary } from "./ActivityGroupSummary";
 import { FileChangeBlock } from "./fileRenderers";
-import { activityGroupSummary, activityItemSummary, commandSummary, webSearchActionText } from "./activitySummary";
+import { activityItemSummary, commandSummary, webSearchActionText } from "./activitySummary";
 import { ImageActivityBlock } from "./imageRenderers";
 import { AssistantMessageMarkdown, UserMessageBubble } from "./messageRenderers";
 import {
@@ -54,13 +56,10 @@ function TimelineActivityGroupRendererImpl({
       <summary>
         <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
           <Terminal size={15} />
-          <Text size="sm" fw={700} className="kodex-activity-group-title" title={activityGroupSummary(items)}>
-            {activityGroupSummary(items)}
-          </Text>
+          <ActivityGroupSummary items={items} />
         </Group>
-        <ChevronRight size={16} className="kodex-activity-caret" aria-hidden="true" />
       </summary>
-      <Stack gap={8} mt={8}>
+      <Stack gap={4}>
         {visibleItems.map((item) => (
           <ActivityItemRenderer
             imagePreviewUrlsByPath={imagePreviewUrlsByPath}
@@ -115,6 +114,7 @@ export function WebSearchBlock({ actions }: { actions: WebSearchAction[] }) {
 }
 
 export function CommandBlock({ item }: { item: TimelineItem }) {
+  const { includeCommandOutputs } = useThreadDeliveryPreferences();
   const command = item.command || payloadValue(item.payload, "command");
   const output = item.output || payloadValue(item.payload, "output") || payloadValue(item.payload, "stdout") || payloadValue(item.payload, "stderr");
   const status = commandStatusMeta(item.status, item.commandOutcomeKnown);
@@ -130,7 +130,7 @@ export function CommandBlock({ item }: { item: TimelineItem }) {
       ) : (
         <MessageText text={item.text || "Command"} />
       )}
-      {output ? (
+      {includeCommandOutputs && output ? (
         <Code block className="kodex-timeline-output">
           {output}
         </Code>
@@ -269,7 +269,7 @@ const ActivityItemRenderer = memo(function ActivityItemRenderer({
         <summary>
           <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
             <Terminal size={15} />
-            <Text size="sm" className="kodex-activity-title" title={commandSummary(item)}>
+            <Text size="xs" c="dimmed" className="kodex-activity-title" title={commandSummary(item)}>
               {commandSummary(item)}
             </Text>
             {status ? (
@@ -278,7 +278,6 @@ const ActivityItemRenderer = memo(function ActivityItemRenderer({
               </Badge>
             ) : null}
           </Group>
-          <ChevronRight size={16} className="kodex-activity-caret" aria-hidden="true" />
         </summary>
         {isOpen ? (
           <>
@@ -295,11 +294,10 @@ const ActivityItemRenderer = memo(function ActivityItemRenderer({
       <summary>
         <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
           <TimelineIcon kind={item.kind} />
-          <Text size="sm" className="kodex-activity-title" title={activityItemSummary(item)}>
+          <Text size="xs" c="dimmed" className="kodex-activity-title" title={activityItemSummary(item)}>
             {activityItemSummary(item)}
           </Text>
         </Group>
-        <ChevronRight size={16} className="kodex-activity-caret" aria-hidden="true" />
       </summary>
       {isOpen ? (
         <>
