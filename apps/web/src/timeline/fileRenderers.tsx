@@ -34,7 +34,7 @@ function TimelineFileChangesRendererImpl({ entries, showDebug = false }: Timelin
         component="summary"
         gap="xs"
         wrap="nowrap"
-        className="kodex-file-changes-heading kodex-timeline-intermediate-summary"
+        className="kodex-file-changes-heading kodex-timeline-intermediate"
         aria-expanded={isOpen}
         aria-label={`${isOpen ? "Collapse" : "Expand"} ${fileChangeLabel}`}
       >
@@ -126,7 +126,7 @@ function FileChangeEntryRow({ entry }: { entry: FileChangeEntry }) {
 
 function FileChangeEntrySummary({ entry }: { entry: FileChangeEntry }) {
   return (
-    <Group gap="xs" wrap="nowrap" className="kodex-file-change-summary kodex-timeline-intermediate-summary">
+    <Group gap="xs" wrap="nowrap" className="kodex-file-change-summary kodex-timeline-intermediate">
       <Text size="sm" className="kodex-file-change-action">
         {entry.action || "Modified"}
       </Text>

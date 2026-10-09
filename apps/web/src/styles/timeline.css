@@ -15,10 +15,10 @@
   padding-block: 0;
 }
 
-/* Interactive intermediate rows share one density contract. Renderers may
-   own their horizontal layout, borders and typography, but vertical inset and
-   minimum hit-area height belong here so activity and file rows cannot drift. */
-.kodex-timeline-intermediate-summary {
+/* Intermediate timeline elements share one density contract. Renderers may
+   own their horizontal layout, borders, typography and interaction, but their
+   vertical inset and minimum row height belong here so treatments cannot drift. */
+.kodex-timeline-intermediate {
   box-sizing: border-box;
   min-height: 32px;
   padding-block: 6px;

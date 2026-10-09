@@ -59,6 +59,32 @@ for (const layout of [
       await context.close();
     }
   });
+
+  test(`context compaction uses intermediate density in ${layout.name}`, async ({ browser }) => {
+    const context = await browser.newContext({ viewport: layout.viewport, hasTouch: layout.hasTouch });
+    const fixture = await nativeSettingsFixture(context);
+    fixture.detail.timeline = contextCompactionTimeline();
+
+    try {
+      const page = await fixture.page("context-density");
+      const contextCompacted = page.getByText("Context compacted", { exact: true });
+      const filesSummary = page.locator(".kodex-file-changes-panel > summary");
+      await expect(contextCompacted).toBeVisible();
+      await expect(filesSummary).toBeVisible();
+
+      const contextBox = await contextCompacted.boundingBox();
+      const filesBox = await filesSummary.boundingBox();
+      expect(contextBox).not.toBeNull();
+      expect(filesBox).not.toBeNull();
+      expect(contextBox!.height).toBeGreaterThanOrEqual(30);
+      expect(Math.abs(contextBox!.height - filesBox!.height)).toBeLessThanOrEqual(2);
+      expect(fixture.unexpected).toEqual([]);
+      expect(fixture.errors).toEqual([]);
+    } finally {
+      await fixture.close();
+      await context.close();
+    }
+  });
 }
 
 async function verticalGeometry(container: Locator, contentSelector: string): Promise<VerticalGeometry> {
@@ -104,24 +130,7 @@ function intermediateTimeline(): ThreadViewResponse["timeline"] {
       displayOrder: 1,
       items: [command],
     },
-    {
-      id: "files",
-      turnId: "turn-intermediate",
-      kind: "file_changes",
-      status: "completed",
-      displayOrder: 2,
-      fileChanges: [
-        {
-          id: "file-change",
-          path: "apps/web/src/timeline/fileRenderers.tsx",
-          action: "Modified",
-          additions: 3,
-          deletions: 1,
-          diff: "@@ -1 +1 @@\n-old\n+new",
-          itemIds: ["file-change"],
-        },
-      ],
-    },
+    fileChangesRow(2),
   ];
   return {
     activeTurnId: null,
@@ -131,5 +140,59 @@ function intermediateTimeline(): ThreadViewResponse["timeline"] {
     rows,
     turns: [{ id: "turn-intermediate", status: "completed" }],
     viewRevision: 1,
+  };
+}
+
+function contextCompactionTimeline(): ThreadViewResponse["timeline"] {
+  const rows: ThreadTimelineRow[] = [
+    {
+      id: "context-compacted",
+      turnId: "turn-intermediate",
+      kind: "context_compaction",
+      status: "completed",
+      displayOrder: 1,
+      item: {
+        id: "projection-context-compacted",
+        threadId: "settings-chat",
+        turnId: "turn-intermediate",
+        itemId: "context-compacted",
+        itemType: "contextCompaction",
+        status: "completed",
+        codexMethod: "item/completed",
+        displayOrder: 1,
+        payload: { item: { type: "contextCompaction" } },
+      },
+    },
+    fileChangesRow(2),
+  ];
+  return {
+    activeTurnId: null,
+    liveState: "idle",
+    pendingApprovalRequests: [],
+    pendingUserInputRequests: [],
+    rows,
+    turns: [{ id: "turn-intermediate", status: "completed" }],
+    viewRevision: 1,
+  };
+}
+
+function fileChangesRow(displayOrder: number): ThreadTimelineRow {
+  return {
+    id: "files",
+    turnId: "turn-intermediate",
+    kind: "file_changes",
+    status: "completed",
+    displayOrder,
+    fileChanges: [
+      {
+        id: "file-change",
+        path: "apps/web/src/timeline/fileRenderers.tsx",
+        action: "Modified",
+        additions: 3,
+        deletions: 1,
+        diff: "@@ -1 +1 @@\n-old\n+new",
+        itemIds: ["file-change"],
+      },
+    ],
   };
 }

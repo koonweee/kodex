@@ -54,7 +54,7 @@ function TimelineActivityGroupRendererImpl({
 
   return (
     <details className="kodex-activity-group">
-      <summary className="kodex-timeline-intermediate-summary">
+      <summary className="kodex-timeline-intermediate">
         <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
           <Terminal size={15} />
           <ActivityGroupSummary items={items} />
@@ -237,7 +237,11 @@ export function PlanBlock({ item }: { item: TimelineItem }) {
 
 export function StatusMarker({ item }: { item: TimelineItem }) {
   return (
-    <Text size="sm" c="dimmed" className="kodex-timeline-inline-row">
+    <Text
+      size="sm"
+      c="dimmed"
+      className={`kodex-timeline-inline-row${item.kind === "context_compaction" ? " kodex-timeline-intermediate" : ""}`}
+    >
       {item.text}
     </Text>
   );
@@ -267,7 +271,7 @@ const ActivityItemRenderer = memo(function ActivityItemRenderer({
     const status = commandStatusMeta(item.status);
     return (
       <details className="kodex-activity-item" onToggle={handleToggle}>
-        <summary className="kodex-timeline-intermediate-summary">
+        <summary className="kodex-timeline-intermediate">
           <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
             <Terminal size={15} />
             <Text size="xs" c="dimmed" className="kodex-activity-title" title={commandSummary(item)}>
@@ -292,7 +296,7 @@ const ActivityItemRenderer = memo(function ActivityItemRenderer({
 
   return (
     <details className="kodex-activity-item" onToggle={handleToggle}>
-      <summary className="kodex-timeline-intermediate-summary">
+      <summary className="kodex-timeline-intermediate">
         <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
           <TimelineIcon kind={item.kind} />
           <Text size="xs" c="dimmed" className="kodex-activity-title" title={activityItemSummary(item)}>
