@@ -1,5 +1,5 @@
 import { MantineProvider } from '@mantine/core';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { ChatClient } from './client';
 import { NativeSubagentViewer } from './NativeSubagentViewer';
@@ -102,4 +102,35 @@ it('does not let stale child prompt inventory hide a newer failed tool result', 
   expect(await screen.findByText(/^failed$/i)).toBeVisible();
   view.rerender(<MantineProvider><NativeSubagentViewer {...props} inventory={{ ...stale, revision: 3, childPrompts: [] }} selectedId="child:child" /></MantineProvider>);
   expect(await screen.findByText(/^failed$/i)).toBeVisible();
+});
+
+
+it('preserves a child tool inspection across native live-to-saved grouping and resets for another child', async () => {
+  type Snapshot = Awaited<ReturnType<ChatClient['openSubagent']>>;
+  let publish!: (value: IteratorResult<Snapshot>) => void;
+  rpc.watchSubagent.mockResolvedValue({ [Symbol.asyncIterator]() { return { next: () => new Promise(resolve => { publish = resolve; }) }; } });
+  const children = { ...inventory, children: [{ id: 'one', title: 'First child', active: true }, { id: 'two', title: 'Second child', active: true }] };
+  const view = render(<MantineProvider><NativeSubagentViewer {...props} inventory={children} selectedId="child:one" /></MantineProvider>);
+  await waitFor(() => expect(rpc.watchSubagent).toHaveBeenCalledTimes(1));
+  const display = defaultDisplayState();
+  display.activeTools.set('call', { name: 'custom_tool', args: {}, status: 'running', partialResult: 'Live child result' });
+  const live: Snapshot = { epoch: 'epoch', revision: 1, chatId: 'parent', kind: 'child', id: 'one', invocation: null,
+    messages: [], display, history: { earliest: null, hasOlder: false } };
+  await act(async () => publish({ value: live, done: false }));
+  const group = () => view.container.querySelector<HTMLDetailsElement>('.kodex-activity-group')!;
+  await waitFor(() => expect(group()).not.toBeNull());
+  fireEvent.click(group().querySelector('summary')!);
+  fireEvent.click(screen.getByText('Used custom_tool'));
+  expect(await screen.findByText('Result: Live child result')).toBeVisible();
+  const saved: Snapshot = { ...live, revision: 2, display: defaultDisplayState(), messages: [{ id: 'saved', role: 'assistant', createdAt: new Date(0), content: { format: 2, parts: [
+    { type: 'tool-invocation', toolInvocation: { toolCallId: 'call', toolName: 'custom_tool', args: {}, state: 'result', result: 'Saved child result' } },
+  ] } }] };
+  await act(async () => publish({ value: saved, done: false }));
+  expect(group().open).toBe(true);
+  expect(await screen.findByText('Result: Saved child result')).toBeVisible();
+  view.rerender(<MantineProvider><NativeSubagentViewer {...props} inventory={children} selectedId="child:two" /></MantineProvider>);
+  await waitFor(() => expect(rpc.watchSubagent).toHaveBeenCalledTimes(2));
+  await act(async () => publish({ value: { ...saved, id: 'two' }, done: false }));
+  await waitFor(() => expect(group()).not.toBeNull());
+  expect(group().open).toBe(false);
 });

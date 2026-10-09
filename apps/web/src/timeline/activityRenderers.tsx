@@ -6,6 +6,7 @@ import type { SyntheticEvent } from "react";
 import type { MarkdownPreviewRequest } from "../files/types";
 import type { ImageLightboxImage } from "../images/types";
 import { useThreadDeliveryPreferences } from "./ThreadDeliveryPreferences";
+import { useActivityDisclosure } from "./ActivityDisclosure";
 import { ActivityGroupSummary } from "./ActivityGroupSummary";
 import { FileChangeBlock } from "./fileRenderers";
 import { activityItemSummary, commandSummary, webSearchActionText } from "./activitySummary";
@@ -22,12 +23,14 @@ import {
   titleCase,
   unknownRenderer,
 } from "./rendererShared";
+import type { ActivityDisclosureIdentity } from "./state";
 import type { TimelineItem, WebSearchAction } from "./reducer";
 
 type TimelineActivityGroupRendererProps = {
   imagePreviewUrlsByPath?: Record<string, string>;
   items: TimelineItem[];
   fallbackSummary?: string;
+  disclosureKeys?: ActivityDisclosureIdentity[];
   onImageOpen?: (image: ImageLightboxImage) => void;
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   showDebug?: boolean;
@@ -40,11 +43,13 @@ function TimelineActivityGroupRendererImpl({
   imagePreviewUrlsByPath = {},
   items,
   fallbackSummary,
+  disclosureKeys,
   onImageOpen,
   onMarkdownOpen,
   showDebug = false,
   threadId,
 }: TimelineActivityGroupRendererProps) {
+  const disclosure = useActivityDisclosure(disclosureKeys, "group");
   const itemIdentity = useMemo(() => items.map((item) => item.id).join("\u0000"), [items]);
   const [visibleItemCount, setVisibleItemCount] = useState(ACTIVITY_ITEM_RENDER_CHUNK);
   useEffect(() => {
@@ -54,18 +59,20 @@ function TimelineActivityGroupRendererImpl({
   const remainingItemCount = Math.max(0, items.length - visibleItems.length);
 
   return (
-    <details className="kodex-activity-group">
+    <details className="kodex-activity-group" open={disclosure?.open} onToggle={disclosure ? event => disclosure.onToggle(event.currentTarget.open) : undefined}>
       <summary>
         <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
           <Terminal size={15} />
           <ActivityGroupSummary items={items} fallbackSummary={fallbackSummary} />
+          {disclosureKeys && items.some(item => item.status === "running") ? <Badge size="xs" variant="light">Running</Badge> : null}
         </Group>
       </summary>
       <Stack gap={4}>
-        {visibleItems.map((item) => (
+        {visibleItems.map((item, index) => (
           <ActivityItemRenderer
             imagePreviewUrlsByPath={imagePreviewUrlsByPath}
             item={item}
+            disclosureKey={disclosureKeys?.[index]}
             key={item.id}
             onImageOpen={onImageOpen}
             onMarkdownOpen={onMarkdownOpen}
@@ -245,6 +252,7 @@ export function StatusMarker({ item }: { item: TimelineItem }) {
 }
 
 const ActivityItemRenderer = memo(function ActivityItemRenderer({
+  disclosureKey,
   imagePreviewUrlsByPath,
   item,
   onImageOpen,
@@ -253,21 +261,25 @@ const ActivityItemRenderer = memo(function ActivityItemRenderer({
   threadId,
 }: {
   imagePreviewUrlsByPath: Record<string, string>;
+  disclosureKey?: ActivityDisclosureIdentity;
   item: TimelineItem;
   onImageOpen?: (image: ImageLightboxImage) => void;
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   showDebug: boolean;
   threadId?: string;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const disclosure = useActivityDisclosure(disclosureKey ? [disclosureKey] : undefined, "item");
+  const [localOpen, setIsOpen] = useState(false);
+  const isOpen = disclosure?.open ?? localOpen;
   const handleToggle = (event: SyntheticEvent<HTMLDetailsElement>) => {
-    setIsOpen(event.currentTarget.open);
+    if (disclosure) disclosure.onToggle(event.currentTarget.open);
+    else setIsOpen(event.currentTarget.open);
   };
 
   if (item.kind === "command_execution") {
     const status = commandStatusMeta(item.status, item.commandOutcomeKnown);
     return (
-      <details className="kodex-activity-item" onToggle={handleToggle}>
+      <details className="kodex-activity-item" open={disclosure?.open} onToggle={handleToggle}>
         <summary>
           <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
             <Terminal size={15} />
@@ -292,7 +304,7 @@ const ActivityItemRenderer = memo(function ActivityItemRenderer({
   }
 
   return (
-    <details className="kodex-activity-item" onToggle={handleToggle}>
+    <details className="kodex-activity-item" open={disclosure?.open} onToggle={handleToggle}>
       <summary>
         <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
           <TimelineIcon kind={item.kind} />

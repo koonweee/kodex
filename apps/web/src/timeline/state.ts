@@ -101,6 +101,8 @@ type TimelineItemRow = {
   dividerBefore?: TimelineRowDivider;
 };
 
+export type ActivityDisclosureIdentity = { key: string; liveKey?: string };
+
 type TimelineActivityRow = {
   type: "activity";
   key: string;
@@ -109,6 +111,7 @@ type TimelineActivityRow = {
   displayOrder: number;
   items: TimelineItem[];
   fallbackSummary?: string;
+  disclosureKeys?: ActivityDisclosureIdentity[];
   dividerBefore?: TimelineRowDivider;
 };
 

@@ -43,10 +43,10 @@ export function timelinePresentation(snapshot: PresentationSnapshot, isLoadingOl
   const messages = snapshot.messages.map(message => message.id === current?.id ? current : message);
   if (current && !messages.some(message => message.id === current.id)) messages.push(current);
   const items: TimelineItem[] = [];
-  const origins: Array<NativeItemOrigin | undefined> = [];
+  const origins: Array<NativeItemOrigin | null | undefined> = [];
   const toolIndexes = new Map<string, number>();
   const savedToolArgs = new Map<string, { name: string; args: unknown; result: unknown; failed: boolean; completed: boolean; messageId?: string }>();
-  function append(item: Omit<TimelineItem, 'displayOrder' | 'turnId' | 'debugEvents'>, origin?: NativeItemOrigin) {
+  function append(item: Omit<TimelineItem, 'displayOrder' | 'turnId' | 'debugEvents'>, origin?: NativeItemOrigin | null) {
     items.push({ ...item, displayOrder: items.length, turnId: null, debugEvents: [] });
     origins.push(origin);
   }
@@ -67,7 +67,7 @@ export function timelinePresentation(snapshot: PresentationSnapshot, isLoadingOl
       // Only known empty reasoning is transparent; unsupported parts still
       // consume a grouping position and prevent activity from crossing them.
       if (part.type === 'reasoning' && !part.reasoning.trim()) return;
-      const origin = message.role === 'assistant' ? { messageId: message.id, groupingIndex } : undefined;
+      const origin = message.role === 'assistant' ? { messageId: message.id, groupingIndex } : null;
       groupingIndex += 1;
       const id = `${message.id}:${index}`;
       const timestampMs = new Date(message.createdAt).getTime();
@@ -89,7 +89,8 @@ export function timelinePresentation(snapshot: PresentationSnapshot, isLoadingOl
     const existing = toolIndexes.get(id);
     const previous = existing === undefined ? undefined : items[existing];
     const saved = savedToolArgs.get(id);
-    const args = tool.args === undefined && saved?.name === tool.name ? saved.args : tool.args;
+    const emptyArgs = tool.args === undefined || (tool.args !== null && typeof tool.args === 'object' && !Array.isArray(tool.args) && Object.keys(tool.args).length === 0);
+    const args = emptyArgs && saved?.name === tool.name ? saved.args : tool.args;
     const file = nativeFileFields(tool.name, args);
     const sameSavedCall = saved?.name === tool.name;
     const retainedQuestion = sameSavedCall && tool.result === undefined && tool.partialResult === undefined

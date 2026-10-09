@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createORPCClient } from '@orpc/client';
@@ -77,5 +77,46 @@ test('native saved tool groups and debug payloads remain inspectable across peer
     await expect(debug.locator('pre')).toContainText('NATIVE_SHELL_OUTPUT');
     await peer.screenshot({ path: testInfo.outputPath('native-tool-group-debug.png'), fullPage: true, animations: 'disabled' });
     expect(errors).toEqual([]); expect(legacy).toEqual([]);
+  } finally { await context.close(); if (backend) await stopBackend(backend); await rm(root, { recursive: true, force: true }); }
+});
+
+
+test('live tool groups stay collapsed by default and preserve each tab inspection through completion', async ({ context, page }, testInfo) => {
+  const root = await mkdtemp(join(tmpdir(), 'kodex-mastra-live-tool-'));
+  let backend: Awaited<ReturnType<typeof startBackend>> | undefined;
+  const api: RouterClient<GatewayRouter> = createORPCClient(new RPCLink({ url: 'http://127.0.0.1:18789/rpc' }));
+  const errors: string[] = [];
+  context.on('page', tab => tab.on('pageerror', error => errors.push(error.message)));
+  page.on('pageerror', error => errors.push(error.message));
+  try {
+    backend = await startBackend(root);
+    const project = (await api.listChats()).projects[0]!;
+    const chat = await api.createChat({ projectId: project.id });
+    const peer = await context.newPage();
+    for (const tab of [page, peer]) {
+      await tab.goto(`/threads/${chat.id}`);
+      await expect(pane(tab).getByLabel('Message composer', { exact: true })).toBeVisible();
+    }
+    await api.send({ chatId: chat.id, text: 'RUN_HELD_SHELL' });
+    for (const tab of [page, peer]) {
+      const group = pane(tab).locator('.kodex-activity-group');
+      await expect(group).toHaveCount(1);
+      await expect(group).not.toHaveAttribute('open', '');
+      await expect(group.locator(':scope > summary').getByText('Running', { exact: true })).toBeVisible();
+    }
+    await page.screenshot({ path: testInfo.outputPath('native-live-tool-collapsed.png'), fullPage: true, animations: 'disabled' });
+    const inspected = pane(page).locator('.kodex-activity-group');
+    await inspected.locator(':scope > summary').click();
+    await inspected.locator('.kodex-activity-item > summary').click();
+    await expect(inspected.locator('.kodex-command-panel')).toBeVisible();
+    await writeFile(join(root, 'project', '.release-tool'), 'done');
+    for (const tab of [page, peer]) {
+      await expect(pane(tab).getByText('fixture:RUN_HELD_SHELL', { exact: true })).toBeVisible();
+      await expect(pane(tab).locator('.kodex-activity-group > summary').getByText('Running', { exact: true })).toHaveCount(0);
+    }
+    await expect(inspected).toHaveAttribute('open', '');
+    await expect(inspected.locator('.kodex-command-panel')).toBeVisible();
+    await expect(pane(peer).locator('.kodex-activity-group')).not.toHaveAttribute('open', '');
+    expect(errors).toEqual([]);
   } finally { await context.close(); if (backend) await stopBackend(backend); await rm(root, { recursive: true, force: true }); }
 });

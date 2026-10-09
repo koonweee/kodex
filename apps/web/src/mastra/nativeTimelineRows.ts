@@ -10,12 +10,14 @@ function isActivity(item: TimelineItem) {
   return !isInteractive(item) && (activityKinds.has(item.kind) || item.kind === 'file_change' && item.fileChangeOutcomeKnown === false);
 }
 
-function adjacent(left: NativeItemOrigin | undefined, right: NativeItemOrigin | undefined) {
-  return left !== undefined && right !== undefined && left.messageId === right.messageId && left.groupingIndex + 1 === right.groupingIndex;
+function adjacent(left: NativeItemOrigin | null | undefined, right: NativeItemOrigin | null | undefined) {
+  return left != null && right != null && left.messageId === right.messageId && left.groupingIndex + 1 === right.groupingIndex;
 }
 
-/** Fold native message-local activity, not inferred turns or final answers. */
-export function nativeTimelineRows(items: TimelineItem[], origins: Array<NativeItemOrigin | undefined>): TimelineRow[] {
+/** Fold native message-local activity, not inferred turns or final answers.
+ * A null origin is user-authored; undefined is an unassociated live overlay.
+ */
+export function nativeTimelineRows(items: TimelineItem[], origins: Array<NativeItemOrigin | null | undefined>): TimelineRow[] {
   const progress = new Set<number>();
   let followingTool = false;
   for (let index = items.length - 1; index >= 0; index -= 1) {
@@ -31,7 +33,7 @@ export function nativeTimelineRows(items: TimelineItem[], origins: Array<NativeI
   }
 
   const rows: TimelineRow[] = [];
-  let previousOrigin: NativeItemOrigin | undefined;
+  let previousOrigin: NativeItemOrigin | null | undefined;
   for (const [index, item] of items.entries()) {
     const origin = origins[index];
     const previous = rows.at(-1);
@@ -42,11 +44,21 @@ export function nativeTimelineRows(items: TimelineItem[], origins: Array<NativeI
         const key = JSON.stringify(['native-activity', origin.messageId, item.id]);
         rows.push({ type: 'activity', key, turnKey: key, turnId: null, displayOrder: item.displayOrder, items: [item], fallbackSummary: 'Activity' });
       }
-    } else if (!origin && item.kind === 'file_change' && isActivity(item)) {
-      const key = JSON.stringify(['native-file-activity', item.id]);
+    } else if (origin === undefined && isActivity(item)) {
+      const key = JSON.stringify(['native-live-activity', item.id]);
       rows.push({ type: 'activity', key, turnKey: key, turnId: null, displayOrder: item.displayOrder, items: [item], fallbackSummary: 'Activity' });
     } else rows.push({ type: 'item', key: item.id, turnKey: item.id, turnId: null, displayOrder: item.displayOrder, item });
     previousOrigin = origin;
   }
+  // Saved identities never change if a later message reuses a tool ID. Only
+  // the latest occurrence may adopt the matching unassociated live choice.
+  const latest = new Map(items.map((item, index) => [item.id, index]));
+  const identities = new Map(items.map((item, index) => {
+    const origin = origins[index];
+    const liveKey = JSON.stringify(['live-item', item.id]);
+    return [item, origin ? { key: JSON.stringify(['message-item', origin.messageId, item.id]),
+      ...(latest.get(item.id) === index && { liveKey }) } : { key: liveKey }];
+  }));
+  for (const row of rows) if (row.type === 'activity') row.disclosureKeys = row.items.map(item => identities.get(item)!);
   return rows;
 }

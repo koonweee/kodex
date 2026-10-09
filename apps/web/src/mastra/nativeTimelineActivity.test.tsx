@@ -2,6 +2,7 @@ import { MantineProvider } from '@mantine/core';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it } from 'vitest';
 import { defaultDisplayState } from '../../../../spikes/mastra-code-sdk/node_modules/@mastra/core/dist/agent-controller/index.js';
+import { ActivityDisclosureProvider } from '../timeline/ActivityDisclosure';
 import { ThreadDeliveryProvider } from '../timeline/ThreadDeliveryPreferences';
 import { TimelineActivityGroupRenderer, TimelineItemRenderer } from '../timeline/renderers';
 import type { ChatSnapshot } from './client';
@@ -21,9 +22,9 @@ function identities(value: ReturnType<typeof rows>) {
   return value.map(row => row.type === 'activity' ? row.items.map(item => item.id) : row.type === 'item' ? row.item.id : row.type);
 }
 function RenderRows({ value }: { value: ReturnType<typeof rows> }) {
-  return <MantineProvider>{value.map(row => row.type === 'activity'
-    ? <TimelineActivityGroupRenderer key={row.key} items={row.items} />
-    : row.type === 'item' ? <TimelineItemRenderer key={row.key} item={row.item} /> : null)}</MantineProvider>;
+  return <MantineProvider><ActivityDisclosureProvider>{value.map(row => row.type === 'activity'
+    ? <TimelineActivityGroupRenderer key={row.key} items={row.items} disclosureKeys={row.disclosureKeys} />
+    : row.type === 'item' ? <TimelineItemRenderer key={row.key} item={row.item} /> : null)}</ActivityDisclosureProvider></MantineProvider>;
 }
 afterEach(cleanup);
 it('hides only empty reasoning and includes streamed reasoning in native activity', async () => {
@@ -140,7 +141,7 @@ it('applies overlays before grouping, exposes pending prompts, and converges liv
   const pending = rows([saved], display, [{ kind: 'approval', target, toolName: 'custom_tool', args: {} }]);
   expect(identities(pending)).toEqual([['shell'], 'custom']); expect(pending[1]).toMatchObject({ item: { status: 'approval_required' } });
   display.activeTools.set('orphan', { name: 'custom_tool', args: {}, status: 'running' });
-  expect(identities(rows([saved], display))).toEqual([['shell', 'custom'], 'orphan']);
+  expect(identities(rows([saved], display))).toEqual([['shell', 'custom'], ['orphan']]);
 });
 it('uses the shared collapsed disclosure and reveals native command output on explicit opening', async () => {
   const value = rows([message('shell', [tool('command', 'execute_command', { command: 'exit 7' }, 'Exit code: 7')])]);
@@ -163,4 +164,74 @@ it('does not group across an unrendered native part or attribute an overlay to a
   expect(value[0]).toMatchObject({ items: [{ id: 'duplicate', status: 'completed', output: 'Native output' }, { id: 'old-sibling' }] });
   expect(value[1]).toMatchObject({ items: [{ id: 'duplicate', status: 'running', output: 'Current only' }] });
   expect(new Set(value.map(row => row.key)).size).toBe(value.length);
+});
+
+
+it.each(['execute_command', 'custom_tool', 'write_file'])('collapses %s before arguments or message provenance arrive', (name) => {
+  const display = defaultDisplayState();
+  display.activeTools.set('early', { name, args: {}, status: 'running' });
+  const value = rows([], display);
+  expect(value[0]).toMatchObject({ type: 'activity', items: [{ id: 'early', status: 'running' }] });
+  const view = render(<RenderRows value={value} />);
+  expect(view.container.querySelector('details')?.open).toBe(false);
+  expect(screen.queryByText('Arguments: {}')).not.toBeInTheDocument();
+});
+it.each([
+  { name: 'execute_command', args: { command: 'pwd' }, kind: 'command_execution' },
+  { name: 'write_file', args: { path: 'notes.md', content: 'hello' }, kind: 'file_change' },
+])('retains saved $name arguments under an empty live placeholder', ({ name, args, kind }) => {
+  const display = defaultDisplayState();
+  display.activeTools.set('same', { name, args: {}, status: 'running' });
+  const value = rows([message('saved', [tool('same', name, args)])], display);
+  expect(value[0]).toMatchObject({ type: 'activity', items: [{ kind, argsSummary: JSON.stringify(args, null, 2) }] });
+});
+
+it('preserves explicit group and tool inspection when live tools merge into a saved message', async () => {
+  const display = defaultDisplayState();
+  display.activeTools.set('live', { name: 'custom_tool', args: {}, status: 'running', partialResult: 'Partial output' });
+  const view = render(<RenderRows value={rows([], display)} />);
+  const group = () => view.container.querySelector<HTMLDetailsElement>('.kodex-activity-group')!;
+  expect(group().open).toBe(false);
+  expect(screen.getByText('Running')).toBeVisible();
+  fireEvent.click(group().querySelector('summary')!);
+  fireEvent.click(screen.getByText('Used custom_tool'));
+  expect(await screen.findByText('Result: Partial output')).toBeVisible();
+  const saved = message('saved', [tool('earlier'), tool('live', 'custom_tool', {}, 'Final output')]);
+  view.rerender(<RenderRows value={rows([saved])} />);
+  expect(group().open).toBe(true);
+  expect(screen.queryByText('Running')).not.toBeInTheDocument();
+  expect(await screen.findByText('Result: Final output')).toBeVisible();
+  fireEvent.click(group().querySelector('summary')!);
+  view.rerender(<RenderRows value={rows([message('saved', [tool('earlier'), tool('live'), tool('later')])])} />);
+  expect(group().open).toBe(false);
+});
+
+it('keeps explicit replacement arguments and different tool names authoritative', () => {
+  const saved = message('saved', [tool('same', 'write_file', { path: 'old.md' })]);
+  const display = defaultDisplayState();
+  display.activeTools.set('same', { name: 'write_file', args: { path: 'new.md' }, status: 'running' });
+  expect(rows([saved], display)[0]).toMatchObject({ items: [{ path: 'new.md' }] });
+  display.activeTools.set('same', { name: 'custom_tool', args: {}, status: 'running' });
+  expect(rows([saved], display)[0]).toMatchObject({ items: [{ kind: 'dynamic_tool_call', argsSummary: '{}', path: undefined }] });
+});
+it('keeps historical duplicate tool IDs separate from the live disclosure choice', async () => {
+  const older = message('older', [tool('same')]);
+  const newer = message('newer', [tool('same')]);
+  const value = rows([older, newer]);
+  const view = render(<RenderRows value={value} />);
+  const groups = view.container.querySelectorAll<HTMLDetailsElement>('.kodex-activity-group');
+  fireEvent.click(groups[1].querySelector('summary')!);
+  expect(groups[1].open).toBe(true);
+  expect(groups[0].open).toBe(false);
+});
+
+it('does not transfer an opened saved call to a later call reusing its native ID', async () => {
+  const first = message('first', [tool('repeated')]);
+  const view = render(<RenderRows value={rows([first])} />);
+  fireEvent.click(view.container.querySelector('summary')!);
+  await screen.findByText('Used custom_tool');
+  view.rerender(<RenderRows value={rows([first, message('second', [tool('repeated')])])} />);
+  const groups = view.container.querySelectorAll<HTMLDetailsElement>('.kodex-activity-group');
+  expect(groups[0].open).toBe(true);
+  expect(groups[1].open).toBe(false);
 });
