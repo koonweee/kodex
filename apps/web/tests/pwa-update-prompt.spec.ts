@@ -36,6 +36,10 @@ for (const shape of [
         const action = await update.boundingBox();
         const box = await notice.boundingBox();
         expect(label).not.toBeNull(); expect(action).not.toBeNull(); expect(box).not.toBeNull();
+        const dismissBox = await notice.getByRole("button", { name: "Dismiss update notice" }).boundingBox();
+        expect(dismissBox).not.toBeNull();
+        expect(box!.height).toBeLessThanOrEqual(Math.max(label!.height, action!.height, dismissBox!.height) + 20);
+        await expect(notice.getByRole("switch")).toHaveCount(0);
         expect(Math.abs(label!.y + label!.height / 2 - action!.y - action!.height / 2)).toBeLessThan(2);
         expect(box!.x).toBeGreaterThanOrEqual(0);
         expect(box!.x + box!.width).toBeLessThanOrEqual(shape.width);

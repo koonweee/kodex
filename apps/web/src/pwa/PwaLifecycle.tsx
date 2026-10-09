@@ -1,4 +1,4 @@
-import { Button, CloseButton, Group, Paper, Switch, Text } from "@mantine/core";
+import { Button, CloseButton, Group, Paper, Text } from "@mantine/core";
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -14,7 +14,7 @@ import { AnimatedNumericText } from "../ui/AnimatedNumericText";
 import { usePwaUpdateCountdown } from "./usePwaUpdateCountdown";
 
 export function PwaLifecycle() {
-  const { preferences, setAutoUpdatePwa } = useInterfacePreferences();
+  const { preferences } = useInterfacePreferences();
   const [updateState, setUpdateState] = useState<PwaUpdateState>(getPwaUpdateState);
 
   useEffect(() => {
@@ -42,7 +42,6 @@ export function PwaLifecycle() {
           </Button>
           <CloseButton aria-label="Dismiss update notice" onClick={dismiss} disabled={updating} size="sm" />
         </Group>
-        <Switch className="kodex-pwa-auto-update" label="Auto-update" size="xs" checked={preferences.autoUpdatePwa} onChange={event => setAutoUpdatePwa(event.currentTarget.checked)} />
         {error ? <Text size="xs" role="alert">{error}</Text> : null}
       </Paper>
     </div>

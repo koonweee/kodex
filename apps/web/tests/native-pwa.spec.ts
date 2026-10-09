@@ -158,7 +158,7 @@ test.describe("real built PWA", () => {
       await first.evaluate(async () => { await (await navigator.serviceWorker.getRegistration())!.update(); });
       for (const page of pages) {
         await expect(page.getByRole("status")).toContainText("Updating in");
-        await expect(page.getByRole("switch", { name: "Auto-update" })).toBeChecked();
+        await expect(page.locator(".kodex-pwa-lifecycle-notice").getByRole("switch")).toHaveCount(0);
       }
       await first.screenshot({ path: info.outputPath("real-auto-update.png") });
       await Promise.all(loaded);

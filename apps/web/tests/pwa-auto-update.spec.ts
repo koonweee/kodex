@@ -1,5 +1,13 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { nativeSettingsFixture } from "./native-settings.fixture";
+
+async function openInterface(page: Page) {
+  const sidebar = page.getByRole("navigation", { name: "Workspace", exact: true });
+  if (!await sidebar.isVisible()) await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
+  await sidebar.getByRole("button", { name: "Account settings", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Preferences", exact: true }).click();
+  return page.getByRole("dialog", { name: "Preferences", exact: true });
+}
 
 for (const touch of [false, true]) {
   test.describe(touch ? "touch auto updates" : "pointer auto updates", () => {
@@ -9,13 +17,13 @@ for (const touch of [false, true]) {
         const response = await route.fetch();
         await route.fulfill({ response, body: await response.text() + `
           setRegisterSWLoaderForTests(async () => options => {
-            const registration = { scope: '/', waiting: new EventTarget(), update: async () => {
+            const registration = { scope: '/', waiting: null, update: async () => {
               window.pwaChecks = (window.pwaChecks || 0) + 1;
-              options.onNeedRefresh();
+              if (registration.waiting) options.onNeedRefresh();
             } };
             window.nextPwaBundle = () => { registration.waiting = new EventTarget(); };
             options.onRegisteredSW('/sw.js', registration);
-            queueMicrotask(() => options.onNeedRefresh());
+            window.showPwaNotice = () => { registration.waiting = new EventTarget(); options.onNeedRefresh(); };
             return async () => { window.pwaAccepted = (window.pwaAccepted || 0) + 1; };
           });
         ` });
@@ -25,17 +33,31 @@ for (const touch of [false, true]) {
         const first = await fixture.page("first");
         const second = await fixture.page("second");
         for (const client of ["first", "second"]) await expect.poll(() => fixture.connected(client)).toBe(true);
-        await first.clock.install();
-        await second.clock.install();
         const notice = first.locator(".kodex-pwa-lifecycle-notice");
         const otherNotice = second.locator(".kodex-pwa-lifecycle-notice");
-        const toggle = notice.getByRole("switch", { name: "Auto-update" });
+        // Open settings before the banner arrives, then opt in with a notice already waiting.
+        const preferences = await openInterface(first);
+        const otherPreferences = await openInterface(second);
+        for (const page of [first, second]) {
+          await page.waitForFunction(() => typeof Reflect.get(window, "showPwaNotice") === "function");
+          await page.evaluate(() => Reflect.get(window, "showPwaNotice")());
+        }
+        for (const banner of [notice, otherNotice]) await expect(banner).toContainText("Update available");
+        const toggle = preferences.getByRole("switch", { name: "Auto-update" });
+        await expect(toggle).not.toBeChecked();
         if (touch) {
           expect((await toggle.boundingBox())!.height).toBeGreaterThanOrEqual(44);
           await toggle.tap();
         }
         else await toggle.check();
-        await expect(otherNotice.getByRole("switch", { name: "Auto-update" })).toBeChecked();
+        await first.screenshot({ path: info.outputPath("auto-update-preferences.png"), animations: "disabled" });
+        await expect(otherPreferences.getByRole("switch", { name: "Auto-update" })).toBeChecked();
+        for (const [page, dialog] of [[first, preferences], [second, otherPreferences]] as const) {
+          await page.keyboard.press("Escape");
+          await expect(dialog).toBeHidden();
+          await page.clock.install();
+        }
+        for (const banner of [notice, otherNotice]) await expect(banner.getByRole("switch")).toHaveCount(0);
         await first.clock.runFor(4000);
         await second.clock.runFor(4000);
         expect(await first.evaluate(() => Reflect.get(window, "pwaAccepted"))).toBeUndefined();
@@ -68,7 +90,9 @@ for (const touch of [false, true]) {
           expect(await page.evaluate(() => Reflect.get(window, "pwaAccepted"))).toBe(1);
         }
         await first.reload();
-        await expect(toggle).toBeChecked();
+        await first.waitForFunction(() => typeof Reflect.get(window, "showPwaNotice") === "function");
+        await first.evaluate(() => Reflect.get(window, "showPwaNotice")());
+        expect(await first.evaluate(() => JSON.parse(localStorage.getItem("kodex-interface")!).autoUpdatePwa)).toBe(true);
         await expect(notice).toContainText("Updating in 3s");
         await notice.getByRole("button", { name: "Dismiss update notice" }).click();
         await first.clock.runFor(4000);

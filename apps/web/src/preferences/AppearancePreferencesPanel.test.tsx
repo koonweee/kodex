@@ -1,5 +1,5 @@
 import { MantineProvider } from "@mantine/core";
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -41,6 +41,18 @@ describe("AppearancePreferencesPanel", () => {
       fullscreenComposerOnTouch: false,
       autoUpdatePwa: false,
     });
+  });
+
+  it("stores auto update in Interface preferences and restores it when reopened", async () => {
+    mountPanel();
+    const toggle = screen.getByRole("switch", { name: "Auto-update" });
+    expect(toggle).not.toBeChecked();
+    await userEvent.click(toggle);
+    expect(toggle).toBeChecked();
+    expect(readStoredInterfacePreferences()).toEqual({ fullscreenComposerOnTouch: true, autoUpdatePwa: true });
+    cleanup();
+    mountPanel();
+    expect(screen.getByRole("switch", { name: "Auto-update" })).toBeChecked();
   });
 
   it("browses light and dark choices without changing appearance mode or saved themes", async () => {

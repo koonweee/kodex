@@ -14,7 +14,7 @@ export type AppearancePreferencesPanelProps = {
 };
 
 export function AppearancePreferencesPanel({ preferences, resolvedSchemeId, onModeChange, onThemeChange }: AppearancePreferencesPanelProps) {
-  const { preferences: interfacePreferences, setFullscreenComposerOnTouch } = useInterfacePreferences();
+  const { preferences: interfacePreferences, setFullscreenComposerOnTouch, setAutoUpdatePwa } = useInterfacePreferences();
   const activeScheme = KODEX_COLOR_SCHEMES.find((scheme) => scheme.id === resolvedSchemeId)!;
   const [browseMode, setBrowseMode] = useState<AppearanceThemeMode>(activeScheme.mode);
   const optionRefs = useRef<Partial<Record<KodexColorSchemeId, HTMLButtonElement | null>>>({});
@@ -60,6 +60,16 @@ export function AppearancePreferencesPanel({ preferences, resolvedSchemeId, onMo
           checked={interfacePreferences.fullscreenComposerOnTouch}
           label="Open composer fullscreen when using touch"
           onChange={(event) => setFullscreenComposerOnTouch(event.currentTarget.checked)}
+        />
+      </Stack>
+      <Stack className="kodex-preferences-setting" gap={6}>
+        <Text fw={600} size="sm">Updates</Text>
+        <Switch
+          checked={interfacePreferences.autoUpdatePwa}
+          label="Auto-update"
+          aria-label="Auto-update"
+          description="Automatically reload future updates after a 3-second countdown. Unsent drafts are discarded. Saved on this device."
+          onChange={(event) => setAutoUpdatePwa(event.currentTarget.checked)}
         />
       </Stack>
       <Stack className="kodex-preferences-setting" gap={8}>

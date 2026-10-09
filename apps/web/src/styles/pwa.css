@@ -82,12 +82,3 @@
     left: max(8px, env(safe-area-inset-left));
   }
 }
-
-.kodex-pwa-auto-update {
-  margin-top: 6px;
-}
-
-@media (pointer: coarse), (any-pointer: coarse) {
-  .kodex-pwa-auto-update .mantine-Switch-body { min-height: 44px; align-items: center; }
-  .kodex-pwa-auto-update .mantine-Switch-label { display: flex; align-items: center; min-height: 44px; }
-}

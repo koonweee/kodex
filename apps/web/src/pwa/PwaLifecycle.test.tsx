@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PwaLifecycle } from "./PwaLifecycle";
+import { AppearancePreferencesPanel } from "../preferences/AppearancePreferencesPanel";
 import { readStoredInterfacePreferences } from "../preferences/useInterfacePreferences";
 import type { PwaUpdateState } from "./registerServiceWorker";
 
@@ -27,10 +28,14 @@ vi.mock("./registerServiceWorker", () => ({
   },
 }));
 
-function renderPwaLifecycle() {
+function renderPwaLifecycle(withPreferences = false) {
   return render(
     <MantineProvider>
       <PwaLifecycle />
+      {withPreferences ? <AppearancePreferencesPanel
+        preferences={{ mode: "auto", lightThemeId: "paper-light", darkThemeId: "oled-black" }}
+        resolvedSchemeId="paper-light" onModeChange={vi.fn()} onThemeChange={vi.fn()}
+      /> : null}
     </MantineProvider>,
   );
 }
@@ -106,7 +111,7 @@ describe("PwaLifecycle", () => {
   it("enabling auto update leaves the current notice manual", async () => {
     const updateServiceWorker = vi.fn().mockResolvedValue(undefined);
     act(() => emitPwaState({ needRefresh: true, updateServiceWorker }));
-    renderPwaLifecycle();
+    renderPwaLifecycle(true);
     fireEvent.click(screen.getByRole("switch", { name: "Auto-update" }));
     expect(JSON.parse(localStorage.getItem("kodex-interface")!).autoUpdatePwa).toBe(true);
     await act(async () => vi.advanceTimersByTime(5000));
@@ -119,7 +124,7 @@ describe("PwaLifecycle", () => {
   it("cancels on disable, dismiss and unmount, but offers a later bundle again", async () => {
     localStorage.setItem("kodex-interface", JSON.stringify({ autoUpdatePwa: true }));
     const updateServiceWorker = vi.fn().mockResolvedValue(undefined);
-    const view = renderPwaLifecycle();
+    const view = renderPwaLifecycle(true);
     act(() => emitPwaState({ needRefresh: true, updateServiceWorker }));
     await act(async () => vi.advanceTimersByTime(1000));
     fireEvent.click(screen.getByRole("switch", { name: "Auto-update" }));
