@@ -13,7 +13,7 @@ Pinned baseline: `@mastra/code-sdk` 1.10.1, `@mastra/core` 1.74.0, `@mastra/memo
 - Use full Mastra Code SDK, accepting its native defaults wherever possible. Prefer first-party components over custom orchestration or plugin forks.
 - One Node process hosts multiple chats. A controller per project scopes SDK project integrations; each chat has a distinct native Session/resource identity. Browser tabs observing one chat share its Session. Historical reads should not activate work.
 - Keep React/Vite; eventual backend uses TypeScript and oRPC. This spike does not change production API ownership or generated contracts.
-- Fresh dedicated Kodex profile. ChatGPT subscription login is required. Provider login, plugin installation, and MCP setup are CLI/config workflows initially.
+- Fresh dedicated Kodex profile. ChatGPT subscription login is required. Provider login and MCP setup are CLI/config workflows initially. Arbitrary plugins are explicitly deferred by the 2026-10-09 user decision; this supersedes the earlier CLI plugin-installation plan.
 - No sandbox or added approval layer. Trusted local/VPN use only.
 - Native queue: waiting input may be lost on backend restart. Stop interrupts current work; queued input may proceed. No Kodex durable queue or pause/drain state machine.
 - Standard execution: interrupted runs require explicit user continuation after restart. Do not enable experimental durable/evented recovery.

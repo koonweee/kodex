@@ -8,7 +8,7 @@ Initial main reference: `00d22832cb43a2784826b1eb9a25689d4b1e5eba`. Merge this e
 
 Deliver basically the Kodex frontend from this reference working end-to-end with the new TypeScript/oRPC/Mastra Code SDK backend. Preserve layout, controls, navigation and workflows with very little UI change. Reuse main's actual components rather than a separately reconstructed native shell/pane wherever practical. The extra in-pane thread title is an accidental difference to remove. Unimplemented features are work remaining, not evidence of native incapability.
 
-Native-first concerns ownership, not a license to change the user experience. Mastra owns execution, conversation persistence, tools, memory, goals and scheduling where supported. Kodex supplies product-specific metadata, projections and coordination where needed. Preserve previous decisions: fresh dedicated profile and ChatGPT CLI login; no sandbox; TypeScript/oRPC; no app-server fallback or generic harness adapter; volatile queue loss after restart and native Stop accepted; queued messages retain their submission-time model/reasoning settings, with picker changes affecting new submissions (explicitly accepted 2026-10-07); effectively unlimited goal evaluations; MCP Apps initially deferred; plugins/extensions require their existing isolation assessment. No legacy data migration.
+Native-first concerns ownership, not a license to change the user experience. Mastra owns execution, conversation persistence, tools, memory, goals and scheduling where supported. Kodex supplies product-specific metadata, projections and coordination where needed. Preserve previous decisions: fresh dedicated profile and ChatGPT CLI login; no sandbox; TypeScript/oRPC; no app-server fallback or generic harness adapter; volatile queue loss after restart and native Stop accepted; queued messages retain their submission-time model/reasoning settings, with picker changes affecting new submissions (explicitly accepted 2026-10-07); effectively unlimited goal evaluations; MCP Apps initially deferred; arbitrary plugins are explicitly deferred (2026-10-09); built-in Control remains supported. No legacy data migration.
 
 ## Decision rule
 
@@ -35,7 +35,7 @@ Proceed autonomously on implementation, routine design choices, tests, fixes, re
 
 ## Progress
 
-- Frozen main merged; normal chat, settings, projects, history/tools, child sessions, prompts, attachments/skills, goals, automations, terminal, MCP and Control slices have validation checkpoints below. Native-only read state is committed. Foreground presence/badges, Web Push preferences/delivery and built same-origin PWA are validated. Native extension wake/tools-only boot characterization and frozen-reference UI audit are complete. User choices remain on plugin scope and integrating the material later-main delta pinned at84b0ebc.
+- Frozen main merged; normal chat, settings, projects, history/tools, child sessions, prompts, attachments/skills, goals, automations, terminal, MCP and Control slices have validation checkpoints below. Native-only read state is committed. Foreground presence/badges, Web Push preferences/delivery and built same-origin PWA are validated. Native extension wake/tools-only boot characterization and frozen-reference UI audit are complete. Arbitrary plugins are explicitly deferred. Scope alignment remains for integrating the material later-main delta pinned at84b0ebc.
 
 ## Workflow inventory against the frozen reference
 
@@ -995,3 +995,10 @@ Frozen-reference UI correction checkpoint: failing-first focused regressions and
 Final focused56/56, browser3/3 (desktop/narrow-fine/narrow-touch), typecheck, native production build, trim and independent review pass. Browser checks actual placement, route persistence through reload and real Back/Forward with no legacy requests or console errors; desktop/touch screenshots inspected. Evidence: /tmp/kodex-native-parity-unit-red.log, /tmp/kodex-native-parity-unit-final.log, /tmp/kodex-native-navigation-red.log, /tmp/kodex-native-navigation-browser.log, /tmp/kodex-native-parity-check.log, /tmp/kodex-native-parity-build.log, /tmp/kodex-native-parity-trim.log. All terminal. The earlier complete426-backend/1388-frontend suite applies to e50094d; these targeted checks cover the subsequent bounded UI corrections. No new backend semantics or deployment.
 
 Current outstanding decisions: native tool plugins versus continued arbitrary-plugin deferral (question sent), followed by material later-main integration scope. Native provider/hook flags remain disabled until that first choice. The overall goal remains active and incomplete; no new test run or scope expansion is justified merely by waiting for the answer.
+
+
+### Arbitrary plugins deferred (2026-10-09, user decision)
+
+User selected “Defer arbitrary plugins entirely.” Keep native arbitrary-plugin loading disabled; do not enable the characterized tools-only composition or build provider routing. Existing disabled hooks remain unchanged. Built-in Kodex Control, native skills and configured MCP tools retain their current supported behavior. The fixture proofs remain capability evidence for future work, not an unfinished requirement for this port. This supersedes the earlier CLI/config plugin-installation plan and resolves the plugin-scope question.
+
+Next single decision is later-main scope: the categorized final reference84b0ebc contains material UI and command/delivery changes beyond the original small-discrepancy expectation. No later-main imports or production deployment have occurred.
