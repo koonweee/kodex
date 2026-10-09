@@ -68,6 +68,93 @@ for (const shape of [
   });
 }
 
+test("loading older history preserves the latest reading anchor through concurrent live growth", async ({ context }) => {
+  const fixture = await nativeSettingsFixture(context);
+  const recent = Array.from({ length: 30 }, (_, index) => assistantRow(`recent-${index}`, index + 30));
+  const older = Array.from({ length: 20 }, (_, index) => assistantRow(`older-${index}`, index));
+  const liveRowId = "recent-0";
+  const liveTurnId = `turn-${liveRowId}`;
+  const withLiveStatus = recent.map((entry) => entry.id === liveRowId
+    ? { ...entry, status: "inProgress" as const, item: { ...entry.item, status: "inProgress" as const, codexMethod: "item/started" } }
+    : entry);
+  fixture.detail.thread.status = "active";
+  fixture.detail.liveState = "streaming";
+  fixture.detail.timeline = {
+    ...fixture.detail.timeline,
+    activeTurnId: liveTurnId,
+    liveState: "streaming",
+    rows: withLiveStatus,
+    turns: withLiveStatus.map((entry) => ({ id: entry.turnId, status: entry.id === liveRowId ? "inProgress" as const : "completed" as const })),
+    viewRevision: 2,
+  };
+  fixture.detail.historyPage = { olderCursor: "older-anchor", newerCursor: null, hasOlder: true, limit: 50, loadedTurnCount: 30, resetWindow: false };
+  let releaseOlder: (() => void) | null = null;
+  await context.route("**/v1/threads/settings-chat/timeline/pages?*", async (route) => {
+    await new Promise<void>((resolve) => { releaseOlder = resolve; });
+    fixture.detail.timeline = {
+      ...fixture.detail.timeline,
+      rows: [...older, ...fixture.detail.timeline.rows],
+      turns: [...older.map((entry) => ({ id: entry.turnId, status: "completed" as const })), ...fixture.detail.timeline.turns],
+      viewRevision: 4,
+    };
+    fixture.detail.historyPage = { ...fixture.detail.historyPage!, olderCursor: null, hasOlder: false, loadedTurnCount: 50 };
+    await route.fulfill({ json: fixture.detail });
+  });
+
+  try {
+    const page = await fixture.page("prepend-anchor");
+    const pane = page.locator('.kodex-thread-pane[data-workspace-pane-active="true"]');
+    const scroll = pane.locator(".kodex-timeline-scroll");
+    const loadOlder = pane.getByRole("button", { name: "Load older history", exact: true });
+    await expect(pane.locator('[data-initial-bottom-aligned="true"]')).toBeVisible();
+    await scroll.evaluate(el => {
+      el.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -1_000 }));
+      el.scrollTop = 0;
+    });
+    await expect(loadOlder).toBeVisible();
+    await loadOlder.click();
+    await expect.poll(() => releaseOlder !== null).toBe(true);
+
+    const delta = `\n\n${"Live output below the reading anchor grows without moving it. ".repeat(80)}`;
+    const revision = 3;
+    fixture.detail.timeline = {
+      ...fixture.detail.timeline,
+      rows: fixture.detail.timeline.rows.map((entry) => entry.id === liveRowId ? assistantRow(liveRowId, 30, delta, true) : entry),
+      viewRevision: revision,
+    };
+    fixture.publishCanonicalEvent({
+      kind: "thread_view.item_delta",
+      seq: 30,
+      payload: { threadId: "settings-chat", turnId: liveTurnId, itemId: liveRowId, delta, viewRevision: revision },
+    }, "prepend-anchor");
+    await expect(pane.locator(".kodex-assistant-markdown").filter({ hasText: "Live output below the reading anchor grows" })).toBeAttached();
+    await page.waitForTimeout(700);
+
+    await scroll.evaluate(el => {
+      el.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: 500 }));
+      el.scrollTop += 500;
+    });
+    await page.waitForTimeout(200);
+    const before = await visibleTimelineAnchor(scroll);
+    const beforeBoundaryHeight = await pane.getByRole("region", { name: "Older history boundary" }).evaluate(element => element.getBoundingClientRect().height);
+
+    releaseOlder?.();
+    await expect(loadOlder).toHaveCount(0);
+    await page.waitForTimeout(700);
+    const anchor = scroll.locator(`[data-row-key="${before.key}"]`);
+    await expect(anchor).toBeVisible();
+    const after = await anchorOffset(scroll, anchor);
+    const afterBoundaryHeight = await pane.getByRole("region", { name: "Beginning of conversation" }).evaluate(element => element.getBoundingClientRect().height);
+    expect(afterBoundaryHeight).toBe(beforeBoundaryHeight);
+    expect(Math.abs(after - before.offset), JSON.stringify({ before, after })).toBeLessThan(2);
+  } finally {
+    releaseOlder?.();
+    await fixture.close();
+  }
+  expect(fixture.unexpected).toEqual([]);
+  expect(fixture.errors).toEqual([]);
+});
+
 test("partial lifecycle coverage refills late text once and converges after a missed stream", async ({ context }) => {
   const fixture = await nativeSettingsFixture(context);
   fixture.detail.thread.status = "active";
@@ -182,4 +269,50 @@ function row(id: string, displayOrder: number): ThreadTimelineRow {
       payload: compactCanonicalPayload({ id: itemId, type: "userMessage", clientId: "reused-client", content: [{ type: "text", text: "Repeated native history" }] }, { id: itemId, itemType: "userMessage", clientId: "reused-client" }),
     },
   };
+}
+
+function assistantRow(id: string, displayOrder: number, suffix = "", live = false): ThreadTimelineRow {
+  const turnId = `turn-${id}`;
+  const text = `Response ${id}\n\n${"Variable-height history content. ".repeat(8)}${suffix}`;
+  return {
+    id,
+    turnId,
+    kind: "assistant_message",
+    status: live ? "inProgress" : "completed",
+    displayOrder,
+    item: {
+      id,
+      threadId: "settings-chat",
+      turnId,
+      itemId: id,
+      itemType: "agentMessage",
+      status: live ? "inProgress" : "completed",
+      codexMethod: live ? "item/started" : "item/completed",
+      displayOrder,
+      payload: compactCanonicalPayload({ id, type: "agentMessage", phase: "final_answer", text }, { id, itemType: "agentMessage" }),
+    },
+  };
+}
+
+async function anchorOffset(scroll: ReturnType<Page["locator"]>, anchor: ReturnType<Page["locator"]>) {
+  return anchor.evaluate((element, scrollElement) => {
+    if (!(scrollElement instanceof HTMLElement)) throw new Error("Expected timeline scroll element");
+    return element.getBoundingClientRect().top - scrollElement.getBoundingClientRect().top;
+  }, await scroll.elementHandle());
+}
+
+async function visibleTimelineAnchor(scroll: ReturnType<Page["locator"]>) {
+  const anchor = await scroll.evaluate(element => {
+    const viewport = element.getBoundingClientRect();
+    const row = [...element.querySelectorAll<HTMLElement>(".kodex-timeline-virtual-row")].find(candidate => {
+      const bounds = candidate.getBoundingClientRect();
+      return bounds.bottom > viewport.top && bounds.top < viewport.bottom;
+    });
+    return row?.dataset.rowKey ? {
+      key: row.dataset.rowKey,
+      offset: row.getBoundingClientRect().top - viewport.top,
+    } : null;
+  });
+  if (!anchor) throw new Error("Expected a visible timeline anchor");
+  return anchor;
 }

@@ -13,7 +13,7 @@ for (const shape of [
     test.use({ viewport: { width: shape.width, height: 844 }, hasTouch: shape.hasTouch, isMobile: shape.isMobile });
     test("native revert fences old reads and converges after a missed reset in another tab", async ({ context }) => {
       const fixture = await nativeSettingsFixture(context);
-      fixture.detail.timeline = { ...fixture.detail.timeline, rows: [row("kept", 1), row("removed", 2)], turns: [{ id: "turn-kept", status: "completed" }, { id: "turn-removed", status: "completed" }], viewRevision: 2 };
+      fixture.detail.timeline = { ...fixture.detail.timeline, rows: [row("removed", 1), row("kept", 2)], turns: [{ id: "turn-removed", status: "completed" }, { id: "turn-kept", status: "completed" }], viewRevision: 2 };
       const attaches = (client: string) => fixture.requests.filter((request) => request.client === client && request.key === "POST /v1/threads/settings-chat/attach").length;
       try {
         const first = await fixture.page("first");
@@ -34,7 +34,7 @@ for (const shape of [
         fixture.holdNext("first", "snapshot", "after-revert");
         // Only the first tab sees the native revert's reset plus refetch marker.
         // The fixture captures the old response before changing native history.
-        fixture.revertTimeline({ ...fixture.detail.timeline, rows: [row("kept", 1)], turns: [{ id: "turn-kept", status: "completed" }] }, "first");
+        fixture.revertTimeline({ ...fixture.detail.timeline, rows: [row("kept", 2)], turns: [{ id: "turn-kept", status: "completed" }] }, "first");
         await expect.poll(() => fixture.wasAborted("first", "snapshot")).toBe(true);
         await expect.poll(() => attaches("first")).toBeGreaterThan(beforeResetReads);
         await expect.poll(() => fixture.isHeld("first", "snapshot", "after-revert")).toBe(true);
@@ -50,6 +50,7 @@ for (const shape of [
         await fixture.release("first", "snapshot", "after-revert");
         await expect(message(first, "kept")).toBeVisible();
         await expect(message(first, "removed")).toHaveCount(0);
+        await expect(first.locator('.kodex-thread-pane[data-workspace-pane-active="true"] .kodex-timeline-virtual-row')).toHaveCount(1);
 
         const beforeReconnectReads = attaches("second");
         fixture.disconnect("second");

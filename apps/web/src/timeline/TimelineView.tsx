@@ -1,6 +1,7 @@
 import { Box, Button, Stack, Text } from "@mantine/core";
 import { ArrowDownToLine } from "lucide-react";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { Virtuoso } from "react-virtuoso";
 
 import type { Approval, ApprovalResponse, PendingTimelineRequestSummary } from "../api/client";
@@ -21,6 +22,7 @@ import { useBottomPinnedVirtuosoTimeline } from "./useBottomPinnedVirtuosoTimeli
 const EMPTY_APPROVALS: Approval[] = [];
 
 const TIMELINE_TEXT = {
+  beginningOfConversation: "Beginning of conversation",
   loadOlderHistory: "Load older history",
   loadingOlderHistory: "Loading older history",
   scrollToBottom: "Scroll to bottom",
@@ -29,6 +31,16 @@ const TIMELINE_TEXT = {
 type TimelineRenderRow = {
   key: string;
   row: TimelineRow;
+};
+
+type TimelineVirtualContext = {
+  footer: ReactNode;
+  header: ReactNode;
+};
+
+const TIMELINE_VIRTUOSO_COMPONENTS = {
+  Footer: TimelineVirtualFooter,
+  Header: TimelineVirtualHeader,
 };
 
 export function TimelineView({
@@ -63,8 +75,10 @@ export function TimelineView({
   const rows = timeline.rows;
   const visibleDebugItems = showDebug ? timeline.hiddenItems.filter((item) => item.debugEvents.length > 0) : [];
   const [expandedWorkRowKeys, setExpandedWorkRowKeys] = useState<ReadonlySet<string>>(() => new Set());
+  const [showHistoryStart, setShowHistoryStart] = useState(false);
   useEffect(() => {
     setExpandedWorkRowKeys(new Set());
+    setShowHistoryStart(false);
   }, [threadId]);
   useEffect(() => {
     const expandableWorkRowKeys = new Set(
@@ -110,22 +124,21 @@ export function TimelineView({
   );
   const approvalsByRowKey = useMemo(() => buildTimelineRowApprovalMap(rows, approvalIndex), [approvalIndex, rows]);
   const rowCount = visibleRows.length;
+  const virtualPosition = useTimelineVirtualPosition(visibleRows, threadId);
   const virtuosoScrollParent = useTimelineScrollParent(scrollParentElement);
   const virtuosoInitialPositionProps = virtuosoScrollParent
     ? { initialTopMostItemIndex: { index: "LAST" as const, align: "end" as const } }
     : { initialItemCount: Math.min(rowCount, 30) };
+  const handleLoadOlderHistory = useCallback(() => {
+    setShowHistoryStart(true);
+    onLoadOlderHistory?.();
+  }, [onLoadOlderHistory]);
   const olderHistoryBoundary = timeline.hasOlderHistory ? (
     <OlderHistoryBoundary
       isLoading={timeline.isLoadingOlderHistory}
-      onLoadOlderHistory={onLoadOlderHistory}
+      onLoadOlderHistory={handleLoadOlderHistory}
     />
-  ) : null;
-  usePrependScrollRestoration({
-    isLoadingOlderHistory: timeline.isLoadingOlderHistory,
-    rowCount,
-    scrollParentElement,
-    threadId,
-  });
+  ) : showHistoryStart ? <HistoryStartBoundary /> : null;
   const {
     followOutput,
     handleAtBottomStateChange,
@@ -138,6 +151,11 @@ export function TimelineView({
     onReady,
     onOverflowAboveChange,
     rowCount,
+    scrollParentElement,
+    timelineLastSeq: timeline.lastSeq,
+  });
+  usePrependAnchorCorrection({
+    isLoadingOlderHistory: timeline.isLoadingOlderHistory,
     scrollParentElement,
     timelineLastSeq: timeline.lastSeq,
   });
@@ -163,24 +181,48 @@ export function TimelineView({
     );
   }
 
+  const virtualContext = {
+    footer: (
+      <>
+        <HiddenDebugPanel
+          hiddenItems={visibleDebugItems}
+          imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+          onImageOpen={onImageOpen}
+          onMarkdownOpen={onMarkdownOpen}
+          threadId={threadId}
+        />
+        {unanchoredApprovals.length > 0 ? (
+          <ThreadApprovalStack approvals={unanchoredApprovals} onDecision={onApprovalDecision} />
+        ) : null}
+      </>
+    ),
+    header: (
+      <>
+        {olderHistoryBoundary}
+        <PendingRequestSummaryStack requests={pendingRequestSummaries} />
+      </>
+    ),
+  };
+
   return (
     <Box className="kodex-timeline-virtual-root" data-initial-bottom-aligned={initialBottomAligned ? "true" : "false"}>
-      {olderHistoryBoundary}
-      <PendingRequestSummaryStack requests={pendingRequestSummaries} />
-      <Virtuoso<TimelineRenderRow>
+      <Virtuoso<TimelineRenderRow, TimelineVirtualContext>
         atBottomStateChange={handleAtBottomStateChange}
         atBottomThreshold={60}
+        components={TIMELINE_VIRTUOSO_COMPONENTS}
         computeItemKey={(index, row) => row?.key ?? visibleRows[index]?.key ?? index}
+        context={virtualContext}
         customScrollParent={virtuosoScrollParent ?? undefined}
         data={visibleRows}
         defaultItemHeight={112}
         // The real scroll parent has one follow owner, including reading pauses.
         followOutput={virtuosoScrollParent ? false : followOutput}
+        firstItemIndex={virtualPosition.firstItemIndex}
         increaseViewportBy={{ top: 720, bottom: 720 }}
         totalListHeightChanged={handleTotalListHeightChanged}
         {...virtuosoInitialPositionProps}
         itemContent={(index, renderRow = visibleRows[index]) => renderRow ? (
-          <Box className="kodex-timeline-virtual-row kodex-thread-column" data-index={index}>
+          <Box className="kodex-timeline-virtual-row kodex-thread-column" data-index={index} data-row-key={renderRow.key}>
             <TimelineRowView
               approvals={approvalsByRowKey.get(renderRow.row.key) ?? EMPTY_APPROVALS}
               imagePreviewUrlsByPath={imagePreviewUrlsByPath}
@@ -198,18 +240,9 @@ export function TimelineView({
             />
           </Box>
         ) : null}
+        key={virtualPosition.generation}
         ref={virtuosoRef}
       />
-      <HiddenDebugPanel
-        hiddenItems={visibleDebugItems}
-        imagePreviewUrlsByPath={imagePreviewUrlsByPath}
-        onImageOpen={onImageOpen}
-        onMarkdownOpen={onMarkdownOpen}
-        threadId={threadId}
-      />
-      {unanchoredApprovals.length > 0 ? (
-        <ThreadApprovalStack approvals={unanchoredApprovals} onDecision={onApprovalDecision} />
-      ) : null}
       {showScrollToBottom ? (
         <AdaptiveIconButton
           className="kodex-scroll-to-bottom"
@@ -255,50 +288,143 @@ function OlderHistoryBoundary({
   );
 }
 
-function usePrependScrollRestoration({
+function HistoryStartBoundary() {
+  return (
+    <Box aria-label="Beginning of conversation" className="kodex-thread-column" component="section">
+      <Button component="div" fullWidth size="xs" variant="subtle">
+        {TIMELINE_TEXT.beginningOfConversation}
+      </Button>
+    </Box>
+  );
+}
+
+const VIRTUOSO_INITIAL_FIRST_ITEM_INDEX = 1_000_000;
+
+function useTimelineVirtualPosition(rows: TimelineRenderRow[], threadId?: string) {
+  const firstKey = rows[0]?.key ?? null;
+  const [position, setPosition] = useState(() => ({
+    firstItemIndex: VIRTUOSO_INITIAL_FIRST_ITEM_INDEX,
+    firstKey,
+    generation: 0,
+    threadId,
+  }));
+
+  if (position.threadId !== threadId) {
+    const next = {
+      firstItemIndex: VIRTUOSO_INITIAL_FIRST_ITEM_INDEX,
+      firstKey,
+      generation: position.generation + 1,
+      threadId,
+    };
+    setPosition(next);
+    return next;
+  }
+  if (position.firstKey !== firstKey) {
+    const prependedRowCount = position.firstKey === null
+      ? 0
+      : rows.findIndex((row) => row.key === position.firstKey);
+    const isPrepend = prependedRowCount > 0;
+    const next = {
+      firstItemIndex: isPrepend
+        ? position.firstItemIndex - prependedRowCount
+        : VIRTUOSO_INITIAL_FIRST_ITEM_INDEX,
+      firstKey,
+      generation: isPrepend ? position.generation : position.generation + 1,
+      threadId,
+    };
+    // React restarts this render before commit, so a prepend reaches Virtuoso
+    // with its matching logical index. Any other leading-row replacement gets
+    // a fresh measurement generation instead of reusing an unrelated index.
+    setPosition(next);
+    return next;
+  }
+  return position;
+}
+
+function usePrependAnchorCorrection({
   isLoadingOlderHistory,
-  rowCount,
   scrollParentElement,
-  threadId,
+  timelineLastSeq,
 }: {
   isLoadingOlderHistory: boolean;
-  rowCount: number;
   scrollParentElement: HTMLDivElement | null;
-  threadId?: string;
+  timelineLastSeq: number;
 }) {
-  const pendingAnchor = useRef<{ rowCount: number; scrollHeight: number; scrollTop: number } | null>(null);
-  const lastThreadId = useRef(threadId);
+  const anchorRef = useRef<{ key: string; offset: number } | null>(null);
+  const wasLoadingRef = useRef(false);
 
   useLayoutEffect(() => {
-    if (lastThreadId.current !== threadId) {
-      lastThreadId.current = threadId;
-      pendingAnchor.current = null;
-    }
     const scrollElement = scrollParentElement;
-    if (!scrollElement || !isLoadingOlderHistory || pendingAnchor.current) {
-      return;
+    if (!scrollElement) return;
+    if (isLoadingOlderHistory) {
+      wasLoadingRef.current = true;
+      const captureAnchor = () => {
+        const viewport = scrollElement.getBoundingClientRect();
+        const row = [...scrollElement.querySelectorAll<HTMLElement>(".kodex-timeline-virtual-row")].find((candidate) => {
+          const bounds = candidate.getBoundingClientRect();
+          return bounds.bottom > viewport.top && bounds.top < viewport.bottom;
+        });
+        if (row?.dataset.rowKey) {
+          anchorRef.current = {
+            key: row.dataset.rowKey,
+            offset: row.getBoundingClientRect().top - viewport.top,
+          };
+        }
+      };
+      captureAnchor();
+      scrollElement.addEventListener("scroll", captureAnchor, { passive: true });
+      return () => scrollElement.removeEventListener("scroll", captureAnchor);
     }
-    pendingAnchor.current = {
-      rowCount,
-      scrollHeight: scrollElement.scrollHeight,
-      scrollTop: scrollElement.scrollTop,
+    if (!wasLoadingRef.current) return;
+    wasLoadingRef.current = false;
+
+    const restoreAnchor = () => {
+      const anchor = anchorRef.current;
+      if (!anchor) return;
+      const row = [...scrollElement.querySelectorAll<HTMLElement>(".kodex-timeline-virtual-row")]
+        .find((candidate) => candidate.dataset.rowKey === anchor.key);
+      if (!row) return;
+      const currentOffset = row.getBoundingClientRect().top - scrollElement.getBoundingClientRect().top;
+      const correction = currentOffset - anchor.offset;
+      if (Math.abs(correction) >= 0.5) scrollElement.scrollTop += correction;
     };
-  }, [isLoadingOlderHistory, rowCount, scrollParentElement, threadId]);
 
-  useLayoutEffect(() => {
-    const scrollElement = scrollParentElement;
-    const anchor = pendingAnchor.current;
-    if (!scrollElement || !anchor || isLoadingOlderHistory) {
-      return;
-    }
-    if (rowCount > anchor.rowCount) {
-      const heightDelta = scrollElement.scrollHeight - anchor.scrollHeight;
-      if (heightDelta > 0) {
-        scrollElement.scrollTop = anchor.scrollTop + heightDelta;
+    let restoreFrame: number | null = null;
+    const cancelRestore = () => {
+      if (restoreFrame !== null) cancelAnimationFrame(restoreFrame);
+      restoreFrame = null;
+      anchorRef.current = null;
+      scrollElement.removeEventListener("wheel", cancelRestore);
+      scrollElement.removeEventListener("touchstart", cancelRestore);
+      scrollElement.removeEventListener("pointerdown", cancelRestore);
+      document.removeEventListener("keydown", cancelRestore);
+    };
+    scrollElement.addEventListener("wheel", cancelRestore, { passive: true });
+    scrollElement.addEventListener("touchstart", cancelRestore, { passive: true });
+    scrollElement.addEventListener("pointerdown", cancelRestore);
+    document.addEventListener("keydown", cancelRestore);
+
+    let remainingPasses = 4;
+    const restoreAfterMeasurement = () => {
+      restoreAnchor();
+      remainingPasses -= 1;
+      if (remainingPasses > 0) {
+        restoreFrame = requestAnimationFrame(restoreAfterMeasurement);
+      } else {
+        cancelRestore();
       }
-    }
-    pendingAnchor.current = null;
-  }, [isLoadingOlderHistory, rowCount, scrollParentElement]);
+    };
+    restoreAfterMeasurement();
+    return cancelRestore;
+  }, [isLoadingOlderHistory, scrollParentElement, timelineLastSeq]);
+}
+
+function TimelineVirtualHeader({ context }: { context: TimelineVirtualContext }) {
+  return context.header;
+}
+
+function TimelineVirtualFooter({ context }: { context: TimelineVirtualContext }) {
+  return context.footer;
 }
 
 function pendingTimelineRequestSummaries(
