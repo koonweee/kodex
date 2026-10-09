@@ -367,7 +367,7 @@ describe("MVP composer input flows", () => {
       }));
     });
 
-    expect(await screen.findByText("Start pending turn")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Start pending turn")).toBeInTheDocument());
     const stopButton = await screen.findByRole("button", { name: /stop turn/i });
     await userEvent.click(stopButton);
     await waitFor(() => {

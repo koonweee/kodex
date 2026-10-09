@@ -1157,7 +1157,10 @@ describe("App shell", () => {
       }));
     });
 
-    expect(await screen.findByText(/live update while reading history/i)).toBeInTheDocument();
+    // The new answer may remain unmounted while the user reads older virtualized rows.
+    // Stop appears only after the same canonical patch marks the new turn streaming.
+    expect(await screen.findByRole("button", { name: /stop turn/i })).toBeInTheDocument();
+    await waitForAnimationFrame();
     expect(scrollRegion.scrollTop).toBe(600);
     expect(screen.getByRole("button", { name: /scroll to bottom/i })).toBeInTheDocument();
   });
