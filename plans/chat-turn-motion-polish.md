@@ -2,7 +2,7 @@
 
 ## Status and objective
 
-Active. Baseline harness and fixture work started on 2026-10-09. Deployment is separate.
+Complete as an implementation exploration on 2026-10-09. Deployment is separate and has not been requested.
 
 Make a normal chat turn feel composed from Send through progress, intermediate output, disclosures and completion. Reduce unnecessary rendering and avoidable layout shifts first. Use subtle motion where movement remains useful or unavoidable, without delaying content, controls or authoritative state.
 
@@ -51,7 +51,7 @@ Each retained chunk gets independent review, relevant passing checks, updated ev
 
 ## Stage 1 Establish a full-turn baseline
 
-Status: Active; baseline fixture and measurements are in progress.
+Status: Complete. The final bounded harness uses production bundles and valid canonical turn/row-delta patches, including a canonical pending user precursor before Working and true running item-upsert semantics while assistant text streams. Earlier fixture iterations that violated patch scope, item order or live-item status are explicitly excluded from the report.
 
 Build a small reproducible turn sequence through the real canonical frontend path: compose, Send, optimistic display, acknowledgment, Working, intermediate commentary, tool/file activity, final response and completion consolidation. Include one disclosure interaction while output continues. Use a production build and fixed payloads/timing; do not create a benchmark platform.
 
@@ -71,7 +71,7 @@ Exit: reproducible baseline recordings, an inventory of visible jumps and expens
 
 ## Stage 2 Remove unnecessary work and stabilize geometry
 
-Status: Pending.
+Status: Complete. Every candidate has a recorded disposition below.
 
 Evaluate all candidates below. Start with the strongest measured bottleneck and the send/completion handoffs; small independent fixes can precede visual prototypes.
 
@@ -91,7 +91,7 @@ Exit: disposition and evidence for every candidate; retained changes reduce unne
 
 ## Stage 3 Selective motion and interaction polish
 
-Status: Pending.
+Status: Complete. Motion is retained only where the interaction has reliable local provenance and does not animate layout.
 
 Compare the stabilized no-new-motion version first. Trial timings are 120–160 ms for entrances/label changes and 140–180 ms for small deliberate disclosures, using restrained easing. These are starting points, not hard-coded acceptance requirements. Effects should finish rather than queue when updates arrive rapidly.
 
@@ -111,7 +111,7 @@ Exit: each surface has a documented motion/no-motion policy; retained effects im
 
 ## Stage 4 Integrated correctness and performance
 
-Status: Pending.
+Status: Complete. Focused component and bundled-Chromium suites pass, independent review findings are resolved, and matched production-build comparisons meet the decision rules.
 
 Replay the whole turn after combining retained changes; individually pleasant effects can conflict when Send, queue/composer resizing, tool output and completion overlap.
 
@@ -151,8 +151,77 @@ Include a compact results table covering anchor displacement, frame distribution
 
 Record retained and rejected candidates, exact final behavior, test/build/trim/review outcomes, limitations and deployment status here. Keep the index synchronized. Mark Complete only when all stages have a disposition, retained work meets exit conditions and artifacts are delivered. If the exploration yields no worthwhile implementation, archive it with the evidence. Deployment requires a separate explicit request.
 
+## Execution result
+
+Retain a small combination of structural work removal and local motion:
+
+- Closed activity groups now render their summary only. Child summaries mount on first expansion, remain mounted afterward so nested open state survives close/reopen, and keep the user's `Show more` limit when new activity appends.
+- Empty approval projections return before recursively walking timeline rows. The avoided traversal is certain, but matched runs did not show a measurable speed improvement, so this is recorded only as a structural simplification.
+- Explicit activity-group and non-command activity-item contents use a 140 ms opacity/2 px entrance. The native disclosure owns geometry immediately; there is no height tween or per-frame React state.
+- The final assistant toolbar already reserves its space while streaming. Completion now transitions that same DOM node from transparent to visible over 140 ms. It is actionable as soon as canonical completion applies.
+- Reduced motion disables the retained effects. Settled content performs no continuing animation work.
+
+The final behavior intentionally leaves user-message handoff, Working/Worked labels, completed-work and command bodies, intermediate row insertion, queue/composer accessories, approvals, questions and errors immediate. A new-user entrance prototype was removed during review because optimistic provenance does not prove a fresh mount; virtualization or a delayed canonical handoff could replay it. The completed-work body trial was also removed because expanded work state survives virtualization and would replay the fade when remounted. Working-header geometry did not produce a demonstrated vertical shift, and reserving additional label/caret width would add visible blank space without measured value. Intermediate-row entrance provenance is similarly uncertain. Approvals, questions and errors stay immediately actionable. Existing composer motion remains the sole owner of composer expansion.
+
+Canonical completion continues to consolidate intermediate rows immediately into a closed Worked disclosure. An open command therefore closes at completion, while the surviving reading anchor, user message and composer remain fixed. Preserving nested open state across that reparenting would require cross-parent identity state or leaving very large work sections expanded; both were rejected. The final toolbar fade and the existing scroll owner provide the useful polish without hiding stale interactive content.
+
+Cold Markdown preloading was rejected: the corrected cold recording showed no automatic reading-anchor displacement, and eager transfer/parse work had no demonstrated benefit. No additional scroll scheduler, height observer or Working timer was added because callback/height-change counts stayed stable and existing browser tests already protect follow, reading pause and prepend behavior.
+
+### Performance findings
+
+The accepted harness ran the production frontend in Playwright's bundled Chromium on Apple Silicon at a 1280×900 viewport. It covers one 980×840 desktop fine-pointer pane, one forced 360 px compact pane, and two simultaneous 489.5 px thread panes. Stress runs used 80 command summaries and 4× CPU throttle. Each quantitative condition has three runs; video, DOM-audit and animation-audit runs are separate. The harness uses a deterministic canonical API/SSE fixture rather than a live native runtime. Text-cue timing measures DOM matching, not paint or visibility, and is therefore excluded from latency claims.
+
+The single-pane timing comparisons use the earlier reviewed production bundle; the subsequently removed Worked-body selector was inactive because those workloads never opened Worked. Current final videos and motion audits, plus all two-pane measurements, use the final reviewed bundle without that selector.
+
+| Comparison | Baseline median (range) | Candidate/final median (range) | Result |
+| --- | ---: | ---: | --- |
+| Closed stress pane nodes | 1,047 | 326 | 68.9% fewer nodes before first disclosure open |
+| Activity-only task work | 1,232 ms (967–1,427) | 955 ms (922–972) | 22.5% lower median; baseline spread is broad |
+| Activity-only script work | 747 ms (627–904) | 590 ms (584–612) | 21.0% lower median |
+| Activity-only frame p95 | 26.2 ms (26.1–26.2) | 26.2 ms (26.2–26.2) | unchanged |
+| Integrated warm task work | 760 ms (755–804) | 781 ms (775–788) | +2.8%, within the investigation threshold |
+| Isolated retained-motion layout work | 57.6 ms (52.4–63.9) | 56.6 ms (43.8–64.5) | no repeated layout regression |
+| Isolated retained-motion frame p95 | 26.1 ms (20.1–26.1) | 26.1 ms (26.0–26.1) | unchanged |
+| Two-pane workspace nodes | 1,985 | 543 | 72.6% fewer nodes across both panes |
+| Two-pane task work | 1,751 ms (1,646–2,043) | 1,907 ms (1,658–3,369) | +8.9% median; one severe final-tail outlier |
+| Two-pane frame p95 | 26.3 ms (26.2–26.9) | 26.2 ms (26.1–51.2) | median unchanged; no clean-tail claim |
+| Automatic reading-anchor displacement | 0 px | 0 px | unchanged in repeated warm and closed-stress runs |
+
+One unpaired integrated stress wave reported 40.2% higher layout work and one warm wave reported 14.1% higher style work. The required alternating isolation did not reproduce either increase: retained motion measured −1.7% layout and −6.1% style with overlapping ranges. These outliers remain in the evidence rather than being discarded. The two-pane final set also retains one severe run with 3,369 ms task work, 51.2 ms frame p95 and 17 long tasks. The other two final runs are near their matched baselines, so this is not a repeatable regression, but the evidence does not support a multi-pane speedup or clean-tail claim. The 72.6% workspace node reduction is the reliable two-pane result.
+
+The multiline composer contracts by 21 px after Send in both baseline and final recordings; this is expected draft clearing, while the existing reading anchor remains stable. The forced compact-pane final recording preserves its prior anchor and user message while the compact composer performs its expected reset. Automated clicks on an initially offscreen tall disclosure scroll it into view equally in baseline and final; canonical completion itself adds 0 px displacement.
+
+The closed-group DOM audit records 12-command descendants dropping from 120 to 11 and child summaries from 12 to zero before first open. Both builds have 119 descendants and 12 summaries after opening and after closing again, which confirms that the retained implementation saves initial work without discarding disclosure state. The 140 ms activity/footer effects finish, and the reduced-motion audit observes neither. The same final-footer node remains hidden and inert while streaming, becomes visible and actionable within the first sampled 102 ms after completion receipt, and reaches full opacity by 235 ms.
+
+### Correctness and review
+
+- Focused Vitest: 54 tests passed across activity, file, message and TimelineView rendering.
+- Bundled-Chromium Playwright: 62 tests passed across canonical send handoff, streaming animation/footer, reading intent, intermediate density, inline composer motion, queue disclosure and native queue/Stop/failure/approval/question convergence. The matrix includes desktop, narrow fine pointer, narrow touch, wide touch with a compact pane, hybrid input and same-user two-tab cases where applicable.
+- Production build and `./tools/trim-frontend.sh` pass.
+- Independent review found and resolved one stale deferred-mount test and removed the optimistic user entrance that could replay on remount. No material findings remain in the retained implementation.
+- No API, gateway lifecycle, generated contract or shared-state ownership changed. Deployment remains separate.
+
+### Artifacts
+
+- [Local comparison page](../tmp/chat-turn-polish/comparison.html)
+- [Accepted raw evidence](../tmp/chat-turn-polish/full-turn-evidence.json)
+- [Reproduction commands and measurement limits](../tmp/chat-turn-polish/README.txt)
+- [Baseline cold multiline turn](../tmp/chat-turn-polish/true-stream-baseline-cold-video/full-turn-cpu1-run1/recording.webm)
+- [Final cold multiline turn](../tmp/chat-turn-polish/true-stream-final-cold-video/full-turn-cpu1-run1/recording.webm)
+- [Baseline paused-reading stress](../tmp/chat-turn-polish/true-stream-baseline-reading-video/full-turn-cpu4-run1/recording.webm)
+- [Final paused-reading stress](../tmp/chat-turn-polish/true-stream-final-reading-video/full-turn-cpu4-run1/recording.webm)
+- [Baseline open disclosure through completion](../tmp/chat-turn-polish/true-stream-baseline-open-completion-video/full-turn-cpu4-run1/recording.webm)
+- [Final open disclosure through completion](../tmp/chat-turn-polish/true-stream-final-open-completion-video/full-turn-cpu4-run1/recording.webm)
+- [Final compact-pane turn](../tmp/chat-turn-polish/true-stream-final-narrow-video/full-turn-cpu1-run1/recording.webm)
+
 ## Experiment and decision log
 
 | Date / stage | Problem and hypothesis | Candidate | Visual and correctness evidence | Performance and limitations | Decision / next step |
 | --- | --- | --- | --- | --- | --- |
 | Planning | Code audit identifies geometry handoffs, hidden activity work and possible repeated scans | No implementation | Existing streaming/footer/composer protections identified | No new full-turn baseline yet | Proposed; begin with Stage 1 |
+| 2026-10-09 / baseline | Initial harness variants used invalid full-snapshot scope, omitted the user precursor, and later mislabeled live assistant items as completed | Correct canonical turn/row-delta fixture | True streaming guard requires running item-upsert, hidden/inert footer and live spans | 68 development/invalid groups retained as excluded diagnostics; 39 corrected groups accepted | Use corrected v4 evidence only |
+| 2026-10-09 / activity | Closed groups eagerly mounted up to 80 summaries and append reset `Show more` | First-open lazy mount with retained local contents/count | Open/current contents, append, nested detail and close/reopen tests pass | 68.9% fewer stress DOM nodes; task/script medians lower; frame p95 unchanged | Retain |
+| 2026-10-09 / approvals | Empty approval arrays triggered two recursive row walks on every row change | Two empty-state returns | Existing approval arrival/resolution and two-tab browser flow passes | Traversal removed; matched timings overlap | Retain as structural-only |
+| 2026-10-09 / geometry | Handoff, composer clearing, work transition and completion might move surviving content | Measure before adding state | Valid fixture records 0 px automatic anchor/user/composer displacement; one final user remains | 21 px textarea contraction is expected; tall-click scroll separated from completion | Keep canonical updates immediate; no geometry machinery |
+| 2026-10-09 / motion | Whole-row entrances can replay, while local activity opens and the reserved footer have reliable provenance | User/Worked prototypes; activity/footer opacity trials | User and Worked prototypes removed in review; retained 140 ms effects finish and reduced motion snaps | Alternating isolation shows no task/frame/layout regression | Retain activity/footer motion only |
+| 2026-10-09 / integrated | Queue, Stop, failure, approvals/questions, responsive input, two-tab and multi-pane flows must stay authoritative | Focused component/browser regression matrix plus compact/two-pane harness modes | 54 Vitest and 62 Playwright tests pass; build/trim pass; compact video and three two-pane pairs captured | Fixture remains synthetic; one severe two-pane tail is retained; no paint-latency or multi-pane speedup claim | Complete; deployment separate |
