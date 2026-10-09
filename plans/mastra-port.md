@@ -954,3 +954,12 @@ Next fixture-only proof: two projects/two concurrent native Sessions with global
 
 
 2026-10-09 final acceptance: pinned84b0ebc merge closes the authorized frontend port. Frontend1555, Mastra432, Rust688, service59, theme41 and built-PWA3 checks pass; native browser coverage101 passed/2 intentional skips accounts for all103 variants across bounded runs. Builds/trim/fmt and independent reviews pass. Full evidence and retained limitations: [frontend parity acceptance](mastra-frontend-parity.md#pinned-main-frontend-parity-accepted-2026-10-09).
+
+
+### Retry error reporting correction (2026-10-09)
+
+A live chat showed the generic model-failure banner while native state still reported running. The original cause was not retained, so it cannot be diagnosed retrospectively. The host previously treated every native error event as terminal, including Code SDK transient-retry announcements. It now honors `retryable: true` (including the final scheduled retry); native non-retryable events still set the shared failure projection. No host retry loop or submission replay is added. The comparison with app-server is the same native-first principle: display the upstream lifecycle rather than infer terminal failure from an intermediate transport error.
+
+Every observed chat error now writes a `chat.run_error` JSON line to backend stderr with time, chat ID, retry metadata and up to four error causes. Diagnostics include bounded redacted first-line messages, names, codes, HTTP status and message fingerprints; raw request/response bodies, headers and stacks are not serialized. Redaction is best-effort, so logs remain local operational data. The separately launched instance captures stderr in `~/.kodex/mastra-spike/serve.log`; arbitrary other launchers must retain their stderr. This cannot recover historical discarded errors. The running process needs a restart to load the change; do not interrupt another active chat just to clear its old banner.
+
+Validation: the new two-client regression failed before the change; the affected chat-service and diagnostics suites pass 14/14, and backend typecheck passes. Independent review confirmed native retry semantics; its Basic-authorization redaction finding was fixed and covered by an additional passing diagnostic regression (4/4 diagnostic tests).

@@ -417,3 +417,21 @@ test('native upload descriptors become saved image bytes and project references 
   assert.ok(JSON.stringify(request.messages).includes(`data:image/png;base64,${png}`));
   assert.ok(JSON.stringify(request.messages).includes(file.relativePath));
 });
+
+
+test('recoverable native errors stay out of both clients while terminal errors converge', { timeout: 30_000 }, async t => {
+  const { makeService, runtimes } = await setup('retry-errors');
+  const service = makeService();
+  t.after(() => service.dispose());
+  const chat = await service.createChat({ projectId: 'a' });
+  const native = await nativeSession(runtimes, chat.id);
+  const peer = service.watchChat({ chatId: chat.id });
+  await peer.next();
+  native.emit({ type: 'error', error: new Error('temporary'), retryable: true, retryAttempt: 1, maxRetries: 3, retryDelay: 100 });
+  assert.equal((await service.openChat({ chatId: chat.id })).error, null);
+  assert.equal((await peer.next()).value?.error, null);
+  native.emit({ type: 'error', error: new Error('terminal') });
+  assert.ok((await service.openChat({ chatId: chat.id })).error);
+  assert.ok((await peer.next()).value?.error);
+  await peer.return(undefined);
+});

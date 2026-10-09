@@ -1,3 +1,4 @@
+import { isNativeRetry, logChatRunError } from './chat-run-errors.js';
 import { createChatPush } from './chat-push.js';
 import type { ChatHandle as Handle } from './chat-service-types.js';
 import { createChatNotifications } from './chat-notifications.js';
@@ -113,7 +114,10 @@ export function createChatService(options: ChatServiceOptions) {
       handle.revision++;
       subagents.invalidate(parentChatId, event.type === 'display_state_changed');
       if (event.type === 'agent_start') handle.error = null;
-      if (event.type === 'error') handle.error = 'The model run failed. Please try again.';
+      if (event.type === 'error') {
+        if (!isNativeRetry(event)) handle.error = 'The model run failed. Please try again.';
+        logChatRunError(parentChatId, event);
+      }
       if (event.type === 'thread_created' || event.type === 'thread_changed' || event.type === 'thread_title_updated' || event.type === 'agent_end' || event.type === 'message_end') invalidateCatalog();
     });
     subagents.invalidate(parentChatId);
