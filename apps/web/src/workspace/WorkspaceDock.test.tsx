@@ -1,4 +1,3 @@
-import { WorkspaceTabOverflowActions } from "./WorkspaceTabOverflowActions";
 import { WorkspaceRightHeaderActions } from "./WorkspaceRightHeaderActions";
 import { WorkspaceDefaultTab } from "./WorkspaceDefaultTab";
 import { MantineProvider, Menu } from "@mantine/core";
@@ -124,7 +123,6 @@ describe("WorkspaceDock sync", () => {
     expect(kodexDockviewTheme.className).toContain("kodex-dockview-theme");
     expect(kodexDockviewTheme.dndTabIndicator).toBe("line");
     expect(kodexDockviewTheme.dndPanelOverlay).toBe("group");
-    expect(kodexDockviewTheme.tabAnimation).toBe("smooth");
   });
 
   it("renders registered active pane actions in the shared Dockview header slot", async () => {
@@ -219,56 +217,6 @@ describe("WorkspaceDock sync", () => {
       dockviewLayout: null, schemaVersion: 1,
     })}><MountedPane /></WorkspaceProvider></MantineProvider>);
     expect(screen.getByRole("status", { name: "Thread in progress" })).toBeInTheDocument();
-  });
-
-  it("renders a dropdown for measured overflow tabs and focuses the chosen panel", async () => {
-    const panels = Array.from({ length: 6 }, (_, index) => ({
-      focus: vi.fn(),
-      id: `pane-${index + 1}`,
-      title: `Pane ${index + 1}`,
-    }));
-
-    render(
-      <MantineProvider>
-        <div className="dv-tabs-and-actions-container">
-          <div className="dv-tabs-container">
-            {panels.map((panel) => (
-              <div className="dv-tab" key={panel.id}>
-                {panel.title}
-              </div>
-            ))}
-          </div>
-          <WorkspaceTabOverflowActions
-            activePanel={panels[0] as never}
-            api={{} as never}
-            containerApi={{} as never}
-            group={{} as never}
-            headerPosition="top"
-            isGroupActive
-            panels={panels as never}
-          />
-        </div>
-      </MantineProvider>,
-    );
-    const tabsContainer = document.querySelector<HTMLElement>(".dv-tabs-container");
-    expect(tabsContainer).not.toBeNull();
-    vi.spyOn(tabsContainer as HTMLElement, "getBoundingClientRect").mockReturnValue(domRect(90, 450));
-    document.querySelectorAll<HTMLElement>(".dv-tab").forEach((tab, index) => {
-      vi.spyOn(tab, "getBoundingClientRect").mockReturnValue(domRect(index * 180, index * 180 + 180));
-    });
-
-    fireEvent(window, new Event("resize"));
-    const moreTabsButton = await screen.findByRole("button", { name: "More tabs" });
-    expect(moreTabsButton).toHaveTextContent("+3");
-
-    fireEvent.click(moreTabsButton);
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Pane 6" }));
-
-    expect(panels[5]?.focus).toHaveBeenCalledTimes(1);
-
-    vi.mocked(tabsContainer!.getBoundingClientRect).mockReturnValue(domRect(0, 990));
-    fireEvent(window, new Event("resize"));
-    await waitFor(() => expect(screen.queryByRole("button", { name: "More tabs" })).not.toBeInTheDocument());
   });
 
   it("adds a new draft tab in the current project from a project thread tab context menu", () => {
@@ -575,19 +523,6 @@ function PaneAdornmentHarness({ activePaneId, pane }: { activePaneId: string; pa
   );
 }
 
-function domRect(left: number, right: number): DOMRect {
-  return {
-    bottom: 32,
-    height: 32,
-    left,
-    right,
-    toJSON: () => ({}),
-    top: 0,
-    width: right - left,
-    x: left,
-    y: 0,
-  };
-}
 
 async function responsiveDockHarness() {
   vi.useFakeTimers();

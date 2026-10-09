@@ -50,7 +50,8 @@ export const kodexDockviewTheme = {
   dndPanelOverlay: "group",
   dndTabIndicator: "line",
   dndOverlayBorder: "1px solid var(--kodex-border-accent-soft)",
-  tabAnimation: "smooth",
+  // Native target indices remain correct when overflow headers are hidden.
+  tabAnimation: "default",
   tabGroupIndicator: "none",
 } satisfies DockviewTheme;
 
@@ -233,6 +234,7 @@ export function WorkspaceDock({
         components={components}
         defaultTabComponent={WorkspaceDefaultTab}
         disableTabsOverflowList
+        scrollbars="native"
         disableDnd={singlePane}
         locked={singlePane}
         disableFloatingGroups

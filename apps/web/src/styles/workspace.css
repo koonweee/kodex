@@ -7,6 +7,7 @@
 }
 
 .kodex-workspace-dock {
+  --kodex-workspace-tab-min-width: 120px;
   --kodex-pane-bg: var(--kodex-bg-panel);
   --kodex-terminal-tab-connected-dot: #45d483;
 
@@ -27,7 +28,6 @@
   z-index: 40;
 }
 
-.kodex-workspace-dock .dv-tabs-and-actions-container .dv-scrollable,
 .kodex-workspace-dock .dv-tabs-and-actions-container .dv-tabs-container {
   flex: 1 1 auto;
   min-width: 0;
@@ -70,6 +70,12 @@
   display: inline-flex;
   height: 100%;
   position: relative;
+}
+
+.kodex-workspace-tab-overflow[data-empty] {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .kodex-workspace-tab-overflow-button {
@@ -116,7 +122,7 @@
 .kodex-workspace-dock .dv-tab {
   flex: 1 1 168px;
   max-width: 168px;
-  min-width: 120px;
+  min-width: var(--kodex-workspace-tab-min-width);
 }
 
 .kodex-workspace-dock .dv-default-tab-content {
@@ -195,27 +201,16 @@
 }
 
 .kodex-workspace-dock .dv-tabs-container {
-  scrollbar-width: none;
+  overflow: clip;
 }
 
-.kodex-workspace-dock .dv-tabs-container::-webkit-scrollbar {
+.kodex-workspace-dock .dv-tabs-container > .dv-tab[hidden] {
   display: none;
 }
 
-.kodex-workspace-dock .dv-tabs-overflow-dropdown-default {
-  border-radius: var(--kodex-radius-md);
-  min-width: 44px;
-}
-
-.kodex-workspace-dock .dv-tabs-overflow-container {
-  border-radius: var(--kodex-radius-sm);
-  box-shadow: var(--kodex-shadow-menu);
-  min-width: min(340px, calc(100vw - 24px));
-}
-
-.kodex-workspace-dock .dv-tabs-overflow-container .dv-tab {
-  max-width: none;
-  width: 100%;
+/* Even a group narrower than one normal tab keeps its selected header fitted. */
+.kodex-workspace-dock .dv-tabs-container[data-fixed-tab-count="1"] > .dv-tab {
+  min-width: 0;
 }
 
 .kodex-workspace-dock .dv-view {

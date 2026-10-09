@@ -75,7 +75,7 @@ export function WorkspaceDefaultTab(props: IDockviewPanelHeaderProps<DockviewPan
     : "Unread completed agent turn";
   return (
     <Tooltip label={tooltipLabel} disabled={!titleClipped && !unread} multiline maw="min(480px, calc(100vw - 24px))">
-      <div ref={tabRef} onMouseEnter={measureTitle} onMouseLeave={measureTitle} className={tabClassName} data-inline-adornment={inlineAdornment ? "true" : undefined} data-unread={indicatorState === "unread" ? "true" : undefined}>
+      <div data-pane-id={props.api.id} ref={tabRef} onMouseEnter={measureTitle} onMouseLeave={measureTitle} className={tabClassName} data-inline-adornment={inlineAdornment ? "true" : undefined} data-unread={indicatorState === "unread" ? "true" : undefined}>
         <DockviewDefaultTab {...props} />
         {inlineAdornment ? <span className="kodex-workspace-pane-title-adornment">{headerAdornment}</span> : headerAdornment}
       </div>
