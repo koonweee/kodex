@@ -1,7 +1,7 @@
 import "../styles/workspace.css";
 
 import { ActionIcon, Button, Drawer, Group, Stack, Text } from "@mantine/core";
-import { Check, PanelLeftOpen, X } from "lucide-react";
+import { PanelLeftOpen, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
@@ -114,11 +114,6 @@ export function WorkspaceSinglePaneHeader({ onClosePane }: { onClosePane?: (pane
                             {title}
                           </Text>
                           <WorkspacePaneIndicator pane={pane} />
-                          {isActivePane ? (
-                            <span aria-hidden="true" className="kodex-workspace-pane-manager-active-icon">
-                              <Check size={16} strokeWidth={2.4} />
-                            </span>
-                          ) : null}
                         </Button>
                         <ActionIcon
                           aria-label={`Close pane ${title}`}
