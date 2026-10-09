@@ -13,7 +13,6 @@ type QueuedMessageListProps = {
   rows: QueuedInput[];
   busy: boolean;
   partial: boolean;
-  isActive: boolean;
   onReorder: (ids: string[]) => void;
   transferringIds?: string[];
   onSendNow: (row: QueuedInput) => void;
@@ -27,7 +26,7 @@ export function QueuedMessageList(props: QueuedMessageListProps) {
   </QueueDisclosure>;
 }
 
-function QueueRows({ rows, busy, partial, isActive, onReorder, transferringIds = [], onSendNow, onEdit, onRemove }: QueuedMessageListProps) {
+function QueueRows({ rows, busy, partial, onReorder, transferringIds = [], onSendNow, onEdit, onRemove }: QueuedMessageListProps) {
   const instructionsId = useId();
   const list = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
@@ -37,7 +36,7 @@ function QueueRows({ rows, busy, partial, isActive, onReorder, transferringIds =
   const [announcement, setAnnouncement] = useState("");
   const ids = rows.map((row) => row.id);
   const order = JSON.stringify(ids);
-  const disabled = busy || partial || rows.length < 2 || !isActive;
+  const disabled = busy || partial || rows.length < 2;
 
   function cancel() {
     drag.current = null;

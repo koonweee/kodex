@@ -136,8 +136,8 @@ for (const shape of [
   });
 }
 
-// Desktop keeps neighboring panes visible while the draft receives focus.
-test("inactive-pane queue handles stay unboxed and regain reorder on focus", async ({ context }) => {
+// A visible queue stays directly interactive when a neighboring pane has focus.
+test("visible inactive-pane queue handles allow a first drag and converge across tabs", async ({ context }) => {
   const fixture = await nativeSettingsFixture(context);
   fixture.queuedInputs.push(...["First", "Second"].map((text, index) => ({
     id: `inactive-${index}`, threadId: "settings-chat", input: [{ type: "text" as const, text }],
@@ -145,6 +145,9 @@ test("inactive-pane queue handles stay unboxed and regain reorder on focus", asy
   })));
   try {
     const page = await fixture.page("inactive-handles", "/threads/settings-chat");
+    const observer = await fixture.page("queue-observer");
+    const observerRows = observer.getByRole("group", { name: "Queued message", exact: true });
+    await expect(observerRows).toHaveCount(2);
     await page.setViewportSize({ width: 1440, height: 900 });
     const pane = page.locator(".kodex-thread-pane-existing");
     const handle = pane.getByRole("button", { name: "Reorder queued message", exact: true }).first();
@@ -157,17 +160,26 @@ test("inactive-pane queue handles stay unboxed and regain reorder on focus", asy
     await page.getByRole("navigation", { name: "Workspace", exact: true }).getByRole("button", { name: "Chats", exact: true }).click();
     await page.getByRole("button", { name: "New chat", exact: true }).click();
     await expect(page.locator('.kodex-thread-pane-empty[data-workspace-pane-active="true"]')).toBeVisible();
-    await expect(handle).toBeDisabled();
-    await expect.poll(async () => (await paint()).background).toBe(enabled.background);
-    await expect.poll(async () => (await paint()).border).toBe(enabled.border);
-    await expect.poll(async () => (await paint()).color).not.toBe(enabled.color);
+    await expect(handle).toBeEnabled();
+    await expect.poll(paint).toEqual(enabled);
     await handle.hover();
     await expect.poll(async () => (await paint()).background).toBe(enabled.background);
     await page.screenshot({ path: test.info().outputPath("inactive-queue-handles.png"), animations: "disabled" });
-    await pane.getByRole("textbox", { name: "Message composer", exact: true }).click();
-    await expect(handle).toBeEnabled();
-    await expect.poll(paint).toEqual(enabled);
-    expect(fixture.requests.filter(request => request.key.endsWith("/reorder"))).toEqual([]);
+    // The first gesture must work without a prior composer click to activate this pane.
+    const source = await handle.boundingBox();
+    const rows = pane.getByRole("group", { name: "Queued message", exact: true });
+    const target = await rows.last().boundingBox();
+    if (!source || !target) throw new Error("Expected visible queue drag targets");
+    await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2);
+    const restingCursor = await handle.evaluate(element => getComputedStyle(element).cursor);
+    await page.mouse.down();
+    const draggingCursor = await handle.evaluate(element => getComputedStyle(element).cursor);
+    await test.info().attach("queue-cursors", { body: JSON.stringify({ restingCursor, draggingCursor }), contentType: "application/json" });
+    await page.mouse.move(source.x + source.width / 2, target.y + target.height / 2, { steps: 8 });
+    await page.mouse.up();
+    for (const list of [rows, observerRows]) await expect(list).toHaveText(["Second", "First"]);
+    expect(fixture.requests.filter(request => request.key.endsWith("/reorder")).map(request => request.body))
+      .toEqual([{ queuedSubmissionIds: ["inactive-1", "inactive-0"] }]);
     expect(fixture.unexpected).toEqual([]);
     expect(fixture.errors).toEqual([]);
   } finally { await fixture.close(); }

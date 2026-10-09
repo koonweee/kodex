@@ -69,7 +69,7 @@ export function NativeQueuePanel({ threadId, queue, onRestoreText, canRestoreTex
       {error ?? errorMessageFrom(query.error)}
       <Button size="compact-sm" variant="subtle" onClick={reload}>Reload queue</Button>
     </Alert> : null}
-    {rows.length > 0 ? <QueuedMessageList rows={rows} busy={busy} partial={Boolean(query.data?.nextCursor)} isActive={isActive}
+    {rows.length > 0 ? <QueuedMessageList rows={rows} busy={busy} partial={Boolean(query.data?.nextCursor)}
       onReorder={(ids) => void mutate(() => reorderQueuedInputs(threadId, ids))}
       onSendNow={(row) => queue.sendNow(row.id)}
       transferringIds={(query.data?.transfers ?? []).map((transfer) => transfer.nativeQueueId)}
