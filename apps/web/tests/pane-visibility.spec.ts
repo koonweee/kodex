@@ -79,10 +79,11 @@ test("a hidden mobile pane cannot paint its running duration over the selected p
     await expect(selectedPane.locator(".kodex-work-row")).toHaveCount(0);
 
     const hiddenPane = page.locator('.dv-render-overlay[style*="visibility: hidden"]');
-    await expect(hiddenPane.locator(".kodex-work-row")).toContainText(/Working for \d/);
-    const outgoingDigit = hiddenPane.locator(".kodex-animated-number-old");
-    await expect(outgoingDigit).toBeAttached({ timeout: 2_500 });
-    await expect(outgoingDigit).toBeHidden();
+    const hiddenWorkRow = hiddenPane.locator(".kodex-work-row");
+    await expect(hiddenWorkRow).toContainText(/Working for \d/);
+    await expect(hiddenPane).toHaveCSS("opacity", "0");
+    await expect(hiddenWorkRow.locator(".kodex-animated-number")).toHaveCount(0);
+    await expect(hiddenWorkRow).toBeHidden();
   } finally {
     await fixture.close();
   }

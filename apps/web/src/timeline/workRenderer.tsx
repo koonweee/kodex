@@ -27,7 +27,7 @@ function TimelineWorkRowRendererImpl({
     return (
       <Box className="kodex-work-row" data-state="running">
         <Text size="xs" c="dimmed">
-          <AnimatedNumericText text={label} />
+          {label}
         </Text>
         <WorkHeaderDivider />
       </Box>
@@ -112,4 +112,3 @@ function fmtElapsedCompact(elapsedSecs: number): string {
   const seconds = elapsedSecs % 60;
   return `${hours}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
 }
-

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -411,7 +411,9 @@ describe("timeline activity renderers", () => {
     expect(screen.getByText("Worked for 5s")).toBeInTheDocument();
   });
 
-  it("renders running work rows with the header divider", () => {
+  it("updates the running work timer without numeric animation", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(5_000);
     const { container } = render(
       <MantineProvider>
         <TimelineWorkRowRenderer
@@ -421,7 +423,7 @@ describe("timeline activity renderers", () => {
             turnKey: "turn-turn-1",
             turnId: "turn-1",
             state: "running",
-            startedAtMs: Date.now(),
+            startedAtMs: 0,
             displayOrder: 1.1,
             collapsedRows: [],
           }}
@@ -429,7 +431,11 @@ describe("timeline activity renderers", () => {
       </MantineProvider>,
     );
 
-    expect(screen.getByText(/Working for \d/)).toBeInTheDocument();
+    expect(screen.getByText("Working for 5s")).toBeInTheDocument();
+    expect(container.querySelector(".kodex-animated-number")).not.toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(1_000));
+    expect(screen.getByText("Working for 6s")).toBeInTheDocument();
+    expect(container.querySelector(".kodex-animated-number")).not.toBeInTheDocument();
     expect(container.querySelector(".kodex-work-header-divider")).toBeInTheDocument();
   });
 
