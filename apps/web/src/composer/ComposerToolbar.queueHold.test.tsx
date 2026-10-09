@@ -26,35 +26,45 @@ const send = () => screen.getByRole("button", { name: "Send message" });
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
-describe("touch Send hold to queue", () => {
-  it("queues once after a sustained touch and suppresses the release click", () => {
+describe("Send hold to queue", () => {
+  it.each(["touch", "mouse", "pen"])("queues once after a sustained %s press and suppresses the release click", (pointerType) => {
     const submit = vi.fn(); render(view(submit));
-    pointer(send(), "pointerdown");
+    pointer(send(), "pointerdown", { pointerType });
     act(() => vi.advanceTimersByTime(449));
     expect(submit).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(1));
     expect(submit).toHaveBeenCalledExactlyOnceWith("queue");
-    pointer(send(), "pointerup"); fireEvent.click(send());
+    pointer(send(), "pointerup", { pointerType }); fireEvent.click(send());
     expect(submit).toHaveBeenCalledTimes(1);
   });
-  it("keeps a short touch and a mouse press as ordinary Send", () => {
+  it("keeps short touch and mouse presses as ordinary Send", () => {
     const submit = vi.fn(); render(view(submit));
     pointer(send(), "pointerdown"); act(() => vi.advanceTimersByTime(100));
     pointer(send(), "pointerup"); fireEvent.click(send());
     expect(submit).toHaveBeenLastCalledWith("send");
     pointer(send(), "pointerdown", { pointerType: "mouse" });
-    act(() => vi.advanceTimersByTime(1000));
+    act(() => vi.advanceTimersByTime(100));
     pointer(send(), "pointerup", { pointerType: "mouse" }); fireEvent.click(send());
     expect(submit).toHaveBeenCalledTimes(2);
     expect(submit).toHaveBeenLastCalledWith("send");
   });
-  it.each(["pointermove", "pointerleave", "pointercancel"])("cancels a touch gesture on %s without submitting", (type) => {
+  it.each(["touch", "mouse"].flatMap(pointerType => ["pointermove", "pointerleave", "pointercancel"].map(type => ({ pointerType, type }))))("cancels $pointerType on $type without submitting", ({ pointerType, type }) => {
     const submit = vi.fn(); render(view(submit));
-    pointer(send(), "pointerdown"); pointer(send(), type, { clientX: 30 });
-    act(() => vi.advanceTimersByTime(1000)); pointer(send(), "pointerup"); fireEvent.click(send());
+    pointer(send(), "pointerdown", { pointerType }); pointer(send(), type, { pointerType, clientX: 30 });
+    act(() => vi.advanceTimersByTime(1000)); pointer(send(), "pointerup", { pointerType }); fireEvent.click(send());
     expect(submit).not.toHaveBeenCalled();
-    pointer(send(), "pointerdown"); pointer(send(), "pointerup"); fireEvent.click(send());
+    pointer(send(), "pointerdown", { pointerType }); pointer(send(), "pointerup", { pointerType }); fireEvent.click(send());
     expect(submit).toHaveBeenCalledExactlyOnceWith("send");
+  });
+  it.each([
+    { pointerType: "mouse", button: 2 },
+    { pointerType: "touch", isPrimary: false },
+  ])("ignores secondary presses: $pointerType", (init) => {
+    const submit = vi.fn(); render(view(submit));
+    pointer(send(), "pointerdown", init);
+    act(() => vi.advanceTimersByTime(1000));
+    pointer(send(), "pointerup", init);
+    expect(submit).not.toHaveBeenCalled();
   });
   it("cancels pending holds when disabled or unmounted", () => {
     const submit = vi.fn(); const rendered = render(view(submit));
@@ -82,9 +92,9 @@ describe("touch Send hold to queue", () => {
     fireEvent.keyDown(send(), { key: "Enter" }); fireEvent.click(send());
     expect(submit).toHaveBeenCalledExactlyOnceWith("send");
   });
-  it("does not queue a draft thread on hold", () => {
+  it.each(["touch", "mouse"])("does not queue a draft thread on %s hold", (pointerType) => {
     const submit = vi.fn(); render(view(submit, { selectedThreadPresent: false }));
-    pointer(send(), "pointerdown"); act(() => vi.advanceTimersByTime(1000)); pointer(send(), "pointerup"); fireEvent.click(send());
+    pointer(send(), "pointerdown", { pointerType }); act(() => vi.advanceTimersByTime(1000)); pointer(send(), "pointerup", { pointerType }); fireEvent.click(send());
     expect(submit).toHaveBeenCalledExactlyOnceWith("send");
   });
 });

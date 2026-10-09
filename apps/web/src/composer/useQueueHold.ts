@@ -4,7 +4,7 @@ const HOLD_MS = 450;
 const MOVE_TOLERANCE = 10;
 type Gesture = { pointerId: number; x: number; y: number };
 
-export function useTouchQueueHold({ enabled, onQueue }: { enabled: boolean; onQueue: () => void }) {
+export function useQueueHold({ enabled, onQueue }: { enabled: boolean; onQueue: () => void }) {
   const [holding, setHolding] = useState(false);
   const gesture = useRef<Gesture | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -34,7 +34,7 @@ export function useTouchQueueHold({ enabled, onQueue }: { enabled: boolean; onQu
       onPointerDown(event: PointerEvent<HTMLButtonElement>) {
         if (event.isPrimary === false) return;
         suppressClick.current = false;
-        if (!current.current.enabled || event.pointerType !== "touch" || event.button !== 0) return;
+        if (!current.current.enabled || event.button !== 0) return;
         clearTimer();
         gesture.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
         setHolding(true);

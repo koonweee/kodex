@@ -8,8 +8,8 @@ import type { ComposerSettings, ComposerSettingsChange, ContextUsage } from "../
 import type { ModelSummary } from "../api/client";
 import { GoalButton, type GoalControls } from "../goals/GoalControls";
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
-import { useTouchQueueHold } from "./useTouchQueueHold";
-import "./touchQueueHold.css";
+import { useQueueHold } from "./useQueueHold";
+import "./queueHold.css";
 
 const COMPOSER_TOOLBAR_TEXT = {
   addAttachment: "Add attachment",
@@ -77,7 +77,7 @@ export const ComposerToolbar = memo(function ComposerToolbar({
     }
     setAttachmentMenuOpen(opened);
   }
-  const queueHold = useTouchQueueHold({
+  const queueHold = useQueueHold({
     enabled: selectedThreadPresent && canSubmitComposer && !disabled && !isSubmitting && !shouldShowStopAction,
     onQueue: () => {
       const form = document.getElementById(formId) as HTMLFormElement | null;
@@ -177,7 +177,7 @@ export const ComposerToolbar = memo(function ComposerToolbar({
           data-action-state="idle"
           disabled={!canSubmitComposer}
           label={actionLabel}
-          tooltip={selectedThreadPresent ? `${actionLabel} · Hold to queue on touch` : actionLabel}
+          tooltip={selectedThreadPresent ? `${actionLabel} · Hold to queue` : actionLabel}
           type="submit"
           data-submit-intent={alternateSubmitPreview ? "alternate" : undefined}
           {...queueHold.handlers}
