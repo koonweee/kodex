@@ -35,8 +35,11 @@ test('native saved tool groups and debug payloads remain inspectable across peer
       const group = pane(tab).locator('.kodex-activity-group');
       await expect(group).toHaveCount(1);
       await expect(group).not.toHaveAttribute('open', '');
+      await expect(pane(tab).getByText('Inspecting the shell failure.', { exact: true })).toHaveCount(0);
       await group.locator(':scope > summary').click();
-      await group.locator('.kodex-activity-item > summary').click();
+      await group.getByText('Assistant', { exact: true }).click();
+      await expect(group.getByText('Inspecting the shell failure.', { exact: true })).toBeVisible();
+      await group.locator('.kodex-activity-item > summary').filter({ hasNotText: 'Assistant' }).click();
       await expect(group.locator('.kodex-timeline-output')).toHaveCount(0);
     }
     const reads = () => [historyReads.get(page)!(), historyReads.get(peer)!()];
@@ -55,8 +58,12 @@ test('native saved tool groups and debug payloads remain inspectable across peer
     await peer.reload();
     const group = pane(peer).locator('.kodex-activity-group');
     await expect(group).toHaveCount(1);
+    await expect(pane(peer).getByText('fixture:RUN_SHELL_FAILURE', { exact: true })).toBeVisible();
+    await expect(pane(peer).getByText('Inspecting the shell failure.', { exact: true })).toHaveCount(0);
     await group.locator(':scope > summary').click();
-    await group.locator('.kodex-activity-item > summary').click();
+    await group.getByText('Assistant', { exact: true }).click();
+    await expect(group.getByText('Inspecting the shell failure.', { exact: true })).toBeVisible();
+    await group.locator('.kodex-activity-item > summary').filter({ hasNotText: 'Assistant' }).click();
     await expect(group.locator('.kodex-timeline-output')).toHaveCount(0);
     const afterReload = historyReads.get(peer)!();
     expect(afterReload).toBeGreaterThan(beforeToggle[1]);
@@ -64,7 +71,7 @@ test('native saved tool groups and debug payloads remain inspectable across peer
     await expect(group.locator('.kodex-timeline-output')).toBeVisible();
     expect(historyReads.get(peer)!()).toBe(afterReload);
     await setNativeMenuPreference(peer, 'Show debug events', true);
-    const debug = group.locator('.kodex-timeline-debug').first();
+    const debug = group.locator('.kodex-activity-item').filter({ has: peer.locator('.kodex-command-panel') }).locator('.kodex-timeline-debug');
     await debug.locator(':scope > summary').click();
     await expect(debug.locator('pre')).toContainText('execute_command');
     await expect(debug.locator('pre')).toContainText('NATIVE_SHELL_OUTPUT');

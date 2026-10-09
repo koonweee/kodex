@@ -1,10 +1,27 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pane, send, startBackend, stopBackend } from './fixtures/mastra';
 import { setNativeMenuPreference } from './fixtures/mastra-preferences';
+
+async function openFileOperation(group: Locator) {
+  await expect(group).not.toHaveAttribute('open');
+  await expect(group.locator('.kodex-file-change-block')).toHaveCount(0);
+  await group.locator(':scope > summary').click();
+  const operation = group.locator('details.kodex-activity-item');
+  await expect(operation).not.toHaveAttribute('open');
+  await expect(group.locator('.kodex-file-change-block')).toHaveCount(0);
+  await operation.locator(':scope > summary').click();
+  return group.locator('.kodex-file-change-block');
+}
+
+async function verifyCollapsedMarker(scope: Locator) {
+  const group = scope.locator('details.kodex-activity-group').filter({ hasText: 'Read marker.txt' }).first();
+  const output = await openFileOperation(group);
+  await expect(output).toContainText('BROWSER_TOOL_MARKER');
+}
 
 test('existing Kodex UI shares native streaming, queue/stop, tool history and restart state across two tabs', async ({ context, page }) => {
   const root = await mkdtemp(join(tmpdir(), 'kodex-mastra-browser-'));
@@ -57,6 +74,7 @@ test('existing Kodex UI shares native streaming, queue/stop, tool history and re
     await send(page, 'HOLD_STOP');
     for (const tab of [page, second]) {
       await expect(pane(tab).getByText('started:HOLD_STOP', { exact: true })).toBeVisible();
+      await expect(pane(tab).getByRole('status').filter({ hasText: /^Working$/ })).toBeVisible();
       await expect(pane(tab).getByRole('button', { name: 'Stop turn', exact: true })).toBeVisible();
     }
     await send(second, 'AFTER_STOP', true);
@@ -82,13 +100,15 @@ test('existing Kodex UI shares native streaming, queue/stop, tool history and re
     await page.getByRole('dialog', { name: 'Edit queued message' }).getByRole('button', { name: 'Close', exact: true }).click();
     await pane(page).getByRole('button', { name: 'Reload queue', exact: true }).click();
     await pane(page).getByRole('button', { name: 'Stop turn', exact: true }).click();
-    for (const tab of [page, second]) await expect(pane(tab).getByText('fixture:AFTER_STOP_EDITED', { exact: true })).toBeVisible();
+    for (const tab of [page, second]) {
+      await expect(pane(tab).getByText('fixture:AFTER_STOP_EDITED', { exact: true })).toBeVisible();
+      await expect(pane(tab).getByRole('status').filter({ hasText: /^Working$/ })).toHaveCount(0);
+    }
     await send(page, 'READ_MARKER');
     for (const tab of [page, second]) await expect(pane(tab).getByText('fixture:READ_MARKER', { exact: true })).toBeVisible();
-    await expect(pane(page).getByText('Read marker.txt', { exact: true })).toBeVisible();
-    for (const tab of [page, second]) await expect(pane(tab).getByText(/BROWSER_TOOL_MARKER/)).toBeVisible();
+    for (const tab of [page, second]) await verifyCollapsedMarker(pane(tab));
     await second.reload();
-    await expect(pane(second).getByText(/BROWSER_TOOL_MARKER/)).toBeVisible();
+    await verifyCollapsedMarker(pane(second));
     await expect(pane(second).getByText('fixture:READ_MARKER', { exact: true })).toBeVisible();
     await send(page, 'HOLD_RESTART');
     await expect(pane(second).getByText('started:HOLD_RESTART', { exact: true })).toBeVisible();
@@ -466,7 +486,7 @@ test('native shell output uses main command rendering without an invented succes
   page.on('pageerror', error => errors.push(error.message));
   const verify = async (tab: Page) => {
     await pane(tab).locator('.kodex-activity-group > summary').click();
-    await pane(tab).locator('.kodex-activity-item > summary').click();
+    await pane(tab).locator('.kodex-activity-item > summary').filter({ hasNotText: 'Assistant' }).click();
     await expect(pane(tab).getByText('Shell', { exact: true })).toBeVisible();
     await expect(pane(tab).locator('.kodex-command-panel')).toContainText("$ printf 'NATIVE_SHELL_OUTPUT");
     await expect(pane(tab).locator('.kodex-timeline-output')).toHaveCount(0);
@@ -522,7 +542,7 @@ test('native subagent inspection reuses main viewer across peers and restart', a
     await viewer.getByRole('textbox', { name: 'Subagent', exact: true }).click();
     await page.getByRole('option', { name: /Fork history/ }).click();
     await expect(viewer.getByText('BROWSER_CHILD_RESULT_FORKED', { exact: true })).toBeVisible();
-    await expect(viewer.getByText('BROWSER_TOOL_MARKER', { exact: false }).first()).toBeVisible();
+    await verifyCollapsedMarker(viewer);
     await page.screenshot({ path: test.info().outputPath('native-subagent-viewer.png') });
     expect(errors).toEqual([]);
   } finally { if (backend) await stopBackend(backend); await rm(root, { recursive: true, force: true }); }
@@ -535,6 +555,12 @@ test('native file summaries preserve real replacement failures across peers and 
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   const verify = async (tab: Page) => {
+    const groups = pane(tab).locator('details.kodex-activity-group');
+    await expect(groups).toHaveCount(2);
+    for (const group of await groups.all()) {
+      await expect(group.locator(':scope > summary')).toContainText('Requested 1 file operation');
+      await openFileOperation(group);
+    }
     const operations = pane(tab).locator('.kodex-file-change-block');
     await expect(operations).toHaveCount(2);
     await expect(operations.first()).toContainText('marker.txt');
@@ -568,7 +594,7 @@ test('fresh delegated children use the main read-only viewer across peers and re
     const viewer = tab.getByRole('complementary', { name: 'Subagent thread viewer' });
     await expect(viewer).toBeVisible();
     await expect(viewer.getByText('BROWSER_FRESH_RESULT', { exact: true })).toBeVisible();
-    await expect(viewer.getByText('BROWSER_TOOL_MARKER', { exact: false }).first()).toBeVisible();
+    await verifyCollapsedMarker(viewer);
     await expect(viewer.getByText('Read-only', { exact: true })).toBeVisible();
     await expect(viewer.getByRole('textbox', { name: 'Subagent', exact: true })).toHaveValue(/Delegated child/);
     await expect(viewer.getByRole('textbox', { name: /message composer/i })).toHaveCount(0);

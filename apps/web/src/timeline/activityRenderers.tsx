@@ -27,6 +27,7 @@ import type { TimelineItem, WebSearchAction } from "./reducer";
 type TimelineActivityGroupRendererProps = {
   imagePreviewUrlsByPath?: Record<string, string>;
   items: TimelineItem[];
+  fallbackSummary?: string;
   onImageOpen?: (image: ImageLightboxImage) => void;
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   showDebug?: boolean;
@@ -38,6 +39,7 @@ const ACTIVITY_ITEM_RENDER_CHUNK = 80;
 function TimelineActivityGroupRendererImpl({
   imagePreviewUrlsByPath = {},
   items,
+  fallbackSummary,
   onImageOpen,
   onMarkdownOpen,
   showDebug = false,
@@ -56,7 +58,7 @@ function TimelineActivityGroupRendererImpl({
       <summary>
         <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
           <Terminal size={15} />
-          <ActivityGroupSummary items={items} />
+          <ActivityGroupSummary items={items} fallbackSummary={fallbackSummary} />
         </Group>
       </summary>
       <Stack gap={4}>

@@ -3,11 +3,11 @@ import { ActivityCommandCount } from "./ActivityCommandCount";
 import { activityGroupSummary } from "./activitySummary";
 import type { TimelineItem } from "./reducer";
 
-export function ActivityGroupSummary({ items }: { items: TimelineItem[] }) {
+export function ActivityGroupSummary({ items, fallbackSummary = "Worked" }: { items: TimelineItem[]; fallbackSummary?: string }) {
   const commandCount = items.filter((item) => item.kind === "command_execution").length;
-  const activitySummary = activityGroupSummary(items.filter(item => item.kind !== "command_execution"));
+  const activitySummary = activityGroupSummary(items.filter(item => item.kind !== "command_execution"), fallbackSummary);
   const prefix = commandCount
-    ? activitySummary === "Worked" ? "Ran " : `${activitySummary}, ran `
+    ? activitySummary === fallbackSummary ? "Ran " : `${activitySummary}, ran `
     : activitySummary;
   const suffix = commandCount === 1 ? " command" : " commands";
   const summary = commandCount ? `${prefix}${commandCount}${suffix}` : prefix;

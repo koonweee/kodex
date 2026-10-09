@@ -19,6 +19,8 @@ import { nativeUnreadCompletion, timelinePresentation } from './presentation';
 import { useNativeReadState } from './useNativeReadState';
 import { nativeReadWitness } from './nativeReadWitness';
 import { NativeComposer } from './NativeComposer';
+import { NativeExecutionStatus } from './NativeExecutionStatus';
+import { useNativeOptimisticMessages } from './useNativeOptimisticMessages';
 import { SubagentPaneToggle } from '../threads/SubagentPaneToggle';
 import { threadIndicatorState } from '../threads/ThreadStatusIndicator';
 import { useNativeSubagents } from './useNativeSubagents';
@@ -43,7 +45,8 @@ export function NativeThreadPane({ pane, draftStore, onError }: { pane: Workspac
   const hasSubagents = Boolean(subagents.error || subagents.snapshot?.invocations.length || subagents.snapshot?.forks.length || subagents.snapshot?.children.length || subagents.snapshot?.history.hasOlder);
   const isActive = workspace.activePaneId === pane.id;
   const unreadCompletion = nativeUnreadCompletion(snapshot?.readState);
-  const timeline = useMemo(() => snapshot ? timelinePresentation(snapshot, isLoadingOlderHistory) : null, [snapshot, isLoadingOlderHistory]);
+  const canonicalTimeline = useMemo(() => snapshot ? timelinePresentation(snapshot, isLoadingOlderHistory) : null, [snapshot, isLoadingOlderHistory]);
+  const { timeline, ...optimisticCallbacks } = useNativeOptimisticMessages(chatId, canonicalTimeline);
   const questionItems = useMemo(() => timeline?.rows.flatMap(row => row.type === 'item' ? [row.item] : []) ?? [], [timeline]);
   const nativePrompts = useMemo(() => [
     ...(snapshot?.prompts ?? []).map(prompt => ({ prompt })), ...(subagents.snapshot?.childPrompts ?? []),
@@ -131,11 +134,12 @@ export function NativeThreadPane({ pane, draftStore, onError }: { pane: Workspac
     {isUnavailable ? <ThreadUnavailablePane paneId={pane.id} onBrowseThreads={onShowMobileSidebar} /> : <Box className="kodex-thread-content" data-subagent-sidebar={subagentsOpen ? "open" : "closed"}><div className="kodex-thread-scroll-frame" data-overflow-above={overflowAbove ? "true" : undefined} data-overflow-below={overflowBelow ? "true" : undefined}><div className="kodex-thread-pane-scroll kodex-timeline-scroll" ref={setScrollParent}>
       {isInitialLoading ? <TimelineLoadingSkeleton /> : timeline ? <AsyncQuestionReplyProvider key={chatId} threadId={chatId!} enabled={!archived} items={questionItems} submitReply={submitQuestionReply}><TimelineView approvals={[]} imagePreviewUrlsByPath={{}} onApprovalDecision={() => {}} onImageOpen={onImageOpen} onLoadOlderHistory={loadOlderHistory} onMarkdownOpen={onMarkdownOpen} onOverflowAboveChange={setOverflowAbove} onOverflowBelowChange={setOverflowBelow} onReady={() => {}} scrollParentElement={scrollParent} showDebug={showDebugEvents} threadId={chatId ?? undefined} timeline={timeline} /></AsyncQuestionReplyProvider> : null}
       {chatId && nativePrompts.length ? <NativePromptStack prompts={nativePrompts} onRefresh={() => { retry(); subagents.retry(); }} onRespond={response => mastraClient.respondPrompt({ chatId, ...response })} /> : null}
+      <NativeExecutionStatus snapshot={snapshot} chatId={chatId} archived={archived} />
     </div></div>
       {subagentsOpen && chatId ? <NativeSubagentViewer chatId={chatId} inventory={subagents.snapshot} selectedId={subagents.selectedId} onSelect={subagents.select}
         error={subagents.error} onReload={subagents.retry} loadingMore={subagents.isLoadingOlderHistory} onLoadMore={subagents.loadOlderHistory}
         onImageOpen={onImageOpen} onMarkdownOpen={onMarkdownOpen} showDebug={showDebugEvents} /> : null}
     </Box>}
-    {!isUnavailable && <NativeComposer pane={pane} snapshot={snapshot} ready={!chatId || Boolean(snapshot)} isActive={isActive} draftStore={draftStore} onError={onError} onQueueReload={retry} />}
+    {!isUnavailable && <NativeComposer {...optimisticCallbacks} pane={pane} snapshot={snapshot} ready={!chatId || Boolean(snapshot)} isActive={isActive} draftStore={draftStore} onError={onError} onQueueReload={retry} />}
   </PaneLayout>;
 }

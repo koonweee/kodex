@@ -7,6 +7,11 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 import { defaultDisplayState } from '../../../../spikes/mastra-code-sdk/node_modules/@mastra/core/dist/agent-controller/index.js';
 import { NativeComposer } from './NativeComposer';
+import { useMemo } from 'react';
+import type { ComposerDraftStore } from '../composer/useComposerDraftState';
+import { useNativeOptimisticMessages } from './useNativeOptimisticMessages';
+import { timelinePresentation } from './presentation';
+import { TimelineView } from '../timeline/TimelineView';
 import type { ChatSnapshot, CatalogSnapshot } from './client';
 import { NativeCatalogProvider } from './NativeCatalogContext';
 import type { WorkspacePane } from '../workspace/paneTypes';
@@ -17,6 +22,7 @@ const workspace = vi.hoisted(() => ({ updatePane: vi.fn().mockResolvedValue(unde
 vi.mock('./client', () => ({ mastraClient: rpc, mastraUploadClient: rpc }));
 vi.mock('../workspace/WorkspaceProvider', () => ({ useWorkspace: () => workspace }));
 const onError = vi.fn();
+const optimistic = { onOptimisticUserMessageStarted: vi.fn(), onOptimisticUserMessageSent: vi.fn(), onOptimisticUserMessageRemoved: vi.fn() };
 const levels = ['off', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 const models = [{ id: 'openai-codex/gpt-5.4', provider: 'openai-codex', modelName: 'gpt-5.4', hasApiKey: true, useCount: 0, thinkingLevels: [...levels] }, { id: 'openai-codex/gpt-5.5', provider: 'openai-codex', modelName: 'gpt-5.5', hasApiKey: true, useCount: 0, thinkingLevels: [...levels] }];
 function snapshot(modelId = models[0].id, thinkingLevel: 'high' | 'medium' | 'max' = 'medium'): ChatSnapshot {
@@ -27,12 +33,18 @@ function defaultsStream() {
   return { publish(value: unknown) { if (!consumer) throw new Error('No defaults consumer'); consumer({ value, done: false }); consumer = undefined; }, iterable: { [Symbol.asyncIterator]() { return { next: () => new Promise<IteratorResult<unknown>>(resolve => { consumer = resolve; }) }; } } };
 }
 function defaults(modelId = models[0].id, thinkingLevel = 'medium') { return { readState: nativeReadStateFixture(), epoch: 'epoch', revision: 1, history: { earliest: null, hasOlder: false }, version: 'version', modelId, thinkingLevel, thinkingLevels: [...levels] }; }
-function renderComposer(pane: WorkspacePane, initial: ChatSnapshot | null) {
+function IntegratedComposer({ pane, snapshot: current, draftStore }: { pane: WorkspacePane; snapshot: ChatSnapshot | null; draftStore: ComposerDraftStore }) {
+  const canonical = useMemo(() => current ? timelinePresentation(current) : null, [current]);
+  const { timeline, ...callbacks } = useNativeOptimisticMessages(current?.chat.id ?? null, canonical);
+  return <><NativeComposer pane={pane} snapshot={current} ready isActive draftStore={draftStore} onError={onError} {...callbacks} />
+    {timeline && <TimelineView onReady={() => {}} scrollParentElement={null} approvals={[]} imagePreviewUrlsByPath={{}} onApprovalDecision={() => {}} onImageOpen={() => {}} onLoadOlderHistory={() => {}} onMarkdownOpen={() => {}} showDebug={false} threadId={current?.chat.id} timeline={timeline} />}</>;
+}
+function renderComposer(pane: WorkspacePane, initial: ChatSnapshot | null, integrated = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const draftStore = new Map();
   let currentPane = pane;
   let catalog: CatalogSnapshot = { epoch: 'epoch', revision: 1, archivedChatIds: [], pinnedDescendants: [], pinnedChatIds: [], projects: [{ id: 'project', name: 'Project', roots: ['/project'] }, { id: 'other', name: 'Other', roots: ['/other'] }], chats: [] };
-  const element = (value: ChatSnapshot | null) => <QueryClientProvider client={client}><MantineProvider env="test"><NativeCatalogProvider snapshot={catalog}><NativeComposer pane={currentPane} snapshot={value} ready isActive draftStore={draftStore} onError={onError} /></NativeCatalogProvider></MantineProvider></QueryClientProvider>;
+  const element = (value: ChatSnapshot | null) => <QueryClientProvider client={client}><MantineProvider env="test"><NativeCatalogProvider snapshot={catalog}>{integrated ? <IntegratedComposer pane={currentPane} snapshot={value} draftStore={draftStore} /> : <NativeComposer pane={currentPane} snapshot={value} ready isActive draftStore={draftStore} onError={onError} {...optimistic} />}</NativeCatalogProvider></MantineProvider></QueryClientProvider>;
   const view = render(element(initial));
   return { ...view, rerenderCatalog(value: CatalogSnapshot, current: ChatSnapshot | null = null) { catalog = value; view.rerender(element(current)); }, rerenderSnapshot(value: ChatSnapshot) { view.rerender(element(value)); }, rerenderPane(value: WorkspacePane) { currentPane = value; view.rerender(element(null)); } };
 }
@@ -52,6 +64,66 @@ function setup() {
   rpc.createChat.mockResolvedValue({ id: 'created' });
 }
 afterEach(() => { vi.clearAllMocks(); vi.restoreAllMocks(); });
+it('starts a correlated optimistic message before acceptance and marks it sent without removing it', async () => {
+  setup();
+  let accept!: (value: unknown) => void;
+  rpc.send.mockReturnValue(new Promise(resolve => { accept = resolve; }));
+  renderComposer({ id: 'pane', kind: 'thread', target: { mode: 'existing', threadId: 'chat' } }, snapshot());
+  await userEvent.type(screen.getByLabelText('Message composer'), 'Optimistic input');
+  await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  await waitFor(() => expect(optimistic.onOptimisticUserMessageStarted).toHaveBeenCalledWith({ clientRequestId: expect.any(String), text: 'Optimistic input', threadId: 'chat', skillMentions: [] }));
+  const id = optimistic.onOptimisticUserMessageStarted.mock.calls[0][0].clientRequestId;
+  expect(rpc.send).toHaveBeenCalledWith({ chatId: 'chat', queueIfPending: true, text: 'Optimistic input', clientId: id });
+  expect(optimistic.onOptimisticUserMessageSent).not.toHaveBeenCalled();
+  await act(async () => accept({ accepted: true }));
+  expect(optimistic.onOptimisticUserMessageSent).toHaveBeenCalledWith(id);
+  expect(optimistic.onOptimisticUserMessageRemoved).not.toHaveBeenCalled();
+});
+it.each([true, false])('keeps a real timeline bubble until canonical replacement, acknowledgment first %s', async acknowledgmentFirst => {
+  setup();
+  let accept!: (value: unknown) => void;
+  rpc.send.mockReturnValue(new Promise(resolve => { accept = resolve; }));
+  const view = renderComposer({ id: 'pane', kind: 'thread', target: { mode: 'existing', threadId: 'chat' } }, snapshot(), true);
+  await userEvent.type(screen.getByLabelText('Message composer'), 'Immediate bubble');
+  await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  expect(await screen.findByText('Immediate bubble')).toBeVisible();
+  const clientId = rpc.send.mock.calls[0][0].clientId;
+  if (acknowledgmentFirst) await act(async () => accept({ accepted: true }));
+  view.rerenderSnapshot({ ...snapshot(), revision: 2 });
+  expect(screen.getAllByText('Immediate bubble')).toHaveLength(1);
+  view.rerenderSnapshot({ ...snapshot(), revision: 3, messages: [{ id: 'native', role: 'signal', createdAt: new Date(), content: { format: 2, parts: [{ type: 'text', text: 'Immediate bubble' }], metadata: { signal: { type: 'user', metadata: { clientId } } } } }] });
+  if (!acknowledgmentFirst) await act(async () => accept({ accepted: true }));
+  expect(screen.getAllByText('Immediate bubble')).toHaveLength(1);
+  view.rerenderSnapshot({ ...snapshot(), revision: 4 });
+  expect(screen.queryByText('Immediate bubble')).not.toBeInTheDocument();
+});
+it('removes a failed real timeline bubble, restores the draft and gives retry a fresh identity', async () => {
+  setup();
+  let reject!: (reason: Error) => void;
+  rpc.send.mockReturnValueOnce(new Promise((_, fail) => { reject = fail; }));
+  renderComposer({ id: 'pane', kind: 'thread', target: { mode: 'existing', threadId: 'chat' } }, snapshot(), true);
+  await userEvent.type(screen.getByLabelText('Message composer'), 'Retry bubble');
+  await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  expect(await screen.findByText('Retry bubble')).toBeVisible();
+  const firstId = rpc.send.mock.calls[0][0].clientId;
+  await act(async () => reject(new Error('Offline')));
+  expect(screen.getByLabelText('Message composer')).toHaveValue('Retry bubble');
+  expect(screen.queryByText('Retry bubble', { selector: 'p' })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  expect(await screen.findByText('Retry bubble')).toBeVisible();
+  expect(rpc.send.mock.calls[1][0].clientId).not.toBe(firstId);
+});
+it.each(['applied', 'conflict', 'uncertain'])('removes optimism on native queue outcome %s without reporting a sent message', async outcome => {
+  setup(); rpc.send.mockResolvedValue({ accepted: outcome === 'applied', outcome, snapshot: nativeQueueFixture() });
+  renderComposer({ id: 'pane', kind: 'thread', target: { mode: 'existing', threadId: 'chat' } }, snapshot());
+  await userEvent.type(screen.getByLabelText('Message composer'), 'Queue routed');
+  await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  await waitFor(() => expect(optimistic.onOptimisticUserMessageRemoved).toHaveBeenCalled());
+  expect(optimistic.onOptimisticUserMessageSent).not.toHaveBeenCalled();
+  expect(screen.getByLabelText('Message composer')).toHaveValue(outcome === 'applied' ? '' : 'Queue routed');
+  expect(onError).toHaveBeenCalledTimes(outcome === 'applied' ? 0 : 1);
+  expect(rpc.send).toHaveBeenCalledTimes(1);
+});
 it('uses native controls and sparse edits while a late acknowledgment cannot overwrite canonical settings', async () => {
   setup();
   let acknowledge!: (value: unknown) => void;
@@ -64,7 +136,7 @@ it('uses native controls and sparse edits while a late acknowledgment cannot ove
   expect(await screen.findByRole('button', { name: 'Model: gpt-5.5, max' })).toBeInTheDocument();
   await userEvent.type(screen.getByLabelText('Message composer'), 'Existing text');
   await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
-  await waitFor(() => expect(rpc.send).toHaveBeenCalledWith({ chatId: 'chat', queueIfPending: true, text: 'Existing text' }));
+  await waitFor(() => expect(rpc.send).toHaveBeenCalledWith({ chatId: 'chat', clientId: expect.any(String), queueIfPending: true, text: 'Existing text' }));
   expect(rpc.createChat).not.toHaveBeenCalled();
 });
 it('keeps explicit draft choices local through defaults updates and passes them only at creation', async () => {
@@ -202,7 +274,7 @@ it('shows a native Fast rejection without changing canonical settings or replayi
   expect(screen.getByRole('button', { name: 'Model: claude-sonnet-4-5, medium' })).toBeEnabled();
   await userEvent.type(screen.getByLabelText('Message composer'), 'Use normal responses');
   await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
-  await waitFor(() => expect(rpc.send).toHaveBeenCalledWith({ chatId: 'chat', queueIfPending: true, text: 'Use normal responses' }));
+  await waitFor(() => expect(rpc.send).toHaveBeenCalledWith({ chatId: 'chat', clientId: expect.any(String), queueIfPending: true, text: 'Use normal responses' }));
   expect(rpc.createChat).not.toHaveBeenCalled();
 });
 
@@ -269,7 +341,7 @@ it('keeps a detached existing chat usable through its own native binding', async
   await waitFor(() => expect(rpc.listModels).toHaveBeenCalledWith({ chatId: 'chat' }));
   await userEvent.type(screen.getByLabelText('Message composer'), 'Detached input');
   await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
-  await waitFor(() => expect(rpc.send).toHaveBeenCalledWith({ chatId: 'chat', queueIfPending: true, text: 'Detached input' }));
+  await waitFor(() => expect(rpc.send).toHaveBeenCalledWith({ chatId: 'chat', clientId: expect.any(String), queueIfPending: true, text: 'Detached input' }));
   expect(rpc.createChat).not.toHaveBeenCalled();
 });
 
@@ -391,7 +463,7 @@ it('uploads image and file attachments through native RPC and sends their descri
   await userEvent.upload(container.querySelector<HTMLInputElement>('input[type="file"]')!, [imageFile, textFile]);
   await userEvent.type(screen.getByLabelText('Message composer'), 'Read attachments');
   await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
-  await waitFor(() => expect(rpc.send).toHaveBeenCalledWith({ chatId: 'chat', queueIfPending: true, text: 'Read attachments', images: [image], files: [file] }));
+  await waitFor(() => expect(rpc.send).toHaveBeenCalledWith({ chatId: 'chat', clientId: expect.any(String), queueIfPending: true, text: 'Read attachments', images: [image], files: [file] }));
   expect(rpc.uploadImage).toHaveBeenCalledWith({ chatId: 'chat', file: imageFile });
   expect(rpc.uploadFile).toHaveBeenCalledWith({ chatId: 'chat', file: textFile });
   expect(gateway.callsFor('POST', '/v1/uploads/images')).toHaveLength(0);
@@ -412,7 +484,7 @@ it('retains image-only input after uncertain Send and reuses its upload only on 
   expect(rpc.send).toHaveBeenCalledTimes(1); expect(rpc.uploadImage).toHaveBeenCalledTimes(1);
   await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
   await waitFor(() => expect(rpc.send).toHaveBeenCalledTimes(2));
-  expect(rpc.send).toHaveBeenLastCalledWith({ chatId: 'chat', queueIfPending: true, text: '', images: [image] });
+  expect(rpc.send).toHaveBeenLastCalledWith({ chatId: 'chat', clientId: expect.any(String), queueIfPending: true, text: '', images: [image] });
   expect(rpc.uploadImage).toHaveBeenCalledTimes(1);
 });
 
@@ -428,7 +500,7 @@ it('retains a failed file upload and draft without submitting until explicit ret
   expect(composer).toHaveValue('Keep this draft'); expect(rpc.send).not.toHaveBeenCalled();
   expect(rpc.uploadFile).toHaveBeenCalledTimes(1);
   await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
-  await waitFor(() => expect(rpc.send).toHaveBeenCalledWith({ chatId: 'chat', queueIfPending: true, text: 'Keep this draft', files: [file] }));
+  await waitFor(() => expect(rpc.send).toHaveBeenCalledWith({ chatId: 'chat', clientId: expect.any(String), queueIfPending: true, text: 'Keep this draft', files: [file] }));
   expect(rpc.uploadFile).toHaveBeenCalledTimes(2);
 });
 
@@ -451,7 +523,7 @@ it.each([false, true])('uses native alternate routing for filled CmdEnter with p
   renderComposer({ id: 'pane', kind: 'thread', target: { mode: 'existing', threadId: 'chat' } }, { ...current, queue: pending ? queued : current.queue });
   await userEvent.type(screen.getByLabelText('Message composer'), 'Alternate native input');
   await userEvent.keyboard('{Meta>}{Enter}{/Meta}');
-  await waitFor(() => expect(rpc.send).toHaveBeenCalledWith({ chatId: 'chat', queueIfEmpty: true, text: 'Alternate native input' }));
+  await waitFor(() => expect(rpc.send).toHaveBeenCalledWith({ chatId: 'chat', clientId: expect.any(String), queueIfEmpty: true, text: 'Alternate native input' }));
   expect(rpc.queue).not.toHaveBeenCalled();
   expect(onError).not.toHaveBeenCalled();
   expect(screen.getByLabelText('Message composer')).toHaveValue('');

@@ -167,7 +167,7 @@ const model = await startModelFixture(async request => {
     return { toolCalls: [{ name: 'string_replace_lsp', arguments: { path: 'marker.txt', old_string: user.includes('REPLACE_MISSING') ? 'ABSENT_STRING' : 'BROWSER_TOOL_MARKER', new_string: 'BROWSER_EDITED_MARKER' } }] };
   }
   if (user.includes('RUN_SHELL_FAILURE') && request.messages.at(-1)?.role !== 'tool') {
-    return { toolCalls: [{ name: 'execute_command', arguments: { description: "Exercise native nonzero shell output", command: "printf 'NATIVE_SHELL_OUTPUT\\n'; exit 7" } }] };
+    return { text: 'Inspecting the shell failure.', toolCalls: [{ name: 'execute_command', arguments: { description: "Exercise native nonzero shell output", command: "printf 'NATIVE_SHELL_OUTPUT\\n'; exit 7" } }] };
   }
   if (user.includes('READ_IMAGE') && request.messages.at(-1)?.role !== 'tool') return { toolCalls: [{ name: 'view', arguments: { path: 'pixel.png' } }] };
   if (user.includes('READ_MARKER') && request.messages.at(-1)?.role !== 'tool') {

@@ -2,7 +2,7 @@
 
 Status: Complete for the authorized end-to-end frontend port at pinned84b0ebc (2026-10-09). Authorized 2026-10-07. Current scope, workflow inventory and exit conditions: [frontend parity plan](mastra-frontend-parity.md).
 
-Current checkpoint (2026-10-09): pinned newer-main84b0ebc integrated; end-to-end native frontend parity and all retained workflow exits pass. See the final acceptance checkpoint in the frontend parity plan for tests, complete browser-matrix accounting and accepted limitations. No deployment. Historical investigations below remain useful context and are superseded by later acceptance checkpoints.
+Current checkpoint (2026-10-09): pinned newer-main84b0ebc integrated; retained frontend workflows passed the recorded integration gates. Subsequent user testing exposed presentation gaps; the [presentation follow-up](mastra-frontend-parity.md#presentation-follow-up-2026-10-09) records optimistic sends, hidden empty reasoning, collapsed file diagnostics and user-authorized native message-local activity folding with canonical live Working/Waiting status. Exact historical completed-turn parity is not required; no inferred turns, outcomes or durations are added. See the frontend parity plan for validation and accepted limitations. No deployment. Historical investigations below remain useful context and are superseded by later acceptance checkpoints.
 
 ## Fixed reference and scope
 

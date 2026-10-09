@@ -3,7 +3,7 @@ import { Alert } from '@mantine/core';
 import { ORPCError } from '@orpc/client';
 import { useEffect, useRef } from 'react';
 import { ComposerPanel } from '../composer/ComposerPanel';
-import { useComposerOrchestration } from '../composer/useComposerOrchestration';
+import { useComposerOrchestration, type OptimisticUserMessageCallbacks } from '../composer/useComposerOrchestration';
 import type { ComposerDraftStore } from '../composer/useComposerDraftState';
 import { paneTargetRecord, type WorkspacePane } from '../workspace/paneTypes';
 import { useWorkspace } from '../workspace/WorkspaceProvider';
@@ -15,7 +15,16 @@ import { useMastraQueue } from './useMastraQueue';
 import { useMastraGoal } from './useMastraGoal';
 import { useNativeSkills } from './useNativeSkills';
 
-export function NativeComposer({ pane, snapshot, ready, isActive, draftStore, onError, onQueueReload }: { pane: WorkspacePane; snapshot: ChatSnapshot | null; ready: boolean; isActive: boolean; draftStore: ComposerDraftStore; onError: (error: unknown) => void; onQueueReload?: () => void }) {
+function sendDisposition(result: Awaited<ReturnType<typeof mastraClient.send>>): { disposition: 'submitted' | 'queued' } {
+  if ('outcome' in result) {
+    if (result.outcome === 'uncertain') throw new Error('Delivery could not be confirmed; check the conversation/queue before sending again.');
+    if (result.outcome === 'conflict') throw new Error('The queue changed before this message could be queued. Review it before sending again.');
+    return { disposition: 'queued' };
+  }
+  return { disposition: 'submitted' };
+}
+
+export function NativeComposer({ pane, snapshot, ready, isActive, draftStore, onError, onQueueReload, ...optimisticCallbacks }: { pane: WorkspacePane; snapshot: ChatSnapshot | null; ready: boolean; isActive: boolean; draftStore: ComposerDraftStore; onError: (error: unknown) => void; onQueueReload?: () => void } & OptimisticUserMessageCallbacks) {
   const catalog = useNativeCatalogSnapshot();
   const projects = catalog?.projects ?? [];
   const { updatePane, setPaneDraftDisposable, onImageOpen } = useWorkspace();
@@ -36,13 +45,14 @@ export function NativeComposer({ pane, snapshot, ready, isActive, draftStore, on
   });
   const goal = useMastraGoal(chatId, snapshot, ready, onQueueReload);
   const queue = useMastraQueue(chatId, snapshot?.queue ?? null, onError, onQueueReload, snapshot?.display.isRunning ?? false);
-  const submitNative = async (action: () => Promise<unknown>) => {
+  const submitNative = async <T,>(action: () => Promise<T>): Promise<T> => {
     try { return await action(); } catch (failure) {
       if (failure instanceof ORPCError && ['BAD_REQUEST', 'CONFLICT', 'NOT_FOUND', 'UNAUTHORIZED', 'FORBIDDEN', 'UNPROCESSABLE_CONTENT', 'TOO_MANY_REQUESTS', 'PRECONDITION_FAILED'].includes(failure.code)) throw failure;
       throw new Error("Delivery could not be confirmed; check the conversation/queue before sending again.", { cause: failure });
     }
   };
   const orchestration = useComposerOrchestration({
+    ...optimisticCallbacks,
     activeSelectedTurnId: null, isRunning: snapshot?.display.isRunning ?? false,
     canCompose, composerSettings: settings.settings ?? DEFAULT_COMPOSER_SETTINGS,
     draftChatThreadSelected: !chatId, draftThreadProjectId: projectId, isDraftThreadSelected: !chatId,
@@ -55,13 +65,13 @@ export function NativeComposer({ pane, snapshot, ready, isActive, draftStore, on
     onThreadMaterialized: id => { void updatePane(pane.id, { target: { mode: 'existing', threadId: id } }).catch(onError); },
     onThreadTurnStarted: () => {}, onThreadTurnStartFailed: () => {}, onError,
     commands: {
-      send: async (id, input, attachments, images, mentions) => {
+      send: async (id, input, attachments, images, mentions, clientId) => {
         const value = nativeComposerInput(input, attachments, images, mentions);
-        return submitNative(() => mastraClient.send({ chatId: id, queueIfPending: true, ...value }));
+        return sendDisposition(await submitNative(() => mastraClient.send({ chatId: id, queueIfPending: true, ...value, ...(clientId && { clientId }) })));
       },
-      alternate: async (id, input, attachments, images, mentions) => {
+      alternate: async (id, input, attachments, images, mentions, clientId) => {
         const value = nativeComposerInput(input, attachments, images, mentions);
-        return submitNative(() => mastraClient.send({ chatId: id, queueIfEmpty: true, ...value }));
+        return sendDisposition(await submitNative(() => mastraClient.send({ chatId: id, queueIfEmpty: true, ...value, ...(clientId && { clientId }) })));
       },
       queue: async (id, input, attachments, images, mentions) => {
         const value = nativeComposerInput(input, attachments, images, mentions);

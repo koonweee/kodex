@@ -99,6 +99,22 @@ async function until(iterator: AsyncIterator<ChatSnapshot>, predicate: (snapshot
   }
 }
 
+test('ordinary send persists its client correlation through the RPC boundary', { timeout: 30_000 }, async t => {
+  const { makeService } = await setup('send-correlation');
+  const service = makeService();
+  const server = await serve(service);
+  t.after(async () => { await server.close(); await service.dispose(); });
+  const client = server.client();
+  const chat = await client.createChat({ projectId: 'a' });
+  const stream = (await client.watchChat({ chatId: chat.id }))[Symbol.asyncIterator]();
+  await client.send({ chatId: chat.id, text: 'Correlated input', clientId: 'attempt-one' });
+  const snapshot = await until(stream, value => hasUserInput(value, 'Correlated input') && !value.display.isRunning);
+  const message = snapshot.messages.find(message => message.content.parts.some(part => part.type === 'text' && part.text === 'Correlated input'));
+  assert.ok(message);
+  assert.equal(message.content.metadata?.signal && (message.content.metadata.signal as { metadata?: { clientId?: string } }).metadata?.clientId, 'attempt-one');
+  await stream.return?.();
+});
+
 test('two RPC clients share native chats, Send acceptance, Queue, Stop and reconnect history', { timeout: 60_000 }, async t => {
   const { makeService, projects, runtimes } = await setup('shared');
   const service = makeService();

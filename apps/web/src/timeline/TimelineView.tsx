@@ -433,6 +433,7 @@ const TimelineRowView = memo(function TimelineRowView({
         <TimelineActivityGroupRenderer
           imagePreviewUrlsByPath={imagePreviewUrlsByPath}
           items={row.items}
+          fallbackSummary={row.fallbackSummary}
           onImageOpen={onImageOpen}
           onMarkdownOpen={onMarkdownOpen}
           showDebug={showDebug}

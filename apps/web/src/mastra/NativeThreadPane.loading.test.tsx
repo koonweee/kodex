@@ -46,6 +46,22 @@ it('shows the shared initial skeleton and header progress until snapshot readine
   expect(screen.queryByRole('status')).not.toBeInTheDocument();
   view.unmount(); expect(native.adornment).toHaveBeenLastCalledWith('one', null);
 });
+it('updates live execution status in peer panes from canonical snapshots and clears it on a chat switch', async () => {
+  native.snapshot = { ...snapshot(), display: { ...defaultDisplayState(), isRunning: true } };
+  const view = render(panes(true));
+  expect(screen.getAllByText('Working', { exact: true })).toHaveLength(2);
+  native.snapshot = { ...snapshot(), prompts: [{ kind: 'question', question: 'Continue?', target: {
+    sessionId: 'session', threadId: 'chat', resourceId: 'resource', runId: 'run', toolCallId: 'question',
+  } }] };
+  await act(async () => view.rerender(panes(true)));
+  expect(screen.getAllByText('Waiting for your response', { exact: true })).toHaveLength(2);
+  native.snapshot = snapshot();
+  await act(async () => view.rerender(panes(true)));
+  expect(screen.queryByText('Waiting for your response', { exact: true })).not.toBeInTheDocument();
+  native.snapshot = { ...snapshot(), display: { ...defaultDisplayState(), isRunning: true } };
+  await act(async () => view.rerender(panes(false, { ...pane, target: { mode: 'existing', threadId: 'other' } })));
+  expect(screen.queryByText('Working', { exact: true })).not.toBeInTheDocument();
+});
 it('does not show initial progress or disable input for a draft pane', () => {
   render(panes(false, { ...pane, target: { mode: 'draft', projectId: null } }));
   expect(screen.queryByRole('status')).not.toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Send draft' })).toBeEnabled();

@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { ThreadDeliveryProvider } from '../timeline/ThreadDeliveryPreferences';
-import { TimelineItemRenderer } from '../timeline/renderers';
+import { TimelineActivityGroupRenderer, TimelineItemRenderer } from '../timeline/renderers';
 import { defaultDisplayState } from '../../../../spikes/mastra-code-sdk/node_modules/@mastra/core/dist/agent-controller/index.js';
 import { acceptsSnapshot, chatListEntry, timelinePresentation } from './presentation';
 import type { Chat, ChatSnapshot } from './client';
@@ -37,7 +37,7 @@ describe('native chat presentation', () => {
     const value = snapshot();
     value.messages[1].content.parts = [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'saved', toolName: 'write_file', state: 'result', args: { path: 'notes.txt', content: 'saved' }, result: 'Wrote 5 bytes to notes.txt' } }];
     const result = timelinePresentation({ messages: value.messages, history: value.history, revision: value.revision });
-    const saved = result.rows.flatMap(row => row.type === 'item' && row.item.id === 'saved' ? [row.item] : []);
+    const saved = result.rows.flatMap(row => row.type === 'activity' ? row.items : row.type === 'item' ? [row.item] : []).filter(item => item.id === 'saved');
     expect(saved).toHaveLength(1);
     expect(saved[0]).toMatchObject({ kind: 'file_change', action: 'Write', path: 'notes.txt', status: 'completed', fileChangeOutcomeKnown: false, output: 'Wrote 5 bytes to notes.txt' });
     expect(result.hasOlderHistory).toBe(true);
@@ -73,17 +73,21 @@ describe('native chat presentation', () => {
     const value = snapshot();
     value.messages[1].content.parts = [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'read', toolName: 'view', state: 'result', args: { path: 'picture.png' }, result: { __workspaceMedia: true, text: 'Saved image', mediaType: 'image/png', data: 'iVBORw0KGgo=' } } }];
     value.display.activeTools.set('read', { name: 'view', args: { path: 'notes.txt' }, status: 'running', partialResult: 'Native text read' });
-    const item = timelinePresentation(value).rows.flatMap(row => row.type === 'item' && row.item.id === 'read' ? [row.item] : [])[0];
+    const item = presentationItems(value).filter(item => item.id === 'read')[0];
     expect(item).toMatchObject({ kind: 'file_change', action: 'Read', path: 'notes.txt', output: 'Native text read', fileChangeOutcomeKnown: false });
     expect(item.imageSrc).toBeUndefined();
   });
-  it('shows a native replacement failure as a requested file operation with its complete result', () => {
+  it('shows a native replacement failure as a requested file operation with its complete result', async () => {
     const value = snapshot();
     value.messages[1].content.parts = [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'replace', toolName: 'string_replace_lsp', state: 'result', args: { path: 'README.md', old_string: 'absent', new_string: 'new' }, result: 'String not found in file\nNative diagnostic detail' } }];
-    const item = timelinePresentation(value).rows.flatMap(row => row.type === 'item' && row.item.id === 'replace' ? [row.item] : [])[0];
-    render(createElement(MantineProvider, null, createElement(TimelineItemRenderer, { item })));
+    const row = timelinePresentation(value).rows.find(row => row.type === 'activity');
+    if (row?.type !== 'activity') throw new Error('Expected file activity');
+    render(createElement(MantineProvider, null, createElement(TimelineActivityGroupRenderer, { items: row.items })));
+    expect(screen.queryByText(/String not found in file/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Requested 1 file operation'));
     expect(screen.getByText('Replace README.md')).toBeVisible();
-    expect(screen.getByText(/String not found in file/)).toHaveTextContent('Native diagnostic detail');
+    fireEvent.click(screen.getByText('Replace README.md'));
+    expect(await screen.findByText(/String not found in file/)).toHaveTextContent('Native diagnostic detail');
     expect(screen.queryByText(/Modified|files? changed|Success/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/File diff/)).not.toBeInTheDocument();
   });
@@ -120,12 +124,16 @@ describe('native chat presentation', () => {
     expect(tools[0]).toMatchObject({ toolName: 'read_file', status: 'completed', output: 'contents' });
     expect(tools[0].argsSummary).toContain('README.md');
   });
-  it('renders native stored tool results through the existing visible tool row', () => {
+  it('reveals native stored file results through the projected activity disclosure', async () => {
     const value = snapshot();
     value.messages[1].content.parts = [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'read', toolName: 'view', state: 'result', args: { path: 'README.md' }, result: 'NATIVE_FILE_CONTENTS' } }];
-    const item = timelinePresentation(value).rows.flatMap(row => row.type === 'item' && row.item.id === 'read' ? [row.item] : [])[0];
-    render(createElement(MantineProvider, null, createElement(TimelineItemRenderer, { item })));
-    expect(screen.getByText(/NATIVE_FILE_CONTENTS/)).toBeVisible();
+    const row = timelinePresentation(value).rows.find(row => row.type === 'activity');
+    if (row?.type !== 'activity') throw new Error('Expected file activity');
+    render(createElement(MantineProvider, null, createElement(TimelineActivityGroupRenderer, { items: row.items })));
+    expect(screen.queryByText(/NATIVE_FILE_CONTENTS/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Requested 1 file operation'));
+    fireEvent.click(screen.getByText('Read README.md'));
+    expect(await screen.findByText(/NATIVE_FILE_CONTENTS/)).toBeVisible();
   });
   it('shows streamed shell text then the full native terminal result without claiming success', () => {
     const value = snapshot();
@@ -144,7 +152,7 @@ describe('native chat presentation', () => {
   it('shows native media descriptions without dumping their encoded bytes into a generic result', () => {
     const value = snapshot();
     value.display.activeTools.set('image', { name: 'view', args: { path: 'sample.png' }, status: 'completed', result: { __workspaceMedia: true, text: 'Image read: sample.png', mediaType: 'image/png', data: 'ENCODED_BYTES' } });
-    const item = timelinePresentation(value).rows.flatMap(row => row.type === 'item' && row.item.id === 'image' ? [row.item] : [])[0];
+    const item = presentationItems(value).filter(item => item.id === 'image')[0];
     render(createElement(MantineProvider, null, createElement(TimelineItemRenderer, { item })));
     expect(screen.getByText(/Image read: sample.png/)).toBeVisible();
     expect(screen.queryByText(/ENCODED_BYTES/)).not.toBeInTheDocument();
@@ -191,7 +199,7 @@ describe('native chat presentation', () => {
     ] as const) {
       const value = snapshot();
       value.display.activeTools.set('view', { name: 'view', args: { path: 'picture.png' }, status: isError ? 'error' : 'completed', result, isError });
-      const item = timelinePresentation(value).rows.flatMap(row => row.type === 'item' && row.item.id === 'view' ? [row.item] : [])[0];
+      const item = timelinePresentation(value).rows.flatMap(row => row.type === 'activity' ? row.items : row.type === 'item' ? [row.item] : []).find(item => item.id === 'view')!;
       expect(item.kind).toBe('file_change');
       expect(item.fileChangeOutcomeKnown).toBe(false);
       expect(item.imageSrc).toBeUndefined();
@@ -205,7 +213,7 @@ describe('native chat presentation', () => {
     const value = snapshot();
     value.messages[1].content.parts = [{ type: 'tool-invocation', toolInvocation: { toolCallId: 'image', toolName: 'view', state: 'result', args: { path: '/project/picture.png' }, result: { __workspaceMedia: true, text: 'Read image', mediaType: 'image/png', data: 'iVBORw0KGgo=' } } }];
     value.display.activeTools.set('image', { name: 'view', args: { path: '/project/picture.png' }, status: isError ? 'error' : 'completed', result, isError });
-    const item = timelinePresentation(value).rows.flatMap(row => row.type === 'item' && row.item.id === 'image' ? [row.item] : [])[0];
+    const item = presentationItems(value).filter(item => item.id === 'image')[0];
     expect(item.kind).toBe('file_change');
     expect(item.imageSrc).toBeUndefined();
     expect(item.path).toBe('/project/picture.png');

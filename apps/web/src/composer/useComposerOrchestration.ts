@@ -40,14 +40,16 @@ import { buildTurnPayload, type ComposerUploads } from "./buildTurnPayload";
 type DraftThreadCreateRequest = { composerSettings?: ComposerSettings; firstMessageText: string; projectId?: string };
 type DraftThreadCreateResult = { threadId: string };
 
-type ComposerInputCommand = (threadId: string, input: UserInput[], attachments: TimelineFileAttachment[], images: ImageUpload[], skillMentions: TimelineSkillMention[]) => Promise<unknown>;
+type ComposerInputCommand<Result = unknown> = (threadId: string, input: UserInput[], attachments: TimelineFileAttachment[], images: ImageUpload[], skillMentions: TimelineSkillMention[], clientId?: string) => Promise<Result>;
+
+export type OptimisticUserMessageCallbacks = Pick<UseComposerOrchestrationParams, 'onOptimisticUserMessageStarted' | 'onOptimisticUserMessageSent' | 'onOptimisticUserMessageRemoved'>;
 
 type UseComposerOrchestrationParams = {
   activeSelectedTurnId: string | null;
   isRunning?: boolean;
   commands?: {
-    send: ComposerInputCommand;
-    alternate?: ComposerInputCommand;
+    send: ComposerInputCommand<{ disposition: 'submitted' | 'queued' }>;
+    alternate?: ComposerInputCommand<{ disposition: 'submitted' | 'queued' }>;
     queue: ComposerInputCommand;
     stop: (threadId: string) => Promise<unknown>;
     compact: (threadId: string) => Promise<unknown>;
@@ -234,7 +236,13 @@ export function useComposerOrchestration({
         }
         if (commands) {
           const action = intent === "alternate" ? commands.alternate! : commands.send;
-          await action(selectedThreadId, payload.input, payload.attachments, payload.images, skillMentions);
+          const result = await action(selectedThreadId, payload.input, payload.attachments, payload.images, skillMentions, clientUserMessageId);
+          if (result.disposition === 'queued') {
+            if (optimisticClientRequestId) onOptimisticUserMessageRemoved?.(optimisticClientRequestId);
+            clearPendingAttachments();
+            setIsComposerSubmitting(false);
+            return;
+          }
         } else {
           const result = await submitThreadInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId, intent === "alternate" ? "ifEmpty" : "ifPending");
           if (result.disposition === "queued") {

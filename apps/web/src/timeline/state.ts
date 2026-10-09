@@ -108,6 +108,7 @@ type TimelineActivityRow = {
   turnId: string | null;
   displayOrder: number;
   items: TimelineItem[];
+  fallbackSummary?: string;
   dividerBefore?: TimelineRowDivider;
 };
 

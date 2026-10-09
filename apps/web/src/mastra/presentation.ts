@@ -62,8 +62,13 @@ export function timelinePresentation(snapshot: PresentationSnapshot, isLoadingOl
     const attachmentFields = { ...(images.length && { images }), ...(files.length && { fileAttachments: files }) };
     const firstText = message.content.parts.findIndex(part => part.type === 'text');
     if ((images.length || files.length) && firstText === -1) append({ id: `${message.id}:${images.length ? 'images' : 'attachments'}`, kind: 'user_message', text: '', ...attachmentFields, status, payload: message.content.parts, timestampMs: new Date(message.createdAt).getTime(), clientId: nativeQuestionReplyClientId(message.content.metadata) });
+    let groupingIndex = 0;
     message.content.parts.forEach((part, index) => {
-      const origin = message.role === 'assistant' ? { messageId: message.id, partIndex: index } : undefined;
+      // Only known empty reasoning is transparent; unsupported parts still
+      // consume a grouping position and prevent activity from crossing them.
+      if (part.type === 'reasoning' && !part.reasoning.trim()) return;
+      const origin = message.role === 'assistant' ? { messageId: message.id, groupingIndex } : undefined;
+      groupingIndex += 1;
       const id = `${message.id}:${index}`;
       const timestampMs = new Date(message.createdAt).getTime();
       if (part.type === 'text') append({ id, kind: userAuthored ? 'user_message' : 'assistant_message', text: userAuthored && index === firstText ? skillFields?.text ?? nativeInputFileText(part.text, files) : part.text, status, payload: part, timestampMs, ...(userAuthored && { clientId: nativeQuestionReplyClientId(message.content.metadata), ...(index === firstText && { ...attachmentFields, ...(skillFields && { skillMentions: skillFields.skillMentions }) }) }) }, origin);

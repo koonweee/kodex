@@ -13,7 +13,7 @@ export function webSearchActionText(action: WebSearchAction): string {
   return action.label;
 }
 
-export function activityGroupSummary(items: TimelineItem[]): string {
+export function activityGroupSummary(items: TimelineItem[], fallbackSummary = "Worked"): string {
   const commandCount = items.filter((item) => item.kind === "command_execution").length;
   const fileCount = items.filter((item) => item.kind === "file_change" && item.fileChangeOutcomeKnown !== false).length;
   const fileOperationCount = items.filter((item) => item.kind === "file_change" && item.fileChangeOutcomeKnown === false).length;
@@ -32,7 +32,7 @@ export function activityGroupSummary(items: TimelineItem[]): string {
     viewedImageCount ? viewedImageCount === 1 ? "viewed 1 image" : `viewed ${viewedImageCount} images` : "",
     commandCount ? commandCount === 1 ? "ran 1 command" : `ran ${commandCount} commands` : "",
   ].filter(Boolean);
-  return parts.length ? sentenceCase(parts.join(", ")) : "Worked";
+  return parts.length ? sentenceCase(parts.join(", ")) : fallbackSummary;
 }
 
 export function commandSummary(item: TimelineItem): string {
