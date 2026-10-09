@@ -13,7 +13,6 @@ import {
   getTimelineRowApprovals,
   getUnanchoredApprovals,
 } from "./derive";
-import { isTimelineMessage } from "./rendererShared";
 import { TimelineActivityGroupRenderer, TimelineFileChangesRenderer, TimelineItemRenderer, TimelineWorkRowRenderer } from "./renderers";
 import type { TimelineItem, TimelineRow, TimelineState } from "./reducer";
 import { useTimelineScrollParent } from "./useTimelineScrollParent";
@@ -461,7 +460,14 @@ const TimelineRowView = memo(function TimelineRowView({
 });
 
 function timelineRowSpacing(row: TimelineRow): "compact" | undefined {
-  return row.type !== "item" || !isTimelineMessage(row.item.kind) ? "compact" : undefined;
+  return timelineRowOwnsDensity(row) ? "compact" : undefined;
+}
+
+function timelineRowOwnsDensity(row: TimelineRow): boolean {
+  if (row.type === "activity" || row.type === "file_changes") {
+    return true;
+  }
+  return row.type === "item" && row.item.kind === "context_compaction";
 }
 
 function isTimestampedMessage(item: TimelineItem): boolean {

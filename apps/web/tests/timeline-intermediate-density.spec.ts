@@ -60,24 +60,53 @@ for (const layout of [
     }
   });
 
-  test(`context compaction uses intermediate density in ${layout.name}`, async ({ browser }) => {
+  test(`compact markers and substantive items use their assigned density in ${layout.name}`, async ({ browser }) => {
     const context = await browser.newContext({ viewport: layout.viewport, hasTouch: layout.hasTouch });
     const fixture = await nativeSettingsFixture(context);
-    fixture.detail.timeline = contextCompactionTimeline();
+    fixture.detail.timeline = mixedDensityTimeline();
 
     try {
-      const page = await fixture.page("context-density");
+      const page = await fixture.page("mixed-density");
       const contextCompacted = page.getByText("Context compacted", { exact: true });
-      const filesSummary = page.locator(".kodex-file-changes-panel > summary");
+      const plan = page.getByText("Inspect then patch", { exact: true });
       await expect(contextCompacted).toBeVisible();
-      await expect(filesSummary).toBeVisible();
+      await expect(plan).toBeVisible();
 
       const contextBox = await contextCompacted.boundingBox();
-      const filesBox = await filesSummary.boundingBox();
       expect(contextBox).not.toBeNull();
-      expect(filesBox).not.toBeNull();
       expect(contextBox!.height).toBeGreaterThanOrEqual(30);
-      expect(Math.abs(contextBox!.height - filesBox!.height)).toBeLessThanOrEqual(2);
+      expect(contextBox!.height).toBeLessThanOrEqual(34);
+
+      const planRow = page.locator(".kodex-turn-group").filter({ has: plan });
+      const planGeometry = await verticalGeometry(planRow, ":scope > .kodex-timeline-item");
+      expect(planGeometry.topInset).toBeGreaterThanOrEqual(7);
+      expect(planGeometry.topInset).toBeLessThanOrEqual(9);
+      expect(planGeometry.bottomInset).toBeGreaterThanOrEqual(7);
+      expect(planGeometry.bottomInset).toBeLessThanOrEqual(9);
+      expect(fixture.unexpected).toEqual([]);
+      expect(fixture.errors).toEqual([]);
+    } finally {
+      await fixture.close();
+      await context.close();
+    }
+  });
+
+  test(`work boundaries retain the default outer gap in ${layout.name}`, async ({ browser }) => {
+    const context = await browser.newContext({ viewport: layout.viewport, hasTouch: layout.hasTouch });
+    const fixture = await nativeSettingsFixture(context);
+    fixture.detail.timeline = workBoundaryTimeline();
+
+    try {
+      const page = await fixture.page("work-density");
+      const workLabel = page.getByText("Worked for 1s", { exact: true });
+      await expect(workLabel).toBeVisible();
+
+      const workRow = page.locator(".kodex-turn-group").filter({ has: workLabel });
+      const workGeometry = await verticalGeometry(workRow, ":scope > .kodex-work-row");
+      expect(workGeometry.topInset).toBeGreaterThanOrEqual(7);
+      expect(workGeometry.topInset).toBeLessThanOrEqual(9);
+      expect(workGeometry.bottomInset).toBeGreaterThanOrEqual(7);
+      expect(workGeometry.bottomInset).toBeLessThanOrEqual(9);
       expect(fixture.unexpected).toEqual([]);
       expect(fixture.errors).toEqual([]);
     } finally {
@@ -143,7 +172,7 @@ function intermediateTimeline(): ThreadViewResponse["timeline"] {
   };
 }
 
-function contextCompactionTimeline(): ThreadViewResponse["timeline"] {
+function mixedDensityTimeline(): ThreadViewResponse["timeline"] {
   const rows: ThreadTimelineRow[] = [
     {
       id: "context-compacted",
@@ -163,7 +192,24 @@ function contextCompactionTimeline(): ThreadViewResponse["timeline"] {
         payload: { item: { type: "contextCompaction" } },
       },
     },
-    fileChangesRow(2),
+    {
+      id: "plan",
+      turnId: "turn-intermediate",
+      kind: "plan",
+      status: "completed",
+      displayOrder: 2,
+      item: {
+        id: "projection-plan",
+        threadId: "settings-chat",
+        turnId: "turn-intermediate",
+        itemId: "plan",
+        itemType: "plan",
+        status: "completed",
+        codexMethod: "item/completed",
+        displayOrder: 2,
+        payload: { item: { text: "Inspect then patch", type: "plan" } },
+      },
+    },
   ];
   return {
     activeTurnId: null,
@@ -194,5 +240,27 @@ function fileChangesRow(displayOrder: number): ThreadTimelineRow {
         itemIds: ["file-change"],
       },
     ],
+  };
+}
+
+function workBoundaryTimeline(): ThreadViewResponse["timeline"] {
+  return {
+    activeTurnId: null,
+    liveState: "idle",
+    pendingApprovalRequests: [],
+    pendingUserInputRequests: [],
+    rows: [
+      {
+        id: "work",
+        turnId: "turn-intermediate",
+        kind: "work",
+        status: "completed",
+        displayOrder: 1,
+        collapsedRows: [],
+        work: { state: "completed", startedAt: 0, completedAt: 1 },
+      },
+    ],
+    turns: [{ id: "turn-intermediate", status: "completed" }],
+    viewRevision: 1,
   };
 }

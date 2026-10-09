@@ -32,8 +32,8 @@
   padding-bottom: 0;
 }
 
-/* The enclosing work row supplies the final 8px at an expanded disclosure's
-   bottom edge, so its last nested row must not contribute the same half-gap. */
+/* The enclosing turn group supplies the final 8px at an expanded work
+   disclosure's bottom edge, so its last nested row must not duplicate it. */
 .kodex-work-row-contents > .kodex-turn-group:last-child {
   padding-bottom: 0;
 }
