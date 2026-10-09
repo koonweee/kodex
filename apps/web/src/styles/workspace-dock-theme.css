@@ -31,7 +31,7 @@
   --dv-sash-color: transparent;
   --dv-separator-border: transparent;
   --dv-spacing-padding: 4px;
-  --dv-tab-border-radius: calc(var(--kodex-radius-md) - 2px);
+  --dv-tab-border-radius: var(--kodex-radius-lg);
   --dv-tab-close-icon-size: 10px;
   --dv-tab-divider-color: var(--kodex-border-subtle);
   --dv-tab-font-size: 0.75rem;
