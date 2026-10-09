@@ -1,3 +1,4 @@
+import { installFilesystemAccess } from './filesystem-access.js';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { MastraCodeConfig, MountedMastraCode } from '@mastra/code-sdk';
@@ -59,11 +60,12 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
       isRemote: false,
     },
     omScope: 'thread',
-    initialState: { yolo: true, skipGlobalInstructions: true, homeDir: options.profile.homeDir },
+    initialState: { sandboxAllowedPaths: [path.parse(projectPath).root], yolo: true, skipGlobalInstructions: true, homeDir: options.profile.homeDir },
     inputProcessors: [affinity, createChatFastProcessor()],
     disableEnvFile: true,
     disableGithubSignals: true,
     disableMcp: options.disableMcp ?? true,
+    disabledTools: ['request_access'],
     disableHooks: true,
     disablePlugins: true,
     crossAgentSignals: false,
@@ -80,6 +82,7 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
   });
   await prepared.finalize();
   const base = { ...prepared.base, mastra };
+  const stopFilesystemAccess = installFilesystemAccess(base.controller, projectPath);
   const mcp = base.mcpManager ? createRuntimeMcp(base.mcpManager) : undefined;
   const sessions = new Map<string, { resourceId: string; scope?: string; session: NativeSession; releasingThreadId?: string | null }>();
   const creatingSessions = new Map<string, Promise<NativeSession>>();
@@ -190,6 +193,7 @@ export async function createProjectRuntime(options: ProjectRuntimeOptions) {
     dispose(): Promise<void> {
       if (disposal) return disposal;
       disposed = true;
+      stopFilesystemAccess();
       disposal = (async () => {
         // This complete first pass is synchronous, before any settlement await
         // or manager cancellation can publish to another still-open parent.
