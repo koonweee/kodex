@@ -126,19 +126,12 @@ Treat available space and input capabilities as independent facts. Components co
 - Native config forms must capture the displayed native write target/version when opened. Submit sparse native edits with that version; never fetch a fresh version to authorize a stale draft. On conflict, preserve the draft and require explicit review before another submission. Do not reconstruct MCP server objects or return raw native config layers/secrets. `config.changed` is a refill marker for saved writes; publish it even when a subsequent MCP reload request fails. Reload acknowledgment means requested, not ready.
 - Any behavior-changing feature that touches shared thread/project/session state should include a same-user, two-tab test shape: one client mutates or misses events, and the other must converge through gateway state/SSE without reload.
 
-## Parallel Work
-
-- Use GPT-6.1 Sol with high reasoning for future subagent spawns, as requested by the user.
-- Use subagents for independent, parallelizable work when the active environment and instructions permit it.
-- Give subagents bounded ownership of files, modules, or questions.
-- Do not delegate work that blocks the immediate next local step.
-- Avoid duplicating work between the main agent and subagents.
-- Integrate and review subagent output before considering the milestone complete.
-
 ## Review Gate
 
 - Every implementation chunk requires an independent review pass before completion.
-- Prefer a review subagent when available and permitted.
+- Prefer a read-only review subagent when available and permitted.
+- Use GPT-5.6 Sol with high reasoning for review subagents; fall back to GPT-6.1 Sol with high reasoning if GPT-5.6 Sol is unavailable.
+- Give review subagents a bounded review scope; the main agent applies fixes and verifies the result.
 - If no review subagent is available, perform a self-review and document what was checked.
 - Iterate until tests pass, docs are updated, and the active milestone exit conditions are satisfied.
 - Before marking frontend lifecycle work complete, check whether the behavior remains correct with two tabs open on the same gateway. If correctness depends on one tab's React state, move the source of truth to the gateway or document why the state is intentionally per-tab.
