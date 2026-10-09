@@ -51,6 +51,7 @@ export function timelinePresentation(snapshot: PresentationSnapshot, isLoadingOl
     items.push({ ...item, displayOrder: items.length, turnId: null, debugEvents: [] });
     origins.push(origin);
   }
+  let workBoundary = 0;
   for (const message of messages) {
     // Native sessions persist human inputs and steers as user-authored signals.
     const signal = message.content.metadata?.signal;
@@ -68,7 +69,8 @@ export function timelinePresentation(snapshot: PresentationSnapshot, isLoadingOl
       // Only known empty reasoning is transparent; unsupported parts still
       // consume a grouping position and prevent activity from crossing them.
       if (part.type === 'reasoning' && !part.reasoning.trim()) return;
-      const origin = message.role === 'assistant' ? { messageId: message.id, groupingIndex } : null;
+      if (part.type !== 'text' && part.type !== 'reasoning' && part.type !== 'tool-invocation') workBoundary += 1;
+      const origin = message.role === 'assistant' ? { messageId: message.id, groupingIndex, workBoundary } : null;
       groupingIndex += 1;
       const id = `${message.id}:${index}`;
       const timestampMs = new Date(message.createdAt).getTime();

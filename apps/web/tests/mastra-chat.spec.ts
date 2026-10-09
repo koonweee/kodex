@@ -17,7 +17,14 @@ async function openFileOperation(group: Locator) {
   return group.locator('.kodex-file-change-block');
 }
 
+async function openWorked(scope: Locator) {
+  await expect(scope.locator('details.kodex-work-row, details.kodex-activity-group').first()).toBeVisible();
+  await expect(scope.locator('.kodex-work-row[data-state="running"]')).toHaveCount(0);
+  for (const summary of await scope.locator('details.kodex-work-row:not([open]) > summary').all()) await summary.click();
+}
+
 async function verifyCollapsedMarker(scope: Locator) {
+  await openWorked(scope);
   const group = scope.locator('details.kodex-activity-group').filter({ hasText: 'Read marker.txt' }).first();
   const output = await openFileOperation(group);
   await expect(output).toContainText('BROWSER_TOOL_MARKER');
@@ -485,6 +492,7 @@ test('native shell output uses main command rendering without an invented succes
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   const verify = async (tab: Page) => {
+    await openWorked(pane(tab));
     await pane(tab).locator('.kodex-activity-group > summary').click();
     await pane(tab).locator('.kodex-activity-item > summary').filter({ hasNotText: 'Assistant' }).click();
     await expect(pane(tab).getByText('Shell', { exact: true })).toBeVisible();
@@ -555,6 +563,7 @@ test('native file summaries preserve real replacement failures across peers and 
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   const verify = async (tab: Page) => {
+    await openWorked(pane(tab));
     const groups = pane(tab).locator('details.kodex-activity-group');
     await expect(groups).toHaveCount(2);
     for (const group of await groups.all()) {

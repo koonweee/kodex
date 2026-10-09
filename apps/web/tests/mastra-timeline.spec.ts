@@ -32,6 +32,11 @@ test('native saved tool groups and debug payloads remain inspectable across peer
     await api.send({ chatId: chat.id, text: 'RUN_SHELL_FAILURE' });
     for (const tab of [page, peer]) {
       await expect(pane(tab).getByText('fixture:RUN_SHELL_FAILURE', { exact: true })).toBeVisible();
+      const worked = pane(tab).locator('details.kodex-work-row');
+      await expect(worked).toHaveCount(1);
+      await expect(worked).not.toHaveAttribute('open', '');
+      await expect(pane(tab).locator('.kodex-activity-group')).toHaveCount(0);
+      await worked.locator(':scope > summary').click();
       const group = pane(tab).locator('.kodex-activity-group');
       await expect(group).toHaveCount(1);
       await expect(group).not.toHaveAttribute('open', '');
@@ -56,6 +61,10 @@ test('native saved tool groups and debug payloads remain inspectable across peer
     for (const tab of [page, peer]) await expect(pane(tab).locator('.kodex-timeline-output')).toBeVisible();
     expect(reads()).toEqual(beforeToggle);
     await peer.reload();
+    const worked = pane(peer).locator('details.kodex-work-row');
+    await expect(worked).not.toHaveAttribute('open', '');
+    await expect(pane(peer).locator('.kodex-activity-group')).toHaveCount(0);
+    await worked.locator(':scope > summary').click();
     const group = pane(peer).locator('.kodex-activity-group');
     await expect(group).toHaveCount(1);
     await expect(pane(peer).getByText('fixture:RUN_SHELL_FAILURE', { exact: true })).toBeVisible();
@@ -103,6 +112,8 @@ test('live tool groups stay collapsed by default and preserve each tab inspectio
       await expect(group).toHaveCount(1);
       await expect(group).not.toHaveAttribute('open', '');
       await expect(group.locator(':scope > summary').getByText('Running', { exact: true })).toBeVisible();
+      await expect(pane(tab).getByRole('status').filter({ hasText: 'Working' })).toBeVisible();
+      expect(await pane(tab).locator('.kodex-work-row').evaluate((header) => Boolean(header.compareDocumentPosition(document.querySelector('.kodex-activity-group')!) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
     }
     await page.screenshot({ path: testInfo.outputPath('native-live-tool-collapsed.png'), fullPage: true, animations: 'disabled' });
     const inspected = pane(page).locator('.kodex-activity-group');
@@ -112,6 +123,10 @@ test('live tool groups stay collapsed by default and preserve each tab inspectio
     await writeFile(join(root, 'project', '.release-tool'), 'done');
     for (const tab of [page, peer]) {
       await expect(pane(tab).getByText('fixture:RUN_HELD_SHELL', { exact: true })).toBeVisible();
+      const worked = pane(tab).locator('details.kodex-work-row');
+      await expect(worked).not.toHaveAttribute('open', '');
+      await expect(pane(tab).locator('.kodex-activity-group')).toHaveCount(0);
+      await worked.locator(':scope > summary').click();
       await expect(pane(tab).locator('.kodex-activity-group > summary').getByText('Running', { exact: true })).toHaveCount(0);
     }
     await expect(inspected).toHaveAttribute('open', '');

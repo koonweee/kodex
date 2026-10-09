@@ -4,6 +4,10 @@ Status: Complete for the authorized end-to-end frontend port at pinned84b0ebc (2
 
 Current checkpoint (2026-10-09): pinned newer-main84b0ebc integrated; retained frontend workflows passed the recorded integration gates. Subsequent user testing exposed presentation gaps; the [presentation follow-up](mastra-frontend-parity.md#presentation-follow-up-2026-10-09) records optimistic sends, hidden empty reasoning, collapsed file diagnostics and user-authorized native message-local activity folding with canonical live Working/Waiting status. Exact historical completed-turn parity is not required; no inferred turns, outcomes or durations are added. See the frontend parity plan for validation and accepted limitations. No deployment. Historical investigations below remain useful context and are superseded by later acceptance checkpoints.
 
+## Outer Working/Worked presentation follow-up (2026-10-09)
+
+User requested one outer closed Worked disclosure across intermediate native message activity, plus mainline's divider and Working above live activity. Implemented as a browser projection using the existing work renderer, preserving the concurrent inner-disclosure changes. Canonical snapshots determine current Working/Waiting; settled eligible activity folds before visible answer text without inventing native turns, successful outcomes or durations. Unknown/step boundaries, prompts, errors and unfinished or answerless activity stay outside completed folds. Stable answer-based keys and folded-span-aware prepend restoration protect inspection and scroll position. See the frontend parity plan for validation. Not deployed.
+
 ## Fixed reference and scope
 
 Current acceptance reference: `84b0ebc7d75cc49efa577511bf2f741e6d624749`, explicitly authorized after the final drift comparison. Initial reference00d2283 remains historical. No further moving-main comparison or production deployment is included.

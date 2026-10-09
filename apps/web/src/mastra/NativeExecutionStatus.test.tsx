@@ -4,7 +4,9 @@ import { afterEach, expect, it } from 'vitest';
 import { defaultDisplayState } from '../../../../spikes/mastra-code-sdk/node_modules/@mastra/core/dist/agent-controller/index.js';
 import type { ChatSnapshot } from './client';
 import { nativeQueueFixture, nativeReadStateFixture, nativeSettingsFixture } from './testBuilders';
-import { NativeExecutionStatus } from './NativeExecutionStatus';
+import { nativeWorkPresentation } from './nativeWorkPresentation';
+import { timelinePresentation } from './presentation';
+import { TimelineWorkRowRenderer } from '../timeline/renderers';
 
 const target = { sessionId: 'session', threadId: 'chat', resourceId: 'resource', runId: 'run', toolCallId: 'tool' };
 function snapshot(running = false, prompts: ChatSnapshot['prompts'] = []): ChatSnapshot {
@@ -14,7 +16,8 @@ function snapshot(running = false, prompts: ChatSnapshot['prompts'] = []): ChatS
     queue: nativeQueueFixture(), settings: nativeSettingsFixture(), history: { earliest: null, hasOlder: false } };
 }
 function status(value: ChatSnapshot | null, chatId = 'chat', archived = false) {
-  return <MantineProvider env="test"><NativeExecutionStatus snapshot={value} chatId={chatId} archived={archived} /></MantineProvider>;
+  const timeline = nativeWorkPresentation(value ? timelinePresentation(value) : null, value, chatId, archived);
+  return <MantineProvider env="test">{timeline?.rows.map(row => row.type === 'work' ? <TimelineWorkRowRenderer key={row.key} row={row} /> : null)}</MantineProvider>;
 }
 afterEach(cleanup);
 

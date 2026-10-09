@@ -25,8 +25,8 @@ function TimelineWorkRowRendererImpl({
   if (row.state === "running") {
     return (
       <Box className="kodex-work-row" data-state="running">
-        <Text size="xs" c="dimmed">
-          {label}
+        <Text size="xs" c="dimmed" role={row.statusLabel ? 'status' : undefined}>
+          {row.statusLabel ?? label}
         </Text>
         <WorkHeaderDivider />
       </Box>

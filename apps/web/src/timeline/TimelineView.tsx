@@ -125,7 +125,7 @@ export function TimelineView({
   ) : null;
   usePrependScrollRestoration({
     isLoadingOlderHistory: timeline.isLoadingOlderHistory,
-    rowCount,
+    rowCount: rows.reduce((count, row) => count + (row.type === 'work' ? Math.max(1, row.collapsedRows.length) : 1), 0),
     scrollParentElement,
     threadId,
   });

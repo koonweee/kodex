@@ -98,6 +98,7 @@ type TimelineItemRow = {
   turnId: string | null;
   displayOrder: number;
   item: TimelineItem;
+  nativeWorkBoundary?: number;
   dividerBefore?: TimelineRowDivider;
 };
 
@@ -111,6 +112,7 @@ type TimelineActivityRow = {
   displayOrder: number;
   items: TimelineItem[];
   fallbackSummary?: string;
+  nativeWorkBoundary?: number;
   disclosureKeys?: ActivityDisclosureIdentity[];
   dividerBefore?: TimelineRowDivider;
 };
@@ -130,7 +132,8 @@ export type TimelineWorkRow = {
   type: "work";
   key: string;
   turnKey: string;
-  turnId: string;
+  turnId: string | null;
+  statusLabel?: string;
   state: "running" | "completed" | "failed" | "interrupted";
   errorMessage?: string;
   startedAtMs?: number;

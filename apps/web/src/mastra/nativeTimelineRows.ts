@@ -1,6 +1,6 @@
 import type { TimelineItem, TimelineRow } from '../timeline/state';
 
-export type NativeItemOrigin = { messageId: string; groupingIndex: number };
+export type NativeItemOrigin = { messageId: string; groupingIndex: number; workBoundary?: number };
 const activityKinds = new Set(['reasoning', 'collab_agent_tool_call', 'command_execution', 'dynamic_tool_call', 'mcp_tool_call', 'web_search_group']);
 function isInteractive(item: TimelineItem) {
   return Boolean(item.asyncQuestions?.length) || item.toolName === 'ask_user' || item.toolName === 'submit_plan' || item.toolName === 'request_user_input_async'
@@ -42,12 +42,12 @@ export function nativeTimelineRows(items: TimelineItem[], origins: Array<NativeI
         previous.items.push(item);
       } else {
         const key = JSON.stringify(['native-activity', origin.messageId, item.id]);
-        rows.push({ type: 'activity', key, turnKey: key, turnId: null, displayOrder: item.displayOrder, items: [item], fallbackSummary: 'Activity' });
+        rows.push({ type: 'activity', key, turnKey: key, turnId: null, displayOrder: item.displayOrder, items: [item], fallbackSummary: 'Activity', nativeWorkBoundary: origin.workBoundary });
       }
     } else if (origin === undefined && isActivity(item)) {
       const key = JSON.stringify(['native-live-activity', item.id]);
       rows.push({ type: 'activity', key, turnKey: key, turnId: null, displayOrder: item.displayOrder, items: [item], fallbackSummary: 'Activity' });
-    } else rows.push({ type: 'item', key: item.id, turnKey: item.id, turnId: null, displayOrder: item.displayOrder, item });
+    } else rows.push({ type: 'item', key: item.id, turnKey: item.id, turnId: null, displayOrder: item.displayOrder, item, nativeWorkBoundary: origin?.workBoundary });
     previousOrigin = origin;
   }
   // Saved identities never change if a later message reuses a tool ID. Only
