@@ -129,6 +129,7 @@ export function TimelineView({
     onOverflowAboveChange,
     rowCount,
     scrollParentElement,
+    threadId,
   });
   usePrependAnchorCorrection({
     isLoadingOlderHistory: timeline.isLoadingOlderHistory,
@@ -224,16 +225,18 @@ export function TimelineView({
         ref={virtuosoRef}
       />
       {showScrollToBottom ? (
-        <AdaptiveIconButton
-          className="kodex-scroll-to-bottom"
-          color="gray"
-          label={TIMELINE_TEXT.scrollToBottom}
-          onClick={scrollToBottom}
-          shape="round"
-          variant="light"
-        >
-          <ArrowDownToLine />
-        </AdaptiveIconButton>
+        <Box className="kodex-scroll-to-bottom-anchor">
+          <AdaptiveIconButton
+            className="kodex-scroll-to-bottom"
+            color="gray"
+            label={TIMELINE_TEXT.scrollToBottom}
+            onClick={scrollToBottom}
+            shape="round"
+            variant="light"
+          >
+            <ArrowDownToLine />
+          </AdaptiveIconButton>
+        </Box>
       ) : null}
     </Box>
   );

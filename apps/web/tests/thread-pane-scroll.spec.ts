@@ -132,6 +132,31 @@ test.describe("bottom follow geometry", () => {
     expect(fixture.unexpected).toEqual([]);
   });
 
+  test("the return-to-bottom control does not add scrollable space", async ({ context }) => {
+    const fixture = await scrollingFixture(context, 40);
+    try {
+      const page = await fixture.page("bottom-control-overlay", "/threads/settings-chat");
+      const pane = page.locator(".kodex-thread-pane-existing");
+      const scroll = pane.locator(".kodex-timeline-scroll");
+      await expect(pane.locator('[data-initial-bottom-aligned="true"]')).toBeVisible();
+      await settle(page, scroll);
+      const baselineHeight = await scroll.evaluate((element) => element.scrollHeight);
+
+      await scroll.evaluate((element) => {
+        element.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -120 }));
+        element.scrollTop -= 120;
+      });
+
+      await expect(pane.getByRole("button", { name: "Scroll to bottom", exact: true })).toBeVisible();
+      await settle(page, scroll);
+      expect(Math.abs(await scroll.evaluate((element) => element.scrollHeight) - baselineHeight)).toBeLessThan(2);
+    } finally {
+      await fixture.close();
+    }
+    expect(fixture.errors).toEqual([]);
+    expect(fixture.unexpected).toEqual([]);
+  });
+
   test("preserves a reading position when the composer grows", async ({ context }) => {
     const fixture = await scrollingFixture(context, 40);
     try {

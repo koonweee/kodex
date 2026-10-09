@@ -16,15 +16,21 @@ export function useBottomPinnedVirtuosoTimeline({
   onOverflowAboveChange,
   rowCount,
   scrollParentElement,
+  threadId,
 }: {
   onReady: () => void;
   onOverflowAboveChange?: (hasOverflowAbove: boolean) => void;
   rowCount: number;
   scrollParentElement: HTMLDivElement | null;
+  threadId?: string;
 }) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const isPinnedToBottomRef = useRef(true);
   const activeUserScrollRef = useRef<Exclude<TimelineScrollPolicySource, "measure"> | null>(null);
+  const bottomOriginDisclosureRef = useRef<Element | null>(null);
+  const pendingDisclosureCollapseRef = useRef<{ startHeight: number } | null>(null);
+  const disclosureRecoveryRevisionRef = useRef(0);
+  const measuredListHeightRef = useRef<number | null>(null);
   const pendingBottomFollowFrame = useRef<number | null>(null);
   const showScrollToBottomRef = useRef(false);
   const touchYRef = useRef<number | null>(null);
@@ -41,6 +47,12 @@ export function useBottomPinnedVirtuosoTimeline({
       cancelAnimationFrame(pendingBottomFollowFrame.current);
       pendingBottomFollowFrame.current = null;
     }
+  }, []);
+
+  const clearDisclosureRecovery = useCallback(() => {
+    bottomOriginDisclosureRef.current = null;
+    pendingDisclosureCollapseRef.current = null;
+    disclosureRecoveryRevisionRef.current += 1;
   }, []);
 
   const syncScrollPolicyFromParent = useCallback((source: TimelineScrollPolicySource = "measure") => {
@@ -115,11 +127,12 @@ export function useBottomPinnedVirtuosoTimeline({
 
   const scrollToBottom = useCallback(() => {
     activeUserScrollRef.current = null;
+    clearDisclosureRecovery();
     isPinnedToBottomRef.current = true;
     setScrollToBottomVisible(false);
     cancelPendingBottomFollow();
     scrollToTimelineBottom("smooth");
-  }, [cancelPendingBottomFollow, scrollToTimelineBottom, setScrollToBottomVisible]);
+  }, [cancelPendingBottomFollow, clearDisclosureRecovery, scrollToTimelineBottom, setScrollToBottomVisible]);
 
   const handleAtBottomStateChange = useCallback(
     (atBottom: boolean) => {
@@ -138,17 +151,38 @@ export function useBottomPinnedVirtuosoTimeline({
 
   // Virtuoso has committed its measurement by the time this fires. Keep the
   // value out of React state: only the scroll policy needs to react to it.
-  const handleTotalListHeightChanged = useCallback(() => {
+  const handleTotalListHeightChanged = useCallback((measuredListHeight: number) => {
+    measuredListHeightRef.current = measuredListHeight;
+    const pendingCollapse = pendingDisclosureCollapseRef.current;
+    if (pendingCollapse && measuredListHeight < pendingCollapse.startHeight) {
+      pendingDisclosureCollapseRef.current = null;
+      const recoveryRevision = disclosureRecoveryRevisionRef.current;
+      requestAnimationFrame(() => {
+        if (
+          disclosureRecoveryRevisionRef.current === recoveryRevision &&
+          !isPinnedToBottomRef.current &&
+          scrollParentElement &&
+          !shouldScrollElementToBottom(scrollParentElement)
+        ) {
+          syncScrollPolicyFromParent("toward");
+        }
+      });
+    }
     if (isPinnedToBottomRef.current) {
       scheduleBottomFollow("auto");
     } else {
       syncScrollPolicyFromParent();
     }
-  }, [scheduleBottomFollow, syncScrollPolicyFromParent]);
+  }, [scheduleBottomFollow, scrollParentElement, syncScrollPolicyFromParent]);
 
   useEffect(() => () => {
     cancelPendingBottomFollow();
   }, [cancelPendingBottomFollow]);
+
+  useEffect(() => {
+    measuredListHeightRef.current = null;
+    clearDisclosureRecovery();
+  }, [clearDisclosureRecovery, threadId]);
 
   const followOutput = useCallback<Exclude<FollowOutput, boolean | string>>(
     () => timelineFollowOutputBehavior(isPinnedToBottomRef.current && !showScrollToBottomRef.current),
@@ -164,6 +198,7 @@ export function useBottomPinnedVirtuosoTimeline({
     syncScrollPolicyFromParent();
     let lastScrollTop = scrollElement.scrollTop;
     let pointerIntentClearFrame: number | null = null;
+    let selectionPauseFrame: number | null = null;
     const cancelPointerIntentClear = () => {
       if (pointerIntentClearFrame !== null) cancelAnimationFrame(pointerIntentClearFrame);
       pointerIntentClearFrame = null;
@@ -171,6 +206,7 @@ export function useBottomPinnedVirtuosoTimeline({
     const handleScroll = () => {
       const currentScrollTop = scrollElement.scrollTop;
       const activeSource = activeUserScrollRef.current;
+      if (activeSource !== null && currentScrollTop !== lastScrollTop) clearDisclosureRecovery();
       const source = activeSource === "user"
         ? currentScrollTop < lastScrollTop ? "away" : currentScrollTop > lastScrollTop ? "toward" : "user"
         : activeSource ?? "measure";
@@ -200,12 +236,14 @@ export function useBottomPinnedVirtuosoTimeline({
       cancelPointerIntentClear();
       activeUserScrollRef.current = null;
       touchYRef.current = null;
+      clearDisclosureRecovery();
       isPinnedToBottomRef.current = false;
       cancelPendingBottomFollow();
-      syncScrollPolicyFromParent();
+      syncScrollPolicyFromParent("away");
     };
     const handleWheel = (event: WheelEvent) => {
       cancelPointerIntentClear();
+      if (event.deltaY !== 0) clearDisclosureRecovery();
       activeUserScrollRef.current = event.deltaY < 0 ? "away" : event.deltaY > 0 ? "toward" : "user";
       if (activeUserScrollRef.current === "away") pauseForReading();
     };
@@ -219,14 +257,48 @@ export function useBottomPinnedVirtuosoTimeline({
       const previousY = touchYRef.current;
       if (currentY === undefined || previousY === null) return;
       cancelPointerIntentClear();
+      clearDisclosureRecovery();
       activeUserScrollRef.current = currentY > previousY ? "away" : currentY < previousY ? "toward" : "user";
       touchYRef.current = currentY;
       if (activeUserScrollRef.current === "away") pauseForReading();
     };
     const handleDisclosureClick = (event: MouseEvent) => {
-      if (event.target instanceof Element && event.target.closest("summary, button[aria-expanded]")) {
-        pauseForReading();
+      if (!(event.target instanceof Element)) return;
+      const disclosure = disclosureElementForTarget(event.target);
+      if (!disclosure) return;
+      const expanded = disclosure instanceof HTMLDetailsElement
+        ? disclosure.open
+        : disclosure.getAttribute("aria-expanded") === "true";
+      if (expanded && disclosure === bottomOriginDisclosureRef.current) {
+        bottomOriginDisclosureRef.current = null;
+        const measuredListHeight = measuredListHeightRef.current;
+        pendingDisclosureCollapseRef.current = measuredListHeight === null ? null : { startHeight: measuredListHeight };
+        activeUserScrollRef.current = null;
+        touchYRef.current = null;
+        isPinnedToBottomRef.current = false;
+        cancelPendingBottomFollow();
+        syncScrollPolicyFromParent("away");
+        return;
       }
+      const startedPinned = isPinnedToBottomRef.current && !showScrollToBottomRef.current;
+      pauseForReading();
+      if (!expanded && startedPinned) {
+        bottomOriginDisclosureRef.current = disclosure;
+      }
+    };
+    const pauseForTimelineSelection = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+      const anchorInTimeline = selection.anchorNode !== null && scrollElement.contains(selection.anchorNode);
+      const focusInTimeline = selection.focusNode !== null && scrollElement.contains(selection.focusNode);
+      if (anchorInTimeline || focusInTimeline) pauseForReading();
+    };
+    const handleSelectStart = () => {
+      if (selectionPauseFrame !== null) cancelAnimationFrame(selectionPauseFrame);
+      selectionPauseFrame = requestAnimationFrame(() => {
+        selectionPauseFrame = null;
+        pauseForTimelineSelection();
+      });
     };
     const handleKeyboardScrollIntent = (event: KeyboardEvent) => {
       if (!isTimelineKeyboardTarget(event.target, scrollElement) || isEditableKeyboardTarget(event.target)) {
@@ -236,11 +308,14 @@ export function useBottomPinnedVirtuosoTimeline({
       if (!direction) return;
       cancelPointerIntentClear();
       activeUserScrollRef.current = direction;
+      clearDisclosureRecovery();
       if (direction === "away") pauseForReading();
     };
-    // Capture before a disclosure changes height; measurements must not repin it.
+    // Capture before a disclosure changes height. Measurement may resume follow
+    // only when the resulting viewport is at the exact bottom.
     scrollElement.addEventListener("click", handleDisclosureClick, true);
-    scrollElement.addEventListener("selectstart", pauseForReading);
+    scrollElement.addEventListener("selectstart", handleSelectStart);
+    document.addEventListener("selectionchange", pauseForTimelineSelection);
     scrollElement.addEventListener("scroll", handleScroll, { passive: true });
     scrollElement.addEventListener("scrollend", clearUserScrollIntent);
     scrollElement.addEventListener("wheel", handleWheel, { passive: true });
@@ -252,7 +327,8 @@ export function useBottomPinnedVirtuosoTimeline({
     document.addEventListener("keydown", handleKeyboardScrollIntent);
     return () => {
       scrollElement.removeEventListener("click", handleDisclosureClick, true);
-      scrollElement.removeEventListener("selectstart", pauseForReading);
+      scrollElement.removeEventListener("selectstart", handleSelectStart);
+      document.removeEventListener("selectionchange", pauseForTimelineSelection);
       scrollElement.removeEventListener("scroll", handleScroll);
       scrollElement.removeEventListener("scrollend", clearUserScrollIntent);
       scrollElement.removeEventListener("wheel", handleWheel);
@@ -263,9 +339,11 @@ export function useBottomPinnedVirtuosoTimeline({
       document.removeEventListener("pointerup", handlePointerEnd);
       document.removeEventListener("keydown", handleKeyboardScrollIntent);
       cancelPointerIntentClear();
+      if (selectionPauseFrame !== null) cancelAnimationFrame(selectionPauseFrame);
+      clearDisclosureRecovery();
       onOverflowAboveChange?.(false);
     };
-  }, [cancelPendingBottomFollow, onOverflowAboveChange, scrollParentElement, syncScrollPolicyFromParent]);
+  }, [cancelPendingBottomFollow, clearDisclosureRecovery, onOverflowAboveChange, scrollParentElement, syncScrollPolicyFromParent]);
 
   useEffect(() => {
     const scrollElement = scrollParentElement;
@@ -368,4 +446,10 @@ function isTimelineKeyboardTarget(target: EventTarget | null, scrollElement: HTM
   if (target !== document.body && target !== document.documentElement) return false;
   return scrollElement.matches(".kodex-thread-pane-scroll")
     && scrollElement.closest('[data-workspace-pane-active="true"]') !== null;
+}
+
+function disclosureElementForTarget(target: Element): Element | null {
+  const summary = target.closest("summary");
+  if (summary?.parentElement instanceof HTMLDetailsElement) return summary.parentElement;
+  return target.closest("button[aria-expanded]");
 }
