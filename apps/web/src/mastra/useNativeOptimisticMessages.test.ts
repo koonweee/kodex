@@ -37,3 +37,36 @@ it('does not leak attempts or late callbacks into a different chat', () => {
   rerender({ chatId: 'first' });
   expect(result.current.timeline?.rows).toHaveLength(0);
 });
+
+function canonicalRow(id: string, kind = 'assistant_message', clientId?: string): TimelinePresentation['rows'][number] {
+  return { type: 'item', key: id, displayOrder: 0, turnId: null, turnKey: id, item: {
+    id, kind, clientId, text: id, displayOrder: 0, turnId: null, debugEvents: [], payload: {}, status: 'completed',
+  } };
+}
+it('keeps an idle send before new native activity until its canonical user message arrives', () => {
+  const prior = canonicalRow('previous-answer');
+  const start = { ...empty, rows: [prior] };
+  const { result, rerender } = renderHook(({ timeline }) => useNativeOptimisticMessages('chat', timeline), { initialProps: { timeline: start } });
+  act(() => result.current.onOptimisticUserMessageStarted({ threadId: 'chat', clientRequestId: 'new', text: 'Next request', skillMentions: [] }));
+  const activity = canonicalRow('new-activity', 'dynamic_tool_call');
+  rerender({ timeline: { ...start, rows: [prior, activity], lastSeq: 2 } });
+  expect(result.current.timeline?.rows.map(row => row.key)).toEqual(['previous-answer', 'optimistic-user-new', 'new-activity']);
+  act(() => result.current.onOptimisticUserMessageSent('new'));
+  rerender({ timeline: { ...start, rows: [canonicalRow('older-history'), prior, activity], lastSeq: 3 } });
+  expect(result.current.timeline?.rows.map(row => row.key)).toEqual(['older-history', 'previous-answer', 'optimistic-user-new', 'new-activity']);
+  const user = canonicalRow('native-user', 'user_message', 'new');
+  rerender({ timeline: { ...start, rows: [prior, user, activity], lastSeq: 4 } });
+  expect(result.current.timeline?.rows.map(row => row.key)).toEqual(['previous-answer', 'native-user', 'new-activity']);
+});
+it('keeps multiple pending sends ordered when an earlier one becomes canonical', () => {
+  const { result, rerender } = renderHook(({ timeline }) => useNativeOptimisticMessages('chat', timeline), { initialProps: { timeline: empty } });
+  act(() => {
+    result.current.onOptimisticUserMessageStarted({ threadId: 'chat', clientRequestId: 'one', text: 'First', skillMentions: [] });
+    result.current.onOptimisticUserMessageStarted({ threadId: 'chat', clientRequestId: 'two', text: 'Second', skillMentions: [] });
+  });
+  const activity = canonicalRow('activity', 'dynamic_tool_call');
+  rerender({ timeline: { ...empty, rows: [activity], lastSeq: 2 } });
+  expect(result.current.timeline?.rows.map(row => row.key)).toEqual(['optimistic-user-one', 'optimistic-user-two', 'activity']);
+  rerender({ timeline: { ...empty, rows: [canonicalRow('native-one', 'user_message', 'one'), activity], lastSeq: 3 } });
+  expect(result.current.timeline?.rows.map(row => row.key)).toEqual(['native-one', 'optimistic-user-two', 'activity']);
+});

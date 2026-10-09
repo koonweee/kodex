@@ -16,6 +16,10 @@ The completed integration checkpoint below is not a claim of identical transcrip
 
 Early noninteractive tools now use collapsed singleton groups until native message provenance arrives. Empty live argument placeholders preserve known same-call arguments. Pane-local explicit disclosure choices survive regrouping, including nested tool inspection. A native Running badge makes active folded work visible without changing mainline summary wording or inferring successful outcomes. Native grouping/prompt boundaries and native execution remain authoritative; no SDK patches or backend state are added. See the running log for verification and deployment status.
 
+### Optimistic ordering follow-up (2026-10-09)
+
+Pending existing-chat sends now retain their send-time row boundary while native activity arrives ahead of the persisted user signal. Matching native client IDs still replace the placeholder; native history order remains authoritative. Concurrent pending sends and history prepends are covered, along with deterministic two-tab desktop/touch browser evidence. See the running log; not deployed.
+
 ## Fixed reference and scope
 
 Current acceptance reference: `84b0ebc7d75cc49efa577511bf2f741e6d624749`, explicitly authorized on 2026-10-09 after the final drift comparison. The initial `00d22832cb43a2784826b1eb9a25689d4b1e5eba` merge and validation remain historical evidence. Integrate this pinned newer snapshot into `codex/mastra-sdk-spike`; do not chase further main changes. Do not change the main checkout or deploy the production service.

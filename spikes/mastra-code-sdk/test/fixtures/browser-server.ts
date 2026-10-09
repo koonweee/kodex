@@ -267,7 +267,20 @@ if (process.argv[4] === 'input-images' && !(await service.listChats()).chats.len
 await service.initializeAutomations();
 if (process.argv[4] === 'push') await service.push();
 const terminals = createTerminalService({ defaultCwd: directoryHome, projectCwd: id => service.terminalProjectCwd(id) });
-const server = await serveRouter(createGatewayRouter(service, terminals), port, service, terminals, { frontendDir: process.argv[5] });
+// Test-only projection delay: exercise native activity reaching a browser before
+// the admitted user signal appears in its history snapshot. Native storage and
+// execution are untouched; releasing the held shell also releases this row.
+const browserService = process.argv[4] === 'optimistic-order' ? { ...service,
+  async *watchChat(...args: Parameters<typeof service.watchChat>) {
+    for await (const snapshot of service.watchChat(...args)) {
+      let released = false;
+      try { await readFile(join(projectPath, '.release-tool')); released = true; } catch {}
+      yield released ? snapshot : { ...snapshot, messages: snapshot.messages.filter(message =>
+        !((message.role === 'user' || message.role === 'signal') && message.content.parts.some(part => part.type === 'text' && part.text === 'RUN_HELD_SHELL'))) };
+    }
+  },
+} : service;
+const server = await serveRouter(createGatewayRouter(browserService, terminals), port, service, terminals, { frontendDir: process.argv[5] });
 console.log(`BROWSER_FIXTURE_READY ${server.url}`);
 let stopping = false;
 const stop = () => {
