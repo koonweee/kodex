@@ -1,95 +1,16 @@
-import { Badge, Box, Button, Code, Group, Stack, Text } from "@mantine/core";
-import { Terminal } from "lucide-react";
-import { memo, useState } from "react";
-import type { SyntheticEvent } from "react";
+import { Badge, Box, Code, Group, Stack, Text } from "@mantine/core";
 
 import type { MarkdownPreviewRequest } from "../files/types";
-import type { ImageLightboxImage } from "../images/types";
 import { useThreadDeliveryPreferences } from "./ThreadDeliveryPreferences";
-import { ActivityGroupSummary } from "./ActivityGroupSummary";
-import { FileChangeBlock } from "./fileRenderers";
-import { ImageActivityBlock } from "./imageRenderers";
-import { AssistantMessageMarkdown, UserMessageBubble } from "./messageRenderers";
-import { fileChangeActionIsModified } from "./presentationFile";
 import {
   commandStatusMeta,
-  DebugDisclosure,
   displayCommand,
   LazyMarkdownContent,
   MessageText,
   payloadValue,
-  TimelineIcon,
-  timelineItemLabels,
   titleCase,
-  unknownRenderer,
 } from "./rendererShared";
 import type { TimelineItem, WebSearchAction } from "./reducer";
-
-type TimelineActivityGroupRendererProps = {
-  imagePreviewUrlsByPath?: Record<string, string>;
-  items: TimelineItem[];
-  onImageOpen?: (image: ImageLightboxImage) => void;
-  onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
-  showDebug?: boolean;
-  threadId?: string;
-};
-
-const ACTIVITY_ITEM_RENDER_CHUNK = 80;
-
-function TimelineActivityGroupRendererImpl({
-  imagePreviewUrlsByPath = {},
-  items,
-  onImageOpen,
-  onMarkdownOpen,
-  showDebug = false,
-  threadId,
-}: TimelineActivityGroupRendererProps) {
-  const [hasOpened, setHasOpened] = useState(false);
-  const [visibleItemCount, setVisibleItemCount] = useState(ACTIVITY_ITEM_RENDER_CHUNK);
-  const visibleItems = items.slice(0, visibleItemCount);
-  const remainingItemCount = Math.max(0, items.length - visibleItems.length);
-  const handleToggle = (event: SyntheticEvent<HTMLDetailsElement>) => {
-    if (event.currentTarget.open) setHasOpened(true);
-  };
-
-  return (
-    <details className="kodex-activity-group" onToggle={handleToggle}>
-      <summary className="kodex-timeline-intermediate">
-        <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
-          <Terminal size={15} />
-          <ActivityGroupSummary items={items} />
-        </Group>
-      </summary>
-      {hasOpened ? (
-        <Stack className="kodex-activity-contents" gap={4}>
-          {visibleItems.map((item) => (
-            <ActivityItemRenderer
-              imagePreviewUrlsByPath={imagePreviewUrlsByPath}
-              item={item}
-              key={item.id}
-              onImageOpen={onImageOpen}
-              onMarkdownOpen={onMarkdownOpen}
-              showDebug={showDebug}
-              threadId={threadId}
-            />
-          ))}
-          {remainingItemCount > 0 ? (
-            <Button
-              size="xs"
-              variant="subtle"
-              onClick={() => setVisibleItemCount((count) => Math.min(items.length, count + ACTIVITY_ITEM_RENDER_CHUNK))}
-            >
-              Show {Math.min(ACTIVITY_ITEM_RENDER_CHUNK, remainingItemCount)} more
-            </Button>
-          ) : null}
-        </Stack>
-      ) : null}
-    </details>
-  );
-}
-
-export const TimelineActivityGroupRenderer = memo(TimelineActivityGroupRendererImpl);
-TimelineActivityGroupRenderer.displayName = "TimelineActivityGroupRenderer";
 
 export function ReasoningBlock({ item }: { item: TimelineItem }) {
   const summary = item.summary || item.text;
@@ -249,154 +170,6 @@ export function StatusMarker({ item }: { item: TimelineItem }) {
   );
 }
 
-const ActivityItemRenderer = memo(function ActivityItemRenderer({
-  imagePreviewUrlsByPath,
-  item,
-  onImageOpen,
-  onMarkdownOpen,
-  showDebug,
-  threadId,
-}: {
-  imagePreviewUrlsByPath: Record<string, string>;
-  item: TimelineItem;
-  onImageOpen?: (image: ImageLightboxImage) => void;
-  onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
-  showDebug: boolean;
-  threadId?: string;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-  const handleToggle = (event: SyntheticEvent<HTMLDetailsElement>) => {
-    setIsOpen(event.currentTarget.open);
-  };
-
-  if (item.kind === "command_execution") {
-    const status = commandStatusMeta(item.status);
-    return (
-      <details className="kodex-activity-item" onToggle={handleToggle}>
-        <summary className="kodex-timeline-intermediate">
-          <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
-            <Terminal size={15} />
-            <Text size="xs" c="dimmed" className="kodex-activity-title" title={commandSummary(item)}>
-              {commandSummary(item)}
-            </Text>
-            {status ? (
-              <Badge data-tone={status.tone} size="xs" variant="light">
-                {status.label}
-              </Badge>
-            ) : null}
-          </Group>
-        </summary>
-        {isOpen ? (
-          <>
-            <CommandBlock item={item} />
-            {showDebug ? <DebugDisclosure item={item} /> : null}
-          </>
-        ) : null}
-      </details>
-    );
-  }
-
-  return (
-    <details className="kodex-activity-item" onToggle={handleToggle}>
-      <summary className="kodex-timeline-intermediate">
-        <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
-          <TimelineIcon kind={item.kind} />
-          <Text size="xs" c="dimmed" className="kodex-activity-title" title={activityItemSummary(item)}>
-            {activityItemSummary(item)}
-          </Text>
-        </Group>
-      </summary>
-      {isOpen ? (
-        <>
-          <Box className="kodex-activity-body">
-            {renderActivityItemBody(item, { imagePreviewUrlsByPath, onImageOpen, onMarkdownOpen, threadId })}
-          </Box>
-          {showDebug ? <DebugDisclosure item={item} /> : null}
-        </>
-      ) : null}
-    </details>
-  );
-});
-ActivityItemRenderer.displayName = "ActivityItemRenderer";
-
-function renderActivityItemBody(
-  item: TimelineItem,
-  options: {
-    imagePreviewUrlsByPath: Record<string, string>;
-    onImageOpen?: (image: ImageLightboxImage) => void;
-    onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
-    threadId?: string;
-  },
-) {
-  if (item.kind === "agent_message" || item.kind === "assistant_message") {
-    return (
-      <AssistantMessageMarkdown
-        item={item}
-        onImageOpen={options.onImageOpen}
-        onMarkdownOpen={options.onMarkdownOpen}
-        text={item.text || "No assistant content yet"}
-        threadId={options.threadId}
-      />
-    );
-  }
-  if (item.kind === "user_message") {
-    return (
-      <UserMessageBubble
-        item={item}
-        imagePreviewUrlsByPath={options.imagePreviewUrlsByPath}
-        onImageOpen={options.onImageOpen}
-        onMarkdownOpen={options.onMarkdownOpen}
-        threadId={options.threadId}
-      />
-    );
-  }
-  if (item.kind === "reasoning_summary" || item.kind === "reasoning") {
-    return <ReasoningBlock item={item} />;
-  }
-  if (item.kind === "command_execution") {
-    return <CommandBlock item={item} />;
-  }
-  if (item.kind === "file_change") {
-    return <FileChangeBlock item={item} />;
-  }
-  if (item.kind === "mcp_tool_call" || item.kind === "dynamic_tool_call") {
-    return <ToolCallBlock item={item} />;
-  }
-  if (item.kind === "collab_agent_tool_call") {
-    return <CollabAgentBlock item={item} onMarkdownOpen={options.onMarkdownOpen} threadId={options.threadId} />;
-  }
-  if (item.kind === "web_search_group") {
-    return <WebSearchBlock actions={item.actions ?? []} />;
-  }
-  if (item.kind === "plan") {
-    return <PlanBlock item={item} />;
-  }
-  if (item.kind === "image_view" || item.kind === "image_generation") {
-    return <ImageActivityBlock item={item} onImageOpen={options.onImageOpen} threadId={options.threadId} />;
-  }
-  if (item.kind === "review_mode_started" || item.kind === "review_mode_finished" || item.kind === "context_compaction") {
-    return <StatusMarker item={item} />;
-  }
-  if (item.kind === "warning") {
-    return (
-      <Text size="sm" className="kodex-ui-text" data-tone="warning">
-        {item.text || "Warning"}
-      </Text>
-    );
-  }
-  if (item.kind === "error") {
-    return (
-      <Text size="sm" className="kodex-ui-text" data-tone="danger">
-        {item.text || "Error"}
-      </Text>
-    );
-  }
-  if (item.kind === "debug_event") {
-    return <Text size="sm">{item.text || "Unsupported item"}</Text>;
-  }
-  return unknownRenderer(item);
-}
-
 function webSearchActionText(action: WebSearchAction): string {
   if (action.kind === "search") {
     return `Searched web for "${action.query}"`;
@@ -408,40 +181,7 @@ function webSearchActionText(action: WebSearchAction): string {
   return action.label;
 }
 
-function commandSummary(item: TimelineItem): string {
-  const command = displayCommand(item.command || payloadValue(item.payload, "command"));
-  if (!command) {
-    return "Ran command";
-  }
-  if (command === "rg --files" || command === "find . -maxdepth 1 -type f" || command === "ls") {
-    return "Listed files";
-  }
-  return `Ran ${command}`;
-}
-
-function activityItemSummary(item: TimelineItem): string {
-  if (item.kind === "file_change") {
-    const path = item.path || payloadValue(item.payload, "path");
-    const action = fileChangeActionIsModified(item.action) ? "Modified" : item.action || "Modified";
-    return path ? `${action} ${path}` : `${action} files`;
-  }
-  if (item.kind === "web_search_group") {
-    const count = item.actions?.length ?? 0;
-    return count === 1 ? "Searched web" : `Searched web, ${count} actions`;
-  }
-  if (item.kind === "mcp_tool_call" || item.kind === "dynamic_tool_call") {
-    return item.toolName ? `Used ${item.toolName}` : "Used tool";
-  }
-  if (item.kind === "collab_agent_tool_call") {
-    return collabActivitySummary(item);
-  }
-  if (item.kind === "image_view" || item.kind === "image_generation") {
-    return item.text || "Image activity";
-  }
-  return timelineItemLabels[item.kind] ?? "Activity";
-}
-
-function collabActivitySummary(item: TimelineItem): string {
+export function collabActivitySummary(item: TimelineItem): string {
   if (item.toolName === "wait" && item.status === "running" && item.collab && item.collab.agents.length > 1) {
     return `Waiting for ${item.collab.agents.length} agents`;
   }

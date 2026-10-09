@@ -9,6 +9,7 @@ import type { MarkdownPreviewRequest } from "../files/types";
 import { ApprovalCard, ThreadApprovalStack } from "../approvals/ApprovalCard";
 import type { ImageLightboxImage } from "../images/types";
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
+import { ACTIVITY_ITEM_RENDER_CHUNK } from "./TimelineActivityGroupRenderer";
 import {
   buildApprovalIndex,
   getTimelineRowApprovals,
@@ -18,6 +19,8 @@ import { TimelineActivityGroupRenderer, TimelineFileChangesRenderer, TimelineIte
 import type { TimelineItem, TimelineRow, TimelineState } from "./reducer";
 import { useTimelineScrollParent } from "./useTimelineScrollParent";
 import { useBottomPinnedVirtuosoTimeline } from "./useBottomPinnedVirtuosoTimeline";
+import { useTimelineDisclosureState } from "./useTimelineDisclosureState";
+import type { ActivityPresentationState } from "./useTimelineDisclosureState";
 
 const EMPTY_APPROVALS: Approval[] = [];
 
@@ -74,44 +77,18 @@ export function TimelineView({
 }) {
   const rows = timeline.rows;
   const visibleDebugItems = showDebug ? timeline.hiddenItems.filter((item) => item.debugEvents.length > 0) : [];
-  const [expandedWorkRowKeys, setExpandedWorkRowKeys] = useState<ReadonlySet<string>>(() => new Set());
   const [showHistoryStart, setShowHistoryStart] = useState(false);
   useEffect(() => {
-    setExpandedWorkRowKeys(new Set());
     setShowHistoryStart(false);
   }, [threadId]);
-  useEffect(() => {
-    const expandableWorkRowKeys = new Set(
-      rows.filter((row) => row.type === "work" && row.collapsedRows.length > 0).map((row) => row.key),
-    );
-    setExpandedWorkRowKeys((current) => {
-      let changed = false;
-      const next = new Set<string>();
-      for (const key of current) {
-        if (expandableWorkRowKeys.has(key)) {
-          next.add(key);
-        } else {
-          changed = true;
-        }
-      }
-      return changed ? next : current;
-    });
-  }, [rows]);
-  const handleWorkRowExpandedChange = useCallback((rowKey: string, expanded: boolean) => {
-    setExpandedWorkRowKeys((current) => {
-      const currentlyExpanded = current.has(rowKey);
-      if (currentlyExpanded === expanded) {
-        return current;
-      }
-      const next = new Set(current);
-      if (expanded) {
-        next.add(rowKey);
-      } else {
-        next.delete(rowKey);
-      }
-      return next;
-    });
-  }, []);
+  const {
+    activityPresentationByRowKey,
+    expandedWorkRowKeys,
+    handleActivityExpandedChange,
+    handleActivityItemExpandedChange,
+    handleActivityVisibleItemCountChange,
+    handleWorkRowExpandedChange,
+  } = useTimelineDisclosureState(rows, threadId);
   const visibleRows = useMemo(() => rows.map((row) => ({ key: row.key, row })), [rows]);
   const approvalIndex = useMemo(() => buildApprovalIndex(approvals), [approvals]);
   const pendingRequestSummaries = useMemo(
@@ -224,12 +201,16 @@ export function TimelineView({
         itemContent={(index, renderRow = visibleRows[index - virtualPosition.firstItemIndex]) => renderRow ? (
           <Box className="kodex-timeline-virtual-row kodex-thread-column" data-index={index} data-row-key={renderRow.key}>
             <TimelineRowView
+              activityPresentationByRowKey={activityPresentationByRowKey}
               approvals={approvalsByRowKey.get(renderRow.row.key) ?? EMPTY_APPROVALS}
               imagePreviewUrlsByPath={imagePreviewUrlsByPath}
               isWorkExpanded={
                 renderRow.row.type === "work" ? expandedWorkRowKeys.has(renderRow.row.key) : false
               }
               onApprovalDecision={onApprovalDecision}
+              onActivityExpandedChange={handleActivityExpandedChange}
+              onActivityItemExpandedChange={handleActivityItemExpandedChange}
+              onActivityVisibleItemCountChange={handleActivityVisibleItemCountChange}
               onWorkExpandedChange={handleWorkRowExpandedChange}
               onImageOpen={onImageOpen}
               onMarkdownOpen={onMarkdownOpen}
@@ -499,10 +480,14 @@ function HiddenDebugPanel({
 
 
 const TimelineRowView = memo(function TimelineRowView({
+  activityPresentationByRowKey,
   approvals,
   imagePreviewUrlsByPath,
   isWorkExpanded,
   onApprovalDecision,
+  onActivityExpandedChange,
+  onActivityItemExpandedChange,
+  onActivityVisibleItemCountChange,
   onImageOpen,
   onMarkdownOpen,
   onWorkExpandedChange,
@@ -511,10 +496,14 @@ const TimelineRowView = memo(function TimelineRowView({
   threadId,
   toolbarTimestampMs,
 }: {
+  activityPresentationByRowKey: ReadonlyMap<string, ActivityPresentationState>;
   approvals: Approval[];
   imagePreviewUrlsByPath: Record<string, string>;
   isWorkExpanded: boolean;
   onApprovalDecision: (approval: Approval, decision: ApprovalResponse) => void;
+  onActivityExpandedChange: (rowKey: string, expanded: boolean) => void;
+  onActivityItemExpandedChange: (rowKey: string, itemId: string, expanded: boolean) => void;
+  onActivityVisibleItemCountChange: (rowKey: string, visibleItemCount: number) => void;
   onImageOpen: (image: ImageLightboxImage) => void;
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   onWorkExpandedChange: (rowKey: string, expanded: boolean) => void;
@@ -537,11 +526,15 @@ const TimelineRowView = memo(function TimelineRowView({
           <Stack gap={0} className="kodex-work-row-contents">
             {row.collapsedRows.map((collapsedRow) => (
               <TimelineRowView
+                activityPresentationByRowKey={activityPresentationByRowKey}
                 approvals={[]}
                 imagePreviewUrlsByPath={imagePreviewUrlsByPath}
                 isWorkExpanded={false}
                 key={collapsedRow.key}
                 onApprovalDecision={onApprovalDecision}
+                onActivityExpandedChange={onActivityExpandedChange}
+                onActivityItemExpandedChange={onActivityItemExpandedChange}
+                onActivityVisibleItemCountChange={onActivityVisibleItemCountChange}
                 onWorkExpandedChange={onWorkExpandedChange}
                 onImageOpen={onImageOpen}
                 onMarkdownOpen={onMarkdownOpen}
@@ -554,12 +547,19 @@ const TimelineRowView = memo(function TimelineRowView({
         </TimelineWorkRowRenderer>
       ) : row.type === "activity" ? (
         <TimelineActivityGroupRenderer
+          expanded={activityPresentationByRowKey.get(row.key)?.expanded ?? false}
+          expandedItemIds={activityPresentationByRowKey.get(row.key)?.expandedItemIds}
+          hasOpened={activityPresentationByRowKey.has(row.key)}
           imagePreviewUrlsByPath={imagePreviewUrlsByPath}
           items={row.items}
+          onExpandedChange={(expanded) => onActivityExpandedChange(row.key, expanded)}
+          onItemExpandedChange={(itemId, expanded) => onActivityItemExpandedChange(row.key, itemId, expanded)}
           onImageOpen={onImageOpen}
           onMarkdownOpen={onMarkdownOpen}
+          onVisibleItemCountChange={(visibleItemCount) => onActivityVisibleItemCountChange(row.key, visibleItemCount)}
           showDebug={showDebug}
           threadId={threadId}
+          visibleItemCount={activityPresentationByRowKey.get(row.key)?.visibleItemCount ?? ACTIVITY_ITEM_RENDER_CHUNK}
         />
       ) : row.type === "file_changes" ? (
         <TimelineFileChangesRenderer entries={row.entries} showDebug={showDebug} />

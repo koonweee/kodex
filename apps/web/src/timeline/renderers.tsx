@@ -10,10 +10,10 @@ import {
   PlanBlock,
   ReasoningBlock,
   StatusMarker,
-  TimelineActivityGroupRenderer,
   ToolCallBlock,
   WebSearchBlock,
 } from "./activityRenderers";
+import { TimelineActivityGroupRenderer } from "./TimelineActivityGroupRenderer";
 import { TimelineWorkRowRenderer } from "./workRenderer";
 import { FileChangeBlock, TimelineFileChangesRenderer } from "./fileRenderers";
 import { ImageActivityBlock } from "./imageRenderers";

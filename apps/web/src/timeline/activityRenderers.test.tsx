@@ -184,6 +184,19 @@ describe("timeline activity renderers", () => {
     expect(screen.getAllByText("Shell")).not.toHaveLength(0);
   });
 
+  it("renders controlled activity contents whenever the group is open", () => {
+    render(
+      <MantineProvider>
+        <TimelineActivityGroupRenderer
+          expanded
+          items={[item({ id: "cmd-controlled", kind: "command_execution", command: "pwd" })]}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText("Ran pwd")).toBeInTheDocument();
+  });
+
   it("keeps revealed activity and open command details when new activity appends", async () => {
     const commands = (count: number) => Array.from({ length: count }, (_, index) => item({
       id: `cmd-${index + 1}`,
