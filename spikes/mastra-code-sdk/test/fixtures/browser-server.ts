@@ -166,8 +166,8 @@ const model = await startModelFixture(async request => {
   if ((user.includes('REPLACE_MARKER') || user.includes('REPLACE_MISSING')) && request.messages.at(-1)?.role !== 'tool') {
     return { toolCalls: [{ name: 'string_replace_lsp', arguments: { path: 'marker.txt', old_string: user.includes('REPLACE_MISSING') ? 'ABSENT_STRING' : 'BROWSER_TOOL_MARKER', new_string: 'BROWSER_EDITED_MARKER' } }] };
   }
-  if (user.includes('RUN_HELD_SHELL') && request.messages.at(-1)?.role !== 'tool') {
-    return { toolCalls: [{ name: 'execute_command', arguments: { description: 'Hold native activity for browser inspection', command: "printf 'LIVE_TOOL_OUTPUT\\n'; for i in {1..300}; do [ -f .release-tool ] && break; sleep 0.1; done; exit 7" } }] };
+  if ((user.includes('RUN_HELD_SHELL') || user.includes('RUN_HELD_COMMENTARY')) && request.messages.at(-1)?.role !== 'tool') {
+    return { ...(user.includes('RUN_HELD_COMMENTARY') && { text: 'Inspecting the live workspace.' }), toolCalls: [{ name: 'execute_command', arguments: { description: 'Hold native activity for browser inspection', command: "printf 'LIVE_TOOL_OUTPUT\\n'; for i in {1..300}; do [ -f .release-tool ] && break; sleep 0.1; done; exit 7" } }] };
   }
   if (user.includes('RUN_SHELL_FAILURE') && request.messages.at(-1)?.role !== 'tool') {
     return { text: 'Inspecting the shell failure.', toolCalls: [{ name: 'execute_command', arguments: { description: "Exercise native nonzero shell output", command: "printf 'NATIVE_SHELL_OUTPUT\\n'; exit 7" } }] };

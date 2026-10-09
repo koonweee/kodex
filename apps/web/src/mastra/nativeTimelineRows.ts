@@ -17,7 +17,7 @@ function adjacent(left: NativeItemOrigin | null | undefined, right: NativeItemOr
 /** Fold native message-local activity, not inferred turns or final answers.
  * A null origin is user-authored; undefined is an unassociated live overlay.
  */
-export function nativeTimelineRows(items: TimelineItem[], origins: Array<NativeItemOrigin | null | undefined>): TimelineRow[] {
+export function nativeTimelineRows(items: TimelineItem[], origins: Array<NativeItemOrigin | null | undefined>, visibleCommentary: ReadonlySet<string> = new Set()): TimelineRow[] {
   const progress = new Set<number>();
   let followingTool = false;
   for (let index = items.length - 1; index >= 0; index -= 1) {
@@ -28,7 +28,7 @@ export function nativeTimelineRows(items: TimelineItem[], origins: Array<NativeI
       if (item.kind !== 'reasoning') followingTool = true;
     } else if (item.kind === 'assistant_message' && item.status !== 'failed' && !isInteractive(item)) {
       // Pre-tool text is progress presentation only; trailing text stays visible.
-      if (followingTool) progress.add(index);
+      if (followingTool && !visibleCommentary.has(origins[index]!.messageId)) progress.add(index);
     } else followingTool = false;
   }
 

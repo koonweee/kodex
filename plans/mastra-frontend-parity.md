@@ -1068,3 +1068,8 @@ Final validation:
 Evidence logs: `/tmp/kodex-new-main-frontend-green.log`, `-backend-suite.log`, `-rust-tests.log`, `-service-tests.log`, `-default-build.log`, `-native-build.log`, `-frontend-trim.log`, `-rust-trim.log`, `-native-browser.log`, `-browser-fixes.log`, `-native-remaining.log`, `-native-final.log`, `-pwa-browser.log`, `-theme-browser.log` (same `/tmp/kodex-new-main` prefix). Browser matrix reconciliation used `-native-list.log`: no unaccounted variants.
 
 Remaining out-of-scope distinctions: native snapshots still transmit hidden output/debug data; optional transport trimming is a performance follow-up. Native PWA publication has a documented typed CLI example, not an installed service-controller migration. Arbitrary plugins/MCP Apps, context-usage display/manual compaction, sandbox/token budgets, and durable restart read-head reconstruction retain their explicit accepted deferrals/limitations. No new product decision is pending for this milestone.
+
+
+### Live commentary visibility decision (2026-10-09)
+
+The user superseded folding immediately upon the next tool: current-request commentary stays visible while native execution is running and folds under the existing progress rules only after it becomes idle. Native interjections retain earlier commentary; prior requests stay folded. No inferred native turn lifecycle or delayed-render timer is introduced. Both tabs converge from the same native snapshot, including reload during execution. See the running port log for the passing regression/browser checks. This does not resolve transient duplicate rendering. Not deployed.

@@ -5,6 +5,7 @@ import { nativeInputFiles, nativeInputFileText } from './nativeInputFiles';
 import { nativeInputSkillFields } from './nativeInputSkills';
 import { nativeQuestionFields, nativeQuestionReplyClientId } from './nativeQuestions';
 import type { TimelineItem } from '../timeline/state';
+import { nativeVisibleCommentary } from './nativeVisibleCommentary';
 import { nativeTimelineRows, type NativeItemOrigin } from './nativeTimelineRows';
 import type { TimelinePresentation } from '../timeline/TimelineView';
 import type { ThreadListEntry } from '../threads/viewTypes';
@@ -117,6 +118,6 @@ export function timelinePresentation(snapshot: PresentationSnapshot, isLoadingOl
     const index = toolIndexes.get(prompt.target.toolCallId);
     if (index !== undefined && items[index].toolName === name) items[index] = { ...items[index], status: prompt.kind === 'question' ? 'waiting' : 'approval_required' };
   }
-  const rows = nativeTimelineRows(items, origins);
+  const rows = nativeTimelineRows(items, origins, nativeVisibleCommentary(messages, snapshot.display?.isRunning === true));
   return { rows, hiddenItems: [], hasOlderHistory: snapshot.history.hasOlder, isLoadingOlderHistory, lastSeq: snapshot.revision, pendingApprovalRequests: [], pendingUserInputRequests: [] };
 }

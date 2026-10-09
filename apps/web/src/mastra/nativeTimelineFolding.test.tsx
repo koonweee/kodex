@@ -72,7 +72,7 @@ it('folds native reasoning, progress text and tools while leaving the trailing a
   expect(await screen.findByText('Tool diagnostics')).toBeVisible();
 });
 
-it('keeps streamed trailing text visible until a native tool follows and converges with saved history', async () => {
+it('keeps streamed commentary visible through tools and message rotation until native execution ends', async () => {
   const initial = message('stream', [reasoning('Investigating'), tool('first'), text('The current explanation')]);
   const display = defaultDisplayState();
   display.isRunning = true;
@@ -85,14 +85,17 @@ it('keeps streamed trailing text visible until a native tool follows and converg
   const continued = message('stream', [...initial.content.parts, tool('next'), text('The retained answer')]);
   display.currentMessage = continued;
   const liveRows = rows([], display);
-  expect(identities(liveRows)).toEqual([['stream:0', 'first', 'stream:2', 'next'], 'stream:4']);
+  expect(identities(liveRows)).toEqual([['stream:0', 'first'], 'stream:2', ['next'], 'stream:4']);
   expect(liveRows[0].key).toBe(initialRows[0].key);
   view.rerender(<RenderRows value={liveRows} />);
-  expect(screen.queryByText('The current explanation')).not.toBeInTheDocument();
+  expect(screen.getByText('The current explanation')).toBeVisible();
   expect(await screen.findByText('The retained answer')).toBeVisible();
+  display.currentMessage = message('next-message', [tool('last-tool')]);
+  view.rerender(<RenderRows value={rows([continued], display)} />);
+  expect(screen.getByText('The current explanation')).toBeVisible();
 
   const savedRows = rows([continued]);
-  expect(identities(savedRows)).toEqual(identities(liveRows));
+  expect(identities(savedRows)).toEqual([['stream:0', 'first', 'stream:2', 'next'], 'stream:4']);
   view.rerender(<RenderRows value={savedRows} />);
   expect(screen.queryByText('The current explanation')).not.toBeInTheDocument();
   expect(screen.getByText('The retained answer')).toBeVisible();
@@ -135,4 +138,19 @@ it('does not hide explicit native errors as progress or fold across pending appr
   const error = rows([message('failed', [tool('before'), { type: 'error', error: { name: 'Error', message: 'Native failure' } }, tool('after')])]);
   expect(identities(error)).toEqual([['before'], 'failed:1', ['after']]);
   expect(error[1]).toMatchObject({ type: 'item', item: { text: 'Native failure', status: 'failed' } });
+});
+
+
+it('retains commentary across native interjections without reopening older requests', () => {
+  const earlier = message('old', [text('Earlier commentary'), tool('old-tool'), text('Earlier answer')]);
+  const input = message('input', [text('New request')], 'user');
+  const working = message('working', [text('Current commentary'), tool('tool')]);
+  const steer = { ...message('steer', [text('Please continue')], 'signal'), content: { format: 2 as const, parts: [text('Please continue')], metadata: {
+    signal: { type: 'user', attributes: { delivery: 'while-active' } },
+  } } };
+  const display = defaultDisplayState(); display.isRunning = true;
+  display.currentMessage = message('next', [tool('new-tool')]);
+  const value = rows([earlier, input, working, steer], display);
+  expect(identities(value)).toEqual([['old:0', 'old-tool'], 'old:2', 'input:0', 'working:0', ['tool'], 'steer:0', ['new-tool']]);
+  expect(identities(rows([earlier, input, working, steer]))).toEqual([['old:0', 'old-tool'], 'old:2', 'input:0', ['working:0', 'tool'], 'steer:0']);
 });
