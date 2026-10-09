@@ -54,6 +54,36 @@ it('wraps activity across native messages once, leaving the answer visible and d
   expect(await screen.findAllByText('Used 1 tool')).toHaveLength(2);
 });
 
+it('captures all four calls across saved native step and bookkeeping records', async () => {
+  const bookkeeping: Part[] = [{ type: 'data-workspace-metadata', data: {} }, { type: 'data-sandbox-exit', data: { exitCode: 0 } }, { type: 'step-start' }];
+  const messages = [
+    message('user', [text('Try four calls')], 'user'),
+    message('first', [text('First progress'), tool('one'), ...bookkeeping,
+      text('Second progress'), tool('two'), bookkeeping[0], bookkeeping[2],
+      tool('three'), ...bookkeeping]),
+    message('second', [text('Third progress'), tool('four'), ...bookkeeping, text('Done with four calls')]),
+  ];
+  const value = snapshot(messages);
+  const rows = project(value).rows;
+  expect(rows.map(row => row.type)).toEqual(['item', 'work', 'item']);
+  const work = rows[1];
+  if (work.type !== 'work') throw new Error('Expected work');
+  expect(work.collapsedRows.flatMap(row => row.type === 'activity' ? row.items.filter(item => item.toolName).map(item => item.id) : [])).toEqual(['one', 'two', 'three', 'four']);
+  const view = render(<Transcript value={value} />);
+  expect(await screen.findByText('Done with four calls')).toBeVisible();
+  expect(view.container.querySelectorAll('.kodex-activity-group')).toHaveLength(0);
+  fireEvent.click(screen.getByText('Worked'));
+  expect(await screen.findAllByText('Used 1 tool')).toHaveLength(4);
+  expect(project(snapshot(structuredClone(messages))).rows).toEqual(rows);
+});
+
+it.each(['step-start', 'data-workspace-metadata', 'data-sandbox-command', 'data-sandbox-stdout', 'data-sandbox-stderr', 'data-sandbox-exit'])('keeps %s transparent only to outer work', type => {
+  const boundary: Part = type === 'step-start' ? { type: 'step-start' } : { type: `data-${type.slice(5)}`, data: {} };
+  const rows = project(snapshot([message('mixed', [tool('a'), boundary, tool('b'), text('Answer')])])).rows;
+  expect(rows.map(row => row.type)).toEqual(['work', 'item']);
+  expect(rows[0]).toMatchObject({ collapsedRows: [{ type: 'activity', items: [{ id: 'a' }] }, { type: 'activity', items: [{ id: 'b' }] }] });
+});
+
 it('anchors Working above live activity and collapses only on canonical settlement', async () => {
   const value = snapshot(conversation(), true);
   const live = project(value).rows;
@@ -71,8 +101,8 @@ it('anchors Working above live activity and collapses only on canonical settleme
   expect(await screen.findByText('Here is the answer')).toBeVisible();
 });
 
-it('does not combine across unknown parts, step markers, visible replies or interactive calls', () => {
-  for (const boundary of [{ type: 'step-start' } satisfies Part, text('Visible reply'), { type: 'tool-invocation', toolInvocation: { toolCallId: 'ask', toolName: 'ask_user', state: 'result', args: {}, result: 'Question' } } satisfies Part]) {
+it('does not combine across unknown parts, visible replies or interactive calls', () => {
+  for (const boundary of [{ type: 'data-unknown', data: {} } satisfies Part, text('Visible reply'), { type: 'tool-invocation', toolInvocation: { toolCallId: 'ask', toolName: 'ask_user', state: 'result', args: {}, result: 'Question' } } satisfies Part]) {
     const value = snapshot([message('user', [text('Go')], 'user'), message('mixed', [tool('a'), boundary, tool('b'), text('Answer')])]);
     const rows = project(value).rows;
     const work = rows.filter(row => row.type === 'work');
@@ -84,8 +114,8 @@ it('does not combine across unknown parts, step markers, visible replies or inte
 it('keeps barriers before answers and unresolved tools outside Worked', () => {
   const unfinished: Part = { type: 'tool-invocation', toolInvocation: { toolCallId: 'pending', toolName: 'custom_tool', state: 'call', args: {} } };
   for (const messages of [
-    [message('mixed', [tool('a'), { type: 'step-start' }, text('Answer')])],
-    [message('work', [tool('a'), { type: 'step-start' }]), message('answer', [text('Answer')])],
+    [message('mixed', [tool('a'), { type: 'data-unknown', data: {} }, text('Answer')])],
+    [message('work', [tool('a'), { type: 'data-unknown', data: {} }]), message('answer', [text('Answer')])],
     [message('work', [unfinished, text('Answer')])],
   ]) expect(project(snapshot(messages)).rows.some(row => row.type === 'work')).toBe(false);
 });

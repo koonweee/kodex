@@ -9,6 +9,49 @@ import type { GatewayRouter } from '../../../spikes/mastra-code-sdk/src/gateway-
 import { pane, startBackend, stopBackend } from './fixtures/mastra';
 import { observeNativeHistoryReads, setNativeMenuPreference } from './fixtures/mastra-preferences';
 
+test('four native tool steps and commentary share one Worked section across peers and reload', async ({ context, page }, testInfo) => {
+  const root = await mkdtemp(join(tmpdir(), 'kodex-mastra-four-work-'));
+  let backend: Awaited<ReturnType<typeof startBackend>> | undefined;
+  const api: RouterClient<GatewayRouter> = createORPCClient(new RPCLink({ url: 'http://127.0.0.1:18789/rpc' }));
+  try {
+    backend = await startBackend(root);
+    const project = (await api.listChats()).projects[0]!;
+    const chat = await api.createChat({ projectId: project.id });
+    const peer = await context.newPage();
+    for (const tab of [page, peer]) {
+      await tab.goto(`/threads/${chat.id}`);
+      await expect(pane(tab).getByLabel('Message composer', { exact: true })).toBeVisible();
+    }
+    await api.send({ chatId: chat.id, text: 'RUN_FOUR_WORK_STEPS' });
+    for (const tab of [page, peer]) {
+      await expect(pane(tab).getByRole('status').filter({ hasText: 'Working' })).toBeVisible();
+      await expect(pane(tab).getByText('Progress before call 4.', { exact: true })).toBeVisible();
+    }
+    await writeFile(join(root, 'project', '.release-four'), 'done');
+    for (const [tab, reload] of [[page, false], [peer, false], [peer, true]] as const) {
+      if (reload) await tab.reload();
+      await expect(pane(tab).getByText('FOUR_WORK_STEPS_DONE', { exact: true })).toBeVisible();
+      const worked = pane(tab).locator('details.kodex-work-row');
+      await expect(worked).toHaveCount(1);
+      await expect(worked).not.toHaveAttribute('open', '');
+      await expect(pane(tab).locator('.kodex-activity-group')).toHaveCount(0);
+      await worked.locator(':scope > summary').click();
+      const groups = worked.locator('.kodex-activity-group');
+      await expect(groups.first()).toBeVisible();
+      for (const group of await groups.all()) await group.locator(':scope > summary').click();
+      const items = worked.locator('.kodex-activity-item');
+      await expect(items).toHaveCount(7);
+      await expect(items.locator(':scope > summary').filter({ hasText: 'Assistant' })).toHaveCount(3);
+      for (const item of await items.all()) await item.locator(':scope > summary').click();
+      for (const index of [1, 2, 4]) await expect(worked.getByText(`Progress before call ${index}.`, { exact: true })).toBeVisible();
+      await expect(worked.getByText('Progress before call 3.', { exact: true })).toHaveCount(0);
+      for (const index of [1, 3, 4]) await expect(worked.locator('.kodex-command-panel').filter({ hasText: `WORK_STEP_${index}` })).toHaveCount(1);
+      await expect(worked.getByText('file_stat', { exact: true }).first()).toBeVisible();
+    }
+    await peer.screenshot({ path: testInfo.outputPath('four-step-worked.png'), fullPage: true });
+  } finally { await context.close(); if (backend) await stopBackend(backend); await rm(root, { recursive: true, force: true }); }
+});
+
 test('native saved tool groups and debug payloads remain inspectable across peers and reload', async ({ context, page }, testInfo) => {
   const root = await mkdtemp(join(tmpdir(), 'kodex-mastra-timeline-browser-'));
   let backend: Awaited<ReturnType<typeof startBackend>> | undefined;

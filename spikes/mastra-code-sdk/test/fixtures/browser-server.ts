@@ -169,6 +169,16 @@ const model = await startModelFixture(async request => {
   if ((user.includes('RUN_HELD_SHELL') || user.includes('RUN_HELD_COMMENTARY')) && request.messages.at(-1)?.role !== 'tool') {
     return { ...(user.includes('RUN_HELD_COMMENTARY') && { text: 'Inspecting the live workspace.' }), toolCalls: [{ name: 'execute_command', arguments: { description: 'Hold native activity for browser inspection', command: "printf 'LIVE_TOOL_OUTPUT\\n'; for i in {1..300}; do [ -f .release-tool ] && break; sleep 0.1; done; exit 7" } }] };
   }
+  if (user.includes('RUN_FOUR_WORK_STEPS')) {
+    const completed = request.messages.filter(message => message.role === 'tool').length;
+    if (completed >= 4) return { text: 'FOUR_WORK_STEPS_DONE' };
+    return {
+      ...(completed !== 2 && { text: `Progress before call ${completed + 1}.` }),
+      toolCalls: [{ name: completed === 1 ? 'file_stat' : 'execute_command',
+        arguments: completed === 1 ? { path: 'marker.txt' } : { description: 'Inspect harmless native multi-step output', command: `printf 'WORK_STEP_${completed + 1}\\n'${completed === 3 ? '; for i in {1..300}; do [ -f .release-four ] && break; sleep 0.1; done' : ''}` },
+        id: `four-work-${completed + 1}` }],
+    };
+  }
   if (user.includes('RUN_SHELL_FAILURE') && request.messages.at(-1)?.role !== 'tool') {
     return { text: 'Inspecting the shell failure.', toolCalls: [{ name: 'execute_command', arguments: { description: "Exercise native nonzero shell output", command: "printf 'NATIVE_SHELL_OUTPUT\\n'; exit 7" } }] };
   }

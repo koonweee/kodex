@@ -69,7 +69,11 @@ export function timelinePresentation(snapshot: PresentationSnapshot, isLoadingOl
       // Only known empty reasoning is transparent; unsupported parts still
       // consume a grouping position and prevent activity from crossing them.
       if (part.type === 'reasoning' && !part.reasoning.trim()) return;
-      if (part.type !== 'text' && part.type !== 'reasoning' && part.type !== 'tool-invocation') workBoundary += 1;
+      // Native step/command bookkeeping separates inner groups, not outer work.
+      const workTransparent = ['text', 'reasoning', 'tool-invocation', 'step-start',
+        'data-workspace-metadata', 'data-sandbox-command', 'data-sandbox-stdout',
+        'data-sandbox-stderr', 'data-sandbox-exit'].includes(part.type);
+      if (!workTransparent) workBoundary += 1;
       const origin = message.role === 'assistant' ? { messageId: message.id, groupingIndex, workBoundary } : null;
       groupingIndex += 1;
       const id = `${message.id}:${index}`;
