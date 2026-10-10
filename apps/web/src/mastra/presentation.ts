@@ -64,21 +64,19 @@ export function timelinePresentation(snapshot: PresentationSnapshot, isLoadingOl
     const attachmentFields = { ...(images.length && { images }), ...(files.length && { fileAttachments: files }) };
     const firstText = message.content.parts.findIndex(part => part.type === 'text');
     if ((images.length || files.length) && firstText === -1) append({ id: `${message.id}:${images.length ? 'images' : 'attachments'}`, kind: 'user_message', text: '', ...attachmentFields, status, payload: message.content.parts, timestampMs: new Date(message.createdAt).getTime(), clientId: nativeQuestionReplyClientId(message.content.metadata) });
+    if (userAuthored) workBoundary += 1;
     let groupingIndex = 0;
     message.content.parts.forEach((part, index) => {
-      // Only known empty reasoning is transparent; unsupported parts still
-      // consume a grouping position and prevent activity from crossing them.
+      // Empty reasoning is transparent. Ignored records separate inner groups,
+      // never visible outer work.
       if (part.type === 'reasoning' && !part.reasoning.trim()) return;
-      // Native step/command bookkeeping separates inner groups, not outer work.
-      const workTransparent = ['text', 'reasoning', 'tool-invocation', 'step-start',
-        'data-workspace-metadata', 'data-sandbox-command', 'data-sandbox-stdout',
-        'data-sandbox-stderr', 'data-sandbox-exit'].includes(part.type);
-      if (!workTransparent) workBoundary += 1;
       const origin = message.role === 'assistant' ? { messageId: message.id, groupingIndex, workBoundary } : null;
       groupingIndex += 1;
       const id = `${message.id}:${index}`;
       const timestampMs = new Date(message.createdAt).getTime();
-      if (part.type === 'text') append({ id, kind: userAuthored ? 'user_message' : 'assistant_message', text: userAuthored && index === firstText ? skillFields?.text ?? nativeInputFileText(part.text, files) : part.text, status, payload: part, timestampMs, ...(userAuthored && { clientId: nativeQuestionReplyClientId(message.content.metadata), ...(index === firstText && { ...attachmentFields, ...(skillFields && { skillMentions: skillFields.skillMentions }) }) }) }, origin);
+      const phase = part.type === 'text' ? part.providerMetadata?.openai?.phase : undefined;
+      const messagePhase = !userAuthored && (phase === 'commentary' || phase === 'final_answer') ? phase : undefined;
+      if (part.type === 'text') append({ id, messagePhase, kind: userAuthored ? 'user_message' : 'assistant_message', text: userAuthored && index === firstText ? skillFields?.text ?? nativeInputFileText(part.text, files) : part.text, status, payload: part, timestampMs, ...(userAuthored && { clientId: nativeQuestionReplyClientId(message.content.metadata), ...(index === firstText && { ...attachmentFields, ...(skillFields && { skillMentions: skillFields.skillMentions }) }) }) }, origin);
       else if (part.type === 'reasoning') append({ id, kind: 'reasoning', text: part.reasoning, status, payload: part, timestampMs }, origin);
       else if (part.type === 'tool-invocation') {
         const tool = part.toolInvocation;

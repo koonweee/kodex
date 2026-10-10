@@ -31,6 +31,8 @@ test('four native tool steps and commentary share one Worked section across peer
     for (const [tab, reload] of [[page, false], [peer, false], [peer, true]] as const) {
       if (reload) await tab.reload();
       await expect(pane(tab).getByText('FOUR_WORK_STEPS_DONE', { exact: true })).toBeVisible();
+      await expect(pane(tab).getByText('FOUR_WORK_STEPS_DONE', { exact: true })).toHaveCount(1);
+      expect((await api.openChat({ chatId: chat.id })).display.currentMessage).toBeNull();
       const worked = pane(tab).locator('details.kodex-work-row');
       await expect(worked).toHaveCount(1);
       await expect(worked).not.toHaveAttribute('open', '');
@@ -42,7 +44,13 @@ test('four native tool steps and commentary share one Worked section across peer
       const items = worked.locator('.kodex-activity-item');
       await expect(items).toHaveCount(7);
       await expect(items.locator(':scope > summary').filter({ hasText: 'Assistant' })).toHaveCount(3);
-      for (const item of await items.all()) await item.locator(':scope > summary').click();
+      for (const item of await items.all()) {
+        await expect(async () => {
+          if (await item.getAttribute('open') === null) await item.locator(':scope > summary').click();
+          await expect(item).toHaveAttribute('open', '');
+          await expect(item.locator(':scope > :not(summary)').first()).toBeVisible();
+        }).toPass();
+      }
       for (const index of [1, 2, 4]) await expect(worked.getByText(`Progress before call ${index}.`, { exact: true })).toBeVisible();
       await expect(worked.getByText('Progress before call 3.', { exact: true })).toHaveCount(0);
       for (const index of [1, 3, 4]) await expect(worked.locator('.kodex-command-panel').filter({ hasText: `WORK_STEP_${index}` })).toHaveCount(1);

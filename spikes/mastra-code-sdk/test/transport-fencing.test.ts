@@ -19,6 +19,7 @@ test("a coalesced native text mutation fences an overlapping history response", 
     if (event.type === "display_state_changed") displayNotifications++;
   });
   t.after(unsubscribe);
+  session.emit({ type: "agent_start" });
   const message: MastraDBMessage = {
     id: "live-message", role: "assistant", createdAt: new Date(),
     content: { format: 2, parts: [{ type: "text", text: "before" }] },

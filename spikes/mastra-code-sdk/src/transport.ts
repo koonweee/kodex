@@ -44,7 +44,12 @@ export function createSessionProjection(session: NativeSession, readHistory?: (r
       signal?.throwIfAborted();
       lifetime.signal.throwIfAborted();
       if (startedAt !== revision) continue;
-      return structuredClone({ epoch, revision, display: session.displayState.get(), ...history });
+      const display = session.displayState.get();
+      // Native currentMessage survives completion and can use a different ID
+      // from saved output. Hand it off only with this fresh history snapshot.
+      // The SDK does not expose swallowed persistence failures as a save receipt.
+      const settled = !display.isRunning && display.pendingSuspensions.size === 0 && display.pendingApprovals.size === 0;
+      return structuredClone({ epoch, revision, display: settled ? { ...display, currentMessage: null } : display, ...history });
     }
   }
   return {

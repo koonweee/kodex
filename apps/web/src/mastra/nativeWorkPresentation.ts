@@ -1,6 +1,7 @@
 import type { TimelinePresentation } from '../timeline/TimelineView';
 import type { TimelineRow, TimelineWorkRow } from '../timeline/state';
 import type { ChatSnapshot } from './client';
+import { payloadRecord } from '../timeline/presentationShared';
 
 /** Presentation-only activity spans, not native turns or successful-run records. */
 export function nativeWorkPresentation(presentation: TimelinePresentation | null, snapshot: ChatSnapshot | null, chatId: string | null, archived: boolean): TimelinePresentation | null {
@@ -9,9 +10,12 @@ export function nativeWorkPresentation(presentation: TimelinePresentation | null
   const active = waiting || snapshot.display.isRunning;
   const source = presentation.rows;
   let lastUser = -1;
-  source.forEach((row, index) => { if (row.type === 'item' && row.item.kind === 'user_message') lastUser = index; });
+  const interjections = snapshot.messages.filter(message => payloadRecord(payloadRecord(message.content.metadata?.signal)?.attributes)?.delivery === 'while-active');
+  source.forEach((row, index) => {
+    if (row.type === 'item' && row.item.kind === 'user_message' && !interjections.some(message => row.item.id.startsWith(`${message.id}:`))) lastUser = index;
+  });
   const rows: TimelineRow[] = [];
-  let pending: Extract<TimelineRow, { type: 'activity' }>[] = [];
+  let pending: Extract<TimelineRow, { type: 'activity' | 'item' }>[] = [];
   const workRow = (key: string, displayOrder: number, collapsedRows: TimelineWorkRow['collapsedRows'], running = false): TimelineWorkRow => ({
     type: 'work', key, turnKey: key, turnId: null, displayOrder, collapsedRows,
     state: running ? 'running' : 'completed', ...(running && { statusLabel: waiting ? 'Waiting for your response' : 'Working' }),
@@ -31,7 +35,8 @@ export function nativeWorkPresentation(presentation: TimelinePresentation | null
     const row = source[index];
     if (!row) { flush(); break; }
     if (active && index > lastUser) { rows.push(row); continue; }
-    const eligible = row.type === 'activity' && row.items.every(item => item.status === 'completed');
+    const eligible = row.type === 'activity' && row.items.every(item => item.status === 'completed')
+      || row.type === 'item' && row.item.kind === 'assistant_message' && row.item.messagePhase === 'commentary' && row.item.status === 'completed';
     if (eligible) {
       if (pending.length && (row.nativeWorkBoundary === undefined || pending.at(-1)!.nativeWorkBoundary !== row.nativeWorkBoundary)) flush();
       pending.push(row);

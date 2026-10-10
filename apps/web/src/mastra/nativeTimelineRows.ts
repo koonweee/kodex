@@ -26,8 +26,9 @@ export function nativeTimelineRows(items: TimelineItem[], origins: Array<NativeI
     if (!origins[index]) followingTool = false;
     else if (isActivity(item)) {
       if (item.kind !== 'reasoning') followingTool = true;
-    } else if (item.kind === 'assistant_message' && item.status !== 'failed' && !isInteractive(item)) {
-      // Pre-tool text is progress presentation only; trailing text stays visible.
+    } else if (item.kind === 'assistant_message' && !item.messagePhase && item.status !== 'failed' && !isInteractive(item)) {
+      // Only unmarked pre-tool text uses the progress fallback. Explicit phases
+      // remain visible here; completed commentary belongs to outer Worked.
       if (followingTool && !visibleCommentary.has(origins[index]!.messageId)) progress.add(index);
     } else followingTool = false;
   }

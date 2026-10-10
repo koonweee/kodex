@@ -14,7 +14,7 @@ import { nativeWorkPresentation } from './nativeWorkPresentation';
 
 type Message = ChatSnapshot['messages'][number];
 type Part = Message['content']['parts'][number];
-const text = (text: string): Part => ({ type: 'text', text });
+const text = (text: string, phase?: 'commentary' | 'final_answer'): Part => ({ type: 'text', text, ...(phase && { providerMetadata: { openai: { phase } } }) });
 const tool = (id: string): Part => ({ type: 'tool-invocation', toolInvocation: { toolCallId: id, toolName: 'custom_tool', state: 'result', args: {}, result: 'Diagnostics' } });
 function message(id: string, parts: Part[], role: Message['role'] = 'assistant'): Message {
   return { id, role, createdAt: new Date(0), content: { format: 2, parts } };
@@ -84,6 +84,16 @@ it.each(['step-start', 'data-workspace-metadata', 'data-sandbox-command', 'data-
   expect(rows[0]).toMatchObject({ collapsedRows: [{ type: 'activity', items: [{ id: 'a' }] }, { type: 'activity', items: [{ id: 'b' }] }] });
 });
 
+it('keeps explicit commentary visible across a while-active steer until settlement', () => {
+  const steer = message('steer', [text('Keep going')], 'signal');
+  steer.content.metadata = { signal: { type: 'user', attributes: { delivery: 'while-active' } } };
+  const messages = [message('user', [text('Work')], 'user'), message('progress', [text('Checking', 'commentary'), tool('a'), text('First answer', 'final_answer')]), steer];
+  const live = project(snapshot(messages, true)).rows;
+  expect(live.filter(row => row.type === 'work')).toEqual([expect.objectContaining({ state: 'running', collapsedRows: [] })]);
+  expect(live.some(row => row.type === 'item' && row.item.text === 'Checking')).toBe(true);
+  expect(project(snapshot(messages)).rows.some(row => row.type === 'work' && row.state === 'completed')).toBe(true);
+});
+
 it('anchors Working above live activity and collapses only on canonical settlement', async () => {
   const value = snapshot(conversation(), true);
   const live = project(value).rows;
@@ -101,8 +111,8 @@ it('anchors Working above live activity and collapses only on canonical settleme
   expect(await screen.findByText('Here is the answer')).toBeVisible();
 });
 
-it('does not combine across unknown parts, visible replies or interactive calls', () => {
-  for (const boundary of [{ type: 'data-unknown', data: {} } satisfies Part, text('Visible reply'), { type: 'tool-invocation', toolInvocation: { toolCallId: 'ask', toolName: 'ask_user', state: 'result', args: {}, result: 'Question' } } satisfies Part]) {
+it('does not combine across visible replies or interactive calls', () => {
+  for (const boundary of [text('Visible reply'), { type: 'tool-invocation', toolInvocation: { toolCallId: 'ask', toolName: 'ask_user', state: 'result', args: {}, result: 'Question' } } satisfies Part]) {
     const value = snapshot([message('user', [text('Go')], 'user'), message('mixed', [tool('a'), boundary, tool('b'), text('Answer')])]);
     const rows = project(value).rows;
     const work = rows.filter(row => row.type === 'work');
@@ -114,10 +124,45 @@ it('does not combine across unknown parts, visible replies or interactive calls'
 it('keeps barriers before answers and unresolved tools outside Worked', () => {
   const unfinished: Part = { type: 'tool-invocation', toolInvocation: { toolCallId: 'pending', toolName: 'custom_tool', state: 'call', args: {} } };
   for (const messages of [
-    [message('mixed', [tool('a'), { type: 'data-unknown', data: {} }, text('Answer')])],
-    [message('work', [tool('a'), { type: 'data-unknown', data: {} }]), message('answer', [text('Answer')])],
+    [message('mixed', [tool('a'), { type: 'error', error: { name: 'Error', message: 'Failed' } }, text('Answer')])],
+    [message('work', [tool('a')]), message('interrupt', [text('Next request')], 'user'), message('answer', [text('Answer')])],
     [message('work', [unfinished, text('Answer')])],
   ]) expect(project(snapshot(messages)).rows.some(row => row.type === 'work')).toBe(false);
+});
+
+it.each(['data-unknown', 'data-om-observation-start', 'data-om-observation-end', 'data-om-activation', 'data-om-buffering-start'] as const)('ignores invisible %s records for outer work while retaining inner separators', type => {
+  const rows = project(snapshot([message('mixed', [tool('a'), { type, data: {} }, tool('b')]), message('answer', [text('Answer')])])).rows;
+  expect(rows.map(row => row.type)).toEqual(['work', 'item']);
+  expect(rows[0]).toMatchObject({ collapsedRows: [{ type: 'activity', items: [{ id: 'a' }] }, { type: 'activity', items: [{ id: 'b' }] }] });
+});
+
+it('keeps explicit final answers visible even before tools and later final answers', () => {
+  const rows = project(snapshot([message('mixed', [text('First answer', 'final_answer'), tool('a'), text('Second answer', 'final_answer'), tool('b'), text('Last answer', 'final_answer')])])).rows;
+  expect(rows.map(row => row.type)).toEqual(['item', 'work', 'item', 'work', 'item']);
+  expect(rows.flatMap(row => row.type === 'item' ? [row.item.text] : [])).toEqual(['First answer', 'Second answer', 'Last answer']);
+});
+
+it('keeps commentary visible while running and folds it with completed work across ignored records', () => {
+  const messages = [message('user', [text('Go')], 'user'), message('commentary', [text('Checking now', 'commentary')]), message('work', [{ type: 'data-om-activation', data: {} }, tool('a')]), message('trailing', [text('Checked it', 'commentary')]), message('answer', [text('Done', 'final_answer')])];
+  const live = project(snapshot(messages, true)).rows;
+  expect(live.flatMap(row => row.type === 'item' ? [row.item.text] : [])).toEqual(['Go', 'Checking now', 'Checked it', 'Done']);
+  const completed = project(snapshot(messages)).rows;
+  expect(completed.map(row => row.type)).toEqual(['item', 'work', 'item']);
+  expect(completed[1]).toMatchObject({ collapsedRows: [{ type: 'item', item: { text: 'Checking now', messagePhase: 'commentary' } }, { type: 'activity' }, { type: 'item', item: { text: 'Checked it', messagePhase: 'commentary' } }] });
+  expect(project(snapshot(structuredClone(messages))).rows).toEqual(completed);
+  expect(project(snapshot(messages.slice(0, -1))).rows.map(row => row.type)).toEqual(['item', 'item', 'activity', 'item']);
+});
+
+it('does not hide explicit commentary without an answer or across failed and interactive work', () => {
+  const commentary = text('Still checking', 'commentary');
+  const failed: Part = { type: 'tool-invocation', toolInvocation: { toolCallId: 'failed', toolName: 'custom_tool', state: 'result', args: {}, isError: true } };
+  const interactive: Part = { type: 'tool-invocation', toolInvocation: { toolCallId: 'ask', toolName: 'ask_user', state: 'result', args: {}, result: 'Question' } };
+  expect(project(snapshot([message('partial', [commentary, tool('a')])])).rows.map(row => row.type)).toEqual(['item', 'activity']);
+  for (const barrier of [failed, interactive]) {
+    const rows = project(snapshot([message('mixed', [commentary, barrier, text('Answer', 'final_answer')])])).rows;
+    expect(rows.some(row => row.type === 'work')).toBe(false);
+    expect(rows[0]).toMatchObject({ type: 'item', item: { text: 'Still checking' } });
+  }
 });
 
 it('retains expansion when older activity is prepended into the same span', async () => {
