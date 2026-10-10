@@ -1,5 +1,5 @@
 import { compactCanonicalPayload } from "../src/test/canonicalPayloadFixture";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import type { ThreadTimelineRow } from "../src/api/client";
 import { nativeSettingsFixture } from "./native-settings.fixture";
 
@@ -10,6 +10,47 @@ for (const shape of [
 ]) {
   test.describe(shape.name, () => {
     test.use({ viewport: { width: shape.width, height: 844 }, hasTouch: shape.hasTouch, isMobile: shape.isMobile });
+
+    test("regular rows use six leading pixels without trailing space", async ({ context }) => {
+      const fixture = await nativeSettingsFixture(context);
+      fixture.detail.timeline = {
+        ...fixture.detail.timeline,
+        rows: [
+          completedAnswerRow("first-answer", "First answer", 1),
+          completedUserRow("follow-up", "Follow-up question", 2),
+          completedWorkRow(3),
+        ],
+        turns: [
+          { id: "turn-first-answer", status: "completed" },
+          { id: "turn-follow-up", status: "completed" },
+          { id: "turn-work", status: "completed" },
+        ],
+      };
+      try {
+        const page = await fixture.page("message-spacing");
+        const rows = page.locator(".kodex-turn-group");
+        await expect(rows).toHaveCount(3);
+        const intermessageGap = await verticalGap(
+          rows.nth(0).locator(".kodex-assistant-message-footer"),
+          rows.nth(1).locator(".kodex-user-message-stack"),
+        );
+        const workGap = await verticalGap(
+          rows.nth(1).locator(".kodex-message-toolbar"),
+          rows.nth(2).locator(".kodex-work-row"),
+        );
+        const trailingGap = await rows.nth(2).evaluate((row) => {
+          const work = row.querySelector(".kodex-work-row");
+          if (!(work instanceof HTMLElement)) throw new Error("Missing final work row");
+          return row.getBoundingClientRect().bottom - work.getBoundingClientRect().bottom;
+        });
+        expect(intermessageGap).toBeCloseTo(6, 1);
+        expect(workGap).toBeCloseTo(6, 1);
+        expect(trailingGap).toBeCloseTo(0, 1);
+      } finally { await fixture.close(); }
+      expect(fixture.errors).toEqual([]);
+      expect(fixture.unexpected).toEqual([]);
+    });
+
     test("streaming footer stays hidden and completion preserves message height", async ({ context }) => {
       const fixture = await nativeSettingsFixture(context);
       const publish = (text: string, done = false) => {
@@ -45,4 +86,43 @@ for (const shape of [
       expect(fixture.unexpected).toEqual([]);
     });
   });
+}
+
+function completedAnswerRow(id: string, text: string, displayOrder: number): ThreadTimelineRow {
+  const turnId = `turn-${id}`;
+  return {
+    id, turnId, kind: "assistant_message", status: "completed", displayOrder,
+    item: {
+      id, threadId: "settings-chat", turnId, itemId: id, itemType: "agentMessage", status: "completed", displayOrder,
+      timestampMs: 1779000000000 + displayOrder,
+      payload: compactCanonicalPayload({ id, type: "agentMessage", phase: "final_answer", text }, { id, itemType: "agentMessage" }),
+    },
+  };
+}
+
+function completedUserRow(id: string, text: string, displayOrder: number): ThreadTimelineRow {
+  const turnId = `turn-${id}`;
+  return {
+    id, turnId, kind: "user_message", status: "completed", displayOrder,
+    item: {
+      id, threadId: "settings-chat", turnId, itemId: id, itemType: "userMessage", status: "completed", displayOrder,
+      timestampMs: 1779000000000 + displayOrder,
+      payload: compactCanonicalPayload({ id, type: "userMessage", clientId: id, content: [{ type: "text", text }] },
+        { id, itemType: "userMessage", clientId: id }),
+    },
+  };
+}
+
+function completedWorkRow(displayOrder: number): ThreadTimelineRow {
+  return {
+    id: "work", turnId: "turn-work", kind: "work", status: "completed", displayOrder,
+    collapsedRows: [], work: { state: "completed", startedAt: 0, completedAt: 1 },
+  };
+}
+
+async function verticalGap(before: Locator, after: Locator) {
+  const [beforeBox, afterBox] = await Promise.all([before.boundingBox(), after.boundingBox()]);
+  expect(beforeBox).not.toBeNull();
+  expect(afterBox).not.toBeNull();
+  return afterBox!.y - (beforeBox!.y + beforeBox!.height);
 }

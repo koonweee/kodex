@@ -6,7 +6,7 @@
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  padding: 8px 0;
+  padding: 6px 0 0;
 }
 
 /* Intermediate controls provide their own hit-area spacing. Avoid adding the
@@ -29,12 +29,6 @@
 .kodex-turn-group > .kodex-timeline-item,
 .kodex-turn-group > .kodex-work-row {
   padding-top: 0;
-  padding-bottom: 0;
-}
-
-/* The enclosing turn group supplies the final 8px at an expanded work
-   disclosure's bottom edge, so its last nested row must not duplicate it. */
-.kodex-work-row-contents > .kodex-turn-group:last-child {
   padding-bottom: 0;
 }
 

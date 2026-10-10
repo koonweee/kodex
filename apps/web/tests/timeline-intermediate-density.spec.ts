@@ -79,10 +79,10 @@ for (const layout of [
 
       const planRow = page.locator(".kodex-turn-group").filter({ has: plan });
       const planGeometry = await verticalGeometry(planRow, ":scope > .kodex-timeline-item");
-      expect(planGeometry.topInset).toBeGreaterThanOrEqual(7);
-      expect(planGeometry.topInset).toBeLessThanOrEqual(9);
-      expect(planGeometry.bottomInset).toBeGreaterThanOrEqual(7);
-      expect(planGeometry.bottomInset).toBeLessThanOrEqual(9);
+      expect(planGeometry.topInset).toBeGreaterThanOrEqual(5);
+      expect(planGeometry.topInset).toBeLessThanOrEqual(7);
+      expect(planGeometry.bottomInset).toBeGreaterThanOrEqual(0);
+      expect(planGeometry.bottomInset).toBeLessThanOrEqual(1);
       expect(fixture.unexpected).toEqual([]);
       expect(fixture.errors).toEqual([]);
     } finally {
@@ -91,22 +91,22 @@ for (const layout of [
     }
   });
 
-  test(`work boundaries retain the default outer gap in ${layout.name}`, async ({ browser }) => {
+  test(`work boundaries use the regular leading gap in ${layout.name}`, async ({ browser }) => {
     const context = await browser.newContext({ viewport: layout.viewport, hasTouch: layout.hasTouch });
     const fixture = await nativeSettingsFixture(context);
     fixture.detail.timeline = workBoundaryTimeline();
 
     try {
       const page = await fixture.page("work-density");
-      const workLabel = page.getByText("Worked for 1s", { exact: true });
-      await expect(workLabel).toBeVisible();
+      const work = page.locator(".kodex-work-row");
+      await expect(work).toContainText("Worked for 1s");
 
-      const workRow = page.locator(".kodex-turn-group").filter({ has: workLabel });
+      const workRow = page.locator(".kodex-turn-group").filter({ has: work });
       const workGeometry = await verticalGeometry(workRow, ":scope > .kodex-work-row");
-      expect(workGeometry.topInset).toBeGreaterThanOrEqual(7);
-      expect(workGeometry.topInset).toBeLessThanOrEqual(9);
-      expect(workGeometry.bottomInset).toBeGreaterThanOrEqual(7);
-      expect(workGeometry.bottomInset).toBeLessThanOrEqual(9);
+      expect(workGeometry.topInset).toBeGreaterThanOrEqual(5);
+      expect(workGeometry.topInset).toBeLessThanOrEqual(7);
+      expect(workGeometry.bottomInset).toBeGreaterThanOrEqual(0);
+      expect(workGeometry.bottomInset).toBeLessThanOrEqual(1);
       expect(fixture.unexpected).toEqual([]);
       expect(fixture.errors).toEqual([]);
     } finally {
