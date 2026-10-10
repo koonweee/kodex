@@ -74,6 +74,7 @@ it("writes only the changed native permission field with the displayed read targ
   expect(await requestJson(gateway.callsFor("PATCH", "/v1/composer-settings")[0])).toEqual({
     permissionProfileId: ":read-only", writeTarget: firstTarget,
   });
+  expect(screen.queryByText(/Saved to/)).not.toBeInTheDocument();
 });
 
 it("rereads a native conflict and requires review before a new user edit can submit", async () => {

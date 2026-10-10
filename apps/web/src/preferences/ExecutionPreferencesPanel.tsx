@@ -55,7 +55,9 @@ export function ExecutionPreferencesPanel() {
         <Button disabled={settings.isFetching || Boolean(settings.error) || !settings.data?.writeTarget} onClick={() => { setNeedsReview(false); mutation.reset(); }} size="xs" variant="light">Review latest configuration</Button>
       </Stack>
     </Alert> : null}
-    {mutation.data?.write ? <NativeConfigWriteFeedback write={mutation.data.write} notificationError={mutation.data.notificationError} /> : null}
+    {mutation.data?.write && (mutation.data.write.status === "okOverridden" || mutation.data.notificationError)
+      ? <NativeConfigWriteFeedback write={mutation.data.write} notificationError={mutation.data.notificationError} />
+      : null}
     <ExecutionPreferencesControls
       profiles={profiles.data} profilesError={profiles.error} profilesLoading={profiles.isLoading}
       models={models.data} modelsError={models.error} modelsLoading={models.isLoading}
