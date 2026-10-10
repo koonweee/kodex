@@ -223,6 +223,7 @@
 .kodex-composer-textarea textarea {
   padding: 0 2px;
   border: 0;
+  border-radius: 0;
   background: transparent;
   box-shadow: none;
   line-height: 1.5;
