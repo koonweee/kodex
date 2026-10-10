@@ -1,17 +1,21 @@
-import { Alert, Badge, Box, Button, Group, Loader, SegmentedControl, Stack, Text } from "@mantine/core";
+import { Alert, Badge, Box, Button, Group, Loader, SegmentedControl, Select, Stack, Text } from "@mantine/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Shield } from "lucide-react";
 import { useState } from "react";
 
-import { GatewayRequestError, getComposerSettings, listPermissionProfiles, persistComposerSettings, type ComposerSettingsUpdateRequest } from "../api/client";
+import { GatewayRequestError, getComposerSettings, listModels, listPermissionProfiles, persistComposerSettings, type ComposerSettingsUpdateRequest } from "../api/client";
 import { refreshNativeConfig } from "../api/nativeConfigCache";
 import { NativeConfigWriteFeedback } from "./NativeConfigWriteFeedback";
 import { queryKeys } from "../api/queryKeys";
+import { compatibleEffort, modelFullLabel, reasoningEffortLabel, selectedModel } from "../composer/modelCatalog";
+
+const CODEX_DEFAULT_VALUE = "__kodex_codex_default__";
 
 export function ExecutionPreferencesPanel() {
   const queryClient = useQueryClient();
   const [needsReview, setNeedsReview] = useState(false);
   const settings = useQuery({ queryKey: queryKeys.composerSettings(null), queryFn: ({ signal }) => getComposerSettings(null, null, signal) });
+  const models = useQuery({ queryKey: queryKeys.models, queryFn: listModels });
   const profiles = useQuery({ queryKey: queryKeys.permissionProfiles(null), queryFn: ({ signal }) => listPermissionProfiles(null, signal) });
   const mutation = useMutation({
     mutationFn: persistComposerSettings,
@@ -35,6 +39,15 @@ export function ExecutionPreferencesPanel() {
     if (desired.approvalsReviewer !== settings.data?.approvalsReviewer) fields.approvalsReviewer = desired.approvalsReviewer;
     if (Object.keys(fields).length) save(fields);
   }
+  function setDefaultModel(modelId: string | null) {
+    if (modelId === (settings.data?.model ?? null)) return;
+    const currentEffort = settings.data?.effort ?? null;
+    const model = selectedModel(models.data ?? [], modelId);
+    const nextEffort = compatibleEffort(model, currentEffort);
+    const fields: Omit<ComposerSettingsUpdateRequest, "writeTarget"> = { model: modelId };
+    if (nextEffort !== currentEffort) fields.effort = nextEffort;
+    save(fields);
+  }
   return <Stack gap={12}>
     {needsReview ? <Alert color="yellow" variant="light">
       <Stack gap={8}>
@@ -45,9 +58,14 @@ export function ExecutionPreferencesPanel() {
     {mutation.data?.write ? <NativeConfigWriteFeedback write={mutation.data.write} notificationError={mutation.data.notificationError} /> : null}
     <ExecutionPreferencesControls
       profiles={profiles.data} profilesError={profiles.error} profilesLoading={profiles.isLoading}
+      models={models.data} modelsError={models.error} modelsLoading={models.isLoading}
       settings={settings.data} settingsError={settings.error} settingsLoading={settings.isLoading}
       saving={mutation.isPending} saveError={needsReview ? null : mutation.error}
       disabled={needsReview || !settings.data?.writeTarget || Boolean(settings.error)}
+      onDefaultEffortChange={(effort) => {
+        if (effort !== (settings.data?.effort ?? null)) save({ effort });
+      }}
+      onDefaultModelChange={setDefaultModel}
       onApprovalModeChange={setApprovalMode}
       onPermissionProfileChange={(permissionProfileId) => {
         if (permissionProfileId !== (settings.data?.permissionProfileId ?? null)) save({ permissionProfileId });
@@ -64,6 +82,9 @@ function ExecutionPreferencesControls({
   profiles,
   profilesError,
   profilesLoading,
+  models,
+  modelsError,
+  modelsLoading,
   saving,
   disabled,
   saveError,
@@ -71,11 +92,16 @@ function ExecutionPreferencesControls({
   settingsError,
   settingsLoading,
   onApprovalModeChange,
+  onDefaultEffortChange,
+  onDefaultModelChange,
   onPermissionProfileChange,
 }: {
   profiles?: Awaited<ReturnType<typeof listPermissionProfiles>>;
   profilesError: Error | null;
   profilesLoading: boolean;
+  models?: Awaited<ReturnType<typeof listModels>>;
+  modelsError: Error | null;
+  modelsLoading: boolean;
   saving: boolean;
   disabled: boolean;
   saveError: Error | null;
@@ -83,12 +109,35 @@ function ExecutionPreferencesControls({
   settingsError: Error | null;
   settingsLoading: boolean;
   onApprovalModeChange: (mode: ExecutionApprovalMode) => void;
+  onDefaultEffortChange: (effort: string | null) => void;
+  onDefaultModelChange: (model: string | null) => void;
   onPermissionProfileChange: (permissionProfileId: string | null) => void;
 }) {
   const selectedPermissionProfileId = settings?.permissionProfileId ?? null;
   const approvalSelection = executionApprovalMode(settings?.approvalPolicy, settings?.approvalsReviewer);
-  const loading = settingsLoading || profilesLoading;
-  const error = settingsError ?? profilesError ?? saveError;
+  const loading = settingsLoading || profilesLoading || modelsLoading;
+  const error = settingsError ?? profilesError ?? modelsError ?? saveError;
+  const model = selectedModel(models ?? [], settings?.model);
+  const modelValue = settings?.model ?? CODEX_DEFAULT_VALUE;
+  const effortValue = settings?.effort ?? CODEX_DEFAULT_VALUE;
+  const modelOptions = [
+    { label: "Codex default", value: CODEX_DEFAULT_VALUE },
+    ...(models ?? []).map((option) => ({ label: modelFullLabel(option), value: option.id })),
+  ];
+  if (settings?.model && !modelOptions.some((option) => option.value === settings.model)) {
+    modelOptions.push({ label: `${settings.model} (unavailable)`, value: settings.model });
+  }
+  const effortOptions = [
+    { label: "Codex default", value: CODEX_DEFAULT_VALUE },
+    ...(model?.supportedReasoningEfforts ?? []).map((option) => ({
+      label: reasoningEffortLabel(option.reasoningEffort),
+      value: option.reasoningEffort,
+    })),
+  ];
+  if (settings?.effort && !effortOptions.some((option) => option.value === settings.effort)) {
+    effortOptions.push({ label: `${reasoningEffortLabel(settings.effort)} (unavailable)`, value: settings.effort });
+  }
+  const modelControlsDisabled = loading || saving || disabled || Boolean(modelsError) || !models?.length;
   const permissionOptions = [
     { id: null, label: "Default", description: "Use the configured Codex default scope." },
     ...(profiles ?? []).map((profile) => ({
@@ -120,6 +169,35 @@ function ExecutionPreferencesControls({
           {error.message}
         </Alert>
       ) : null}
+
+      <Stack className="kodex-preferences-setting" gap={10}>
+        <Box className="kodex-preferences-setting-header">
+          <Text fw={600} size="sm">
+            Default model and reasoning
+          </Text>
+          <Text c="dimmed" size="xs">
+            Prefills new chats. Existing chats keep their current settings.
+          </Text>
+        </Box>
+        <Box className="kodex-execution-model-controls">
+          <Select
+            aria-label="Default model"
+            data={modelOptions}
+            disabled={modelControlsDisabled}
+            label="Model"
+            onChange={(value) => onDefaultModelChange(value === CODEX_DEFAULT_VALUE ? null : value)}
+            value={settings ? modelValue : null}
+          />
+          <Select
+            aria-label="Default reasoning"
+            data={effortOptions}
+            disabled={modelControlsDisabled || !model}
+            label="Reasoning"
+            onChange={(value) => onDefaultEffortChange(value === CODEX_DEFAULT_VALUE ? null : value)}
+            value={settings ? effortValue : null}
+          />
+        </Box>
+      </Stack>
 
       <Stack className="kodex-preferences-setting" gap={10}>
         <Box className="kodex-preferences-setting-header">

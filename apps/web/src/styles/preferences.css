@@ -60,6 +60,7 @@
 .kodex-execution-option-list,
 .kodex-execution-option,
 .kodex-execution-option-copy,
+.kodex-execution-model-controls,
 .kodex-mcp-layout,
 .kodex-mcp-server-list,
 .kodex-mcp-detail,
@@ -106,6 +107,12 @@
 .kodex-execution-option-list {
   display: grid;
   gap: 6px;
+}
+
+.kodex-execution-model-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
 }
 
 .kodex-execution-option {

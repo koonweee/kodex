@@ -47,6 +47,11 @@ for (const shape of [
         await expect(last).toBeInViewport();
         expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth), "Interface must not overflow horizontally").toBe(true);
         await page.screenshot({ path: test.info().outputPath("preferences-appearance.png") });
+        await dialog.getByRole("button", { name: "Execution", exact: true }).click();
+        await expect(dialog.getByLabel("Default model", { exact: true })).toBeVisible();
+        await expect(dialog.getByLabel("Default reasoning", { exact: true })).toBeVisible();
+        expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth), "Execution must not overflow horizontally").toBe(true);
+        await page.screenshot({ path: test.info().outputPath("preferences-execution.png") });
         await dialog.getByRole("button", { name: "Notifications", exact: true }).click();
         await page.screenshot({ path: test.info().outputPath("preferences-notifications.png") });
       } finally { await fixture.close(); }

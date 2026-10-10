@@ -8,6 +8,7 @@ import { useCompactDialog } from "./shared/layoutBreakpoints";
 import { usePaneLayout } from "./shared/PaneLayout";
 import { useInputCapabilities } from "./shared/inputCapabilities";
 import { composerSettingsPresentation } from "./composer/presentationPolicy";
+import { defaultModel, modelFullLabel, reasoningEffortLabel, selectedModel as catalogSelectedModel } from "./composer/modelCatalog";
 
 import type { ModelSummary } from "./api/client";
 import { AdaptiveIcon } from "./ui/AdaptiveIcon";
@@ -52,8 +53,8 @@ export function ComposerFooterControls({
   const { compact } = usePaneLayout();
   const { hasAnyCoarsePointer } = useInputCapabilities();
   const menuPresentation = composerSettingsPresentation(compactDialog, hasAnyCoarsePointer);
-  const defaultModel = models.find((model) => model.isDefault) ?? models[0] ?? null;
-  const selectedModel = settings?.model ? models.find((model) => model.id === settings.model) ?? null : defaultModel;
+  const fallbackModel = defaultModel(models);
+  const selectedModel = settings?.model ? catalogSelectedModel(models, settings.model) : fallbackModel;
   const selectedModelLabel = selectedModel ? modelFullLabel(selectedModel) : settings?.model ?? "Model";
   const selectedModelShortLabel = selectedModelLabel.replace(/^gpt-/i, "");
   const selectedEffort = settings?.effort ?? selectedModel?.defaultReasoningEffort ?? null;
@@ -320,17 +321,6 @@ function ContextUsageIndicator({ usage }: { usage?: ContextUsage | null }) {
   );
 }
 
-function modelFullLabel(model: ModelSummary | null) {
-  return model?.model || model?.displayName || model?.id || "Model";
-}
-
-function reasoningEffortLabel(value: string) {
-  if (value.toLowerCase() === "xhigh") {
-    return "xHigh";
-  }
-  return titleCase(value);
-}
-
 function contextPercentLeft(usedTokens: number, contextWindow: number) {
   if (contextWindow <= CONTEXT_USAGE_BASELINE_TOKENS) {
     return 0;
@@ -340,10 +330,6 @@ function contextPercentLeft(usedTokens: number, contextWindow: number) {
   const effectiveUsed = Math.max(0, usedTokens - CONTEXT_USAGE_BASELINE_TOKENS);
   const remaining = Math.max(0, effectiveWindow - effectiveUsed);
   return Math.round(Math.min(100, Math.max(0, (remaining / effectiveWindow) * 100)));
-}
-
-function titleCase(value: string) {
-  return value ? `${value.slice(0, 1).toUpperCase()}${value.slice(1)}` : value;
 }
 
 function SolidBoltIcon() {

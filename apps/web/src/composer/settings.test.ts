@@ -1,8 +1,29 @@
 import { describe, expect, it } from "vitest";
 
-import { composerSettingsFromNative, composerThreadSettingsPatch, createThreadOptions } from "./settings";
+import { composerSettingsFromNative, composerThreadSettingsPatch, createThreadOptions, normalizePersistedComposerSettings } from "./settings";
+
+const defaultModel = {
+  id: "native-default", model: "native-default", displayName: "Native default", description: "Default model",
+  defaultReasoningEffort: "medium", hidden: false, inputModalities: ["text"], isDefault: true, rawPayload: {},
+  supportedReasoningEfforts: [
+    { reasoningEffort: "medium", description: "Balanced" },
+    { reasoningEffort: "high", description: "Deep" },
+  ],
+};
 
 describe("native composer settings", () => {
+  it("keeps an explicit reasoning default when the model uses the catalog default", () => {
+    expect(normalizePersistedComposerSettings({
+      model: null,
+      effort: "high",
+      serviceTier: null,
+      permissionProfileId: null,
+      approvalPolicy: null,
+      approvalsReviewer: null,
+      writeTarget: null,
+    }, [defaultModel])).toEqual({ model: undefined, effort: "high", fast: false, serviceTier: undefined });
+  });
+
   it("preserves authoritative values even when the model or effort is absent from the model catalog", () => {
     expect(composerSettingsFromNative({
       model: "native-custom", effort: "ultra", serviceTier: "fast", activePermissionProfile: null,

@@ -108,6 +108,31 @@ describe("native configuration cache events", () => {
     observingClient.clear();
   });
 
+  it("refetches new-chat defaults for every active client after a native config change", async () => {
+    const clients = [new QueryClient(), new QueryClient()];
+    let current = { model: "before-model", effort: "low" };
+    const fetches = clients.map(() => vi.fn(() => Promise.resolve(current)));
+    const cleanups = clients.map((client, index) => {
+      const observer = new QueryObserver(client, {
+        queryFn: fetches[index],
+        queryKey: queryKeys.composerSettings(null),
+      });
+      return observer.subscribe(() => {});
+    });
+
+    await vi.waitFor(() => fetches.forEach((fetch) => expect(fetch).toHaveBeenCalledTimes(1)));
+    current = { model: "after-model", effort: "high" };
+    await Promise.all(clients.map((client) => applyNativeConfigEvent(client, event("config.changed"))));
+
+    clients.forEach((client) => {
+      expect(client.getQueryData(queryKeys.composerSettings(null))).toEqual(current);
+    });
+    fetches.forEach((fetch) => expect(fetch).toHaveBeenCalledTimes(2));
+
+    cleanups.forEach((cleanup) => cleanup());
+    clients.forEach((client) => client.clear());
+  });
+
   it("ignores unrelated events", () => {
     const queryClient = new QueryClient();
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();

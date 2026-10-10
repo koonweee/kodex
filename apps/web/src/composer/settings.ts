@@ -8,6 +8,7 @@ import type {
 } from "../api/client";
 import type { ComposerSettings, ComposerSettingsChange, ContextUsage } from "../ComposerFooterControls";
 import { asRecord, numberValue } from "../shared/values";
+import { selectedModel, supportsReasoningEffort } from "./modelCatalog";
 
 export type ComposerContext = {
   activeSelectedTurnId: string | null;
@@ -32,10 +33,10 @@ export function normalizePersistedComposerSettings(
   settings: ComposerSettingsResponse,
   models: ModelSummary[],
 ): ComposerSettings {
-  const model = settings.model && models.some((candidate) => candidate.id === settings.model) ? settings.model : undefined;
-  const selectedModel = model ? models.find((candidate) => candidate.id === model) : null;
+  const effectiveModel = selectedModel(models, settings.model);
+  const model = settings.model && effectiveModel ? settings.model : undefined;
   const effort =
-    selectedModel && settings.effort && supportsReasoningEffort(selectedModel, settings.effort)
+    effectiveModel && settings.effort && supportsReasoningEffort(effectiveModel, settings.effort)
       ? settings.effort
       : undefined;
 
@@ -117,8 +118,4 @@ export function sameComposerContext(left: ComposerContext | null, right: Compose
     left.selectedProjectId === right.selectedProjectId &&
     left.selectedThreadId === right.selectedThreadId
   );
-}
-
-function supportsReasoningEffort(model: ModelSummary, effort: string) {
-  return model.supportedReasoningEfforts.some((option) => option.reasoningEffort === effort);
 }
