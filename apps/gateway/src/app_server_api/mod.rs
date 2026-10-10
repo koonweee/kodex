@@ -20,6 +20,7 @@ mod queue;
 #[cfg(test)]
 mod queue_tests;
 mod subagents;
+mod usage;
 
 mod timeline;
 pub use client::{client, CodexClient};
@@ -49,6 +50,7 @@ pub use timeline::{
     ThreadTimelineSnapshotTurn, ThreadTimelineWindowPage, ThreadTimelineWorkDetailRow,
     ThreadTimelineWorkSummary, TimelineDisplayItemPayload,
 };
+pub use usage::*;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -1913,6 +1915,7 @@ impl ReasoningEffortOption {
 pub struct RateLimitsResponse {
     pub rate_limits: Option<RateLimitSnapshot>,
     pub rate_limits_by_limit_id: Option<BTreeMap<String, RateLimitSnapshot>>,
+    pub rate_limit_reset_credits: Option<RateLimitResetCreditsSummary>,
     pub raw_payload: Value,
 }
 
@@ -1940,6 +1943,14 @@ impl RateLimitsResponse {
         Ok(Self {
             rate_limits,
             rate_limits_by_limit_id,
+            rate_limit_reset_credits: payload
+                .get("rateLimitResetCredits")
+                .filter(|value| !value.is_null())
+                .map(|value| {
+                    serde_json::from_value(value.clone())
+                        .map_err(|_| bad_gateway("invalid rateLimitResetCredits"))
+                })
+                .transpose()?,
             raw_payload: payload,
         })
     }

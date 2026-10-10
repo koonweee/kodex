@@ -3,6 +3,7 @@ import type { EventEnvelope, RateLimitSnapshot, RateLimitWindow, RateLimitsRespo
 export type UsageLimitLines = {
   primary: string;
   secondary?: string;
+  credits?: string;
 };
 
 type RateLimitsUpdatedPayload = {
@@ -36,20 +37,29 @@ export function usageLimitSnapshotFromEvent(event: EventEnvelope): RateLimitSnap
 }
 
 export function formatUsageLimitLines(snapshot: RateLimitSnapshot | null, now = new Date()): UsageLimitLines | null {
-  if (!snapshot?.primary) {
-    return null;
-  }
-
-  const primary = formatUsageLimitLine(snapshot.primary, "5h", now);
-  if (!primary) {
-    return null;
-  }
-
-  const secondary = snapshot.secondary ? formatUsageLimitLine(snapshot.secondary, "7d", now) : null;
+  const primary = snapshot?.primary ? formatUsageLimitLine(snapshot.primary, "5h", now) : "";
+  const secondary = snapshot?.secondary ? formatUsageLimitLine(snapshot.secondary, "7d", now) : null;
+  const balance = creditBalance(snapshot);
+  const credits = balance !== null && balance > 0 ? formatCreditsRemaining(snapshot) : null;
+  if (!primary && !secondary && !credits) return null;
   return {
     primary,
     ...(secondary ? { secondary } : {}),
+    ...(credits ? { credits } : {}),
   };
+}
+
+export function creditBalance(snapshot: RateLimitSnapshot | null): number | null {
+  const value = snapshot?.credits?.balance?.trim();
+  if (!value) return null;
+  const balance = Number(value);
+  return Number.isFinite(balance) && balance >= 0 ? balance : null;
+}
+
+export function formatCreditsRemaining(snapshot: RateLimitSnapshot | null): string {
+  if (snapshot?.credits?.unlimited) return "Unlimited credits";
+  const balance = creditBalance(snapshot);
+  return balance === null ? "Credits unavailable" : `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 }).format(balance)} credits remaining`;
 }
 
 function formatUsageLimitLine(window: RateLimitWindow, fallbackLabel: string, now: Date) {

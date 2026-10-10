@@ -566,8 +566,6 @@
   color: var(--kodex-text-secondary);
   font-size: 12px;
   line-height: 1.35;
-  opacity: 0.76;
-  pointer-events: none;
 }
 
 .kodex-thread-approval-badge {

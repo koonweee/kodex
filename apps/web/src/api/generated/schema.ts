@@ -100,6 +100,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/account/rate-limit-reset-credits/consume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["consume_reset_credit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/account/rate-limits": {
         parameters: {
             query?: never;
@@ -2374,6 +2390,15 @@ export interface components {
             /** @enum {string} */
             type: "unknown";
         };
+        /** @enum {string} */
+        ConsumeRateLimitResetCreditOutcome: "reset" | "nothingToReset" | "noCredit" | "alreadyRedeemed";
+        ConsumeRateLimitResetCreditRequest: {
+            creditId: string;
+            idempotencyKey: string;
+        };
+        ConsumeRateLimitResetCreditResponse: {
+            outcome: components["schemas"]["ConsumeRateLimitResetCreditOutcome"];
+        };
         CreateChatThreadRequest: {
             approvalPolicy?: string | null;
             approvalsReviewer?: string | null;
@@ -2971,6 +2996,22 @@ export interface components {
             attachments?: components["schemas"]["TimelineFileAttachment"][];
             input: unknown[];
         };
+        RateLimitResetCredit: {
+            description?: string | null;
+            /** Format: int64 */
+            expiresAt?: number | null;
+            /** Format: int64 */
+            grantedAt: number;
+            id: string;
+            resetType: string;
+            status: string;
+            title?: string | null;
+        };
+        RateLimitResetCreditsSummary: {
+            /** Format: int64 */
+            availableCount: number;
+            credits?: components["schemas"]["RateLimitResetCredit"][] | null;
+        };
         RateLimitSnapshot: {
             credits?: null | components["schemas"]["CreditsSnapshot"];
             limitId?: string | null;
@@ -2989,6 +3030,7 @@ export interface components {
             windowDurationMins?: number | null;
         };
         RateLimitsResponse: {
+            rateLimitResetCredits?: null | components["schemas"]["RateLimitResetCreditsSummary"];
             rateLimits?: null | components["schemas"]["RateLimitSnapshot"];
             rateLimitsByLimitId?: {
                 [key: string]: components["schemas"]["RateLimitSnapshot"];
@@ -3978,6 +4020,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RawAppServerResponse"];
+                };
+            };
+        };
+    };
+    consume_reset_credit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConsumeRateLimitResetCreditRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsumeRateLimitResetCreditResponse"];
                 };
             };
         };

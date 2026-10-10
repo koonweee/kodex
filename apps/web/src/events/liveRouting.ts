@@ -43,7 +43,7 @@ export function routeGlobalLiveEvent(event: EventEnvelope, handlers: LiveEventRo
   if (event.kind === "thread.goal_changed" || event.kind === "thread_view.patch") {
     handlers.applyThreadGoalEvent(event);
   }
-  if (event.kind === "account.updated" || event.kind === "account.login_completed") {
+  if (event.kind === "account.updated" || event.kind === "account.login_completed" || event.kind === "account.rate_limits_updated") {
     handlers.applyAccountEvent(event);
   }
   const usageLimitSnapshot = usageLimitSnapshotFromEvent(event);

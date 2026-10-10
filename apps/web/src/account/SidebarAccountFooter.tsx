@@ -1,9 +1,10 @@
 import { AnimatedNumericText } from "../ui/AnimatedNumericText";
-import { Box, Menu } from "@mantine/core";
+import { Menu, Stack } from "@mantine/core";
 import { Bug, Check, CircleUserRound, Clock, LogIn, LogOut, Palette, Terminal } from "lucide-react";
 import { useState } from "react";
 
 import type { AccountResponse } from "../api/client";
+import type { PreferenceSection } from "../PreferencesModal";
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 import { CheckboxMenuItem } from "../ui/CheckboxMenuItem";
 import type { UsageLimitLines } from "./rateLimits";
@@ -33,7 +34,7 @@ export function SidebarAccountMenu({
   account: AccountResponse | null;
   onLogout: () => void;
   onSelectAutomations: () => void;
-  onOpenPreferences: () => void;
+  onOpenPreferences: (section?: PreferenceSection) => void;
   onShowDebugEventsChange: (value: boolean) => void;
   onShowCommandOutputsChange?: (value: boolean) => void;
   showDebugEvents: boolean;
@@ -79,7 +80,7 @@ function SettingsMenu({
   isAuthenticated: boolean;
   onLogout: () => void;
   onSelectAutomations: () => void;
-  onOpenPreferences: () => void;
+  onOpenPreferences: (section?: PreferenceSection) => void;
   onShowDebugEventsChange: (value: boolean) => void;
   onShowCommandOutputsChange?: (value: boolean) => void;
   showDebugEvents: boolean;
@@ -107,15 +108,21 @@ function SettingsMenu({
       </Menu.Target>
       <Menu.Dropdown aria-label={ACCOUNT_TEXT.settings} className="kodex-settings-dropdown">
         {usageLimitLines ? (
-          <Box
-            aria-label="Usage limits"
+          <Menu.Item
+            aria-label="Usage details"
             className="kodex-settings-usage-limits"
             data-testid="sidebar-usage-limits"
-            role="presentation"
+            onClick={() => {
+              setOpened(false);
+              onOpenPreferences("usage");
+            }}
           >
-            <span><AnimatedNumericText text={usageLimitLines.primary} /></span>
+            <Stack gap={2}>
+            {usageLimitLines.primary ? <span><AnimatedNumericText text={usageLimitLines.primary} /></span> : null}
             {usageLimitLines.secondary ? <span><AnimatedNumericText text={usageLimitLines.secondary} /></span> : null}
-          </Box>
+            {usageLimitLines.credits ? <span><AnimatedNumericText text={usageLimitLines.credits} /></span> : null}
+            </Stack>
+          </Menu.Item>
         ) : null}
         <Menu.Item
           className="kodex-settings-menu-item"

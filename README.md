@@ -103,6 +103,8 @@ Project creation uses a directory browser rooted at the gateway user's home. Sel
 
 The sidebar contains Pinned, Projects, and standalone Chats. Pinning and pinned order use native app-server state and preserve a chat’s project and working directory. Kodex does not expose chat reassignment between projects, custom sections or section management. Chats with pre-existing native custom-section membership remain visible in their normal project/chat lists.
 
+The account menu shows remaining plan usage and a credit balance when positive. Click that usage block to open **Preferences → Usage**, which shows the credit balance (including zero), plan-limit reset times, and available named resets with expiry dates. **Use reset** redeems the selected native reset and refreshes usage across tabs. Missing backend balances or reset details are shown as unavailable.
+
 On hover-capable desktop layouts, hovering over the collapsed sidebar’s expand icon briefly opens a borderless temporary overlay beside the rail, blending into it with the same sidebar background without resizing the panes. It closes after the pointer and keyboard focus leave; sidebar menus remain usable. Click the expand icon on the rail to pin it open. Touch and narrow layouts retain their tap navigation, and the short preview animation respects reduced-motion preferences.
 
 Unavailable thread panes offer **Browse threads** and an **X** to close that pane. Closing the last pane opens a fresh draft.

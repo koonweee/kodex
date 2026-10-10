@@ -22,6 +22,51 @@ function setup() {
 }
 
 describe("usage limit reads", () => {
+  it("keeps reset details from a full read when a live window update overlaps it", async () => {
+    let finish!: (value: Awaited<ReturnType<typeof getRateLimits>>) => void;
+    vi.mocked(getRateLimits).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const { result, client } = setup();
+    await waitFor(() => expect(getRateLimits).toHaveBeenCalledTimes(1));
+    act(() => result.current.applyUsageLimitSnapshot(snapshot(20)));
+    await act(async () => finish({ ...response(90), rateLimitResetCredits: { availableCount: 1, credits: null } }));
+    await waitFor(() => expect(client.getQueryData(queryKeys.rateLimits)).toMatchObject({ rateLimitResetCredits: { availableCount: 1 } }));
+    expect(result.current.usageLimitSnapshot?.primary?.usedPercent).toBe(20);
+  });
+  it("preserves credits and reset details through sparse native updates", async () => {
+    vi.mocked(getRateLimits).mockResolvedValueOnce({
+      ...response(20), rateLimits: { primary: { usedPercent: 20, resetsAt: 2000000000, windowDurationMins: 300 }, credits: { balance: "42", hasCredits: true, unlimited: false } },
+      rateLimitResetCredits: { availableCount: 1, credits: null },
+    });
+    const { result, client } = setup();
+    await waitFor(() => expect(result.current.usageLimitSnapshot?.credits?.balance).toBe("42"));
+    act(() => result.current.applyUsageLimitSnapshot({ ...snapshot(50), credits: null }));
+    await waitFor(() => expect(result.current.usageLimitSnapshot?.primary?.usedPercent).toBe(50));
+    expect(result.current.usageLimitSnapshot?.credits?.balance).toBe("42");
+    expect(result.current.usageLimitSnapshot?.primary).toMatchObject({ usedPercent: 50, resetsAt: 2000000000, windowDurationMins: 300 });
+    act(() => result.current.applyUsageLimitSnapshot({ credits: { balance: null, hasCredits: true, unlimited: false } }));
+    expect(result.current.usageLimitSnapshot?.credits?.balance).toBe("42");
+    expect(client.getQueryData(queryKeys.rateLimits)).toMatchObject({ rateLimitResetCredits: { availableCount: 1 } });
+  });
+
+  it("refills two clients after a reset and recovers a missed reset on reconnect", async () => {
+    let used = 100;
+    vi.mocked(getRateLimits).mockImplementation(async () => response(used));
+    const a = setup();
+    const b = setup();
+    await waitFor(() => expect(a.result.current.usageLimitSnapshot?.primary?.usedPercent).toBe(100));
+    await waitFor(() => expect(b.result.current.usageLimitSnapshot?.primary?.usedPercent).toBe(100));
+    const event = { id: "reset", seq: 3, kind: "account.rate_limits_updated", payload: {}, receivedAt: "2026-10-10T00:00:00Z" };
+    used = 0;
+    act(() => { applyAccountEvent(a.client, event); applyAccountEvent(b.client, event); });
+    await waitFor(() => expect(a.result.current.usageLimitSnapshot?.primary?.usedPercent).toBe(0));
+    await waitFor(() => expect(b.result.current.usageLimitSnapshot?.primary?.usedPercent).toBe(0));
+    used = 10;
+    act(() => applyAccountEvent(a.client, event));
+    await waitFor(() => expect(a.result.current.usageLimitSnapshot?.primary?.usedPercent).toBe(10));
+    expect(b.result.current.usageLimitSnapshot?.primary?.usedPercent).toBe(0);
+    await act(async () => { await refreshAccountQueries(b.client, { cancelInFlight: true }); });
+    await waitFor(() => expect(b.result.current.usageLimitSnapshot?.primary?.usedPercent).toBe(10));
+  });
   it("keeps a live update over a snapshot already in flight, then accepts a later native read", async () => {
     let finish!: (value: ReturnType<typeof response>) => void;
     vi.mocked(getRateLimits).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));

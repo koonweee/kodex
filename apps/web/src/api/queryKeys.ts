@@ -33,6 +33,7 @@ export const queryKeys = {
   queuedInputs: (threadId: string) => ["queued-inputs", threadId] as const,
   queuedInputsRoot: ["queued-inputs"] as const,
   rateLimits: ["account", "rate-limits"] as const,
+  resetCredit: ["account", "reset-credit"] as const,
   sidebarThreads: ["threads", "sidebar"] as const,
   skills: (cwd: string | null) => ["skills", cwd ?? "global"] as const,
   threadSubagentsRoot: ["thread-subagents"] as const,

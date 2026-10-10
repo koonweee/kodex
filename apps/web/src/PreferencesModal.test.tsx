@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createKodexQueryClient } from "./api/queryClient";
 import { queryKeys } from "./api/queryKeys";
-import { PreferencesModal } from "./PreferencesModal";
+import { PreferencesModal, type PreferenceSection } from "./PreferencesModal";
 
 const apiMocks = vi.hoisted(() => ({
   deleteCurrentPushSubscription: vi.fn(),
@@ -38,7 +38,7 @@ vi.mock("./api/client", async (importOriginal) => ({
   upsertPushSubscription: apiMocks.upsertPushSubscription,
 }));
 
-function renderPreferences(initialSection: "appearance" | "execution" | "notifications" | "plugins" | "mcp" = "plugins") {
+function renderPreferences(initialSection: PreferenceSection = "plugins") {
   const queryClient = createKodexQueryClient();
   queryClient.setDefaultOptions({
     queries: {
@@ -55,7 +55,7 @@ function renderPreferences(initialSection: "appearance" | "execution" | "notific
   }
 
   function Harness() {
-    const [section, setSection] = useState<"appearance" | "execution" | "notifications" | "plugins" | "mcp">(initialSection);
+    const [section, setSection] = useState<PreferenceSection>(initialSection);
     return (
       <PreferencesModal
         activeSection={section}

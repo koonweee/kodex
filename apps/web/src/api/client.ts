@@ -648,6 +648,10 @@ export async function getRateLimits(signal?: AbortSignal): Promise<RateLimitsRes
   return unwrap(api.GET("/v1/account/rate-limits", { signal, cache: "no-store" }));
 }
 
+export async function consumeRateLimitResetCredit(body: components["schemas"]["ConsumeRateLimitResetCreditRequest"]) {
+  return unwrap(api.POST("/v1/account/rate-limit-reset-credits/consume", { body }));
+}
+
 export async function listModels(): Promise<ModelSummary[]> {
   const response = await unwrap(api.GET("/v1/models", { params: { query: { includeHidden: false } } }));
   return response.models.filter((model) => !model.hidden);

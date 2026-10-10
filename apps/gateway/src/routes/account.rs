@@ -9,7 +9,9 @@ use utoipa::{IntoParams, ToSchema};
 use crate::{
     api::AppState,
     app_server_api::{
-        self, AccountResponse, LoginStartResponse, RateLimitsResponse, RawAppServerResponse,
+        self, AccountResponse, ConsumeRateLimitResetCreditRequest,
+        ConsumeRateLimitResetCreditResponse, LoginStartResponse, RateLimitsResponse,
+        RawAppServerResponse,
     },
     error::ApiResult,
 };
@@ -21,6 +23,10 @@ pub fn router() -> Router<AppState> {
         .route("/v1/account/login/{login_id}/cancel", post(cancel_login))
         .route("/v1/account/logout", post(logout))
         .route("/v1/account/rate-limits", get(read_rate_limits))
+        .route(
+            "/v1/account/rate-limit-reset-credits/consume",
+            post(consume_reset_credit),
+        )
 }
 
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
@@ -79,4 +85,40 @@ pub async fn read_rate_limits(
             .rate_limits_read()
             .await?,
     ))
+}
+
+#[utoipa::path(post, path = "/v1/account/rate-limit-reset-credits/consume", request_body = ConsumeRateLimitResetCreditRequest, responses((status = 200, body = ConsumeRateLimitResetCreditResponse)))]
+pub async fn consume_reset_credit(
+    State(state): State<AppState>,
+    Json(request): Json<ConsumeRateLimitResetCreditRequest>,
+) -> ApiResult<Json<ConsumeRateLimitResetCreditResponse>> {
+    if request.credit_id.trim().is_empty() || request.idempotency_key.trim().is_empty() {
+        return Err(crate::error::ApiError::BadRequest(
+            "creditId and idempotencyKey must not be empty".into(),
+        ));
+    }
+    let result = app_server_api::client(&state.app_server)
+        .consume_rate_limit_reset_credit(request)
+        .await;
+    // Even an ambiguous native failure can have consumed a credit. All clients
+    // must refetch; never turn an accepted reset into a retryable write failure.
+    match state
+        .store
+        .append_event(crate::store::NewEvent {
+            project_id: None,
+            thread_id: None,
+            turn_id: None,
+            item_id: None,
+            kind: crate::events::ACCOUNT_RATE_LIMITS_UPDATED_EVENT.into(),
+            codex_method: None,
+            payload: serde_json::json!({}),
+        })
+        .await
+    {
+        Ok(event) => {
+            let _ = state.events.send(event);
+        }
+        Err(error) => tracing::warn!(%error, "could not publish usage refill after reset attempt"),
+    }
+    result.map(Json)
 }

@@ -1,4 +1,6 @@
 pub mod account;
+#[cfg(test)]
+mod account_usage_tests;
 pub mod app_surfaces;
 pub mod approvals;
 pub mod automations;

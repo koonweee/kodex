@@ -7,6 +7,18 @@ import type { AccountResponse } from "../api/client";
 import { SidebarAccountMenu } from "./SidebarAccountFooter";
 
 describe("SidebarAccountMenu", () => {
+  it("opens Usage preferences from the limits and positive-credit block", async () => {
+    const onOpenPreferences = vi.fn();
+    render(<QueryClientProvider client={new QueryClient()}><MantineProvider env="test"><SidebarAccountMenu account={null}
+      onLogout={vi.fn()} onOpenPreferences={onOpenPreferences} onSelectAutomations={vi.fn()}
+      onShowDebugEventsChange={vi.fn()} showDebugEvents={false}
+      usageLimitLines={{ primary: "7d 0% left", credits: "25 credits remaining" }}
+    /></MantineProvider></QueryClientProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "Account settings" }));
+    expect(await screen.findByText("25 credits remaining")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Usage details" }));
+    expect(onOpenPreferences).toHaveBeenCalledWith("usage");
+  });
   it("offers independent debug and command-output toggles in that order", async () => {
     const onDebug = vi.fn();
     const onOutputs = vi.fn();

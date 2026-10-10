@@ -826,7 +826,10 @@ function KodexShell({
     handleSelectedThreadLoadFailed(threadId);
   });
   const handleClosePreferences = useEventCallback(() => setPreferencesOpen(false));
-  const handleOpenPreferences = useEventCallback(() => setPreferencesOpen(true));
+  const handleOpenPreferences = useEventCallback((section?: PreferenceSection) => {
+    if (section) setPreferencesSection(section);
+    setPreferencesOpen(true);
+  });
   const stableHandleCreateChat = useEventCallback(handleCreateChat);
   const stableHandleCreateThread = useEventCallback(handleCreateThread);
   const stableHandlePinThread = useEventCallback((threadId: string) => nativePinned.setPinned(threadId, true));

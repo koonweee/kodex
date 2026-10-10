@@ -1,0 +1,20 @@
+.kodex-usage-reset-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--kodex-border-subtle);
+}
+
+.kodex-usage-reset-copy {
+  flex: 1 1 160px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (pointer: coarse), (any-pointer: coarse) {
+  .kodex-usage-panel button {
+    min-height: 44px;
+  }
+}

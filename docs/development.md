@@ -59,6 +59,8 @@ Execution defaults and MCP setup read the native config layers and expose only t
 
 `config.changed` is a global refill-only event after a native save. Config reads are canceled/refilled on invalidation, actual EventSource reopening and foreground recovery. MCP writes request one explicit native reload after saving; failure leaves the save intact, and Reload retries only the runtime request. The acknowledgment establishes a queued refresh, not server readiness. Native config reload is best-effort for loaded chats and cannot turn session-static defaults into existing-chat settings.
 
+Preferences → Usage reads native credit balances, plan windows and reset-credit details. The account menu shows a positive balance and links directly to Usage. Reset buttons submit the chosen native credit ID with one idempotency key per attempt; an explicit retry after an ambiguous error reuses that key. Native outcomes remain distinct. A reset attempt emits a global `account.rate_limits_updated` refill marker with no `codexMethod`, including after an ambiguous failure. Every tab cancels pending usage reads and refetches; reconnect and foreground recovery also refill. Native `account/rateLimits/updated` notifications remain sparse updates, preserving unavailable metadata until a full read replaces it. There is no gateway credit ledger or local reset inventory.
+
 ## Validation commands
 
 Backend:

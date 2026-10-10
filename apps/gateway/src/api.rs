@@ -287,6 +287,7 @@ impl AppState {
         crate::routes::account::cancel_login,
         crate::routes::account::logout,
         crate::routes::account::read_rate_limits,
+        crate::routes::account::consume_reset_credit,
         crate::routes::models::list_models,
         crate::routes::notifications::notification_status,
         crate::routes::notifications::upsert_push_subscription,

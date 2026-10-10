@@ -6,6 +6,11 @@ import { queryKeys } from "../api/queryKeys";
 // Recovery needs a read begun after subscription/foreground validation. Ordinary
 // refills share in-flight reads; account changes drop the previous account's data.
 export async function refreshAccountQueries(queryClient: QueryClient, { reset = false, cancelInFlight = false } = {}) {
+  if (reset) {
+    for (const mutation of queryClient.getMutationCache().findAll({ mutationKey: queryKeys.resetCredit })) {
+      queryClient.getMutationCache().remove(mutation);
+    }
+  }
   const keys = [queryKeys.account, queryKeys.models];
   if (cancelInFlight) {
     await Promise.all(keys.map((queryKey) => queryClient.cancelQueries({ queryKey })));
@@ -16,7 +21,9 @@ export async function refreshAccountQueries(queryClient: QueryClient, { reset = 
 }
 
 export function applyAccountEvent(queryClient: QueryClient, event: EventEnvelope) {
-  if (event.kind === "account.updated") {
+  if (event.kind === "account.rate_limits_updated" && !event.codexMethod) {
+    void refreshUsageQueries(queryClient);
+  } else if (event.kind === "account.updated") {
     void refreshAccountQueries(queryClient, { reset: true });
   } else if (event.kind === "account.login_completed") {
     const completion = loginCompletionFromEvent(event);
@@ -30,6 +37,11 @@ export function applyAccountEvent(queryClient: QueryClient, event: EventEnvelope
     }
     void refreshAccountQueries(queryClient);
   }
+}
+
+export async function refreshUsageQueries(queryClient: QueryClient) {
+  await queryClient.cancelQueries({ queryKey: queryKeys.rateLimits });
+  await queryClient.invalidateQueries({ queryKey: queryKeys.rateLimits });
 }
 
 function loginCompletionFromEvent(event: EventEnvelope): AccountLoginCompleted | null {

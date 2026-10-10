@@ -69,7 +69,7 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
 
   function emit(kind: string, payload: unknown, client?: string, eventSeq = seq + 1) {
     seq = Math.max(seq, eventSeq);
-    const event: EventEnvelope = { id: `${eventSeq}-${kind}`, seq: eventSeq, kind, threadId: ["frontend.updated", "config.changed", "mcp.oauth_login_completed", "mcp.server_status_updated", "thread.subagents_changed", "automation.run_updated"].includes(kind) ? null : detail.thread.id, payload, receivedAt: "2026-10-04T00:00:00Z" };
+    const event: EventEnvelope = { id: `${eventSeq}-${kind}`, seq: eventSeq, kind, threadId: ["frontend.updated", "config.changed", "account.rate_limits_updated", "mcp.oauth_login_completed", "mcp.server_status_updated", "thread.subagents_changed", "automation.run_updated"].includes(kind) ? null : detail.thread.id, payload, receivedAt: "2026-10-04T00:00:00Z" };
     for (const [stream, id] of streams) {
       if (!client || client === id) {
         const delivery = options.payloadDelivery && kind === "thread_view.patch"
@@ -373,6 +373,7 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
       emit(event.kind, event.payload, client, event.seq);
     },
     configChanged(client?: string) { emit("config.changed", {}, client); },
+    usageChanged(client?: string) { emit("account.rate_limits_updated", {}, client); },
     mcpOAuthCompleted(name: string, success: boolean, error: string | null, client?: string) { emit("mcp.oauth_login_completed", { name, threadId: null, success, error }, client); },
     subagentsChanged(client?: string, changedThreadId: string | null = null) { emit("thread.subagents_changed", { changedThreadId }, client); },
     refreshRequired(client?: string) { emit("thread_view.refresh_required", { threadId: detail.thread.id, reason: "snapshot_required" }, client); },
