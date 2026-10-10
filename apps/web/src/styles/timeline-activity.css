@@ -100,9 +100,9 @@
   min-width: 0;
 }
 
-.kodex-activity-group[open],
-.kodex-activity-item[open] {
-  gap: 4px;
+.kodex-activity-group > summary ~ *,
+.kodex-activity-item > summary ~ * {
+  margin-top: 4px;
 }
 
 .kodex-activity-body {

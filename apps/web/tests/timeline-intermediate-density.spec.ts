@@ -39,6 +39,12 @@ for (const layout of [
       const fileSummary = files.locator(".kodex-file-change-summary").first();
       const commandExpanded = await verticalGeometry(commandSummary, ".kodex-activity-heading");
       const fileExpanded = await verticalGeometry(fileSummary, ".kodex-file-change-action");
+      const activityContents = activity.locator(":scope > .kodex-activity-contents");
+
+      await expect.poll(() => verticalGap(activitySummary, activityContents)).toBeCloseTo(4, 0);
+      await commandSummary.click();
+      const commandPanel = activity.locator(".kodex-activity-item > .kodex-command-panel").first();
+      await expect.poll(() => verticalGap(commandSummary, commandPanel)).toBeCloseTo(4, 0);
 
       expect(Math.abs(activityExpanded.height - activityCollapsed.height)).toBeLessThanOrEqual(1);
       // The expanded file header gains its separator border without changing its
