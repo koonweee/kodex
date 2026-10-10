@@ -18,7 +18,7 @@ for (const shape of [
         await sidebar.getByRole("button", { name: "Account settings", exact: true }).click();
         await page.getByRole("menuitem", { name: "Preferences", exact: true }).click();
         const dialog = page.getByRole("dialog", { name: "Preferences", exact: true });
-        for (const name of ["Interface", "Execution", "Notifications", "Plugins", "MCP"]) {
+        for (const name of ["Interface", "Execution", "Usage", "Notifications", "MCP"]) {
           const button = dialog.getByRole("button", { name, exact: true });
           await expect(button).toBeInViewport();
           expect(await button.evaluate((element) => {
@@ -26,6 +26,7 @@ for (const shape of [
             return label.scrollWidth <= label.clientWidth;
           }), `${name} is clipped`).toBe(true);
         }
+        await expect(dialog.getByRole("button", { name: "Plugins", exact: true })).toHaveCount(0);
         await expect(dialog.getByRole("radiogroup", { name: "Appearance mode", exact: true })).toBeVisible();
         const themes = dialog.getByRole("radiogroup", { name: /^(Light|Dark) theme$/ });
         for (const card of await themes.getByRole("radio").all()) {

@@ -25,8 +25,6 @@ export type EventEnvelope = components["schemas"]["EventEnvelope"];
 export type AppSurfaceBridgeRequest = components["schemas"]["AppSurfaceBridgeRequest"];
 export type AppSurfaceBridgeResponse = components["schemas"]["AppSurfaceBridgeResponse"];
 export type AppSurfaceSession = components["schemas"]["AppSurfaceSessionDto"];
-export type KodexControlPluginInstallResponse = components["schemas"]["KodexControlPluginInstallResponse"];
-export type KodexControlPluginStatusResponse = components["schemas"]["KodexControlPluginStatusResponse"];
 export type ConfiguredMcpServer = components["schemas"]["ConfiguredMcpServer"];
 export type ConfiguredMcpServerListResponse = components["schemas"]["ConfiguredMcpServerListResponse"];
 export type McpConfigMutationResponse = components["schemas"]["McpConfigMutationResponse"];
@@ -655,14 +653,6 @@ export async function consumeRateLimitResetCredit(body: components["schemas"]["C
 export async function listModels(): Promise<ModelSummary[]> {
   const response = await unwrap(api.GET("/v1/models", { params: { query: { includeHidden: false } } }));
   return response.models.filter((model) => !model.hidden);
-}
-
-export async function getKodexControlPluginStatus(): Promise<KodexControlPluginStatusResponse> {
-  return unwrap(api.GET("/v1/kodex-control-plugin"));
-}
-
-export async function installKodexControlPlugin(): Promise<KodexControlPluginInstallResponse> {
-  return unwrap(api.POST("/v1/kodex-control-plugin/install"));
 }
 
 export async function listMcpServers(signal?: AbortSignal): Promise<McpServerListResponse> {

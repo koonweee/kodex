@@ -11,7 +11,6 @@ export const queryKeys = {
   composerSettings: (projectId: string | null, cwd?: string | null) => ["composer-settings", projectId ?? "global", cwd ?? null] as const,
   appSurfaceRoot: ["app-surfaces"] as const,
   appSurface: (threadId: string) => ["app-surfaces", threadId] as const,
-  kodexControlPlugin: ["plugins", "kodex-control"] as const,
   models: ["models"] as const,
   mcpConfiguredServers: ["mcp", "configured-servers"] as const,
   mcpResource: (server: string, uri: string) => ["mcp", "servers", server, "resources", uri] as const,

@@ -1,40 +1,26 @@
 # Kodex Control
 
-The first-party plugin at `plugins/kodex-control` gives Codex guarded access to Kodex itself. It bundles the `generative-ui` skill and exposes a gateway-hosted MCP server for self-control tools and read-only resources.
+Kodex Control is a required part of each Kodex-managed runtime. The gateway registers its MCP server and installs its bundled skills before starting app-server. There is no plugin installation or Preferences install panel.
 
-## Install from Kodex
+## Runtime bundle
 
-1. Start the gateway with a ready Codex app-server.
-2. Open Preferences > Plugins in the web client.
-3. Install Kodex Control, or select Reinstall to refresh an existing installation.
+Skills live in `runtime/kodex/skills` and are embedded in the gateway through the explicit inventory in `apps/gateway/src/app_server/builtin.rs`. Add or remove inventory entries alongside skill files. Rebuild the gateway to update the bundle; no cachebuster, marketplace or separate skill version is needed.
 
-The install action adds the bundled marketplace, installs `kodex-control`, and emits `skills.changed`. Installation is unavailable when app-server is degraded.
+Managed startup reconciles owned files under the dedicated `CODEX_HOME/skills/kodex-builtin`. A small receipt records ownership. Retired bundled files are removed; unrelated user skills and added files are preserved. Ownership collisions and symlinked bundle paths fail startup rather than overwrite user content. Update/restart and rollback to a release with this mechanism reconcile that release's embedded bundle. Frontend-only updates do not modify it.
 
-For non-web development, override the marketplace path with `KODEX_KODEX_CONTROL_MARKETPLACE_PATH`. The default for a repository checkout is `.agents/plugins/marketplace.json`.
-
-## Develop the plugin
-
-When changing files under `plugins/kodex-control`, update the version suffix in `.codex-plugin/plugin.json` before reinstalling. Codex keys its installed plugin cache by version, so reinstalling the same version may retain stale content.
-
-For example:
-
-```text
-0.1.0+codex.local-20260817-120000
-```
-
-If the Codex plugin-creator skill is available, its `update_plugin_cachebuster.py` helper updates only the `+codex...` suffix while preserving the base version.
+MCP configuration is launch-scoped and does not edit user configuration. The `mcp_servers.kodex-control` name is reserved: a manual definition in the dedicated home configuration or `KODEX_CODEX_ARGS` fails startup with instructions to rename or remove that entry. Native overrides merge tables, so silently accepting it could retain foreign transport settings. The old `kodex-control@kodex-local` plugin is disabled for managed launches to avoid duplicate tools; its installation is left intact for rollback. This does not uninstall or change any plugin listing in external accounts. Rollback to a release predating built-in Control uses that release's old plugin setup; the new prefixed skill may remain on disk until a built-in release starts again.
 
 ## MCP server
 
-The gateway binary hosts the plugin's MCP server:
+The gateway binary hosts the built-in MCP server:
 
 ```bash
 kodex-gateway mcp kodex-control
 ```
 
-Managed Kodex launches provide the actual bound gateway URL and running executable to their own Codex child through `KODEX_GATEWAY_URL` and `KODEX_GATEWAY_BINARY`. The plugin forwards these native `env_vars` to its MCP launcher. This supports an ephemeral or custom port and avoids an HTTP bootstrap lookup, a Cargo build, or accidentally invoking another installed gateway. Inherited Control bindings are stripped before setting the owned values. Wildcard listeners use loopback; a specific private/VPN listener also receives the child-only remote opt-in required to reach that address. This does not make the gateway safe for public exposure.
+Managed Kodex launches provide the actual bound gateway URL and running executable to their own Codex child through `KODEX_GATEWAY_URL` and `KODEX_GATEWAY_BINARY`. The built-in registration forwards these native `env_vars` to the MCP process. This supports an ephemeral or custom port and avoids an HTTP bootstrap lookup, a Cargo build, or accidentally invoking another installed gateway. Inherited Control bindings are stripped before setting the owned values. Wildcard listeners use loopback; a specific private/VPN listener also receives the child-only remote opt-in required to reach that address. This does not make the gateway safe for public exposure.
 
-For an unmanaged development invocation, place `kodex-gateway` on `PATH` or set `KODEX_GATEWAY_BINARY` explicitly, and set `KODEX_GATEWAY_URL` to the intended gateway. A source-checkout launcher can also use an already-built `target/debug/kodex-gateway`. The MCP server otherwise defaults to `http://127.0.0.1:8787`; non-loopback URLs require `KODEX_ALLOW_REMOTE_SELF_CONTROL=1`.
+Normal source-checkout gateway launches use the same setup as the installed service. Direct MCP invocations can set `KODEX_GATEWAY_URL`; otherwise the server defaults to `http://127.0.0.1:8787`. Non-loopback URLs require `KODEX_ALLOW_REMOTE_SELF_CONTROL=1`.
 
 The server exposes guarded tools for:
 
@@ -59,8 +45,8 @@ MCP tool and resource calls pass through gateway-owned grants and inherit Kodex'
 
 ## Example use
 
-After installing the plugin, another project can invoke a bundled skill with a prompt such as:
+A Kodex chat can invoke the bundled skill with a prompt such as:
 
 ```text
-Use $generative-ui to create an interactive app surface for exploring these options.
+Use $kodex-generative-ui to create an interactive app surface for exploring these options.
 ```

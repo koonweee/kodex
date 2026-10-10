@@ -1,23 +1,6 @@
-# Kodex Control Plugin
+# Kodex runtime bundle
 
-`kodex-control` is the first-party Kodex plugin for guarded local gateway self-control.
-
-It contains:
-
-- `skills/generative-ui`: guidance for using Kodex-generated MCP App surfaces.
-- `.mcp.json`: a gateway-hosted MCP server definition that runs `kodex-gateway mcp kodex-control`.
-
-Install or reinstall from the Kodex web app via Preferences > Plugins. The focused gateway install endpoint is transitional; generic plugin listing and installation should replace it when Kodex grows a full plugin manager.
-
-When updating this local plugin, bump the manifest version with a Codex cachebuster suffix before reinstalling so the installed plugin cache gets a fresh bundle. Prefer:
-
-```bash
-python3 "$HOME/.codex/skills/.system/plugin-creator/scripts/update_plugin_cachebuster.py" plugins/kodex-control
-```
-
-This preserves the base version and rewrites only the `+codex...` suffix, for example `0.1.0` to `0.1.0+codex.local-20260604-143000`.
-
-The MCP server calls the running gateway over `KODEX_GATEWAY_URL`, defaulting to `http://127.0.0.1:8787`. Non-loopback URLs are refused unless `KODEX_ALLOW_REMOTE_SELF_CONTROL=1` is set.
+Control tools and skills are built into Kodex; see [setup and development](../../docs/kodex-control.md). The explicit skill inventory is embedded in the gateway binary. No plugin installation is required.
 
 Projects use native IDs and may have zero, one, or several organizational roots. `create_thread` and `spawn_thread` require the selected project to have exactly one root and execute there. If supplied, `cwd` must match that root; it cannot override it. Correct zero-root or multiple-root projects before starting a chat. Roots do not grant filesystem access, and changing a thread's project does not move its files or change its working directory.
 

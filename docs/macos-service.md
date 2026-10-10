@@ -29,7 +29,7 @@ The installation layout is:
   controller -> releases/<release>  # or controllers/<snapshot> for a controller-only upgrade
   controllers/<snapshot>/       # optional management-only snapshots
   config.json                   # private settings, mode 0600
-  releases/<release>/           # gateway, frontend, Codex, Control marketplace, controller
+  releases/<release>/           # gateway (with Control skills), frontend, Codex, controller
   current -> releases/<release>
   previous -> releases/<release>
   dev.kodex.gateway.plist        # launchd definition
@@ -157,3 +157,5 @@ python3 -m unittest discover -s tools/tests -p 'test_kodex_service*.py'
 ```
 
 These tests include a real loopback bind-conflict check, so a sandbox that prohibits socket binding must grant local network access. Live service validation additionally requires the logged-in GUI launchd domain. Installation, stop/start, update health and crash recovery should be exercised there; unit mocks alone do not establish launchd behavior.
+
+Kodex Control is registered automatically by the gateway before app-server starts. Skills are embedded in the gateway binary and reconciled in the dedicated home on startup, including full updates and rollback to built-in releases. Frontend-only updates do not change the bundle. See [Kodex Control](kodex-control.md) for ownership and legacy-plugin rollback behavior.

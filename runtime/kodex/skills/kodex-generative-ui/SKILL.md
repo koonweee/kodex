@@ -1,5 +1,5 @@
 ---
-name: generative-ui
+name: kodex-generative-ui
 description: Open or update a temporary thread-bound interactive app-surface pane when visual structure, direct manipulation, forms, comparisons, previews, branching choices, or repeated actions are clearer than chat alone; use the Kodex Control app-surface MCP tools rather than duplicating their schema.
 ---
 

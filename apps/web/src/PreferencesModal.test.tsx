@@ -6,16 +6,13 @@ import { useState, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createKodexQueryClient } from "./api/queryClient";
-import { queryKeys } from "./api/queryKeys";
 import { PreferencesModal, type PreferenceSection } from "./PreferencesModal";
 
 const apiMocks = vi.hoisted(() => ({
   deleteCurrentPushSubscription: vi.fn(),
   deletePushSubscription: vi.fn(),
   getCurrentPushSubscriptionStatus: vi.fn(),
-  getKodexControlPluginStatus: vi.fn(),
   getNotificationStatus: vi.fn(),
-  installKodexControlPlugin: vi.fn(),
   sendTestNotification: vi.fn(),
   upsertPushSubscription: vi.fn(),
 }));
@@ -31,14 +28,12 @@ vi.mock("./api/client", async (importOriginal) => ({
   deleteCurrentPushSubscription: apiMocks.deleteCurrentPushSubscription,
   deletePushSubscription: apiMocks.deletePushSubscription,
   getCurrentPushSubscriptionStatus: apiMocks.getCurrentPushSubscriptionStatus,
-  getKodexControlPluginStatus: apiMocks.getKodexControlPluginStatus,
   getNotificationStatus: apiMocks.getNotificationStatus,
-  installKodexControlPlugin: apiMocks.installKodexControlPlugin,
   sendTestNotification: apiMocks.sendTestNotification,
   upsertPushSubscription: apiMocks.upsertPushSubscription,
 }));
 
-function renderPreferences(initialSection: PreferenceSection = "plugins") {
+function renderPreferences(initialSection: PreferenceSection = "appearance") {
   const queryClient = createKodexQueryClient();
   queryClient.setDefaultOptions({
     queries: {
@@ -132,145 +127,12 @@ function restoreDescriptor(target: object, key: string, descriptor: PropertyDesc
   }
 }
 
-describe("PreferencesModal plugins tab", () => {
-  beforeEach(() => {
-    apiMocks.deleteCurrentPushSubscription.mockReset();
-    apiMocks.deletePushSubscription.mockReset();
-    apiMocks.getCurrentPushSubscriptionStatus.mockReset();
-    apiMocks.getKodexControlPluginStatus.mockReset();
-    apiMocks.getNotificationStatus.mockReset();
-    apiMocks.sendTestNotification.mockReset();
-    apiMocks.upsertPushSubscription.mockReset();
-    apiMocks.installKodexControlPlugin.mockReset();
-  });
-
-  it("shows plugin status and install action", async () => {
-    apiMocks.getKodexControlPluginStatus.mockResolvedValue({
-      appServerReady: true,
-      appsNeedingAuth: [],
-      authPolicy: null,
-      marketplaceAdded: false,
-      marketplacePath: "/repo/.agents/plugins/marketplace.json",
-      mcpServers: ["kodex-control"],
-      plugin: null,
-      pluginName: "kodex-control",
-      setupError: null,
-      skills: ["generative-ui"],
-      status: "notInstalled",
-    });
-    apiMocks.installKodexControlPlugin.mockResolvedValue({ status: {}, marketplace: null, install: null });
-
-    const { queryClient } = renderPreferences();
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
-
-    expect(await screen.findByText("Kodex Control")).toBeInTheDocument();
-    expect(await screen.findByText("Available")).toBeInTheDocument();
-    expect(await screen.findByText("1 skills · 1 MCP servers")).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: /^install$/i }));
-
-    await waitFor(() => expect(apiMocks.installKodexControlPlugin).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.kodexControlPlugin }));
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["skills"] });
-  });
-
-  it("shows loading and status fetch errors", async () => {
-    apiMocks.getKodexControlPluginStatus.mockImplementation(() => new Promise(() => {}));
-
-    const { unmount } = renderPreferences();
-
-    expect(await screen.findByText("Checking plugin status")).toBeInTheDocument();
-    unmount();
-
-    apiMocks.getKodexControlPluginStatus.mockReset();
-    apiMocks.getKodexControlPluginStatus.mockRejectedValue(new Error("status fetch failed"));
-    renderPreferences();
-
-    expect(await screen.findByText("status fetch failed")).toBeInTheDocument();
-  });
-
-  it("shows installed state with a reinstall action", async () => {
-    apiMocks.getKodexControlPluginStatus.mockResolvedValue({
-      appServerReady: true,
-      appsNeedingAuth: [],
-      authPolicy: "onInstall",
-      marketplaceAdded: true,
-      marketplacePath: "/repo/.agents/plugins/marketplace.json",
-      mcpServers: ["kodex-control"],
-      plugin: { installed: true, enabled: true },
-      pluginName: "kodex-control",
-      setupError: null,
-      skills: ["generative-ui"],
-      status: "installed",
-    });
-    apiMocks.installKodexControlPlugin.mockResolvedValue({ status: {}, marketplace: null, install: null });
-
-    const { queryClient } = renderPreferences();
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
-
-    expect(await screen.findAllByText("Installed")).toHaveLength(1);
-    const reinstallButton = await screen.findByRole("button", { name: /^reinstall$/i });
-    expect(reinstallButton).toBeEnabled();
-
-    await userEvent.click(reinstallButton);
-
-    await waitFor(() => expect(apiMocks.installKodexControlPlugin).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.kodexControlPlugin }));
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["skills"] });
-  });
-
-  it("surfaces app-server setup errors without enabling install", async () => {
-    apiMocks.getKodexControlPluginStatus.mockResolvedValue({
-      appServerReady: false,
-      appsNeedingAuth: [],
-      authPolicy: null,
-      marketplaceAdded: false,
-      marketplacePath: null,
-      mcpServers: [],
-      plugin: null,
-      pluginName: "kodex-control",
-      setupError: "Codex app-server is unavailable",
-      skills: [],
-      status: "appServerUnavailable",
-    });
-
-    renderPreferences();
-
-    expect(await screen.findByText("App-server unavailable")).toBeInTheDocument();
-    expect(screen.getByText("Codex app-server is unavailable")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^install$/i })).toBeDisabled();
-  });
-
-  it("keeps interface and plugins tab navigation separate", async () => {
-    apiMocks.getKodexControlPluginStatus.mockResolvedValue({
-      appServerReady: true,
-      appsNeedingAuth: [],
-      authPolicy: null,
-      marketplaceAdded: false,
-      marketplacePath: null,
-      mcpServers: [],
-      plugin: null,
-      pluginName: "kodex-control",
-      setupError: null,
-      skills: [],
-      status: "notInstalled",
-    });
-
-    renderPreferences("appearance");
-
-    expect(screen.getByRole("radio", { name: /oled black/i })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Plugins" }));
-    expect(await screen.findByText("Kodex Control")).toBeInTheDocument();
-  });
-});
-
 describe("PreferencesModal notifications tab", () => {
   beforeEach(() => {
     pwaMocks.getServiceWorkerRegistration.mockReset();
     apiMocks.deleteCurrentPushSubscription.mockReset();
     apiMocks.deletePushSubscription.mockReset();
     apiMocks.getCurrentPushSubscriptionStatus.mockReset();
-    apiMocks.getKodexControlPluginStatus.mockReset();
     apiMocks.getNotificationStatus.mockReset();
     apiMocks.sendTestNotification.mockReset();
     apiMocks.upsertPushSubscription.mockReset();

@@ -3,16 +3,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, BellOff, Send } from "lucide-react";
 
 import {
-  getKodexControlPluginStatus,
   getNotificationStatus,
-  installKodexControlPlugin,
   sendTestNotification,
 } from "./api/client";
 import { queryKeys } from "./api/queryKeys";
 import { McpPreferencesPanel } from "./mcp/McpPreferencesPanel";
 import { ExecutionPreferencesPanel } from "./preferences/ExecutionPreferencesPanel";
 import { AppearancePreferencesPanel } from "./preferences/AppearancePreferencesPanel";
-import { PluginsPreferencesPanel } from "./preferences/PluginsPreferencesPanel";
 import { UsagePreferencesPanel } from "./preferences/UsagePreferencesPanel";
 import type { AppearanceMode, AppearancePreferences } from "./theme/appearancePreferences";
 import { requestKodexNotificationPermission } from "./notifications/browserNotifications";
@@ -25,7 +22,7 @@ import {
 } from "./notifications/pushSubscriptions";
 import type { KodexColorSchemeId } from "./theme";
 
-export type PreferenceSection = "appearance" | "execution" | "usage" | "notifications" | "plugins" | "mcp";
+export type PreferenceSection = "appearance" | "execution" | "usage" | "notifications" | "mcp";
 
 export type PreferencesModalProps = {
   activeSection?: PreferenceSection;
@@ -49,11 +46,6 @@ export function PreferencesModal({
   opened,
 }: PreferencesModalProps) {
   const queryClient = useQueryClient();
-  const pluginStatusQuery = useQuery({
-    enabled: opened && activeSection === "plugins",
-    queryFn: getKodexControlPluginStatus,
-    queryKey: queryKeys.kodexControlPlugin,
-  });
   const notificationStatusQuery = useQuery({
     enabled: opened && activeSection === "notifications",
     queryFn: ({ signal }) => getNotificationStatus(signal),
@@ -63,15 +55,6 @@ export function PreferencesModal({
     enabled: opened && activeSection === "notifications",
     queryFn: ({ signal }) => loadBrowserPushNotificationState(signal),
     queryKey: ["notifications", "current-device"],
-  });
-  const installPluginMutation = useMutation({
-    mutationFn: installKodexControlPlugin,
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.kodexControlPlugin }),
-        queryClient.invalidateQueries({ queryKey: ["skills"] }),
-      ]);
-    },
   });
   const enableNotificationsMutation = useMutation({
     mutationFn: async () => {
@@ -157,15 +140,6 @@ export function PreferencesModal({
           </Button>
           <Button
             className="kodex-preferences-section-button"
-            data-active={activeSection === "plugins" ? "true" : undefined}
-            onClick={() => onSectionChange("plugins")}
-            type="button"
-            variant={activeSection === "plugins" ? "light" : "subtle"}
-          >
-            Plugins
-          </Button>
-          <Button
-            className="kodex-preferences-section-button"
             data-active={activeSection === "mcp" ? "true" : undefined}
             onClick={() => onSectionChange("mcp")}
             type="button"
@@ -207,16 +181,6 @@ export function PreferencesModal({
             testResult={testNotificationMutation.data}
             testSuccess={testNotificationMutation.isSuccess}
             testing={testNotificationMutation.isPending}
-          />
-        ) : activeSection === "plugins" ? (
-          <PluginsPreferencesPanel
-            installError={installPluginMutation.error}
-            installing={installPluginMutation.isPending}
-            onInstall={() => installPluginMutation.mutate()}
-            onRefresh={() => pluginStatusQuery.refetch()}
-            status={pluginStatusQuery.data}
-            statusError={pluginStatusQuery.error}
-            statusLoading={pluginStatusQuery.isLoading}
           />
         ) : (
           <McpPreferencesPanel />

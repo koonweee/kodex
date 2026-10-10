@@ -15,7 +15,6 @@ pub mod file_preview;
 mod file_preview_tests;
 pub mod frontend_updates;
 pub mod health;
-pub mod kodex_control_plugin;
 pub mod mcp;
 pub mod models;
 #[cfg(test)]
@@ -249,27 +248,6 @@ mod tests {
                 .and_then(|value| value.to_str().ok()),
             Some("*")
         );
-    }
-
-    #[tokio::test]
-    async fn kodex_control_plugin_reports_unavailable_app_server() {
-        let (state, app_server) = test_state().await;
-        app_server.ready.store(false, Ordering::SeqCst);
-        let app = build_router(state.clone());
-
-        let response = app
-            .oneshot(
-                Request::get("/v1/kodex-control-plugin")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["status"], "appServerUnavailable");
-        assert_eq!(body["appServerReady"], false);
     }
 
     #[tokio::test]
@@ -1273,150 +1251,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn kodex_control_plugin_reports_not_installed() {
-        let (mut state, app_server) = test_state().await;
-        let marketplace_root = tempdir().unwrap();
-        let marketplace_dir = marketplace_root.path().join(".agents/plugins");
-        std::fs::create_dir_all(&marketplace_dir).unwrap();
-        let marketplace_path = marketplace_dir.join("marketplace.json");
-        std::fs::write(
-            &marketplace_path,
-            json!({"name": "kodex-local", "plugins": []}).to_string(),
-        )
-        .unwrap();
-        Arc::make_mut(&mut state.config)
-            .plugins
-            .kodex_control_marketplace_path = Some(marketplace_path.clone());
-        app_server
-            .queued_responses
-            .lock()
-            .unwrap()
-            .push(plugin_read_response(false, &marketplace_path, None));
-        let app = build_router(state);
-
-        let response = app
-            .oneshot(
-                Request::get("/v1/kodex-control-plugin")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["status"], "notInstalled");
-        assert_eq!(body["plugin"]["installed"], false);
-        assert_eq!(body["skills"], json!(["generative-ui"]));
-    }
-
-    #[tokio::test]
-    async fn kodex_control_plugin_reports_missing_marketplace_path() {
-        let (mut state, _) = test_state().await;
-        Arc::make_mut(&mut state.config)
-            .plugins
-            .kodex_control_marketplace_path = Some(tempdir().unwrap().path().join("missing.json"));
-        let app = build_router(state);
-
-        let response = app
-            .oneshot(
-                Request::get("/v1/kodex-control-plugin")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["status"], "setupError");
-        assert!(body["setupError"]
-            .as_str()
-            .unwrap()
-            .contains("marketplace was not found"));
-    }
-
-    #[tokio::test]
-    async fn kodex_control_plugin_install_adds_marketplace_installs_and_broadcasts_skills() {
-        let (mut state, app_server) = test_state().await;
-        let marketplace_root = tempdir().unwrap();
-        let marketplace_dir = marketplace_root.path().join(".agents/plugins");
-        std::fs::create_dir_all(&marketplace_dir).unwrap();
-        let marketplace_path = marketplace_dir.join("marketplace.json");
-        std::fs::write(
-            &marketplace_path,
-            json!({
-                "name": "kodex-local",
-                "plugins": []
-            })
-            .to_string(),
-        )
-        .unwrap();
-        Arc::make_mut(&mut state.config)
-            .plugins
-            .kodex_control_marketplace_path = Some(marketplace_path.clone());
-        app_server.queued_responses.lock().unwrap().extend([
-            json!({
-                "alreadyAdded": false,
-                "installedRoot": marketplace_root.path().display().to_string(),
-                "marketplaceName": "kodex-local"
-            }),
-            json!({"appsNeedingAuth": [], "authPolicy": "onInstall"}),
-            plugin_read_response(
-                true,
-                &marketplace_path,
-                Some(
-                    &marketplace_root
-                        .path()
-                        .join("installed/kodex-control/0.1.0"),
-                ),
-            ),
-        ]);
-        let mut receiver = state.events.subscribe();
-        let skills = state.skills.clone();
-        assert_eq!(skills.generation().await, 0);
-        let app = build_router(state);
-
-        let response = app
-            .oneshot(
-                Request::post("/v1/kodex-control-plugin/install")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["status"]["status"], "installed");
-        assert_eq!(body["status"]["skills"], json!(["generative-ui"]));
-        assert_eq!(body["status"]["mcpServers"][0], "kodex-control");
-        let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests[0].0, "marketplace/add");
-        assert_eq!(
-            requests[0].1["source"],
-            marketplace_root.path().display().to_string()
-        );
-        assert_eq!(requests[1].0, "plugin/install");
-        assert_eq!(
-            requests[1].1["marketplacePath"],
-            marketplace_path.display().to_string()
-        );
-        assert_eq!(requests[2].0, "plugin/read");
-        assert_eq!(
-            requests[2].1["marketplacePath"],
-            marketplace_path.display().to_string()
-        );
-
-        let event = timeout(Duration::from_secs(2), receiver.recv())
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(event.kind, "skills.changed");
-        assert_eq!(skills.generation().await, 1);
-    }
-
-    #[tokio::test]
     async fn self_control_status_reports_gateway_and_app_server_readiness() {
         let (state, app_server) = test_state().await;
         app_server.ready.store(false, Ordering::SeqCst);
@@ -1543,8 +1377,6 @@ mod tests {
             "/v1/notifications/subscriptions/{subscriptionId}",
             "/v1/notifications/test",
             "/v1/skills",
-            "/v1/kodex-control-plugin",
-            "/v1/kodex-control-plugin/install",
             "/v1/mcp/configured-servers",
             "/v1/mcp/servers",
             "/v1/mcp/servers/{server}",
@@ -9473,48 +9305,6 @@ mod tests {
                 collect_serialized_row_items(collapsed_rows, items);
             }
         }
-    }
-
-    fn plugin_read_response(
-        installed: bool,
-        marketplace_path: &std::path::Path,
-        plugin_root: Option<&std::path::Path>,
-    ) -> Value {
-        let generative_ui_skill_path = plugin_root
-            .map(|root| root.join("skills/generative-ui/SKILL.md"))
-            .unwrap_or_else(|| "/tmp/generative-ui/SKILL.md".into());
-        json!({
-            "plugin": {
-                "summary": {
-                    "id": "kodex-local:kodex-control",
-                    "name": "kodex-control",
-                    "installed": installed,
-                    "enabled": installed,
-                    "installPolicy": "available",
-                    "authPolicy": "onInstall",
-                    "source": {"source": "local", "path": "./plugins/kodex-control"},
-                    "interface": {
-                        "displayName": "Kodex Control",
-                        "shortDescription": "Guarded Kodex self-management tools",
-                        "capabilities": ["Interactive", "Write"]
-                    }
-                },
-                "marketplaceName": "kodex-local",
-                "marketplacePath": marketplace_path.display().to_string(),
-                "skills": [
-                    {
-                        "name": "generative-ui",
-                        "path": generative_ui_skill_path.display().to_string(),
-                        "description": "Open interactive generated app-surface panes.",
-                        "enabled": true,
-                        "scope": "plugin"
-                    }
-                ],
-                "mcpServers": ["kodex-control"],
-                "apps": [],
-                "description": null
-            }
-        })
     }
 
     fn mcp_server_status(name: &str, tool_name: &str) -> Value {

@@ -15,7 +15,6 @@ pub struct Config {
     pub uploads: UploadsConfig,
     pub projects: ProjectsConfig,
     pub frontend: FrontendConfig,
-    pub plugins: PluginConfig,
     pub notifications: NotificationsConfig,
 }
 
@@ -59,11 +58,6 @@ pub struct FrontendConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub struct PluginConfig {
-    pub kodex_control_marketplace_path: Option<PathBuf>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct NotificationsConfig {
     pub vapid_public_key: Option<String>,
     pub vapid_private_key: Option<String>,
@@ -104,9 +98,6 @@ impl Default for Config {
                 home_dir: home_dir(),
             },
             frontend: FrontendConfig { dist_dir: None },
-            plugins: PluginConfig {
-                kodex_control_marketplace_path: None,
-            },
             notifications: NotificationsConfig {
                 vapid_public_key: None,
                 vapid_private_key: None,
@@ -145,10 +136,6 @@ impl Config {
 
         if let Ok(dist_dir) = env::var("KODEX_FRONTEND_DIST") {
             config.frontend.dist_dir = Some(expand_home(dist_dir));
-        }
-
-        if let Ok(path) = env::var("KODEX_KODEX_CONTROL_MARKETPLACE_PATH") {
-            config.plugins.kodex_control_marketplace_path = Some(expand_home(path));
         }
 
         if let Ok(key) = env::var("KODEX_VAPID_PUBLIC_KEY") {

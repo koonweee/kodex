@@ -69,10 +69,6 @@ use crate::{
         file_preview::FilePreviewQuery,
         frontend_updates::FrontendUpdateRequest,
         health::{HealthResponse, ReadyResponse},
-        kodex_control_plugin::{
-            KodexControlPluginInstallResponse, KodexControlPluginStatusKind,
-            KodexControlPluginStatusResponse,
-        },
         mcp::{McpResourceReadQuery, McpServersQuery},
         models::ModelsQuery,
         notifications::{
@@ -299,8 +295,6 @@ impl AppState {
         crate::routes::thread_presence::replace_thread_view_presence,
         crate::routes::skills::list_skills,
         crate::routes::skills::preview_skill_icon,
-        crate::routes::kodex_control_plugin::kodex_control_plugin_status,
-        crate::routes::kodex_control_plugin::install_kodex_control_plugin,
         crate::routes::mcp::list_configured_mcp_servers,
         crate::routes::mcp::list_mcp_servers,
         crate::routes::mcp::add_mcp_server,
@@ -547,9 +541,6 @@ impl AppState {
         PluginMarketplaceEntry,
         PluginReadResponse,
         PluginSummary,
-        KodexControlPluginStatusKind,
-        KodexControlPluginStatusResponse,
-        KodexControlPluginInstallResponse,
         McpServersQuery,
         McpResourceReadQuery,
         McpServerStatusDetail,
@@ -639,7 +630,6 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::thread_presence::router())
         .merge(routes::permission_profiles::router())
         .merge(routes::skills::router())
-        .merge(routes::kodex_control_plugin::router())
         .merge(routes::mcp::router())
         .merge(routes::self_control::router())
         .merge(SwaggerUi::new("/docs").url("/openapi.json", ApiDoc::openapi()))

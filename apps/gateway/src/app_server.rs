@@ -99,6 +99,7 @@ impl AppServer for UnavailableAppServer {
     }
 }
 
+mod builtin;
 mod control_binding;
 
 pub struct JsonRpcAppServer {
@@ -147,6 +148,9 @@ impl JsonRpcAppServer {
             control_binding::apply_control_binding(&mut command, address, binary);
         }
         command.args(&config.args);
+        if let Some((_, binary)) = control {
+            builtin::prepare(&mut command, &config.home, binary)?;
+        }
         for (key, value) in [
             ("sqlite_home", config.home.join("sqlite")),
             ("log_dir", config.home.join("log")),

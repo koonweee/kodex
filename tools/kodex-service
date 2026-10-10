@@ -196,7 +196,6 @@ class Service:
             'KODEX_DATA_DIR': config['data_dir'],
             'KODEX_CODEX_BINARY': str(release / 'codex'),
             'KODEX_FRONTEND_DIST': str(release / 'frontend'),
-            'KODEX_KODEX_CONTROL_MARKETPLACE_PATH': str(release / 'marketplace/.agents/plugins/marketplace.json'),
         })
         # Explicit, narrowly scoped optional settings; never import an old production env file.
         optional = config.get('environment', {})
@@ -355,9 +354,6 @@ class Service:
             run(['npm', 'run', 'build'], cwd=repo / 'apps/web', env=build_env)
             shutil.copy2(repo / 'target/release/kodex-gateway', stage / 'kodex-gateway')
             shutil.copytree(repo / 'apps/web/dist', stage / 'frontend')
-            marketplace = stage / 'marketplace'
-            shutil.copytree(repo / 'plugins', marketplace / 'plugins')
-            shutil.copytree(repo / '.agents/plugins', marketplace / '.agents/plugins')
             (stage / 'manifest.json').write_text(json.dumps({'schema_version': version, 'native': native}))
             destination = releases / (time.strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:8])
             stage.rename(destination)

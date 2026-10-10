@@ -161,14 +161,13 @@ class LifecycleTests(unittest.TestCase):
     def test_build_packages_release_and_forces_same_origin(self):
         repo = self.root / 'repo'
         for folder in ('tools', 'apps/gateway/src', 'apps/web/dist', 'target/release',
-                       'plugins/kodex-control', '.agents/plugins'):
+                       'runtime/kodex/skills'):
             (repo / folder).mkdir(parents=True)
         (repo / 'apps/gateway/src/schema.rs').write_text('APP_SERVER_SCHEMA_VERSION: &str = "0.160.0"')
         for name in service.CONTROLLER_FILES:
             (repo / 'tools' / name).write_text('controller')
         (repo / 'target/release/kodex-gateway').write_text('executable')
         (repo / 'apps/web/dist/index.html').write_text('frontend')
-        (repo / '.agents/plugins/marketplace.json').write_text('{}')
         def acquire(version, stage):
             self.assertEqual(version, '0.160.0')
             (stage / 'codex').write_text('native executable')
@@ -180,7 +179,6 @@ class LifecycleTests(unittest.TestCase):
         build = next(call for call in commands.call_args_list if call.args[0][:3] == ['npm', 'run', 'build'])
         self.assertEqual(build.kwargs['env']['VITE_KODEX_API_BASE_URL'], '')
         self.assertEqual((release / 'frontend/index.html').read_text(), 'frontend')
-        self.assertTrue((release / 'marketplace/.agents/plugins/marketplace.json').is_file())
         self.assertEqual((release / 'codex').read_text(), 'native executable')
         for name in service.CONTROLLER_FILES:
             self.assertEqual((release / name).read_text(), 'controller')

@@ -54,8 +54,6 @@
   min-width: 0;
 }
 
-.kodex-plugin-row,
-.kodex-plugin-copy,
 .kodex-execution-panel,
 .kodex-execution-option-list,
 .kodex-execution-option,
@@ -81,27 +79,6 @@
 
 .kodex-preferences-setting-header {
   padding-top: 1px;
-}
-
-.kodex-plugin-row {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: start;
-  padding: 12px;
-  border: 1px solid var(--kodex-border-subtle);
-  border-radius: var(--kodex-radius-md);
-  background: var(--kodex-bg-raised);
-}
-
-.kodex-plugin-icon {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border-radius: var(--kodex-radius-md);
-  background: var(--kodex-bg-raised-muted);
-  color: var(--kodex-text-accent);
 }
 
 .kodex-execution-option-list {
@@ -341,15 +318,6 @@
   .kodex-preferences-section-button .kodex-mantine-button-label {
     white-space: normal;
     overflow-wrap: anywhere;
-  }
-
-  .kodex-plugin-row {
-    grid-template-columns: 34px minmax(0, 1fr);
-  }
-
-  .kodex-plugin-row > .kodex-mantine-button-root {
-    grid-column: 1 / -1;
-    justify-self: start;
   }
 
   .kodex-mcp-layout {

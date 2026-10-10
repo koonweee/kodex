@@ -139,7 +139,7 @@ The real push-provider browser proof is manual-only; run it from your own termin
 | --- | --- |
 | `apps/gateway` | Rust gateway, Codex app-server adapter, API, persistence, and host integrations |
 | `apps/web` | React, TypeScript, and Vite progressive web app |
-| `plugins/kodex-control` | First-party plugin for guarded agent access to Kodex |
+| `runtime/kodex` | Built-in skills for guarded agent access to Kodex |
 | `docs` | Architecture, development, deployment, and maintenance guides |
 | `plans` | Implementation history and future work |
 
@@ -149,7 +149,7 @@ The real push-provider browser proof is manual-only; run it from your own termin
 - [Development](docs/development.md) — setup, local workflows, validation, and generated contracts.
 - [Theme guidelines](docs/theme-guidelines.md) — contrast audit, semantic token rules, and reproducible theme contact sheets.
 - [Deployment](docs/deployment.md) — security assumptions, configuration, PWA updates, and Web Push.
-- [Kodex Control](docs/kodex-control.md) — install and develop the bundled plugin and MCP server.
+- [Kodex Control](docs/kodex-control.md) — built-in MCP server and application-owned skills.
 - [Plans](plans/index.md) — completed milestones, active work, and future extensions.
 
 For persistent hosting on your Mac, use the [login service and update commands](docs/macos-service.md). The service runs a compiled release independently of your development checkout and works with private Tailscale HTTPS. It downloads the complete official Codex runtime pinned to the checked-in app-server schema and verifies its checksum; it does not extract binaries from the desktop app.

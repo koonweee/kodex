@@ -405,38 +405,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/kodex-control-plugin": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["kodex_control_plugin_status"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/kodex-control-plugin/install": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["install_kodex_control_plugin"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/mcp/configured-servers": {
         parameters: {
             query?: never;
@@ -2530,26 +2498,6 @@ export interface components {
         ImageUploadResponse: {
             images: components["schemas"]["ImageUpload"][];
         };
-        KodexControlPluginInstallResponse: {
-            install?: null | components["schemas"]["PluginInstallResponse"];
-            marketplace?: null | components["schemas"]["MarketplaceAddResponse"];
-            status: components["schemas"]["KodexControlPluginStatusResponse"];
-        };
-        /** @enum {string} */
-        KodexControlPluginStatusKind: "notInstalled" | "installed" | "appServerUnavailable" | "setupError";
-        KodexControlPluginStatusResponse: {
-            appServerReady: boolean;
-            appsNeedingAuth: components["schemas"]["AppSummary"][];
-            authPolicy?: string | null;
-            marketplaceAdded: boolean;
-            marketplacePath?: string | null;
-            mcpServers: string[];
-            plugin?: null | components["schemas"]["PluginSummary"];
-            pluginName: string;
-            setupError?: string | null;
-            skills: string[];
-            status: components["schemas"]["KodexControlPluginStatusKind"];
-        };
         LoginStartResponse: {
             loginId: string;
             loginType: string;
@@ -4576,44 +4524,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-        };
-    };
-    kodex_control_plugin_status: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KodexControlPluginStatusResponse"];
-                };
-            };
-        };
-    };
-    install_kodex_control_plugin: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KodexControlPluginInstallResponse"];
-                };
             };
         };
     };

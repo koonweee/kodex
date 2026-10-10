@@ -6,7 +6,7 @@ use axum::{
     middleware::{self, Next},
 };
 use kodex_gateway::app_server_api::{CodexClient, McpServerStatusDetail, McpServerToolCallRequest};
-use serde_json::{json, Value};
+use serde_json::json;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -15,7 +15,7 @@ use tokio::time::{timeout, Duration};
 
 #[tokio::test]
 #[ignore = "requires explicit pinned real Codex executable and loopback access"]
-async fn real_native_installed_control_bundle_uses_its_owned_gateway_and_explicit_target(
+async fn real_native_builtin_control_bundle_uses_its_owned_gateway_and_explicit_target(
 ) -> anyhow::Result<()> {
     let mut fixture = Fixture::new().await?;
     let config_file = fixture.config.codex.home.join("config.toml");
@@ -43,26 +43,16 @@ async fn real_native_installed_control_bundle_uses_its_owned_gateway_and_explici
     ));
     let serving = tokio::spawn(async move { axum::serve(listener, router).await });
     let result=timeout(Duration::from_secs(60),async {
-        let installed=api(&session.app,"POST","/v1/kodex-control-plugin/install",None).await?;
-        anyhow::ensure!(installed["status"]["plugin"]["installed"]==true,"native installation did not confirm: {installed}");
-        let source_root=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let source=source_root.join("plugins/kodex-control");
-        let manifest:Value=serde_json::from_slice(&std::fs::read(source.join(".codex-plugin/plugin.json"))?)?;
-        let version=manifest["version"].as_str().context("source plugin version")?;
-        let cache=fixture.config.codex.home.join("plugins/cache/kodex-local/kodex-control").join(version);
-        anyhow::ensure!(cache.is_dir(),"native installed bundle missing at {}",cache.display());
-        for file in [".mcp.json","bin/kodex-control-mcp",".codex-plugin/plugin.json"] {
-            anyhow::ensure!(std::fs::read(cache.join(file))?==std::fs::read(source.join(file))?,"installed {file} differs from actual source bundle");
-        }
-        // Native installation/discovery must run the unmodified installed shim,
-        // with no test-only MCP override or patched plugin cache.
+        let skills=api(&session.app,"GET","/v1/skills",None).await?;
+        anyhow::ensure!(skills.to_string().contains("kodex-generative-ui"), "built-in skill missing: {skills}");
         let inventory=CodexClient::new(session.state.app_server.clone()).mcp_server_status_list(McpServerStatusDetail::Full).await?;
-        let server=inventory.servers.iter().find(|server|server.tools.values().any(|tool|tool.name=="get_status")).context("installed native Control server absent from inventory")?;
+        anyhow::ensure!(inventory.servers.iter().filter(|server| server.tools.values().any(|tool|tool.name=="get_status")).count()==1, "expected exactly one built-in Control server");
+        let server=inventory.servers.iter().find(|server|server.tools.values().any(|tool|tool.name=="get_status")).context("built-in native Control server absent from inventory")?;
         let project=api(&session.app,"POST","/v1/projects",Some(json!({"name":"Installed Control proof","roots":[{"path":fixture.workspace}],"idempotencyKey":"installed-control"}))).await?;
         let thread=api(&session.app,"POST","/v1/threads",Some(json!({"projectId":project["id"]}))).await?;
         let thread_id=thread["thread"]["id"].as_str().context("Kodex-owned native target")?.to_owned();
         fixture.enqueue([ModelResponse::message("Control target materialized")]);
-        api(&session.app,"POST",&format!("/v1/threads/{thread_id}/input"),Some(json!({"input":[{"type":"text","text":"materialize installed Control target"}]}))).await?;
+        api(&session.app,"POST",&format!("/v1/threads/{thread_id}/input"),Some(json!({"input":[{"type":"text","text":"materialize built-in Control target"}]}))).await?;
         fixture.next_model_request().await?;
         session.completed_turn(&thread_id,"completed").await?;
         let invoking_id=thread_id.clone();
@@ -73,14 +63,14 @@ async fn real_native_installed_control_bundle_uses_its_owned_gateway_and_explici
         fixture.next_model_request().await?;
         session.completed_turn(&thread_id,"completed").await?;
         let client=CodexClient::new(session.state.app_server.clone());
-        let status=client.mcp_tool_call(McpServerToolCallRequest {server:server.name.clone(),thread_id:invoking_id.clone(),tool:"get_status".into(),arguments:Some(json!({})),meta:None}).await.context("installed Control get_status")?;
-        anyhow::ensure!(status.is_error!=Some(true),"installed native Control status error: {status:?}");
+        let status=client.mcp_tool_call(McpServerToolCallRequest {server:server.name.clone(),thread_id:invoking_id.clone(),tool:"get_status".into(),arguments:Some(json!({})),meta:None}).await.context("built-in Control get_status")?;
+        anyhow::ensure!(status.is_error!=Some(true),"built-in native Control status error: {status:?}");
         anyhow::ensure!(owned_reads.load(Ordering::SeqCst)>0,"Control request did not reach the owning gateway listener");
         // Native MCP supplies the invoking chat A in metadata. The explicit
         // owned target B must win, and omission must not default to A.
-        let opened=client.mcp_tool_call(McpServerToolCallRequest {server:server.name.clone(),thread_id:invoking_id.clone(),tool:"open_app_surface".into(),arguments:Some(json!({"threadId":thread_id,"title":"Installed native app","html":"<h1>Owned Control bundle</h1>","fallbackContent":"Owned Control bundle"})),meta:None}).await.context("installed Control explicit app target")?;
-        anyhow::ensure!(opened.is_error!=Some(true),"installed bundle surface call failed: {opened:?}");
-        let surface=session.state.store.latest_app_surface_session(&thread_id).await?.context("installed native call did not create artifact in owning store")?;
+        let opened=client.mcp_tool_call(McpServerToolCallRequest {server:server.name.clone(),thread_id:invoking_id.clone(),tool:"open_app_surface".into(),arguments:Some(json!({"threadId":thread_id,"title":"Installed native app","html":"<h1>Owned Control bundle</h1>","fallbackContent":"Owned Control bundle"})),meta:None}).await.context("built-in Control explicit app target")?;
+        anyhow::ensure!(opened.is_error!=Some(true),"built-in bundle surface call failed: {opened:?}");
+        let surface=session.state.store.latest_app_surface_session(&thread_id).await?.context("built-in native call did not create artifact in owning store")?;
         anyhow::ensure!(surface.thread_id==thread_id && surface.title=="Installed native app");
         anyhow::ensure!(session.state.store.latest_app_surface_session(&invoking_id).await?.is_none());
         let rejected=client.mcp_tool_call(McpServerToolCallRequest {server:server.name.clone(),thread_id:invoking_id.clone(),tool:"open_app_surface".into(),arguments:Some(json!({"title":"No implicit target","html":"<h1>Reject</h1>","fallbackContent":"Reject"})),meta:None}).await;
@@ -94,7 +84,109 @@ async fn real_native_installed_control_bundle_uses_its_owned_gateway_and_explici
     serving.abort();
     let _ = serving.await;
     session.shutdown().await?;
-    result.context("installed native Control proof exceeded observation bound")??;
+    result.context("built-in native Control proof exceeded observation bound")??;
     anyhow::ensure!(!fixture.config.codex.home.join("auth.json").exists());
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires explicit pinned real Codex executable and loopback access"]
+async fn real_native_builtin_control_replaces_legacy_plugin_without_config_writes(
+) -> anyhow::Result<()> {
+    let fixture = Fixture::new().await?;
+    let config_file = fixture.config.codex.home.join("config.toml");
+    let config =
+        std::fs::read_to_string(&config_file)?.replace("plugins = false", "plugins = true");
+    std::fs::write(&config_file, config)?;
+    let market = fixture.workspace.join("legacy-market");
+    let plugin = market.join("plugins/kodex-control");
+    std::fs::create_dir_all(plugin.join(".codex-plugin"))?;
+    std::fs::create_dir_all(plugin.join("skills/legacy"))?;
+    std::fs::create_dir_all(market.join(".agents/plugins"))?;
+    std::fs::write(market.join(".agents/plugins/marketplace.json"), json!({
+        "name":"kodex-local", "plugins":[{"name":"kodex-control","source":{"source":"local","path":"./plugins/kodex-control"},"policy":{"installation":"AVAILABLE","authentication":"ON_INSTALL"},"category":"Coding"}]
+    }).to_string())?;
+    std::fs::write(plugin.join(".codex-plugin/plugin.json"), json!({"name":"kodex-control","version":"0.1.0","skills":"./skills/","mcpServers":"./.mcp.json"}).to_string())?;
+    std::fs::write(
+        plugin.join(".mcp.json"),
+        json!({"mcpServers":{"kodex-control":{"command":"/usr/bin/false"}}}).to_string(),
+    )?;
+    std::fs::write(plugin.join("skills/legacy/SKILL.md"), "---\nname: legacy-control-probe\ndescription: Legacy plugin fixture.\n---\nLegacy probe.\n")?;
+    let legacy = NativeSession::start(&fixture).await?;
+    let client = CodexClient::new(legacy.state.app_server.clone());
+    client
+        .marketplace_add(market.to_string_lossy().into_owned(), None, None)
+        .await?;
+    let market_path = market
+        .join(".agents/plugins/marketplace.json")
+        .to_string_lossy()
+        .into_owned();
+    client
+        .plugin_install("kodex-control".into(), Some(market_path.clone()), None)
+        .await?;
+    let skills = api(&legacy.app, "GET", "/v1/skills", None).await?;
+    anyhow::ensure!(
+        skills.to_string().contains("legacy-control-probe"),
+        "legacy installation not discovered: {skills}"
+    );
+    legacy.shutdown().await?;
+    drop(legacy);
+    let saved = std::fs::read_to_string(&config_file)?;
+    for _ in 0..2 {
+        let session =
+            NativeSession::start_with_control(&fixture, "127.0.0.1:12345".parse()?).await?;
+        let result = async {
+            let config = session
+                .state
+                .app_server
+                .request("config/read", json!({"includeLayers":false}))
+                .await?;
+            let server = &config["config"]["mcp_servers"]["kodex-control"];
+            anyhow::ensure!(
+                server["command"] == env!("CARGO_BIN_EXE_kodex-gateway"),
+                "wrong owned command: {server}"
+            );
+            anyhow::ensure!(
+                server.get("url").is_none_or(|v| v.is_null())
+                    && server.get("env").is_none_or(|v| v.is_null()),
+                "stale fields survived: {server}"
+            );
+            let skills = api(&session.app, "GET", "/v1/skills", None).await?;
+            anyhow::ensure!(
+                skills.to_string().contains("kodex-generative-ui")
+                    && !skills.to_string().contains("legacy-control-probe"),
+                "legacy skill remained active: {skills}"
+            );
+            let inventory = CodexClient::new(session.state.app_server.clone())
+                .mcp_server_status_list(McpServerStatusDetail::Full)
+                .await?;
+            anyhow::ensure!(
+                inventory
+                    .servers
+                    .iter()
+                    .filter(|s| s.tools.values().any(|t| t.name == "get_status"))
+                    .count()
+                    == 1,
+                "built-in Control absent or duplicated"
+            );
+            anyhow::ensure!(
+                std::fs::read_to_string(&config_file)? == saved,
+                "managed startup mutated user config"
+            );
+            Ok::<_, anyhow::Error>(())
+        }
+        .await;
+        session.shutdown().await?;
+        result?;
+    }
+    // Reject manual collisions instead of inheriting transport or policy fields.
+    let conflicting = format!("{saved}\n[mcp_servers.kodex-control]\nurl = \"http://127.0.0.1:1/foreign\"\nenabled = false\n");
+    std::fs::write(&config_file, &conflicting)?;
+    let result = NativeSession::start_with_control(&fixture, "127.0.0.1:12345".parse()?).await;
+    anyhow::ensure!(
+        result.is_err(),
+        "manual Control definition should be rejected"
+    );
+    anyhow::ensure!(std::fs::read_to_string(&config_file)? == conflicting);
     Ok(())
 }
