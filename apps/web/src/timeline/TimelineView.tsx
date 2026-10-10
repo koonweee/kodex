@@ -182,10 +182,15 @@ export function TimelineView({
   };
 
   return (
-    <Box className="kodex-timeline-virtual-root" data-initial-bottom-aligned={initialBottomAligned ? "true" : "false"}>
+    <Box
+      className="kodex-timeline-virtual-root"
+      data-align-short-to-bottom={timeline.activeTurnId === null ? "true" : undefined}
+      data-initial-bottom-aligned={initialBottomAligned ? "true" : "false"}
+    >
       <Virtuoso<TimelineRenderRow, TimelineVirtualContext>
         atBottomStateChange={handleAtBottomStateChange}
         atBottomThreshold={60}
+        className="kodex-timeline-virtuoso"
         components={TIMELINE_VIRTUOSO_COMPONENTS}
         computeItemKey={(index, row) => row?.key ?? visibleRows[index - virtualPosition.firstItemIndex]?.key ?? index}
         context={virtualContext}

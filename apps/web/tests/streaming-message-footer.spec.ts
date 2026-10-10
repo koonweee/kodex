@@ -51,6 +51,41 @@ for (const shape of [
       expect(fixture.unexpected).toEqual([]);
     });
 
+    test("a short timeline aligns its final row above the composer", async ({ context }) => {
+      const fixture = await nativeSettingsFixture(context);
+      fixture.detail.timeline = {
+        ...fixture.detail.timeline,
+        activeTurnId: null,
+        liveState: "idle",
+        rows: [completedAnswerRow("short-answer", "Short final answer", 1)],
+        turns: [{ id: "turn-short-answer", status: "completed" }],
+      };
+      try {
+        const page = await fixture.page("short-timeline-alignment");
+        const answer = page.getByText("Short final answer", { exact: true });
+        const pane = page.locator(".kodex-thread-pane").filter({ has: answer });
+        await expect(answer).toBeVisible();
+        await expect(pane.locator('[data-initial-bottom-aligned="true"]')).toBeVisible();
+        await expect(pane.locator('[data-align-short-to-bottom="true"]')).toBeVisible();
+
+        const row = pane.locator(".kodex-turn-group");
+        const scroll = pane.locator(".kodex-thread-pane-scroll");
+        const composer = pane.locator(".kodex-composer");
+        const [rowBox, scrollBox, composerBox] = await Promise.all([
+          row.boundingBox(),
+          scroll.boundingBox(),
+          composer.boundingBox(),
+        ]);
+        expect(rowBox).not.toBeNull();
+        expect(scrollBox).not.toBeNull();
+        expect(composerBox).not.toBeNull();
+        expect(scrollBox!.y + scrollBox!.height - (rowBox!.y + rowBox!.height)).toBeCloseTo(16, 0);
+        expect(composerBox!.y - (rowBox!.y + rowBox!.height)).toBeCloseTo(24, 0);
+      } finally { await fixture.close(); }
+      expect(fixture.errors).toEqual([]);
+      expect(fixture.unexpected).toEqual([]);
+    });
+
     test("streaming footer stays hidden and completion preserves message height", async ({ context }) => {
       const fixture = await nativeSettingsFixture(context);
       const publish = (text: string, done = false) => {

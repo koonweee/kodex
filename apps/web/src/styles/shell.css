@@ -372,8 +372,20 @@
 .kodex-timeline-virtual-root {
   position: relative;
   width: 100%;
+  min-height: 100%;
   min-width: 0;
   padding-top: 4px;
+}
+
+/* Completed short timelines sit above the composer. Active timelines stay in
+   normal flow so a growing item cannot move a paused reading anchor. */
+.kodex-timeline-virtual-root[data-align-short-to-bottom="true"] {
+  display: flex;
+  flex-direction: column;
+}
+
+.kodex-timeline-virtual-root[data-align-short-to-bottom="true"] > .kodex-timeline-virtuoso {
+  margin-top: auto;
 }
 
 .kodex-timeline-virtual-row {
