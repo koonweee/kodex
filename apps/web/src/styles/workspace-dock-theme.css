@@ -103,6 +103,10 @@
   visibility: visible;
 }
 
+.kodex-thread-pane-actions .kodex-adaptive-icon-button {
+  border-radius: var(--kodex-radius-round);
+}
+
 /* Add 5px to the first tab's existing 3px margin. */
 .kodex-workspace-dock .dv-tabs-container:not(.dv-tabs-container-vertical) {
   padding-left: 5px;
