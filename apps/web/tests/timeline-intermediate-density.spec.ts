@@ -1,4 +1,5 @@
 import { expect, test, type Locator } from "@playwright/test";
+import { compactCanonicalPayload } from "../src/test/canonicalPayloadFixture";
 import type { ThreadTimelineRow, ThreadViewResponse } from "../src/api/client";
 import { nativeSettingsFixture } from "./native-settings.fixture";
 
@@ -145,6 +146,82 @@ for (const layout of [
       await context.close();
     }
   });
+
+  test(`bordered timeline surfaces keep the regular visual gap before the next message in ${layout.name}`, async ({ browser }) => {
+    const context = await browser.newContext({ viewport: layout.viewport, hasTouch: layout.hasTouch });
+    const fixture = await nativeSettingsFixture(context);
+    fixture.detail.timeline = fileSurfaceBoundaryTimeline();
+
+    try {
+      const page = await fixture.page("file-surface-boundary-density");
+      const rows = page.locator(".kodex-turn-group");
+      await expect(rows).toHaveCount(2);
+
+      const gap = await verticalGap(
+        rows.nth(0).locator(".kodex-file-changes-panel"),
+        rows.nth(1).locator(".kodex-user-message-bubble"),
+      );
+      const surfaceRow = await verticalGeometry(rows.nth(0), ".kodex-file-changes-panel");
+      expect(gap).toBeGreaterThanOrEqual(11);
+      expect(gap).toBeLessThanOrEqual(13);
+      expect(surfaceRow.bottomInset).toBeGreaterThanOrEqual(0);
+      expect(surfaceRow.bottomInset).toBeLessThanOrEqual(1);
+      expect(fixture.unexpected).toEqual([]);
+      expect(fixture.errors).toEqual([]);
+    } finally {
+      await fixture.close();
+      await context.close();
+    }
+  });
+
+  test(`expanded work ending in a bordered surface keeps the regular visual gap before the next message in ${layout.name}`, async ({ browser }) => {
+    const context = await browser.newContext({ viewport: layout.viewport, hasTouch: layout.hasTouch });
+    const fixture = await nativeSettingsFixture(context);
+    fixture.detail.timeline = expandedWorkSurfaceBoundaryTimeline();
+
+    try {
+      const page = await fixture.page("expanded-work-surface-boundary-density");
+      const rows = page.locator(".kodex-timeline-virtual-row > .kodex-turn-group");
+      await expect(rows).toHaveCount(2);
+      await rows.nth(0).locator(":scope > .kodex-work-row > summary").click({ force: true });
+
+      const gap = await verticalGap(
+        rows.nth(0).locator(".kodex-file-changes-panel"),
+        rows.nth(1).locator(".kodex-user-message-bubble"),
+      );
+      expect(gap).toBeGreaterThanOrEqual(11);
+      expect(gap).toBeLessThanOrEqual(13);
+      expect(fixture.unexpected).toEqual([]);
+      expect(fixture.errors).toEqual([]);
+    } finally {
+      await fixture.close();
+      await context.close();
+    }
+  });
+
+  test(`empty file-change rows do not create surfaced boundary spacing in ${layout.name}`, async ({ browser }) => {
+    const context = await browser.newContext({ viewport: layout.viewport, hasTouch: layout.hasTouch });
+    const fixture = await nativeSettingsFixture(context);
+    const timeline = fileSurfaceBoundaryTimeline();
+    timeline.rows[0] = { ...fileChangesRow(1), fileChanges: [] };
+    fixture.detail.timeline = timeline;
+
+    try {
+      const page = await fixture.page("empty-file-surface-boundary-density");
+      const rows = page.locator(".kodex-timeline-virtual-row > .kodex-turn-group");
+      await expect(rows).toHaveCount(2);
+
+      const userRow = await verticalGeometry(rows.nth(1), ".kodex-user-message-bubble");
+      expect(userRow.topInset).toBeGreaterThanOrEqual(5);
+      expect(userRow.topInset).toBeLessThanOrEqual(7);
+      expect(fixture.unexpected).toEqual([]);
+      expect(fixture.errors).toEqual([]);
+    } finally {
+      await fixture.close();
+      await context.close();
+    }
+  });
+
 }
 
 async function verticalGeometry(container: Locator, contentSelector: string): Promise<VerticalGeometry> {
@@ -279,6 +356,60 @@ function fileChangesRow(displayOrder: number): ThreadTimelineRow {
       },
     ],
   };
+}
+
+function fileSurfaceBoundaryTimeline(): ThreadViewResponse["timeline"] {
+  const userItemId = "after-files-user";
+  const userTurnId = "turn-after-files";
+  return {
+    activeTurnId: null,
+    liveState: "idle",
+    pendingApprovalRequests: [],
+    pendingUserInputRequests: [],
+    rows: [
+      fileChangesRow(1),
+      {
+        id: "after-files-row",
+        turnId: userTurnId,
+        kind: "user_message",
+        status: "completed",
+        displayOrder: 2,
+        item: {
+          id: userItemId,
+          threadId: "settings-chat",
+          turnId: userTurnId,
+          itemId: userItemId,
+          itemType: "userMessage",
+          status: "completed",
+          codexMethod: "item/completed",
+          displayOrder: 2,
+          payload: compactCanonicalPayload(
+            { id: userItemId, type: "userMessage", content: [{ type: "text", text: "Message after files" }] },
+            { id: userItemId, itemType: "userMessage" },
+          ),
+        },
+      },
+    ],
+    turns: [
+      { id: "turn-intermediate", status: "completed" },
+      { id: userTurnId, status: "completed" },
+    ],
+    viewRevision: 1,
+  };
+}
+
+function expandedWorkSurfaceBoundaryTimeline(): ThreadViewResponse["timeline"] {
+  const timeline = fileSurfaceBoundaryTimeline();
+  timeline.rows[0] = {
+    id: "work-ending-in-files",
+    turnId: "turn-intermediate",
+    kind: "work",
+    status: "completed",
+    displayOrder: 1,
+    collapsedRows: [fileChangesRow(1)],
+    work: { state: "completed", startedAt: 0, completedAt: 1 },
+  };
+  return timeline;
 }
 
 function workBoundaryTimeline(): ThreadViewResponse["timeline"] {

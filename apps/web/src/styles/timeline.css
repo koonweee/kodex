@@ -1,4 +1,6 @@
 .kodex-turn-group {
+  --kodex-timeline-leading-gap: 6px;
+
   box-sizing: border-box;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -6,7 +8,14 @@
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  padding: 6px 0 0;
+  padding: var(--kodex-timeline-leading-gap) 0 0;
+}
+
+/* The following row owns boundary spacing, so a final surfaced row never
+   leaves trailing space. Bordered surfaces need a full visible gap because
+   their internal hit-area padding ends inside the border. */
+.kodex-turn-group[data-preceding-edge="surface"] {
+  --kodex-timeline-leading-gap: 12px;
 }
 
 /* Intermediate timeline elements share one density contract. Renderers may

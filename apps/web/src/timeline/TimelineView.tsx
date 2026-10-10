@@ -203,29 +203,35 @@ export function TimelineView({
         increaseViewportBy={{ top: 360, bottom: 360 }}
         totalListHeightChanged={handleTotalListHeightChanged}
         {...virtuosoInitialPositionProps}
-        itemContent={(index, renderRow = visibleRows[index - virtualPosition.firstItemIndex]) => renderRow ? (
-          <Box className="kodex-timeline-virtual-row kodex-thread-column" data-index={index} data-row-key={renderRow.key}>
-            <TimelineRowView
-              activityPresentationByRowKey={activityPresentationByRowKey}
-              approvals={approvalsByRowKey.get(renderRow.row.key) ?? EMPTY_APPROVALS}
-              imagePreviewUrlsByPath={imagePreviewUrlsByPath}
-              isWorkExpanded={
-                renderRow.row.type === "work" ? expandedWorkRowKeys.has(renderRow.row.key) : false
-              }
-              onApprovalDecision={onApprovalDecision}
-              onActivityExpandedChange={handleActivityExpandedChange}
-              onActivityItemExpandedChange={handleActivityItemExpandedChange}
-              onActivityVisibleItemCountChange={handleActivityVisibleItemCountChange}
-              onWorkExpandedChange={handleWorkRowExpandedChange}
-              onImageOpen={onImageOpen}
-              onMarkdownOpen={onMarkdownOpen}
-              row={renderRow.row}
-              showDebug={showDebug}
-              threadId={threadId}
-              toolbarTimestampMs={renderRow.row.type === "item" && isTimestampedMessage(renderRow.row.item) ? renderRow.row.item.timestampMs : undefined}
-            />
-          </Box>
-        ) : null}
+        itemContent={(index, renderRow = visibleRows[index - virtualPosition.firstItemIndex]) => {
+          if (!renderRow) return null;
+          const rowIndex = index - virtualPosition.firstItemIndex;
+          return (
+            <Box className="kodex-timeline-virtual-row kodex-thread-column" data-index={index} data-row-key={renderRow.key}>
+              <TimelineRowView
+                activityPresentationByRowKey={activityPresentationByRowKey}
+                approvals={approvalsByRowKey.get(renderRow.row.key) ?? EMPTY_APPROVALS}
+                expandedWorkRowKeys={expandedWorkRowKeys}
+                followsSurface={timelineRowEndsWithSurface(visibleRows[rowIndex - 1]?.row, expandedWorkRowKeys)}
+                imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+                isWorkExpanded={
+                  renderRow.row.type === "work" ? expandedWorkRowKeys.has(renderRow.row.key) : false
+                }
+                onApprovalDecision={onApprovalDecision}
+                onActivityExpandedChange={handleActivityExpandedChange}
+                onActivityItemExpandedChange={handleActivityItemExpandedChange}
+                onActivityVisibleItemCountChange={handleActivityVisibleItemCountChange}
+                onWorkExpandedChange={handleWorkRowExpandedChange}
+                onImageOpen={onImageOpen}
+                onMarkdownOpen={onMarkdownOpen}
+                row={renderRow.row}
+                showDebug={showDebug}
+                threadId={threadId}
+                toolbarTimestampMs={renderRow.row.type === "item" && isTimestampedMessage(renderRow.row.item) ? renderRow.row.item.timestampMs : undefined}
+              />
+            </Box>
+          );
+        }}
         key={virtualPosition.generation}
         ref={virtuosoRef}
       />
@@ -489,6 +495,8 @@ function HiddenDebugPanel({
 const TimelineRowView = memo(function TimelineRowView({
   activityPresentationByRowKey,
   approvals,
+  expandedWorkRowKeys,
+  followsSurface = false,
   imagePreviewUrlsByPath,
   isWorkExpanded,
   onApprovalDecision,
@@ -505,6 +513,8 @@ const TimelineRowView = memo(function TimelineRowView({
 }: {
   activityPresentationByRowKey: ReadonlyMap<string, ActivityPresentationState>;
   approvals: Approval[];
+  expandedWorkRowKeys: ReadonlySet<string>;
+  followsSurface?: boolean;
   imagePreviewUrlsByPath: Record<string, string>;
   isWorkExpanded: boolean;
   onApprovalDecision: (approval: Approval, decision: ApprovalResponse) => void;
@@ -520,7 +530,7 @@ const TimelineRowView = memo(function TimelineRowView({
   toolbarTimestampMs?: number;
 }) {
   return (
-    <Box className="kodex-turn-group">
+    <Box className="kodex-turn-group" data-preceding-edge={followsSurface ? "surface" : undefined}>
       {row.type !== "work" && row.dividerBefore === "final_response" ? (
         <Box aria-hidden="true" className="kodex-timeline-final-response-divider" />
       ) : null}
@@ -531,10 +541,12 @@ const TimelineRowView = memo(function TimelineRowView({
           row={row}
         >
           <Stack gap={0} className="kodex-work-row-contents">
-            {row.collapsedRows.map((collapsedRow) => (
+            {row.collapsedRows.map((collapsedRow, index) => (
               <TimelineRowView
                 activityPresentationByRowKey={activityPresentationByRowKey}
                 approvals={[]}
+                expandedWorkRowKeys={expandedWorkRowKeys}
+                followsSurface={timelineRowEndsWithSurface(row.collapsedRows[index - 1], expandedWorkRowKeys)}
                 imagePreviewUrlsByPath={imagePreviewUrlsByPath}
                 isWorkExpanded={false}
                 key={collapsedRow.key}
@@ -591,6 +603,19 @@ const TimelineRowView = memo(function TimelineRowView({
     </Box>
   );
 });
+
+function timelineRowEndsWithSurface(
+  row: TimelineRow | undefined,
+  expandedWorkRowKeys: ReadonlySet<string>,
+): boolean {
+  if (row?.type === "file_changes") {
+    return row.entries.length > 0;
+  }
+  if (row?.type !== "work" || !expandedWorkRowKeys.has(row.key)) {
+    return false;
+  }
+  return timelineRowEndsWithSurface(row.collapsedRows.at(-1), expandedWorkRowKeys);
+}
 
 function isTimestampedMessage(item: TimelineItem): boolean {
   return item.kind === "user_message" || ((item.kind === "assistant_message" || item.kind === "agent_message") && item.messagePhase === "final_answer");
