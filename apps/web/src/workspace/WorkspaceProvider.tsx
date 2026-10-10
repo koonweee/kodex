@@ -81,6 +81,7 @@ type WorkspaceProviderProps = {
   onImageOpen?: (image: ImageLightboxImage) => void;
   onLiveEvent?: (event: EventEnvelope) => void;
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
+  onComposerTextDraftPresenceChange?: (present: boolean) => void;
   onShowMobileSidebar?: () => void;
   onThreadArchived?: (threadId: string) => void;
   onThreadSnapshotLoadFailed?: (threadId: string) => void;
@@ -128,6 +129,7 @@ type WorkspaceContextValue = {
   paneTabStatusById: Record<string, WorkspacePaneTabStatus>;
   paneThreadContextsById: Record<string, PaneThreadContext>;
   setPaneDraftDisposable: (paneId: string, disposable: boolean) => void;
+  setPaneComposerTextDraft: (paneId: string, present: boolean) => void;
   setPaneThreadContext: (paneId: string, context: PaneThreadContext | null) => void;
   persistLayout: (dockviewLayout: unknown, activePaneId: string | null) => void;
   publishThreadPaneTimelineAction: (action: ThreadPaneTimelineAction) => void;
@@ -175,6 +177,7 @@ export function WorkspaceProvider({
   onImageOpen = () => undefined,
   onLiveEvent,
   onMarkdownOpen = () => undefined,
+  onComposerTextDraftPresenceChange = () => undefined,
   onShowMobileSidebar = () => undefined,
   onThreadArchived = noopThreadSnapshot,
   onThreadSnapshotLoadFailed = noopThreadSnapshot,
@@ -210,6 +213,7 @@ export function WorkspaceProvider({
   const [visiblePaneIds, setVisiblePaneIds] = useState<string[]>([]);
   const [workspace, setWorkspace] = useState<WorkspaceModel>(() => ensureWorkspaceHasActivePane(paneStore.load()));
   const { isReusableDraft, setPaneDraftDisposable } = useDraftPaneReuse(workspace.panes);
+  const [composerTextDraftPaneIds, setComposerTextDraftPaneIds] = useState<Set<string>>(() => new Set());
   const [workspaceError, setWorkspaceError] = useState<Error | null>(null);
   const nextFocusPulseRef = useRef(0);
   const appSurfacePresentationHandlerRef = useRef<(event: EventEnvelope) => void>(() => undefined);
@@ -218,6 +222,28 @@ export function WorkspaceProvider({
   useEffect(() => {
     onLiveEventRef.current = onLiveEvent;
   }, [onLiveEvent]);
+
+  const setPaneComposerTextDraft = useCallback((paneId: string, present: boolean) => {
+    setComposerTextDraftPaneIds((current) => {
+      if (current.has(paneId) === present) return current;
+      const next = new Set(current);
+      if (present) next.add(paneId);
+      else next.delete(paneId);
+      return next;
+    });
+  }, []);
+  useEffect(() => {
+    const paneIds = new Set(workspace.panes.map((pane) => pane.id));
+    setComposerTextDraftPaneIds((current) => {
+      const next = new Set([...current].filter((paneId) => paneIds.has(paneId)));
+      return next.size === current.size ? current : next;
+    });
+  }, [workspace.panes]);
+  const hasComposerTextDraft = composerTextDraftPaneIds.size > 0;
+  useEffect(() => {
+    onComposerTextDraftPresenceChange(hasComposerTextDraft);
+  }, [hasComposerTextDraft, onComposerTextDraftPresenceChange]);
+  useEffect(() => () => onComposerTextDraftPresenceChange(false), [onComposerTextDraftPresenceChange]);
 
   useEffect(() => {
     workspaceRef.current = workspace;
@@ -797,6 +823,7 @@ export function WorkspaceProvider({
       paneThreadContextsById,
       setPaneThreadContext,
       setPaneDraftDisposable,
+      setPaneComposerTextDraft,
       persistLayout,
       publishThreadPaneTimelineAction,
       renderThreadComposer: renderThreadComposer
@@ -852,6 +879,7 @@ export function WorkspaceProvider({
       paneThreadContextsById,
       setPaneThreadContext,
       setPaneDraftDisposable,
+      setPaneComposerTextDraft,
       persistLayout,
       publishThreadPaneTimelineAction,
       renderThreadComposer,

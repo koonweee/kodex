@@ -55,6 +55,10 @@ for (const touch of [false, true]) {
         for (const [page, dialog] of [[first, preferences], [second, otherPreferences]] as const) {
           await page.keyboard.press("Escape");
           await expect(dialog).toBeHidden();
+          if (touch && page === second) {
+            await otherNotice.getByRole("button", { name: "Dismiss update notice" }).tap();
+            await page.getByRole("button", { name: "Show thread", exact: true }).tap();
+          }
           await page.clock.install();
         }
         for (const banner of [notice, otherNotice]) await expect(banner.getByRole("switch")).toHaveCount(0);
@@ -63,9 +67,13 @@ for (const touch of [false, true]) {
         expect(await first.evaluate(() => Reflect.get(window, "pwaAccepted"))).toBeUndefined();
         expect(await second.evaluate(() => Reflect.get(window, "pwaAccepted"))).toBeUndefined();
         await expect(notice).toContainText("Update available");
+        const secondComposer = second.locator('.kodex-thread-pane[data-workspace-pane-active="true"]')
+          .getByRole("textbox", { name: "Message composer", exact: true });
+        await secondComposer.fill("Keep this text draft while the update waits.");
         for (const page of [first, second]) await page.evaluate(() => Reflect.get(window, "nextPwaBundle")());
         fixture.frontendUpdated();
-        for (const banner of [notice, otherNotice]) await expect(banner).toContainText("Updating in 3s");
+        await expect(notice).toContainText("Updating in 3s");
+        await expect(otherNotice).toContainText("Update available");
         await first.clock.runFor(1000);
         await expect(notice).toContainText("Updating in 2s");
         const animation = await notice.locator(".kodex-animated-number").evaluate(el => el.getAnimations({ subtree: true }).map(a => ({
@@ -83,9 +91,15 @@ for (const touch of [false, true]) {
         await expect.poll(() => first.evaluate(() => Reflect.get(window, "pwaChecks"))).toBeGreaterThan(beforeRepeatChecks);
         await expect(notice).toContainText("Updating in 1s");
         await first.clock.runFor(1000);
+        await expect.poll(() => first.evaluate(() => Reflect.get(window, "pwaAccepted"))).toBe(1);
+        await second.clock.runFor(4000);
+        expect(await second.evaluate(() => Reflect.get(window, "pwaAccepted"))).toBeUndefined();
+        await expect(secondComposer).toHaveValue("Keep this text draft while the update waits.");
+        await secondComposer.fill("");
+        await expect(otherNotice).toContainText("Updating in 3s");
         await second.clock.runFor(3000);
+        await expect.poll(() => second.evaluate(() => Reflect.get(window, "pwaAccepted"))).toBe(1);
         for (const page of [first, second]) {
-          await expect.poll(() => page.evaluate(() => Reflect.get(window, "pwaAccepted"))).toBe(1);
           await page.clock.runFor(4000);
           expect(await page.evaluate(() => Reflect.get(window, "pwaAccepted"))).toBe(1);
         }

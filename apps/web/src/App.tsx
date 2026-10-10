@@ -1,6 +1,5 @@
 import { ThreadDeliveryProvider } from "./timeline/ThreadDeliveryPreferences";
 import { SubagentPaneToggle } from "./threads/SubagentPaneToggle";
-import { CompatibilityNotice } from "./api/CompatibilityNotice";
 import { refreshUnreadBadge } from "./notifications/unreadBadge";
 import { usePinnedThreads } from "./threads/usePinnedThreads";
 import { MantineProvider } from "@mantine/core";
@@ -159,6 +158,7 @@ type AppProps = {
 
 export function App({ queryClientInstance = queryClient, workspacePaneStore }: AppProps = {}) {
   const { preferences, resolvedSchemeId: colorSchemeId, setMode, setTheme, selectTheme } = useAppearancePreferences();
+  const [hasComposerTextDraft, setHasComposerTextDraft] = useState(false);
   const colorScheme = useMemo(() => getKodexColorScheme(colorSchemeId), [colorSchemeId]);
   const theme = useMemo(() => createKodexMantineTheme(colorScheme), [colorScheme]);
 
@@ -173,8 +173,7 @@ export function App({ queryClientInstance = queryClient, workspacePaneStore }: A
   return (
     <QueryClientProvider client={queryClientInstance}>
       <MantineProvider forceColorScheme={colorScheme.mode} theme={theme}>
-        <PwaLifecycle />
-        <CompatibilityNotice />
+        <PwaLifecycle hasComposerTextDraft={hasComposerTextDraft} />
         {isThemeWorkbench ? (
           <Suspense fallback={null}>
             <ThemeWorkbench colorSchemeId={colorSchemeId} onColorSchemeChange={selectTheme} />
@@ -184,6 +183,7 @@ export function App({ queryClientInstance = queryClient, workspacePaneStore }: A
             colorSchemeId={colorSchemeId}
             appearance={preferences}
             onAppearanceModeChange={setMode}
+            onComposerTextDraftPresenceChange={setHasComposerTextDraft}
             onThemeChange={setTheme}
             workspacePaneStore={workspacePaneStore}
           />
@@ -197,12 +197,14 @@ function KodexShell({
   colorSchemeId,
   appearance,
   onAppearanceModeChange,
+  onComposerTextDraftPresenceChange,
   onThemeChange,
   workspacePaneStore,
 }: {
   colorSchemeId: KodexColorSchemeId;
   appearance: AppearancePreferences;
   onAppearanceModeChange: (mode: AppearancePreferences["mode"]) => void;
+  onComposerTextDraftPresenceChange: (present: boolean) => void;
   onThemeChange: (id: KodexColorSchemeId) => void;
   workspacePaneStore?: WorkspacePaneStoreAdapter;
 }) {
@@ -1058,6 +1060,7 @@ function KodexShell({
         isVisible={selectedMainPane === "thread" && (!useSingleThreadWorkspace || mobilePanel === "chat")}
         imagePreviewUrlsByPath={mergedImagePreviewUrlsByPath}
         onApprovalDecision={handleApprovalDecision}
+        onComposerTextDraftPresenceChange={onComposerTextDraftPresenceChange}
         onFocusThreadPane={handleWorkspaceFocusThreadPane}
         onImageOpen={setLightboxImage}
         onLiveEvent={handleWorkspaceLiveEvent}

@@ -56,6 +56,7 @@ export type ComposerPanelProps = {
   composerDraftKey?: string;
   composerDraftStore?: ComposerDraftStore;
   onDraftDisposableChange?: (disposable: boolean) => void;
+  onTextDraftPresenceChange?: (present: boolean) => void;
   composerCwd?: string | null;
   composerShellRef?: RefObject<HTMLDivElement | null>;
   contextUsage?: ContextUsage | null;
@@ -108,6 +109,7 @@ export function ComposerPanel({
   composerDraftKey,
   composerDraftStore,
   onDraftDisposableChange,
+  onTextDraftPresenceChange,
   composerCwd,
   composerShellRef,
   contextUsage,
@@ -142,6 +144,11 @@ export function ComposerPanel({
   useLayoutEffect(() => {
     onDraftDisposableChange?.(draftDisposable);
   }, [draftDisposable, onDraftDisposableChange]);
+  const hasTextDraft = draftState.composerText.length > 0;
+  useLayoutEffect(() => {
+    onTextDraftPresenceChange?.(hasTextDraft);
+    return () => onTextDraftPresenceChange?.(false);
+  }, [hasTextDraft, onTextDraftPresenceChange]);
   const { compact } = usePaneLayout();
   const threadGoal = useThreadGoal(goalThreadId);
   const currentGoalThreadId = useRef(goalThreadId);

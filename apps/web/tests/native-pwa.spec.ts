@@ -136,7 +136,7 @@ test.describe("real built PWA", () => {
     }
   });
 
-  test("device opt-in automatically activates a real waiting worker and reloads both tabs once", async ({ context }, info) => {
+  test("device opt-in reloads a clean tab while a text-draft tab remains manual", async ({ context }, info) => {
     test.setTimeout(90_000);
     const fixture = await nativeTerminalFixture(context);
     try {
@@ -147,26 +147,32 @@ test.describe("real built PWA", () => {
       const second = await fixture.page();
       await second.getByRole("navigation", { name: "Workspace", exact: true }).getByRole("button", { name: "Chats", exact: true }).click();
       await second.getByRole("button", { name: "New chat", exact: true }).click();
-      await second.getByRole("textbox", { name: "Message composer", exact: true }).fill("This draft is intentionally discarded by auto-update.");
+      const secondComposer = second.getByRole("textbox", { name: "Message composer", exact: true });
+      await secondComposer.fill("Keep this draft until I update manually.");
       const reloads = [0, 0];
       const pages = [first, second];
       for (const [index, page] of pages.entries()) page.on("framenavigated", frame => {
         if (frame === page.mainFrame() && frame.url().startsWith(fixture.baseUrl)) reloads[index]++;
       });
-      const loaded = pages.map(page => page.waitForEvent("load"));
+      const firstLoaded = first.waitForEvent("load");
       await appendFile(join(fixture.frontendDist, "sw.js"), "\n// Disposable automatic update proof.\n");
       await first.evaluate(async () => { await (await navigator.serviceWorker.getRegistration())!.update(); });
-      for (const page of pages) {
-        await expect(page.getByRole("status")).toContainText("Updating in");
-        await expect(page.locator(".kodex-pwa-lifecycle-notice").getByRole("switch")).toHaveCount(0);
-      }
+      await expect(first.getByRole("status")).toContainText("Updating in");
+      await expect(second.getByRole("status")).toContainText("Update available");
+      for (const page of pages) await expect(page.locator(".kodex-pwa-lifecycle-notice").getByRole("switch")).toHaveCount(0);
       await first.screenshot({ path: info.outputPath("real-auto-update.png") });
-      await Promise.all(loaded);
+      await firstLoaded;
+      await expect(first.getByRole("button", { name: "Update", exact: true })).toHaveCount(0);
+      await expect(second.getByRole("button", { name: "Update", exact: true })).toBeVisible();
+      await expect(secondComposer).toHaveValue("Keep this draft until I update manually.");
       for (const page of pages) {
-        await expect(page.getByRole("button", { name: "Update", exact: true })).toHaveCount(0);
         expect(await page.evaluate(() => JSON.parse(localStorage.getItem("kodex-interface")!).autoUpdatePwa)).toBe(true);
         await expect.poll(() => page.evaluate(() => navigator.serviceWorker.controller?.state)).toBe("activated");
       }
+      expect(reloads).toEqual([1, 0]);
+      const secondLoaded = second.waitForEvent("load");
+      await second.getByRole("button", { name: "Update", exact: true }).click();
+      await secondLoaded;
       expect(reloads).toEqual([1, 1]);
       await expect(second.getByRole("textbox", { name: "Message composer", exact: true })).toHaveValue("");
       await fixture.assertClean();

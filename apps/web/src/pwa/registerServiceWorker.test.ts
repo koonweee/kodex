@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  applyLatestFrontendUpdate,
   getPwaUpdateState,
   getServiceWorkerRegistration,
   registerKodexServiceWorker,
@@ -19,6 +20,36 @@ afterEach(() => {
 });
 
 describe("registerKodexServiceWorker", () => {
+  it("uses one action to check for, activate and reload a newly available update", async () => {
+    let registerOptions: RegisterSWOptions | undefined;
+    const original = navigator.serviceWorker;
+    const acceptUpdate = vi.fn().mockResolvedValue(undefined);
+    const registration = {
+      scope: "/",
+      waiting: null as ServiceWorker | null,
+      update: vi.fn().mockImplementation(async () => {
+        registration.waiting = {} as ServiceWorker;
+        registerOptions?.onNeedRefresh?.();
+      }),
+    };
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: Object.assign(new EventTarget(), { getRegistration: vi.fn().mockResolvedValue(registration), controller: {} }),
+    });
+    setRegisterSWLoaderForTests(() => Promise.resolve((options) => {
+      registerOptions = options;
+      options?.onRegisteredSW?.("/sw.js", registration as unknown as ServiceWorkerRegistration);
+      return acceptUpdate;
+    }));
+    try {
+      await applyLatestFrontendUpdate();
+      expect(registration.update).toHaveBeenCalledTimes(1);
+      expect(acceptUpdate).toHaveBeenCalledWith(true);
+    } finally {
+      Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: original });
+    }
+  });
+
   it("checks immediately when deployment signals an update without polling", async () => {
     vi.useFakeTimers();
     const original = navigator.serviceWorker;

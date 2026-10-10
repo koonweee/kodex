@@ -68,6 +68,23 @@ describe("WorkspaceProvider pane commands", () => {
     expect(store.getState().activePaneId).not.toBe("pane-draft");
   });
 
+  it("aggregates text drafts across panes and clears only after the final draft pane closes", async () => {
+    const presence = vi.fn();
+    const store = createMemoryWorkspacePaneStore(workspaceState([
+      threadPane("pane-thread-1", "thread-1", "Thread 1"),
+      threadPane("pane-thread-2", "thread-2", "Thread 2"),
+    ], "pane-thread-1"));
+    renderProvider(store, { onComposerTextDraftPresenceChange: presence });
+    await waitFor(() => expect(presence).toHaveBeenLastCalledWith(false));
+    fireEvent.click(screen.getByRole("button", { name: "Draft first pane" }));
+    await waitFor(() => expect(presence).toHaveBeenLastCalledWith(true));
+    fireEvent.click(screen.getByRole("button", { name: "Draft second pane" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear first draft" }));
+    expect(presence).toHaveBeenLastCalledWith(true);
+    fireEvent.click(screen.getByRole("button", { name: "Close second pane" }));
+    await waitFor(() => expect(presence).toHaveBeenLastCalledWith(false));
+  });
+
   it.each(["Split thread", "Duplicate thread", "Split draft"])("preserves an empty draft for explicit %s", async (command) => {
     const store = createMemoryWorkspacePaneStore(workspaceState([draftThreadPane("pane-draft")], "pane-draft"));
     renderProvider(store);
@@ -392,12 +409,14 @@ describe("WorkspaceProvider pane commands", () => {
 function renderProvider(
   paneStore: ReturnType<typeof createMemoryWorkspacePaneStore>,
   options: {
+    onComposerTextDraftPresenceChange?: ComponentProps<typeof WorkspaceProvider>["onComposerTextDraftPresenceChange"];
     onThreadArchived?: ComponentProps<typeof WorkspaceProvider>["onThreadArchived"];
     threadActions?: ComponentProps<typeof WorkspaceProvider>["threadActions"];
   } = {},
 ) {
   render(
     <WorkspaceProvider
+      onComposerTextDraftPresenceChange={options.onComposerTextDraftPresenceChange}
       onThreadArchived={options.onThreadArchived}
       paneStore={paneStore}
       threadActions={options.threadActions}
@@ -423,6 +442,10 @@ function CommandHarness() {
       <button onClick={() => void workspace.openThreadPane("thread-1", "Thread 1", { placement: { direction: "right" } })}>Split thread</button>
       <button onClick={() => void workspace.openDraftThreadPane(null, { placement: { direction: "right" } })}>Split draft</button>
       <button onClick={() => workspace.setPaneDraftDisposable("pane-draft", false)}>Protect draft</button>
+      <button onClick={() => workspace.setPaneComposerTextDraft("pane-thread-1", true)}>Draft first pane</button>
+      <button onClick={() => workspace.setPaneComposerTextDraft("pane-thread-2", true)}>Draft second pane</button>
+      <button onClick={() => workspace.setPaneComposerTextDraft("pane-thread-1", false)}>Clear first draft</button>
+      <button onClick={() => workspace.closePane("pane-thread-2", null)}>Close second pane</button>
       <button onClick={() => void workspace.openDraftThreadPane("project-1")}>New project chat</button>
       <button onClick={() => void workspace.openDraftThreadPane(null)}>New projectless chat</button>
       <span data-testid="pane-count">{workspace.workspace.panes.length}</span>

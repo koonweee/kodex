@@ -104,6 +104,18 @@ describe("ComposerPanel", () => {
     vi.mocked(listSkills).mockReset();
   });
 
+  it("unregisters text-draft presence when the composer renderer unmounts", async () => {
+    const presence = vi.fn();
+    const view = renderComposerPanel({ onTextDraftPresenceChange: presence });
+    await waitFor(() => expect(presence).toHaveBeenLastCalledWith(false));
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Keep this draft");
+    await waitFor(() => expect(presence).toHaveBeenLastCalledWith(true));
+
+    view.unmount();
+
+    expect(presence).toHaveBeenLastCalledWith(false);
+  });
+
   it("opens skill autocomplete from $ and submits selected skill inputs", async () => {
     mockSkills([
       skillFixture({

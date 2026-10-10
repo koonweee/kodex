@@ -1,4 +1,3 @@
-import { CompatibilityNotice } from "./CompatibilityNotice";
 import { compatibilityRequired, observeApiVersion } from "./compatibility";
 import { Button, Center, MantineProvider, Stack, Text } from "@mantine/core";
 import type { QueryClient } from "@tanstack/react-query";
@@ -166,7 +165,6 @@ function GatewayInstanceGate({ children, queryClient }: GatewayInstanceBoundaryP
   return (
     <MantineProvider>
       <PwaLifecycle />
-      <CompatibilityNotice />
       <Center mih="100dvh" p="md">
         <Stack align="center">
           <Text role={error ? "alert" : "status"}>

@@ -68,7 +68,7 @@ export function AppearancePreferencesPanel({ preferences, resolvedSchemeId, onMo
           checked={interfacePreferences.autoUpdatePwa}
           label="Auto-update"
           aria-label="Auto-update"
-          description="Automatically reload future updates after a 3-second countdown. Unsent drafts are discarded. Saved on this device."
+          description="Automatically reload future updates after a 3-second countdown. Waits while a composer contains text. Saved on this device."
           onChange={(event) => setAutoUpdatePwa(event.currentTarget.checked)}
         />
       </Stack>

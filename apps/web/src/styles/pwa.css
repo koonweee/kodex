@@ -69,6 +69,7 @@
 
 @media (pointer: coarse), (any-pointer: coarse) {
   .kodex-pwa-lifecycle .mantine-Button-root,
+  .kodex-pwa-lifecycle .mantine-ActionIcon-root,
   .kodex-pwa-lifecycle .mantine-CloseButton-root {
     min-height: 44px;
     min-width: 44px;

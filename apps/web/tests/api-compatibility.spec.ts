@@ -20,14 +20,17 @@ for (const width of [1280, 390]) {
         await route.fulfill({ status: 409, headers: { "x-kodex-api-version": "future" }, json: { code: "client_update_required", message: "Update Kodex before making changes.", retryable: false } });
       });
       await pane(first).getByRole("button", { name: "Send message", exact: true }).click();
-      await expect(first.getByText("Update Kodex to continue")).toBeVisible();
+      await expect(first.getByText("Update required", { exact: true })).toBeVisible();
+      await expect(first.getByRole("button", { name: "Update", exact: true })).toBeVisible();
+      await first.getByRole("button", { name: "Update details" }).focus();
+      await expect(first.getByRole("tooltip", { name: "Update details" })).toContainText("server API changed");
       await expect(composer(first)).toHaveValue("first unsent draft");
       await pane(first).getByRole("button", { name: "Send message", exact: true }).click();
       expect(writes).toBe(1);
       await expect(composer(second)).toHaveValue("second unsent draft");
       await second.route("**/v1/capabilities", (route) => route.fulfill({ json: { gateway: { instanceId: "native-settings-fixture", apiVersion: "future" } } }));
       await second.evaluate(() => window.dispatchEvent(new Event("focus")));
-      await expect(second.getByText("Update Kodex to continue")).toBeVisible();
+      await expect(second.getByText("Update required", { exact: true })).toBeVisible();
       await expect(composer(second)).toHaveValue("second unsent draft");
       await first.screenshot({ path: test.info().outputPath("update-required.png") });
     } finally { await fixture.close(); }

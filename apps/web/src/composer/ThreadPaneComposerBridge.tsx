@@ -55,7 +55,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
   projects,
   skillsInvalidationGeneration,
 }: ThreadPaneComposerBridgeProps) {
-  const { publishThreadPaneTimelineAction, setPaneDraftDisposable, updatePane } = useWorkspace();
+  const { publishThreadPaneTimelineAction, setPaneComposerTextDraft, setPaneDraftDisposable, updatePane } = useWorkspace();
   const target = paneTargetRecord(pane);
   const existingThreadId = target.mode === "existing" && typeof target.threadId === "string" ? target.threadId : null;
   const isDraftPane = existingThreadId === null;
@@ -119,6 +119,9 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
   const handleDraftDisposableChange = useCallback((disposable: boolean) => {
     if (isDraftPane) setPaneDraftDisposable(pane.id, disposable && createdDraftThreadRef.current === null);
   }, [isDraftPane, pane.id, setPaneDraftDisposable]);
+  const handleTextDraftPresenceChange = useCallback((present: boolean) => {
+    setPaneComposerTextDraft(pane.id, present);
+  }, [pane.id, setPaneComposerTextDraft]);
 
   const orchestration = useComposerOrchestration({
     activeSelectedTurnId: paneState.activeTurnId,
@@ -197,6 +200,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
       composerDraftKey={composerDraftKey}
       composerDraftStore={composerDraftStore}
       onDraftDisposableChange={handleDraftDisposableChange}
+      onTextDraftPresenceChange={handleTextDraftPresenceChange}
       composerResetToken={0}
       composerSettings={paneComposerSettings}
       composerSettingsDisabled={!isDraftPane && threadSettings.pending}

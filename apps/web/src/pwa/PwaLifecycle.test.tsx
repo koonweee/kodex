@@ -3,12 +3,14 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PwaLifecycle } from "./PwaLifecycle";
+import { observeApiVersion, resetCompatibilityForTests } from "../api/compatibility";
 import { AppearancePreferencesPanel } from "../preferences/AppearancePreferencesPanel";
 import { readStoredInterfacePreferences } from "../preferences/useInterfacePreferences";
 import type { PwaUpdateState } from "./registerServiceWorker";
 
 const mocks = vi.hoisted(() => ({
   listeners: new Set<(state: PwaUpdateState) => void>(),
+  applyLatestFrontendUpdate: vi.fn(),
   registerPwaServiceWorker: vi.fn(),
   state: {
     needRefresh: false,
@@ -18,6 +20,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("./registerServiceWorker", () => ({
+  applyLatestFrontendUpdate: mocks.applyLatestFrontendUpdate,
   getPwaUpdateState: () => mocks.state,
   registerPwaServiceWorker: mocks.registerPwaServiceWorker,
   subscribeToPwaUpdates: (listener: (state: PwaUpdateState) => void) => {
@@ -28,10 +31,10 @@ vi.mock("./registerServiceWorker", () => ({
   },
 }));
 
-function renderPwaLifecycle(withPreferences = false) {
+function renderPwaLifecycle(withPreferences = false, hasComposerTextDraft = false) {
   return render(
     <MantineProvider>
-      <PwaLifecycle />
+      <PwaLifecycle hasComposerTextDraft={hasComposerTextDraft} />
       {withPreferences ? <AppearancePreferencesPanel
         preferences={{ mode: "auto", lightThemeId: "paper-light", darkThemeId: "oled-black" }}
         resolvedSchemeId="paper-light" onModeChange={vi.fn()} onThemeChange={vi.fn()}
@@ -58,6 +61,10 @@ describe("PwaLifecycle", () => {
       updateServiceWorker: null,
     };
     mocks.registerPwaServiceWorker.mockResolvedValue({ registered: true, registration: { scope: "/" } });
+    mocks.applyLatestFrontendUpdate.mockImplementation(async () => {
+      if (!mocks.state.updateServiceWorker) throw new Error("Update is unavailable");
+      await mocks.state.updateServiceWorker();
+    });
   });
 
   afterEach(() => {
@@ -65,6 +72,7 @@ describe("PwaLifecycle", () => {
     vi.clearAllMocks();
     vi.restoreAllMocks();
     vi.useRealTimers();
+    resetCompatibilityForTests();
   });
 
   it("registers the service worker and stays hidden until an update is needed", () => {
@@ -106,6 +114,63 @@ describe("PwaLifecycle", () => {
     expect(updateServiceWorker).toHaveBeenCalledTimes(1);
     await act(async () => vi.advanceTimersByTime(5000));
     expect(updateServiceWorker).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a text draft manual and cancels a running countdown when text appears", async () => {
+    localStorage.setItem("kodex-interface", JSON.stringify({ autoUpdatePwa: true }));
+    const updateServiceWorker = vi.fn().mockResolvedValue(undefined);
+    const view = renderPwaLifecycle(false, true);
+    act(() => emitPwaState({ needRefresh: true, updateServiceWorker }));
+    expect(screen.getByRole("status")).toHaveTextContent("Update available");
+    await act(async () => vi.advanceTimersByTime(4000));
+    expect(updateServiceWorker).not.toHaveBeenCalled();
+
+    view.rerender(<MantineProvider><PwaLifecycle hasComposerTextDraft={false} /></MantineProvider>);
+    expect(screen.getByRole("status")).toHaveTextContent("Updating in 3s");
+    await act(async () => vi.advanceTimersByTime(1000));
+    view.rerender(<MantineProvider><PwaLifecycle hasComposerTextDraft /></MantineProvider>);
+    expect(screen.getByRole("status")).toHaveTextContent("Update available");
+    await act(async () => vi.advanceTimersByTime(4000));
+    expect(updateServiceWorker).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Update" })).toBeEnabled();
+  });
+
+  it("renders an API mismatch through the compact required-update state", () => {
+    const updateServiceWorker = vi.fn().mockResolvedValue(undefined);
+    renderPwaLifecycle();
+    act(() => {
+      emitPwaState({ needRefresh: true, updateServiceWorker });
+      observeApiVersion("future");
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Update required");
+    expect(screen.getByRole("button", { name: "Update" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Dismiss update notice" })).toBeNull();
+    const details = screen.getByRole("button", { name: "Update details" });
+    expect(details).toBeVisible();
+    fireEvent.click(details);
+    act(() => vi.advanceTimersByTime(300));
+    expect(screen.getByRole("tooltip")).toHaveTextContent("server API changed");
+  });
+
+  it("keeps a compatibility update in flight when it discovers a PWA revision", async () => {
+    let rejectUpdate!: (reason: Error) => void;
+    const updateServiceWorker = vi.fn().mockResolvedValue(undefined);
+    mocks.applyLatestFrontendUpdate.mockImplementation(() => {
+      emitPwaState({ needRefresh: true, updateRevision: 1, updateServiceWorker });
+      return new Promise<void>((_, reject) => { rejectUpdate = reject; });
+    });
+    renderPwaLifecycle();
+    act(() => observeApiVersion("future"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Update" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Updating…");
+    expect(screen.getByRole("button", { name: "Update" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Update" }));
+    expect(mocks.applyLatestFrontendUpdate).toHaveBeenCalledTimes(1);
+
+    await act(async () => rejectUpdate(new Error("activation failed")));
+    expect(screen.getByRole("status")).toHaveTextContent("Update failed");
+    expect(screen.getByRole("button", { name: "Update" })).toBeEnabled();
   });
 
   it("enabling auto update leaves the current notice manual", async () => {
@@ -171,14 +236,15 @@ describe("PwaLifecycle", () => {
     renderPwaLifecycle();
     act(() => emitPwaState({ needRefresh: true, updateServiceWorker }));
     await act(async () => vi.advanceTimersByTime(3000));
-    expect(screen.getByRole("alert")).toHaveTextContent("Update failed. Try again.");
+    expect(screen.getByRole("status")).toHaveTextContent("Update failed");
+    expect(screen.getByRole("button", { name: "Update details" })).toBeVisible();
     await act(async () => vi.advanceTimersByTime(9000));
     expect(updateServiceWorker).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Update" }));
     expect(updateServiceWorker).toHaveBeenCalledTimes(2);
   });
 
-  it("ignores an older rejected attempt after a newer update fails", async () => {
+  it("keeps one attempt active across revision changes and retries the current update", async () => {
     localStorage.setItem("kodex-interface", JSON.stringify({ autoUpdatePwa: true }));
     let rejectOld!: (reason: Error) => void;
     const older = vi.fn(() => new Promise<void>((_, reject) => { rejectOld = reject; }));
@@ -188,11 +254,13 @@ describe("PwaLifecycle", () => {
     await act(async () => vi.advanceTimersByTime(3000));
     act(() => emitPwaState({ needRefresh: true, updateServiceWorker: newer, updateRevision: 2 }));
     await act(async () => vi.advanceTimersByTime(3000));
-    expect(screen.getByRole("alert")).toHaveTextContent("Update failed. Try again.");
+    expect(screen.getByRole("status")).toHaveTextContent("Updating…");
+    expect(newer).not.toHaveBeenCalled();
     await act(async () => rejectOld(new Error("older failed late")));
-    expect(screen.getByRole("alert")).toHaveTextContent("Update failed. Try again.");
-    await act(async () => vi.advanceTimersByTime(6000));
+    expect(screen.getByRole("status")).toHaveTextContent("Update failed");
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Update" })));
     expect(newer).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("status")).toHaveTextContent("Update failed");
   });
 
   it("manual acceptance during the countdown applies only once", async () => {

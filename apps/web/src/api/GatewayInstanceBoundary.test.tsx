@@ -1,4 +1,3 @@
-import { CompatibilityNotice } from "./CompatibilityNotice";
 import { resetCompatibilityForTests } from "./compatibility";
 import { MantineProvider } from "@mantine/core";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
@@ -15,6 +14,7 @@ import { createKodexQueryClient } from "./queryClient";
 import { queryKeys } from "./queryKeys";
 
 const pwa = vi.hoisted(() => ({
+  apply: vi.fn().mockResolvedValue(undefined),
   check: vi.fn().mockResolvedValue(undefined),
   needRefresh: false,
   register: vi.fn().mockResolvedValue({ registered: false, reason: "unsupported" }),
@@ -23,6 +23,7 @@ const pwa = vi.hoisted(() => ({
 
 vi.mock("./client", () => ({ attachThread: vi.fn(), getCapabilities: vi.fn(), getProject: vi.fn(), getThreadDetail: vi.fn() }));
 vi.mock("../pwa/registerServiceWorker", () => ({
+  applyLatestFrontendUpdate: pwa.apply,
   getPwaUpdateState: () => ({ needRefresh: pwa.needRefresh, updateRevision: pwa.needRefresh ? 1 : 0, updateServiceWorker: pwa.update }),
   registerPwaServiceWorker: pwa.register,
   requestPwaUpdateCheck: pwa.check,
@@ -136,7 +137,7 @@ describe("gateway instance bootstrap", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Unable to connect");
     expect(screen.getByRole("status")).toHaveTextContent("Update available");
     fireEvent.click(screen.getByRole("button", { name: "Update" }));
-    expect(pwa.update).toHaveBeenCalledTimes(1);
+    expect(pwa.apply).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: "fresh draft" })).not.toBeInTheDocument();
 
     vi.mocked(getCapabilities).mockResolvedValueOnce(capabilities("valid"));
@@ -532,13 +533,14 @@ describe("gateway instance bootstrap", () => {
 
  it("keeps an edited draft mounted when a foreground check detects an incompatible deployment", async () => {
     vi.mocked(getCapabilities).mockResolvedValue(capabilities("same-instance"));
-    render(<GatewayInstanceBoundary queryClient={createKodexQueryClient()}><WorkspaceProbe /><MantineProvider><CompatibilityNotice /></MantineProvider></GatewayInstanceBoundary>);
+    render(<GatewayInstanceBoundary queryClient={createKodexQueryClient()}><WorkspaceProbe /><MantineProvider><PwaLifecycle /></MantineProvider></GatewayInstanceBoundary>);
     fireEvent.click(await screen.findByText("fresh draft"));
     const changed = capabilities("same-instance");
     Object.assign(changed.gateway, { apiVersion: "future" });
     vi.mocked(getCapabilities).mockResolvedValue(changed);
     fireEvent(window, new Event("focus"));
-    expect(await screen.findByText("Update Kodex to continue")).toBeVisible();
+    expect(await screen.findByText("Update required")).toBeVisible();
     expect(screen.getByText("edited draft")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Reload after saving drafts" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Update" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Update details" })).toBeVisible();
   });

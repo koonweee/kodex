@@ -319,6 +319,29 @@ export async function requestPwaUpdateCheck(): Promise<void> {
   }
 }
 
+export async function applyLatestFrontendUpdate(): Promise<void> {
+  const ready = getPwaUpdateState();
+  if (ready.needRefresh && ready.updateServiceWorker) {
+    await ready.updateServiceWorker();
+    return;
+  }
+  const result = await registerPwaServiceWorker();
+  if (!result.registered) {
+    if (result.reason !== "failed") {
+      window.location.reload();
+      return;
+    }
+    throw result.error instanceof Error ? result.error : new Error("Unable to check for an update");
+  }
+  await updateRegistration(result.registration);
+  const checked = getPwaUpdateState();
+  if (checked.needRefresh && checked.updateServiceWorker) {
+    await checked.updateServiceWorker();
+    return;
+  }
+  throw new Error("The update is still downloading. Try again shortly.");
+}
+
 export function setRegisterSWLoaderForTests(loader: () => Promise<RegisterSW>): void {
   loadRegisterSW = loader;
   resetPwaServiceWorkerStateForTests();
