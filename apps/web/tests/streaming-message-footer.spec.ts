@@ -79,8 +79,8 @@ for (const shape of [
         expect(rowBox).not.toBeNull();
         expect(scrollBox).not.toBeNull();
         expect(composerBox).not.toBeNull();
-        expect(scrollBox!.y + scrollBox!.height - (rowBox!.y + rowBox!.height)).toBeCloseTo(16, 0);
-        expect(composerBox!.y - (rowBox!.y + rowBox!.height)).toBeCloseTo(24, 0);
+        expect(scrollBox!.y + scrollBox!.height - (rowBox!.y + rowBox!.height)).toBeCloseTo(8, 0);
+        expect(composerBox!.y - (rowBox!.y + rowBox!.height)).toBeCloseTo(16, 0);
       } finally { await fixture.close(); }
       expect(fixture.errors).toEqual([]);
       expect(fixture.unexpected).toEqual([]);
