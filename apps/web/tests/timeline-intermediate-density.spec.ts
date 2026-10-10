@@ -114,6 +114,31 @@ for (const layout of [
       await context.close();
     }
   });
+
+  test(`compact activity rows keep equal visual gaps from neighboring prose in ${layout.name}`, async ({ browser }) => {
+    const context = await browser.newContext({ viewport: layout.viewport, hasTouch: layout.hasTouch });
+    const fixture = await nativeSettingsFixture(context);
+    fixture.detail.timeline = activityBoundaryTimeline();
+
+    try {
+      const page = await fixture.page("activity-boundary-density");
+      const rows = page.locator(".kodex-turn-group");
+      await expect(rows).toHaveCount(3);
+
+      const activityHeading = rows.nth(1).locator(".kodex-activity-heading");
+      const gapBefore = await verticalGap(rows.nth(0).locator(":scope > .kodex-timeline-item"), activityHeading);
+      const gapAfter = await verticalGap(activityHeading, rows.nth(2).locator(":scope > .kodex-timeline-item"));
+
+      expect(gapAfter, `gap before activity: ${gapBefore}px`).toBeCloseTo(gapBefore, 0);
+      expect(gapBefore).toBeGreaterThanOrEqual(12);
+      expect(gapBefore).toBeLessThanOrEqual(15);
+      expect(fixture.unexpected).toEqual([]);
+      expect(fixture.errors).toEqual([]);
+    } finally {
+      await fixture.close();
+      await context.close();
+    }
+  });
 }
 
 async function verticalGeometry(container: Locator, contentSelector: string): Promise<VerticalGeometry> {
@@ -136,6 +161,13 @@ function expectUniformDensity(rows: VerticalGeometry[]) {
   for (const inset of insets) expect(inset).toBeGreaterThanOrEqual(5);
   for (const inset of insets) expect(inset).toBeLessThanOrEqual(8);
   expect(Math.max(...insets) - Math.min(...insets)).toBeLessThanOrEqual(2);
+}
+
+async function verticalGap(before: Locator, after: Locator) {
+  const [beforeBox, afterBox] = await Promise.all([before.boundingBox(), after.boundingBox()]);
+  expect(beforeBox).not.toBeNull();
+  expect(afterBox).not.toBeNull();
+  return afterBox!.y - (beforeBox!.y + beforeBox!.height);
 }
 
 function intermediateTimeline(): ThreadViewResponse["timeline"] {
@@ -261,6 +293,58 @@ function workBoundaryTimeline(): ThreadViewResponse["timeline"] {
       },
     ],
     turns: [{ id: "turn-intermediate", status: "completed" }],
+    viewRevision: 1,
+  };
+}
+
+function activityBoundaryTimeline(): ThreadViewResponse["timeline"] {
+  const planRow = (id: string, text: string, displayOrder: number): ThreadTimelineRow => ({
+    id,
+    turnId: "turn-activity-boundary",
+    kind: "plan",
+    status: "completed",
+    displayOrder,
+    item: {
+      id: `projection-${id}`,
+      threadId: "settings-chat",
+      turnId: "turn-activity-boundary",
+      itemId: id,
+      itemType: "plan",
+      status: "completed",
+      codexMethod: "item/completed",
+      displayOrder,
+      payload: { item: { text, type: "plan" } },
+    },
+  });
+  const command = {
+    id: "projection-boundary-command",
+    threadId: "settings-chat",
+    turnId: "turn-activity-boundary",
+    itemId: "boundary-command",
+    itemType: "commandExecution",
+    status: "completed",
+    codexMethod: "item/completed",
+    displayOrder: 2,
+    payload: { item: { command: "pwd", output: "/execution/settings", exitCode: 0 } },
+  };
+  return {
+    activeTurnId: null,
+    liveState: "idle",
+    pendingApprovalRequests: [],
+    pendingUserInputRequests: [],
+    rows: [
+      planRow("before-activity", "Before activity", 1),
+      {
+        id: "activity-boundary",
+        turnId: "turn-activity-boundary",
+        kind: "activity",
+        status: "completed",
+        displayOrder: 2,
+        items: [command],
+      },
+      planRow("after-activity", "After activity", 3),
+    ],
+    turns: [{ id: "turn-activity-boundary", status: "completed" }],
     viewRevision: 1,
   };
 }

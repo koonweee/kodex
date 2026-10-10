@@ -9,15 +9,11 @@
   padding: 6px 0 0;
 }
 
-/* Intermediate controls provide their own hit-area spacing. Avoid adding the
-   prose row padding around them as a second source of vertical whitespace. */
-.kodex-turn-group[data-spacing="compact"] {
-  padding-block: 0;
-}
-
 /* Intermediate timeline elements share one density contract. Renderers may
    own their horizontal layout, borders, typography and interaction, but their
-   vertical inset and minimum row height belong here so treatments cannot drift. */
+   vertical inset and minimum row height belong here so treatments cannot drift.
+   Their turn group still supplies the shared leading gap, keeping the control's
+   visual inset even with the prose on both sides. */
 .kodex-timeline-intermediate {
   box-sizing: border-box;
   min-height: 32px;

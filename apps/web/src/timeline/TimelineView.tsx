@@ -515,7 +515,7 @@ const TimelineRowView = memo(function TimelineRowView({
   toolbarTimestampMs?: number;
 }) {
   return (
-    <Box className="kodex-turn-group" data-spacing={timelineRowSpacing(row)}>
+    <Box className="kodex-turn-group">
       {row.type !== "work" && row.dividerBefore === "final_response" ? (
         <Box aria-hidden="true" className="kodex-timeline-final-response-divider" />
       ) : null}
@@ -586,17 +586,6 @@ const TimelineRowView = memo(function TimelineRowView({
     </Box>
   );
 });
-
-function timelineRowSpacing(row: TimelineRow): "compact" | undefined {
-  return timelineRowOwnsDensity(row) ? "compact" : undefined;
-}
-
-function timelineRowOwnsDensity(row: TimelineRow): boolean {
-  if (row.type === "activity" || row.type === "file_changes") {
-    return true;
-  }
-  return row.type === "item" && row.item.kind === "context_compaction";
-}
 
 function isTimestampedMessage(item: TimelineItem): boolean {
   return item.kind === "user_message" || ((item.kind === "assistant_message" || item.kind === "agent_message") && item.messagePhase === "final_answer");

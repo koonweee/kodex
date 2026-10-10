@@ -49,7 +49,7 @@
   box-sizing: border-box;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 4px;
+  gap: 0;
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -94,10 +94,15 @@
 .kodex-activity-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 4px;
+  gap: 0;
   width: 100%;
   max-width: 100%;
   min-width: 0;
+}
+
+.kodex-activity-group[open],
+.kodex-activity-item[open] {
+  gap: 4px;
 }
 
 .kodex-activity-body {
