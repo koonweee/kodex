@@ -78,6 +78,7 @@ pub struct RegisterExecutorRequest {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateExecutorRequest {
     pub display_name: Option<String>,
+    pub base_url: Option<String>,
     pub enabled: Option<bool>,
 }
 
@@ -286,32 +287,107 @@ pub(crate) async fn register_executor(
     path = "/v1/federation/executors/{executorId}",
     params(("executorId" = String, Path)),
     request_body = UpdateExecutorRequest,
-    responses((status = 200, body = ExecutorRecord), (status = 400, body = ErrorBody), (status = 404, body = ErrorBody))
+    responses((status = 200, body = ExecutorRecord), (status = 400, body = ErrorBody), (status = 404, body = ErrorBody), (status = 409, body = ErrorBody), (status = 502, body = ErrorBody))
 )]
 pub(crate) async fn update_executor(
     State(state): State<FederatorState>,
     Path(executor_id): Path<String>,
     Json(request): Json<UpdateExecutorRequest>,
 ) -> Result<Json<ExecutorRecord>, RegistryError> {
-    if request.display_name.is_none() && request.enabled.is_none() {
-        return Err(RegistryError::bad_request("Supply displayName or enabled."));
+    if request.display_name.is_none() && request.base_url.is_none() && request.enabled.is_none() {
+        return Err(RegistryError::bad_request(
+            "Supply displayName, baseUrl, or enabled.",
+        ));
     }
     let display_name = request
         .display_name
         .as_deref()
         .map(validate_display_name)
         .transpose()?;
-    let updated = state
-        .store
-        .update_executor_sparse(
-            &executor_id,
-            display_name.as_deref(),
-            request.enabled,
-            unix_seconds(),
-        )
-        .await
-        .map_err(RegistryError::internal)?
-        .ok_or_else(RegistryError::not_found)?;
+    let updated = if let Some(base_url) = request.base_url.as_deref() {
+        let current = state
+            .store
+            .get_executor(&executor_id)
+            .await
+            .map_err(RegistryError::internal)?
+            .ok_or_else(RegistryError::not_found)?;
+        let canonical_base_url = parse_executor_url(base_url)?.base_url;
+        if state
+            .store
+            .list_executors()
+            .await
+            .map_err(RegistryError::internal)?
+            .iter()
+            .any(|executor| executor.id != executor_id && executor.base_url == canonical_base_url)
+        {
+            return Err(RegistryError::conflict(
+                "An executor with this backend URL is already registered.",
+            ));
+        }
+        let endpoint = validate_executor_probe_endpoint(&canonical_base_url).await?;
+        let capabilities = probe_executor(&endpoint).await?;
+        if capabilities.instance_id != current.instance_id {
+            return Err(RegistryError::conflict(
+                "The new endpoint belongs to a different executor instance; register it as a new executor.",
+            ));
+        }
+        let now = unix_seconds();
+        let status = capabilities.status();
+        let last_error = capabilities.status_error();
+        let updated = state
+            .store
+            .update_executor_verified_endpoint(
+                &executor_id,
+                current.generation,
+                display_name.as_deref(),
+                request.enabled,
+                &endpoint.base_url,
+                &capabilities.api_version,
+                &capabilities.app_server_schema_version,
+                status,
+                last_error.as_deref(),
+                now,
+            )
+            .await
+            .map_err(|error| {
+                if error.to_string().contains("UNIQUE constraint failed") {
+                    RegistryError::conflict(
+                        "Executor endpoint conflicts with another registration.",
+                    )
+                } else {
+                    RegistryError::internal(error)
+                }
+            })?;
+        match updated {
+            Some(updated) => updated,
+            None => {
+                if state
+                    .store
+                    .get_executor(&executor_id)
+                    .await
+                    .map_err(RegistryError::internal)?
+                    .is_none()
+                {
+                    return Err(RegistryError::not_found());
+                }
+                return Err(RegistryError::conflict(
+                    "Executor registration changed while the endpoint was being verified; refresh and retry.",
+                ));
+            }
+        }
+    } else {
+        state
+            .store
+            .update_executor_sparse(
+                &executor_id,
+                display_name.as_deref(),
+                request.enabled,
+                unix_seconds(),
+            )
+            .await
+            .map_err(RegistryError::internal)?
+            .ok_or_else(RegistryError::not_found)?
+    };
     let _ = state.registry_changes.send(RegistryChange {
         executor_id: updated.id.clone(),
         generation: Some(updated.generation),

@@ -3303,6 +3303,7 @@ export interface components {
             readRevision: number;
         };
         UpdateExecutorRequest: {
+            baseUrl?: string | null;
             displayName?: string | null;
             enabled?: boolean | null;
         };
@@ -6044,6 +6045,22 @@ export interface operations {
                 };
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };

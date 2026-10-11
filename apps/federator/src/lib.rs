@@ -253,6 +253,39 @@ mod tests {
             .header("x-kodex-api-version", trust::FEDERATOR_API_VERSION)
     }
 
+    async fn spawn_test_executor(
+        instance_id: &'static str,
+        marker: &'static str,
+    ) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let app = Router::new()
+            .route(
+                "/v1/capabilities",
+                get(move || async move {
+                    Json(json!({
+                        "gateway": {"apiVersion": "4", "instanceId": instance_id},
+                        "appServer": {
+                            "ready": true,
+                            "schemaVersion": "0.160.0",
+                            "detectedVersionMatchesSchema": true
+                        }
+                    }))
+                }),
+            )
+            .route(
+                "/v1/projects",
+                get(move || async move {
+                    (
+                        [("x-kodex-api-version", "4")],
+                        Json(json!({"marker": marker})),
+                    )
+                }),
+            );
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (address, task)
+    }
+
     #[tokio::test]
     async fn serves_health_and_app_shell_without_codex() {
         let dir = tempfile::tempdir().unwrap();
@@ -573,6 +606,149 @@ mod tests {
         assert_eq!(listed["executors"][0]["enabled"], false);
         assert_eq!(listed["executors"][0]["status"], "unknown");
         executor_task.abort();
+    }
+
+    #[tokio::test]
+    async fn endpoint_edit_preserves_only_the_verified_executor_instance() {
+        let (first_address, first_task) =
+            spawn_test_executor("stable-executor-instance", "first").await;
+        let (second_address, second_task) =
+            spawn_test_executor("stable-executor-instance", "second").await;
+        let (replacement_address, replacement_task) =
+            spawn_test_executor("replacement-instance", "replacement").await;
+        let duplicate_url = "http://127.0.0.1:1";
+        let dir = tempfile::tempdir().unwrap();
+        let config = config::Config {
+            data_dir: dir.path().to_path_buf(),
+            database_path: dir.path().join("federator.db"),
+            ..config::Config::default()
+        };
+        let (_instance, state) = prepare(&config).await.unwrap();
+        state
+            .store
+            .insert_executor(&registry::ExecutorRecord {
+                id: "other-binding".to_string(),
+                generation: 1,
+                display_name: "Other binding".to_string(),
+                base_url: duplicate_url.to_string(),
+                instance_id: "historical-other-instance".to_string(),
+                api_version: "4".to_string(),
+                app_server_schema_version: "0.160.0".to_string(),
+                enabled: true,
+                status: registry::ExecutorStatus::Ready,
+                last_error: None,
+                last_seen_at: 1,
+                created_at: 1,
+                updated_at: 1,
+            })
+            .await
+            .unwrap();
+        let mut changes = state.registry_changes.subscribe();
+        let app = primary_router(state, None, config.sandbox_public_url);
+        let created = app
+            .clone()
+            .oneshot(
+                primary_mutation(Request::post("/v1/federation/executors"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "displayName": "Moving executor",
+                            "baseUrl": format!("http://{first_address}")
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let created = response_json(created).await;
+        let executor_id = created["id"].as_str().unwrap();
+        let registered = changes.recv().await.unwrap();
+        assert_eq!(registered.executor_id, executor_id);
+        assert_eq!(registered.generation, Some(1));
+
+        let moved = app
+            .clone()
+            .oneshot(
+                primary_mutation(Request::patch(format!(
+                    "/v1/federation/executors/{executor_id}"
+                )))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({"baseUrl": format!("http://{second_address}")}).to_string(),
+                ))
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(moved.status(), StatusCode::OK);
+        let moved = response_json(moved).await;
+        assert_eq!(moved["id"], executor_id);
+        assert_eq!(moved["generation"], 2);
+        assert_eq!(moved["baseUrl"], format!("http://{second_address}"));
+        let change = changes.recv().await.unwrap();
+        assert_eq!(change.executor_id, executor_id);
+        assert_eq!(change.generation, Some(2));
+
+        let proxied = app
+            .clone()
+            .oneshot(
+                primary_request(Request::get(format!(
+                    "/v1/executors/{executor_id}/projects"
+                )))
+                .body(Body::empty())
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response_json(proxied).await["marker"], "second");
+
+        let replacement = app
+            .clone()
+            .oneshot(
+                primary_mutation(Request::patch(format!(
+                    "/v1/federation/executors/{executor_id}"
+                )))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({"baseUrl": format!("http://{replacement_address}")}).to_string(),
+                ))
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(replacement.status(), StatusCode::CONFLICT);
+        let retained = app
+            .clone()
+            .oneshot(
+                primary_request(Request::get(format!(
+                    "/v1/federation/executors/{executor_id}"
+                )))
+                .body(Body::empty())
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        let retained = response_json(retained).await;
+        assert_eq!(retained["generation"], 2);
+        assert_eq!(retained["baseUrl"], format!("http://{second_address}"));
+
+        let duplicate = app
+            .oneshot(
+                primary_mutation(Request::patch(format!(
+                    "/v1/federation/executors/{executor_id}"
+                )))
+                .header("content-type", "application/json")
+                .body(Body::from(json!({"baseUrl": duplicate_url}).to_string()))
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(duplicate.status(), StatusCode::CONFLICT);
+
+        first_task.abort();
+        second_task.abort();
+        replacement_task.abort();
     }
 
     #[tokio::test]

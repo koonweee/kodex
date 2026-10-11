@@ -131,6 +131,39 @@ impl Store {
         row.map(decode_executor).transpose()
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_executor_verified_endpoint(
+        &self,
+        id: &str,
+        expected_generation: i64,
+        display_name: Option<&str>,
+        enabled: Option<bool>,
+        base_url: &str,
+        api_version: &str,
+        app_server_schema_version: &str,
+        status: ExecutorStatus,
+        last_error: Option<&str>,
+        updated_at: i64,
+    ) -> anyhow::Result<Option<ExecutorRecord>> {
+        let row = sqlx::query(
+            "UPDATE executors SET display_name = COALESCE(?, display_name), enabled = COALESCE(?, enabled), base_url = ?, api_version = ?, app_server_schema_version = ?, status = ?, last_error = ?, last_seen_at = ?, generation = generation + 1, updated_at = ? WHERE id = ? AND generation = ? RETURNING id, generation, display_name, base_url, instance_id, api_version, app_server_schema_version, enabled, status, last_error, last_seen_at, created_at, updated_at",
+        )
+        .bind(display_name)
+        .bind(enabled)
+        .bind(base_url)
+        .bind(api_version)
+        .bind(app_server_schema_version)
+        .bind(status.as_str())
+        .bind(last_error)
+        .bind(updated_at)
+        .bind(updated_at)
+        .bind(id)
+        .bind(expected_generation)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(decode_executor).transpose()
+    }
+
     pub async fn delete_executor(&self, id: &str) -> anyhow::Result<bool> {
         Ok(sqlx::query("DELETE FROM executors WHERE id = ?")
             .bind(id)
@@ -189,6 +222,24 @@ fn decode_executor(row: sqlx::sqlite::SqliteRow) -> anyhow::Result<ExecutorRecor
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn executor(id: &str) -> ExecutorRecord {
+        ExecutorRecord {
+            id: id.to_string(),
+            generation: 1,
+            display_name: "Executor".to_string(),
+            base_url: format!("http://127.0.0.1:9{id}"),
+            instance_id: format!("instance-{id}"),
+            api_version: "4".to_string(),
+            app_server_schema_version: "0.160.0".to_string(),
+            enabled: true,
+            status: ExecutorStatus::Ready,
+            last_error: None,
+            last_seen_at: 1,
+            created_at: 1,
+            updated_at: 1,
+        }
+    }
 
     #[tokio::test]
     async fn fresh_store_uses_wal_and_reopens_at_the_supported_schema() {
@@ -257,5 +308,41 @@ mod tests {
         .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
         assert_eq!(executors_table, 1);
+    }
+
+    #[tokio::test]
+    async fn verified_endpoint_update_rejects_a_stale_generation_without_partial_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::connect(&dir.path().join("federator.db"))
+            .await
+            .unwrap();
+        store.insert_executor(&executor("1")).await.unwrap();
+        store
+            .update_executor_sparse("1", Some("Concurrent rename"), None, 2)
+            .await
+            .unwrap();
+
+        let stale = store
+            .update_executor_verified_endpoint(
+                "1",
+                1,
+                Some("Stale rename"),
+                Some(false),
+                "http://127.0.0.1:9999",
+                "future",
+                "future",
+                ExecutorStatus::Incompatible,
+                Some("stale"),
+                3,
+            )
+            .await
+            .unwrap();
+        assert!(stale.is_none());
+        let retained = store.get_executor("1").await.unwrap().unwrap();
+        assert_eq!(retained.generation, 2);
+        assert_eq!(retained.display_name, "Concurrent rename");
+        assert_eq!(retained.base_url, "http://127.0.0.1:91");
+        assert!(retained.enabled);
+        assert_eq!(retained.api_version, "4");
     }
 }
