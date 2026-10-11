@@ -208,6 +208,7 @@ impl AppState {
         crate::routes::terminals::list_terminals,
         crate::routes::terminals::create_terminal,
         crate::routes::terminals::delete_terminal,
+        crate::routes::terminals::connect_terminal_ws,
         crate::routes::composer_settings::read_composer_settings,
         crate::routes::composer_settings::update_composer_settings,
         crate::routes::permission_profiles::list_permission_profiles,

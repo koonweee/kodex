@@ -2,14 +2,17 @@ use std::sync::OnceLock;
 
 use axum::{
     body::Body,
-    extract::{Path, State},
+    extract::{
+        ws::{Message as BrowserMessage, WebSocket, WebSocketUpgrade},
+        Path, Query, State,
+    },
     http::{header, HeaderMap, Method, Request, StatusCode},
     response::{IntoResponse, Response},
-    routing::any,
+    routing::{any, get},
     Json, Router,
 };
-use futures_util::StreamExt;
-use serde::Serialize;
+use futures_util::{SinkExt, StreamExt};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     registry::{self, ExecutorRecord, ExecutorStatus, SUPPORTED_EXECUTOR_API_VERSION},
@@ -19,9 +22,340 @@ use crate::{
 const EXPECTED_INSTANCE_HEADER: &str = "x-kodex-expected-instance";
 const API_VERSION_HEADER: &str = "x-kodex-api-version";
 const FRONTEND_UPDATE_PATH: &str = "/v1/frontend-updates";
+const WEBSOCKET_SETUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+const WEBSOCKET_CLOSE_HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 
 pub fn router() -> Router<FederatorState> {
-    Router::new().route("/v1/executors/{executor_id}/{*path}", any(proxy_executor))
+    Router::new()
+        .route(
+            "/v1/executors/{executor_id}/terminals/{terminal_id}/ws",
+            get(proxy_terminal_websocket),
+        )
+        .route("/v1/executors/{executor_id}/{*path}", any(proxy_executor))
+}
+
+async fn proxy_terminal_websocket(
+    State(state): State<FederatorState>,
+    Path((executor_id, terminal_id)): Path<(String, String)>,
+    Query(query): Query<TerminalWebSocketQuery>,
+    ws: WebSocketUpgrade,
+) -> Response {
+    if query.api_version.as_deref() != Some(crate::trust::FEDERATOR_API_VERSION) {
+        return ProxyError::client_update_required().into_response();
+    }
+    match connect_terminal_websocket(&state, &executor_id, &terminal_id).await {
+        Ok((upstream, binding, changes)) => ws
+            .on_upgrade(move |browser| bridge_websockets(browser, upstream, binding, changes))
+            .into_response(),
+        Err(error) => error.into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TerminalWebSocketQuery {
+    api_version: Option<String>,
+}
+
+type UpstreamWebSocket =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+async fn connect_terminal_websocket(
+    state: &FederatorState,
+    executor_id: &str,
+    terminal_id: &str,
+) -> Result<
+    (
+        UpstreamWebSocket,
+        ExecutorRecord,
+        tokio::sync::broadcast::Receiver<crate::RegistryChange>,
+    ),
+    ProxyError,
+> {
+    connect_terminal_websocket_with_timeout(
+        state,
+        executor_id,
+        terminal_id,
+        WEBSOCKET_SETUP_TIMEOUT,
+    )
+    .await
+}
+
+async fn connect_terminal_websocket_with_timeout(
+    state: &FederatorState,
+    executor_id: &str,
+    terminal_id: &str,
+    timeout: std::time::Duration,
+) -> Result<
+    (
+        UpstreamWebSocket,
+        ExecutorRecord,
+        tokio::sync::broadcast::Receiver<crate::RegistryChange>,
+    ),
+    ProxyError,
+> {
+    tokio::time::timeout(
+        timeout,
+        connect_terminal_websocket_inner(state, executor_id, terminal_id),
+    )
+    .await
+    .map_err(|_| ProxyError::upstream("Executor WebSocket setup timed out."))?
+}
+
+async fn connect_terminal_websocket_inner(
+    state: &FederatorState,
+    executor_id: &str,
+    terminal_id: &str,
+) -> Result<
+    (
+        UpstreamWebSocket,
+        ExecutorRecord,
+        tokio::sync::broadcast::Receiver<crate::RegistryChange>,
+    ),
+    ProxyError,
+> {
+    let changes = state.registry_changes.subscribe();
+    let binding = load_routable_binding(state, executor_id).await?;
+    let endpoint = registry::validate_executor_proxy_endpoint(&binding.base_url)
+        .await
+        .map_err(|error| ProxyError::upstream(error.message().to_string()))?;
+    let tcp = connect_pinned(&endpoint.addresses).await?;
+    let mut url = url::Url::parse(&endpoint.base_url).map_err(ProxyError::internal)?;
+    url.set_scheme(if url.scheme() == "https" { "wss" } else { "ws" })
+        .map_err(|_| ProxyError::internal("invalid executor WebSocket scheme"))?;
+    url.set_path(&format!(
+        "/v1/terminals/{}/ws",
+        percent_encoding::utf8_percent_encode(terminal_id, percent_encoding::NON_ALPHANUMERIC)
+    ));
+    let mut request =
+        tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(
+            url.as_str(),
+        )
+        .map_err(ProxyError::internal)?;
+    request.headers_mut().insert(
+        EXPECTED_INSTANCE_HEADER,
+        binding
+            .instance_id
+            .parse()
+            .map_err(|_| ProxyError::internal("invalid stored executor instance identity"))?,
+    );
+    request.headers_mut().insert(
+        API_VERSION_HEADER,
+        SUPPORTED_EXECUTOR_API_VERSION
+            .parse()
+            .expect("supported API version is a valid header value"),
+    );
+    let (upstream, response) =
+        tokio_tungstenite::client_async_tls_with_config(request, tcp, None, None)
+            .await
+            .map_err(|error| ProxyError::upstream(format!("Executor WebSocket failed: {error}")))?;
+    if response
+        .headers()
+        .get(API_VERSION_HEADER)
+        .is_none_or(|version| version != SUPPORTED_EXECUTOR_API_VERSION)
+    {
+        return Err(ProxyError::incompatible(
+            "Executor WebSocket did not confirm the required API version.",
+        ));
+    }
+    ensure_binding_current(state, &binding).await?;
+    Ok((upstream, binding, changes))
+}
+
+async fn load_routable_binding(
+    state: &FederatorState,
+    executor_id: &str,
+) -> Result<ExecutorRecord, ProxyError> {
+    let binding = state
+        .store
+        .get_executor(executor_id)
+        .await
+        .map_err(ProxyError::internal)?
+        .ok_or_else(|| ProxyError::not_found("Executor not found."))?;
+    if !binding.enabled {
+        return Err(ProxyError::unavailable("Executor is disabled."));
+    }
+    if binding.api_version != SUPPORTED_EXECUTOR_API_VERSION
+        || binding.status == ExecutorStatus::Incompatible
+    {
+        return Err(ProxyError::conflict(
+            "Executor API/native version is incompatible.",
+        ));
+    }
+    Ok(binding)
+}
+
+async fn connect_pinned(
+    addresses: &[std::net::SocketAddr],
+) -> Result<tokio::net::TcpStream, ProxyError> {
+    let mut last_error = None;
+    for address in addresses {
+        match tokio::net::TcpStream::connect(address).await {
+            Ok(stream) => return Ok(stream),
+            Err(error) => last_error = Some(error.to_string()),
+        }
+    }
+    Err(ProxyError::upstream(format!(
+        "Executor WebSocket connection failed: {}",
+        last_error.unwrap_or_else(|| "endpoint has no validated addresses".to_string())
+    )))
+}
+
+async fn bridge_websockets(
+    browser: WebSocket,
+    upstream: UpstreamWebSocket,
+    binding: ExecutorRecord,
+    mut changes: tokio::sync::broadcast::Receiver<crate::RegistryChange>,
+) {
+    let (browser_sink, mut browser_stream) = browser.split();
+    let (upstream_sink, mut upstream_stream) = upstream.split();
+    let browser_sink = std::sync::Arc::new(tokio::sync::Mutex::new(browser_sink));
+    let upstream_sink = std::sync::Arc::new(tokio::sync::Mutex::new(upstream_sink));
+    let browser_to_executor = async {
+        while let Some(Ok(message)) = browser_stream.next().await {
+            let close = matches!(message, BrowserMessage::Close(_));
+            upstream_sink
+                .lock()
+                .await
+                .send(browser_to_upstream(message))
+                .await
+                .map_err(|error| error.to_string())?;
+            if close {
+                // axum's receive half automatically queues the browser's close
+                // acknowledgement. Flush it through the split sink before the
+                // bridge waits for the executor's half of the handshake.
+                browser_sink
+                    .lock()
+                    .await
+                    .flush()
+                    .await
+                    .map_err(|error| error.to_string())?;
+                return Ok(true);
+            }
+        }
+        Ok::<bool, String>(false)
+    };
+    let executor_to_browser = async {
+        while let Some(Ok(message)) = upstream_stream.next().await {
+            if let Some((message, close)) = upstream_to_browser(message) {
+                browser_sink
+                    .lock()
+                    .await
+                    .send(message)
+                    .await
+                    .map_err(|error| error.to_string())?;
+                if close {
+                    // tungstenite queues the executor's close acknowledgement
+                    // while reading the frame. Flush it before ending this half.
+                    upstream_sink
+                        .lock()
+                        .await
+                        .flush()
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    return Ok(true);
+                }
+            }
+        }
+        Ok::<bool, String>(false)
+    };
+    tokio::pin!(browser_to_executor, executor_to_browser);
+    enum CompletedDirection {
+        Browser(Result<bool, String>),
+        Executor(Result<bool, String>),
+        BindingChanged,
+    }
+    let completed = {
+        let binding_changed = wait_for_binding_change(&mut changes, &binding);
+        tokio::pin!(binding_changed);
+        tokio::select! {
+            result = &mut browser_to_executor => CompletedDirection::Browser(result),
+            result = &mut executor_to_browser => CompletedDirection::Executor(result),
+            () = &mut binding_changed => CompletedDirection::BindingChanged,
+        }
+    };
+    match completed {
+        CompletedDirection::Browser(Ok(true)) => {
+            let peer_close =
+                tokio::time::timeout(WEBSOCKET_CLOSE_HANDSHAKE_TIMEOUT, &mut executor_to_browser);
+            tokio::pin!(peer_close);
+            tokio::select! {
+                _ = &mut peer_close => {}
+                () = wait_for_binding_change(&mut changes, &binding) => {}
+            }
+        }
+        CompletedDirection::Executor(Ok(true)) => {
+            let peer_close =
+                tokio::time::timeout(WEBSOCKET_CLOSE_HANDSHAKE_TIMEOUT, &mut browser_to_executor);
+            tokio::pin!(peer_close);
+            tokio::select! {
+                _ = &mut peer_close => {}
+                () = wait_for_binding_change(&mut changes, &binding) => {}
+            }
+        }
+        CompletedDirection::Browser(Ok(false) | Err(_))
+        | CompletedDirection::Executor(Ok(false) | Err(_))
+        | CompletedDirection::BindingChanged => {}
+    }
+    // Dropping both forwarding futures cancels any backpressured write before
+    // either socket half is awaited again. The browser transport is revoked
+    // immediately even when the executor never reads or completes a close.
+}
+
+async fn wait_for_binding_change(
+    changes: &mut tokio::sync::broadcast::Receiver<crate::RegistryChange>,
+    binding: &ExecutorRecord,
+) {
+    loop {
+        match changes.recv().await {
+            Ok(change)
+                if change.executor_id == binding.id
+                    && change
+                        .generation
+                        .map_or(true, |generation| generation > binding.generation) =>
+            {
+                return;
+            }
+            Ok(_) => continue,
+            Err(_) => return,
+        }
+    }
+}
+
+fn browser_to_upstream(message: BrowserMessage) -> tokio_tungstenite::tungstenite::Message {
+    use tokio_tungstenite::tungstenite::Message;
+    match message {
+        BrowserMessage::Text(value) => Message::Text(value.to_string().into()),
+        BrowserMessage::Binary(value) => Message::Binary(value.to_vec().into()),
+        BrowserMessage::Ping(value) => Message::Ping(value.to_vec().into()),
+        BrowserMessage::Pong(value) => Message::Pong(value.to_vec().into()),
+        BrowserMessage::Close(frame) => Message::Close(frame.map(|frame| {
+            tokio_tungstenite::tungstenite::protocol::CloseFrame {
+                code: frame.code.into(),
+                reason: frame.reason.to_string().into(),
+            }
+        })),
+    }
+}
+
+fn upstream_to_browser(
+    message: tokio_tungstenite::tungstenite::Message,
+) -> Option<(BrowserMessage, bool)> {
+    use tokio_tungstenite::tungstenite::Message;
+    Some(match message {
+        Message::Text(value) => (BrowserMessage::Text(value.to_string().into()), false),
+        Message::Binary(value) => (BrowserMessage::Binary(value.to_vec().into()), false),
+        Message::Ping(value) => (BrowserMessage::Ping(value.to_vec().into()), false),
+        Message::Pong(value) => (BrowserMessage::Pong(value.to_vec().into()), false),
+        Message::Close(frame) => (
+            BrowserMessage::Close(frame.map(|frame| axum::extract::ws::CloseFrame {
+                code: frame.code.into(),
+                reason: frame.reason.to_string().into(),
+            })),
+            true,
+        ),
+        Message::Frame(_) => return None,
+    })
 }
 
 async fn proxy_executor(
@@ -50,22 +384,7 @@ async fn proxy_executor_inner(
         ));
     }
 
-    let binding = state
-        .store
-        .get_executor(executor_id)
-        .await
-        .map_err(ProxyError::internal)?
-        .ok_or_else(|| ProxyError::not_found("Executor not found."))?;
-    if !binding.enabled {
-        return Err(ProxyError::unavailable("Executor is disabled."));
-    }
-    if binding.api_version != SUPPORTED_EXECUTOR_API_VERSION
-        || binding.status == ExecutorStatus::Incompatible
-    {
-        return Err(ProxyError::conflict(
-            "Executor API/native version is incompatible.",
-        ));
-    }
+    let binding = load_routable_binding(state, executor_id).await?;
 
     // Resolve and constrain the endpoint for every routed request. The returned
     // client is pinned to that address set, so a later DNS answer cannot change
@@ -341,6 +660,13 @@ struct ProxyError {
 }
 
 impl ProxyError {
+    fn client_update_required() -> Self {
+        Self::new(
+            StatusCode::CONFLICT,
+            "client_update_required",
+            "Update Kodex before making changes.",
+        )
+    }
     fn not_found(message: impl Into<String>) -> Self {
         Self::new(StatusCode::NOT_FOUND, "executor_route_not_found", message)
     }
@@ -398,9 +724,23 @@ impl IntoResponse for ProxyError {
 
 #[cfg(test)]
 mod tests {
-    use std::{convert::Infallible, time::Duration};
+    use std::{
+        convert::Infallible,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
+        time::Duration,
+    };
 
-    use axum::{body::Body, response::Response, routing::get, Router};
+    use axum::{
+        body::Body,
+        extract::{ws::WebSocketUpgrade, Path},
+        http::HeaderValue,
+        response::Response,
+        routing::get,
+        Router,
+    };
     use http_body_util::BodyExt;
     use tokio::time::{sleep, timeout};
 
@@ -431,6 +771,340 @@ mod tests {
         ] {
             assert!(validate_proxy_path(path).is_err(), "{path}");
         }
+    }
+
+    #[test]
+    fn websocket_close_code_and_reason_are_preserved_in_both_directions() {
+        let upstream =
+            browser_to_upstream(BrowserMessage::Close(Some(axum::extract::ws::CloseFrame {
+                code: 4001,
+                reason: "browser reason".into(),
+            })));
+        let tokio_tungstenite::tungstenite::Message::Close(Some(upstream)) = upstream else {
+            panic!("expected close frame");
+        };
+        assert_eq!(u16::from(upstream.code), 4001);
+        assert_eq!(upstream.reason, "browser reason");
+
+        let (browser, close) = upstream_to_browser(tokio_tungstenite::tungstenite::Message::Close(
+            Some(tokio_tungstenite::tungstenite::protocol::CloseFrame {
+                code: 4002.into(),
+                reason: "executor reason".into(),
+            }),
+        ))
+        .unwrap();
+        let BrowserMessage::Close(Some(browser)) = browser else {
+            panic!("expected close frame");
+        };
+        assert!(close);
+        assert_eq!(browser.code, 4002);
+        assert_eq!(browser.reason, "executor reason");
+    }
+
+    #[tokio::test]
+    async fn terminal_websocket_setup_has_one_total_deadline() {
+        let upstream_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_address = upstream_listener.local_addr().unwrap();
+        let accepted = tokio::spawn(async move {
+            let (_socket, _) = upstream_listener.accept().await.unwrap();
+            std::future::pending::<()>().await;
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let config = crate::config::Config {
+            data_dir: dir.path().to_path_buf(),
+            database_path: dir.path().join("federator.db"),
+            ..crate::config::Config::default()
+        };
+        let (_instance, state) = crate::prepare(&config).await.unwrap();
+        state
+            .store
+            .insert_executor(&ExecutorRecord {
+                id: "executor-1".to_string(),
+                generation: 1,
+                display_name: "Executor".to_string(),
+                base_url: format!("http://{upstream_address}"),
+                instance_id: "executor-instance".to_string(),
+                api_version: "4".to_string(),
+                app_server_schema_version: "0.160.0".to_string(),
+                enabled: true,
+                status: ExecutorStatus::Ready,
+                last_error: None,
+                last_seen_at: 1,
+                created_at: 1,
+                updated_at: 1,
+            })
+            .await
+            .unwrap();
+        let error = connect_terminal_websocket_with_timeout(
+            &state,
+            "executor-1",
+            "terminal-1",
+            Duration::from_millis(50),
+        )
+        .await
+        .err()
+        .expect("stalled handshake times out");
+        assert_eq!(error.code, "executor_proxy_failed");
+        assert!(error.message.contains("setup timed out"));
+        accepted.abort();
+    }
+
+    #[tokio::test]
+    async fn terminal_websocket_is_bidirectional_and_generation_fenced() {
+        let upstream_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_address = upstream_listener.local_addr().unwrap();
+        let upstream_handshakes = Arc::new(AtomicUsize::new(0));
+        let upstream_app = Router::new().route(
+            "/v1/terminals/{terminal_id}/ws",
+            get({
+                let upstream_handshakes = upstream_handshakes.clone();
+                move |Path(terminal_id): Path<String>, headers: HeaderMap, ws: WebSocketUpgrade| {
+                    let upstream_handshakes = upstream_handshakes.clone();
+                    async move {
+                        upstream_handshakes.fetch_add(1, Ordering::SeqCst);
+                        assert_eq!(headers[EXPECTED_INSTANCE_HEADER], "executor-instance");
+                        assert_eq!(headers[API_VERSION_HEADER], "4");
+                        let mut response = ws.on_upgrade(move |mut socket| async move {
+                            if terminal_id == "blocked" {
+                                std::future::pending::<()>().await;
+                            }
+                            if terminal_id == "executor-close" {
+                                socket
+                                    .send(BrowserMessage::Close(Some(
+                                        axum::extract::ws::CloseFrame {
+                                            code: 4002,
+                                            reason: "executor reason".into(),
+                                        },
+                                    )))
+                                    .await
+                                    .unwrap();
+                            }
+                            while let Some(Ok(message)) = socket.recv().await {
+                                if matches!(message, BrowserMessage::Close(_)) {
+                                    break;
+                                }
+                                if socket.send(message).await.is_err() {
+                                    break;
+                                }
+                            }
+                        });
+                        response
+                            .headers_mut()
+                            .insert(API_VERSION_HEADER, HeaderValue::from_static("4"));
+                        response
+                    }
+                }
+            }),
+        );
+        let upstream_task =
+            tokio::spawn(
+                async move { axum::serve(upstream_listener, upstream_app).await.unwrap() },
+            );
+
+        let public_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let public_address = public_listener.local_addr().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let config = crate::config::Config {
+            data_dir: dir.path().to_path_buf(),
+            database_path: dir.path().join("federator.db"),
+            public_origin: format!("http://{public_address}"),
+            ..crate::config::Config::default()
+        };
+        let (_instance, state) = crate::prepare(&config).await.unwrap();
+        state
+            .store
+            .insert_executor(&ExecutorRecord {
+                id: "executor-1".to_string(),
+                generation: 1,
+                display_name: "Executor".to_string(),
+                base_url: format!("http://{upstream_address}"),
+                instance_id: "executor-instance".to_string(),
+                api_version: "4".to_string(),
+                app_server_schema_version: "0.160.0".to_string(),
+                enabled: true,
+                status: ExecutorStatus::Ready,
+                last_error: None,
+                last_seen_at: 1,
+                created_at: 1,
+                updated_at: 1,
+            })
+            .await
+            .unwrap();
+        let changes = state.registry_changes.clone();
+        let app = crate::primary_router(state, None, config.sandbox_public_url);
+        let federator_task =
+            tokio::spawn(async move { axum::serve(public_listener, app).await.unwrap() });
+
+        let base_url =
+            format!("ws://{public_address}/v1/executors/executor-1/terminals/terminal-1/ws");
+        for suffix in ["", "?apiVersion=3"] {
+            let mut request =
+                tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(
+                    format!("{base_url}{suffix}"),
+                )
+                .unwrap();
+            request.headers_mut().insert(
+                header::ORIGIN,
+                format!("http://{public_address}").parse().unwrap(),
+            );
+            let error = tokio_tungstenite::connect_async(request)
+                .await
+                .expect_err("missing or stale browser API version is rejected");
+            let tokio_tungstenite::tungstenite::Error::Http(response) = error else {
+                panic!("expected HTTP WebSocket rejection");
+            };
+            assert_eq!(response.status(), StatusCode::CONFLICT);
+        }
+        assert_eq!(upstream_handshakes.load(Ordering::SeqCst), 0);
+
+        let url = format!("{base_url}?apiVersion=4");
+        let mut request =
+            tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(
+                url.as_str(),
+            )
+            .unwrap();
+        request.headers_mut().insert(
+            header::ORIGIN,
+            format!("http://{public_address}").parse().unwrap(),
+        );
+        let (mut client, _) = tokio_tungstenite::connect_async(request).await.unwrap();
+        client
+            .send(tokio_tungstenite::tungstenite::Message::Binary(
+                b"terminal bytes".to_vec().into(),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            client.next().await.unwrap().unwrap().into_data(),
+            b"terminal bytes".as_slice()
+        );
+        assert_eq!(upstream_handshakes.load(Ordering::SeqCst), 1);
+
+        let browser_close_url = format!(
+            "ws://{public_address}/v1/executors/executor-1/terminals/browser-close/ws?apiVersion=4"
+        );
+        let mut browser_close_request =
+            tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(
+                browser_close_url,
+            )
+            .unwrap();
+        browser_close_request.headers_mut().insert(
+            header::ORIGIN,
+            format!("http://{public_address}").parse().unwrap(),
+        );
+        let (mut browser_close_client, _) = tokio_tungstenite::connect_async(browser_close_request)
+            .await
+            .unwrap();
+        browser_close_client
+            .send(tokio_tungstenite::tungstenite::Message::Close(Some(
+                tokio_tungstenite::tungstenite::protocol::CloseFrame {
+                    code: 4001.into(),
+                    reason: "browser reason".into(),
+                },
+            )))
+            .await
+            .unwrap();
+        let browser_close = timeout(Duration::from_secs(1), browser_close_client.next())
+            .await
+            .expect("executor close reply reaches the browser")
+            .expect("executor sends a close reply")
+            .unwrap();
+        let tokio_tungstenite::tungstenite::Message::Close(Some(browser_close)) = browser_close
+        else {
+            panic!("expected browser close reply");
+        };
+        assert_eq!(u16::from(browser_close.code), 4001);
+        assert_eq!(browser_close.reason, "browser reason");
+
+        let executor_close_url = format!(
+            "ws://{public_address}/v1/executors/executor-1/terminals/executor-close/ws?apiVersion=4"
+        );
+        let mut executor_close_request =
+            tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(
+                executor_close_url,
+            )
+            .unwrap();
+        executor_close_request.headers_mut().insert(
+            header::ORIGIN,
+            format!("http://{public_address}").parse().unwrap(),
+        );
+        let (mut executor_close_client, _) =
+            tokio_tungstenite::connect_async(executor_close_request)
+                .await
+                .unwrap();
+        let executor_close = timeout(Duration::from_secs(1), executor_close_client.next())
+            .await
+            .expect("executor close reaches the browser")
+            .expect("executor sends a close")
+            .unwrap();
+        let tokio_tungstenite::tungstenite::Message::Close(Some(executor_close)) = executor_close
+        else {
+            panic!("expected executor close");
+        };
+        assert_eq!(u16::from(executor_close.code), 4002);
+        assert_eq!(executor_close.reason, "executor reason");
+
+        let blocked_url = format!(
+            "ws://{public_address}/v1/executors/executor-1/terminals/blocked/ws?apiVersion=4"
+        );
+        let mut blocked_request =
+            tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(
+                blocked_url.as_str(),
+            )
+            .unwrap();
+        blocked_request.headers_mut().insert(
+            header::ORIGIN,
+            format!("http://{public_address}").parse().unwrap(),
+        );
+        let (blocked_client, _) = tokio_tungstenite::connect_async(blocked_request)
+            .await
+            .unwrap();
+        assert_eq!(upstream_handshakes.load(Ordering::SeqCst), 4);
+        let (mut blocked_sink, mut blocked_stream) = blocked_client.split();
+        let blocked_sender = tokio::spawn(async move {
+            let payload = vec![0_u8; 1024 * 1024];
+            loop {
+                if blocked_sink
+                    .send(tokio_tungstenite::tungstenite::Message::Binary(
+                        payload.clone().into(),
+                    ))
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
+        sleep(Duration::from_millis(50)).await;
+
+        changes
+            .send(crate::RegistryChange {
+                executor_id: "executor-1".to_string(),
+                generation: Some(2),
+            })
+            .unwrap();
+        let closed = timeout(Duration::from_secs(1), client.next())
+            .await
+            .expect("generation change closes the WebSocket");
+        assert!(
+            closed.is_none()
+                || closed
+                    .is_some_and(|message| message.is_err()
+                        || message.is_ok_and(|message| message.is_close()))
+        );
+        let blocked_closed = timeout(Duration::from_secs(1), blocked_stream.next())
+            .await
+            .expect("generation change interrupts a backpressured executor write");
+        assert!(
+            blocked_closed.is_none()
+                || blocked_closed
+                    .is_some_and(|message| message.is_err()
+                        || message.is_ok_and(|message| message.is_close()))
+        );
+
+        blocked_sender.abort();
+        federator_task.abort();
+        upstream_task.abort();
     }
 
     #[tokio::test]

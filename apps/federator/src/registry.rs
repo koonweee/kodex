@@ -446,6 +446,7 @@ struct ParsedEndpoint {
 pub(crate) struct ValidatedEndpoint {
     pub(crate) base_url: String,
     pub(crate) client: reqwest::Client,
+    pub(crate) addresses: Vec<SocketAddr>,
 }
 
 fn parse_executor_url(value: &str) -> Result<ParsedEndpoint, RegistryError> {
@@ -522,24 +523,30 @@ async fn validate_executor_endpoint(
     if let Some(timeout) = total_timeout {
         builder = builder.timeout(timeout);
     }
-    if let url::Host::Domain(domain) = endpoint.url.host().expect("validated URL has a host") {
-        let port = endpoint
-            .url
-            .port_or_known_default()
-            .expect("validated HTTP(S) URL has a default port");
-        let addresses = tokio::net::lookup_host((domain, port))
-            .await
-            .map_err(|error| {
-                RegistryError::upstream(format!("Executor hostname resolution failed: {error}"))
-            })?
-            .collect::<Vec<_>>();
-        validate_resolved_addresses(endpoint.boundary, &addresses)?;
-        builder = builder.resolve_to_addrs(domain, &addresses);
-    }
+    let port = endpoint
+        .url
+        .port_or_known_default()
+        .expect("validated HTTP(S) URL has a default port");
+    let addresses = match endpoint.url.host().expect("validated URL has a host") {
+        url::Host::Domain(domain) => {
+            let addresses = tokio::net::lookup_host((domain, port))
+                .await
+                .map_err(|error| {
+                    RegistryError::upstream(format!("Executor hostname resolution failed: {error}"))
+                })?
+                .collect::<Vec<_>>();
+            validate_resolved_addresses(endpoint.boundary, &addresses)?;
+            builder = builder.resolve_to_addrs(domain, &addresses);
+            addresses
+        }
+        url::Host::Ipv4(address) => vec![SocketAddr::new(IpAddr::V4(address), port)],
+        url::Host::Ipv6(address) => vec![SocketAddr::new(IpAddr::V6(address), port)],
+    };
     let client = builder.build().map_err(RegistryError::internal)?;
     Ok(ValidatedEndpoint {
         base_url: endpoint.base_url,
         client,
+        addresses,
     })
 }
 

@@ -108,6 +108,14 @@ pub fn federated_openapi() -> serde_json::Value {
                     "schema": { "type": "string" }
                 }),
             );
+            if path == "/v1/terminals/{terminalId}/ws" && method == "get" {
+                parameters.push(serde_json::json!({
+                    "name": "apiVersion",
+                    "in": "query",
+                    "required": true,
+                    "schema": { "type": "string", "enum": [trust::FEDERATOR_API_VERSION] }
+                }));
+            }
         }
         target_paths.insert(format!("/v1/executors/{{executorId}}{suffix}"), item);
     }

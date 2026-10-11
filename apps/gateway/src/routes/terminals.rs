@@ -79,6 +79,12 @@ pub async fn delete_terminal(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/terminals/{terminalId}/ws",
+    params(("terminalId" = String, Path)),
+    responses((status = 101, description = "Terminal WebSocket upgrade"))
+)]
 pub async fn connect_terminal_ws(
     State(state): State<AppState>,
     Path(terminal_id): Path<String>,

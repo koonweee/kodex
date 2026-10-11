@@ -809,6 +809,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/terminals/{terminalId}/ws": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["connect_terminal_ws"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/thread-view-presence": {
         parameters: {
             query?: never;
@@ -4717,6 +4733,26 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TerminalDeleteResponse"];
                 };
+            };
+        };
+    };
+    connect_terminal_ws: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                terminalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Terminal WebSocket upgrade */
+            101: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

@@ -1,4 +1,4 @@
-import { compatibleFetch, compatibilityRequired } from "./compatibility";
+import { API_VERSION, compatibleFetch, compatibilityRequired } from "./compatibility";
 import createClient from "openapi-fetch";
 
 import type { components, paths } from "./generated/schema";
@@ -125,7 +125,7 @@ function getApiBaseUrl(): string {
 }
 
 export function terminalWebSocketUrl(terminalId: string): string {
-  const route = `/v1/terminals/${encodeURIComponent(terminalId)}/ws`;
+  const route = `/v1/terminals/${encodeURIComponent(terminalId)}/ws?apiVersion=${encodeURIComponent(API_VERSION)}`;
   const baseUrl = getApiBaseUrl();
   const url = new URL(route, baseUrl || window.location.origin);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
