@@ -59,8 +59,8 @@ it.each(["snapshot", "older page"])("fences a pending %s read when native revert
   const loaded = vi.fn();
   const failed = vi.fn();
   const store = createMemoryWorkspacePaneStore({
-    schemaVersion: 1, activePaneId: "revert-pane", dockviewLayout: null,
-    panes: [{ id: "revert-pane", kind: "thread", target: { mode: "existing", threadId: "revert-chat" } }],
+    schemaVersion: 2, activePaneId: "revert-pane", dockviewLayout: null,
+    panes: [{ id: "revert-pane", kind: "thread", target: { executorId: "local", mode: "existing", threadId: "revert-chat" } }],
   });
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <MantineProvider><WorkspaceProvider paneStore={store} onThreadSnapshotLoaded={loaded} onThreadSnapshotLoadFailed={failed}

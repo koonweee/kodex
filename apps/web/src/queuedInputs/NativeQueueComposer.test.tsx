@@ -52,7 +52,7 @@ it.each([
   await waitFor(() => expect(screen.getByRole("dialog", { name: title })).toBeVisible());
   // Browser navigation can change the pane while a portal dialog is open.
   await act(async () => {
-    window.history.pushState(null, "", "/threads/thread-2");
+    window.history.pushState(null, "", "/executors/local/threads/thread-2");
     window.dispatchEvent(new PopStateEvent("popstate"));
   });
   await screen.findByRole("heading", { name: /^second thread$/i });

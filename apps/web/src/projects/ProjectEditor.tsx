@@ -5,6 +5,7 @@ import { useState } from "react";
 import type { Project, UpdateProjectRequest } from "../api/client";
 import { useGatewayClient } from "../api/GatewayClientContext";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
+import { useExecutorConnection } from "../api/GatewayClientContext";
 import { errorMessageFrom } from "../shared/values";
 import { refreshProjectState } from "./cache";
 import { projectRootsFromText } from "./roots";
@@ -13,6 +14,7 @@ export function ProjectEditor({ project, onDeleted }: { project: Project; onDele
   const api = useGatewayClient();
   const queryClient = useQueryClient();
   const { publishThreadPaneTimelineAction } = useWorkspace();
+  const executorId = useExecutorConnection()?.executorId ?? "local";
   const [nameEdit, setNameEdit] = useState<string | null>(null);
   const [rootsEdit, setRootsEdit] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -23,7 +25,7 @@ export function ProjectEditor({ project, onDeleted }: { project: Project; onDele
   const remove = useMutation({
     mutationFn: () => api.deleteProject(project.id),
     onSuccess: async () => {
-      publishThreadPaneTimelineAction({ kind: "refresh_snapshot" });
+      publishThreadPaneTimelineAction({ executorId, kind: "refresh_snapshot" });
       await refreshProjectState(queryClient);
       onDeleted();
     },

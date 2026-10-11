@@ -1,6 +1,7 @@
 import { MessageSquareText, Sparkles, TerminalSquare } from "lucide-react";
 import type { ReactElement } from "react";
 
+import { ExecutorRuntimeBoundary } from "../api/GatewayClientContext";
 import { AppSurfaceWorkspacePane } from "../panes/appSurface/AppSurfaceWorkspacePane";
 import { TerminalPane } from "../panes/terminal/TerminalPane";
 import { ThreadPane } from "../panes/thread/ThreadPane";
@@ -34,5 +35,13 @@ const paneRegistry: Record<WorkspacePaneType, PaneDefinition> = {
 export function WorkspacePaneRenderer({ pane, isActive }: WorkspacePaneComponentProps) {
   const definition = paneRegistry[pane.kind];
   const Component = definition.component;
-  return <Component pane={pane} isActive={isActive} />;
+  return (
+    <ExecutorRuntimeBoundary
+      executorId={pane.target.executorId}
+      fallback={<div className="kodex-pane-unavailable" role="status">Executor unavailable</div>}
+      preserveChildrenWhenUnavailable={pane.kind === "thread"}
+    >
+      <Component pane={pane} isActive={isActive} />
+    </ExecutorRuntimeBoundary>
+  );
 }

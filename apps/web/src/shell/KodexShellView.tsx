@@ -29,6 +29,7 @@ const DESKTOP_EXPANDED_SIDEBAR_WIDTH = 292;
 
 type KodexShellViewProps = {
   automationsPaneProps: ComponentProps<typeof AutomationsPaneComponent>;
+  executorId: string;
   isSidebarResizing: boolean;
   isDraftThreadSelected: boolean;
   mainPane: "thread" | "automations" | "project";
@@ -59,6 +60,7 @@ function AutomationsPaneFallback() {
 
 export function KodexShellView({
   automationsPaneProps,
+  executorId,
   isDraftThreadSelected,
   isSidebarResizing,
   mainPane,
@@ -92,6 +94,7 @@ export function KodexShellView({
       <div className="kodex-pwa-safe-area" aria-hidden="true" />
       <WorkspaceSidebarWithPaneActions
         {...workspaceSidebarProps}
+        executorId={executorId}
         sidebarCollapsed={sidebarCollapsed}
         sidebarWidth={effectiveSidebarWidth}
         useSingleThreadMode={useSingleThreadWorkspace}
@@ -133,11 +136,13 @@ export function KodexShellView({
 
 
 type WorkspaceSidebarWithPaneActionsProps = ComponentProps<typeof WorkspaceSidebar> & {
+  executorId: string;
   useSingleThreadMode: boolean;
   workspaceSelectedThreadPaneId: string | null;
 };
 
 function WorkspaceSidebarWithPaneActions({
+  executorId,
   useSingleThreadMode,
   workspaceSelectedThreadPaneId,
   ...props
@@ -160,7 +165,7 @@ function WorkspaceSidebarWithPaneActions({
   }, [props.chatThreads, props.pinnedThreads, props.threadsByProjectId]);
 
   function openThread(threadId: string) {
-    void openThreadPane(threadId, titleForThread(props, threadId)).catch((error: unknown) => {
+    void openThreadPane(threadId, titleForThread(props, threadId), { executorId }).catch((error: unknown) => {
       console.error("Failed to open workspace thread pane", error);
     });
   }
@@ -180,12 +185,14 @@ function WorkspaceSidebarWithPaneActions({
     void openThreadPane(
       workspaceSelectedThreadPaneId,
       titleForThread(titleLookupPropsRef.current, workspaceSelectedThreadPaneId),
+      { executorId },
     ).catch((error: unknown) => {
       console.error("Failed to reconcile route thread into workspace pane", error);
     });
   }, [
     openDraftThreadPane,
     openThreadPane,
+    executorId,
     props.selectedProjectId,
     props.selectedMainPane,
     props.selectedThreadId,
@@ -201,13 +208,13 @@ function WorkspaceSidebarWithPaneActions({
       onOpenTerminal={props.onOpenTerminal ? openTerminal : undefined}
       onCreateChat={() => {
         props.onCreateChat();
-        void openDraftThreadPane(null).catch((error: unknown) => {
+        void openDraftThreadPane(null, { executorId }).catch((error: unknown) => {
           console.error("Failed to open workspace draft chat pane", error);
         });
       }}
       onCreateThread={(projectId) => {
         props.onCreateThread(projectId);
-        void openDraftThreadPane(projectId).catch((error: unknown) => {
+        void openDraftThreadPane(projectId, { executorId }).catch((error: unknown) => {
           console.error("Failed to open workspace draft thread pane", error);
         });
       }}

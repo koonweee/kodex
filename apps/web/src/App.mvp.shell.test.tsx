@@ -324,7 +324,7 @@ describe("MVP shell flows", () => {
       name: null,
       preview: "reference the Codex desktop app UI and identify improvements",
     };
-    window.history.replaceState(null, "", "/threads/019de25f-9ac3-72b1-adf6-a108f82d1fb6");
+    window.history.replaceState(null, "", "/executors/local/threads/019de25f-9ac3-72b1-adf6-a108f82d1fb6");
     mockGateway(
       baseRoutes({
         "GET /v1/threads": {
@@ -395,7 +395,7 @@ describe("MVP shell flows", () => {
   });
 
   it("opens the root draft chat page from the desktop Chats scope create action", async () => {
-    window.history.replaceState(null, "", "/threads/thread-1");
+    window.history.replaceState(null, "", "/executors/local/threads/thread-1");
     mockGateway(baseRoutes());
 
     render(<App />);
@@ -403,7 +403,7 @@ describe("MVP shell flows", () => {
     expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     await openNewChatFromSidebar();
 
-    expect(window.location.pathname).toBe("/");
+    expect(window.location.pathname).toBe("/executors/local");
     expect(activeComposer()).toBeEnabled();
   });
 
@@ -1625,17 +1625,17 @@ describe("MVP shell flows", () => {
         {
           id: "pane-thread-1",
           kind: "thread",
-          target: { mode: "existing", threadId: "thread-1" },
+          target: { executorId: "local", mode: "existing", threadId: "thread-1" },
           title: "Implement frontend",
         },
         {
           id: "pane-thread-2",
           kind: "thread",
-          target: { mode: "existing", threadId: "thread-2" },
+          target: { executorId: "local", mode: "existing", threadId: "thread-2" },
           title: "Second thread",
         },
       ],
-      schemaVersion: 1,
+      schemaVersion: 2,
     });
 
     render(<App />);
@@ -1715,17 +1715,17 @@ describe("MVP shell flows", () => {
         {
           id: "pane-thread-1",
           kind: "thread",
-          target: { mode: "existing", threadId: "thread-1" },
+          target: { executorId: "local", mode: "existing", threadId: "thread-1" },
           title: "Implement frontend",
         },
         {
           id: "pane-terminal-1",
           kind: "terminal",
-          target: { terminalId: "terminal-1" },
+          target: { executorId: "local", terminalId: "terminal-1" },
           title: "Terminal",
         },
       ],
-      schemaVersion: 1,
+      schemaVersion: 2,
     });
 
     render(<App />);
@@ -1773,7 +1773,7 @@ describe("MVP shell flows", () => {
     await userEvent.click(screen.getByRole("button", { name: /^new chat$/i }));
 
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
-    expect(window.location.pathname).toBe("/");
+    expect(window.location.pathname).toBe("/executors/local");
     expect(screen.queryByRole("menuitem", { name: /no project/i })).not.toBeInTheDocument();
     await userEvent.type(activeComposer(), "Start from mobile chats");
     await userEvent.click(activeSendButton());
@@ -1885,13 +1885,13 @@ describe("MVP shell flows", () => {
 
     render(<App />);
 
-    expect(window.location.pathname).toBe("/");
+    expect(window.location.pathname).toBe("/executors/local");
     expect(await screen.findByRole("button", { name: /^implement frontend$/i })).toBeInTheDocument();
     await userEvent.click(await screen.findByRole("button", { name: /^second thread$/i }));
 
     expect(await screen.findByText(/second project snapshot/i)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/");
+    expect(window.location.pathname).toBe("/executors/local");
   });
 
   it("keeps the old active thread when a project title row is clicked", async () => {

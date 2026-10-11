@@ -273,17 +273,17 @@ function seedAppSurfaceWorkspace() {
       {
         id: "pane-thread-1",
         kind: "thread",
-        target: { mode: "existing", threadId: "thread-1" },
+        target: { executorId: "local", mode: "existing", threadId: "thread-1" },
         title: "Implement frontend",
       },
       {
         id: "pane-app-surface-1",
         kind: "appSurface",
-        target: { mode: "latest", threadId: "thread-1" },
+        target: { executorId: "local", mode: "latest", threadId: "thread-1" },
         title: "App Surface",
       },
     ],
-    schemaVersion: 1,
+    schemaVersion: 2,
   });
 }
 

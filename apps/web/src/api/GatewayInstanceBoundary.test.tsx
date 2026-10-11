@@ -220,7 +220,7 @@ describe("gateway instance bootstrap", () => {
   });
 
   it("validates a first-visit link with history only before mounting the workspace", async () => {
-    window.history.replaceState(null, "", "/threads/native-thread");
+    window.history.replaceState(null, "", "/executors/local/threads/native-thread");
     vi.mocked(getCapabilities).mockResolvedValue(capabilities("first"));
     let resolve!: (value: ThreadViewResponse) => void;
     vi.mocked(getThreadDetail).mockReturnValueOnce(new Promise((done) => { resolve = done; }));
@@ -231,11 +231,11 @@ describe("gateway instance bootstrap", () => {
     await act(async () => resolve(threadDetail("native-thread")));
 
     expect(await screen.findByRole("button", { name: "fresh draft" })).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/threads/native-thread");
+    expect(window.location.pathname).toBe("/executors/local/threads/native-thread");
     expect(attachThread).not.toHaveBeenCalled();
   });
 
-  it.each(["/threads/foreign", "/projects/foreign"])(
+  it.each(["/executors/local/threads/foreign", "/executors/local/projects/foreign"])(
     "keeps a failed first-visit %s out of the workspace until the user retries or leaves the link",
     async (path) => {
       window.history.replaceState(null, "", path);
@@ -250,12 +250,12 @@ describe("gateway instance bootstrap", () => {
       fireEvent.click(screen.getByRole("button", { name: "Open workspace" }));
 
       expect(await screen.findByRole("button", { name: "fresh draft" })).toBeInTheDocument();
-      expect(window.location.pathname).toBe("/");
+      expect(window.location.pathname).toBe("/executors/local");
     },
   );
 
   it("retries a valid notification link without discarding its destination", async () => {
-    window.history.replaceState(null, "", "/threads/notification-thread");
+    window.history.replaceState(null, "", "/executors/local/threads/notification-thread");
     vi.mocked(getCapabilities).mockResolvedValue(capabilities("first"));
     vi.mocked(getThreadDetail)
       .mockRejectedValueOnce(new Error("Offline"))
@@ -266,11 +266,11 @@ describe("gateway instance bootstrap", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     expect(await screen.findByRole("button", { name: "fresh draft" })).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/threads/notification-thread");
+    expect(window.location.pathname).toBe("/executors/local/threads/notification-thread");
   });
 
   it("ignores a pending route read after browser navigation replaces the initial link", async () => {
-    window.history.replaceState(null, "", "/threads/old-link");
+    window.history.replaceState(null, "", "/executors/local/threads/old-link");
     vi.mocked(getCapabilities).mockResolvedValue(capabilities("first"));
     let resolve!: (value: ThreadViewResponse) => void;
     vi.mocked(getThreadDetail).mockReturnValueOnce(new Promise((done) => { resolve = done; }));
@@ -279,17 +279,17 @@ describe("gateway instance bootstrap", () => {
     await waitFor(() => expect(getThreadDetail).toHaveBeenCalled());
 
     await act(async () => {
-      window.history.replaceState(null, "", "/projects/native-project");
+      window.history.replaceState(null, "", "/executors/local/projects/native-project");
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
     expect(await screen.findByRole("button", { name: "fresh draft" })).toBeInTheDocument();
     await act(async () => resolve(threadDetail("old-link")));
 
-    expect(window.location.pathname).toBe("/projects/native-project");
+    expect(window.location.pathname).toBe("/executors/local/projects/native-project");
     expect(screen.getByRole("button", { name: "fresh draft" })).toBeInTheDocument();
   });
 
-  it.each(["/threads/foreign", "/projects/foreign"])("rejects a mismatched native ID returned for %s", async (path) => {
+  it.each(["/executors/local/threads/foreign", "/executors/local/projects/foreign"])("rejects a mismatched native ID returned for %s", async (path) => {
     window.history.replaceState(null, "", path);
     vi.mocked(getCapabilities).mockResolvedValue(capabilities("first"));
     vi.mocked(getThreadDetail).mockResolvedValue(threadDetail("another-thread"));
@@ -301,7 +301,7 @@ describe("gateway instance bootstrap", () => {
     expect(window.location.pathname).toBe(path);
   });
 
-  it.each(["/threads/notification-thread", "/projects/project-1"])(
+  it.each(["/executors/local/threads/notification-thread", "/executors/local/projects/project-1"])(
     "preserves %s for the same instance and clears it after a known replacement",
     async (path) => {
       window.history.replaceState(null, "", path);
@@ -317,7 +317,7 @@ describe("gateway instance bootstrap", () => {
 
       vi.mocked(getCapabilities).mockResolvedValue(capabilities("replacement"));
       await act(async () => { window.dispatchEvent(new Event("online")); });
-      expect(window.location.pathname).toBe("/");
+      expect(window.location.pathname).toBe("/executors/local");
     },
   );
 

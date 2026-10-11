@@ -138,7 +138,7 @@ function GatewayInstanceGate({ children, queryClient }: GatewayInstanceBoundaryP
 
   if (instance) {
     return (
-      <GatewayRuntimeEnvironmentProvider key={instance.id} value={{ ...connection, storage: instance.storage }}>
+      <GatewayRuntimeEnvironmentProvider key={instance.id} value={{ ...connection, available: true, storage: instance.storage }}>
         {children}
       </GatewayRuntimeEnvironmentProvider>
     );

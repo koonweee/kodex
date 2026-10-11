@@ -18,7 +18,8 @@ export function removeWorkspacePanes(
   }
 
   const remainingPanes = current.panes.filter((pane) => !closingPaneIds.has(pane.id));
-  const panes = remainingPanes.length > 0 ? remainingPanes : [createDraftThreadPane()];
+  const fallbackExecutorId = current.panes.find(shouldRemove)?.target.executorId ?? current.panes[0]?.target.executorId ?? "local";
+  const panes = remainingPanes.length > 0 ? remainingPanes : [createDraftThreadPane(fallbackExecutorId)];
   const preferredActivePaneId =
     options.nextActivePaneId && panes.some((pane) => pane.id === options.nextActivePaneId)
       ? options.nextActivePaneId

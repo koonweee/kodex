@@ -158,7 +158,7 @@ describe("MVP timeline flows", () => {
 
   it("uses one workspace stream for global events and subscribed thread panes", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
-    window.history.replaceState(null, "", "/threads/thread-1");
+    window.history.replaceState(null, "", "/executors/local/threads/thread-1");
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads": {
@@ -590,7 +590,7 @@ describe("MVP timeline flows", () => {
 
   it("batches active Dockview pane workspace stream render events", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
-    window.history.pushState({}, "", "/threads/thread-1");
+    window.history.pushState({}, "", "/executors/local/threads/thread-1");
     const gateway = mockGateway(
       baseRoutes({
         "POST /v1/threads/thread-1/attach": threadDetail(thread, [
@@ -651,7 +651,7 @@ describe("MVP timeline flows", () => {
 
   it("keeps applying later Dockview pane patches after an orphan delta in the same batch", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
-    window.history.pushState({}, "", "/threads/thread-1");
+    window.history.pushState({}, "", "/executors/local/threads/thread-1");
     mockGateway(
       baseRoutes({
         "POST /v1/threads/thread-1/attach": threadDetail(thread, [
@@ -668,6 +668,11 @@ describe("MVP timeline flows", () => {
 
     expect(await screen.findByText(/initial snapshot/i)).toBeInTheDocument();
     const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id]);
+    let renderedLaterPatch = false;
+    const observer = new MutationObserver(() => {
+      if (document.body.textContent?.includes("Later valid patch")) renderedLaterPatch = true;
+    });
+    observer.observe(document.body, { characterData: true, childList: true, subtree: true });
 
     act(() => {
       workspaceStream.emitNamed("thread_view.item_delta", itemDeltaEvent({ seq: 2, delta: "orphan" }));
@@ -682,7 +687,8 @@ describe("MVP timeline flows", () => {
       );
     });
 
-    expect(await screen.findByText(/later valid patch/i)).toBeInTheDocument();
+    await waitFor(() => expect(renderedLaterPatch).toBe(true));
+    observer.disconnect();
   });
 
   it("indexes empty running assistant patches so later deltas can append", async () => {

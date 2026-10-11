@@ -63,7 +63,7 @@ async function resetQueryClient() {
 
 beforeEach(async () => {
   await resetQueryClient();
-  window.history.replaceState(null, "", "/threads/thread-1");
+  window.history.replaceState(null, "", "/executors/local/threads/thread-1");
 });
 
 afterEach(async () => {

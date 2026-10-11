@@ -3,11 +3,14 @@ import { PaneLayout } from "../../shared/PaneLayout";
 import { threadIndicatorState } from "../../threads/ThreadStatusIndicator";
 import { AsyncQuestionReplyProvider } from "../../composer/AsyncQuestionReplyProvider";
 import { refreshUnreadBadge } from "../../notifications/unreadBadge";
+import { useApprovalsState } from "../../approvals/useApprovalsState";
 import { useThreadReadState } from "../../threads/useThreadReadState";
 import { mergeThreadReadState, preserveNewerThreadReadState } from "../../threads/readState";
 import { threadReadUpdateFromEvent } from "../../threads/events";
 import { mergeThreadSummaryMetadata } from "../../threads/summaryMetadata";
 import { subagentsEventInvalidatesThread } from "../../threads/subagentsCache";
+import { SubagentPaneToggle } from "../../threads/SubagentPaneToggle";
+import { useThreadSubagents } from "../../threads/useThreadSubagents";
 import { useThreadPaneTitle } from "./useThreadPaneTitle";
 import { ThreadActionsMenu } from "./ThreadActionsMenu";
 import { Badge, Box, Button, Group, Loader, Modal, Skeleton, TextInput, Title } from "@mantine/core";
@@ -46,6 +49,9 @@ import { ThreadUnavailablePane } from "./ThreadUnavailablePane";
 const TimelineView = lazy(() =>
   import("../../timeline/TimelineView").then((module) => ({ default: module.TimelineView })),
 );
+const SubagentThreadViewer = lazy(() =>
+  import("../../threads/SubagentThreadViewer").then((module) => ({ default: module.SubagentThreadViewer })),
+);
 
 export function ThreadPane({ isActive, pane }: WorkspacePaneComponentProps) {
   const { errorMessage, renderThreadComposer, renderThreadPane, updatePane, workspace } = useWorkspace();
@@ -54,13 +60,13 @@ export function ThreadPane({ isActive, pane }: WorkspacePaneComponentProps) {
   const materializeThreadPane = useCallback(
     (threadId: string, title?: string | null) => {
       void updatePane(pane.id, {
-        target: { mode: "existing", threadId },
+        target: { executorId: pane.target.executorId, mode: "existing", threadId },
         title: title ?? pane.title ?? undefined,
       }).catch((error: unknown) => {
         console.error("Failed to materialize workspace draft pane", error);
       });
     },
-    [pane.id, pane.title, updatePane],
+    [pane.id, pane.target.executorId, pane.title, updatePane],
   );
   const fallback =
     target.mode !== "existing" || typeof target.threadId !== "string" ? (
@@ -95,21 +101,19 @@ function ExistingThreadPane({
   const api = useGatewayClient();
   const { getOptions: getDeliveryOptions } = useThreadDeliveryPreferences();
   const {
-    approvals,
+    defaultExecutorId,
     errorMessage: appErrorMessage,
     handleThreadArchived,
-    imagePreviewUrlsByPath,
+    imagePreviewUrlsByPath: defaultImagePreviewUrlsByPath,
+    imagePreviewUrlsByExecutor,
     onImageOpen,
     onMarkdownOpen,
-    onApprovalDecision,
     onShowMobileSidebar,
     onThreadSnapshotLoadFailed,
     onThreadSnapshotLoaded,
     openAppSurfacePane,
     openThreadPane,
     renderThreadComposer,
-    renderThreadPaneAside,
-    renderThreadPaneHeaderActions,
     setPaneHeaderActions,
     setPaneHeaderAdornment,
     setPaneThreadContext,
@@ -122,7 +126,8 @@ function ExistingThreadPane({
     updatePane,
   } = useWorkspace();
   const queryClient = useQueryClient();
-  const seededThread = threadSummariesById[threadId] ?? null;
+  const usesDefaultWorkspaceState = pane.target.executorId === defaultExecutorId;
+  const seededThread = usesDefaultWorkspaceState ? threadSummariesById[threadId] ?? null : null;
   const [entry, setEntry] = useState<TimelineEntry>(idleTimelineEntry);
   const [paneErrorMessage, setPaneErrorMessage] = useState<string | null>(null);
   const [scrollParentElement, setScrollParentElement] = useState<HTMLDivElement | null>(null);
@@ -143,6 +148,10 @@ function ExistingThreadPane({
   const [renameValue, setRenameValue] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
   const [renamePending, setRenamePending] = useState(false);
+  const paneApprovals = useApprovalsState({ onError: (error) => setPaneErrorMessage(errorMessageFrom(error)) });
+  const subagents = useThreadSubagents(threadId);
+  const imagePreviewUrlsByPath = imagePreviewUrlsByExecutor[pane.target.executorId]
+    ?? (usesDefaultWorkspaceState ? defaultImagePreviewUrlsByPath : {});
   const appSurfaceQuery = useQuery({
     queryKey: queryKeys.appSurface(threadId),
     queryFn: ({ signal }) => api.getThreadAppSurface(threadId, signal),
@@ -192,7 +201,7 @@ function ExistingThreadPane({
       setTimeline((current) => applyTimelineSnapshot(current, snapshot));
       const mergedThread = mergePaneThreadSummary(latestPaneThreadRef.current, nextThread);
       setThread((current) => mergePaneThreadSummary(current, nextThread));
-      onThreadSnapshotLoaded(mergedThread);
+      if (usesDefaultWorkspaceState) onThreadSnapshotLoaded(mergedThread);
       setEntry({ phase: "streamingLive", threadId });
       setPaneErrorMessage(null);
     } catch (error) {
@@ -200,12 +209,12 @@ function ExistingThreadPane({
         return;
       }
       if (error instanceof GatewayRequestError && error.code === "thread_archived") {
-        handleThreadArchived(threadId);
+        handleThreadArchived(pane.target.executorId, threadId);
         return;
       }
       setEntry({ phase: "error", threadId });
       setPaneErrorMessage(errorMessageFrom(error));
-      onThreadSnapshotLoadFailed(threadId);
+      if (usesDefaultWorkspaceState) onThreadSnapshotLoadFailed(threadId);
     } finally {
       if (refreshInFlightThreadIdRef.current !== requestThreadId || requestId !== refreshRequestIdRef.current) {
         return;
@@ -217,7 +226,7 @@ function ExistingThreadPane({
         void refreshSnapshot();
       }
     }
-  }, [api, getDeliveryOptions, handleThreadArchived, onThreadSnapshotLoadFailed, onThreadSnapshotLoaded, threadId]);
+  }, [api, getDeliveryOptions, handleThreadArchived, onThreadSnapshotLoadFailed, onThreadSnapshotLoaded, pane.target.executorId, threadId, usesDefaultWorkspaceState]);
 
   useThreadReadState({
     thread,
@@ -230,7 +239,7 @@ function ExistingThreadPane({
       if (!current) return;
       const next = mergeThreadReadState(current, read);
       setThread((current) => current ? mergeThreadReadState(current, read) : current);
-      onThreadSnapshotLoaded(next);
+      if (usesDefaultWorkspaceState) onThreadSnapshotLoaded(next);
     },
     onRefresh: () => { void refreshSnapshot(true); },
     onError: (error) => setPaneErrorMessage(errorMessageFrom(error)),
@@ -287,7 +296,7 @@ function ExistingThreadPane({
   }, []);
 
   useEffect(() => {
-    return subscribeLiveEvent((event) => {
+    return subscribeLiveEvent(pane.target.executorId, (event) => {
       if (event.kind === "thread.pins_updated" || subagentsEventInvalidatesThread(event, threadId) || projectEventInvalidatesThread(event, threadId)) {
         cancelQueuedTimelineEvents();
         void refreshSnapshot(true);
@@ -356,10 +365,11 @@ function ExistingThreadPane({
       }
       enqueueTimelineEvent(event);
     });
-  }, [cancelQueuedTimelineEvents, enqueueTimelineEvent, refreshSnapshot, subscribeLiveEvent, threadId]);
+  }, [cancelQueuedTimelineEvents, enqueueTimelineEvent, pane.target.executorId, refreshSnapshot, subscribeLiveEvent, threadId]);
 
   useEffect(() => {
     return subscribeThreadPaneTimelineAction((action) => {
+      if (action.executorId !== pane.target.executorId) return;
       if (action.kind === "refresh_snapshot") {
         if (!action.threadId || action.threadId === threadId) {
           cancelQueuedTimelineEvents();
@@ -387,7 +397,7 @@ function ExistingThreadPane({
       }
       setTimeline((current) => removeOptimisticUserMessage(current, action.clientRequestId));
     });
-  }, [cancelQueuedTimelineEvents, refreshSnapshot, subscribeThreadPaneTimelineAction, threadId]);
+  }, [cancelQueuedTimelineEvents, pane.target.executorId, refreshSnapshot, subscribeThreadPaneTimelineAction, threadId]);
 
   const loadOlderHistory = useCallback(() => {
     const cursor = timeline.olderCursor;
@@ -415,15 +425,75 @@ function ExistingThreadPane({
         if (historyControllerRef.current === controller) historyControllerRef.current = null;
       });
   }, [api, getDeliveryOptions, threadId, timeline.isLoadingOlderHistory, timeline.olderCursor]);
-  const threadApprovals = approvals.filter((approval) => approval.threadId === threadId);
+  const threadApprovals = paneApprovals.approvals.filter((approval) => approval.threadId === threadId);
   const isReady = entry.phase === "streamingLive" || entry.phase === "refreshingSnapshot";
   const isInitialSnapshotLoading = (entry.phase === "loadingSnapshot" || entry.phase === "refreshingSnapshot") && !thread;
   const isUnavailable = entry.phase === "error" && !thread;
+  const paneThreadActions = useMemo(() => {
+    if (usesDefaultWorkspaceState) {
+      return {
+        onArchiveThread: threadActions.onArchiveThread,
+        onPinThread: threadActions.onPinThread,
+        onSetThreadNotificationsEnabled: threadActions.onSetThreadNotificationsEnabled,
+        onUnpinThread: threadActions.onUnpinThread,
+        pinPending: threadActions.pinPending,
+      };
+    }
+    return {
+      onArchiveThread: (id: string) => {
+        void api.archiveThread(id)
+          .then(() => handleThreadArchived(pane.target.executorId, id))
+          .catch((error: unknown) => setPaneErrorMessage(errorMessageFrom(error)));
+      },
+      onPinThread: (id: string) => {
+        void api.setThreadPinned(id, true).catch((error: unknown) => setPaneErrorMessage(errorMessageFrom(error)));
+      },
+      onSetThreadNotificationsEnabled: (id: string, enabled: boolean) => {
+        void api.setThreadNotificationsEnabled(id, enabled).catch((error: unknown) => setPaneErrorMessage(errorMessageFrom(error)));
+      },
+      onUnpinThread: (id: string) => {
+        void api.setThreadPinned(id, false).catch((error: unknown) => setPaneErrorMessage(errorMessageFrom(error)));
+      },
+      pinPending: false,
+    };
+  }, [
+    api,
+    handleThreadArchived,
+    pane.target.executorId,
+    threadActions.onArchiveThread,
+    threadActions.onPinThread,
+    threadActions.onSetThreadNotificationsEnabled,
+    threadActions.onUnpinThread,
+    threadActions.pinPending,
+    usesDefaultWorkspaceState,
+  ]);
   const nativeTitle = thread ? threadDisplayTitle(thread) : null;
   useThreadPaneTitle(pane.id, pane.title, nativeTitle, updatePane);
   const title = isUnavailable ? "Thread not found or unavailable" : nativeTitle ?? paneTitle ?? threadId;
   const threadChromeState = thread ? { isActive, thread, threadId } : null;
-  const paneAside = threadChromeState ? renderThreadPaneAside?.(pane, threadChromeState) : null;
+  const paneAside = threadChromeState && subagents.open ? (
+    <Suspense fallback={null}>
+      <SubagentThreadViewer
+        imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+        onError={(error) => setPaneErrorMessage(errorMessageFrom(error))}
+        onImageOpen={onImageOpen}
+        onMarkdownOpen={(request) => onMarkdownOpen(
+          pane.target.executorId,
+          subagents.selectedId ?? threadId,
+          request,
+        )}
+        onSelectSubagent={subagents.select}
+        selectedSubagentId={subagents.selectedId}
+        showDebugEvents={showDebugEvents}
+        subagents={subagents.subagents}
+        hasMore={subagents.hasMore}
+        loadingMore={subagents.loadingMore}
+        onLoadMore={subagents.loadMore}
+        error={subagents.error}
+        onReload={subagents.reload}
+      />
+    </Suspense>
+  ) : null;
   const appSurfaceSession = appSurfaceQuery.data ?? null;
   const isSnapshotSyncing = entry.phase === "loadingSnapshot" || entry.phase === "refreshingSnapshot";
   const paneHeaderAdornment = useMemo(
@@ -439,7 +509,13 @@ function ExistingThreadPane({
   );
   const paneHeaderActions = useMemo(
     () => {
-      const customHeaderActions = threadChromeState ? renderThreadPaneHeaderActions?.(pane, threadChromeState) : null;
+      const customHeaderActions = threadChromeState ? (
+        <SubagentPaneToggle
+          visible={isActive && (subagents.open || subagents.subagents.length > 0 || subagents.error !== null)}
+          open={subagents.open}
+          onToggle={subagents.toggle}
+        />
+      ) : null;
       return (
         <Group className="kodex-thread-pane-actions" gap={4} wrap="nowrap">
           {!isUnavailable ? (
@@ -450,6 +526,7 @@ function ExistingThreadPane({
                   label="Open app surface"
                   onClick={() =>
                     void openAppSurfacePane(threadId, `${title} App Surface`, {
+                      executorId: pane.target.executorId,
                       placement: { sourcePaneId: pane.id },
                     })
                   }
@@ -458,19 +535,20 @@ function ExistingThreadPane({
                 </AdaptiveIconButton>
               ) : null}
               <ThreadActionsMenu
-                pinPending={threadActions.pinPending}
+                pinPending={paneThreadActions.pinPending}
                 onDuplicatePane={() =>
                   void openThreadPane(threadId, title, {
                     duplicate: true,
+                    executorId: pane.target.executorId,
                     placement: { sourcePaneId: pane.id },
                   })
                 }
-                onArchiveThread={threadActions.onArchiveThread}
-                onPinThread={threadActions.onPinThread}
+                onArchiveThread={paneThreadActions.onArchiveThread}
+                onPinThread={paneThreadActions.onPinThread}
                 onRenameThread={() => setRenameModalOpen(true)}
                 onSetThread={setThread}
-                onSetThreadNotificationsEnabled={threadActions.onSetThreadNotificationsEnabled}
-                onUnpinThread={threadActions.onUnpinThread}
+                onSetThreadNotificationsEnabled={paneThreadActions.onSetThreadNotificationsEnabled}
+                onUnpinThread={paneThreadActions.onUnpinThread}
                 thread={thread}
                 threadId={threadId}
               />
@@ -486,13 +564,12 @@ function ExistingThreadPane({
       openAppSurfacePane,
       openThreadPane,
       pane,
-      renderThreadPaneHeaderActions,
+      subagents.error,
+      subagents.open,
+      subagents.subagents.length,
+      subagents.toggle,
       thread,
-      threadActions.pinPending,
-      threadActions.onArchiveThread,
-      threadActions.onPinThread,
-      threadActions.onSetThreadNotificationsEnabled,
-      threadActions.onUnpinThread,
+      paneThreadActions,
       threadId,
       title,
     ],
@@ -526,7 +603,7 @@ function ExistingThreadPane({
 
   async function handleRenameSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!thread || !threadActions.onRenameThread) {
+    if (!thread || (usesDefaultWorkspaceState && !threadActions.onRenameThread)) {
       return;
     }
     const name = renameValue.trim();
@@ -537,7 +614,8 @@ function ExistingThreadPane({
     setRenamePending(true);
     setRenameError(null);
     try {
-      await threadActions.onRenameThread(thread.id, name);
+      if (usesDefaultWorkspaceState) await threadActions.onRenameThread?.(thread.id, name);
+      else await api.renameThread(thread.id, name);
       setThread((current) => (current ? { ...current, name } : current));
       setRenameModalOpen(false);
     } catch (error) {
@@ -609,10 +687,10 @@ function ExistingThreadPane({
                     <TimelineView
                       approvals={threadApprovals}
                       imagePreviewUrlsByPath={imagePreviewUrlsByPath}
-                      onApprovalDecision={onApprovalDecision}
+                      onApprovalDecision={paneApprovals.handleApprovalDecision}
                       onImageOpen={onImageOpen}
                       onLoadOlderHistory={loadOlderHistory}
-                      onMarkdownOpen={onMarkdownOpen}
+                      onMarkdownOpen={(request) => onMarkdownOpen(pane.target.executorId, threadId, request)}
                       onOverflowAboveChange={setTimelineOverflowAbove}
                       onOverflowBelowChange={setTimelineOverflowBelow}
                       onReady={() => {}}

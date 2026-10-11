@@ -18,6 +18,7 @@ export type WorkspacePanePlacementOptions = {
 export type WorkspacePaneOpenOptions = {
   activate?: boolean;
   duplicate?: boolean;
+  executorId?: string;
   placement?: WorkspacePanePlacementOptions;
 };
 

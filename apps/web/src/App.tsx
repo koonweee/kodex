@@ -1,5 +1,4 @@
 import { ThreadDeliveryProvider } from "./timeline/ThreadDeliveryPreferences";
-import { SubagentPaneToggle } from "./threads/SubagentPaneToggle";
 import { refreshUnreadBadge } from "./notifications/unreadBadge";
 import { usePinnedThreads } from "./threads/usePinnedThreads";
 import { MantineProvider } from "@mantine/core";
@@ -13,7 +12,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ComponentProps,
 } from "react";
 
 import { useApprovalsState } from "./approvals/useApprovalsState";
@@ -30,7 +28,7 @@ import {
   type Project,
   type ThreadSummary,
 } from "./api/client";
-import { ExecutorRuntimeProvider, GatewayClientProvider, useGatewayClient } from "./api/GatewayClientContext";
+import { ExecutorRuntimeBoundary, ExecutorRuntimeRegistryProvider, FederatedShellRuntimeProvider, GatewayClientProvider, useExecutorConnection, useGatewayClient } from "./api/GatewayClientContext";
 import { queryClient, type ExecutorRuntime } from "./api/queryClient";
 import { queryKeys } from "./api/queryKeys";
 import {
@@ -78,7 +76,6 @@ import {
   upsertChatThread,
   upsertProjectThread,
 } from "./threads/cache";
-import { useThreadSubagents } from "./threads/useThreadSubagents";
 import { useSidebarThreadCaches } from "./threads/useSidebarThreadCaches";
 import { useSidebarThreadsSnapshot } from "./threads/useSidebarThreadsSnapshot";
 import { useThreadMetadata } from "./threads/useThreadMetadata";
@@ -118,9 +115,6 @@ const ImageLightbox = lazy(() =>
 const MarkdownPreviewPane = lazy(() =>
   import("./files/MarkdownPreviewPane").then((module) => ({ default: module.MarkdownPreviewPane })),
 );
-const SubagentThreadViewer = lazy(() =>
-  import("./threads/SubagentThreadViewer").then((module) => ({ default: module.SubagentThreadViewer })),
-);
 const ThemeWorkbench = lazy(() =>
   import("./theme/ThemeWorkbench").then((module) => ({ default: module.ThemeWorkbench })),
 );
@@ -138,14 +132,22 @@ function useEventCallback<TArgs extends unknown[], TResult>(
 }
 
 type AppProps = {
+  availableExecutorIds?: readonly string[];
   executorRuntime?: ExecutorRuntime;
+  executorRuntimes?: readonly ExecutorRuntime[];
+  federatedShellAvailable?: boolean;
+  federatedRouteError?: string | null;
   queryClientInstance?: QueryClient;
   workspacePaneStore?: WorkspacePaneStoreAdapter;
 };
 
-export function App({ executorRuntime, queryClientInstance = queryClient, workspacePaneStore }: AppProps = {}) {
+export function App({ availableExecutorIds, executorRuntime, executorRuntimes: providedExecutorRuntimes, federatedRouteError = null, federatedShellAvailable = true, queryClientInstance = queryClient, workspacePaneStore }: AppProps = {}) {
   const { preferences, resolvedSchemeId: colorSchemeId, setMode, setTheme, selectTheme } = useAppearancePreferences();
   const [hasComposerTextDraft, setHasComposerTextDraft] = useState(false);
+  const executorRuntimes = useMemo(
+    () => providedExecutorRuntimes ?? (executorRuntime ? [executorRuntime] : []),
+    [executorRuntime, providedExecutorRuntimes],
+  );
   const colorScheme = useMemo(() => getKodexColorScheme(colorSchemeId), [colorSchemeId]);
   const theme = useMemo(() => createKodexMantineTheme(colorScheme), [colorScheme]);
 
@@ -159,6 +161,31 @@ export function App({ executorRuntime, queryClientInstance = queryClient, worksp
   const content = (
     <MantineProvider forceColorScheme={colorScheme.mode} theme={theme}>
       <PwaLifecycle hasComposerTextDraft={hasComposerTextDraft} />
+      {executorRuntime && (availableExecutorIds?.length ?? executorRuntimes.length) === 0 ? (
+        <div
+          role="alert"
+          style={{
+            alignItems: "center",
+            background: "var(--mantine-color-body)",
+            display: "flex",
+            inset: 0,
+            justifyContent: "center",
+            padding: "var(--mantine-spacing-md)",
+            position: "fixed",
+            zIndex: 10000,
+          }}
+        >
+          No executors are currently available.
+        </div>
+      ) : federatedRouteError ? (
+        <div role="alert" style={{ position: "fixed", right: 16, top: 16, zIndex: 10000 }}>
+          {federatedRouteError}
+        </div>
+      ) : executorRuntime && !federatedShellAvailable ? (
+        <div role="status" style={{ position: "fixed", right: 16, top: 16, zIndex: 10000 }}>
+          The shell executor is unavailable. Open panes on another executor remain usable.
+        </div>
+      ) : null}
       {isThemeWorkbench ? (
         <Suspense fallback={null}>
           <ThemeWorkbench colorSchemeId={colorSchemeId} onColorSchemeChange={selectTheme} />
@@ -175,7 +202,11 @@ export function App({ executorRuntime, queryClientInstance = queryClient, worksp
       )}
     </MantineProvider>
   );
-  if (executorRuntime) return <ExecutorRuntimeProvider runtime={executorRuntime}>{content}</ExecutorRuntimeProvider>;
+  if (executorRuntime) return (
+    <ExecutorRuntimeRegistryProvider availableExecutorIds={availableExecutorIds} runtimes={executorRuntimes}>
+      <FederatedShellRuntimeProvider available={federatedShellAvailable} runtime={executorRuntime}>{content}</FederatedShellRuntimeProvider>
+    </ExecutorRuntimeRegistryProvider>
+  );
   return <QueryClientProvider client={queryClientInstance}><GatewayClientProvider client={defaultGatewayClient}>{content}</GatewayClientProvider></QueryClientProvider>;
 }
 
@@ -195,6 +226,7 @@ function KodexShell({
   workspacePaneStore?: WorkspacePaneStoreAdapter;
 }) {
   const gateway = useGatewayClient();
+  const executorId = useExecutorConnection()?.executorId ?? "local";
   const [initialRoute] = useState(() => currentKodexRoute());
   const queryClientForShell = useQueryClient();
   const useSingleThreadWorkspace = useNarrowWorkspace();
@@ -205,8 +237,12 @@ function KodexShell({
   const [showCommandOutputs, setShowCommandOutputs] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lightboxImage, setLightboxImage] = useState<ImageLightboxImage | null>(null);
-  const [markdownPreview, setMarkdownPreview] = useState<MarkdownPreviewRequest | null>(null);
-  const [paneImagePreviewUrlsByPath, setPaneImagePreviewUrlsByPath] = useState<Record<string, string>>({});
+  const [markdownPreview, setMarkdownPreview] = useState<{
+    executorId: string;
+    preview: MarkdownPreviewRequest;
+    threadId: string;
+  } | null>(null);
+  const [paneImagePreviewUrlsByExecutor, setPaneImagePreviewUrlsByExecutor] = useState<Record<string, Record<string, string>>>({});
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferencesSection, setPreferencesSection] = useState<PreferenceSection>("appearance");
   const [hoveredThreadActionId, setHoveredThreadActionId] = useState<string | null>(null);
@@ -265,6 +301,7 @@ function KodexShell({
     unavailableThreadId,
   } = useShellSelection({
     chatThreadsRef,
+    executorId,
     initialRoute,
     pinnedThreadsRef,
     resetComposerDraft,
@@ -360,7 +397,7 @@ function KodexShell({
   const nativePinned = usePinnedThreads(sidebarThreadsQuery.data, {
     api: gateway,
     snapshotUpdatedAt: sidebarThreadsQuery.dataUpdatedAt,
-    onChanged: () => publishThreadPaneTimelineAction({ kind: "refresh_snapshot" }),
+    onChanged: () => publishThreadPaneTimelineAction({ executorId, kind: "refresh_snapshot" }),
     onError: reportError,
   });
   const automationsQuery = useQuery({
@@ -443,7 +480,6 @@ function KodexShell({
     selectedThreadId !== null && materializingThreadIds.has(selectedThreadId);
   const isDraftThreadSelected =
     draftChatThreadSelected || (draftThreadProjectId !== null && draftThreadProjectId === selectedProjectId);
-  const subagents = useThreadSubagents(selectedMainPane === "thread" ? selectedThreadId : null);
   const automations = automationsQuery.data ?? EMPTY_AUTOMATIONS;
   const automationTargetThreadOptions = useMemo(
     () =>
@@ -522,10 +558,6 @@ function KodexShell({
     sidebarWidth,
   } = useSidebarResize();
   const imagePreviewUrlsByPath = {};
-  const mergedImagePreviewUrlsByPath = useMemo(
-    () => ({ ...imagePreviewUrlsByPath, ...paneImagePreviewUrlsByPath }),
-    [paneImagePreviewUrlsByPath],
-  );
   const usageLimitLines = useMemo(() => formatUsageLimitLines(usageLimitSnapshot), [usageLimitSnapshot]);
 
   useEffect(() => {
@@ -625,7 +657,8 @@ function KodexShell({
     setSkillsInvalidationGeneration,
   });
 
-  const handleWorkspaceLiveEvent = useEventCallback((event: EventEnvelope) => {
+  const handleWorkspaceLiveEvent = useEventCallback((event: EventEnvelope, eventExecutorId: string) => {
+    if (eventExecutorId !== executorId) return;
     handlePwaLiveEvent(event);
     const archivedThreadId = archivedThreadIdFromEvent(event);
     if (archivedThreadId) {
@@ -807,7 +840,9 @@ function KodexShell({
   const handleThreadArchived = useEventCallback((threadId: string) => handleArchivedThreadProjection(threadId));
   const handleCloseLightbox = useEventCallback(() => setLightboxImage(null));
   const handleCloseMarkdownPreview = useEventCallback(() => setMarkdownPreview(null));
-  const handleOpenMarkdownPreview = useEventCallback((request: MarkdownPreviewRequest) => setMarkdownPreview(request));
+  const handleOpenMarkdownPreview = useEventCallback((previewExecutorId: string, previewThreadId: string, preview: MarkdownPreviewRequest) => {
+    setMarkdownPreview({ executorId: previewExecutorId, preview, threadId: previewThreadId });
+  });
   const handleThreadPaneSnapshotLoaded = useEventCallback((thread: ThreadSummary) => {
     handleSelectedThreadSnapshot(thread);
   });
@@ -854,6 +889,7 @@ function KodexShell({
   );
   const handleShowMobileSidebar = useEventCallback(() => {
     pushKodexRoute({
+      executorId,
       panel: "threads",
       projectId: selectedMainPane === "project" ? selectedProjectPaneId : null,
       threadId: null,
@@ -863,6 +899,7 @@ function KodexShell({
   });
   const handleShowMobileThread = useEventCallback(() => {
     pushKodexRoute({
+      executorId,
       panel: null,
       projectId: selectedMainPane === "project" ? selectedProjectPaneId : null,
       threadId: null,
@@ -946,40 +983,22 @@ function KodexShell({
       sidebarThreadsQuery,
     ],
   );
-  const subagentViewer = subagents.open ? (
-    <Suspense fallback={null}>
-      <SubagentThreadViewer
-        imagePreviewUrlsByPath={mergedImagePreviewUrlsByPath}
-        onError={reportError}
-        onImageOpen={setLightboxImage}
-        onMarkdownOpen={setMarkdownPreview}
-        onSelectSubagent={subagents.select}
-        selectedSubagentId={subagents.selectedId}
-        showDebugEvents={showDebugEvents}
-        subagents={subagents.subagents}
-        hasMore={subagents.hasMore}
-        loadingMore={subagents.loadingMore}
-        onLoadMore={subagents.loadMore}
-        error={subagents.error}
-        onReload={subagents.reload}
-      />
-    </Suspense>
-  ) : null;
   const gatewayTerminalAvailable = capabilitiesQuery.data?.gateway.terminals?.enabled ?? true;
-  const handlePaneImagePreviewUrlsChanged = useEventCallback((previewUrls: Record<string, string>) => {
+  const handlePaneImagePreviewUrlsChanged = useEventCallback((executorId: string, previewUrls: Record<string, string>) => {
     if (Object.keys(previewUrls).length === 0) {
       return;
     }
-    setPaneImagePreviewUrlsByPath((current) => {
+    setPaneImagePreviewUrlsByExecutor((current) => {
       let changed = false;
-      const next = { ...current };
+      const executorPreviews = current[executorId] ?? {};
+      const nextExecutorPreviews = { ...executorPreviews };
       for (const [path, url] of Object.entries(previewUrls)) {
-        if (next[path] !== url) {
-          next[path] = url;
+        if (nextExecutorPreviews[path] !== url) {
+          nextExecutorPreviews[path] = url;
           changed = true;
         }
       }
-      return changed ? next : current;
+      return changed ? { ...current, [executorId]: nextExecutorPreviews } : current;
     });
   });
   const handleWorkspaceFocusThreadPane = useEventCallback((threadId: string) => {
@@ -1000,7 +1019,7 @@ function KodexShell({
         onCreateDraftThread={createDraftThreadFromComposer}
         onError={reportError}
         onImageOpen={setLightboxImage}
-        onImagePreviewUrlsChanged={handlePaneImagePreviewUrlsChanged}
+        onImagePreviewUrlsChanged={(previewUrls) => handlePaneImagePreviewUrlsChanged(pane.target.executorId, previewUrls)}
         onThreadMaterialized={markThreadMaterialized}
         onThreadTurnStartFailed={markThreadIdle}
         onThreadTurnStarted={markThreadActive}
@@ -1026,31 +1045,14 @@ function KodexShell({
       skillsInvalidationGeneration,
     ],
   );
-  const renderWorkspaceThreadPaneAside = useCallback<
-    NonNullable<ComponentProps<typeof WorkspaceProvider>["renderThreadPaneAside"]>
-  >(
-    (_pane, state) => (state.isActive && state.thread.id === selectedThreadId ? subagentViewer : null),
-    [selectedThreadId, subagentViewer],
-  );
-  const renderWorkspaceThreadPaneHeaderActions = useCallback<
-    NonNullable<ComponentProps<typeof WorkspaceProvider>["renderThreadPaneHeaderActions"]>
-  >(
-    (_pane, state) => (
-      <SubagentPaneToggle
-        visible={state.isActive && state.thread.id === selectedThreadId && (subagents.open || subagents.subagents.length > 0 || subagents.error !== null)}
-        open={subagents.open}
-        onToggle={subagents.toggle}
-      />
-    ),
-    [selectedThreadId, subagents.error, subagents.open, subagents.subagents.length, subagents.toggle],
-  );
   return (
     <ThreadDeliveryProvider includeDebugEvents={showDebugEvents} includeCommandOutputs={showCommandOutputs}>
       <WorkspaceProvider
         approvals={approvals}
         errorMessage={errorMessage}
         isVisible={selectedMainPane === "thread" && (!useSingleThreadWorkspace || mobilePanel === "chat")}
-        imagePreviewUrlsByPath={mergedImagePreviewUrlsByPath}
+        imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+        imagePreviewUrlsByExecutor={paneImagePreviewUrlsByExecutor}
         onApprovalDecision={handleApprovalDecision}
         onComposerTextDraftPresenceChange={onComposerTextDraftPresenceChange}
         onFocusThreadPane={handleWorkspaceFocusThreadPane}
@@ -1065,8 +1067,6 @@ function KodexShell({
         paneStore={workspacePaneStore}
         publishThreadPaneTimelineAction={publishThreadPaneTimelineAction}
         renderThreadComposer={renderWorkspaceThreadComposer}
-        renderThreadPaneAside={renderWorkspaceThreadPaneAside}
-        renderThreadPaneHeaderActions={renderWorkspaceThreadPaneHeaderActions}
         showDebugEvents={showDebugEvents}
         subscribeThreadPaneTimelineAction={subscribeThreadPaneTimelineAction}
         threadActions={workspaceThreadActions}
@@ -1086,6 +1086,7 @@ function KodexShell({
           onUpdateAutomation: handleUpdateAutomation,
           threadOptions: automationTargetThreadOptions,
         }}
+        executorId={executorId}
         isDraftThreadSelected={isDraftThreadSelected}
         isSidebarResizing={isSidebarResizing}
         mainPane={selectedMainPane}
@@ -1141,9 +1142,11 @@ function KodexShell({
         </Suspense>
       ) : null}
       {markdownPreview ? (
-        <Suspense fallback={null}>
-          <MarkdownPreviewPane preview={markdownPreview} threadId={selectedThreadId ?? undefined} onClose={handleCloseMarkdownPreview} />
-        </Suspense>
+        <ExecutorRuntimeBoundary executorId={markdownPreview.executorId}>
+          <Suspense fallback={null}>
+            <MarkdownPreviewPane preview={markdownPreview.preview} threadId={markdownPreview.threadId} onClose={handleCloseMarkdownPreview} />
+          </Suspense>
+        </ExecutorRuntimeBoundary>
       ) : null}
     </ThreadDeliveryProvider>
   );

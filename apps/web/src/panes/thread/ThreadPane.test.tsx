@@ -53,8 +53,8 @@ it("loads each client's editable pane from one attach snapshot and reattaches on
   for (const client of ["first", "second"]) {
     const actions = new Set<ThreadPaneTimelineActionHandler>();
     const store = createMemoryWorkspacePaneStore({
-      schemaVersion: 1, activePaneId: client, dockviewLayout: null,
-      panes: [{ id: client, kind: "thread", target: { mode: "existing", threadId: "shared" } }],
+      schemaVersion: 2, activePaneId: client, dockviewLayout: null,
+      panes: [{ id: client, kind: "thread", target: { executorId: "local", mode: "existing", threadId: "shared" } }],
     });
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <MantineProvider><WorkspaceProvider paneStore={store}
@@ -129,8 +129,8 @@ it("loads the canonical initial snapshot after StrictMode cleanup without waitin
   const onLoaded = vi.fn();
   const onFailed = vi.fn();
   const store = createMemoryWorkspacePaneStore({
-    schemaVersion: 1, activePaneId: "pane-strict", dockviewLayout: null,
-    panes: [{ id: "pane-strict", kind: "thread", target: { mode: "existing", threadId: "thread-strict" } }],
+    schemaVersion: 2, activePaneId: "pane-strict", dockviewLayout: null,
+    panes: [{ id: "pane-strict", kind: "thread", target: { executorId: "local", mode: "existing", threadId: "thread-strict" } }],
   });
   testingRender(
     <StrictMode>
@@ -190,8 +190,8 @@ it("commits one editable-pane refill in StrictMode and queues one newer repair b
     "GET /v1/threads/shared/app-surface": { session: null },
   });
   const store = createMemoryWorkspacePaneStore({
-    schemaVersion: 1, activePaneId: "shared-pane", dockviewLayout: null,
-    panes: [{ id: "shared-pane", kind: "thread", target: { mode: "existing", threadId: "shared" } }],
+    schemaVersion: 2, activePaneId: "shared-pane", dockviewLayout: null,
+    panes: [{ id: "shared-pane", kind: "thread", target: { executorId: "local", mode: "existing", threadId: "shared" } }],
   });
   render(<StrictMode><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <MantineProvider><WorkspaceProvider paneStore={store}><ActiveThreadPane /></WorkspaceProvider></MantineProvider>
@@ -260,8 +260,8 @@ it("shows a native attach failure without a prose-based retry loop and recovers 
   });
   const actions = new Set<ThreadPaneTimelineActionHandler>();
   const store = createMemoryWorkspacePaneStore({
-    schemaVersion: 1, activePaneId: "unavailable-pane", dockviewLayout: null,
-    panes: [{ id: "unavailable-pane", kind: "thread", target: { mode: "existing", threadId: "unavailable" } }],
+    schemaVersion: 2, activePaneId: "unavailable-pane", dockviewLayout: null,
+    panes: [{ id: "unavailable-pane", kind: "thread", target: { executorId: "local", mode: "existing", threadId: "unavailable" } }],
   });
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <MantineProvider><WorkspaceProvider paneStore={store}
@@ -290,10 +290,10 @@ it("closes a cold-restored archived pane without showing the unavailable state",
   const onArchived = vi.fn();
   const onFailed = vi.fn();
   const store = createMemoryWorkspacePaneStore({
-    schemaVersion: 1,
+    schemaVersion: 2,
     activePaneId: "archived-pane",
     dockviewLayout: null,
-    panes: [{ id: "archived-pane", kind: "thread", target: { mode: "existing", threadId: "archived" } }],
+    panes: [{ id: "archived-pane", kind: "thread", target: { executorId: "local", mode: "existing", threadId: "archived" } }],
   });
 
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -308,7 +308,7 @@ it("closes a cold-restored archived pane without showing the unavailable state",
   await waitFor(() => expect(onArchived).toHaveBeenCalledOnce());
   expect(await screen.findByText("Draft ready")).toBeInTheDocument();
   expect(store.getState().panes).toHaveLength(1);
-  expect(store.getState().panes[0]).toMatchObject({ kind: "thread", target: { mode: "draft" } });
+  expect(store.getState().panes[0]).toMatchObject({ kind: "thread", target: { executorId: "local", mode: "draft" } });
   expect(screen.queryByRole("heading", { name: "Thread not found or unavailable" })).not.toBeInTheDocument();
   expect(onArchived).toHaveBeenCalledWith("archived");
   expect(onFailed).not.toHaveBeenCalled();
@@ -337,10 +337,10 @@ it("closes the same archived thread in two workspace clients after native confir
     "GET /v1/threads/shared-archive/app-surface": { session: null },
   });
   const stores = ["first", "second"].map((id) => createMemoryWorkspacePaneStore({
-    schemaVersion: 1,
+    schemaVersion: 2,
     activePaneId: `${id}-pane`,
     dockviewLayout: null,
-    panes: [{ id: `${id}-pane`, kind: "thread", target: { mode: "existing", threadId: "shared-archive" } }],
+    panes: [{ id: `${id}-pane`, kind: "thread", target: { executorId: "local", mode: "existing", threadId: "shared-archive" } }],
   }));
   stores.forEach((store, index) => render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -358,7 +358,7 @@ it("closes the same archived thread in two workspace clients after native confir
 
   await waitFor(() => stores.forEach((store) => {
     expect(store.getState().panes).toHaveLength(1);
-    expect(store.getState().panes[0]).toMatchObject({ kind: "thread", target: { mode: "draft" } });
+    expect(store.getState().panes[0]).toMatchObject({ kind: "thread", target: { executorId: "local", mode: "draft" } });
   }));
 });
 
@@ -380,10 +380,10 @@ it("keeps an available pane open across replayed archive and unarchive markers",
   });
   const onArchived = vi.fn();
   const store = createMemoryWorkspacePaneStore({
-    schemaVersion: 1,
+    schemaVersion: 2,
     activePaneId: "replayed-pane",
     dockviewLayout: null,
-    panes: [{ id: "replayed-pane", kind: "thread", target: { mode: "existing", threadId: "replayed" } }],
+    panes: [{ id: "replayed-pane", kind: "thread", target: { executorId: "local", mode: "existing", threadId: "replayed" } }],
   });
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <MantineProvider><WorkspaceProvider onThreadArchived={onArchived} paneStore={store}>
@@ -399,7 +399,7 @@ it("keeps an available pane open across replayed archive and unarchive markers",
   });
 
   await waitFor(() => expect(gateway.callsFor("POST", "/v1/threads/replayed/attach").length).toBeGreaterThan(1));
-  expect(store.getState().panes[0]).toMatchObject({ kind: "thread", target: { mode: "existing", threadId: "replayed" } });
+  expect(store.getState().panes[0]).toMatchObject({ kind: "thread", target: { executorId: "local", mode: "existing", threadId: "replayed" } });
   expect(screen.getByRole("heading", { name: "Available again" })).toBeInTheDocument();
   expect(onArchived).not.toHaveBeenCalled();
 });
@@ -423,8 +423,8 @@ it("keeps direct-input capability owned by canonical detail when older sidebar a
     "GET /v1/threads/child/app-surface": { session: null },
   });
   const store = createMemoryWorkspacePaneStore({
-    schemaVersion: 1, activePaneId: "pane-child", dockviewLayout: null,
-    panes: [{ id: "pane-child", kind: "thread", target: { mode: "existing", threadId: "child" } }],
+    schemaVersion: 2, activePaneId: "pane-child", dockviewLayout: null,
+    panes: [{ id: "pane-child", kind: "thread", target: { executorId: "local", mode: "existing", threadId: "child" } }],
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const onLoaded = vi.fn();
@@ -474,8 +474,8 @@ it("fences a pre-input attach when a persisted native summary marker arrives", a
     "POST /v1/threads/fresh/attach": (request: Request) => { signals.push(request.signal); return signals.length === 1 ? old : native; },
     "GET /v1/threads/fresh/app-surface": { session: null },
   });
-  const store = createMemoryWorkspacePaneStore({ schemaVersion: 1, activePaneId: "fresh-pane", dockviewLayout: null,
-    panes: [{ id: "fresh-pane", kind: "thread", title: "New thread", target: { mode: "existing", threadId: "fresh" } }] });
+  const store = createMemoryWorkspacePaneStore({ schemaVersion: 2, activePaneId: "fresh-pane", dockviewLayout: null,
+    panes: [{ id: "fresh-pane", kind: "thread", title: "New thread", target: { executorId: "local", mode: "existing", threadId: "fresh" } }] });
   const seed: ThreadSummary = { ...stale.thread, rawPayload: {} };
   const query = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const tree = (thread: ThreadSummary) => <QueryClientProvider client={query}><MantineProvider><WorkspaceProvider
@@ -498,10 +498,10 @@ it.each([false, true])("closes an unavailable pane and keeps a usable workspace 
     "POST /v1/threads/missing/attach": new Response(JSON.stringify({ code: "not_found", message: "Missing thread", retryable: false }), { status: 404, headers: { "Content-Type": "application/json" } }),
   });
   const store = createMemoryWorkspacePaneStore({
-    schemaVersion: 1, activePaneId: "missing-pane", dockviewLayout: null,
+    schemaVersion: 2, activePaneId: "missing-pane", dockviewLayout: null,
     panes: [
-      { id: "missing-pane", kind: "thread", target: { mode: "existing", threadId: "missing" } },
-      ...(hasOtherPane ? [{ id: "other-pane", kind: "thread" as const, target: { mode: "draft" as const } }] : []),
+      { id: "missing-pane", kind: "thread", target: { executorId: "local", mode: "existing", threadId: "missing" } },
+      ...(hasOtherPane ? [{ id: "other-pane", kind: "thread" as const, target: { executorId: "local", mode: "draft" as const } }] : []),
     ],
   });
   const browse = vi.fn();

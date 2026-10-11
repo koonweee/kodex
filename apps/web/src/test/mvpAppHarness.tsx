@@ -227,16 +227,16 @@ function defaultWorkspacePaneState(): WorkspacePaneState {
       {
         id: "pane-thread-1",
         kind: "thread",
-        target: { mode: "existing", threadId: "thread-1" },
+        target: { executorId: "local", mode: "existing", threadId: "thread-1" },
         title: "Implement frontend",
       },
     ],
-    schemaVersion: 1,
+    schemaVersion: 2,
   };
 }
 
 function defaultWorkspacePaneStateForCurrentRoute(): WorkspacePaneState {
-  const threadMatch = window.location.pathname.match(/^\/threads\/([^/]+)$/);
+  const threadMatch = window.location.pathname.match(/^\/executors\/local\/threads\/([^/]+)$/);
   if (!threadMatch) {
     return {
       activePaneId: "pane-draft",
@@ -247,11 +247,11 @@ function defaultWorkspacePaneStateForCurrentRoute(): WorkspacePaneState {
         {
           id: "pane-draft",
           kind: "thread",
-          target: { mode: "draft", projectId: null },
+          target: { executorId: "local", mode: "draft", projectId: null },
           title: "Draft thread",
         },
       ],
-      schemaVersion: 1,
+      schemaVersion: 2,
     };
   }
   const threadId = decodeURIComponent(threadMatch[1]);
@@ -267,11 +267,11 @@ function defaultWorkspacePaneStateForCurrentRoute(): WorkspacePaneState {
       {
         id: `pane-${threadId}`,
         kind: "thread",
-        target: { mode: "existing", threadId },
+        target: { executorId: "local", mode: "existing", threadId },
         title: null,
       },
     ],
-    schemaVersion: 1,
+    schemaVersion: 2,
   };
 }
 

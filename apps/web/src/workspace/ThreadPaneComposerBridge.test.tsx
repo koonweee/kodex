@@ -38,7 +38,7 @@ function pane(threadId: string, title: string, paneId = `pane-${threadId}`): Wor
   return {
     id: paneId,
     kind: "thread",
-    target: { mode: "existing", threadId },
+    target: { executorId: "local", mode: "existing", threadId },
     title,
   };
 }

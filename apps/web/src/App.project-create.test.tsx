@@ -7,7 +7,7 @@ import { App, baseRoutes, mockGateway, project, requestJson } from "./test/mvpAp
 afterEach(() => vi.restoreAllMocks());
 
 it("registers the selected root as a native project and reuses its idempotency key after an uncertain reply", async () => {
-  window.history.replaceState({}, "", "/threads/thread-1");
+  window.history.replaceState({}, "", "/executors/local/threads/thread-1");
   const created = { ...project, id: "native-created", name: "Research", roots: [{ path: "/home/kodex/Research" }], metadata: {}, position: 1, createdAt: 1, updatedAt: 1, recencyAt: null };
   let calls = 0;
   let projects = [project];

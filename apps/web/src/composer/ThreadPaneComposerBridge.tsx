@@ -11,7 +11,7 @@ import { singleProjectRoot } from "../projects/roots";
 import { useWorkspace, type ThreadComposerState } from "../workspace/WorkspaceProvider";
 import { paneTargetRecord, type WorkspacePane } from "../workspace/paneTypes";
 import { ComposerPanel } from "./ComposerPanel";
-import { applyDraftComposerSettingsChange, normalizePersistedComposerSettings } from "./settings";
+import { applyDraftComposerSettingsChange, contextUsageFromEvent, createThreadOptions, DEFAULT_COMPOSER_SETTINGS, normalizePersistedComposerSettings } from "./settings";
 import type { ComposerDraftStore } from "./useComposerDraftState";
 import { useComposerOrchestration } from "./useComposerOrchestration";
 import type { useComposerSettingsState } from "./useComposerSettingsState";
@@ -57,7 +57,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
   skillsInvalidationGeneration,
 }: ThreadPaneComposerBridgeProps) {
   const api = useGatewayClient();
-  const { publishThreadPaneTimelineAction, setPaneComposerTextDraft, setPaneDraftDisposable, updatePane } = useWorkspace();
+  const { defaultExecutorId, publishThreadPaneTimelineAction, setPaneComposerTextDraft, setPaneDraftDisposable, subscribeLiveEvent, updatePane } = useWorkspace();
   const target = paneTargetRecord(pane);
   const existingThreadId = target.mode === "existing" && typeof target.threadId === "string" ? target.threadId : null;
   const isDraftPane = existingThreadId === null;
@@ -66,11 +66,27 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
   const inputStateReadable = paneState.isReady && !isNativeReadOnly;
   const threadSettings = useThreadSettings(inputStateReadable ? existingThreadId : null);
   const draftProjectId = target.mode === "draft" && typeof target.projectId === "string" ? target.projectId : null;
-  const currentProject = draftProjectId ? projects.find((project) => project.id === draftProjectId) ?? null : null;
+  const usesDefaultWorkspaceState = pane.target.executorId === defaultExecutorId;
+  const remoteModelsQuery = useQuery({
+    enabled: !usesDefaultWorkspaceState,
+    queryKey: queryKeys.models,
+    queryFn: api.listModels,
+  });
+  const paneModels = usesDefaultWorkspaceState ? models : remoteModelsQuery.data ?? [];
+  const paneComposerDefaults = usesDefaultWorkspaceState ? composerDefaults : DEFAULT_COMPOSER_SETTINGS;
+  const remoteProjectsQuery = useQuery({
+    enabled: !usesDefaultWorkspaceState,
+    queryKey: queryKeys.projects,
+    queryFn: () => api.listProjects(),
+  });
+  const paneProjects = usesDefaultWorkspaceState ? projects : remoteProjectsQuery.data ?? [];
+  const currentProject = draftProjectId ? paneProjects.find((project) => project.id === draftProjectId) ?? null : null;
   const composerCwd = isDraftPane ? singleProjectRoot(currentProject) : thread?.cwd ?? null;
   const canCompose = !isNativeReadOnly && (!isDraftPane || draftProjectId === null || (currentProject !== null && composerCwd !== null));
   const [draftComposerEdited, setDraftComposerEdited] = useState(false);
-  const [draftComposerSettings, setDraftComposerSettings] = useState<ComposerSettings>(composerDefaults);
+  const [draftComposerSettings, setDraftComposerSettings] = useState<ComposerSettings>(paneComposerDefaults);
+  const [remoteContextUsage, setRemoteContextUsage] = useState<ContextUsage | null>(null);
+  const [remoteSkillsInvalidationGeneration, setRemoteSkillsInvalidationGeneration] = useState(0);
   const composerShellRef = useRef<HTMLDivElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const createdDraftThreadRef = useRef<{ threadId: string } | null>(null);
@@ -81,8 +97,20 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
     queryFn: ({ signal }) => api.getComposerSettings(draftProjectId, composerCwd, signal),
   });
   const effectiveDraftSettings = !draftComposerEdited && draftDefaultsQuery.data
-    ? normalizePersistedComposerSettings(draftDefaultsQuery.data, models)
+    ? normalizePersistedComposerSettings(draftDefaultsQuery.data, paneModels)
     : draftComposerSettings;
+
+  useEffect(() => {
+    if (usesDefaultWorkspaceState) return;
+    return subscribeLiveEvent(pane.target.executorId, (event) => {
+      if (event.kind === "skills.changed") {
+        setRemoteSkillsInvalidationGeneration((current) => current + 1);
+      }
+      if (event.threadId !== existingThreadId) return;
+      const contextUsage = contextUsageFromEvent(event);
+      if (contextUsage) setRemoteContextUsage(contextUsage);
+    });
+  }, [existingThreadId, pane.target.executorId, subscribeLiveEvent, usesDefaultWorkspaceState]);
 
   useEffect(() => {
     createdDraftThreadRef.current = null;
@@ -94,8 +122,8 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
   const activeThreadId = existingThreadId;
   const composerSettingsErrorMessage = isDraftPane ? null : threadSettings.error;
   const composerDraftKey = existingThreadId
-    ? `pane:${pane.id}:thread:${existingThreadId}`
-    : `pane:${pane.id}:draft`;
+    ? `executor:${pane.target.executorId}:pane:${pane.id}:thread:${existingThreadId}`
+    : `executor:${pane.target.executorId}:pane:${pane.id}:draft`;
   const createDraftThreadForPane = useCallback<ThreadPaneComposerBridgeProps["onCreateDraftThread"]>(
     async (request) => {
       if (!isDraftPane) {
@@ -105,6 +133,15 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
         return createdDraftThreadRef.current;
       }
       if (draftProjectId && !composerCwd) throw new Error("Edit this project to choose one root directory before starting a chat.");
+      if (!usesDefaultWorkspaceState) {
+        const settings = request.composerSettings ?? effectiveDraftSettings;
+        const thread = draftProjectId
+          ? await api.createThread(draftProjectId, { ...createThreadOptions(settings), cwd: composerCwd! })
+          : await api.createChatThread(request.firstMessageText, createThreadOptions(settings));
+        const created = { threadId: thread.id };
+        createdDraftThreadRef.current = created;
+        return created;
+      }
       const hydratedSettings = !draftComposerEdited
         ? await hydrateComposerDefaults(draftProjectId, composerCwd)
         : null;
@@ -115,7 +152,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
       createdDraftThreadRef.current = createdThread;
       return createdThread;
     },
-    [composerCwd, draftComposerEdited, draftProjectId, hydrateComposerDefaults, isDraftPane, onCreateDraftThread],
+    [api, composerCwd, draftComposerEdited, draftProjectId, effectiveDraftSettings, hydrateComposerDefaults, isDraftPane, onCreateDraftThread, usesDefaultWorkspaceState],
   );
 
   const handleDraftDisposableChange = useCallback((disposable: boolean) => {
@@ -136,14 +173,15 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
     onError,
     onImagePreviewUrlsChanged,
     onOptimisticUserMessageRemoved: (clientRequestId) => {
-      publishThreadPaneTimelineAction({ clientRequestId, kind: "optimistic_user_removed" });
+      publishThreadPaneTimelineAction({ clientRequestId, executorId: pane.target.executorId, kind: "optimistic_user_removed" });
     },
     onOptimisticUserMessageSent: (clientRequestId) => {
-      publishThreadPaneTimelineAction({ clientRequestId, kind: "optimistic_user_sent" });
+      publishThreadPaneTimelineAction({ clientRequestId, executorId: pane.target.executorId, kind: "optimistic_user_sent" });
     },
     onOptimisticUserMessageStarted: ({ clientRequestId, skillMentions, text, threadId }) => {
       publishThreadPaneTimelineAction({
         clientRequestId,
+        executorId: pane.target.executorId,
         kind: "optimistic_user_started",
         skillMentions,
         text,
@@ -152,11 +190,11 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
     },
     onThreadMaterialized: (threadId) => {
       createdDraftThreadRef.current = null;
-      onThreadMaterialized(threadId);
+      if (usesDefaultWorkspaceState) onThreadMaterialized(threadId);
       paneState.materializeThreadPane?.(threadId, null);
     },
-    onThreadTurnStartFailed,
-    onThreadTurnStarted,
+    onThreadTurnStartFailed: (threadId) => { if (usesDefaultWorkspaceState) onThreadTurnStartFailed(threadId); },
+    onThreadTurnStarted: (threadId) => { if (usesDefaultWorkspaceState) onThreadTurnStarted(threadId); },
     selectedProjectId: isDraftPane ? draftProjectId : null,
     selectedThreadId: activeThreadId,
   });
@@ -164,7 +202,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
   function handleComposerSettingsChange(change: ComposerSettingsChange) {
     if (!existingThreadId) {
       setDraftComposerEdited(true);
-      setDraftComposerSettings(applyDraftComposerSettingsChange(effectiveDraftSettings, change, models));
+      setDraftComposerSettings(applyDraftComposerSettingsChange(effectiveDraftSettings, change, paneModels));
       return;
     }
     threadSettings.update(change);
@@ -172,7 +210,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
 
   function handleDraftProjectChange(projectId: string | null) {
     void updatePane(pane.id, {
-      target: { mode: "draft", projectId },
+      target: { executorId: pane.target.executorId, mode: "draft", projectId },
     }).catch((error: unknown) => {
       onError(error);
     });
@@ -209,13 +247,15 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
       composerSettingsError={composerSettingsErrorMessage}
       composerCwd={composerCwd}
       composerShellRef={composerShellRef}
-      contextUsage={existingThreadId ? contextUsageByThreadId[existingThreadId] ?? null : null}
+      contextUsage={existingThreadId
+        ? usesDefaultWorkspaceState ? contextUsageByThreadId[existingThreadId] ?? null : remoteContextUsage
+        : null}
       currentProjectName={currentProject?.name ?? null}
       draftProjectSelector={
         isDraftPane
           ? {
               onChange: handleDraftProjectChange,
-              projects,
+              projects: paneProjects,
               value: draftProjectId,
             }
           : undefined
@@ -225,8 +265,8 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
       isComposerDragActive={orchestration.isComposerDragActive}
       isComposerSubmitting={orchestration.isComposerSubmitting}
       isSelectedTimelineReady={paneState.isReady}
-      skillsInvalidationGeneration={skillsInvalidationGeneration}
-      models={models}
+      skillsInvalidationGeneration={usesDefaultWorkspaceState ? skillsInvalidationGeneration : remoteSkillsInvalidationGeneration}
+      models={paneModels}
       onAttachmentInputChange={orchestration.handleAttachmentInputChange}
       onComposerDragLeave={orchestration.handleComposerDragLeave}
       onComposerDragOver={orchestration.handleComposerDragOver}

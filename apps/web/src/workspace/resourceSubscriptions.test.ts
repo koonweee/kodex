@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { WorkspacePane } from "./paneTypes";
-import { workspaceSubscribedThreadIds } from "./resourceSubscriptions";
+import { workspaceSubscribedThreadIds, workspaceSubscribedThreadIdsByExecutor } from "./resourceSubscriptions";
 
 describe("workspaceSubscribedThreadIds", () => {
   it("dedupes thread resources across duplicate thread and app surface panes", () => {
@@ -16,12 +16,25 @@ describe("workspaceSubscribedThreadIds", () => {
 
     expect(workspaceSubscribedThreadIds(panes)).toEqual(["thread-1", "thread-2"]);
   });
+
+  it("keeps colliding thread subscriptions in separate executor channels", () => {
+    const panes: WorkspacePane[] = [
+      pane("first", "thread", { executorId: "executor-a", mode: "existing", threadId: "shared" }),
+      pane("second", "thread", { executorId: "executor-b", mode: "existing", threadId: "shared" }),
+      pane("app", "appSurface", { executorId: "executor-a", mode: "latest", threadId: "extra" }),
+    ];
+
+    expect(workspaceSubscribedThreadIdsByExecutor(panes)).toEqual(new Map([
+      ["executor-a", ["shared", "extra"]],
+      ["executor-b", ["shared"]],
+    ]));
+  });
 });
 
 function pane(id: string, kind: WorkspacePane["kind"], target: unknown): WorkspacePane {
   return {
     id,
     kind,
-    target,
+    target: { executorId: "local", ...(target as object) },
   } as WorkspacePane;
 }

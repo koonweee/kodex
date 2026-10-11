@@ -72,7 +72,7 @@ describe("Automations frontend", () => {
 
     await openAutomationsFromSidebar();
 
-    expect(window.location.pathname).toBe("/automations");
+    expect(window.location.pathname).toBe("/executors/local/automations");
     const main = screen.getByRole("main", { name: /automations/i });
     expect(await within(main).findByRole("heading", { name: "Automations" })).toBeInTheDocument();
     expect(await within(main).findByText("Daily status", undefined, { timeout: 5000 })).toBeInTheDocument();
@@ -84,19 +84,19 @@ describe("Automations frontend", () => {
   });
 
   it("keeps Automations route and mobile selector panel state in browser navigation", async () => {
-    goTo("/automations?panel=threads");
+    goTo("/executors/local/automations?panel=threads");
     mockGateway(baseRoutes({ "GET /v1/automations": { automations: [] } }));
 
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: "Automations" })).toBeInTheDocument();
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "threads");
-    expect(window.location.pathname + window.location.search).toBe("/automations?panel=threads");
+    expect(window.location.pathname + window.location.search).toBe("/executors/local/automations?panel=threads");
   });
 
   it("applies automation upsert and delete events from the gateway stream", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
-    goTo("/automations");
+    goTo("/executors/local/automations");
     mockGateway(baseRoutes({ "GET /v1/automations": { automations: [] } }));
 
     render(<App />);
@@ -144,7 +144,7 @@ describe("Automations frontend", () => {
 
   it("refetches when a live automation event arrives before the snapshot resolves", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
-    goTo("/automations");
+    goTo("/executors/local/automations");
     const firstSnapshot = deferred<{ automations: typeof automation[] }>();
     const gateway = mockGateway(
       baseRoutes({
@@ -189,7 +189,7 @@ describe("Automations frontend", () => {
 
   it("still loads the first automation snapshot after a live event arrives before opening the pane", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
-    goTo("/threads/thread-1");
+    goTo("/executors/local/threads/thread-1");
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/automations": { automations: [automation] },
@@ -230,7 +230,7 @@ describe("Automations frontend", () => {
   });
 
   it("creates an automation from the details modal", async () => {
-    goTo("/threads/thread-1");
+    goTo("/executors/local/threads/thread-1");
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/automations": { automations: [] },
@@ -282,7 +282,7 @@ describe("Automations frontend", () => {
   });
 
   it("edits, pauses, resumes, and confirms delete from the details modal", async () => {
-    goTo("/automations");
+    goTo("/executors/local/automations");
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/automations": { automations: [automation] },
@@ -343,7 +343,7 @@ describe("Automations frontend", () => {
   });
 
   it("returns from Automations to a selected thread", async () => {
-    goTo("/automations");
+    goTo("/executors/local/automations");
     mockGateway(
       baseRoutes({
         "GET /v1/automations": { automations: [] },
@@ -362,7 +362,7 @@ describe("Automations frontend", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^second thread$/i }));
 
     expect(await screen.findByRole("heading", { name: /^second thread$/i })).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/");
+    expect(window.location.pathname).toBe("/executors/local");
   });
 });
 

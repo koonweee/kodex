@@ -57,7 +57,7 @@ export class ExecutorRuntimeRegistry {
   private pending: Promise<void> = Promise.resolve();
 
   constructor(
-    private readonly options: { baseUrl?: string; storage?: InstanceStorage | null } = {},
+    private readonly options: { baseUrl?: string; retainRemoved?: boolean; storage?: InstanceStorage | null } = {},
   ) {}
 
   get(executorId: string): ExecutorRuntimeEntry | undefined {
@@ -79,14 +79,15 @@ export class ExecutorRuntimeRegistry {
       return this.currentEntries();
     }
     const executors = snapshot.executors;
-    const nextIds = new Set(executors.map((executor) => executor.id));
-    for (const [executorId, entry] of this.entries) {
-      if (!nextIds.has(executorId)) {
-        await disposeExecutorRuntime(entry.runtime);
-        this.entries.delete(executorId);
+    if (!this.options.retainRemoved) {
+      const nextIds = new Set(executors.map((executor) => executor.id));
+      for (const [executorId, entry] of this.entries) {
+        if (!nextIds.has(executorId)) {
+          await disposeExecutorRuntime(entry.runtime);
+          this.entries.delete(executorId);
+        }
       }
     }
-
     const ordered = [] as ExecutorRuntimeEntry[];
     for (const executor of executors) {
       const record = Object.freeze({ ...executor });

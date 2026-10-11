@@ -98,7 +98,7 @@ describe("WorkspaceSinglePaneHeader", () => {
 
     await waitFor(() => {
       expect(store.getState().panes).toHaveLength(1);
-      expect(store.getState().panes[0]?.target).toEqual({ mode: "draft" });
+      expect(store.getState().panes[0]?.target).toEqual({ executorId: "local", mode: "draft" });
     });
     expect(store.getState().activePaneId).toBe(store.getState().panes[0]?.id);
     expect(within(screen.getByRole("button", { name: /switch workspace pane/i })).getByText("New chat")).toBeInTheDocument();
@@ -258,7 +258,7 @@ function workspaceState(panes: WorkspacePane[], activePaneId: string | null = pa
       panes: panes.map((pane) => ({ id: pane.id })),
     },
     panes,
-    schemaVersion: 1,
+    schemaVersion: 2,
   };
 }
 
@@ -266,7 +266,7 @@ function threadPane(id: string, threadId: string, title: string): WorkspacePane 
   return {
     id,
     kind: "thread",
-    target: { mode: "existing", threadId },
+    target: { executorId: "local", mode: "existing", threadId },
     title,
   };
 }
@@ -275,7 +275,7 @@ function draftThreadPane(id: string, title: string): WorkspacePane {
   return {
     id,
     kind: "thread",
-    target: { mode: "draft" },
+    target: { executorId: "local", mode: "draft" },
     title,
   };
 }

@@ -10,8 +10,8 @@ function restoreProjectDraft(cwd = "/outside-roots") {
   setInitialWorkspacePaneState({
     activePaneId: "project-draft",
     dockviewLayout: null,
-    panes: [{ id: "project-draft", kind: "thread", target: { mode: "draft", projectId: project.id, cwd }, title: "New project chat" }],
-    schemaVersion: 1,
+    panes: [{ id: "project-draft", kind: "thread", target: { executorId: "local", mode: "draft", projectId: project.id, cwd }, title: "New project chat" }],
+    schemaVersion: 2,
   });
 }
 
@@ -86,7 +86,7 @@ it.each([{ roots: [] }, { roots: [{ path: "/one" }, { path: "/two" }] }])("direc
 });
 
 it("preserves an existing chat's native cwd after its project root changes", async () => {
-  window.history.replaceState({}, "", "/threads/thread-1");
+  window.history.replaceState({}, "", "/executors/local/threads/thread-1");
   const gateway = mockGateway(baseRoutes({
     "GET /v1/projects": { projects: [{ ...project, roots: [{ path: "/updated-project-root" }] }] },
     "GET /v1/terminals": { terminals: [] },

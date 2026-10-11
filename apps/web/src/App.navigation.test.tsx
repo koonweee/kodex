@@ -69,7 +69,7 @@ describe("deep link navigation", () => {
   });
 
   it("opens a deep-linked thread instead of selecting the first sidebar thread", async () => {
-    goTo("/threads/thread-2");
+    goTo("/executors/local/threads/thread-2");
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [thread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
@@ -89,9 +89,22 @@ describe("deep link navigation", () => {
     expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(1);
   });
 
+  it("does not resolve a popstate route owned by another executor through the current client", async () => {
+    goTo("/executors/local");
+    const gateway = mockGateway(baseRoutes());
+
+    render(<App />);
+    expect(await screen.findByRole("button", { name: /^implement frontend$/i })).toBeInTheDocument();
+
+    emitPopstate("/executors/executor-b/threads/thread-1");
+
+    await waitFor(() => expect(window.location.pathname).toBe("/executors/executor-b/threads/thread-1"));
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/attach")).toHaveLength(0);
+  });
+
   it("opens a mobile deep-linked thread when the persisted workspace starts on a draft pane", async () => {
     stubNarrowViewport();
-    goTo("/threads/thread-2");
+    goTo("/executors/local/threads/thread-2");
     mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [thread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
@@ -107,11 +120,11 @@ describe("deep link navigation", () => {
         {
           id: "pane-draft",
           kind: "thread",
-          target: { mode: "draft", projectId: null },
+          target: { executorId: "local", mode: "draft", projectId: null },
           title: "Draft thread",
         },
       ],
-      schemaVersion: 1,
+      schemaVersion: 2,
     });
 
     render(<App />);
@@ -125,7 +138,7 @@ describe("deep link navigation", () => {
   });
 
   it("shows representative timeline skeleton rows while a selected thread snapshot loads", async () => {
-    goTo("/threads/thread-2");
+    goTo("/executors/local/threads/thread-2");
     const detailDeferred = deferred<ReturnType<typeof threadDetail>>();
     mockGateway(
       baseRoutes({
@@ -166,7 +179,7 @@ describe("deep link navigation", () => {
   });
 
   it("shows the timeline skeleton immediately for a deep-linked thread before the thread list resolves", async () => {
-    goTo("/threads/thread-2");
+    goTo("/executors/local/threads/thread-2");
     const threadsDeferred = deferred<{
       backwardsCursor: null;
       nextCursor: null;
@@ -196,7 +209,7 @@ describe("deep link navigation", () => {
   });
 
   it("keeps the detail snapshot authoritative when a stale sidebar list resolves later", async () => {
-    goTo("/threads/thread-2");
+    goTo("/executors/local/threads/thread-2");
     const threadsDeferred = deferred<{
       backwardsCursor: null;
       nextCursor: null;
@@ -288,28 +301,28 @@ describe("deep link navigation", () => {
     render(<App />);
 
     await userEvent.click(await screen.findByRole("button", { name: /show sidebar/i }));
-    expect(window.location.pathname + window.location.search).toBe("/?panel=threads");
+    expect(window.location.pathname + window.location.search).toBe("/executors/local?panel=threads");
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "threads");
 
     await userEvent.click(screen.getByRole("button", { name: /^second thread$/i }));
     expect(await screen.findByRole("heading", { name: /^second thread$/i })).toBeInTheDocument();
-    expect(window.location.pathname + window.location.search).toBe("/");
+    expect(window.location.pathname + window.location.search).toBe("/executors/local");
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
 
-    emitPopstate("/?panel=threads");
+    emitPopstate("/executors/local?panel=threads");
 
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "threads");
-    expect(window.location.pathname + window.location.search).toBe("/?panel=threads");
+    expect(window.location.pathname + window.location.search).toBe("/executors/local?panel=threads");
   });
 
   it("renders a dedicated unavailable pane for a missing deep-linked thread", async () => {
-    goTo("/threads/missing-thread");
+    goTo("/executors/local/threads/missing-thread");
     mockGateway(baseRoutes());
 
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /thread not found or unavailable/i })).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/");
+    expect(window.location.pathname).toBe("/executors/local");
     expect(screen.getByRole("button", { name: /browse threads/i })).toBeInTheDocument();
   });
 });

@@ -10,17 +10,19 @@ import {
   type ThreadSummary,
   type TimelineSkillMention,
 } from "../api/client";
-import { useExecutorConnection, useGatewayInstanceStorage, useGatewayInstanceValidation, useGatewayStreamConnected } from "../api/GatewayClientContext";
+import { useAvailableExecutorIds, useExecutorConnection, useExecutorRuntimes, useGatewayInstanceStorage, useGatewayInstanceValidation, useGatewayStreamConnected } from "../api/GatewayClientContext";
 import type { MarkdownPreviewRequest } from "../files/types";
 import type { ImageLightboxImage } from "../images/types";
 import { recordLiveEvent } from "../events/liveDiagnostics";
 import { createEventStreamClient } from "../events/stream";
+import { applyApprovalInvalidation } from "../approvals/cache";
 import { layoutMatchesWorkspacePanes } from "./workspaceLayoutCodec";
 import {
   createBrowserWorkspacePaneStore,
   createDraftThreadPane,
   createPaneId,
   ensureWorkspaceHasActivePane,
+  LOCAL_EXECUTOR_ID,
   type WorkspacePaneStoreAdapter,
 } from "./paneStore";
 import {
@@ -32,21 +34,23 @@ import {
 import { paneTargetRecord, type WorkspaceModel, type WorkspacePane, type WorkspacePanePatch } from "./paneTypes";
 import { usePaneThreadContexts, type PaneThreadContext } from "./usePaneThreadContexts";
 import { useDraftPaneReuse } from "./useDraftPaneReuse";
-import { workspaceSubscribedThreadIds } from "./resourceSubscriptions";
+import { workspaceSubscribedThreadIdsByExecutor } from "./resourceSubscriptions";
 import { removeWorkspacePanes } from "./paneRemoval";
+import { currentKodexRoute } from "../shell/browserRouting";
 
 type WorkspaceLiveEventHandler = (event: EventEnvelope) => void;
 export type ThreadPaneTimelineAction =
-  | { kind: "refresh_snapshot"; threadId?: string }
+  | { executorId: string; kind: "refresh_snapshot"; threadId?: string }
   | {
       clientRequestId: string;
+      executorId: string;
       kind: "optimistic_user_started";
       skillMentions: TimelineSkillMention[];
       text: string;
       threadId: string;
     }
-  | { clientRequestId: string; kind: "optimistic_user_sent" }
-  | { clientRequestId: string; kind: "optimistic_user_removed" };
+  | { clientRequestId: string; executorId: string; kind: "optimistic_user_sent" }
+  | { clientRequestId: string; executorId: string; kind: "optimistic_user_removed" };
 export type ThreadPaneTimelineActionHandler = (action: ThreadPaneTimelineAction) => void;
 
 export type ThreadComposerState = {
@@ -76,11 +80,12 @@ type WorkspaceProviderProps = {
   errorMessage?: string | null;
   isVisible?: boolean;
   imagePreviewUrlsByPath?: Record<string, string>;
+  imagePreviewUrlsByExecutor?: Record<string, Record<string, string>>;
   onApprovalDecision?: (approval: Approval, decision: ApprovalResponse) => void;
   onFocusThreadPane?: (threadId: string) => void;
   onImageOpen?: (image: ImageLightboxImage) => void;
-  onLiveEvent?: (event: EventEnvelope) => void;
-  onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
+  onLiveEvent?: (event: EventEnvelope, executorId: string) => void;
+  onMarkdownOpen?: (executorId: string, threadId: string, request: MarkdownPreviewRequest) => void;
   onComposerTextDraftPresenceChange?: (present: boolean) => void;
   onShowMobileSidebar?: () => void;
   onThreadArchived?: (threadId: string) => void;
@@ -103,17 +108,19 @@ type WorkspaceProviderProps = {
 type WorkspaceContextValue = {
   approvals: Approval[];
   closePane: (paneId: string, dockviewLayout: unknown, options?: WorkspacePaneCloseOptions) => void;
+  defaultExecutorId: string;
   duplicatePane: (paneId: string) => void;
   errorMessage: string | null;
   focusPane: (paneId: string | null, options?: WorkspacePaneFocusOptions) => void;
   focusPulseByPaneId: Record<string, number>;
   imagePreviewUrlsByPath: Record<string, string>;
+  imagePreviewUrlsByExecutor: Record<string, Record<string, string>>;
   isLoading: boolean;
   onApprovalDecision: (approval: Approval, decision: ApprovalResponse) => void;
   onImageOpen: (image: ImageLightboxImage) => void;
-  onMarkdownOpen: (request: MarkdownPreviewRequest) => void;
+  onMarkdownOpen: (executorId: string, threadId: string, request: MarkdownPreviewRequest) => void;
   onShowMobileSidebar: () => void;
-  handleThreadArchived: (threadId: string) => void;
+  handleThreadArchived: (executorId: string, threadId: string) => void;
   onThreadSnapshotLoadFailed: (threadId: string) => void;
   onThreadSnapshotLoaded: (thread: ThreadSummary) => void;
   onVisiblePaneIdsChange: (paneIds: string[]) => void;
@@ -138,7 +145,7 @@ type WorkspaceContextValue = {
   renderThreadPaneHeaderActions?: (pane: WorkspacePane, state: ThreadPaneChromeState) => ReactNode;
   renderThreadPane?: (pane: WorkspacePane, fallback: ReactNode) => ReactNode;
   showDebugEvents: boolean;
-  subscribeLiveEvent: (handler: WorkspaceLiveEventHandler) => () => void;
+  subscribeLiveEvent: (executorId: string, handler: WorkspaceLiveEventHandler) => () => void;
   subscribeThreadPaneTimelineAction: (handler: ThreadPaneTimelineActionHandler) => () => void;
   clearPanePlacementHints: (paneIds: string[]) => void;
   setPaneHeaderAdornment: (paneId: string, adornment: ReactNode | null) => void;
@@ -172,6 +179,7 @@ export function WorkspaceProvider({
   errorMessage = null,
   isVisible = true,
   imagePreviewUrlsByPath = {},
+  imagePreviewUrlsByExecutor = {},
   onApprovalDecision = () => undefined,
   onFocusThreadPane,
   onImageOpen = () => undefined,
@@ -197,14 +205,17 @@ export function WorkspaceProvider({
 }: WorkspaceProviderProps) {
   const instanceStorage = useGatewayInstanceStorage();
   const executorConnection = useExecutorConnection();
+  const executorRuntimes = useExecutorRuntimes();
+  const availableExecutorIds = useAvailableExecutorIds();
+  const defaultExecutorId = executorConnection?.executorId ?? LOCAL_EXECUTOR_ID;
   const validateInstance = useGatewayInstanceValidation();
   const handleStreamConnected = useGatewayStreamConnected();
   const paneStore = useMemo(
-    () => paneStoreOverride ?? createBrowserWorkspacePaneStore(instanceStorage),
-    [instanceStorage, paneStoreOverride],
+    () => paneStoreOverride ?? createBrowserWorkspacePaneStore(instanceStorage, defaultExecutorId),
+    [defaultExecutorId, instanceStorage, paneStoreOverride],
   );
-  const liveEventCursorRef = useRef<number | undefined>(undefined);
-  const liveEventHandlersRef = useRef(new Set<WorkspaceLiveEventHandler>());
+  const liveEventCursorByExecutorRef = useRef(new Map<string, number>());
+  const liveEventHandlersByExecutorRef = useRef(new Map<string, Set<WorkspaceLiveEventHandler>>());
   const onLiveEventRef = useRef(onLiveEvent);
   const [paneHeaderAdornmentsById, setPaneHeaderAdornmentsById] = useState<Record<string, ReactNode>>({});
   const [paneHeaderActionsById, setPaneHeaderActionsById] = useState<Record<string, ReactNode>>({});
@@ -217,7 +228,7 @@ export function WorkspaceProvider({
   const [composerTextDraftPaneIds, setComposerTextDraftPaneIds] = useState<Set<string>>(() => new Set());
   const [workspaceError, setWorkspaceError] = useState<Error | null>(null);
   const nextFocusPulseRef = useRef(0);
-  const appSurfacePresentationHandlerRef = useRef<(event: EventEnvelope) => void>(() => undefined);
+  const appSurfacePresentationHandlerRef = useRef<(event: EventEnvelope, executorId: string) => void>(() => undefined);
   const workspaceRef = useRef(workspace);
 
   useEffect(() => {
@@ -315,18 +326,20 @@ export function WorkspaceProvider({
     }
   }, [paneStore, workspace]);
 
-  const activeFocusedThreadId = useMemo(() => {
+  const activeFocusedThread = useMemo(() => {
     const activePane = workspace.activePaneId
       ? workspace.panes.find((pane) => pane.id === workspace.activePaneId) ?? null
       : null;
-    return activePane?.kind === "thread" && activePane.target.mode === "existing" ? activePane.target.threadId : null;
+    return activePane?.kind === "thread" && activePane.target.mode === "existing"
+      ? { executorId: activePane.target.executorId, threadId: activePane.target.threadId }
+      : null;
   }, [workspace.activePaneId, workspace.panes]);
 
   useEffect(() => {
-    if (activeFocusedThreadId) {
-      onFocusThreadPane?.(activeFocusedThreadId);
+    if (activeFocusedThread?.executorId === defaultExecutorId) {
+      onFocusThreadPane?.(activeFocusedThread.threadId);
     }
-  }, [activeFocusedThreadId, onFocusThreadPane]);
+  }, [activeFocusedThread?.executorId, activeFocusedThread?.threadId, defaultExecutorId, onFocusThreadPane]);
 
   const onVisiblePaneIdsChange = useCallback((paneIds: string[]) => {
     setVisiblePaneIds((current) => (sameStringArray(current, paneIds) ? current : paneIds));
@@ -341,22 +354,25 @@ export function WorkspaceProvider({
     setFocusPulseByPaneId((current) => ({ ...current, [paneId]: token }));
   }, []);
 
-  const closeThreadPanes = useCallback((threadId: string) => {
+  const closeThreadPanes = useCallback((executorId: string, threadId: string) => {
     setWorkspace((current) => removeWorkspacePanes(
       current,
-      (pane) => pane.kind === "thread" && pane.target.mode === "existing" && pane.target.threadId === threadId,
+      (pane) => pane.kind === "thread" && pane.target.mode === "existing" && pane.target.executorId === executorId && pane.target.threadId === threadId,
     ));
   }, []);
 
-  const handleThreadArchived = useCallback((threadId: string) => {
-    closeThreadPanes(threadId);
-    onThreadArchived(threadId);
-  }, [closeThreadPanes, onThreadArchived]);
+  const handleThreadArchived = useCallback((executorId: string, threadId: string) => {
+    closeThreadPanes(executorId, threadId);
+    if (executorId === defaultExecutorId) onThreadArchived(threadId);
+  }, [closeThreadPanes, defaultExecutorId, onThreadArchived]);
 
   const exposedVisiblePaneIds = useMemo(() => isVisible ? visiblePaneIds : [], [isVisible, visiblePaneIds]);
   const visibleThreadIds = useMemo(
-    () => visibleThreadIdsForPaneIds(workspace.panes, exposedVisiblePaneIds),
-    [exposedVisiblePaneIds, workspace.panes],
+    () => visibleThreadIdsForPaneIds(
+      workspace.panes.filter((pane) => pane.target.executorId === defaultExecutorId),
+      exposedVisiblePaneIds,
+    ),
+    [defaultExecutorId, exposedVisiblePaneIds, workspace.panes],
   );
 
   useEffect(() => {
@@ -364,49 +380,82 @@ export function WorkspaceProvider({
   }, [onVisibleThreadIdsChange, visibleThreadIds]);
 
   const { includeDebugEvents, includeCommandOutputs, getOptions: getDeliveryOptions } = useThreadDeliveryPreferences();
-  const deliveryStreamRef = useRef<ReturnType<typeof createEventStreamClient> | null>(null);
-  const subscribedThreadIds = useMemo(() => workspaceSubscribedThreadIds(workspace.panes), [workspace.panes]);
-  const subscribedThreadIdsKey = subscribedThreadIds.join("\n");
+  const deliveryStreamsRef = useRef(new Set<ReturnType<typeof createEventStreamClient>>());
+  const subscribedThreadIdsByExecutor = useMemo(() => workspaceSubscribedThreadIdsByExecutor(workspace.panes), [workspace.panes]);
+  const subscribedThreadIdsKey = Array.from(subscribedThreadIdsByExecutor, ([executorId, threadIds]) => `${executorId}\n${threadIds.join("\n")}`).join("\n\n");
 
   useEffect(() => {
-    const client = createEventStreamClient({
-      beforeConnect: validateInstance,
-      connection: executorConnection,
-      cursor: liveEventCursorRef.current,
-      includeGlobal: true,
-      ...getDeliveryOptions(),
-      threadIds: subscribedThreadIds,
-      onStatusChange: (status, reason) => {
-        if (status === "connected" && reason !== "delivery_options") {
-          handleStreamConnected?.();
-          publishThreadPaneTimelineAction({ kind: "refresh_snapshot" });
-        }
-      },
-      onEvent: (event) => {
-        recordLiveEvent("global", event);
-        liveEventCursorRef.current = Math.max(liveEventCursorRef.current ?? 0, event.seq);
-        onLiveEventRef.current?.(event);
-        for (const handler of liveEventHandlersRef.current) {
-          handler(event);
-        }
-        appSurfacePresentationHandlerRef.current(event);
-      },
-    });
-    deliveryStreamRef.current = client;
-    client.connect();
-    return () => { deliveryStreamRef.current = null; client.close(); };
-  }, [executorConnection, getDeliveryOptions, handleStreamConnected, publishThreadPaneTimelineAction, subscribedThreadIdsKey, validateInstance]);
+    const clients: ReturnType<typeof createEventStreamClient>[] = [];
+    for (const [executorId, threadIds] of subscribedThreadIdsByExecutor) {
+      const runtime = executorRuntimes?.get(executorId);
+      const runtimeAvailable = availableExecutorIds?.has(executorId) ?? true;
+      const connection = executorRuntimes
+        ? runtimeAvailable ? runtime?.connection : undefined
+        : executorConnection?.executorId === executorId ? executorConnection : undefined;
+      if (!connection && executorRuntimes) continue;
+      const beforeConnect = runtime
+        ? async () => {
+            try {
+              const capabilities = await runtime.api.getCapabilities();
+              return capabilities.gateway.instanceId === runtime.connection.instanceId;
+            } catch {
+              return false;
+            }
+          }
+        : validateInstance;
+      const client = createEventStreamClient({
+        beforeConnect,
+        connection,
+        cursor: liveEventCursorByExecutorRef.current.get(executorId),
+        includeGlobal: true,
+        ...getDeliveryOptions(),
+        threadIds,
+        onStatusChange: (status, reason) => {
+          if (status === "connected" && reason !== "delivery_options") {
+            if (runtime) void runtime.queryClient.invalidateQueries();
+            else handleStreamConnected?.();
+            publishThreadPaneTimelineAction({ executorId, kind: "refresh_snapshot" });
+          }
+        },
+        onEvent: (event) => {
+          recordLiveEvent("global", event);
+          liveEventCursorByExecutorRef.current.set(
+            executorId,
+            Math.max(liveEventCursorByExecutorRef.current.get(executorId) ?? 0, event.seq),
+          );
+          onLiveEventRef.current?.(event, executorId);
+          if (runtime && executorId !== defaultExecutorId) applyApprovalInvalidation(runtime.queryClient, event);
+          for (const handler of liveEventHandlersByExecutorRef.current.get(executorId) ?? []) handler(event);
+          appSurfacePresentationHandlerRef.current(event, executorId);
+        },
+      });
+      clients.push(client);
+      client.connect();
+    }
+    for (const client of clients) deliveryStreamsRef.current.add(client);
+    return () => {
+      for (const client of clients) {
+        deliveryStreamsRef.current.delete(client);
+        client.close();
+      }
+    };
+  }, [availableExecutorIds, defaultExecutorId, executorConnection, executorRuntimes, getDeliveryOptions, handleStreamConnected, publishThreadPaneTimelineAction, subscribedThreadIdsKey, validateInstance]);
 
   useEffect(() => {
-    deliveryStreamRef.current?.updateDeliveryOptions({ includeDebugEvents, includeCommandOutputs });
+    for (const client of deliveryStreamsRef.current) {
+      client.updateDeliveryOptions({ includeDebugEvents, includeCommandOutputs });
+    }
   }, [includeDebugEvents, includeCommandOutputs]);
 
   const { paneThreadContextsById, setPaneThreadContext } = usePaneThreadContexts(workspace.panes);
 
-  const subscribeLiveEvent = useCallback((handler: WorkspaceLiveEventHandler) => {
-    liveEventHandlersRef.current.add(handler);
+  const subscribeLiveEvent = useCallback((executorId: string, handler: WorkspaceLiveEventHandler) => {
+    const handlers = liveEventHandlersByExecutorRef.current.get(executorId) ?? new Set<WorkspaceLiveEventHandler>();
+    handlers.add(handler);
+    liveEventHandlersByExecutorRef.current.set(executorId, handlers);
     return () => {
-      liveEventHandlersRef.current.delete(handler);
+      handlers.delete(handler);
+      if (handlers.size === 0) liveEventHandlersByExecutorRef.current.delete(executorId);
     };
   }, []);
 
@@ -657,23 +706,38 @@ export function WorkspaceProvider({
 
   const openThreadPane = useCallback(
     async (threadId: string, title?: string | null, options: WorkspacePaneOpenOptions = {}) => {
+      const executorId = options.executorId ?? defaultExecutorId;
       const pane: WorkspacePane = {
         id: createPaneId("thread"),
         kind: "thread",
-        target: { mode: "existing", threadId },
+        target: { executorId, mode: "existing", threadId },
         title: title ?? null,
       };
       focusPaneOrAppend(pane, options.duplicate ? "duplicate" : "thread", options);
     },
-    [focusPaneOrAppend],
+    [defaultExecutorId, focusPaneOrAppend],
   );
+
+  useEffect(() => {
+    const applyFederatedRoute = () => {
+      const route = currentKodexRoute();
+      if (!route.executorId || route.executorId === defaultExecutorId || !route.threadId) return;
+      if (!executorRuntimes) return;
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+      void openThreadPane(route.threadId, null, { executorId: route.executorId });
+    };
+    applyFederatedRoute();
+    window.addEventListener("popstate", applyFederatedRoute);
+    return () => window.removeEventListener("popstate", applyFederatedRoute);
+  }, [availableExecutorIds, defaultExecutorId, executorRuntimes, openThreadPane]);
 
   const openDraftThreadPane = useCallback(
     async (projectId?: string | null, options: WorkspacePaneOpenOptions = {}) => {
-      const pane = createDraftThreadPane(projectId);
+      const executorId = options.executorId ?? defaultExecutorId;
+      const pane = createDraftThreadPane(executorId, projectId);
       setWorkspace((current) => {
         const existing = !options.duplicate && !options.placement
-          ? current.panes.find(isReusableDraft)
+          ? current.panes.find((candidate) => candidate.target.executorId === executorId && isReusableDraft(candidate))
           : undefined;
         if (!existing) {
           recordPanePlacementHint(pane.id, "draftThread", options);
@@ -692,13 +756,14 @@ export function WorkspaceProvider({
         };
       });
     },
-    [recordPanePlacementHint, pulsePane, isReusableDraft],
+    [defaultExecutorId, recordPanePlacementHint, pulsePane, isReusableDraft],
   );
 
   const openAppSurfacePane = useCallback(
     async (threadId: string, title?: string | null, options: WorkspacePaneOpenOptions = {}) => {
+      const executorId = options.executorId ?? defaultExecutorId;
       if (!options.duplicate) {
-        const existing = appSurfacePaneForThread(workspaceRef.current.panes, threadId);
+        const existing = appSurfacePaneForThread(workspaceRef.current.panes, executorId, threadId);
         if (existing) {
           focusPane(existing.id);
           return;
@@ -708,7 +773,7 @@ export function WorkspaceProvider({
         {
           id: createPaneId("appSurface"),
           kind: "appSurface",
-          target: { mode: "latest", threadId },
+          target: { executorId, mode: "latest", threadId },
           title: title ?? "App Surface",
         },
         "appSurface",
@@ -723,15 +788,17 @@ export function WorkspaceProvider({
         },
       );
     },
-    [appendPane, focusPane],
+    [appendPane, defaultExecutorId, focusPane],
   );
 
   const openTerminalPane = useCallback(
     async (options: WorkspaceTerminalOpenOptions = {}) => {
+      const executorId = options.executorId ?? defaultExecutorId;
       const pane: WorkspacePane = {
         id: createPaneId("terminal"),
         kind: "terminal",
         target: {
+          executorId,
           command: options.command ?? null,
           cwd: options.cwd ?? null,
           ...(options.projectId ? { projectId: options.projectId } : {}),
@@ -739,9 +806,9 @@ export function WorkspaceProvider({
         },
         title: "Terminal",
       };
-      focusPaneOrAppend(pane, "terminal", options, terminalPaneForRequest(options));
+      focusPaneOrAppend(pane, "terminal", options, terminalPaneForRequest({ ...options, executorId }));
     },
-    [focusPaneOrAppend],
+    [defaultExecutorId, focusPaneOrAppend],
   );
 
   const openNewTerminalPane = useCallback(
@@ -751,6 +818,7 @@ export function WorkspaceProvider({
           id: createPaneId("terminal"),
           kind: "terminal",
           target: {
+            executorId: options.executorId ?? defaultExecutorId,
             command: options.command ?? null,
             cwd: options.cwd ?? null,
             ...(options.projectId ? { projectId: options.projectId } : {}),
@@ -761,17 +829,18 @@ export function WorkspaceProvider({
         { ...options, duplicate: true },
       );
     },
-    [appendPane],
+    [appendPane, defaultExecutorId],
   );
 
   useEffect(() => {
-    appSurfacePresentationHandlerRef.current = (event: EventEnvelope) => {
+    appSurfacePresentationHandlerRef.current = (event: EventEnvelope, executorId: string) => {
       const request = appSurfacePresentationRequestFromEvent(event);
       if (!request) {
         return;
       }
       void openAppSurfacePane(request.threadId, request.title ?? "App Surface", {
         activate: request.action === "focus",
+        executorId,
       }).catch((error: unknown) => {
         console.error("Failed to apply app surface presentation request", error);
       });
@@ -786,23 +855,25 @@ export function WorkspaceProvider({
       ...threadActions,
       onArchiveThread: threadActions.onArchiveThread
         ? (threadId: string) => {
-            flushSync(() => closeThreadPanes(threadId));
+            flushSync(() => closeThreadPanes(defaultExecutorId, threadId));
             threadActions.onArchiveThread?.(threadId);
           }
         : undefined,
     }),
-    [closeThreadPanes, threadActions],
+    [closeThreadPanes, defaultExecutorId, threadActions],
   );
 
   const value = useMemo<WorkspaceContextValue>(
     () => ({
       approvals,
       closePane,
+      defaultExecutorId,
       duplicatePane,
       errorMessage,
       focusPane,
       focusPulseByPaneId,
       imagePreviewUrlsByPath,
+      imagePreviewUrlsByExecutor,
       isLoading: false,
       onApprovalDecision,
       onImageOpen,
@@ -855,11 +926,13 @@ export function WorkspaceProvider({
     [
       approvals,
       closePane,
+      defaultExecutorId,
       duplicatePane,
       errorMessage,
       focusPane,
       focusPulseByPaneId,
       imagePreviewUrlsByPath,
+      imagePreviewUrlsByExecutor,
       onApprovalDecision,
       onImageOpen,
       onMarkdownOpen,
@@ -946,13 +1019,13 @@ function visibleThreadIdsForPaneIds(panes: WorkspacePane[], paneIds: string[]): 
   return Array.from(threadIds).sort();
 }
 
-function appSurfacePaneForThread(panes: WorkspacePane[], threadId: string): WorkspacePane | null {
+function appSurfacePaneForThread(panes: WorkspacePane[], executorId: string, threadId: string): WorkspacePane | null {
   return panes.find((pane) => {
     if (pane.kind !== "appSurface") {
       return false;
     }
     const target = paneTargetRecord(pane);
-    return typeof target.threadId === "string" && target.threadId === threadId;
+    return pane.target.executorId === executorId && typeof target.threadId === "string" && target.threadId === threadId;
   }) ?? null;
 }
 
@@ -999,13 +1072,16 @@ function terminalPaneForRequest(options: WorkspaceTerminalOpenOptions): (panes: 
   const cwd = options.cwd ?? null;
   const projectId = options.projectId ?? null;
   return (panes) => {
-    const terminalPanes = [...panes].reverse().filter((pane) => pane.kind === "terminal");
+    const terminalPanes = [...panes].reverse().filter(
+      (pane) => pane.kind === "terminal" && pane.target.executorId === options.executorId,
+    );
     if (!command && !cwd && !projectId) {
       return terminalPanes[0] ?? null;
     }
     return terminalPanes.find((pane) => {
       const target = paneTargetRecord(pane);
       return (
+        target.executorId === options.executorId &&
         (projectId ? target.projectId === projectId : !target.projectId) &&
         (!command || target.command === command) &&
         (!cwd || target.cwd === cwd)
@@ -1019,6 +1095,7 @@ function paneIdentity(pane: WorkspacePane): unknown {
     return {
       kind: pane.kind,
       target: {
+        executorId: pane.target.executorId,
         mode: "draft",
         projectId: pane.target.projectId ?? null,
       },

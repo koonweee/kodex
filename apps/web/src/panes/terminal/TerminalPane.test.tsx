@@ -97,6 +97,7 @@ describe("TerminalPane", () => {
         target: {
           command: "/bin/zsh",
           cwd: "/tmp/worktree",
+          executorId: "local",
           terminalId: "terminal-1",
         },
         title: "worktree: /bin/zsh",
@@ -115,13 +116,14 @@ describe("TerminalPane", () => {
       reuseRunning: false,
     });
     await waitFor(() => expect(workspaceMocks.updatePane).toHaveBeenCalledWith("pane-terminal", {
-      target: { command: "/bin/zsh", cwd: session.cwd, projectId: "project-1", terminalId: session.id },
+      target: { command: "/bin/zsh", cwd: session.cwd, executorId: "local", projectId: "project-1", terminalId: session.id },
       title: session.title,
     }));
     const actions = workspaceMocks.setPaneHeaderActions.mock.calls.find(([paneId]) => paneId === "pane-terminal")?.[1];
     render(<MantineProvider>{actions}</MantineProvider>);
     fireEvent.click(screen.getByRole("button", { name: "New terminal" }));
     await waitFor(() => expect(workspaceMocks.openNewTerminalPane).toHaveBeenCalledWith({
+      executorId: "local",
       projectId: "project-1",
       placement: { direction: "within", sourcePaneId: "pane-terminal" },
     }));
@@ -148,6 +150,7 @@ describe("TerminalPane", () => {
     await waitFor(() => {
       expect(workspaceMocks.openNewTerminalPane).toHaveBeenCalledWith({
         cwd: "/tmp/worktree",
+        executorId: "local",
         placement: { direction: "within", sourcePaneId: "pane-terminal" },
       });
     });
@@ -193,7 +196,7 @@ function workspacePane(target: Record<string, unknown>): WorkspacePane {
   return {
     id: "pane-terminal",
     kind: "terminal",
-    target,
+    target: { executorId: "local", ...target },
     title: null,
   };
 }

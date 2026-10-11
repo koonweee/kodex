@@ -271,6 +271,7 @@ export function workspaceTabContextMenuItems({
       action: () => {
         void openDraftThreadPane(projectId, {
           duplicate: true,
+          executorId: pane.target.executorId,
           placement: { direction: "within", sourcePaneId: panelId },
         });
       },

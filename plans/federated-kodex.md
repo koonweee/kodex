@@ -225,6 +225,8 @@ M2 is complete on the pinned feature baseline. The federator now persists and pu
 
 Exit: two colliding-ID executors can be used in adjacent panes and two tabs with no cache/action/event crossover; one executor failing or requiring an upgrade leaves the other usable.
 
+M3 is complete on the pinned feature baseline. The web app now bootstraps a federator-owned executor runtime registry with independent clients, query caches, storage namespaces and event streams. Workspace schema v2 qualifies every pane and persisted draft target by executor; thread, composer, queue, approval, terminal, upload, preview, app-surface and subagent actions resolve through the owning runtime. Qualified routes open executor-owned panes without rebinding another pane's actions, while cross-executor project/automation history transitions fail closed until the merged catalog in M4 owns them. Colliding native IDs remain isolated in adjacent panes, unavailable thread panes retain unsent text and attachments, and terminal/app-surface transports close while unavailable. Initial offline deep links retain access to healthy panes, failed/unready executors are gated, federator restart-reset bindings can reconnect, and same-ID instance replacement swaps the retired runtime/cache. The full frontend suite (184 files, 1,393 passing tests and one skipped test), production build, frontend trim and independent review pass.
+
 ### M4 Federated catalog and project-first navigation
 
 - Add bounded persisted catalog metadata with freshness, page coverage and deletion/invalidation fencing.

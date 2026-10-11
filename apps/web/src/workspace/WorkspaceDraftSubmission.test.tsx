@@ -15,8 +15,8 @@ it("preserves a submitting draft's project after native creation has cleared its
   const gateway = mockGateway(baseRoutes({
     "POST /v1/threads/thread-1/input": () => new Promise(() => {}),
   }));
-  const store = createMemoryWorkspacePaneStore({ schemaVersion: 1, activePaneId: "draft", dockviewLayout: null,
-    panes: [{ id: "draft", kind: "thread", target: { mode: "draft", projectId: project.id }, title: "New thread" }],
+  const store = createMemoryWorkspacePaneStore({ schemaVersion: 2, activePaneId: "draft", dockviewLayout: null,
+    panes: [{ id: "draft", kind: "thread", target: { executorId: "local", mode: "draft", projectId: project.id }, title: "New thread" }],
   });
   const onCreateDraftThread = vi.fn(async () => ({ threadId: "thread-1" }));
   const noop = () => undefined;
@@ -49,7 +49,7 @@ it("preserves a submitting draft's project after native creation has cleared its
   expect(input).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "New standalone chat" }));
   await waitFor(() => expect(store.getState().panes).toHaveLength(2));
-  expect(store.getState().panes[0]).toMatchObject({ id: "draft", target: { mode: "draft", projectId: project.id } });
+  expect(store.getState().panes[0]).toMatchObject({ id: "draft", target: { executorId: "local", mode: "draft", projectId: project.id } });
   expect(store.getState().activePaneId).not.toBe("draft");
   expect(onCreateDraftThread).toHaveBeenCalledTimes(1);
 });

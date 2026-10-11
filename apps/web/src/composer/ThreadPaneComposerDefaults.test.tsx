@@ -25,7 +25,7 @@ function Draft() {
   const settings = useComposerSettingsState({ projects, onError: ignore });
   useEffect(() => { void settings.hydrateComposerDefaults(null); }, [settings.hydrateComposerDefaults]);
   return <ThreadPaneComposerBridge {...settings}
-    pane={{ id: "draft-pane", kind: "thread", target: { mode: "draft", projectId: null }, title: "New chat" }}
+    pane={{ id: "draft-pane", kind: "thread", target: { executorId: "local", mode: "draft", projectId: null }, title: "New chat" }}
     paneState={{ activeTurnId: null, isActive: true, isReady: true, selectedThreadPresent: false, thread: null, publishThreadPaneTimelineAction: ignore }}
     projects={projects} contextUsageByThreadId={{}} composerDraftStore={draftStore} isDraftComposerTransitioning={false}
     onCreateDraftThread={async () => ({ threadId: "created" })} onError={ignore} onImageOpen={ignore} onImagePreviewUrlsChanged={ignore}

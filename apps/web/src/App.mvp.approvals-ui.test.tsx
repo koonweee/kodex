@@ -124,7 +124,7 @@ describe("MVP approvals UI flows", () => {
       createdAt: "2026-04-30T00:00:00Z",
       resolvedAt: null,
     };
-    window.history.replaceState(null, "", "/threads/thread-recent-idle");
+    window.history.replaceState(null, "", "/executors/local/threads/thread-recent-idle");
     mockGateway(
       baseRoutes({
         "GET /v1/threads": {

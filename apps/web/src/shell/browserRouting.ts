@@ -25,16 +25,17 @@ export function historyState(): Record<string, unknown> {
 }
 
 export function pathForKodexRoute(route: KodexRoute): string {
+  const executorId = route.executorId ?? currentKodexRoute().executorId ?? "local";
   if (route.view === "automations") {
-    return automationsPath({ panel: route.panel });
+    return automationsPath(executorId, { panel: route.panel });
   }
   if (route.view === "project" && route.projectId) {
-    return projectPath(route.projectId, { panel: route.panel });
+    return projectPath(route.projectId, executorId, { panel: route.panel });
   }
   if (route.threadId) {
-    return threadPath(route.threadId, { panel: route.panel });
+    return threadPath(route.threadId, executorId, { panel: route.panel });
   }
-  return emptyPath({ panel: route.panel });
+  return emptyPath(executorId, { panel: route.panel });
 }
 
 export function pushKodexRoute(route: KodexRoute) {

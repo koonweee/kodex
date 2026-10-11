@@ -111,14 +111,14 @@ describe("predictable automatic pane placement", () => {
     const api = dock(600, 400);
     api.addPanel({ id: "floating", component: "test", floating: { width: 1500, height: 900 } });
     expect(place(api)).toEqual({ referencePanel: "a", direction: "within" });
-    expect(panelPlacementOptions(api, { id: "new", kind: "terminal", title: null, target: {} }, null,
+    expect(panelPlacementOptions(api, { id: "new", kind: "terminal", title: null, target: { executorId: "local" } }, null,
       { new: { referencePaneId: "closed", direction: "auto" } }, new Set(), 6,
     )).toEqual({ floating: false, position: { referencePanel: "a", direction: "within" } });
   });
   it.each(["right", "below", "within"] as const)("preserves explicit %s placement", (direction) => {
     const api = dock(600, 400);
     const consumed = new Set<string>();
-    expect(panelPlacementOptions(api, { id: "new", kind: "terminal", title: null, target: {} }, null,
+    expect(panelPlacementOptions(api, { id: "new", kind: "terminal", title: null, target: { executorId: "local" } }, null,
       { new: { referencePaneId: "a", direction } }, consumed, 6,
     )).toEqual({ floating: false, position: { referencePanel: "a", direction } });
     expect([...consumed]).toEqual(["new"]);

@@ -69,6 +69,7 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
     setPaneError(null);
     void updatePane(pane.id, {
       target: {
+        executorId: pane.target.executorId,
         ...target,
         command: targetCommand ?? session.command,
         cwd: targetProjectId ? session.cwd : targetCwd ?? session.cwd,
@@ -126,11 +127,12 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
         : "closed";
   const handleOpenTerminalTab = useCallback(() => {
     void openNewTerminalPane({
+      executorId: pane.target.executorId,
       ...(targetCommand ? { command: targetCommand } : {}),
       ...(targetProjectId ? { projectId: targetProjectId } : session?.cwd ?? targetCwd ? { cwd: session?.cwd ?? targetCwd } : {}),
       placement: { direction: "within", sourcePaneId: pane.id },
     });
-  }, [openNewTerminalPane, pane.id, session?.cwd, targetCommand, targetCwd, targetProjectId]);
+  }, [openNewTerminalPane, pane.id, pane.target.executorId, session?.cwd, targetCommand, targetCwd, targetProjectId]);
   const paneHeaderActions = useMemo(
     () => (
       <Group className="kodex-terminal-pane-actions" gap={4} wrap="nowrap">

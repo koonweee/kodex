@@ -144,7 +144,7 @@ describe("WorkspaceDock sync", () => {
         activePaneId: "pane-thread",
         dockviewLayout: null,
         panes: [workspacePane],
-        schemaVersion: 1,
+        schemaVersion: 2,
       })}>
         <MantineProvider><PaneAdornmentHarness activePaneId="pane-thread" pane={workspacePane} /></MantineProvider>
       </WorkspaceProvider>,
@@ -168,7 +168,7 @@ describe("WorkspaceDock sync", () => {
       return <WorkspaceRightHeaderActions activePanel={{ id: active } as never} panels={[{ id: "one" }, { id: "two" }] as never}
         api={{} as never} containerApi={{} as never} group={{} as never} headerPosition="top" isGroupActive />;
     }
-    const store = createMemoryWorkspacePaneStore({ activePaneId: "one", dockviewLayout: null, schemaVersion: 1,
+    const store = createMemoryWorkspacePaneStore({ activePaneId: "one", dockviewLayout: null, schemaVersion: 2,
       panes: [pane("one", "thread", { mode: "draft" }), pane("two", "thread", { mode: "draft" })] });
     const renderActions = (active: string) => <MantineProvider><WorkspaceProvider paneStore={store}><Actions active={active} /></WorkspaceProvider></MantineProvider>;
     const view = render(renderActions("one"));
@@ -184,7 +184,7 @@ describe("WorkspaceDock sync", () => {
     const workspacePane = pane("pane-thread", "thread", { mode: "existing", threadId: "thread-1" }, "First thread");
     const renderTab = (status: string, unread: boolean) => (
       <MantineProvider>
-        <WorkspaceProvider paneStore={createMemoryWorkspacePaneStore({ activePaneId: "pane-thread", dockviewLayout: null, panes: [workspacePane], schemaVersion: 1 })} threadSummariesById={{ "thread-1": {
+        <WorkspaceProvider paneStore={createMemoryWorkspacePaneStore({ activePaneId: "pane-thread", dockviewLayout: null, panes: [workspacePane], schemaVersion: 2 })} threadSummariesById={{ "thread-1": {
           id: "thread-1", status, unreadCompletedAgentTurn: unread,
         } as ThreadSummary }}>
           <MantineProvider><PaneAdornmentHarness activePaneId="pane-thread" pane={workspacePane} /></MantineProvider>
@@ -214,7 +214,7 @@ describe("WorkspaceDock sync", () => {
     }
     render(<MantineProvider><WorkspaceProvider paneStore={createMemoryWorkspacePaneStore({
       activePaneId: "other", panes: [workspacePane, pane("other", "thread", { mode: "draft" })],
-      dockviewLayout: null, schemaVersion: 1,
+      dockviewLayout: null, schemaVersion: 2,
     })}><MountedPane /></WorkspaceProvider></MantineProvider>);
     expect(screen.getByRole("status", { name: "Thread in progress" })).toBeInTheDocument();
   });
@@ -238,6 +238,7 @@ describe("WorkspaceDock sync", () => {
 
     expect(openDraftThreadPane).toHaveBeenCalledWith("project-1", {
       duplicate: true,
+      executorId: "local",
       placement: { direction: "within", sourcePaneId: "pane-thread" },
     });
   });
@@ -318,7 +319,7 @@ describe("WorkspaceDock sync", () => {
           },
         },
         panes,
-        schemaVersion: 1,
+        schemaVersion: 2,
       },
       suppressEventsRef,
     );
@@ -657,20 +658,20 @@ function workspaceModel(panes: WorkspacePane[], activePaneId: string | null = pa
       panels: Object.fromEntries(panes.slice(0, 2).map((workspacePane) => [workspacePane.id, {}])),
     },
     panes,
-    schemaVersion: 1,
+    schemaVersion: 2,
   };
 }
 
 function pane(
   id: string,
   kind: WorkspacePane["kind"],
-  target: WorkspacePane["target"],
+  target: Omit<WorkspacePane["target"], "executorId">,
   title: string | null = null,
 ): WorkspacePane {
   return {
     id,
     kind,
     title,
-    target,
+    target: { executorId: "local", ...target },
   } as WorkspacePane;
 }

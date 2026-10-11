@@ -58,7 +58,7 @@ describe("workspaceLayoutCodec", () => {
       activePaneId: "pane-b",
       dockviewLayout: {},
       panes: [pane("pane-a"), pane("pane-b")],
-      schemaVersion: 1,
+      schemaVersion: 2,
     };
 
     expect(compactWorkspaceLayout(workspace)).toEqual({
@@ -72,6 +72,6 @@ function pane(id: string): WorkspacePane {
   return {
     id,
     kind: "thread",
-    target: { mode: "draft" },
+    target: { executorId: "local", mode: "draft" },
   };
 }

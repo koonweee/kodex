@@ -1,24 +1,31 @@
 import type { InstanceStorage } from "../api/instanceStorage";
 import type { AppSurfacePaneTarget, TerminalPaneTarget, ThreadPaneTarget, WorkspaceModel, WorkspacePane, WorkspacePaneState } from "./paneTypes";
 
-const WORKSPACE_PANE_STATE_VERSION = 1;
-const WORKSPACE_PANE_STORAGE_KEY = "kodex.workspace.panes.v1";
+const WORKSPACE_PANE_STATE_VERSION = 2;
+const WORKSPACE_PANE_STORAGE_KEY = "kodex.workspace.panes.v2";
+export const LOCAL_EXECUTOR_ID = "local";
 
 export type WorkspacePaneStoreAdapter = {
   load: () => WorkspacePaneState;
   save: (state: WorkspacePaneState) => void;
 };
 
-export function createBrowserWorkspacePaneStore(storage: InstanceStorage | null): WorkspacePaneStoreAdapter {
+export function createBrowserWorkspacePaneStore(
+  storage: InstanceStorage | null,
+  defaultExecutorId = LOCAL_EXECUTOR_ID,
+): WorkspacePaneStoreAdapter {
   return {
     load: () => {
       try {
-        return parseWorkspacePaneState(storage?.getItem(WORKSPACE_PANE_STORAGE_KEY) ?? null);
+        return parseWorkspacePaneState(storage?.getItem(WORKSPACE_PANE_STORAGE_KEY) ?? null, defaultExecutorId);
       } catch {
-        return createDefaultWorkspaceState();
+        return createDefaultWorkspaceState(defaultExecutorId);
       }
     },
-    save: (state) => storage?.setItem(WORKSPACE_PANE_STORAGE_KEY, JSON.stringify(serializeWorkspacePaneState(state))),
+    save: (state) => storage?.setItem(
+      WORKSPACE_PANE_STORAGE_KEY,
+      JSON.stringify(serializeWorkspacePaneState(state, defaultExecutorId)),
+    ),
   };
 }
 
@@ -35,8 +42,8 @@ export function createMemoryWorkspacePaneStore(initialState?: WorkspacePaneState
   };
 }
 
-export function createDefaultWorkspaceState(): WorkspacePaneState {
-  const pane = createDraftThreadPane();
+export function createDefaultWorkspaceState(executorId = LOCAL_EXECUTOR_ID): WorkspacePaneState {
+  const pane = createDraftThreadPane(executorId);
   return {
     activePaneId: pane.id,
     dockviewLayout: null,
@@ -45,11 +52,11 @@ export function createDefaultWorkspaceState(): WorkspacePaneState {
   };
 }
 
-export function createDraftThreadPane(projectId?: string | null): WorkspacePane {
+export function createDraftThreadPane(executorId: string, projectId?: string | null): WorkspacePane {
   return {
     id: createPaneId("thread"),
     kind: "thread",
-    target: projectId ? { mode: "draft", projectId } : { mode: "draft" },
+    target: projectId ? { executorId, mode: "draft", projectId } : { executorId, mode: "draft" },
     title: projectId ? "New thread" : "New chat",
   };
 }
@@ -59,19 +66,25 @@ export function createPaneId(kind: WorkspacePane["kind"]): string {
   return `${kind}-${randomId}`;
 }
 
-export function parseWorkspacePaneState(serialized: string | null): WorkspacePaneState {
+export function parseWorkspacePaneState(
+  serialized: string | null,
+  defaultExecutorId = LOCAL_EXECUTOR_ID,
+): WorkspacePaneState {
   if (!serialized) {
-    return createDefaultWorkspaceState();
+    return createDefaultWorkspaceState(defaultExecutorId);
   }
   try {
-    return normalizeWorkspacePaneState(JSON.parse(serialized)) ?? createDefaultWorkspaceState();
+    return normalizeWorkspacePaneState(JSON.parse(serialized)) ?? createDefaultWorkspaceState(defaultExecutorId);
   } catch {
-    return createDefaultWorkspaceState();
+    return createDefaultWorkspaceState(defaultExecutorId);
   }
 }
 
-export function serializeWorkspacePaneState(state: WorkspacePaneState): WorkspacePaneState {
-  return normalizeWorkspacePaneState(state) ?? createDefaultWorkspaceState();
+export function serializeWorkspacePaneState(
+  state: WorkspacePaneState,
+  defaultExecutorId = LOCAL_EXECUTOR_ID,
+): WorkspacePaneState {
+  return normalizeWorkspacePaneState(state) ?? createDefaultWorkspaceState(defaultExecutorId);
 }
 
 export function normalizeWorkspacePaneState(value: unknown): WorkspacePaneState | null {
@@ -127,7 +140,7 @@ function isWorkspacePane(value: unknown): value is WorkspacePane {
 }
 
 function isThreadPaneTarget(value: unknown): value is ThreadPaneTarget {
-  if (!isRecord(value)) {
+  if (!isExecutorTarget(value)) {
     return false;
   }
   if (value.mode === "existing") {
@@ -141,7 +154,7 @@ function isThreadPaneTarget(value: unknown): value is ThreadPaneTarget {
 }
 
 function isAppSurfacePaneTarget(value: unknown): value is AppSurfacePaneTarget {
-  if (!isRecord(value) || typeof value.threadId !== "string") {
+  if (!isExecutorTarget(value) || typeof value.threadId !== "string") {
     return false;
   }
   if (value.mode === "latest") {
@@ -154,7 +167,7 @@ function isAppSurfacePaneTarget(value: unknown): value is AppSurfacePaneTarget {
 }
 
 function isTerminalPaneTarget(value: unknown): value is TerminalPaneTarget {
-  if (!isRecord(value)) {
+  if (!isExecutorTarget(value)) {
     return false;
   }
   for (const key of ["command", "cwd", "terminalId"] as const) {
@@ -164,6 +177,10 @@ function isTerminalPaneTarget(value: unknown): value is TerminalPaneTarget {
     }
   }
   return true;
+}
+
+function isExecutorTarget(value: unknown): value is Record<string, unknown> & { executorId: string } {
+  return isRecord(value) && typeof value.executorId === "string" && value.executorId.trim().length > 0;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

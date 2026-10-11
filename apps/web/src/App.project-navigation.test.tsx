@@ -16,7 +16,7 @@ describe("project navigation", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: /project settings for kodex/i }));
 
-    expect(window.location.pathname).toBe("/projects/project-1");
+    expect(window.location.pathname).toBe("/executors/local/projects/project-1");
     const main = await screen.findByRole("main", { name: "Project" });
     expect(await within(main).findByRole("heading", { name: "Kodex" })).toBeInTheDocument();
     expect(within(main).getByRole("textbox", { name: "Root directories" })).toHaveValue(project.roots.map((root) => root.path).join("\n"));

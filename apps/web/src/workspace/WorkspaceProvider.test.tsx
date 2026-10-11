@@ -1,9 +1,13 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useLayoutEffect, type ComponentProps } from "react";
+import { useEffect, useLayoutEffect, useState, type ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { deleteTerminalSession } from "../api/client";
 import type { EventEnvelope } from "../api/client";
+import type { GatewayClient } from "../api/gatewayClient";
+import { ExecutorRuntimeRegistryProvider } from "../api/GatewayClientContext";
+import { createKodexQueryClient, type ExecutorRuntime } from "../api/queryClient";
+import type { ExecutorConnection } from "../api/executorConnection";
 import { createMemoryWorkspacePaneStore } from "./paneStore";
 import type { WorkspacePane, WorkspacePaneState } from "./paneTypes";
 import { WorkspaceProvider, useWorkspace } from "./WorkspaceProvider";
@@ -12,15 +16,17 @@ const streamClients: Array<{
   close: ReturnType<typeof vi.fn>;
   connect: ReturnType<typeof vi.fn>;
   emit: (event: EventEnvelope) => void;
+  connection?: ExecutorConnection;
   threadIds: string[];
 }> = [];
 
 vi.mock("../events/stream", () => ({
-  createEventStreamClient: vi.fn((options: { onEvent?: (event: EventEnvelope) => void; threadIds?: string[] }) => {
+  createEventStreamClient: vi.fn((options: { connection?: ExecutorConnection; onEvent?: (event: EventEnvelope) => void; threadIds?: string[] }) => {
     const client = {
       close: vi.fn(),
       updateDeliveryOptions: vi.fn(),
       connect: vi.fn(),
+      connection: options.connection,
       emit: (event: EventEnvelope) => options.onEvent?.(event),
       threadIds: options.threadIds ?? [],
     };
@@ -52,9 +58,9 @@ describe("WorkspaceProvider pane commands", () => {
     fireEvent.click(screen.getByRole("button", { name: "New project chat" }));
     await waitFor(() => expect(store.getState().activePaneId).toBe("pane-draft"));
     expect(store.getState().panes).toHaveLength(2);
-    expect(store.getState().panes[0]?.target).toEqual({ mode: "draft", projectId: "project-1" });
+    expect(store.getState().panes[0]?.target).toEqual({ executorId: "local", mode: "draft", projectId: "project-1" });
     fireEvent.click(screen.getByRole("button", { name: "New projectless chat" }));
-    await waitFor(() => expect(store.getState().panes[0]?.target).toEqual({ mode: "draft" }));
+    await waitFor(() => expect(store.getState().panes[0]?.target).toEqual({ executorId: "local", mode: "draft" }));
     expect(store.getState().panes).toHaveLength(2);
   });
 
@@ -64,7 +70,7 @@ describe("WorkspaceProvider pane commands", () => {
     fireEvent.click(screen.getByRole("button", { name: "Protect draft" }));
     fireEvent.click(screen.getByRole("button", { name: "New projectless chat" }));
     await waitFor(() => expect(store.getState().panes).toHaveLength(2));
-    expect(store.getState().panes[0]).toMatchObject({ id: "pane-draft", target: { mode: "draft", projectId: "project-1" } });
+    expect(store.getState().panes[0]).toMatchObject({ id: "pane-draft", target: { executorId: "local", mode: "draft", projectId: "project-1" } });
     expect(store.getState().activePaneId).not.toBe("pane-draft");
   });
 
@@ -90,7 +96,7 @@ describe("WorkspaceProvider pane commands", () => {
     renderProvider(store);
     fireEvent.click(screen.getByRole("button", { name: command }));
     await waitFor(() => expect(store.getState().panes).toHaveLength(2));
-    expect(store.getState().panes[0]).toMatchObject({ kind: "thread", target: { mode: "draft" } });
+    expect(store.getState().panes[0]).toMatchObject({ kind: "thread", target: { executorId: "local", mode: "draft" } });
   });
 
   it("does not discard panes added in the same batch as a thread open", async () => {
@@ -153,7 +159,7 @@ describe("WorkspaceProvider pane commands", () => {
     });
     const createdTerminal = store.getState().panes.find((pane) => pane.kind === "terminal" && pane.id !== "pane-terminal-1");
     expect(createdTerminal).toBeTruthy();
-    expect(createdTerminal?.target).toEqual({ command: null, cwd: null });
+    expect(createdTerminal?.target).toEqual({ command: null, cwd: null, executorId: "local" });
 
     fireEvent.click(screen.getByRole("button", { name: "Close existing terminal" }));
 
@@ -173,7 +179,7 @@ describe("WorkspaceProvider pane commands", () => {
     await waitFor(() => expect(store.getState().panes.some((pane) => pane.kind === "terminal")).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "Open terminal" }));
     await waitFor(() => expect(store.getState().panes.find((pane) => pane.kind === "terminal")?.target).toEqual({
-      command: null, cwd: null, reuseRunning: true,
+      command: null, cwd: null, executorId: "local", reuseRunning: true,
     }));
     expect(deleteTerminalSession).not.toHaveBeenCalled();
   });
@@ -261,7 +267,7 @@ describe("WorkspaceProvider pane commands", () => {
     renderProvider(store);
     fireEvent.click(screen.getByRole("button", { name: "Open thread" }));
     await waitFor(() => expect(store.getState().panes).toHaveLength(1));
-    expect(store.getState().panes[0]).toMatchObject({ id: "pane-draft", target: { mode: "existing", threadId: "thread-1" } });
+    expect(store.getState().panes[0]).toMatchObject({ id: "pane-draft", target: { executorId: "local", mode: "existing", threadId: "thread-1" } });
   });
 
   it("does not retarget an active draft thread pane when opening an existing thread", async () => {
@@ -278,6 +284,7 @@ describe("WorkspaceProvider pane commands", () => {
     });
     expect(screen.getByTestId("active-pane")).not.toHaveTextContent("pane-draft");
     expect(store.getState().panes.find((pane) => pane.id === "pane-draft")?.target).toEqual({
+      executorId: "local",
       mode: "draft",
       projectId: "project-1",
     });
@@ -300,6 +307,7 @@ describe("WorkspaceProvider pane commands", () => {
       expect(screen.getByTestId("pane-count")).toHaveTextContent("2");
     });
     expect(store.getState().panes.find((pane) => pane.id === "pane-thread-1")?.target).toEqual({
+      executorId: "local",
       mode: "existing",
       threadId: "thread-1",
     });
@@ -384,7 +392,7 @@ describe("WorkspaceProvider pane commands", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open unseen thread" }));
     await waitFor(() => expect(screen.getByTestId("active-pane")).toHaveTextContent("pane-thread-2"));
     expect(screen.getByTestId("canonical-pane-context")).toHaveTextContent("native-project|/native-cwd");
-    expect(store.getState().panes[0].target).toEqual({ mode: "existing", threadId: "thread-1" });
+    expect(store.getState().panes[0].target).toEqual({ executorId: "local", mode: "existing", threadId: "thread-1" });
     fireEvent.click(screen.getByRole("button", { name: "Close native context pane" }));
     await waitFor(() => expect(screen.getByTestId("canonical-pane-context")).toHaveTextContent("none|none"));
   });
@@ -404,7 +412,50 @@ describe("WorkspaceProvider pane commands", () => {
     });
     expect(streamClients[0]?.threadIds).toEqual(["thread-1"]);
   });
+
+  it("opens independent event channels for colliding thread ids on adjacent executors", async () => {
+    const store = createMemoryWorkspacePaneStore(workspaceState([
+      threadPane("first", "shared", "First", "executor-a"),
+      threadPane("second", "shared", "Second", "executor-b"),
+    ]));
+
+    render(
+      <ExecutorRuntimeRegistryProvider runtimes={[executorRuntime("executor-a"), executorRuntime("executor-b")]}>
+        <WorkspaceProvider paneStore={store}><StreamCounters /></WorkspaceProvider>
+      </ExecutorRuntimeRegistryProvider>,
+    );
+
+    await waitFor(() => expect(streamClients).toHaveLength(2));
+    expect(streamClients.map((client) => [client.connection?.executorId, client.threadIds])).toEqual([
+      ["executor-a", ["shared"]],
+      ["executor-b", ["shared"]],
+    ]);
+
+    await act(async () => streamClients[0].emit(appSurfacePresentationEvent("open", 1)));
+    expect(screen.getByTestId("executor-a-events")).toHaveTextContent("1");
+    expect(screen.getByTestId("executor-b-events")).toHaveTextContent("0");
+    await act(async () => streamClients[1].emit(appSurfacePresentationEvent("open", 1)));
+    expect(screen.getByTestId("executor-a-events")).toHaveTextContent("1");
+    expect(screen.getByTestId("executor-b-events")).toHaveTextContent("1");
+  });
 });
+
+function StreamCounters() {
+  const workspace = useWorkspace();
+  const [counts, setCounts] = useState({ first: 0, second: 0 });
+  useEffect(() => workspace.subscribeLiveEvent("executor-a", () => setCounts((value) => ({ ...value, first: value.first + 1 }))), [workspace]);
+  useEffect(() => workspace.subscribeLiveEvent("executor-b", () => setCounts((value) => ({ ...value, second: value.second + 1 }))), [workspace]);
+  return <><span data-testid="executor-a-events">{counts.first}</span><span data-testid="executor-b-events">{counts.second}</span></>;
+}
+
+function executorRuntime(executorId: string): ExecutorRuntime {
+  return {
+    api: {} as GatewayClient,
+    connection: Object.freeze({ executorId, instanceId: `instance-${executorId}` }),
+    queryClient: createKodexQueryClient(),
+    storage: null,
+  };
+}
 
 function renderProvider(
   paneStore: ReturnType<typeof createMemoryWorkspacePaneStore>,
@@ -516,15 +567,15 @@ function workspaceState(panes: WorkspacePane[], activePaneId: string | null = pa
       panes: panes.map((pane) => ({ id: pane.id })),
     },
     panes,
-    schemaVersion: 1,
+    schemaVersion: 2,
   };
 }
 
-function threadPane(id: string, threadId: string, title: string): WorkspacePane {
+function threadPane(id: string, threadId: string, title: string, executorId = "local"): WorkspacePane {
   return {
     id,
     kind: "thread",
-    target: { mode: "existing", threadId },
+    target: { executorId, mode: "existing", threadId },
     title,
   };
 }
@@ -533,7 +584,7 @@ function draftThreadPane(id: string, projectId: string | null = null): Workspace
   return {
     id,
     kind: "thread",
-    target: { mode: "draft", projectId },
+    target: { executorId: "local", mode: "draft", projectId },
     title: "Draft thread",
   };
 }
@@ -542,7 +593,7 @@ function appSurfacePane(id: string, threadId: string): WorkspacePane {
   return {
     id,
     kind: "appSurface",
-    target: { mode: "latest", threadId },
+    target: { executorId: "local", mode: "latest", threadId },
     title: "App Surface",
   };
 }
@@ -551,7 +602,7 @@ function terminalPane(id: string, terminalId: string): WorkspacePane {
   return {
     id,
     kind: "terminal",
-    target: { terminalId },
+    target: { executorId: "local", terminalId },
     title: "Terminal",
   };
 }

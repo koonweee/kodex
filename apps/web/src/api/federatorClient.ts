@@ -15,6 +15,7 @@ export function createFederatorClient({
   const api = createClient<paths>({ baseUrl, fetch: (request) => compatibleFetch(request) });
 
   return {
+    getHealth: () => unwrap(api.GET("/healthz", { cache: "no-store" })),
     listExecutors: () => unwrap(api.GET("/v1/federation/executors", { cache: "no-store" })),
     registerExecutor: (request: components["schemas"]["RegisterExecutorRequest"]) => (
       unwrap(api.POST("/v1/federation/executors", { body: request }))
@@ -36,6 +37,11 @@ export function createFederatorClient({
       params: { path: { executorId } },
     })),
   };
+}
+
+export function isFederatedAppShell(): boolean {
+  return typeof document !== "undefined"
+    && document.head.querySelector<HTMLMetaElement>('meta[name="kodex-federator"]')?.content === "true";
 }
 
 export type FederatorClient = ReturnType<typeof createFederatorClient>;

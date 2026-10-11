@@ -566,17 +566,17 @@ describe("MVP composer input flows", () => {
         {
           id: "pane-thread-1",
           kind: "thread",
-          target: { mode: "existing", threadId: "thread-1" },
+          target: { executorId: "local", mode: "existing", threadId: "thread-1" },
           title: "Implement frontend",
         },
         {
           id: "pane-thread-2",
           kind: "thread",
-          target: { mode: "existing", threadId: "thread-2" },
+          target: { executorId: "local", mode: "existing", threadId: "thread-2" },
           title: "Second thread",
         },
       ],
-      schemaVersion: 1,
+      schemaVersion: 2,
     });
 
     render(<App />);

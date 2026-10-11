@@ -83,7 +83,7 @@ describe("subagent thread viewer", () => {
   });
 
   it("hides the robot action when the gateway reports no subagents", async () => {
-    window.history.replaceState(null, "", "/threads/thread-1");
+    window.history.replaceState(null, "", "/executors/local/threads/thread-1");
     mockGateway(baseRoutes());
 
     render(<App />);

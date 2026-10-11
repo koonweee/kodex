@@ -34,8 +34,8 @@ it("does not acknowledge or advertise a pane hidden behind the narrow sidebar un
       unreadCompletedAgentTurn: false, updatedAt: "2026-10-05T00:00:00Z" },
   });
   const visibleThreads = vi.fn();
-  const store = createMemoryWorkspacePaneStore({ schemaVersion: 1, activePaneId: "pane", dockviewLayout: null,
-    panes: [{ id: "pane", kind: "thread", target: { mode: "existing", threadId: "deep-link" } }] });
+  const store = createMemoryWorkspacePaneStore({ schemaVersion: 2, activePaneId: "pane", dockviewLayout: null,
+    panes: [{ id: "pane", kind: "thread", target: { executorId: "local", mode: "existing", threadId: "deep-link" } }] });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const tree = (isVisible: boolean) => <QueryClientProvider client={client}><MantineProvider>
     <WorkspaceProvider isVisible={isVisible} paneStore={store} onVisibleThreadIdsChange={visibleThreads}
@@ -67,8 +67,8 @@ it("refills an invalidated native head and acknowledges only the visible canonic
     "GET /v1/threads/deep-link/app-surface": { session: null },
   });
   const loaded = vi.fn();
-  const store = createMemoryWorkspacePaneStore({ schemaVersion: 1, activePaneId: "pane", dockviewLayout: null,
-    panes: [{ id: "pane", kind: "thread", target: { mode: "existing", threadId: "deep-link" } }] });
+  const store = createMemoryWorkspacePaneStore({ schemaVersion: 2, activePaneId: "pane", dockviewLayout: null,
+    panes: [{ id: "pane", kind: "thread", target: { executorId: "local", mode: "existing", threadId: "deep-link" } }] });
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <MantineProvider><WorkspaceProvider paneStore={store} onThreadSnapshotLoaded={loaded}
       renderThreadComposer={(_pane, state) => <div role="status">{state.thread?.latestCompletedTurnId}:{state.thread?.readRevision}:{String(state.thread?.unreadCompletedAgentTurn)}</div>}>

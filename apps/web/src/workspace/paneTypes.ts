@@ -1,14 +1,18 @@
 export type WorkspacePaneType = "thread" | "appSurface" | "terminal";
 
+export type ExecutorPaneTarget = {
+  executorId: string;
+};
+
 export type ThreadPaneTarget =
-  | { mode: "existing"; threadId: string }
-  | { mode: "draft"; projectId?: string | null; cwd?: string | null };
+  | (ExecutorPaneTarget & { mode: "existing"; threadId: string })
+  | (ExecutorPaneTarget & { mode: "draft"; projectId?: string | null; cwd?: string | null });
 
 export type AppSurfacePaneTarget =
-  | { mode: "latest"; threadId: string }
-  | { mode: "session"; threadId: string; sessionId: string };
+  | (ExecutorPaneTarget & { mode: "latest"; threadId: string })
+  | (ExecutorPaneTarget & { mode: "session"; threadId: string; sessionId: string });
 
-export type TerminalPaneTarget = {
+export type TerminalPaneTarget = ExecutorPaneTarget & {
   projectId?: string | null;
   reuseRunning?: boolean;
   command?: string | null;
