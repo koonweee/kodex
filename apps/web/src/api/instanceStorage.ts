@@ -7,7 +7,24 @@ export function createInstanceStorage(
   if (!storage || !instanceId.trim()) {
     return null;
   }
-  const prefix = `kodex.instance.${encodeURIComponent(instanceId)}:`;
+  return createPrefixedStorage(`kodex.instance.${encodeURIComponent(instanceId)}:`, storage);
+}
+
+export function createExecutorStorage(
+  executorId: string,
+  instanceId: string,
+  storage: InstanceStorage | null = browserStorage(),
+): InstanceStorage | null {
+  if (!storage || !executorId.trim() || !instanceId.trim()) {
+    return null;
+  }
+  return createPrefixedStorage(
+    `kodex.executor.${encodeURIComponent(executorId)}.${encodeURIComponent(instanceId)}:`,
+    storage,
+  );
+}
+
+function createPrefixedStorage(prefix: string, storage: InstanceStorage): InstanceStorage {
   return {
     getItem: (key) => storage.getItem(`${prefix}${key}`),
     setItem: (key, value) => storage.setItem(`${prefix}${key}`, value),
