@@ -15,9 +15,9 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::State as FederatorState;
+use crate::{RegistryChange, State as FederatorState};
 
-pub const SUPPORTED_EXECUTOR_API_VERSION: &str = "3";
+pub const SUPPORTED_EXECUTOR_API_VERSION: &str = "4";
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -102,6 +102,10 @@ pub(crate) struct RegistryError {
 }
 
 impl RegistryError {
+    pub(crate) fn message(&self) -> &str {
+        &self.message
+    }
+
     fn bad_request(message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::BAD_REQUEST,
@@ -217,7 +221,7 @@ pub(crate) async fn register_executor(
     Json(request): Json<RegisterExecutorRequest>,
 ) -> Result<(StatusCode, Json<ExecutorRecord>), RegistryError> {
     let display_name = validate_display_name(&request.display_name)?;
-    let endpoint = validate_executor_endpoint(&request.base_url).await?;
+    let endpoint = validate_executor_probe_endpoint(&request.base_url).await?;
     let base_url = endpoint.base_url.clone();
     let capabilities = probe_executor(&endpoint).await?;
     let existing = state
@@ -270,6 +274,10 @@ pub(crate) async fn register_executor(
                 RegistryError::internal(error)
             }
         })?;
+    let _ = state.registry_changes.send(RegistryChange {
+        executor_id: record.id.clone(),
+        generation: Some(record.generation),
+    });
     Ok((StatusCode::CREATED, Json(record)))
 }
 
@@ -304,6 +312,10 @@ pub(crate) async fn update_executor(
         .await
         .map_err(RegistryError::internal)?
         .ok_or_else(RegistryError::not_found)?;
+    let _ = state.registry_changes.send(RegistryChange {
+        executor_id: updated.id.clone(),
+        generation: Some(updated.generation),
+    });
     Ok(Json(updated))
 }
 
@@ -323,6 +335,10 @@ pub(crate) async fn delete_executor(
         .await
         .map_err(RegistryError::internal)?
     {
+        let _ = state.registry_changes.send(RegistryChange {
+            executor_id,
+            generation: None,
+        });
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(RegistryError::not_found())
@@ -351,9 +367,9 @@ struct ParsedEndpoint {
     boundary: NetworkBoundary,
 }
 
-struct ValidatedEndpoint {
-    base_url: String,
-    client: reqwest::Client,
+pub(crate) struct ValidatedEndpoint {
+    pub(crate) base_url: String,
+    pub(crate) client: reqwest::Client,
 }
 
 fn parse_executor_url(value: &str) -> Result<ParsedEndpoint, RegistryError> {
@@ -408,13 +424,28 @@ fn parse_executor_url(value: &str) -> Result<ParsedEndpoint, RegistryError> {
     })
 }
 
-async fn validate_executor_endpoint(value: &str) -> Result<ValidatedEndpoint, RegistryError> {
+async fn validate_executor_probe_endpoint(value: &str) -> Result<ValidatedEndpoint, RegistryError> {
+    validate_executor_endpoint(value, Some(Duration::from_secs(5))).await
+}
+
+pub(crate) async fn validate_executor_proxy_endpoint(
+    value: &str,
+) -> Result<ValidatedEndpoint, RegistryError> {
+    validate_executor_endpoint(value, None).await
+}
+
+async fn validate_executor_endpoint(
+    value: &str,
+    total_timeout: Option<Duration>,
+) -> Result<ValidatedEndpoint, RegistryError> {
     let endpoint = parse_executor_url(value)?;
     let mut builder = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
         .connect_timeout(Duration::from_secs(5))
         .redirect(reqwest::redirect::Policy::none())
         .no_proxy();
+    if let Some(timeout) = total_timeout {
+        builder = builder.timeout(timeout);
+    }
     if let url::Host::Domain(domain) = endpoint.url.host().expect("validated URL has a host") {
         let port = endpoint
             .url

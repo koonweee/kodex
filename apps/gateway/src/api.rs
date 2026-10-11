@@ -663,6 +663,7 @@ fn finish_router(router: Router) -> Router {
 /// intentionally absent so an exposed executor listener cannot bypass the
 /// federator route allowlist.
 pub fn build_executor_router(state: AppState) -> Router {
+    let instance_id = state.config.instance.id.clone();
     let mut router = executor_routes(executor_openapi()).with_state(state.clone());
     // The existing single-machine service still serves the frontend from this
     // process. M1 moves these assets to the federator atomically with the
@@ -670,7 +671,10 @@ pub fn build_executor_router(state: AppState) -> Router {
     if let Some(dist_dir) = state.config.frontend.dist_dir.clone() {
         router = static_assets::attach_frontend(router, dist_dir);
     }
-    finish_router(router)
+    finish_router(router.layer(middleware::from_fn_with_state(
+        instance_id,
+        crate::instance_precondition::enforce,
+    )))
 }
 
 /// Loopback-only agent Control API. It deliberately excludes every browser

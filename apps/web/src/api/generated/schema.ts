@@ -1396,7 +1396,7 @@ export interface components {
             retryable: boolean;
         };
         /** @enum {string} */
-        ApiVersion: "3";
+        ApiVersion: "4";
         AppServerCapabilities: {
             detectedVersion?: string | null;
             detectedVersionMatchesSchema?: boolean | null;

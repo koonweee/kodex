@@ -10,6 +10,7 @@ pub mod error;
 pub mod events;
 mod events_replay;
 mod events_synthetic;
+pub mod instance_precondition;
 pub mod mcp;
 pub mod native_runtime;
 pub mod notifications;
@@ -33,4 +34,6 @@ pub mod thread_view_patch;
 mod thread_view_projection;
 pub mod turn_lifecycle;
 
-pub use api::{build_control_router, build_executor_router, build_router, AppState};
+pub use api::{
+    build_control_router, build_executor_router, build_router, executor_openapi, AppState,
+};

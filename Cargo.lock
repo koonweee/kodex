@@ -1818,8 +1818,11 @@ name = "kodex-federator"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-stream",
  "axum",
+ "futures-util",
  "http-body-util",
+ "kodex-gateway",
  "percent-encoding",
  "reqwest",
  "serde",

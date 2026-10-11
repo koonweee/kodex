@@ -229,6 +229,50 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn executor_listener_enforces_supplied_instance_preconditions() {
+        let (state, _) = test_state().await;
+        let expected_instance = state.config.instance.id.clone();
+        let executor = build_executor_router(state.clone());
+        let control = build_control_router(state);
+
+        let mismatch = executor
+            .clone()
+            .oneshot(
+                Request::get("/v1/projects")
+                    .header("x-kodex-expected-instance", "replacement-instance")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(mismatch.status(), StatusCode::CONFLICT);
+        let mismatch = response_json(mismatch).await;
+        assert_eq!(mismatch["code"], "executor_instance_mismatch");
+
+        let matched = executor
+            .oneshot(
+                Request::get("/v1/projects")
+                    .header("x-kodex-expected-instance", expected_instance)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(matched.status(), StatusCode::OK);
+
+        let local_control = control
+            .oneshot(
+                Request::get("/v1/self-control/status")
+                    .header("x-kodex-expected-instance", "federator-value")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(local_control.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
     async fn thread_view_presence_route_tracks_visible_and_hidden_clients() {
         let (state, _) = test_state().await;
         let app = build_router(state.clone());

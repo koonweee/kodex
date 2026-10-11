@@ -20,6 +20,1316 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/executors/{executorId}/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["read_account"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/account/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["start_login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/account/login/{loginId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cancel_login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/account/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/account/rate-limit-reset-credits/consume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["consume_reset_credit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/account/rate-limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["read_rate_limits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/app-surfaces/{sessionId}/bridge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["app_surface_bridge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/app-surfaces/{sessionId}/document": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["app_surface_document"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_approvals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/approvals/{approvalId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_approval"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/approvals/{approvalId}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["decide_approval"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/automations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_automations"];
+        put?: never;
+        post: operations["create_automation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/automations/{automationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_automation"];
+        put?: never;
+        post?: never;
+        delete: operations["delete_automation"];
+        options?: never;
+        head?: never;
+        patch: operations["update_automation"];
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/automations/{automationId}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["pause_automation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/automations/{automationId}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resume_automation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/automations/{automationId}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_automation_runs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["capabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/chats/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_chat_threads"];
+        put?: never;
+        post: operations["create_chat_thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/composer-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["read_composer_settings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["update_composer_settings"];
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/debug/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["debug_events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/directories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Browse directories inside the gateway user's home */
+        get: operations["list_directories"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/mcp/configured-servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_configured_mcp_servers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/mcp/reload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reload_mcp_servers"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/mcp/servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_mcp_servers"];
+        put?: never;
+        post: operations["add_mcp_server"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/mcp/servers/{server}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["remove_mcp_server"];
+        options?: never;
+        head?: never;
+        patch: operations["update_mcp_server"];
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/mcp/servers/{server}/enabled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["set_mcp_server_enabled"];
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/mcp/servers/{server}/oauth-login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["start_mcp_oauth_login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/mcp/servers/{server}/resources/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["read_mcp_resource"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_models"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/notifications/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["notification_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/notifications/subscription/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["current_push_subscription"];
+        put?: never;
+        post?: never;
+        delete: operations["delete_current_push_subscription"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/notifications/subscriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["upsert_push_subscription"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/notifications/subscriptions/{subscriptionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_push_subscription"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/notifications/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["test_notification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/permission-profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_permission_profiles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/pinned-threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_pinned_threads"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_projects"];
+        put?: never;
+        post: operations["create_project"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/projects/{projectId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_project"];
+        put?: never;
+        post?: never;
+        delete: operations["delete_project"];
+        options?: never;
+        head?: never;
+        patch: operations["update_project"];
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/projects/{projectId}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["move_project"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/queue-transfers/{transferId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["dismiss_queue_transfer"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/queue-transfers/{transferId}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reconcile_queue_transfer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/sidebar/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_sidebar_threads"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_skills"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/skills/icon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview a local skill icon image
+         * @description Serves supported readable local skill icon images for localhost or trusted VPN deployments; this endpoint is not a public-safe filesystem authorization model.
+         */
+        get: operations["preview_skill_icon"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/terminals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_terminals"];
+        put?: never;
+        post: operations["create_terminal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/terminals/{terminalId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_terminal"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/thread-view-presence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["replace_thread_view_presence"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_threads"];
+        put?: never;
+        post: operations["create_thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/unread-badge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_unread_badge"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_thread"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/app-surface": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_thread_app_surface"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["archive_thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/attach": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["attach_thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/compact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["compact_thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/files/content/{directory}/{filePath}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a local HTML preview or one of its relative assets
+         * @description Directory-aware static file serving for localhost or trusted VPN deployments. The base64url directory is routing context, not an authorization token. HTML uses an opaque-origin CSP sandbox. Relative assets cannot escape the directory through parent paths or symlinks.
+         */
+        get: operations["thread_file_content"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/files/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview or download a local thread file
+         * @description Serves readable local files for localhost or trusted VPN deployments; this endpoint is not a public-safe filesystem authorization model.
+         */
+        get: operations["preview_thread_file"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/fork": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["fork_thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/goal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_thread_goal"];
+        put?: never;
+        post?: never;
+        delete: operations["clear_thread_goal"];
+        options?: never;
+        head?: never;
+        patch: operations["set_thread_goal"];
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/input": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["submit_thread_input"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/interrupt-current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pause an active native goal and interrupt the current native turn. */
+        post: operations["interrupt_current_turn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["rename_thread"];
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["update_thread_notifications"];
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["set_thread_pinned"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/queued-inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_queued_inputs"];
+        put?: never;
+        post: operations["create_queued_input"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/queued-inputs/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reorder_queued_inputs"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/queued-inputs/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["start_queued_input"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/queued-inputs/steer-first": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["steer_first_queued_input"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/queued-inputs/{queueId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["update_queued_input"];
+        post?: never;
+        delete: operations["delete_queued_input"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/queued-inputs/{queueId}/steer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["steer_queued_input"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resume_thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/seen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["mark_thread_seen"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_thread_settings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["update_thread_settings"];
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/subagents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_subagents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/timeline/pages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_thread_timeline_page"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/turns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["start_turn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/turns/{turnId}/interrupt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["interrupt_turn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/turns/{turnId}/steer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["steer_turn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/uploads/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["upload_thread_files"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/threads/{threadId}/view-presence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["update_thread_view_presence"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/executors/{executorId}/uploads/images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["upload_images"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/federation/executors": {
         parameters: {
             query?: never;
@@ -56,9 +1366,539 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AccountLoginCompleted: {
+            error?: string | null;
+            loginId?: string | null;
+            success: boolean;
+        };
+        AccountQuery: {
+            refreshToken?: boolean;
+        };
+        AccountResponse: {
+            account?: null | components["schemas"]["AccountSummary"];
+            rawPayload: unknown;
+            requiresOpenaiAuth: boolean;
+        };
+        AccountSummary: {
+            accountType: string;
+            email?: string | null;
+            planType?: string | null;
+            rawPayload: unknown;
+        };
+        ActivePermissionProfile: {
+            extends?: string | null;
+            id: string;
+        };
+        ApiErrorBody: {
+            code: string;
+            data?: null | components["schemas"]["NativeConfigWriteErrorData"];
+            message: string;
+            retryable: boolean;
+        };
+        /** @enum {string} */
+        ApiVersion: "4";
+        AppServerCapabilities: {
+            detectedVersion?: string | null;
+            detectedVersionMatchesSchema?: boolean | null;
+            experimentalApi: boolean;
+            ready: boolean;
+            schemaVersion: string;
+        };
+        AppSummary: {
+            description?: string | null;
+            id: string;
+            installUrl?: string | null;
+            name: string;
+            needsAuth: boolean;
+        };
+        AppSurfaceBridgeError: {
+            /** Format: int64 */
+            code: number;
+            data?: unknown;
+            message: string;
+        };
+        AppSurfaceBridgeRequest: {
+            bridgeToken?: string | null;
+            id?: unknown;
+            method: string;
+            params?: unknown;
+            /** Format: int64 */
+            revision: number;
+        };
+        AppSurfaceBridgeResponse: {
+            error?: null | components["schemas"]["AppSurfaceBridgeError"];
+            id?: unknown;
+            result?: unknown;
+        };
+        AppSurfaceCsp: {
+            baseUriDomains?: string[];
+            connectDomains?: string[];
+            frameDomains?: string[];
+            resourceDomains?: string[];
+        };
+        AppSurfaceDocumentQuery: {
+            /** Format: int64 */
+            revision: number;
+        };
+        AppSurfaceGrants: {
+            canOpenLinks?: boolean;
+            canSendMessage?: boolean;
+            canUpdateModelContext?: boolean;
+            resources?: components["schemas"]["AppSurfaceResourceGrant"][];
+            tools?: components["schemas"]["AppSurfaceToolGrant"][];
+        };
+        AppSurfacePermissions: {
+            camera?: unknown;
+            clipboardWrite?: unknown;
+            geolocation?: unknown;
+            microphone?: unknown;
+        };
+        /** @enum {string} */
+        AppSurfacePresentationAction: "open" | "focus";
+        AppSurfacePresentationRequestDto: {
+            action: components["schemas"]["AppSurfacePresentationAction"];
+            sessionId?: string | null;
+            threadId: string;
+            title?: string | null;
+        };
+        AppSurfacePresentationResponse: {
+            request: components["schemas"]["AppSurfacePresentationRequestDto"];
+        };
+        /** @enum {string} */
+        AppSurfaceProvider: "mcp" | "generated";
+        AppSurfaceResourceGrant: {
+            server?: string | null;
+            uri: string;
+        };
+        AppSurfaceSession: {
+            /** Format: date-time */
+            archivedAt?: string | null;
+            bridgeToken: string;
+            /** Format: date-time */
+            createdAt: string;
+            csp: components["schemas"]["AppSurfaceCsp"];
+            displayModes: string[];
+            fallbackContent: string;
+            grants: components["schemas"]["AppSurfaceGrants"];
+            html: string;
+            id: string;
+            permissions: components["schemas"]["AppSurfacePermissions"];
+            provenance: unknown;
+            provider: components["schemas"]["AppSurfaceProvider"];
+            resourceMimeType: string;
+            resourceUri: string;
+            /** Format: int64 */
+            revision: number;
+            status: components["schemas"]["AppSurfaceSessionStatus"];
+            threadId: string;
+            title: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AppSurfaceSessionDto: {
+            /** Format: date-time */
+            archivedAt?: string | null;
+            bridgeToken: string;
+            /** Format: date-time */
+            createdAt: string;
+            csp: components["schemas"]["AppSurfaceCsp"];
+            displayModes: string[];
+            documentUrl: string;
+            fallbackContent: string;
+            grants: components["schemas"]["AppSurfaceGrants"];
+            id: string;
+            permissions: components["schemas"]["AppSurfacePermissions"];
+            provenance: unknown;
+            provider: components["schemas"]["AppSurfaceProvider"];
+            resourceMimeType: string;
+            resourceUri: string;
+            /** Format: int64 */
+            revision: number;
+            status: components["schemas"]["AppSurfaceSessionStatus"];
+            threadId: string;
+            title: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AppSurfaceSessionReadResponse: {
+            session?: null | components["schemas"]["AppSurfaceSessionDto"];
+        };
+        AppSurfaceSessionResponse: {
+            session: components["schemas"]["AppSurfaceSessionDto"];
+        };
+        /** @enum {string} */
+        AppSurfaceSessionStatus: "active" | "archived";
+        AppSurfaceToolGrant: {
+            name?: string | null;
+            server: string;
+            tool: string;
+        };
+        Approval: {
+            /** Format: date-time */
+            createdAt: string;
+            id: string;
+            itemId?: string | null;
+            method: string;
+            payload: unknown;
+            requestId: string;
+            /** Format: date-time */
+            resolvedAt?: string | null;
+            response?: unknown;
+            source: components["schemas"]["ApprovalSource"];
+            status: string;
+            threadId?: string | null;
+            turnId?: string | null;
+        };
+        ApprovalDecisionRequest: {
+            decision: unknown;
+        };
+        ApprovalListResponse: {
+            approvals: components["schemas"]["Approval"][];
+            /** Format: int64 */
+            revision: number;
+            runtimeId: string;
+        };
+        /** @enum {string} */
+        ApprovalSource: "native" | "generatedApp";
+        AutomationCreateRequest: {
+            /**
+             * @description Non-empty display name for the automation.
+             * @example Daily status
+             */
+            name: string;
+            newThread?: null | components["schemas"]["AutomationNewThread"];
+            /**
+             * @description Non-empty prompt to enqueue into the target thread at each scheduled firing.
+             * @example Summarize current repo state and next actions.
+             */
+            prompt: string;
+            /** @description Initial schedule. startAt is an absolute instant; repeatEvery is a fixed duration. */
+            schedule: components["schemas"]["AutomationSchedule"];
+            /** @description Target thread id that will receive the queued automation prompt. */
+            targetThreadId?: string | null;
+        };
+        AutomationDeleteResponse: {
+            id: string;
+        };
+        AutomationDto: {
+            /** Format: int64 */
+            consecutiveFailureCount: number;
+            /** Format: date-time */
+            createdAt: string;
+            id: string;
+            lastError?: string | null;
+            lastNativeQueueId?: string | null;
+            /** Format: date-time */
+            lastRunAt?: string | null;
+            name: string;
+            newThread?: null | components["schemas"]["AutomationNewThread"];
+            /**
+             * Format: date-time
+             * @description Next due firing instant in UTC.
+             */
+            nextRunAt: string;
+            pausedReason?: string | null;
+            prompt: string;
+            provenance?: unknown;
+            schedule: components["schemas"]["AutomationSchedule"];
+            status: components["schemas"]["AutomationStatus"];
+            targetThreadId?: string | null;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AutomationListQuery: {
+            threadId?: string | null;
+        };
+        AutomationListResponse: {
+            automations: components["schemas"]["AutomationDto"][];
+        };
+        /** @description Fresh chat settings captured by each automation run. Omitted settings use native defaults. */
+        AutomationNewThread: {
+            cwd?: string | null;
+            effort?: string | null;
+            model?: string | null;
+            projectId?: string | null;
+        };
+        AutomationRepeatEvery: {
+            /** @description Interval unit. The gateway canonicalizes this to seconds for storage and scheduling. */
+            unit: components["schemas"]["AutomationRepeatUnit"];
+            /**
+             * Format: int64
+             * @description Positive repeat interval value in the selected unit.
+             * @example 1
+             */
+            value: number;
+        };
+        /** @enum {string} */
+        AutomationRepeatUnit: "seconds" | "minutes" | "hours";
+        AutomationResponse: {
+            automation: components["schemas"]["AutomationDto"];
+        };
+        AutomationRun: {
+            automationId: string;
+            /** Format: date-time */
+            createdAt: string;
+            error?: string | null;
+            id: string;
+            nativeQueueId?: string | null;
+            newThread?: null | components["schemas"]["AutomationNewThread"];
+            phase: components["schemas"]["AutomationRunPhase"];
+            /** Format: date-time */
+            scheduledFor?: string | null;
+            targetThreadId?: string | null;
+            turnId?: string | null;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AutomationRunListResponse: {
+            runs: components["schemas"]["AutomationRun"][];
+        };
+        /** @enum {string} */
+        AutomationRunPhase: "admitting" | "queued" | "startRequested" | "dispatched" | "rejected" | "uncertain" | "removed";
+        AutomationSchedule: {
+            /** @description Fixed-duration repeat interval. Accepted units are seconds, minutes, and hours; the effective interval must be at least 30 seconds. */
+            repeatEvery: components["schemas"]["AutomationRepeatEvery"];
+            /**
+             * Format: date-time
+             * @description Absolute RFC3339 timestamp for the first firing. Clients should send either a Z timestamp or an explicit UTC offset; the gateway normalizes and stores the instant in UTC. Fixed-duration repeats are not timezone or DST aware.
+             * @example 2026-05-07T09:00:00-07:00
+             */
+            startAt: string;
+        };
+        /** @enum {string} */
+        AutomationStatus: "active" | "paused";
+        AutomationUpdateRequest: {
+            /** @description Replacement non-empty display name. Omit to keep the current name. */
+            name?: string | null;
+            newThread?: null | components["schemas"]["AutomationNewThread"];
+            /** @description Replacement non-empty prompt. Omit to keep the current prompt. */
+            prompt?: string | null;
+            schedule?: null | components["schemas"]["AutomationSchedule"];
+            /** @description Replacement target thread id. Omit to keep the current target thread. */
+            targetThreadId?: string | null;
+        };
+        ByteRange: {
+            /** Format: int32 */
+            end: number;
+            /** Format: int32 */
+            start: number;
+        };
+        /**
+         * @description A canonical item has one identity envelope and normalized user-input metadata.
+         *     Native source/raw item state remains internal for projection reconciliation.
+         */
+        CanonicalTimelineItemPayload: {
+            clientId?: string | null;
+            fileAttachments?: components["schemas"]["TimelineFileAttachment"][];
+            item: components["schemas"]["TimelineDisplayItemPayload"];
+            skillMentions?: components["schemas"]["TimelineSkillMention"][];
+        };
+        CapabilitiesResponse: {
+            appServer: components["schemas"]["AppServerCapabilities"];
+            gateway: components["schemas"]["GatewayCapabilities"];
+        };
+        ChatThreadListQuery: {
+            cursor?: string | null;
+            /** Format: int32 */
+            limit?: number | null;
+        };
+        CompactItem: {
+            error?: string | null;
+            /** Format: int64 */
+            exitCode?: number | null;
+            id: string;
+            itemType: string;
+            phase?: string | null;
+            status?: string | null;
+            success?: boolean | null;
+            text?: string | null;
+            truncated: boolean;
+        };
+        CompactTurn: {
+            error?: string | null;
+            id: string;
+            items: components["schemas"]["CompactItem"][];
+            omittedItems: number;
+            status: string;
+            truncated: boolean;
+        };
+        CompactTurnsResponse: {
+            nextCursor?: string | null;
+            threadId: string;
+            truncated: boolean;
+            turns: components["schemas"]["CompactTurn"][];
+        };
+        /** @enum {string} */
+        ComposerPermissionsPreset: "default" | "autoReview" | "fullAccess";
+        ComposerSettingsQuery: {
+            cwd?: string | null;
+            projectId?: string | null;
+        };
+        ComposerSettingsResponse: {
+            approvalPolicy?: string | null;
+            approvalsReviewer?: string | null;
+            effort?: string | null;
+            model?: string | null;
+            permissionProfileId?: string | null;
+            permissionsPreset?: null | components["schemas"]["ComposerPermissionsPreset"];
+            serviceTier?: string | null;
+            writeTarget: null | components["schemas"]["NativeConfigWriteTarget"];
+        };
+        ComposerSettingsUpdateRequest: {
+            approvalPolicy?: string | null;
+            approvalsReviewer?: string | null;
+            effort?: string | null;
+            model?: string | null;
+            permissionProfileId?: string | null;
+            serviceTier?: string | null;
+            writeTarget: components["schemas"]["NativeConfigWriteTarget"];
+        };
+        ComposerSettingsUpdateResponse: {
+            notificationError?: string | null;
+            saved: boolean;
+            write: components["schemas"]["NativeConfigWriteResult"];
+        };
+        ConfiguredMcpSecret: {
+            configured: boolean;
+            masked: boolean;
+        };
+        ConfiguredMcpServer: {
+            enabled: boolean;
+            enabledTools?: string[];
+            hasStoredSecrets: boolean;
+            name: string;
+            required?: boolean | null;
+            scopes?: string[];
+            /** Format: int64 */
+            startupTimeoutSec?: number | null;
+            /** Format: int64 */
+            toolTimeoutSec?: number | null;
+            transport: components["schemas"]["ConfiguredMcpTransport"];
+        };
+        ConfiguredMcpServerListResponse: {
+            servers: components["schemas"]["ConfiguredMcpServer"][];
+            writeTarget: null | components["schemas"]["NativeConfigWriteTarget"];
+        };
+        ConfiguredMcpTransport: {
+            args?: string[];
+            command: string;
+            cwd?: string | null;
+            env?: {
+                [key: string]: components["schemas"]["ConfiguredMcpSecret"];
+            };
+            envVars?: string[];
+            /** @enum {string} */
+            type: "stdio";
+        } | {
+            bearerTokenEnvVar?: string | null;
+            envHttpHeaders?: {
+                [key: string]: string;
+            };
+            httpHeaders?: {
+                [key: string]: components["schemas"]["ConfiguredMcpSecret"];
+            };
+            oauthResource?: string | null;
+            /** @enum {string} */
+            type: "streamableHttp";
+            url: string;
+        } | {
+            /** @enum {string} */
+            type: "unknown";
+        };
+        /** @enum {string} */
+        ConsumeRateLimitResetCreditOutcome: "reset" | "nothingToReset" | "noCredit" | "alreadyRedeemed";
+        ConsumeRateLimitResetCreditRequest: {
+            creditId: string;
+            idempotencyKey: string;
+        };
+        ConsumeRateLimitResetCreditResponse: {
+            outcome: components["schemas"]["ConsumeRateLimitResetCreditOutcome"];
+        };
+        CreateChatThreadRequest: {
+            approvalPolicy?: string | null;
+            approvalsReviewer?: string | null;
+            effort?: string | null;
+            firstMessageText: string;
+            model?: string | null;
+            payload?: unknown;
+            permissions?: string | null;
+            sandbox?: string | null;
+            serviceTier?: string | null;
+        };
+        CreateProjectRequest: {
+            idempotencyKey: string;
+            metadata?: {
+                [key: string]: string;
+            } | null;
+            name: string;
+            roots: components["schemas"]["ProjectRoot"][];
+        };
+        CreateTerminalSession: {
+            command?: string | null;
+            cwd?: string | null;
+            /** @description Resolves the sole native project root for project terminals; omit for an existing chat's cwd. */
+            projectId?: string | null;
+            title?: string | null;
+        };
+        CreateThreadRequest: {
+            approvalPolicy?: string | null;
+            approvalsReviewer?: string | null;
+            cwd?: string | null;
+            effort?: string | null;
+            model?: string | null;
+            payload?: unknown;
+            permissions?: string | null;
+            projectId: string;
+            sandbox?: string | null;
+            serviceTier?: string | null;
+        };
+        CreditsSnapshot: {
+            balance?: string | null;
+            hasCredits: boolean;
+            unlimited: boolean;
+        };
+        CurrentPushSubscriptionQuery: {
+            endpoint: string;
+        };
+        CurrentPushSubscriptionResponse: {
+            configured: boolean;
+            subscribed: boolean;
+            subscription?: null | components["schemas"]["PushSubscriptionResponse"];
+        };
+        DirectoryEntry: {
+            name: string;
+            path: string;
+        };
+        DirectoryListQuery: {
+            /** @description Absolute directory to browse; omission starts at the gateway user's home. */
+            path?: string | null;
+        };
+        DirectoryListResponse: {
+            directories: components["schemas"]["DirectoryEntry"][];
+            homePath: string;
+            parentPath?: string | null;
+            path: string;
+        };
         ErrorBody: {
             code: string;
             message: string;
+        };
+        EventEnvelope: {
+            codexMethod?: string | null;
+            id: string;
+            itemId?: string | null;
+            kind: string;
+            payload: unknown;
+            projectId?: string | null;
+            /** Format: date-time */
+            receivedAt: string;
+            /** Format: int64 */
+            seq: number;
+            threadId?: string | null;
+            turnId?: string | null;
+        };
+        EventListResponse: {
+            events: components["schemas"]["EventEnvelope"][];
         };
         ExecutorListResponse: {
             executors: components["schemas"]["ExecutorRecord"][];
@@ -84,18 +1924,1446 @@ export interface components {
         };
         /** @enum {string} */
         ExecutorStatus: "unknown" | "ready" | "unready" | "incompatible";
+        FilePreviewQuery: {
+            path: string;
+        };
+        FileUploadRequest: {
+            files: string[];
+        };
+        FileUploadResponse: {
+            files: components["schemas"]["TimelineFileAttachment"][];
+        };
+        FrontendUpdateRequest: {
+            revision: string;
+        };
+        GatewayCapabilities: {
+            apiVersion: components["schemas"]["ApiVersion"];
+            approvals: boolean;
+            gatewayAuth: boolean;
+            instanceId: string;
+            sse: boolean;
+            terminals: components["schemas"]["TerminalCapabilities"];
+            trustedNetworkOnly: boolean;
+            version: string;
+        };
+        GitInfo: {
+            branch?: string | null;
+            originUrl?: string | null;
+            sha?: string | null;
+        };
+        GitInfoPatch: {
+            branch?: string | null;
+            originUrl?: string | null;
+            sha?: string | null;
+        };
         HealthResponse: {
             instanceId: string;
             ready: boolean;
             service: string;
         };
+        ImageUpload: {
+            fileName: string;
+            id: string;
+            mimeType: string;
+            path: string;
+            /** Format: int64 */
+            sizeBytes: number;
+        };
+        ImageUploadRequest: {
+            images: string[];
+        };
+        ImageUploadResponse: {
+            images: components["schemas"]["ImageUpload"][];
+        };
+        LoginStartResponse: {
+            loginId: string;
+            loginType: string;
+            userCode: string;
+            verificationUrl: string;
+        };
+        MarkThreadSeenRequest: {
+            completedTurnId: string;
+            /** Format: int64 */
+            readRevision: number;
+        };
+        MarketplaceAddResponse: {
+            alreadyAdded: boolean;
+            installedRoot: string;
+            marketplaceName: string;
+        };
+        MarketplaceLoadErrorInfo: {
+            marketplacePath: string;
+            message: string;
+        };
+        /** @enum {string} */
+        McpAuthStatus: "unknown" | "unsupported" | "notLoggedIn" | "bearerToken" | "oAuth";
+        McpConfigMutationResponse: {
+            notificationError?: string | null;
+            reload: components["schemas"]["McpReloadResponse"];
+            saved: boolean;
+            write: components["schemas"]["NativeConfigWriteResult"];
+        };
+        McpOAuthLoginRequest: {
+            scopes?: string[] | null;
+            /** Format: int64 */
+            timeoutSecs?: number | null;
+        };
+        McpOAuthLoginResponse: {
+            authorizationUrl: string;
+        };
+        McpReloadResponse: {
+            error: string | null;
+            /**
+             * @description True when native acknowledges queuing a refresh, not server readiness.
+             *     False with an error means unconfirmed; it does not prove no refresh was queued.
+             */
+            queued: boolean;
+        };
+        McpResource: {
+            _meta?: unknown;
+            annotations?: unknown;
+            description?: string | null;
+            icons?: unknown;
+            mimeType?: string | null;
+            name: string;
+            /** Format: int64 */
+            size?: number | null;
+            title?: string | null;
+            uri: string;
+        } & {
+            [key: string]: unknown;
+        };
+        McpResourceReadQuery: {
+            threadId?: string | null;
+            uri: string;
+        };
+        McpResourceReadResponse: {
+            contents: unknown[];
+            originCallId?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        McpResourceTemplate: {
+            annotations?: unknown;
+            description?: string | null;
+            mimeType?: string | null;
+            name: string;
+            title?: string | null;
+            uriTemplate: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** @enum {string} */
+        McpServerConnectionStatus: "notStarted" | "starting" | "connected" | "authenticationRequired" | "failed" | "cancelled" | "disabled";
+        McpServerInstallRequest: {
+            enabled?: boolean | null;
+            enabledTools?: string[] | null;
+            name: string;
+            required?: boolean | null;
+            scopes?: string[] | null;
+            /** Format: int64 */
+            startupTimeoutSec?: number | null;
+            /** Format: int64 */
+            toolTimeoutSec?: number | null;
+            transport: components["schemas"]["McpServerTransportRequest"];
+            writeTarget: components["schemas"]["NativeConfigWriteTarget"];
+        };
+        McpServerListResponse: {
+            servers: components["schemas"]["McpServerStatus"][];
+        };
+        McpServerRemoveRequest: {
+            writeTarget: components["schemas"]["NativeConfigWriteTarget"];
+        };
+        McpServerStatus: {
+            authStatus: components["schemas"]["McpAuthStatus"];
+            httpOrigin?: string | null;
+            name: string;
+            pluginId?: string | null;
+            resourceTemplates: components["schemas"]["McpResourceTemplate"][];
+            resources: components["schemas"]["McpResource"][];
+            runtimeStatus?: null | components["schemas"]["McpServerConnectionStatus"];
+            serverCapabilities?: unknown;
+            serverInfo?: unknown;
+            tools: {
+                [key: string]: components["schemas"]["McpTool"];
+            };
+            toolsError?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** @enum {string} */
+        McpServerStatusDetail: "full" | "toolsAndAuthOnly";
+        McpServerToggleRequest: {
+            enabled: boolean;
+            writeTarget: components["schemas"]["NativeConfigWriteTarget"];
+        };
+        McpServerTransportRequest: {
+            args?: string[];
+            command: string;
+            cwd?: string | null;
+            env?: {
+                [key: string]: string;
+            };
+            envVars?: string[];
+            /** @enum {string} */
+            type: "stdio";
+        } | {
+            bearerTokenEnvVar?: string | null;
+            envHttpHeaders?: {
+                [key: string]: string;
+            };
+            httpHeaders?: {
+                [key: string]: string;
+            };
+            oauthResource?: string | null;
+            /** @enum {string} */
+            type: "streamableHttp";
+            url: string;
+        };
+        McpServerUpdateRequest: {
+            edits: components["schemas"]["NativeConfigLeafEdit"][];
+            writeTarget: components["schemas"]["NativeConfigWriteTarget"];
+        };
+        McpServersQuery: {
+            detail?: null | components["schemas"]["McpServerStatusDetail"];
+        };
+        McpTool: {
+            _meta?: unknown;
+            annotations?: unknown;
+            description?: string | null;
+            icons?: unknown;
+            inputSchema: unknown;
+            name: string;
+            outputSchema?: unknown;
+            title?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        ModelListResponse: {
+            models: components["schemas"]["ModelSummary"][];
+            nextCursor?: string | null;
+            rawPayload: unknown;
+        };
+        ModelSummary: {
+            defaultReasoningEffort: string;
+            description: string;
+            displayName: string;
+            hidden: boolean;
+            id: string;
+            inputModalities: string[];
+            isDefault: boolean;
+            model: string;
+            rawPayload: unknown;
+            supportedReasoningEfforts: components["schemas"]["ReasoningEffortOption"][];
+            upgrade?: string | null;
+        };
+        ModelsQuery: {
+            includeHidden?: boolean;
+        };
+        MoveProjectRequest: {
+            beforeProjectId?: string | null;
+        };
+        NativeConfigLayerMetadata: {
+            filePath?: string | null;
+            kind: string;
+            profile?: string | null;
+            version: string;
+        };
+        NativeConfigLeafEdit: {
+            /** @description Native key-path segments relative to one MCP server. Null deletes the leaf. */
+            keyPath: string[];
+            value: unknown;
+        };
+        NativeConfigOverriddenMetadata: {
+            message: string;
+            overridingLayer: components["schemas"]["NativeConfigLayerMetadata"];
+        };
+        /** @enum {string} */
+        NativeConfigWriteErrorCode: "configLayerReadonly" | "configRequirementReadonly" | "configVersionConflict" | "configValidationError" | "configPathNotFound" | "configSchemaUnknownKey" | "userLayerNotFound";
+        NativeConfigWriteErrorData: {
+            config_write_error_code: components["schemas"]["NativeConfigWriteErrorCode"];
+        };
+        NativeConfigWriteResult: {
+            filePath: string;
+            overriddenMetadata: null | components["schemas"]["NativeConfigOverriddenMetadata"];
+            status: components["schemas"]["NativeConfigWriteStatus"];
+            version: string;
+        };
+        /** @enum {string} */
+        NativeConfigWriteStatus: "ok" | "okOverridden";
+        NativeConfigWriteTarget: {
+            filePath: string;
+            version: string;
+        };
+        NativeQueuedSubmission: {
+            clientUserMessageId: string;
+            id: string;
+            input: unknown[];
+        };
+        NotificationStatusResponse: {
+            configured: boolean;
+            subscriptionsEnabled: boolean;
+            vapidPublicKey?: string | null;
+        };
+        PendingTimelineRequestSummary: {
+            /** Format: date-time */
+            createdAt: string;
+            id: string;
+            itemId?: string | null;
+            method: string;
+            requestId: string;
+            requestKind: string;
+            status: string;
+            summary?: string | null;
+            threadId?: string | null;
+            title: string;
+            turnId?: string | null;
+        };
+        PermissionProfileListResponse: {
+            profiles: components["schemas"]["PermissionProfileSummary"][];
+        };
+        PermissionProfileSummary: {
+            description?: string | null;
+            id: string;
+            label: string;
+        };
+        PermissionProfilesQuery: {
+            cwd?: string | null;
+            /** Format: int32 */
+            limit?: number | null;
+            projectId?: string | null;
+        };
+        PinnedThreadListQuery: {
+            cursor?: string | null;
+            /** Format: int32 */
+            limit?: number | null;
+        };
+        PluginDetail: {
+            apps?: components["schemas"]["AppSummary"][];
+            description?: string | null;
+            marketplaceName: string;
+            marketplacePath?: string | null;
+            mcpServers?: string[];
+            skills?: components["schemas"]["SkillMetadata"][];
+            summary: components["schemas"]["PluginSummary"];
+        };
+        PluginInstallResponse: {
+            appsNeedingAuth: components["schemas"]["AppSummary"][];
+            authPolicy: string;
+        };
+        PluginInterface: {
+            brandColor?: string | null;
+            capabilities?: string[];
+            category?: string | null;
+            defaultPrompt?: string[] | null;
+            developerName?: string | null;
+            displayName?: string | null;
+            longDescription?: string | null;
+            shortDescription?: string | null;
+        };
+        PluginListResponse: {
+            featuredPluginIds?: string[];
+            marketplaceLoadErrors?: components["schemas"]["MarketplaceLoadErrorInfo"][];
+            marketplaces: components["schemas"]["PluginMarketplaceEntry"][];
+        };
+        PluginMarketplaceEntry: {
+            name: string;
+            path?: string | null;
+            plugins: components["schemas"]["PluginSummary"][];
+        };
+        PluginReadResponse: {
+            plugin: components["schemas"]["PluginDetail"];
+        };
+        PluginSummary: {
+            authPolicy: string;
+            enabled: boolean;
+            id: string;
+            installPolicy: string;
+            installed: boolean;
+            interface?: null | components["schemas"]["PluginInterface"];
+            name: string;
+            source: unknown;
+        };
+        Project: {
+            /** Format: int64 */
+            createdAt: number;
+            id: string;
+            metadata: {
+                [key: string]: string;
+            };
+            name: string;
+            /** Format: int64 */
+            position: number;
+            /** Format: int64 */
+            recencyAt?: number | null;
+            roots: components["schemas"]["ProjectRoot"][];
+            /** Format: int64 */
+            updatedAt: number;
+        };
+        ProjectChanged: {
+            changeType: string;
+            projectId: string;
+        };
+        ProjectListResponse: {
+            projects: components["schemas"]["Project"][];
+        };
+        ProjectRoot: {
+            path: string;
+        };
+        PromotionOutcome: {
+            /** @enum {string} */
+            status: "empty";
+        } | {
+            id: string;
+            /** @enum {string} */
+            status: "delivered";
+        } | {
+            /** @enum {string} */
+            status: "transfer";
+            transfer: components["schemas"]["QueueTransfer"];
+        };
+        PushSubscriptionDeleteResponse: {
+            subscription?: null | components["schemas"]["PushSubscriptionResponse"];
+        };
+        PushSubscriptionKeysRequest: {
+            auth: string;
+            p256dh: string;
+        };
+        PushSubscriptionResponse: {
+            /** Format: date-time */
+            createdAt: string;
+            enabled: boolean;
+            endpoint: string;
+            id: string;
+            /** Format: date-time */
+            updatedAt: string;
+            userAgent?: string | null;
+        };
+        PushSubscriptionUpsertRequest: {
+            endpoint: string;
+            keys: components["schemas"]["PushSubscriptionKeysRequest"];
+            userAgent?: string | null;
+        };
+        PushSubscriptionUpsertResponse: {
+            subscription: components["schemas"]["PushSubscriptionResponse"];
+        };
+        /**
+         * @description Recoverable input for one native-queue-to-steer transfer. Ordinary queued
+         *     messages remain exclusively in native storage.
+         */
+        QueueTransfer: {
+            /**
+             * @description Original native queue correlation for provenance; it is not unique and
+             *     cannot establish delivery of this transfer.
+             */
+            clientUserMessageId: string;
+            /** Format: date-time */
+            createdAt: string;
+            error?: string | null;
+            expectedTurnId: string;
+            /** @description Fresh operation identity, also used as the steered user message client ID. */
+            id: string;
+            input: unknown[];
+            nativeQueueId: string;
+            phase: components["schemas"]["QueueTransferPhase"];
+            threadId: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        QueueTransferDeleteResponse: {
+            id: string;
+            threadId: string;
+        };
+        /** @enum {string} */
+        QueueTransferPhase: "deleting" | "deleted" | "steering" | "accepted" | "uncertain";
+        QueuedInput: {
+            attachments: components["schemas"]["TimelineFileAttachment"][];
+            /**
+             * @description Active-turn presentation hint. Send now remains available when idle;
+             *     the gateway captures and revalidates native routing at request time.
+             */
+            canSteer: boolean;
+            clientUserMessageId: string;
+            id: string;
+            input: unknown[];
+            threadId: string;
+        };
+        QueuedInputCreateRequest: {
+            attachments?: components["schemas"]["TimelineFileAttachment"][];
+            clientUserMessageId?: string | null;
+            input: unknown[];
+        };
+        QueuedInputDeleteResponse: {
+            deleted: boolean;
+            id: string;
+            threadId: string;
+        };
+        QueuedInputListQuery: {
+            cursor?: string | null;
+            /** Format: int32 */
+            limit?: number | null;
+        };
+        QueuedInputListResponse: {
+            nextCursor?: string | null;
+            queuedInputs: components["schemas"]["QueuedInput"][];
+            transfers: components["schemas"]["QueueTransfer"][];
+        };
+        QueuedInputReorderRequest: {
+            queuedSubmissionIds: string[];
+        };
+        QueuedInputResponse: {
+            queuedInput: components["schemas"]["QueuedInput"];
+        };
+        QueuedInputStartRequest: {
+            queuedSubmissionId: string;
+        };
+        QueuedInputUpdateRequest: {
+            attachments?: components["schemas"]["TimelineFileAttachment"][];
+            input: unknown[];
+        };
+        RateLimitResetCredit: {
+            description?: string | null;
+            /** Format: int64 */
+            expiresAt?: number | null;
+            /** Format: int64 */
+            grantedAt: number;
+            id: string;
+            resetType: string;
+            status: string;
+            title?: string | null;
+        };
+        RateLimitResetCreditsSummary: {
+            /** Format: int64 */
+            availableCount: number;
+            credits?: components["schemas"]["RateLimitResetCredit"][] | null;
+        };
+        RateLimitSnapshot: {
+            credits?: null | components["schemas"]["CreditsSnapshot"];
+            limitId?: string | null;
+            limitName?: string | null;
+            planType?: string | null;
+            primary?: null | components["schemas"]["RateLimitWindow"];
+            rateLimitReachedType?: string | null;
+            secondary?: null | components["schemas"]["RateLimitWindow"];
+        };
+        RateLimitWindow: {
+            /** Format: int64 */
+            resetsAt?: number | null;
+            /** Format: int64 */
+            usedPercent: number;
+            /** Format: int64 */
+            windowDurationMins?: number | null;
+        };
+        RateLimitsResponse: {
+            rateLimitResetCredits?: null | components["schemas"]["RateLimitResetCreditsSummary"];
+            rateLimits?: null | components["schemas"]["RateLimitSnapshot"];
+            rateLimitsByLimitId?: {
+                [key: string]: components["schemas"]["RateLimitSnapshot"];
+            } | null;
+            rawPayload: unknown;
+        };
+        RawAppServerResponse: {
+            payload: unknown;
+        };
+        ReadyResponse: {
+            message?: string | null;
+            ready: boolean;
+        };
+        ReasoningEffortOption: {
+            description: string;
+            reasoningEffort: string;
+        };
         RegisterExecutorRequest: {
             baseUrl: string;
             displayName: string;
         };
+        RenameThreadRequest: {
+            name: string;
+        };
+        RenameThreadResponse: {
+            thread: components["schemas"]["ThreadSummary"];
+        };
+        SelfControlAppSurfacePresentationRequest: {
+            action: components["schemas"]["AppSurfacePresentationAction"];
+            /** Format: int32 */
+            maxSelfControlDepth?: number | null;
+            source?: components["schemas"]["SelfControlSource"];
+        };
+        SelfControlApprovalDecisionRequest: {
+            decision: unknown;
+            policyToken?: string | null;
+            requestedBy?: null | components["schemas"]["SelfControlRequestedBy"];
+            source?: components["schemas"]["SelfControlSource"];
+        };
+        SelfControlApprovalDecisionResponse: {
+            approval: components["schemas"]["Approval"];
+            policy: components["schemas"]["SelfControlApprovalPolicyResult"];
+        };
+        SelfControlApprovalPolicyResult: {
+            allowed: boolean;
+            reason: string;
+        };
+        SelfControlAutomationCreateRequest: {
+            enabled?: boolean | null;
+            name: string;
+            newThread?: null | components["schemas"]["AutomationNewThread"];
+            prompt: string;
+            schedule: components["schemas"]["AutomationSchedule"];
+            source?: components["schemas"]["SelfControlSource"];
+            targetThreadId?: string | null;
+        };
+        SelfControlAutomationResponse: {
+            automation: components["schemas"]["AutomationDto"];
+            pausedByDefault: boolean;
+        };
+        SelfControlAutomationRunNowRequest: {
+            source?: components["schemas"]["SelfControlSource"];
+        };
+        SelfControlAutomationRunNowResponse: {
+            automation: components["schemas"]["AutomationDto"];
+            run: components["schemas"]["AutomationRun"];
+        };
+        SelfControlAutomationUpdateRequest: components["schemas"]["AutomationUpdateRequest"] & {
+            enabled?: boolean | null;
+            source?: null | components["schemas"]["SelfControlSource"];
+        };
+        SelfControlAutomationValidateRequest: {
+            name: string;
+            newThread?: null | components["schemas"]["AutomationNewThread"];
+            prompt: string;
+            schedule: components["schemas"]["AutomationSchedule"];
+            targetThreadId?: string | null;
+        };
+        SelfControlAutomationValidateResponse: {
+            /** Format: int64 */
+            repeatEverySeconds: number;
+            valid: boolean;
+        };
+        SelfControlCapabilities: {
+            appSurfaces: boolean;
+            automations: boolean;
+            mcpResources: boolean;
+            threads: boolean;
+        };
+        SelfControlCreateThreadRequest: {
+            approvalPolicy?: string | null;
+            approvalsReviewer?: string | null;
+            cwd?: string | null;
+            effort?: string | null;
+            /** Format: int32 */
+            maxSelfControlDepth?: number | null;
+            model?: string | null;
+            payload?: unknown;
+            permissions?: string | null;
+            projectId?: string | null;
+            sandbox?: string | null;
+            serviceTier?: string | null;
+            source?: components["schemas"]["SelfControlSource"];
+        };
+        SelfControlGeneratedAppSurfaceUpsertRequest: {
+            csp?: components["schemas"]["AppSurfaceCsp"];
+            displayModes?: string[];
+            fallbackContent: string;
+            grants?: components["schemas"]["AppSurfaceGrants"];
+            html: string;
+            /** Format: int32 */
+            maxSelfControlDepth?: number | null;
+            permissions?: components["schemas"]["AppSurfacePermissions"];
+            presentation?: null | components["schemas"]["AppSurfacePresentationAction"];
+            provenance?: unknown;
+            source?: components["schemas"]["SelfControlSource"];
+            title: string;
+        };
+        SelfControlMarkThreadSeenRequest: {
+            completedTurnId: string;
+            /** Format: int64 */
+            readRevision: number;
+            source?: components["schemas"]["SelfControlSource"];
+        };
+        SelfControlMutationRequest: {
+            source?: components["schemas"]["SelfControlSource"];
+        };
+        SelfControlNotificationsRequest: {
+            enabled: boolean;
+            source?: components["schemas"]["SelfControlSource"];
+        };
+        SelfControlRenameThreadRequest: {
+            name: string;
+            source?: components["schemas"]["SelfControlSource"];
+        };
+        /** @enum {string} */
+        SelfControlRequestedBy: "user" | "agent";
+        /**
+         * @description Provenance supplied by Kodex Control MCP tools when they call guarded self-control endpoints.
+         *
+         *     Self-control endpoints are the agent-facing product boundary for Kodex-managed mutations.
+         *     MCP tools should use these routes instead of raw thread or automation CRUD routes so
+         *     gateway-owned policy, reconciliation, provenance, and audit behavior stay centralized.
+         */
+        SelfControlSource: {
+            /** @description Short reason recorded in audit/provenance payloads. */
+            reason?: string | null;
+            requestedBy?: null | components["schemas"]["SelfControlRequestedBy"];
+            /** @description Originating Kodex thread, when this request came from another thread. */
+            sourceThreadId?: string | null;
+            /** @description Originating MCP tool call id or equivalent agent tool invocation id. */
+            sourceToolCallId?: string | null;
+            /** @description Originating Kodex turn, when this request came from a specific turn. */
+            sourceTurnId?: string | null;
+            /** @description Self-control provenance marker. The only accepted value is `kodex_control`. */
+            sourceType?: components["schemas"]["SelfControlSourceType"];
+        };
+        /**
+         * @description Allowed provenance source type for self-control requests.
+         * @enum {string}
+         */
+        SelfControlSourceType: "kodex_control";
+        SelfControlStatusResponse: {
+            appServerError?: string | null;
+            appServerReady: boolean;
+            capabilities: components["schemas"]["SelfControlCapabilities"];
+            gatewayReady: boolean;
+            version: string;
+        };
+        /** @enum {string} */
+        SelfControlThreadInputAction: "queued";
+        SelfControlThreadInputRequest: {
+            input: unknown[];
+            /** Format: int32 */
+            maxSelfControlDepth?: number | null;
+            source?: components["schemas"]["SelfControlSource"];
+        };
+        SelfControlThreadInputResponse: {
+            action: components["schemas"]["SelfControlThreadInputAction"];
+            queuedInput?: null | components["schemas"]["QueuedInput"];
+            turn?: null | components["schemas"]["RawAppServerResponse"];
+        };
+        SelfControlThreadPayloadMutationRequest: {
+            payload?: unknown;
+            source?: components["schemas"]["SelfControlSource"];
+        };
+        SelfControlThreadPinRequest: components["schemas"]["ThreadPinRequest"] & {
+            source?: components["schemas"]["SelfControlSource"];
+        };
+        SelfControlThreadSettingsUpdateRequest: components["schemas"]["ThreadSettingsUpdateRequest"] & {
+            source?: components["schemas"]["SelfControlSource"];
+        };
+        SelfControlThreadSpawnRequest: {
+            approvalPolicy?: string | null;
+            approvalsReviewer?: string | null;
+            cwd?: string | null;
+            effort?: string | null;
+            goal?: string | null;
+            idempotencyKey?: string | null;
+            input: components["schemas"]["UserInput"][];
+            /** Format: int32 */
+            maxSelfControlDepth?: number | null;
+            model?: string | null;
+            nickname?: string | null;
+            payload?: unknown;
+            permissions?: string | null;
+            projectId?: string | null;
+            role?: string | null;
+            sandbox?: string | null;
+            serviceTier?: string | null;
+            source?: components["schemas"]["SelfControlSource"];
+        };
+        SelfControlThreadSpawnResponse: {
+            clientUserMessageId: string;
+            idempotencyKey?: string | null;
+            idempotentReplay: boolean;
+            queuedSubmissionId: string;
+            /** Format: int32 */
+            remainingSelfControlDepth: number;
+            threadId: string;
+        };
+        SidebarThreadListResponse: {
+            backwardsCursor?: string | null;
+            nextCursor?: string | null;
+            threads: components["schemas"]["SidebarThreadSummary"][];
+        };
+        SidebarThreadSummary: {
+            agentNickname?: string | null;
+            agentRole?: string | null;
+            approvalPolicy?: string | null;
+            approvalsReviewer?: string | null;
+            canAcceptDirectInput: boolean | null;
+            /** Format: int64 */
+            createdAt: number;
+            cwd: string;
+            gitInfo?: null | components["schemas"]["GitInfo"];
+            id: string;
+            latestCompletedTurnId: string | null;
+            model?: string | null;
+            name?: string | null;
+            notificationsEnabled: boolean;
+            parentThreadId: string | null;
+            pinned: boolean;
+            preview?: unknown;
+            projectId?: string | null;
+            /** Format: int64 */
+            readRevision: number;
+            readStateKnown: boolean;
+            reasoningEffort?: string | null;
+            sandbox?: unknown;
+            seenCompletedTurnId: string | null;
+            serviceTier?: string | null;
+            source?: string | null;
+            status: components["schemas"]["ThreadStatus"];
+            unreadCompletedAgentTurn: boolean;
+            /** Format: int64 */
+            updatedAt: number;
+        };
+        SidebarThreadsResponse: {
+            chatThreads: components["schemas"]["SidebarThreadListResponse"];
+            pinnedThreads: components["schemas"]["SidebarThreadListResponse"];
+            projectThreads: {
+                [key: string]: components["schemas"]["SidebarThreadListResponse"];
+            };
+            projects: components["schemas"]["Project"][];
+        };
+        SkillErrorInfo: {
+            message: string;
+            path: string;
+        };
+        SkillIconQuery: {
+            path: string;
+        };
+        SkillInterface: {
+            brandColor?: string | null;
+            defaultPrompt?: string | null;
+            displayName?: string | null;
+            iconLarge?: string | null;
+            iconSmall?: string | null;
+            shortDescription?: string | null;
+        };
+        SkillMetadata: {
+            description: string;
+            enabled: boolean;
+            interface?: null | components["schemas"]["SkillInterface"];
+            name: string;
+            path: string;
+            scope?: string;
+            shortDescription?: string | null;
+        };
+        SkillsCatalogResponse: {
+            cwd?: string | null;
+            errors: components["schemas"]["SkillErrorInfo"][];
+            /** Format: int64 */
+            invalidationGeneration: number;
+            skills: components["schemas"]["SkillMetadata"][];
+        };
+        SkillsQuery: {
+            cwd?: string | null;
+            forceReload?: boolean;
+        };
+        TerminalCapabilities: {
+            enabled: boolean;
+        };
+        TerminalDeleteResponse: {
+            id: string;
+        };
+        TerminalSessionInfo: {
+            command: string;
+            createdAt: string;
+            cwd: string;
+            /** Format: int64 */
+            historySizeBytes: number;
+            id: string;
+            status: components["schemas"]["TerminalSessionStatus"];
+            title: string;
+        };
+        TerminalSessionListResponse: {
+            terminals: components["schemas"]["TerminalSessionInfo"][];
+        };
+        TerminalSessionResponse: {
+            terminal: components["schemas"]["TerminalSessionInfo"];
+        };
+        /** @enum {string} */
+        TerminalSessionStatus: "running" | "exited";
+        TestNotificationResponse: {
+            activeSubscriptionCount: number;
+            configured: boolean;
+            deliveryIds: string[];
+            enqueued: boolean;
+        };
+        TextElement: {
+            byteRange: components["schemas"]["ByteRange"];
+            placeholder?: string | null;
+        };
+        ThreadCommandResponse: {
+            activePermissionProfile?: null | components["schemas"]["ActivePermissionProfile"];
+            approvalPolicy?: string | null;
+            approvalsReviewer?: string | null;
+            cwd?: string | null;
+            model?: string | null;
+            modelProvider?: string | null;
+            rawPayload: unknown;
+            reasoningEffort?: string | null;
+            sandbox?: unknown;
+            serviceTier?: string | null;
+            thread: components["schemas"]["ThreadSummary"];
+        };
+        /** @enum {string} */
+        ThreadCompactDisposition: "started";
+        ThreadCompactResponse: {
+            disposition: components["schemas"]["ThreadCompactDisposition"];
+            rawPayload?: unknown;
+        };
+        ThreadGoal: {
+            /** Format: int64 */
+            createdAt: number;
+            objective: string;
+            status: components["schemas"]["ThreadGoalStatus"];
+            threadId: string;
+            /** Format: int64 */
+            timeUsedSeconds: number;
+            /** Format: int64 */
+            tokenBudget: number | null;
+            /** Format: int64 */
+            tokensUsed: number;
+            /** Format: int64 */
+            updatedAt: number;
+        };
+        /** @description Refill the authoritative native goal; this marker carries no goal snapshot. */
+        ThreadGoalChanged: {
+            threadId: string;
+        };
+        ThreadGoalClearResponse: {
+            cleared: boolean;
+        };
+        ThreadGoalGetResponse: {
+            goal: null | components["schemas"]["ThreadGoal"];
+        };
+        ThreadGoalSetRequest: {
+            objective?: string | null;
+            status?: null | components["schemas"]["ThreadGoalStatus"];
+            /** Format: int64 */
+            tokenBudget?: number | null;
+        };
+        ThreadGoalSetResponse: {
+            goal: components["schemas"]["ThreadGoal"];
+        };
+        /** @enum {string} */
+        ThreadGoalStatus: "active" | "paused" | "blocked" | "usageLimited" | "budgetLimited" | "complete";
+        /** @enum {string} */
+        ThreadInputDisposition: "submitted" | "queued";
+        ThreadInputRequest: components["schemas"]["TurnStartRequest"] & {
+            /** @description Alternate composer policy: enqueue only when the native queue is empty. */
+            queueIfEmpty?: boolean;
+            /** @description Composer policy: append to existing native queued work before start-or-steer. */
+            queueIfPending?: boolean;
+        };
+        ThreadInputResponse: {
+            disposition?: null | components["schemas"]["ThreadInputDisposition"];
+            payload: unknown;
+            queuedInput?: null | components["schemas"]["NativeQueuedSubmission"];
+        };
+        /** @enum {string} */
+        ThreadInterruptCurrentDisposition: "interrupted" | "idle";
+        ThreadInterruptCurrentResponse: {
+            disposition: components["schemas"]["ThreadInterruptCurrentDisposition"];
+            interruptedTurnId?: string | null;
+            rawPayload?: unknown;
+        };
+        ThreadItemSnapshot: {
+            clientId?: string | null;
+            fileAttachments?: components["schemas"]["TimelineFileAttachment"][];
+            id: string;
+            itemType: string;
+            skillMentions?: components["schemas"]["TimelineSkillMention"][];
+        };
+        ThreadListQuery: {
+            /** @description Return archived threads only; defaults to active threads. */
+            archived?: boolean;
+            cursor?: string | null;
+            /** Format: int32 */
+            limit?: number | null;
+            projectId?: string | null;
+        };
+        ThreadListResponse: {
+            backwardsCursor?: string | null;
+            nextCursor?: string | null;
+            rawPayload: unknown;
+            threads: components["schemas"]["ThreadSummary"][];
+        };
+        /** @enum {string} */
+        ThreadLiveState: "idle" | "streaming" | "syncing" | "notLoaded";
+        ThreadNotificationSettingsResponse: {
+            notificationsEnabled: boolean;
+            threadId: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ThreadNotificationSettingsUpdateRequest: {
+            enabled: boolean;
+        };
+        ThreadPinRequest: {
+            beforeThreadId?: string | null;
+            pinned: boolean;
+        };
+        ThreadProjectUpdated: {
+            projectId: string | null;
+            threadId: string;
+        };
+        ThreadRead: {
+            latestCompletedTurnId: string | null;
+            /** Format: int64 */
+            readRevision: number;
+            readStateKnown: boolean;
+            seenCompletedTurnId: string | null;
+            threadId: string;
+            unreadCompletedAgentTurn: boolean;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ThreadReadStateUpdate: components["schemas"]["ThreadRead"];
+        ThreadSettingsResponse: {
+            activePermissionProfile?: null | components["schemas"]["ActivePermissionProfile"];
+            effort?: string | null;
+            model: string;
+            serviceTier?: string | null;
+        };
+        ThreadSettingsUpdateRequest: {
+            approvalPolicy?: string | null;
+            approvalsReviewer?: string | null;
+            effort?: string | null;
+            model?: string | null;
+            permissions?: string | null;
+            sandboxPolicy?: unknown;
+            serviceTier?: string | null;
+        };
+        ThreadSettingsUpdateResponse: Record<string, never>;
+        /** @description An invalidation marker, never a replayable settings snapshot. */
+        ThreadSettingsUpdated: {
+            threadId: string;
+        };
+        /** @enum {string} */
+        ThreadStatus: "notLoaded" | "idle" | "systemError" | "active";
+        ThreadSubagentListQuery: {
+            archived?: boolean;
+            cursor?: string | null;
+            /** Format: int32 */
+            limit?: number | null;
+        };
+        ThreadSubagentListResponse: {
+            nextCursor: string | null;
+            subagents: components["schemas"]["ThreadSubagentSummary"][];
+        };
+        ThreadSubagentSummary: {
+            agentNickname?: string | null;
+            agentRole?: string | null;
+            canAcceptDirectInput: boolean | null;
+            id: string;
+            name?: string | null;
+            parentThreadId: string | null;
+            preview: string;
+            status: components["schemas"]["ThreadStatus"];
+            /** Format: int64 */
+            updatedAt: number;
+        };
+        ThreadSubagentsChanged: {
+            changedThreadId: string | null;
+        };
+        ThreadSummary: {
+            activePermissionProfile?: null | components["schemas"]["ActivePermissionProfile"];
+            agentNickname?: string | null;
+            agentRole?: string | null;
+            approvalPolicy?: string | null;
+            approvalsReviewer?: string | null;
+            canAcceptDirectInput: boolean | null;
+            /** Format: int64 */
+            createdAt: number;
+            cwd: string;
+            gitInfo?: null | components["schemas"]["GitInfo"];
+            id: string;
+            latestCompletedTurnId: string | null;
+            model?: string | null;
+            name?: string | null;
+            notificationsEnabled: boolean;
+            parentThreadId: string | null;
+            pinned: boolean;
+            preview?: unknown;
+            projectId?: string | null;
+            rawPayload: unknown;
+            /** Format: int64 */
+            readRevision: number;
+            readStateKnown: boolean;
+            reasoningEffort?: string | null;
+            sandbox?: unknown;
+            seenCompletedTurnId: string | null;
+            serviceTier?: string | null;
+            source?: string | null;
+            status: components["schemas"]["ThreadStatus"];
+            unreadCompletedAgentTurn: boolean;
+            /** Format: int64 */
+            updatedAt: number;
+        };
+        /** @description A native metadata refill signal, not a title or sidebar membership projection. */
+        ThreadSummaryChanged: {
+            threadId: string;
+        };
+        ThreadTimelineFileChangeEntry: {
+            action: string;
+            /** Format: int64 */
+            additions: number;
+            /** Format: int64 */
+            deletions: number;
+            diff: string;
+            id: string;
+            itemIds: string[];
+            path: string;
+        };
+        ThreadTimelinePageQuery: {
+            cursor?: string | null;
+            includeCommandOutputs?: boolean | null;
+            includeDebugEvents?: boolean | null;
+            /** Format: int32 */
+            limit?: number | null;
+        };
+        ThreadTimelineRow: {
+            collapsedRows?: components["schemas"]["ThreadTimelineWorkDetailRow"][];
+            /** Format: int64 */
+            displayOrder: number;
+            dividerBefore?: string | null;
+            fileChanges?: components["schemas"]["ThreadTimelineFileChangeEntry"][];
+            id: string;
+            item?: null | components["schemas"]["ThreadTimelineSnapshotItem"];
+            items?: components["schemas"]["ThreadTimelineSnapshotItem"][];
+            kind: string;
+            status: string;
+            /** Format: int64 */
+            timestampMs?: number | null;
+            turnId?: string | null;
+            work?: null | components["schemas"]["ThreadTimelineWorkSummary"];
+        };
+        ThreadTimelineSnapshot: {
+            activeTurnId?: string | null;
+            liveState: components["schemas"]["ThreadLiveState"];
+            pendingApprovalRequests: components["schemas"]["PendingTimelineRequestSummary"][];
+            pendingUserInputRequests: components["schemas"]["PendingTimelineRequestSummary"][];
+            rows: components["schemas"]["ThreadTimelineRow"][];
+            turns: components["schemas"]["ThreadTimelineSnapshotTurn"][];
+            /** Format: int64 */
+            viewRevision: number;
+        };
+        ThreadTimelineSnapshotItem: {
+            codexMethod: string;
+            /** Format: int64 */
+            displayOrder: number;
+            id: string;
+            itemId: string;
+            itemType: string;
+            payload: components["schemas"]["CanonicalTimelineItemPayload"];
+            status: string;
+            threadId: string;
+            /** Format: int64 */
+            timestampMs?: number | null;
+            turnId: string;
+        };
+        ThreadTimelineSnapshotTurn: {
+            /** Format: int64 */
+            completedAt?: number | null;
+            errorMessage?: string | null;
+            id: string;
+            /** Format: int64 */
+            startedAt?: number | null;
+            status: string;
+        };
+        ThreadTimelineWindowPage: {
+            hasOlder: boolean;
+            /** Format: int32 */
+            limit: number;
+            /** Format: int32 */
+            loadedTurnCount: number;
+            newerCursor?: string | null;
+            olderCursor?: string | null;
+            resetWindow?: boolean;
+        };
+        ThreadTimelineWorkDetailRow: {
+            /** Format: int64 */
+            displayOrder: number;
+            dividerBefore?: string | null;
+            fileChanges?: components["schemas"]["ThreadTimelineFileChangeEntry"][];
+            id: string;
+            item?: null | components["schemas"]["ThreadTimelineSnapshotItem"];
+            items?: components["schemas"]["ThreadTimelineSnapshotItem"][];
+            kind: string;
+            status: string;
+            /** Format: int64 */
+            timestampMs?: number | null;
+            turnId?: string | null;
+        };
+        ThreadTimelineWorkSummary: {
+            /** Format: int64 */
+            completedAt?: number | null;
+            errorMessage?: string | null;
+            /** Format: int64 */
+            startedAt?: number | null;
+            state: string;
+        };
+        ThreadTurnSnapshot: {
+            /** Format: int64 */
+            completedAt?: number | null;
+            id: string;
+            items: components["schemas"]["ThreadItemSnapshot"][];
+            rawPayload: unknown;
+            /** Format: int64 */
+            startedAt?: number | null;
+            status: string;
+        };
+        ThreadViewPatch: {
+            activeTurnId?: string | null;
+            affectedTurnIds?: string[];
+            liveState: components["schemas"]["ThreadLiveState"];
+            pendingApprovalRequests: components["schemas"]["PendingTimelineRequestSummary"][];
+            pendingUserInputRequests: components["schemas"]["PendingTimelineRequestSummary"][];
+            removedRowIds?: string[];
+            rows?: components["schemas"]["ThreadTimelineRow"][] | null;
+            scope: components["schemas"]["ThreadViewPatchScope"];
+            threadId: string;
+            threadStatus?: null | components["schemas"]["ThreadStatus"];
+            turns?: components["schemas"]["ThreadTimelineSnapshotTurn"][];
+            /** Format: int64 */
+            viewRevision: number;
+        };
+        /** @enum {string} */
+        ThreadViewPatchScope: "full_snapshot" | "turn" | "row_delta" | "lifecycle";
+        ThreadViewPresenceRequest: {
+            clientId: string;
+            visible: boolean;
+        };
+        ThreadViewPresenceSnapshotRequest: {
+            clientId: string;
+            visibleThreadIds: string[];
+        };
+        ThreadViewResponse: {
+            historyPage?: null | components["schemas"]["ThreadTimelineWindowPage"];
+            liveState: components["schemas"]["ThreadLiveState"];
+            thread: components["schemas"]["ThreadViewThreadSummary"];
+            timeline: components["schemas"]["ThreadTimelineSnapshot"];
+        };
+        ThreadViewThreadSummary: {
+            activePermissionProfile?: null | components["schemas"]["ActivePermissionProfile"];
+            agentNickname?: string | null;
+            agentRole?: string | null;
+            approvalPolicy?: string | null;
+            approvalsReviewer?: string | null;
+            canAcceptDirectInput: boolean | null;
+            /** Format: int64 */
+            createdAt: number;
+            cwd: string;
+            gitInfo?: null | components["schemas"]["GitInfo"];
+            id: string;
+            latestCompletedTurnId: string | null;
+            model?: string | null;
+            name?: string | null;
+            notificationsEnabled: boolean;
+            parentThreadId: string | null;
+            pinned: boolean;
+            preview?: unknown;
+            projectId?: string | null;
+            /** Format: int64 */
+            readRevision: number;
+            readStateKnown: boolean;
+            reasoningEffort?: string | null;
+            sandbox?: unknown;
+            seenCompletedTurnId: string | null;
+            serviceTier?: string | null;
+            source?: string | null;
+            status: components["schemas"]["ThreadStatus"];
+            unreadCompletedAgentTurn: boolean;
+            /** Format: int64 */
+            updatedAt: number;
+        };
+        TimelineDisplayItemPayload: {
+            action?: unknown;
+            agentNickname?: string | null;
+            agentPath?: string | null;
+            agentRole?: string | null;
+            agentThreadId?: string | null;
+            agent_nickname?: string | null;
+            agent_role?: string | null;
+            agentsStates?: unknown;
+            args?: unknown;
+            arguments?: unknown;
+            change?: unknown;
+            changes?: unknown;
+            clientId?: string | null;
+            command?: string | null;
+            content?: unknown;
+            cwd?: string | null;
+            delivery?: string | null;
+            diff?: string | null;
+            fileAttachments?: components["schemas"]["TimelineFileAttachment"][];
+            id?: string | null;
+            kind?: string | null;
+            message?: string | null;
+            model?: string | null;
+            name?: string | null;
+            output?: string | null;
+            path?: string | null;
+            phase?: string | null;
+            prompt?: string | null;
+            query?: string | null;
+            questions?: unknown;
+            reasoningEffort?: string | null;
+            receiverThreadIds?: string[] | null;
+            result?: string | null;
+            review?: string | null;
+            revisedPrompt?: string | null;
+            revised_prompt?: string | null;
+            savedPath?: string | null;
+            saved_path?: string | null;
+            status?: string | null;
+            stderr?: string | null;
+            stdout?: string | null;
+            summary?: unknown;
+            text?: string | null;
+            tool?: string | null;
+            toolName?: string | null;
+            type?: string | null;
+        };
+        TimelineFileAttachment: {
+            absolutePath?: string | null;
+            extension: string;
+            fileName: string;
+            id: string;
+            mimeType?: string | null;
+            relativePath: string;
+            /** Format: int64 */
+            sizeBytes: number;
+        };
+        TimelineItemDeltaPayload: {
+            delta: string;
+            rawPayload: unknown;
+            source: components["schemas"]["TimelineUpdateSource"];
+        };
+        TimelineItemUpsertPayload: {
+            item: components["schemas"]["TimelineDisplayItemPayload"];
+            itemId: string;
+            itemSnapshot: components["schemas"]["ThreadItemSnapshot"];
+            source: components["schemas"]["TimelineUpdateSource"];
+            turnId: string;
+        };
+        TimelineSkillMention: {
+            brandColor?: string | null;
+            displayName?: string | null;
+            /** Format: int32 */
+            end: number;
+            iconSmallUrl?: string | null;
+            name: string;
+            path: string;
+            scope?: string | null;
+            shortDescription?: string | null;
+            /** Format: int32 */
+            start: number;
+        };
+        TimelineThreadMetadataPayload: {
+            gitInfo?: null | components["schemas"]["GitInfoPatch"];
+            source: components["schemas"]["TimelineUpdateSource"];
+            thread?: null | components["schemas"]["ThreadSummary"];
+            threadId: string;
+        };
+        TimelineThreadStatusPayload: {
+            liveState: components["schemas"]["ThreadLiveState"];
+            rawPayload: unknown;
+            source: components["schemas"]["TimelineUpdateSource"];
+            status: components["schemas"]["ThreadStatus"];
+        };
+        TimelineTurnUpsertPayload: {
+            liveState: components["schemas"]["ThreadLiveState"];
+            source: components["schemas"]["TimelineUpdateSource"];
+            turn: components["schemas"]["ThreadTurnSnapshot"];
+        };
+        /** @enum {string} */
+        TimelineUpdateSource: "gatewayStream" | "appServerSnapshot";
+        TurnStartOptions: {
+            approvalPolicy?: string | null;
+            approvalsReviewer?: string | null;
+            effort?: string | null;
+            model?: string | null;
+            permissions?: string | null;
+            sandboxPolicy?: unknown;
+            serviceTier?: string | null;
+        };
+        TurnStartRequest: components["schemas"]["TurnStartOptions"] & {
+            attachments?: components["schemas"]["TimelineFileAttachment"][];
+            clientUserMessageId?: string | null;
+            input: components["schemas"]["UserInput"][];
+        };
+        TurnSteerRequest: {
+            clientUserMessageId?: string | null;
+            input: components["schemas"]["UserInput"][];
+        };
+        UnreadBadgeResponse: {
+            /** Format: int64 */
+            count: number;
+            /** Format: int64 */
+            readRevision: number;
+        };
         UpdateExecutorRequest: {
             displayName?: string | null;
             enabled?: boolean | null;
+        };
+        UpdateProjectRequest: {
+            /** @description Replaces the complete metadata map when supplied; omission preserves it. */
+            metadata?: {
+                [key: string]: string;
+            } | null;
+            name?: string | null;
+            roots?: components["schemas"]["ProjectRoot"][] | null;
+        };
+        UserInput: {
+            text: string;
+            text_elements?: components["schemas"]["TextElement"][];
+            /** @enum {string} */
+            type: "text";
+        } | {
+            /** @enum {string} */
+            type: "image";
+            url: string;
+        } | {
+            path: string;
+            /** @enum {string} */
+            type: "localImage";
+        } | {
+            name: string;
+            path: string;
+            /** @enum {string} */
+            type: "skill";
+        } | {
+            name: string;
+            path: string;
+            /** @enum {string} */
+            type: "mention";
+        };
+        WaitTarget: {
+            afterCursor?: string | null;
+            threadId: string;
+        };
+        WaitThreadError: {
+            error: components["schemas"]["ApiErrorBody"];
+            threadId: string;
+        };
+        WaitThreadResult: {
+            changed: boolean;
+            condition: string;
+            cursor: string;
+            progress: components["schemas"]["CompactTurn"][];
+            reset: boolean;
+            threadId: string;
+            truncated: boolean;
+        };
+        WaitThreadsRequest: {
+            targets: components["schemas"]["WaitTarget"][];
+            /** Format: int64 */
+            timeoutMs?: number | null;
+        };
+        WaitThreadsResponse: {
+            errors: components["schemas"]["WaitThreadError"][];
+            results: components["schemas"]["WaitThreadResult"][];
+            status: string;
         };
     };
     responses: never;
@@ -121,6 +3389,2503 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    read_account: {
+        parameters: {
+            query?: {
+                refreshToken?: boolean;
+            };
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountResponse"];
+                };
+            };
+        };
+    };
+    start_login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginStartResponse"];
+                };
+            };
+        };
+    };
+    cancel_login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                loginId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RawAppServerResponse"];
+                };
+            };
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RawAppServerResponse"];
+                };
+            };
+        };
+    };
+    consume_reset_credit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConsumeRateLimitResetCreditRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsumeRateLimitResetCreditResponse"];
+                };
+            };
+        };
+    };
+    read_rate_limits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitsResponse"];
+                };
+            };
+        };
+    };
+    app_surface_bridge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppSurfaceBridgeRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppSurfaceBridgeResponse"];
+                };
+            };
+        };
+    };
+    app_surface_document: {
+        parameters: {
+            query: {
+                revision: number;
+            };
+            header?: never;
+            path: {
+                executorId: string;
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": unknown;
+                };
+            };
+        };
+    };
+    list_approvals: {
+        parameters: {
+            query?: {
+                status?: string | null;
+                threadId?: string | null;
+            };
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalListResponse"];
+                };
+            };
+        };
+    };
+    get_approval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                approvalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Approval"];
+                };
+            };
+        };
+    };
+    decide_approval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                approvalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApprovalDecisionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Approval"];
+                };
+            };
+        };
+    };
+    list_automations: {
+        parameters: {
+            query?: {
+                threadId?: string | null;
+            };
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationListResponse"];
+                };
+            };
+        };
+    };
+    create_automation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutomationCreateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationResponse"];
+                };
+            };
+        };
+    };
+    get_automation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                automationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationResponse"];
+                };
+            };
+        };
+    };
+    delete_automation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                automationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationDeleteResponse"];
+                };
+            };
+        };
+    };
+    update_automation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                automationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutomationUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationResponse"];
+                };
+            };
+        };
+    };
+    pause_automation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                automationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationResponse"];
+                };
+            };
+        };
+    };
+    resume_automation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                automationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationResponse"];
+                };
+            };
+        };
+    };
+    list_automation_runs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                automationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationRunListResponse"];
+                };
+            };
+        };
+    };
+    capabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapabilitiesResponse"];
+                };
+            };
+        };
+    };
+    list_chat_threads: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+                limit?: number | null;
+            };
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadListResponse"];
+                };
+            };
+        };
+    };
+    create_chat_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateChatThreadRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadCommandResponse"];
+                };
+            };
+        };
+    };
+    read_composer_settings: {
+        parameters: {
+            query?: {
+                projectId?: string | null;
+                cwd?: string | null;
+            };
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComposerSettingsResponse"];
+                };
+            };
+        };
+    };
+    update_composer_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ComposerSettingsUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComposerSettingsUpdateResponse"];
+                };
+            };
+        };
+    };
+    debug_events: {
+        parameters: {
+            query?: {
+                cursor?: number | null;
+                projectId?: string | null;
+                threadId?: string | null;
+                excludeThreadId?: string | null;
+                includeGlobal?: boolean | null;
+                threadIds?: string | null;
+                includeDebugEvents?: boolean | null;
+                includeCommandOutputs?: boolean | null;
+            };
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventListResponse"];
+                };
+            };
+        };
+    };
+    list_directories: {
+        parameters: {
+            query?: {
+                /** @description Absolute directory to browse; omission starts at the gateway user's home. */
+                path?: string | null;
+            };
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectoryListResponse"];
+                };
+            };
+            /** @description Path is outside home, unreadable or not a directory */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Directory does not exist */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    events: {
+        parameters: {
+            query?: {
+                cursor?: number | null;
+                projectId?: string | null;
+                threadId?: string | null;
+                excludeThreadId?: string | null;
+                includeGlobal?: boolean | null;
+                threadIds?: string | null;
+                includeDebugEvents?: boolean | null;
+                includeCommandOutputs?: boolean | null;
+            };
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventListResponse"];
+                };
+            };
+        };
+    };
+    list_configured_mcp_servers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfiguredMcpServerListResponse"];
+                };
+            };
+        };
+    };
+    reload_mcp_servers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpReloadResponse"];
+                };
+            };
+        };
+    };
+    list_mcp_servers: {
+        parameters: {
+            query?: {
+                detail?: null | components["schemas"]["McpServerStatusDetail"];
+            };
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpServerListResponse"];
+                };
+            };
+        };
+    };
+    add_mcp_server: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpServerInstallRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpConfigMutationResponse"];
+                };
+            };
+        };
+    };
+    remove_mcp_server: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                /** @description MCP server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpServerRemoveRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpConfigMutationResponse"];
+                };
+            };
+        };
+    };
+    update_mcp_server: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                /** @description MCP server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpServerUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpConfigMutationResponse"];
+                };
+            };
+        };
+    };
+    set_mcp_server_enabled: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                /** @description MCP server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpServerToggleRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpConfigMutationResponse"];
+                };
+            };
+        };
+    };
+    start_mcp_oauth_login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                /** @description MCP server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpOAuthLoginRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpOAuthLoginResponse"];
+                };
+            };
+        };
+    };
+    read_mcp_resource: {
+        parameters: {
+            query: {
+                uri: string;
+                threadId?: string | null;
+            };
+            header?: never;
+            path: {
+                executorId: string;
+                /** @description MCP server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpResourceReadResponse"];
+                };
+            };
+        };
+    };
+    list_models: {
+        parameters: {
+            query?: {
+                includeHidden?: boolean;
+            };
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelListResponse"];
+                };
+            };
+        };
+    };
+    notification_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationStatusResponse"];
+                };
+            };
+        };
+    };
+    current_push_subscription: {
+        parameters: {
+            query: {
+                endpoint: string;
+            };
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentPushSubscriptionResponse"];
+                };
+            };
+        };
+    };
+    delete_current_push_subscription: {
+        parameters: {
+            query: {
+                endpoint: string;
+            };
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentPushSubscriptionResponse"];
+                };
+            };
+        };
+    };
+    upsert_push_subscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PushSubscriptionUpsertRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushSubscriptionUpsertResponse"];
+                };
+            };
+        };
+    };
+    delete_push_subscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                subscriptionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushSubscriptionDeleteResponse"];
+                };
+            };
+        };
+    };
+    test_notification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestNotificationResponse"];
+                };
+            };
+        };
+    };
+    list_permission_profiles: {
+        parameters: {
+            query?: {
+                projectId?: string | null;
+                cwd?: string | null;
+                limit?: number | null;
+            };
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionProfileListResponse"];
+                };
+            };
+        };
+    };
+    list_pinned_threads: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+                limit?: number | null;
+            };
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadListResponse"];
+                };
+            };
+        };
+    };
+    list_projects: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectListResponse"];
+                };
+            };
+        };
+    };
+    create_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateProjectRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+        };
+    };
+    get_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+        };
+    };
+    delete_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProjectRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+        };
+    };
+    move_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoveProjectRequest"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    dismiss_queue_transfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                transferId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueTransferDeleteResponse"];
+                };
+            };
+        };
+    };
+    reconcile_queue_transfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                transferId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromotionOutcome"];
+                };
+            };
+        };
+    };
+    get_sidebar_threads: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SidebarThreadsResponse"];
+                };
+            };
+        };
+    };
+    list_skills: {
+        parameters: {
+            query?: {
+                cwd?: string | null;
+                forceReload?: boolean;
+            };
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillsCatalogResponse"];
+                };
+            };
+        };
+    };
+    preview_skill_icon: {
+        parameters: {
+            query: {
+                path: string;
+            };
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Local skill icon image bytes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Icon path was not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Icon path exists but is not a supported image type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_terminals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TerminalSessionListResponse"];
+                };
+            };
+        };
+    };
+    create_terminal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTerminalSession"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TerminalSessionResponse"];
+                };
+            };
+        };
+    };
+    delete_terminal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                terminalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TerminalDeleteResponse"];
+                };
+            };
+        };
+    };
+    replace_thread_view_presence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadViewPresenceSnapshotRequest"];
+            };
+        };
+        responses: {
+            /** @description Thread view presence snapshot replaced */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_threads: {
+        parameters: {
+            query?: {
+                /** @description Return archived threads only; defaults to active threads. */
+                archived?: boolean;
+                projectId?: string | null;
+                cursor?: string | null;
+                limit?: number | null;
+            };
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadListResponse"];
+                };
+            };
+        };
+    };
+    create_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateThreadRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadCommandResponse"];
+                };
+            };
+        };
+    };
+    get_unread_badge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnreadBadgeResponse"];
+                };
+            };
+        };
+    };
+    get_thread: {
+        parameters: {
+            query?: {
+                includeDebugEvents?: boolean;
+                includeCommandOutputs?: boolean;
+            };
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadViewResponse"];
+                };
+            };
+        };
+    };
+    get_thread_app_surface: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppSurfaceSessionReadResponse"];
+                };
+            };
+        };
+    };
+    archive_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RawAppServerResponse"];
+                };
+            };
+        };
+    };
+    attach_thread: {
+        parameters: {
+            query?: {
+                includeDebugEvents?: boolean;
+                includeCommandOutputs?: boolean;
+            };
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadViewResponse"];
+                };
+            };
+            /** @description Thread is archived */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    compact_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadCompactResponse"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    thread_file_content: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                /** @description Thread id for native metadata validation */
+                threadId: string;
+                /** @description Base64url encoded absolute preview directory */
+                directory: string;
+                /** @description Relative asset path; may include nested path segments */
+                filePath: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Inline HTML, local asset, or download bytes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Requested file byte range */
+            206: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid or missing request authority for an HTML preview */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Thread or file not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unsupported or oversized preview */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Requested range is not satisfiable */
+            416: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    preview_thread_file: {
+        parameters: {
+            query: {
+                path: string;
+            };
+            header?: never;
+            path: {
+                executorId: string;
+                /** @description Thread id that owns the preview context */
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Local file preview or download bytes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Requested video byte range */
+            206: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description HTML redirect to its relative asset context */
+            307: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Thread or preview path was not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Preview path exists but is not a supported preview type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Requested video range is not satisfiable */
+            416: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    fork_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": unknown;
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadCommandResponse"];
+                };
+            };
+        };
+    };
+    get_thread_goal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadGoalGetResponse"];
+                };
+            };
+        };
+    };
+    clear_thread_goal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadGoalClearResponse"];
+                };
+            };
+        };
+    };
+    set_thread_goal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadGoalSetRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadGoalSetResponse"];
+                };
+            };
+        };
+    };
+    submit_thread_input: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadInputRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadInputResponse"];
+                };
+            };
+        };
+    };
+    interrupt_current_turn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadInterruptCurrentResponse"];
+                };
+            };
+        };
+    };
+    rename_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameThreadRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenameThreadResponse"];
+                };
+            };
+        };
+    };
+    update_thread_notifications: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadNotificationSettingsUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadNotificationSettingsResponse"];
+                };
+            };
+        };
+    };
+    set_thread_pinned: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadPinRequest"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_queued_inputs: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+                limit?: number | null;
+            };
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueuedInputListResponse"];
+                };
+            };
+        };
+    };
+    create_queued_input: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueuedInputCreateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueuedInputResponse"];
+                };
+            };
+        };
+    };
+    reorder_queued_inputs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueuedInputReorderRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    start_queued_input: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueuedInputStartRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RawAppServerResponse"];
+                };
+            };
+        };
+    };
+    steer_first_queued_input: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromotionOutcome"];
+                };
+            };
+            /** @description Native lifecycle changed during send-now preflight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_queued_input: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+                queueId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueuedInputUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueuedInputResponse"];
+                };
+            };
+        };
+    };
+    delete_queued_input: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+                queueId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueuedInputDeleteResponse"];
+                };
+            };
+        };
+    };
+    steer_queued_input: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+                queueId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromotionOutcome"];
+                };
+            };
+        };
+    };
+    resume_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": unknown;
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadCommandResponse"];
+                };
+            };
+        };
+    };
+    mark_thread_seen: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkThreadSeenRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadRead"];
+                };
+            };
+        };
+    };
+    get_thread_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadSettingsResponse"];
+                };
+            };
+        };
+    };
+    update_thread_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadSettingsUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Native update queued; application is reported by thread.settings_updated */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadSettingsUpdateResponse"];
+                };
+            };
+        };
+    };
+    list_subagents: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+                limit?: number | null;
+                archived?: boolean;
+            };
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadSubagentListResponse"];
+                };
+            };
+        };
+    };
+    get_thread_timeline_page: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+                limit?: number | null;
+                includeDebugEvents?: boolean | null;
+                includeCommandOutputs?: boolean | null;
+            };
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadViewResponse"];
+                };
+            };
+        };
+    };
+    start_turn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TurnStartRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RawAppServerResponse"];
+                };
+            };
+        };
+    };
+    interrupt_turn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+                turnId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RawAppServerResponse"];
+                };
+            };
+        };
+    };
+    steer_turn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+                turnId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TurnSteerRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RawAppServerResponse"];
+                };
+            };
+        };
+    };
+    upload_thread_files: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["FileUploadRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileUploadResponse"];
+                };
+            };
+        };
+    };
+    update_thread_view_presence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadViewPresenceRequest"];
+            };
+        };
+        responses: {
+            /** @description Thread view presence updated */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    upload_images: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["ImageUploadRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageUploadResponse"];
                 };
             };
         };
