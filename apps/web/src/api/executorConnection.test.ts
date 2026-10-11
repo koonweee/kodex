@@ -20,6 +20,8 @@ describe("executor connection transport", () => {
       expect(request.url).toBe("https://kodex.example/v1/executors/executor%2Fa/threads/native%2Fthread?limit=20");
       expect(request.headers.get("x-kodex-expected-instance")).toBe("instance-a");
       expect(request.headers.get("content-type")).toBe("application/json");
+      expect(request.method).toBe("POST");
+      expect(await request.text()).toBe('{"message":"hello"}');
       return new Response(null, { status: 204 });
     });
     const scopedFetch = createExecutorFetch(connection, upstream, "https://kodex.example");
@@ -31,6 +33,7 @@ describe("executor connection transport", () => {
           "content-type": "application/json",
           "x-kodex-expected-instance": "stale-instance",
         },
+        body: '{"message":"hello"}',
       }),
     );
 

@@ -134,12 +134,7 @@ describe("useThreadViewPresence", () => {
     });
   });
 
-  it("uses sendBeacon for pagehide cleanup when available", async () => {
-    const sendBeacon = vi.fn(() => true);
-    Object.defineProperty(navigator, "sendBeacon", {
-      configurable: true,
-      value: sendBeacon,
-    });
+  it("uses a keepalive PUT for pagehide cleanup", async () => {
     renderHook(() => useThreadViewPresence({ enabled: true, heartbeatMs: HEARTBEAT_MS, threadIds: ["thread-1"] }));
 
     await flushEffects();
@@ -148,10 +143,13 @@ describe("useThreadViewPresence", () => {
       window.dispatchEvent(new Event("pagehide"));
     });
 
-    expect(sendBeacon).toHaveBeenCalledTimes(1);
-    const [url, body] = (sendBeacon.mock.calls as unknown as Array<[string, BodyInit]>)[0] ?? ["", ""];
-    expect(new URL(String(url), window.location.origin).pathname).toBe("/v1/thread-view-presence");
-    expect(body).toEqual(expect.any(Blob));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [input, init] = fetchMock.mock.calls[1];
+    const request = input instanceof Request ? input : new Request(input as RequestInfo | URL, init as RequestInit);
+    expect(request.method).toBe("PUT");
+    expect(request.keepalive).toBe(true);
+    expect(new URL(request.url, window.location.origin).pathname).toBe("/v1/thread-view-presence");
+    await expect(request.clone().json()).resolves.toMatchObject({ visibleThreadIds: [] });
   });
 
   it("falls back to an in-memory client id when sessionStorage is unavailable", async () => {
