@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{RegistryChange, State as FederatorState};
+use crate::{CatalogChange, RegistryChange, State as FederatorState};
 
 pub const SUPPORTED_EXECUTOR_API_VERSION: &str = "4";
 
@@ -165,6 +165,7 @@ impl RegistryWriter {
     pub(crate) fn start(
         store: crate::store::Store,
         changes: tokio::sync::broadcast::Sender<RegistryChange>,
+        catalog_changes: tokio::sync::broadcast::Sender<CatalogChange>,
     ) -> Self {
         let (commands, mut receiver) = tokio::sync::mpsc::channel(32);
         tokio::spawn(async move {
@@ -197,14 +198,17 @@ impl RegistryWriter {
                             )
                             .await
                             .map(|updated| {
-                                updated.map(|(record, revision)| {
+                                updated.map(|mutation| {
                                     publish_registry_change(
                                         &changes,
-                                        revision,
-                                        record.id.clone(),
-                                        Some(record.generation),
+                                        mutation.registry_revision,
+                                        mutation.record.id.clone(),
+                                        Some(mutation.record.generation),
                                     );
-                                    record
+                                    if let Some(change) = mutation.catalog_change {
+                                        let _ = catalog_changes.send(change);
+                                    }
+                                    mutation.record
                                 })
                             });
                         let _ = reply.send(result);
@@ -225,14 +229,17 @@ impl RegistryWriter {
                             )
                             .await
                             .map(|updated| {
-                                updated.map(|(record, revision)| {
+                                updated.map(|mutation| {
                                     publish_registry_change(
                                         &changes,
-                                        revision,
-                                        record.id.clone(),
-                                        Some(record.generation),
+                                        mutation.registry_revision,
+                                        mutation.record.id.clone(),
+                                        Some(mutation.record.generation),
                                     );
-                                    record
+                                    if let Some(change) = mutation.catalog_change {
+                                        let _ = catalog_changes.send(change);
+                                    }
+                                    mutation.record
                                 })
                             });
                         let _ = reply.send(result);
@@ -252,22 +259,38 @@ impl RegistryWriter {
                             )
                             .await
                             .map(|updated| {
-                                updated.map(|(record, revision)| {
+                                updated.map(|mutation| {
                                     publish_registry_change(
                                         &changes,
-                                        revision,
-                                        record.id.clone(),
-                                        Some(record.generation),
+                                        mutation.registry_revision,
+                                        mutation.record.id.clone(),
+                                        Some(mutation.record.generation),
                                     );
-                                    record
+                                    if let Some(change) = mutation.catalog_change {
+                                        let _ = catalog_changes.send(change);
+                                    }
+                                    mutation.record
                                 })
                             });
                         let _ = reply.send(result);
                     }
                     RegistryCommand::Delete { id, reply } => {
-                        let result = store.delete_executor(&id).await.map(|revision| {
-                            revision.is_some_and(|revision| {
-                                publish_registry_change(&changes, revision, id, None);
+                        let result = store.delete_executor(&id).await.map(|outcome| {
+                            outcome.is_some_and(|outcome| {
+                                publish_registry_change(
+                                    &changes,
+                                    outcome.registry_revision,
+                                    id,
+                                    None,
+                                );
+                                if let (Some(revision), Some(order_revision)) =
+                                    (outcome.catalog_revision, outcome.order_revision)
+                                {
+                                    let _ = catalog_changes.send(CatalogChange {
+                                        revision,
+                                        order_revision,
+                                    });
+                                }
                                 true
                             })
                         });

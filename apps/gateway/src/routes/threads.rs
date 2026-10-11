@@ -91,7 +91,7 @@ pub struct ThreadTimelinePageQuery {
     pub include_command_outputs: Option<bool>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SidebarThreadsResponse {
     pub projects: Vec<Project>,
@@ -100,7 +100,7 @@ pub struct SidebarThreadsResponse {
     pub pinned_threads: SidebarThreadListResponse,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SidebarThreadListResponse {
     pub threads: Vec<SidebarThreadSummary>,
@@ -108,7 +108,7 @@ pub struct SidebarThreadListResponse {
     pub backwards_cursor: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SidebarThreadSummary {
     pub id: String,

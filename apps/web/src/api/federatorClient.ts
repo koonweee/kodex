@@ -5,6 +5,7 @@ import type { components, paths } from "./generated/federation";
 import { unwrap, unwrapNoContent } from "./gatewayClientShared";
 
 export type ExecutorRegistryEvent = components["schemas"]["ExecutorRegistryEvent"];
+export type CatalogEvent = components["schemas"]["CatalogEvent"];
 export type FederatorClientOptions = {
   baseUrl?: string;
 };
@@ -36,7 +37,39 @@ export function createFederatorClient({
     probeExecutor: (executorId: string) => unwrap(api.POST("/v1/federation/executors/{executorId}/probe", {
       params: { path: { executorId } },
     })),
+    getCatalog: () => unwrap(api.GET("/v1/federation/catalog", { cache: "no-store" })),
+    refreshCatalog: () => unwrap(api.POST("/v1/federation/catalog")),
+    moveCatalogItem: (
+      kind: "project" | "pinned",
+      request: components["schemas"]["MoveCatalogItemRequest"],
+    ) => unwrap(api.POST("/v1/federation/catalog/order/{kind}/move", {
+      params: { path: { kind } },
+      body: request,
+    })),
   };
+}
+
+export function createFederationCatalogSubscription({
+  EventSourceCtor = globalThis.EventSource as EventSourceCtor | undefined,
+  baseUrl,
+  onEvent,
+}: {
+  EventSourceCtor?: EventSourceCtor;
+  baseUrl?: string;
+  onEvent: (event: CatalogEvent) => void;
+}): () => void {
+  if (!EventSourceCtor) return () => undefined;
+  const route = "/v1/federation/catalog/events";
+  const source = new EventSourceCtor(baseUrl ? new URL(route, baseUrl).toString() : route);
+  source.addEventListener("federation.catalog_changed", (message) => {
+    try {
+      const event = JSON.parse(message.data) as Partial<CatalogEvent>;
+      if (typeof event.revision === "number" && typeof event.orderRevision === "number") onEvent(event as CatalogEvent);
+    } catch {
+      // Reconnect/refetch supplies the authoritative snapshot.
+    }
+  });
+  return () => source.close();
 }
 
 export function isFederatedAppShell(): boolean {

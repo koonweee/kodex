@@ -3,6 +3,8 @@ import type { components as federationComponents } from "./generated/federation"
 
 export type FederatedExecutor = federationComponents["schemas"]["ExecutorRecord"];
 export type FederatedExecutorListResponse = federationComponents["schemas"]["ExecutorListResponse"];
+export type FederatedCatalog = federationComponents["schemas"]["CatalogResponse"];
+export type FederatedCatalogRef = federationComponents["schemas"]["QualifiedCatalogRef"];
 export type RegisterFederatedExecutorRequest = federationComponents["schemas"]["RegisterExecutorRequest"];
 export type UpdateFederatedExecutorRequest = federationComponents["schemas"]["UpdateExecutorRequest"];
 

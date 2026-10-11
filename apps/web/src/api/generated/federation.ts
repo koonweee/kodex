@@ -1346,6 +1346,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/federation/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_catalog"];
+        put?: never;
+        post: operations["refresh_catalog"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/federation/catalog/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["catalog_events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/federation/catalog/order/{kind}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["move_catalog_item"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/federation/events": {
         parameters: {
             query?: never;
@@ -1776,6 +1824,40 @@ export interface components {
         CapabilitiesResponse: {
             appServer: components["schemas"]["AppServerCapabilities"];
             gateway: components["schemas"]["GatewayCapabilities"];
+        };
+        CatalogErrorBody: {
+            code: string;
+            message: string;
+        };
+        CatalogEvent: {
+            /** Format: int64 */
+            orderRevision: number;
+            /** Format: int64 */
+            revision: number;
+        };
+        CatalogExecutorSnapshot: {
+            executorId: string;
+            executorName: string;
+            /** Format: int64 */
+            generation: number;
+            /** Format: int64 */
+            observedAt: number;
+            snapshot: components["schemas"]["SidebarThreadsResponse"];
+            stale: boolean;
+        };
+        CatalogOrderResponse: {
+            items: components["schemas"]["QualifiedCatalogRef"][];
+            /** Format: int64 */
+            orderRevision: number;
+        };
+        CatalogResponse: {
+            executors: components["schemas"]["CatalogExecutorSnapshot"][];
+            /** Format: int64 */
+            orderRevision: number;
+            pinnedOrder: components["schemas"]["QualifiedCatalogRef"][];
+            projectOrder: components["schemas"]["QualifiedCatalogRef"][];
+            /** Format: int64 */
+            revision: number;
         };
         ChatThreadListQuery: {
             cursor?: string | null;
@@ -2249,6 +2331,12 @@ export interface components {
         ModelsQuery: {
             includeHidden?: boolean;
         };
+        MoveCatalogItemRequest: {
+            before?: null | components["schemas"]["QualifiedCatalogRef"];
+            item: components["schemas"]["QualifiedCatalogRef"];
+            /** Format: int64 */
+            orderRevision: number;
+        };
         MoveProjectRequest: {
             beforeProjectId?: string | null;
         };
@@ -2435,6 +2523,10 @@ export interface components {
         };
         PushSubscriptionUpsertResponse: {
             subscription: components["schemas"]["PushSubscriptionResponse"];
+        };
+        QualifiedCatalogRef: {
+            executorId: string;
+            nativeId: string;
         };
         /**
          * @description Recoverable input for one native-queue-to-steer transfer. Ordinary queued
@@ -5999,6 +6091,107 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImageUploadResponse"];
+                };
+            };
+        };
+    };
+    get_catalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogResponse"];
+                };
+            };
+        };
+    };
+    refresh_catalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogResponse"];
+                };
+            };
+        };
+    };
+    catalog_events: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Last applied catalog revision */
+                "Last-Event-ID"?: number | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["CatalogEvent"];
+                };
+            };
+        };
+    };
+    move_catalog_item: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoveCatalogItemRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogOrderResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogErrorBody"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogErrorBody"];
                 };
             };
         };

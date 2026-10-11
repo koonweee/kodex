@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { compatibilityRequired, resetCompatibilityForTests } from "./compatibility";
 import {
+  createFederationCatalogSubscription,
   createFederationRegistrySubscription,
   createFederatorClient,
   type ExecutorRegistryEvent,
@@ -11,6 +12,45 @@ describe("federator client", () => {
   afterEach(() => {
     resetCompatibilityForTests();
     vi.unstubAllGlobals();
+  });
+
+  it("uses generated catalog routes and publishes typed catalog invalidations", async () => {
+    const requests: Request[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init);
+      requests.push(request);
+      const path = new URL(request.url).pathname;
+      if (path.endsWith("/move")) {
+        return Response.json({ orderRevision: 3, items: [] }, { headers: { "x-kodex-api-version": "4" } });
+      }
+      return Response.json({ revision: 2, orderRevision: 2, projectOrder: [], pinnedOrder: [], executors: [] }, { headers: { "x-kodex-api-version": "4" } });
+    }));
+    const client = createFederatorClient({ baseUrl: "https://kodex.example" });
+    await client.getCatalog();
+    await client.refreshCatalog();
+    await client.moveCatalogItem("project", {
+      item: { executorId: "executor-a", nativeId: "project-a" },
+      before: null,
+      orderRevision: 2,
+    });
+    expect(requests.map((request) => [request.method, new URL(request.url).pathname])).toEqual([
+      ["GET", "/v1/federation/catalog"],
+      ["POST", "/v1/federation/catalog"],
+      ["POST", "/v1/federation/catalog/order/project/move"],
+    ]);
+
+    class FakeEventSource {
+      static instance: FakeEventSource;
+      listener?: (event: MessageEvent<string>) => void;
+      constructor(readonly url: string) { FakeEventSource.instance = this; }
+      addEventListener(_type: string, listener: (event: MessageEvent<string>) => void) { this.listener = listener; }
+      close() {}
+    }
+    const onEvent = vi.fn();
+    createFederationCatalogSubscription({ EventSourceCtor: FakeEventSource, onEvent });
+    expect(FakeEventSource.instance.url).toBe("/v1/federation/catalog/events");
+    FakeEventSource.instance.listener?.({ data: JSON.stringify({ revision: 4, orderRevision: 3 }) } as MessageEvent<string>);
+    expect(onEvent).toHaveBeenCalledWith({ revision: 4, orderRevision: 3 });
   });
 
   it("uses the generated federation routes for registry reads and mutations", async () => {

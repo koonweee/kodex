@@ -1,3 +1,4 @@
+pub mod catalog;
 pub mod config;
 mod frontend_updates;
 pub mod instance;
@@ -19,7 +20,9 @@ pub struct State {
     instance_id: String,
     pub(crate) store: store::Store,
     pub(crate) registry_writer: registry::RegistryWriter,
+    pub(crate) catalog_writer: catalog::CatalogWriter,
     pub(crate) registry_changes: broadcast::Sender<RegistryChange>,
+    pub(crate) catalog_changes: broadcast::Sender<CatalogChange>,
     pub(crate) frontend_update_writer: frontend_updates::FrontendUpdateWriter,
     pub(crate) frontend_updates: broadcast::Sender<String>,
     pub(crate) trust: trust::TrustPolicy,
@@ -37,6 +40,12 @@ pub(crate) struct RegistryChange {
     pub(crate) generation: Option<i64>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct CatalogChange {
+    pub(crate) revision: i64,
+    pub(crate) order_revision: i64,
+}
+
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 struct HealthResponse {
@@ -49,6 +58,10 @@ struct HealthResponse {
 #[openapi(
     paths(
         health,
+        catalog::get_catalog,
+        catalog::refresh_catalog,
+        catalog::catalog_events,
+        catalog::move_catalog_item,
         frontend_updates::publish_frontend_update,
         frontend_updates::frontend_update_events,
         registry::registry_events,
@@ -61,6 +74,12 @@ struct HealthResponse {
     ),
     components(schemas(
         HealthResponse,
+        catalog::CatalogResponse,
+        catalog::CatalogExecutorSnapshot,
+        catalog::QualifiedCatalogRef,
+        catalog::MoveCatalogItemRequest,
+        catalog::CatalogOrderResponse,
+        catalog::CatalogEvent,
         frontend_updates::FrontendUpdateRequest,
         registry::ExecutorRecord,
         registry::ExecutorStatus,
@@ -147,6 +166,7 @@ pub fn primary_router(
     let mut router = Router::new()
         .route("/healthz", get(health))
         .route("/readyz", get(health))
+        .merge(catalog::router())
         .merge(frontend_updates::router())
         .merge(registry::router())
         .merge(proxy::router())
@@ -194,7 +214,13 @@ pub async fn prepare(
     let prepared = instance::prepare(&config.data_dir, &config.database_path)?;
     let store = store::Store::connect(&config.database_path).await?;
     let (registry_changes, _) = broadcast::channel(128);
-    let registry_writer = registry::RegistryWriter::start(store.clone(), registry_changes.clone());
+    let (catalog_changes, _) = broadcast::channel(128);
+    let registry_writer = registry::RegistryWriter::start(
+        store.clone(),
+        registry_changes.clone(),
+        catalog_changes.clone(),
+    );
+    let catalog_writer = catalog::CatalogWriter::start(store.clone(), catalog_changes.clone());
     let (frontend_updates, _) = broadcast::channel(16);
     let frontend_update_writer =
         frontend_updates::FrontendUpdateWriter::start(store.clone(), frontend_updates.clone());
@@ -203,7 +229,9 @@ pub async fn prepare(
         instance_id: prepared.identity.id.to_string(),
         store,
         registry_writer,
+        catalog_writer,
         registry_changes,
+        catalog_changes,
         frontend_update_writer,
         frontend_updates,
         trust,
@@ -338,6 +366,28 @@ mod tests {
                         Json(json!({"marker": marker})),
                     )
                 }),
+            )
+            .route(
+                "/v1/sidebar/threads",
+                get(move || async move {
+                    ([
+                        ("x-kodex-api-version", "4")
+                    ], Json(json!({
+                        "projects": [{
+                            "id": format!("project-{marker}"),
+                            "name": format!("Project {marker}"),
+                            "roots": [{"path": format!("/{marker}")}],
+                            "metadata": {},
+                            "position": 0,
+                            "createdAt": 1,
+                            "updatedAt": 1,
+                            "recencyAt": null
+                        }],
+                        "projectThreads": {},
+                        "chatThreads": {"threads": [], "nextCursor": null, "backwardsCursor": null},
+                        "pinnedThreads": {"threads": [], "nextCursor": null, "backwardsCursor": null}
+                    })))
+                }),
             );
         let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         (address, task)
@@ -438,6 +488,9 @@ mod tests {
         let paths = contract["paths"].as_object().unwrap();
         assert!(paths.contains_key("/v1/federation/executors"));
         assert!(paths.contains_key("/v1/federation/events"));
+        assert!(paths.contains_key("/v1/federation/catalog"));
+        assert!(paths.contains_key("/v1/federation/catalog/events"));
+        assert!(paths.contains_key("/v1/federation/catalog/order/{kind}/move"));
         assert!(paths.contains_key("/v1/executors/{executorId}/projects"));
         assert!(paths.contains_key("/v1/executors/{executorId}/events"));
         assert!(!paths.contains_key("/v1/executors/{executorId}/frontend-updates"));
@@ -1254,6 +1307,147 @@ mod tests {
             assert_eq!(response["code"], "executor_incompatible", "{path}");
         }
         executor_task.abort();
+    }
+
+    #[tokio::test]
+    async fn catalog_refresh_persists_qualified_membership_and_rejects_stale_moves() {
+        let (address_a, task_a) = spawn_test_executor("instance-a", "a").await;
+        let (address_b, task_b) = spawn_test_executor("instance-b", "b").await;
+        let dir = tempfile::tempdir().unwrap();
+        let config = config::Config {
+            data_dir: dir.path().to_path_buf(),
+            database_path: dir.path().join("federator.db"),
+            ..config::Config::default()
+        };
+        let (_instance, state) = prepare(&config).await.unwrap();
+        let mut catalog_events = state.catalog_changes.subscribe();
+        let app = primary_router(state, None, config.sandbox_public_url);
+
+        for (display_name, address) in [("A", address_a), ("B", address_b)] {
+            let response = app
+                .clone()
+                .oneshot(
+                    primary_mutation(Request::post("/v1/federation/executors"))
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            json!({"displayName": display_name, "baseUrl": format!("http://{address}")}).to_string(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::CREATED);
+        }
+
+        let response = app
+            .clone()
+            .oneshot(
+                primary_mutation(Request::post("/v1/federation/catalog"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let catalog = response_json(response).await;
+        assert_eq!(catalog["executors"].as_array().unwrap().len(), 2);
+        assert_eq!(catalog["projectOrder"].as_array().unwrap().len(), 2);
+        let revision = catalog["orderRevision"].as_i64().unwrap();
+        let first = catalog["projectOrder"][0].clone();
+        let second = catalog["projectOrder"][1].clone();
+        let moved_executor_id = second["executorId"].clone();
+
+        let move_body = json!({"item": second, "before": first, "orderRevision": revision});
+        let moved = app
+            .clone()
+            .oneshot(
+                primary_mutation(Request::post("/v1/federation/catalog/order/project/move"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(move_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(moved.status(), StatusCode::OK);
+        let moved = response_json(moved).await;
+        assert_eq!(moved["items"][0]["executorId"], moved_executor_id);
+
+        let stale = app
+            .clone()
+            .oneshot(
+                primary_mutation(Request::post("/v1/federation/catalog/order/project/move"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(move_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(stale.status(), StatusCode::CONFLICT);
+
+        task_b.abort();
+        let partial = app
+            .clone()
+            .oneshot(
+                primary_mutation(Request::post("/v1/federation/catalog"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(partial.status(), StatusCode::OK);
+        let partial = response_json(partial).await;
+        assert_eq!(
+            partial["executors"].as_array().unwrap().len(),
+            2,
+            "a failed executor refresh must retain its cached catalog"
+        );
+        assert!(partial["executors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|executor| executor["stale"] == true));
+
+        while catalog_events.try_recv().is_ok() {}
+        let deleted_executor = partial["executors"][0]["executorId"].as_str().unwrap();
+        let before_revision = partial["revision"].as_i64().unwrap();
+        let before_order_revision = partial["orderRevision"].as_i64().unwrap();
+        let deleted = app
+            .clone()
+            .oneshot(
+                primary_mutation(Request::delete(format!(
+                    "/v1/federation/executors/{deleted_executor}"
+                )))
+                .body(Body::empty())
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+        let deletion_change = tokio::time::timeout(Duration::from_secs(1), catalog_events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(deletion_change.revision > before_revision);
+        assert!(deletion_change.order_revision > before_order_revision);
+
+        let after_delete = app
+            .clone()
+            .oneshot(
+                primary_request(Request::get("/v1/federation/catalog"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let after_delete = response_json(after_delete).await;
+        assert_eq!(after_delete["executors"].as_array().unwrap().len(), 1);
+        assert_eq!(after_delete["revision"], deletion_change.revision);
+        assert_eq!(
+            after_delete["orderRevision"],
+            deletion_change.order_revision
+        );
+
+        task_a.abort();
     }
 
     async fn response_json(response: axum::response::Response) -> serde_json::Value {

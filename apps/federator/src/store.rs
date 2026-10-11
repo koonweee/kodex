@@ -6,15 +6,33 @@ use sqlx::{
     Pool, Row, Sqlite,
 };
 
-use crate::registry::{ExecutorRecord, ExecutorStatus};
+use crate::{
+    registry::{ExecutorRecord, ExecutorStatus},
+    CatalogChange,
+};
 
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 5;
 const REGISTRY_REVISION_KEY: &str = "executor_registry_revision";
 const FRONTEND_REVISION_KEY: &str = "frontend_revision";
+const CATALOG_REVISION_KEY: &str = "catalog_revision";
+const ORDER_REVISION_KEY: &str = "catalog_order_revision";
 
 #[derive(Clone)]
 pub struct Store {
-    pool: Pool<Sqlite>,
+    pub(crate) pool: Pool<Sqlite>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct DeleteExecutorOutcome {
+    pub(crate) registry_revision: i64,
+    pub(crate) catalog_revision: Option<i64>,
+    pub(crate) order_revision: Option<i64>,
+}
+
+pub(crate) struct ExecutorMutation {
+    pub(crate) record: ExecutorRecord,
+    pub(crate) registry_revision: i64,
+    pub(crate) catalog_change: Option<CatalogChange>,
 }
 
 impl Store {
@@ -39,7 +57,8 @@ impl Store {
                 .await?;
             install_executor_schema(&mut transaction).await?;
             install_registry_revision(&mut transaction).await?;
-            sqlx::query("PRAGMA user_version = 3")
+            install_catalog_schema(&mut transaction).await?;
+            sqlx::query("PRAGMA user_version = 5")
                 .execute(&mut *transaction)
                 .await?;
             transaction.commit().await?;
@@ -47,14 +66,32 @@ impl Store {
             let mut transaction = pool.begin().await?;
             install_executor_schema(&mut transaction).await?;
             install_registry_revision(&mut transaction).await?;
-            sqlx::query("PRAGMA user_version = 3")
+            install_catalog_schema(&mut transaction).await?;
+            sqlx::query("PRAGMA user_version = 5")
                 .execute(&mut *transaction)
                 .await?;
             transaction.commit().await?;
         } else if version == 2 {
             let mut transaction = pool.begin().await?;
             install_registry_revision(&mut transaction).await?;
-            sqlx::query("PRAGMA user_version = 3")
+            install_catalog_schema(&mut transaction).await?;
+            sqlx::query("PRAGMA user_version = 5")
+                .execute(&mut *transaction)
+                .await?;
+            transaction.commit().await?;
+        } else if version == 3 {
+            let mut transaction = pool.begin().await?;
+            install_catalog_schema(&mut transaction).await?;
+            sqlx::query("PRAGMA user_version = 5")
+                .execute(&mut *transaction)
+                .await?;
+            transaction.commit().await?;
+        } else if version == 4 {
+            let mut transaction = pool.begin().await?;
+            sqlx::query("ALTER TABLE catalog_snapshots ADD COLUMN refresh_error TEXT")
+                .execute(&mut *transaction)
+                .await?;
+            sqlx::query("PRAGMA user_version = 5")
                 .execute(&mut *transaction)
                 .await?;
             transaction.commit().await?;
@@ -75,6 +112,12 @@ impl Store {
         .await?;
         if reset.rows_affected() > 0 {
             advance_registry_revision(&mut transaction).await?;
+            if sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM catalog_snapshots)")
+                .fetch_one(&mut *transaction)
+                .await?
+            {
+                advance_revision(&mut transaction, CATALOG_REVISION_KEY).await?;
+            }
         }
         transaction.commit().await?;
         Ok(Self { pool })
@@ -151,7 +194,7 @@ impl Store {
     }
 
     pub async fn insert_executor(&self, record: &ExecutorRecord) -> anyhow::Result<i64> {
-        let mut transaction = self.pool.begin().await?;
+        let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         sqlx::query(
             "INSERT INTO executors (id, generation, display_name, base_url, instance_id, api_version, app_server_schema_version, enabled, status, last_error, last_seen_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
@@ -175,14 +218,14 @@ impl Store {
         Ok(revision)
     }
 
-    pub async fn update_executor_sparse(
+    pub(crate) async fn update_executor_sparse(
         &self,
         id: &str,
         display_name: Option<&str>,
         enabled: Option<bool>,
         updated_at: i64,
-    ) -> anyhow::Result<Option<(ExecutorRecord, i64)>> {
-        let mut transaction = self.pool.begin().await?;
+    ) -> anyhow::Result<Option<ExecutorMutation>> {
+        let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         let row = sqlx::query(
             "UPDATE executors SET display_name = COALESCE(?, display_name), enabled = COALESCE(?, enabled), generation = generation + 1, updated_at = ? WHERE id = ? RETURNING id, generation, display_name, base_url, instance_id, api_version, app_server_schema_version, enabled, status, last_error, last_seen_at, created_at, updated_at",
         )
@@ -197,13 +240,18 @@ impl Store {
             return Ok(None);
         };
         let record = decode_executor(row)?;
-        let revision = advance_registry_revision(&mut transaction).await?;
+        let registry_revision = advance_registry_revision(&mut transaction).await?;
+        let catalog_change = catalog_change_for_executor(&mut transaction, id).await?;
         transaction.commit().await?;
-        Ok(Some((record, revision)))
+        Ok(Some(ExecutorMutation {
+            record,
+            registry_revision,
+            catalog_change,
+        }))
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn update_executor_verified_endpoint(
+    pub(crate) async fn update_executor_verified_endpoint(
         &self,
         id: &str,
         expected_generation: i64,
@@ -215,8 +263,8 @@ impl Store {
         status: ExecutorStatus,
         last_error: Option<&str>,
         updated_at: i64,
-    ) -> anyhow::Result<Option<(ExecutorRecord, i64)>> {
-        let mut transaction = self.pool.begin().await?;
+    ) -> anyhow::Result<Option<ExecutorMutation>> {
+        let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         let row = sqlx::query(
             "UPDATE executors SET display_name = COALESCE(?, display_name), enabled = COALESCE(?, enabled), base_url = ?, api_version = ?, app_server_schema_version = ?, status = ?, last_error = ?, last_seen_at = ?, generation = generation + 1, updated_at = ? WHERE id = ? AND generation = ? RETURNING id, generation, display_name, base_url, instance_id, api_version, app_server_schema_version, enabled, status, last_error, last_seen_at, created_at, updated_at",
         )
@@ -238,13 +286,18 @@ impl Store {
             return Ok(None);
         };
         let record = decode_executor(row)?;
-        let revision = advance_registry_revision(&mut transaction).await?;
+        let registry_revision = advance_registry_revision(&mut transaction).await?;
+        let catalog_change = catalog_change_for_executor(&mut transaction, id).await?;
         transaction.commit().await?;
-        Ok(Some((record, revision)))
+        Ok(Some(ExecutorMutation {
+            record,
+            registry_revision,
+            catalog_change,
+        }))
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn update_executor_probe(
+    pub(crate) async fn update_executor_probe(
         &self,
         id: &str,
         expected_generation: i64,
@@ -255,8 +308,8 @@ impl Store {
         last_seen_at: i64,
         updated_at: i64,
         bump_generation: bool,
-    ) -> anyhow::Result<Option<(ExecutorRecord, i64)>> {
-        let mut transaction = self.pool.begin().await?;
+    ) -> anyhow::Result<Option<ExecutorMutation>> {
+        let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         let row = sqlx::query(
             "UPDATE executors SET api_version = ?, app_server_schema_version = ?, status = ?, last_error = ?, last_seen_at = ?, generation = generation + ?, updated_at = ? WHERE id = ? AND generation = ? RETURNING id, generation, display_name, base_url, instance_id, api_version, app_server_schema_version, enabled, status, last_error, last_seen_at, created_at, updated_at",
         )
@@ -276,26 +329,64 @@ impl Store {
             return Ok(None);
         };
         let record = decode_executor(row)?;
-        let revision = advance_registry_revision(&mut transaction).await?;
+        let registry_revision = advance_registry_revision(&mut transaction).await?;
+        let catalog_change = catalog_change_for_executor(&mut transaction, id).await?;
         transaction.commit().await?;
-        Ok(Some((record, revision)))
+        Ok(Some(ExecutorMutation {
+            record,
+            registry_revision,
+            catalog_change,
+        }))
     }
 
-    pub async fn delete_executor(&self, id: &str) -> anyhow::Result<Option<i64>> {
-        let mut transaction = self.pool.begin().await?;
+    pub(crate) async fn delete_executor(
+        &self,
+        id: &str,
+    ) -> anyhow::Result<Option<DeleteExecutorOutcome>> {
+        let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        let had_snapshot: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM catalog_snapshots WHERE executor_id = ?)",
+        )
+        .bind(id)
+        .fetch_one(&mut *transaction)
+        .await?;
+        let had_order: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM catalog_order WHERE executor_id = ?)")
+                .bind(id)
+                .fetch_one(&mut *transaction)
+                .await?;
         let deleted = sqlx::query("DELETE FROM executors WHERE id = ?")
             .bind(id)
             .execute(&mut *transaction)
             .await?
             .rows_affected()
             > 0;
-        let revision = if deleted {
-            Some(advance_registry_revision(&mut transaction).await?)
+        let outcome = if deleted {
+            let registry_revision = advance_registry_revision(&mut transaction).await?;
+            let catalog_revision = if had_snapshot || had_order {
+                Some(advance_revision(&mut transaction, CATALOG_REVISION_KEY).await?)
+            } else {
+                None
+            };
+            let order_revision = if had_snapshot || had_order {
+                Some(if had_order {
+                    advance_revision(&mut transaction, ORDER_REVISION_KEY).await?
+                } else {
+                    revision(&mut transaction, ORDER_REVISION_KEY).await?
+                })
+            } else {
+                None
+            };
+            Some(DeleteExecutorOutcome {
+                registry_revision,
+                catalog_revision,
+                order_revision,
+            })
         } else {
             None
         };
         transaction.commit().await?;
-        Ok(revision)
+        Ok(outcome)
     }
 }
 
@@ -329,6 +420,48 @@ async fn advance_registry_revision(
     .await?)
 }
 
+async fn advance_revision(
+    transaction: &mut sqlx::Transaction<'_, Sqlite>,
+    key: &str,
+) -> anyhow::Result<i64> {
+    Ok(sqlx::query_scalar(
+        "UPDATE federation_meta SET value = CAST(value AS INTEGER) + 1 WHERE key = ? RETURNING CAST(value AS INTEGER)",
+    )
+    .bind(key)
+    .fetch_one(&mut **transaction)
+    .await?)
+}
+
+async fn revision(
+    transaction: &mut sqlx::Transaction<'_, Sqlite>,
+    key: &str,
+) -> anyhow::Result<i64> {
+    Ok(
+        sqlx::query_scalar("SELECT CAST(value AS INTEGER) FROM federation_meta WHERE key = ?")
+            .bind(key)
+            .fetch_one(&mut **transaction)
+            .await?,
+    )
+}
+
+async fn catalog_change_for_executor(
+    transaction: &mut sqlx::Transaction<'_, Sqlite>,
+    executor_id: &str,
+) -> anyhow::Result<Option<CatalogChange>> {
+    let has_snapshot: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM catalog_snapshots WHERE executor_id = ?)")
+            .bind(executor_id)
+            .fetch_one(&mut **transaction)
+            .await?;
+    if !has_snapshot {
+        return Ok(None);
+    }
+    Ok(Some(CatalogChange {
+        revision: advance_revision(transaction, CATALOG_REVISION_KEY).await?,
+        order_revision: revision(transaction, ORDER_REVISION_KEY).await?,
+    }))
+}
+
 async fn install_executor_schema(
     transaction: &mut sqlx::Transaction<'_, Sqlite>,
 ) -> anyhow::Result<()> {
@@ -348,6 +481,45 @@ async fn install_executor_schema(
             last_seen_at INTEGER NOT NULL,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
+        )
+        "#,
+    )
+    .execute(&mut **transaction)
+    .await?;
+    Ok(())
+}
+
+async fn install_catalog_schema(
+    transaction: &mut sqlx::Transaction<'_, Sqlite>,
+) -> anyhow::Result<()> {
+    for key in [CATALOG_REVISION_KEY, ORDER_REVISION_KEY] {
+        sqlx::query("INSERT OR IGNORE INTO federation_meta (key, value) VALUES (?, '0')")
+            .bind(key)
+            .execute(&mut **transaction)
+            .await?;
+    }
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS catalog_snapshots (
+            executor_id TEXT PRIMARY KEY REFERENCES executors(id) ON DELETE CASCADE,
+            generation INTEGER NOT NULL,
+            snapshot_json TEXT NOT NULL,
+            observed_at INTEGER NOT NULL,
+            refresh_error TEXT
+        )
+        "#,
+    )
+    .execute(&mut **transaction)
+    .await?;
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS catalog_order (
+            kind TEXT NOT NULL CHECK (kind IN ('project', 'pinned')),
+            executor_id TEXT NOT NULL REFERENCES executors(id) ON DELETE CASCADE,
+            native_id TEXT NOT NULL,
+            position INTEGER NOT NULL,
+            PRIMARY KEY (kind, executor_id, native_id),
+            UNIQUE (kind, position)
         )
         "#,
     )
@@ -540,16 +712,24 @@ mod tests {
         let (revision, rows) = store.executor_registry_snapshot().await.unwrap();
         assert_eq!(revision, 1);
         assert_eq!(rows.len(), 1);
-        let (updated, revision) = store
+        let mutation = store
             .update_executor_sparse("1", Some("Renamed"), None, 2)
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(revision, 2);
-        assert_eq!(updated.display_name, "Renamed");
+        assert_eq!(mutation.registry_revision, 2);
+        assert_eq!(mutation.record.display_name, "Renamed");
+        assert!(mutation.catalog_change.is_none());
         assert!(store.delete_executor("missing").await.unwrap().is_none());
         assert_eq!(store.executor_registry_revision().await.unwrap(), 2);
-        assert_eq!(store.delete_executor("1").await.unwrap(), Some(3));
+        assert_eq!(
+            store.delete_executor("1").await.unwrap(),
+            Some(DeleteExecutorOutcome {
+                registry_revision: 3,
+                catalog_revision: None,
+                order_revision: None,
+            })
+        );
         drop(store);
 
         let reopened = Store::connect(&path).await.unwrap();
