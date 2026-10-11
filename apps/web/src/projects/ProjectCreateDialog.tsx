@@ -23,7 +23,12 @@ export function WorkspaceProjectCreateDialog({ api, onClose, onCreated, onError 
   }} />;
 }
 
-export function ProjectCreateDialog({ api, onClose, onCreated }: { api: GatewayClient; onClose: () => void; onCreated: (project: Project) => void }) {
+export function ProjectCreateDialog({ api, blockedMessage = null, onClose, onCreated }: {
+  api: GatewayClient;
+  blockedMessage?: string | null;
+  onClose: () => void;
+  onCreated: (project: Project) => void;
+}) {
   const queryClient = useQueryClient();
   const [root, setRoot] = useState<string | null>(null);
   const attempt = useRef<{ body: string; idempotencyKey: string } | null>(null);
@@ -40,7 +45,7 @@ export function ProjectCreateDialog({ api, onClose, onCreated }: { api: GatewayC
   });
 
   function submit() {
-    if (!root) return;
+    if (!root || blockedMessage) return;
     const fields = { name: root.split("/").filter(Boolean).at(-1) ?? root, roots: [{ path: root }] };
     const body = JSON.stringify(fields);
     if (attempt.current?.body !== body) attempt.current = { body, idempotencyKey: createClientRequestId() };
@@ -52,9 +57,10 @@ export function ProjectCreateDialog({ api, onClose, onCreated }: { api: GatewayC
     <Modal opened onClose={onClose} title="Add project" closeOnClickOutside={!create.isPending} closeOnEscape={!create.isPending} withCloseButton={!create.isPending}>
       <form onSubmit={(event) => { event.preventDefault(); submit(); }}>
         <Stack>
-          <DirectoryPicker api={api} value={root} onChange={(value) => { setRoot(value); create.reset(); }} disabled={create.isPending} />
+          {blockedMessage ? <Alert color="yellow">{blockedMessage}</Alert> : null}
+          <DirectoryPicker api={api} value={root} onChange={(value) => { setRoot(value); create.reset(); }} disabled={create.isPending || Boolean(blockedMessage)} />
           {create.error ? <Alert color="red">{errorMessageFrom(create.error)}</Alert> : null}
-          <Button type="submit" disabled={!root} loading={create.isPending}>Add project</Button>
+          <Button type="submit" disabled={!root || Boolean(blockedMessage)} loading={create.isPending}>Add project</Button>
         </Stack>
       </form>
     </Modal>

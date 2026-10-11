@@ -7,6 +7,7 @@ import { PinnedOrderMenuItems, type PinnedThreadActions } from "./PinnedOrderMen
 import { threadDisplayTitle, threadNeedsApproval } from "./helpers";
 import { SidebarIconButton } from "./SidebarIconButton";
 import { SidebarRowFrame } from "./sidebarRows";
+import { federatedExecutorContextLabel, type FederatedSidebarItemContext } from "../federation/federatedSidebarModel";
 import "../styles/thread-sidebar-rows.css";
 
 const SIDEBAR_TEXT = { newThread: "New thread", pinThread: "Pin thread", unpinThread: "Unpin thread", showMoreLoading: "Loading more", showLessThreads: "Show less", showMoreThreads: "Show more", showMoreError: "Could not load more threads" };
@@ -20,6 +21,7 @@ export type ThreadListRowProps = PinnedThreadActions & {
   canMoveDown?: boolean;
   approvals: Approval[];
   isSelected: boolean;
+  itemContext?: FederatedSidebarItemContext;
   onArchiveThread: (threadId: string) => void;
   onPinThread: (threadId: string) => void;
   onSelectThread: (threadId: string) => void;
@@ -33,6 +35,7 @@ export type ThreadListRowProps = PinnedThreadActions & {
 export const ThreadListRow = memo(function ThreadListRow({
   approvals,
   isSelected,
+  itemContext,
   onArchiveThread,
   onPinThread,
   onSelectThread,
@@ -47,6 +50,7 @@ export const ThreadListRow = memo(function ThreadListRow({
   const displayTitle = threadDisplayTitleWithPending(thread, pendingTitleThreadIds);
   const isPinned = thread.pinned;
   const pinLabel = isPinned ? SIDEBAR_TEXT.unpinThread : SIDEBAR_TEXT.pinThread;
+  const actionDisabled = pinPending || itemContext?.actionable === false;
   const focusPointerType = useRef<string | null>(null);
 
   function handleHoverPointerDown(event: ReactPointerEvent<HTMLElement>) {
@@ -74,7 +78,7 @@ export const ThreadListRow = memo(function ThreadListRow({
           data-pinned={isPinned ? "true" : undefined}
           density="compact"
           label={pinLabel}
-          disabled={pinPending}
+          disabled={actionDisabled}
           onClick={(event) => {
             event.stopPropagation();
             if (isPinned) {
@@ -118,8 +122,8 @@ export const ThreadListRow = memo(function ThreadListRow({
           {onMovePinnedThread ? <Menu position="bottom-end" withinPortal>
             <Menu.Target><SidebarIconButton density="compact" label={`Thread actions for ${displayTitle}`} tooltip={false}><MoreHorizontal /></SidebarIconButton></Menu.Target>
             <Menu.Dropdown>
-              <PinnedOrderMenuItems threadId={thread.id} onMovePinnedThread={onMovePinnedThread} pinPending={pinPending} previousThreadId={previousThreadId} followingThreadId={followingThreadId} canMoveDown={canMoveDown} />
-              <Menu.Item onClick={() => onArchiveThread(thread.id)}>Archive thread</Menu.Item>
+              <PinnedOrderMenuItems threadId={thread.id} onMovePinnedThread={onMovePinnedThread} pinPending={actionDisabled} previousThreadId={previousThreadId} followingThreadId={followingThreadId} canMoveDown={canMoveDown} />
+              <Menu.Item disabled={actionDisabled} onClick={() => onArchiveThread(thread.id)}>Archive thread</Menu.Item>
             </Menu.Dropdown>
           </Menu> : null}
           {indicatorState && !showThreadArchiveAction ? (
@@ -129,6 +133,7 @@ export const ThreadListRow = memo(function ThreadListRow({
             <SidebarIconButton
               className="kodex-thread-archive-button"
               density="compact"
+              disabled={actionDisabled}
               label={`Archive ${displayTitle}`}
               tooltip="Archive thread"
               onClick={() => onArchiveThread(thread.id)}
@@ -148,16 +153,30 @@ export const ThreadListRow = memo(function ThreadListRow({
           justify="space-between"
           wrap="nowrap"
         >
-          <Text
-            className="kodex-thread-list-title"
-            c={pendingTitleThreadIds.has(thread.id) ? "dimmed" : undefined}
-            data-placeholder-title={pendingTitleThreadIds.has(thread.id) ? "true" : undefined}
-            fw={400}
-            size="xs"
-            lineClamp={1}
-          >
-            {displayTitle}
-          </Text>
+          <Stack gap={0} className="kodex-thread-list-label-stack">
+            <Text
+              className="kodex-thread-list-title"
+              c={pendingTitleThreadIds.has(thread.id) ? "dimmed" : undefined}
+              data-placeholder-title={pendingTitleThreadIds.has(thread.id) ? "true" : undefined}
+              fw={400}
+              size="xs"
+              lineClamp={1}
+            >
+              {displayTitle}
+            </Text>
+            {itemContext ? (
+              <Text
+                className="kodex-thread-list-context"
+                c="dimmed"
+                data-offline={!itemContext.available ? "true" : undefined}
+                data-stale={itemContext.stale ? "true" : undefined}
+                size="xs"
+                lineClamp={1}
+              >
+                {federatedExecutorContextLabel(itemContext)}
+              </Text>
+            ) : null}
+          </Stack>
           {needsApproval ? (
             <Badge className="kodex-thread-approval-badge" data-tone="warning" size="xs" variant="light">
               Needs approval
@@ -172,6 +191,7 @@ export const ThreadListRow = memo(function ThreadListRow({
 export function areThreadListRowPropsEqual(previous: ThreadListRowProps, next: ThreadListRowProps) {
   return (
     previous.onMovePinnedThread === next.onMovePinnedThread &&
+    previous.itemContext === next.itemContext &&
     previous.pinPending === next.pinPending &&
     previous.previousThreadId === next.previousThreadId &&
     previous.followingThreadId === next.followingThreadId &&
@@ -195,6 +215,7 @@ export function ThreadList({
   expanded,
   hasMore = false,
   hoveredThreadActionId,
+  itemContextById,
   onArchiveThread,
   onPinThread,
   onSelectThread,
@@ -212,6 +233,7 @@ export function ThreadList({
   expanded: boolean;
   hasMore?: boolean;
   hoveredThreadActionId: string | null;
+  itemContextById?: Record<string, FederatedSidebarItemContext>;
   onArchiveThread: (threadId: string) => void;
   onPinThread: (threadId: string) => void;
   onSelectThread: (threadId: string) => void;
@@ -242,6 +264,7 @@ export function ThreadList({
           canMoveDown={pinnedOrder ? pinnedOrder.findIndex((row) => row.id === thread.id) < pinnedOrder.length - 1 && (pinnedOrder.findIndex((row) => row.id === thread.id) + 2 < pinnedOrder.length || !hasMore) : undefined}
           approvals={approvals}
           isSelected={thread.id === selectedThreadId}
+          itemContext={itemContextById?.[thread.id]}
           key={thread.id}
           onArchiveThread={onArchiveThread}
           onPinThread={onPinThread}

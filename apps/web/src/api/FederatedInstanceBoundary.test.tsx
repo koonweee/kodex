@@ -85,7 +85,7 @@ describe("federated instance bootstrap", () => {
     expect(window.location.pathname).toBe("/executors/missing/threads/shared");
   });
 
-  it("rejects cross-executor non-thread popstate routes instead of exposing the old shell under the new URL", async () => {
+  it("rejects cross-executor automation popstate routes instead of exposing the old shell under the new URL", async () => {
     const client = {
       getHealth: vi.fn().mockResolvedValue({ instanceId: "federator-1", ready: true, service: "kodex-federator" }),
       listExecutors: vi.fn().mockResolvedValue({
@@ -105,11 +105,37 @@ describe("federated instance bootstrap", () => {
     );
     expect(await screen.findByText("ready")).toBeInTheDocument();
 
-    window.history.pushState(null, "", "/executors/executor-a/projects/shared");
+    window.history.pushState(null, "", "/executors/executor-a/automations");
     window.dispatchEvent(new PopStateEvent("popstate"));
 
     expect(await screen.findByText(/open executor executor-a .* in a new tab/i)).toBeInTheDocument();
     expect(window.location.pathname).toBe("/executors/executor-b/threads/shared");
+  });
+
+  it("allows a healthy cross-executor project route for the federated project overlay", async () => {
+    const client = {
+      getHealth: vi.fn().mockResolvedValue({ instanceId: "federator-1", ready: true, service: "kodex-federator" }),
+      listExecutors: vi.fn().mockResolvedValue({
+        revision: 1,
+        executors: [executor("executor-a", "instance-a"), executor("executor-b", "instance-b")],
+      }),
+    };
+    render(
+      <FederatedInstanceBoundary
+        client={client}
+        registry={new ExecutorRuntimeRegistry({ baseUrl: window.location.origin, storage: null })}
+        subscribe={() => () => undefined}
+      >
+        {({ routeError }) => <p>{routeError ?? "ready"}</p>}
+      </FederatedInstanceBoundary>,
+    );
+    expect(await screen.findByText("ready")).toBeInTheDocument();
+
+    window.history.pushState(null, "", "/executors/executor-a/projects/shared");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+
+    expect(await screen.findByText("ready")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/executors/executor-a/projects/shared");
   });
 
   it("replaces the retained shell runtime when the binding gets a new instance", async () => {
@@ -175,6 +201,7 @@ describe("federated instance bootstrap", () => {
       const path = new URL(input instanceof Request ? input.url : input.toString()).pathname;
       if (path === "/healthz") return Response.json({ instanceId: "federator-1", ready: true, service: "kodex-federator" });
       if (path === "/v1/federation/executors") return Response.json({ revision: 1, executors: [executor("executor-a", "instance-a")] });
+      if (path === "/v1/federation/catalog") return Response.json({ revision: 0, orderRevision: 0, projectOrder: [], pinnedOrder: [], executors: [] });
       return Response.json({}, { status: 404 });
     });
 
@@ -186,7 +213,13 @@ describe("federated instance bootstrap", () => {
 
     expect(await screen.findByText("executor-a")).toBeInTheDocument();
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(fetch.mock.calls.map(([input]) => new URL(input instanceof Request ? input.url : input.toString()).pathname)).toEqual([
+      "/v1/federation/catalog",
+      "/healthz",
+      "/v1/federation/executors",
+      "/v1/federation/catalog",
+    ]);
   });
 
   it("keeps the mounted workspace and healthy runtimes after selected-executor removal or refresh failure", async () => {

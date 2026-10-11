@@ -5,7 +5,14 @@ import type { components, paths } from "./generated/federation";
 import { unwrap, unwrapNoContent } from "./gatewayClientShared";
 
 export type ExecutorRegistryEvent = components["schemas"]["ExecutorRegistryEvent"];
+export type FederatedExecutor = components["schemas"]["ExecutorRecord"];
 export type CatalogEvent = components["schemas"]["CatalogEvent"];
+export type FederatedCatalog = components["schemas"]["CatalogResponse"];
+export type CatalogExecutorSnapshot = components["schemas"]["CatalogExecutorSnapshot"];
+export type QualifiedCatalogRef = components["schemas"]["QualifiedCatalogRef"];
+export type CatalogOrder = components["schemas"]["CatalogOrderResponse"];
+export type RegisterExecutorRequest = components["schemas"]["RegisterExecutorRequest"];
+export type UpdateExecutorRequest = components["schemas"]["UpdateExecutorRequest"];
 export type FederatorClientOptions = {
   baseUrl?: string;
 };

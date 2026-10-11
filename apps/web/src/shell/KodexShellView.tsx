@@ -1,5 +1,5 @@
 import { AppShell, Button, Group, Stack, Title } from "@mantine/core";
-import { lazy, Suspense, useEffect, useRef, type ComponentProps } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ComponentProps } from "react";
 
 import type { AutomationsPane as AutomationsPaneComponent } from "../automations/AutomationsPane";
 import type { PreferencesModalProps } from "../PreferencesModal";
@@ -9,6 +9,8 @@ import { readNarrowWorkspace, useNarrowWorkspace } from "../shared/layoutBreakpo
 import { useProjectTerminal } from "../projects/useProjectTerminal";
 import { WorkspaceSidebar } from "../threads/WorkspaceSidebar";
 import type { ThreadSummary } from "../api/client";
+import type { QualifiedCatalogRef } from "../api/federatorClient";
+import { ExecutorPickerDialog, type ExecutorChoice } from "../federation/ExecutorPickerDialog";
 import { WorkspaceShell } from "../workspace/WorkspaceShell";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
 
@@ -30,16 +32,22 @@ const DESKTOP_EXPANDED_SIDEBAR_WIDTH = 292;
 type KodexShellViewProps = {
   automationsPaneProps: ComponentProps<typeof AutomationsPaneComponent>;
   executorId: string;
+  executorChoices?: ExecutorChoice[];
   isSidebarResizing: boolean;
   isDraftThreadSelected: boolean;
   mainPane: "thread" | "automations" | "project";
   mobilePanel: MobilePanel;
+  onActivateFederatedTarget?: (target: QualifiedCatalogRef, mode: "draft" | "thread") => void;
+  onSelectFederatedProject?: (target: QualifiedCatalogRef, projectKey: string) => void;
+  onExecutorUsed?: (executorId: string) => void;
   preferencesProps: PreferencesModalProps;
+  preferredExecutorId?: string | null;
   projectPaneProps: ComponentProps<typeof ProjectPaneComponent>;
   sidebarCollapsed: boolean;
   useSingleThreadWorkspace: boolean;
   workspaceSidebarProps: ComponentProps<typeof WorkspaceSidebar>;
   workspaceSelectedThreadPaneId: string | null;
+  resolveSidebarTarget?: (key: string) => QualifiedCatalogRef | null;
 };
 
 function AutomationsPaneFallback() {
@@ -61,16 +69,22 @@ function AutomationsPaneFallback() {
 export function KodexShellView({
   automationsPaneProps,
   executorId,
+  executorChoices,
   isDraftThreadSelected,
   isSidebarResizing,
   mainPane,
   mobilePanel,
+  onActivateFederatedTarget,
+  onSelectFederatedProject,
+  onExecutorUsed,
   preferencesProps,
+  preferredExecutorId,
   projectPaneProps,
   sidebarCollapsed: desktopSidebarCollapsed,
   useSingleThreadWorkspace,
   workspaceSidebarProps,
   workspaceSelectedThreadPaneId,
+  resolveSidebarTarget,
 }: KodexShellViewProps) {
   const mainLabel = mainPane === "automations" ? "Automations" : mainPane === "project" ? "Project" : "Thread workspace";
   const isNarrowThreadWorkspace = useNarrowWorkspace();
@@ -95,6 +109,12 @@ export function KodexShellView({
       <WorkspaceSidebarWithPaneActions
         {...workspaceSidebarProps}
         executorId={executorId}
+        executorChoices={executorChoices}
+        onActivateFederatedTarget={onActivateFederatedTarget}
+        onSelectFederatedProject={onSelectFederatedProject}
+        onExecutorUsed={onExecutorUsed}
+        preferredExecutorId={preferredExecutorId}
+        resolveSidebarTarget={resolveSidebarTarget}
         sidebarCollapsed={sidebarCollapsed}
         sidebarWidth={effectiveSidebarWidth}
         useSingleThreadMode={useSingleThreadWorkspace}
@@ -137,12 +157,24 @@ export function KodexShellView({
 
 type WorkspaceSidebarWithPaneActionsProps = ComponentProps<typeof WorkspaceSidebar> & {
   executorId: string;
+  executorChoices?: ExecutorChoice[];
+  onActivateFederatedTarget?: (target: QualifiedCatalogRef, mode: "draft" | "thread") => void;
+  onSelectFederatedProject?: (target: QualifiedCatalogRef, projectKey: string) => void;
+  onExecutorUsed?: (executorId: string) => void;
+  preferredExecutorId?: string | null;
+  resolveSidebarTarget?: (key: string) => QualifiedCatalogRef | null;
   useSingleThreadMode: boolean;
   workspaceSelectedThreadPaneId: string | null;
 };
 
 function WorkspaceSidebarWithPaneActions({
   executorId,
+  executorChoices,
+  onActivateFederatedTarget,
+  onSelectFederatedProject,
+  onExecutorUsed,
+  preferredExecutorId,
+  resolveSidebarTarget,
   useSingleThreadMode,
   workspaceSelectedThreadPaneId,
   ...props
@@ -159,14 +191,30 @@ function WorkspaceSidebarWithPaneActions({
   });
   const titleLookupPropsRef = useRef(props);
   const seededRouteThreadPaneRef = useRef<string | null>(null);
+  const [chatPickerOpen, setChatPickerOpen] = useState(false);
 
   useEffect(() => {
     titleLookupPropsRef.current = props;
   }, [props.chatThreads, props.pinnedThreads, props.threadsByProjectId]);
 
+  function targetFor(key: string): QualifiedCatalogRef {
+    return resolveSidebarTarget?.(key) ?? { executorId, nativeId: key };
+  }
+
   function openThread(threadId: string) {
-    void openThreadPane(threadId, titleForThread(props, threadId), { executorId }).catch((error: unknown) => {
+    const target = targetFor(threadId);
+    void openThreadPane(target.nativeId, titleForThread(props, threadId), { executorId: target.executorId }).catch((error: unknown) => {
       console.error("Failed to open workspace thread pane", error);
+    });
+    return target;
+  }
+
+  function openDraftChat(targetExecutorId: string) {
+    onExecutorUsed?.(targetExecutorId);
+    onActivateFederatedTarget?.({ executorId: targetExecutorId, nativeId: "" }, "draft");
+    if (targetExecutorId === executorId) props.onCreateChat();
+    void openDraftThreadPane(null, { executorId: targetExecutorId }).catch((error: unknown) => {
+      console.error("Failed to open workspace draft chat pane", error);
     });
   }
 
@@ -204,33 +252,58 @@ function WorkspaceSidebarWithPaneActions({
     <>
     <WorkspaceSidebar
       {...props}
-      onArchiveThread={threadActions.onArchiveThread ?? props.onArchiveThread}
+      onArchiveThread={resolveSidebarTarget ? props.onArchiveThread : threadActions.onArchiveThread ?? props.onArchiveThread}
       onOpenTerminal={props.onOpenTerminal ? openTerminal : undefined}
       onCreateChat={() => {
-        props.onCreateChat();
-        void openDraftThreadPane(null, { executorId }).catch((error: unknown) => {
-          console.error("Failed to open workspace draft chat pane", error);
-        });
+        if (executorChoices && executorChoices.length !== 1) {
+          setChatPickerOpen(true);
+          return;
+        }
+        openDraftChat(executorChoices?.[0]?.id ?? executorId);
       }}
       onCreateThread={(projectId) => {
-        props.onCreateThread(projectId);
-        void openDraftThreadPane(projectId, { executorId }).catch((error: unknown) => {
+        const target = targetFor(projectId);
+        onActivateFederatedTarget?.(target, "draft");
+        if (target.executorId === executorId) props.onCreateThread(target.nativeId);
+        void openDraftThreadPane(target.nativeId, { executorId: target.executorId }).catch((error: unknown) => {
           console.error("Failed to open workspace draft thread pane", error);
         });
       }}
       onSelectChatThread={(threadId) => {
-        openThread(threadId);
-        props.onSelectChatThread(threadId);
+        const target = openThread(threadId);
+        onActivateFederatedTarget?.(target, "thread");
+        if (target.executorId === executorId) props.onSelectChatThread(target.nativeId);
       }}
       onSelectPinnedThread={(threadId) => {
-        openThread(threadId);
-        props.onSelectPinnedThread(threadId);
+        const target = openThread(threadId);
+        onActivateFederatedTarget?.(target, "thread");
+        if (target.executorId === executorId) props.onSelectPinnedThread(target.nativeId);
+      }}
+      onSelectProjectSettings={(projectId) => {
+        const target = targetFor(projectId);
+        onSelectFederatedProject?.(target, projectId);
+        if (target.executorId === executorId) props.onSelectProjectSettings(target.nativeId);
       }}
       onSelectThread={(projectId, threadId) => {
-        openThread(threadId);
-        props.onSelectThread(projectId, threadId);
+        const target = openThread(threadId);
+        const projectTarget = targetFor(projectId);
+        onActivateFederatedTarget?.(target, "thread");
+        if (target.executorId === executorId) props.onSelectThread(projectTarget.nativeId, target.nativeId);
       }}
     />
+    {executorChoices ? (
+      <ExecutorPickerDialog
+        choices={executorChoices}
+        kind="chat"
+        onClose={() => setChatPickerOpen(false)}
+        onConfirm={(targetExecutorId) => {
+          setChatPickerOpen(false);
+          openDraftChat(targetExecutorId);
+        }}
+        opened={chatPickerOpen}
+        preferredExecutorId={preferredExecutorId ?? executorId}
+      />
+    ) : null}
     {terminalDirectoryDialog}
     </>
   );

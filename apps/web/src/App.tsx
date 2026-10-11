@@ -28,8 +28,13 @@ import {
   type Project,
   type ThreadSummary,
 } from "./api/client";
+import type { FederatedCatalog, FederatedExecutor, QualifiedCatalogRef, RegisterExecutorRequest, UpdateExecutorRequest } from "./api/federatorClient";
 import { ExecutorRuntimeBoundary, ExecutorRuntimeRegistryProvider, FederatedShellRuntimeProvider, GatewayClientProvider, useExecutorConnection, useGatewayClient } from "./api/GatewayClientContext";
 import { queryClient, type ExecutorRuntime } from "./api/queryClient";
+import { FederatedCatalogProvider } from "./federation/FederatedCatalogContext";
+import { FederatedProjectCreateFlow } from "./federation/FederatedProjectCreateFlow";
+import { FederatedProjectSettingsModal } from "./federation/FederatedProjectSettingsModal";
+import { useFederatedSidebarController } from "./federation/useFederatedSidebarController";
 import { queryKeys } from "./api/queryKeys";
 import {
   deleteCachedAutomation,
@@ -135,13 +140,47 @@ type AppProps = {
   availableExecutorIds?: readonly string[];
   executorRuntime?: ExecutorRuntime;
   executorRuntimes?: readonly ExecutorRuntime[];
+  federatedCatalog?: FederatedCatalog | null;
+  federatedCatalogError?: string | null;
+  federatedCatalogRefreshing?: boolean;
+  federatedExecutors?: readonly FederatedExecutor[];
   federatedShellAvailable?: boolean;
   federatedRouteError?: string | null;
+  moveFederatedCatalogItem?: (
+    kind: "project" | "pinned",
+    item: QualifiedCatalogRef,
+    before: QualifiedCatalogRef | null,
+  ) => Promise<unknown>;
+  probeFederatedExecutor?: (executorId: string) => Promise<FederatedExecutor>;
   queryClientInstance?: QueryClient;
+  refreshFederatedCatalog?: () => Promise<void>;
+  refreshFederatedExecutors?: () => Promise<void>;
+  registerFederatedExecutor?: (request: RegisterExecutorRequest) => Promise<FederatedExecutor>;
+  removeFederatedExecutor?: (executorId: string) => Promise<void>;
+  updateFederatedExecutor?: (executorId: string, request: UpdateExecutorRequest) => Promise<FederatedExecutor>;
   workspacePaneStore?: WorkspacePaneStoreAdapter;
 };
 
-export function App({ availableExecutorIds, executorRuntime, executorRuntimes: providedExecutorRuntimes, federatedRouteError = null, federatedShellAvailable = true, queryClientInstance = queryClient, workspacePaneStore }: AppProps = {}) {
+export function App({
+  availableExecutorIds,
+  executorRuntime,
+  executorRuntimes: providedExecutorRuntimes,
+  federatedCatalog,
+  federatedCatalogError = null,
+  federatedCatalogRefreshing = false,
+  federatedExecutors = [],
+  federatedRouteError = null,
+  federatedShellAvailable = true,
+  moveFederatedCatalogItem,
+  probeFederatedExecutor,
+  queryClientInstance = queryClient,
+  refreshFederatedCatalog,
+  refreshFederatedExecutors,
+  registerFederatedExecutor,
+  removeFederatedExecutor,
+  updateFederatedExecutor,
+  workspacePaneStore,
+}: AppProps = {}) {
   const { preferences, resolvedSchemeId: colorSchemeId, setMode, setTheme, selectTheme } = useAppearancePreferences();
   const [hasComposerTextDraft, setHasComposerTextDraft] = useState(false);
   const executorRuntimes = useMemo(
@@ -202,12 +241,30 @@ export function App({ availableExecutorIds, executorRuntime, executorRuntimes: p
       )}
     </MantineProvider>
   );
+  const unavailableExecutorManagement = async () => { throw new Error("Executor management is unavailable."); };
+  const federatedContent = federatedCatalog !== undefined && moveFederatedCatalogItem && refreshFederatedCatalog ? (
+    <FederatedCatalogProvider value={{
+      catalog: federatedCatalog,
+      error: federatedCatalogError,
+      executors: federatedExecutors,
+      moveItem: moveFederatedCatalogItem,
+      probeExecutor: probeFederatedExecutor ?? unavailableExecutorManagement,
+      registerExecutor: registerFederatedExecutor ?? unavailableExecutorManagement,
+      removeExecutor: removeFederatedExecutor ?? unavailableExecutorManagement,
+      refresh: refreshFederatedCatalog,
+      refreshExecutors: refreshFederatedExecutors ?? unavailableExecutorManagement,
+      refreshing: federatedCatalogRefreshing,
+      updateExecutor: updateFederatedExecutor ?? unavailableExecutorManagement,
+    }}>
+      {content}
+    </FederatedCatalogProvider>
+  ) : content;
   if (executorRuntime) return (
     <ExecutorRuntimeRegistryProvider availableExecutorIds={availableExecutorIds} runtimes={executorRuntimes}>
-      <FederatedShellRuntimeProvider available={federatedShellAvailable} runtime={executorRuntime}>{content}</FederatedShellRuntimeProvider>
+      <FederatedShellRuntimeProvider available={federatedShellAvailable} runtime={executorRuntime}>{federatedContent}</FederatedShellRuntimeProvider>
     </ExecutorRuntimeRegistryProvider>
   );
-  return <QueryClientProvider client={queryClientInstance}><GatewayClientProvider client={defaultGatewayClient}>{content}</GatewayClientProvider></QueryClientProvider>;
+  return <QueryClientProvider client={queryClientInstance}><GatewayClientProvider client={defaultGatewayClient}>{federatedContent}</GatewayClientProvider></QueryClientProvider>;
 }
 
 function KodexShell({
@@ -453,6 +510,24 @@ function KodexShell({
   });
   const chatThreads = chatThreadsQuery.data ?? EMPTY_THREADS;
   const pinnedThreads = nativePinned.threads;
+  const federatedSidebar = useFederatedSidebarController({
+    executorId,
+    moveNativePinned: nativePinned.movePinnedThread,
+    moveNativeProject: handleMoveProject,
+    onError: reportError,
+    onShowWorkspace: handleShowWorkspace,
+    setNativePinned: nativePinned.setPinned,
+  });
+  const federatedSidebarModel = federatedSidebar.model;
+  const federatedCatalogState = federatedSidebar.federation;
+  const federatedRuntimes = federatedSidebar.runtimes;
+  const executorChoices = federatedSidebar.executorChoices;
+  const preferredExecutorId = federatedSidebar.preferredExecutorId;
+  const federationMode = federatedSidebar.federationMode;
+  const sidebarProjects = federationMode ? federatedSidebarModel?.projects ?? [] : orderedProjects;
+  const sidebarChatThreads = federationMode ? federatedSidebarModel?.chatThreads ?? [] : chatThreads;
+  const sidebarPinnedThreads = federationMode ? federatedSidebarModel?.pinnedThreads ?? [] : pinnedThreads;
+  const sidebarThreadsByProjectId = federationMode ? federatedSidebarModel?.threadsByProjectId ?? {} : threadsByProjectId;
   const flatProjectThreads = useMemo(() => Object.values(threadsByProjectId).flat(), [threadsByProjectId]);
   const selectedProjectPane =
     selectedProjectPaneId ? orderedProjects.find((project) => project.id === selectedProjectPaneId) ?? null : null;
@@ -837,6 +912,9 @@ function KodexShell({
   }
 
   const handleArchiveThreadById = useEventCallback((threadId: string) => void handleArchiveThread(threadId));
+  const handleSidebarArchiveThread = useEventCallback((threadId: string) => {
+    federatedSidebar.archiveThread(threadId, handleArchiveThreadById);
+  });
   const handleThreadArchived = useEventCallback((threadId: string) => handleArchivedThreadProjection(threadId));
   const handleCloseLightbox = useEventCallback(() => setLightboxImage(null));
   const handleCloseMarkdownPreview = useEventCallback(() => setMarkdownPreview(null));
@@ -1087,15 +1165,20 @@ function KodexShell({
           threadOptions: automationTargetThreadOptions,
         }}
         executorId={executorId}
+        executorChoices={executorChoices}
         isDraftThreadSelected={isDraftThreadSelected}
         isSidebarResizing={isSidebarResizing}
         mainPane={selectedMainPane}
         mobilePanel={mobilePanel}
+        onActivateFederatedTarget={federationMode ? federatedSidebar.activateTarget : undefined}
+        onExecutorUsed={federationMode ? federatedSidebar.recordExecutorUsed : undefined}
+        onSelectFederatedProject={federationMode ? federatedSidebar.selectProject : undefined}
         preferencesProps={{
           activeSection: preferencesSection, resolvedSchemeId: colorSchemeId, preferences: appearance,
           onClose: handleClosePreferences, onModeChange: onAppearanceModeChange, onThemeChange,
           onSectionChange: setPreferencesSection, opened: preferencesOpen,
         }}
+        preferredExecutorId={preferredExecutorId}
         projectPaneProps={{
           onShowMobileSidebar: handleShowMobileSidebar,
           project: selectedProjectPane,
@@ -1104,37 +1187,81 @@ function KodexShell({
           sidebarCollapsed={sidebarCollapsed}
           useSingleThreadWorkspace={useSingleThreadWorkspace}
           workspaceSidebarProps={{
-          account, approvals, chatThreads, dataState: sidebarDataState, hoveredThreadActionId,
+          account, approvals: federationMode ? [] : approvals, chatThreads: sidebarChatThreads, dataState: federationMode ? {
+            chatThreads: federatedSidebarModel ? "loaded" : federatedCatalogState?.error ? "error" : "loading",
+            pinnedThreads: federatedSidebarModel ? "loaded" : federatedCatalogState?.error ? "error" : "loading",
+            projects: federatedSidebarModel ? "loaded" : federatedCatalogState?.error ? "error" : "loading",
+            projectThreadsById: Object.fromEntries(sidebarProjects.map((project) => [project.id, "loaded"])),
+          } : sidebarDataState, hoveredThreadActionId,
+          itemContextById: federatedSidebarModel?.contextById,
+          executorFilter: federatedSidebar.executorFilter,
+          executorFilterOptions: federatedCatalogState?.catalog?.executors.map((entry) => ({
+            label: entry.executorName,
+            value: entry.executorId,
+          })),
+          onExecutorFilterChange: federationMode ? federatedSidebar.setExecutorFilter : undefined,
           sidebarSnapshotStatus: {
-            failed: sidebarThreadsQuery.isError,
-            retrying: sidebarThreadsQuery.isFetching,
-            onRetry: () => { void sidebarThreadsQuery.refetch(); },
+            failed: federationMode ? federatedCatalogState?.error !== null : sidebarThreadsQuery.isError,
+            retrying: federationMode ? federatedCatalogState?.refreshing ?? false : sidebarThreadsQuery.isFetching,
+            onRetry: () => { if (federatedCatalogState) void federatedCatalogState.refresh(); else void sidebarThreadsQuery.refetch(); },
           },
-          chatThreadsHasMore: chatThreadsNextCursor !== null,
+          chatThreadsHasMore: federationMode ? false : chatThreadsNextCursor !== null,
           chatThreadsPaginationState,
-          onArchiveThread: handleArchiveThreadById,
+          onArchiveThread: federationMode ? handleSidebarArchiveThread : handleArchiveThreadById,
           onCreateChat: stableHandleCreateChat, onCreateProject: () => setProjectFormOpen(true), onCreateThread: stableHandleCreateThread, onLogout: handleLogout,
-          onLoadMoreChatThreads: handleLoadMoreChatThreads, onLoadMoreProjectThreads: handleLoadMoreProjectThreads,
-          onPinThread: stableHandlePinThread,
-          onOpenPreferences: handleOpenPreferences, onOpenTerminal: gatewayTerminalAvailable ? handleShowWorkspace : undefined,
-          onMoveProject: handleMoveProject, onSelectChatThread: stableHandleSelectChatThread,
-          onSelectAutomations: stableHandleSelectAutomations, onSelectPinnedThread: stableHandleSelectPinnedThread, onSelectProjectSettings: stableHandleSelectProjectSettings, onSelectThread: stableHandleSelectThread, onUnpinThread: stableHandleUnpinThread,
+          onLoadMoreChatThreads: federationMode ? undefined : handleLoadMoreChatThreads, onLoadMoreProjectThreads: federationMode ? undefined : handleLoadMoreProjectThreads,
+          onPinThread: federationMode ? (threadId) => federatedSidebar.setPinned(threadId, true) : stableHandlePinThread,
+          onOpenPreferences: handleOpenPreferences, onOpenTerminal: !federationMode && gatewayTerminalAvailable ? handleShowWorkspace : undefined,
+          onMoveProject: federationMode ? federatedSidebar.moveProject : handleMoveProject, onSelectChatThread: stableHandleSelectChatThread,
+          onSelectAutomations: stableHandleSelectAutomations, onSelectPinnedThread: stableHandleSelectPinnedThread, onSelectProjectSettings: stableHandleSelectProjectSettings, onSelectThread: stableHandleSelectThread,
           onShowThread: handleShowMobileThread, onShowDebugEventsChange: setShowDebugEvents, onShowCommandOutputsChange: setShowCommandOutputs, onSidebarCollapseClick: handleSidebarCollapseClick,
           onSidebarExpandClick: handleSidebarExpandClick, onThreadActionHoverChange: setHoveredThreadActionId,
-          pinnedThreads,
-          pinnedThreadsHasMore: nativePinned.hasMore, pinnedThreadsPaginationState: nativePinned.paginationState,
-          onLoadMorePinnedThreads: nativePinned.loadMore, onMovePinnedThread: nativePinned.movePinnedThread, pinPending: nativePinned.pinPending,
+          pinnedThreads: sidebarPinnedThreads,
+          pinnedThreadsHasMore: federationMode ? false : nativePinned.hasMore, pinnedThreadsPaginationState: nativePinned.paginationState,
+          onLoadMorePinnedThreads: federationMode ? undefined : nativePinned.loadMore, onMovePinnedThread: federationMode ? federatedSidebar.movePinned : nativePinned.movePinnedThread, pinPending: federationMode ? federatedCatalogState?.refreshing ?? false : nativePinned.pinPending,
           pendingTitleThreadIds,
-          projectThreadHasMoreById: Object.fromEntries(Object.entries(projectThreadNextCursors).map(([projectId, cursor]) => [projectId, cursor !== null])),
+          projectThreadHasMoreById: federationMode ? {} : Object.fromEntries(Object.entries(projectThreadNextCursors).map(([projectId, cursor]) => [projectId, cursor !== null])),
           projectThreadPaginationStateById,
-          projects: orderedProjects, selectedMainPane, selectedProjectId, selectedThreadId: selectedMainPane === "thread" ? selectedThreadId : null,
-          showDebugEvents, showCommandOutputs, sidebarWidth, threadsByProjectId, usageLimitLines,
+          projects: sidebarProjects, selectedMainPane,
+          selectedProjectId: federationMode ? federatedSidebar.selectedProjectKey : selectedProjectId,
+          selectedThreadId: selectedMainPane === "thread"
+            ? (federationMode ? federatedSidebar.selectedThreadKey : selectedThreadId)
+            : null,
+          showDebugEvents, showCommandOutputs, sidebarWidth, threadsByProjectId: sidebarThreadsByProjectId, usageLimitLines,
+          onUnpinThread: federationMode ? (threadId) => federatedSidebar.setPinned(threadId, false) : stableHandleUnpinThread,
         }}
+        resolveSidebarTarget={federatedSidebarModel?.resolveTarget}
         workspaceSelectedThreadPaneId={
           selectedMainPane === "thread" && !isSelectedThreadSnapshotDeferred ? routeThreadPaneId ?? unavailableThreadId : null
         }
         />
-        {projectFormOpen ? <WorkspaceProjectCreateDialog api={gateway} onClose={() => setProjectFormOpen(false)} onCreated={(project) => handleCreateThread(project.id)} onError={reportError} /> : null}
+        {projectFormOpen ? (
+          federationMode ? (
+            executorChoices && federatedRuntimes ? (
+              <FederatedProjectCreateFlow
+                choices={executorChoices}
+                onClose={() => setProjectFormOpen(false)}
+                onCreated={() => federatedCatalogState?.refresh()}
+                onError={reportError}
+                onExecutorUsed={federatedSidebar.recordExecutorUsed}
+                opened
+                preferredExecutorId={preferredExecutorId}
+                runtimes={federatedRuntimes}
+              />
+            ) : null
+          ) : (
+            <WorkspaceProjectCreateDialog api={gateway} onClose={() => setProjectFormOpen(false)} onCreated={(project) => handleCreateThread(project.id)} onError={reportError} />
+          )
+        ) : null}
+        {federatedSidebar.projectSettings ? (
+          <FederatedProjectSettingsModal
+            actionable={federatedSidebar.projectSettingsActionable}
+            executorId={federatedSidebar.projectSettings.executorId}
+            onClose={federatedSidebar.closeProjectSettings}
+            onRefresh={() => { void federatedCatalogState?.refresh(); }}
+            project={federatedSidebar.projectSettings.project}
+          />
+        ) : null}
       </WorkspaceProvider>
       {lightboxImage ? (
         <Suspense fallback={null}>

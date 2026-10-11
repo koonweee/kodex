@@ -79,6 +79,16 @@
   min-width: 0;
 }
 
+.kodex-thread-list-label-stack,
+.kodex-thread-list-context {
+  width: 100%;
+  min-width: 0;
+}
+
+.kodex-thread-list-context {
+  font-size: 10px;
+}
+
 .kodex-thread-list-sidecar {
   min-width: 0;
 }

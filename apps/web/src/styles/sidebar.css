@@ -269,6 +269,16 @@
   letter-spacing: 0;
 }
 
+.kodex-sidebar-row-label-stack {
+  display: grid;
+  min-width: 0;
+}
+
+.kodex-sidebar-row-context {
+  min-width: 0;
+  font-size: 10px;
+}
+
 .kodex-sidebar-row-trailing {
   display: inline-flex;
   gap: var(--kodex-sidebar-action-gap);

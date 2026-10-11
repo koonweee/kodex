@@ -7,6 +7,7 @@ import type { PinnedThreadActions } from "./PinnedOrderMenuItems";
 import {
   AppShell,
   Box,
+  Select,
   Stack,
   Text,
 } from "@mantine/core";
@@ -35,6 +36,7 @@ import {
 } from "react";
 
 import type { AccountResponse, Approval, Project, ThreadSummary } from "../api/client";
+import { federatedExecutorContextLabel, type FederatedSidebarItemContext } from "../federation/federatedSidebarModel";
 import { useGatewayInstanceStorage } from "../api/GatewayInstanceBoundary";
 import type { UsageLimitLines } from "../account/rateLimits";
 import { SidebarAccountMenu } from "../account/SidebarAccountFooter";
@@ -100,8 +102,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   chatThreadsHasMore = false,
   chatThreadsPaginationState = "idle",
   dataState = DEFAULT_DATA_STATE,
+  executorFilter,
+  executorFilterOptions,
   sidebarSnapshotStatus,
   hoveredThreadActionId,
+  itemContextById,
   onArchiveThread,
   onCreateChat,
   onCreateProject,
@@ -109,6 +114,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onLogout,
   onLoadMoreChatThreads,
   onLoadMoreProjectThreads,
+  onExecutorFilterChange,
   onOpenPreferences,
   onOpenTerminal,
   onPinThread,
@@ -149,8 +155,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   chatThreadsHasMore?: boolean;
   chatThreadsPaginationState?: SidebarPaginationState;
   dataState?: WorkspaceSidebarDataState;
+  executorFilter?: string | null;
+  executorFilterOptions?: Array<{ label: string; value: string }>;
   sidebarSnapshotStatus?: SidebarSnapshotStatus;
   hoveredThreadActionId: string | null;
+  itemContextById?: Record<string, FederatedSidebarItemContext>;
   onArchiveThread: (threadId: string) => void;
   onCreateChat: () => void;
   onCreateProject: () => void;
@@ -158,6 +167,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onLogout: () => void;
   onLoadMoreChatThreads?: () => void;
   onLoadMoreProjectThreads?: (projectId: string) => void;
+  onExecutorFilterChange?: (executorId: string | null) => void;
   onOpenPreferences: (section?: import("../PreferencesModal").PreferenceSection) => void;
   onOpenTerminal?: () => void;
   onPinThread: (threadId: string) => void;
@@ -472,6 +482,17 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                 query={searchQuery}
               />
               {onOpenTerminal ? <SidebarTextActionRow icon={<SquareTerminal />} label="Terminal" onClick={onOpenTerminal} /> : null}
+              {executorFilterOptions && executorFilterOptions.length > 1 && onExecutorFilterChange ? (
+                <Select
+                  aria-label="Executor filter"
+                  clearable
+                  data={executorFilterOptions}
+                  onChange={onExecutorFilterChange}
+                  placeholder="All executors"
+                  size="xs"
+                  value={executorFilter}
+                />
+              ) : null}
             </Box>
             <Box className="kodex-sidebar-scope-switch">
               <button
@@ -515,6 +536,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                   onArchiveThread={onArchiveThread} onPinThread={onPinThread} onUnpinThread={onUnpinThread}
                   onMovePinnedThread={onMovePinnedThread} pinPending={pinPending}
                   onSelectThread={onSelectPinnedThread} onThreadActionHoverChange={onThreadActionHoverChange}
+                  itemContextById={itemContextById}
                   pendingTitleThreadIds={pendingTitleThreadIds} selectedThreadId={selectedThreadId}
                 />
                 {sidebarScope === "projects" ? (
@@ -564,6 +586,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                             const renderedProjectThreads = projectCollapsed ? collapsedProjectThreads : displayedProjectThreads;
                             const newThreadLabel =
                               project.id === selectedProjectId ? SIDEBAR_TEXT.newThread : `Create thread in ${project.name}`;
+                            const projectActionable = itemContextById?.[project.id]?.actionable !== false;
                             return (
                               <Box
                                 className="kodex-project-group"
@@ -578,7 +601,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                                 }}
                                 role="group"
                                 aria-label={project.name}
-                                onDrop={(event) => handleProjectDrop(event, project.id)}
+                                onDrop={projectActionable ? (event) => handleProjectDrop(event, project.id) : undefined}
                               >
                                 <SidebarActionDisclosureRow
                                   className="kodex-project-row"
@@ -586,6 +609,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                                   disclosureEnabled={projectHasDisclosure}
                                   disclosureLabel={`${projectCollapsed ? "Expand" : "Collapse"} ${project.name}`}
                                   label={project.name}
+                                  contextLabel={itemContextById?.[project.id]
+                                    ? federatedExecutorContextLabel(itemContextById[project.id])
+                                    : undefined}
                                   leadingIcon={
                                     projectHasDisclosure && projectCollapsed ? (
                                       <AdaptiveIcon className="kodex-project-folder-icon" data-collapsed="true">
@@ -600,18 +626,20 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                                   mainClassName="kodex-ui-selectable kodex-project-title"
                                   onToggle={() => handleProjectCollapseToggle(project.id)}
                                   rootProps={{
-                                    draggable: true,
-                                    onDragEnd: handleProjectDragEnd,
-                                    onDragOver: (event) => handleProjectDragOver(event, project.id),
-                                    onDragStart: (event) => handleProjectDragStart(event, project.id),
+                                    draggable: projectActionable,
+                                    onDragEnd: projectActionable ? handleProjectDragEnd : undefined,
+                                    onDragOver: projectActionable ? (event) => handleProjectDragOver(event, project.id) : undefined,
+                                    onDragStart: projectActionable ? (event) => handleProjectDragStart(event, project.id) : undefined,
                                   }}
                                   trailingActions={[
                                     {
+                                      disabled: itemContextById?.[project.id]?.actionable === false,
                                       icon: <Settings />,
                                       label: `Project settings for ${project.name}`,
                                       onClick: () => onSelectProjectSettings(project.id),
                                     },
                                     {
+                                      disabled: itemContextById?.[project.id]?.actionable === false,
                                       icon: <SquarePen />,
                                       label: newThreadLabel,
                                       onClick: () => onCreateThread(project.id),
@@ -625,6 +653,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                                     className="kodex-project-thread-list"
                                     expanded={projectCollapsed || showAllProjectThreads}
                                     hoveredThreadActionId={hoveredThreadActionId}
+                                    itemContextById={itemContextById}
                                     hasMore={projectCollapsed ? false : projectThreadsHaveMore}
                                     onArchiveThread={onArchiveThread}
                                     onPinThread={onPinThread}
@@ -679,6 +708,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                       expanded={chatThreadsExpanded}
                       hasMore={chatThreadsHasMore}
                       hoveredThreadActionId={hoveredThreadActionId}
+                      itemContextById={itemContextById}
                       onArchiveThread={onArchiveThread}
                       onPinThread={onPinThread}
                       onSelectThread={onSelectChatThread}

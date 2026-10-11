@@ -12,6 +12,7 @@ import { AdaptiveIcon } from "../ui/AdaptiveIcon";
 import { SidebarIconButton } from "./SidebarIconButton";
 
 export type SidebarRowAction = {
+  disabled?: boolean;
   icon: ReactNode;
   label: string;
   onClick: () => void;
@@ -56,6 +57,7 @@ export function SidebarRowFrame({
     <SidebarIconButton
       className="kodex-sidebar-row-action"
       density="compact"
+      disabled={action.disabled}
       key={action.label}
       label={action.label}
       onClick={action.onClick}
@@ -126,6 +128,7 @@ export function SidebarActionDisclosureRow({
   disclosureEnabled = true,
   disclosureLabel,
   label,
+  contextLabel,
   leadingIcon,
   mainClassName,
   onToggle,
@@ -137,6 +140,7 @@ export function SidebarActionDisclosureRow({
   disclosureEnabled?: boolean;
   disclosureLabel: string;
   label: string;
+  contextLabel?: string;
   leadingIcon?: ReactNode;
   mainClassName?: string;
   onToggle: () => void;
@@ -145,9 +149,16 @@ export function SidebarActionDisclosureRow({
 }) {
   const content = (
     <>
-      <Text component="span" className="kodex-sidebar-row-label" fw={400} size="xs" lineClamp={1}>
-        {label}
-      </Text>
+      <span className="kodex-sidebar-row-label-stack">
+        <Text component="span" className="kodex-sidebar-row-label" fw={400} size="xs" lineClamp={1}>
+          {label}
+        </Text>
+        {contextLabel ? (
+          <Text component="span" className="kodex-sidebar-row-context" c="dimmed" size="xs" lineClamp={1}>
+            {contextLabel}
+          </Text>
+        ) : null}
+      </span>
       {disclosureEnabled ? <DisclosureChevron /> : null}
     </>
   );

@@ -99,6 +99,24 @@ describe("ThreadListRow layout and actions", () => {
     expect(onSelect).toHaveBeenCalledWith("thread-1");
   });
 
+  it("keeps stale executor rows readable while disabling their mutations", () => {
+    renderThreadRow({
+      itemContext: {
+        actionable: false,
+        available: true,
+        executorName: "Build Linux",
+        observedAt: 1_791_753_600,
+        stale: true,
+      },
+      showThreadArchiveAction: true,
+    });
+
+    expect(screen.getByText(/Build Linux · Stale · Last seen/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pin thread" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Archive thread-1" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /thread-1 Build Linux/ })).toBeEnabled();
+  });
+
   it("only exposes hover actions for mouse pointers", () => {
     const onHoverChange = vi.fn();
     renderThreadRow({ onThreadActionHoverChange: onHoverChange });

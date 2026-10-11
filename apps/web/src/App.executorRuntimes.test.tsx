@@ -4,7 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 import { createGatewayClient } from "./api/client";
+import type { FederatedCatalog, FederatedExecutor } from "./api/federatorClient";
 import { createKodexQueryClient, type ExecutorRuntime } from "./api/queryClient";
+import { queryKeys } from "./api/queryKeys";
 import { createMemoryWorkspacePaneStore } from "./workspace/paneStore";
 
 class FakeEventSource {
@@ -61,6 +63,8 @@ async function responseFor(id: string, calls: string[], input: RequestInfo | URL
     "GET /v1/capabilities": { gateway: { apiVersion: "4", instanceId: `instance-${id}`, version: "test", sse: true, approvals: true, terminals: { enabled: true }, gatewayAuth: false, trustedNetworkOnly: true }, appServer: { ready: true, experimentalApi: true, schemaVersion: "0.160.0", detectedVersion: "0.160.0", detectedVersionMatchesSchema: true } },
     "GET /v1/sidebar/threads": { projects: [], projectThreads: {}, pinnedThreads: { threads: [], nextCursor: null }, chatThreads: { threads: [thread], nextCursor: null, backwardsCursor: null, rawPayload: {} } },
     "GET /v1/projects": { projects: [] },
+    "GET /v1/directories": { path: `/${id}`, homePath: `/${id}`, parentPath: null, directories: [] },
+    "POST /v1/projects": { id: "shared-project", name: `Project ${id}`, roots: [{ path: `/${id}` }], metadata: {}, position: 0, createdAt: 1, updatedAt: 1, recencyAt: null },
     "GET /v1/threads": { threads: [thread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
     "GET /v1/chats/threads": { threads: [thread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
     "GET /v1/pinned-threads": { threads: [], nextCursor: null },
@@ -86,11 +90,48 @@ async function responseFor(id: string, calls: string[], input: RequestInfo | URL
     : Response.json(body);
 }
 
+function registeredExecutor(id: string): FederatedExecutor {
+  return {
+    apiVersion: "4", appServerSchemaVersion: "0.160.0", baseUrl: `https://${id}.example`, createdAt: 1,
+    displayName: id, enabled: true, generation: 1, id, instanceId: `instance-${id}`,
+    lastError: null, lastSeenAt: 1, status: "ready", updatedAt: 1,
+  };
+}
+
+function projectCatalog(staleExecutorB: boolean): FederatedCatalog {
+  const project = {
+    id: "shared-project", name: "Remote project", roots: [{ path: "/executor-b" }], metadata: {}, position: 0,
+    createdAt: 1, updatedAt: 1, recencyAt: null,
+  };
+  return {
+    revision: staleExecutorB ? 2 : 1,
+    orderRevision: 1,
+    projectOrder: [{ executorId: "executor-b", nativeId: project.id }],
+    pinnedOrder: [],
+    executors: ["executor-a", "executor-b"].map((executorId) => ({
+      executorId,
+      executorName: executorId === "executor-a" ? "Desk Mac" : "Build Linux",
+      generation: 1,
+      observedAt: 1_791_753_600,
+      stale: executorId === "executor-b" && staleExecutorB,
+      snapshot: {
+        projects: executorId === "executor-b" ? [project] : [],
+        projectThreads: executorId === "executor-b"
+          ? { [project.id]: { threads: [], nextCursor: null } }
+          : {},
+        pinnedThreads: { threads: [], nextCursor: null },
+        chatThreads: { threads: [], nextCursor: null },
+      },
+    })),
+  };
+}
+
 describe("App executor runtime registry", () => {
   beforeEach(() => {
     vi.stubGlobal("EventSource", FakeEventSource);
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1440);
     vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(900);
+    HTMLElement.prototype.scrollIntoView = vi.fn();
     window.history.replaceState(null, "", "/executors/executor-a/threads/shared");
   });
 
@@ -137,6 +178,208 @@ describe("App executor runtime registry", () => {
       expect(callsB).toContain("POST /v1/approvals/shared-approval/decision");
       expect(callsA).not.toContain("POST /v1/approvals/shared-approval/decision");
     });
+  });
+
+  it("opens colliding rows from the merged catalog through the owning executor", async () => {
+    window.history.replaceState(null, "", "/executors/executor-a");
+    const callsA: string[] = [];
+    const callsB: string[] = [];
+    const executorA = runtime("executor-a", callsA, false);
+    const executorB = runtime("executor-b", callsB, false);
+    const catalogThread = (id: string, executorId: string) => ({
+      id, name: `Thread ${executorId}`, projectId: null, cwd: `/${executorId}`, status: "idle" as const,
+      notificationsEnabled: true, pinned: false, latestCompletedTurnId: null, seenCompletedTurnId: null,
+      readRevision: 0, readStateKnown: false, unreadCompletedAgentTurn: false, createdAt: 1, updatedAt: 2,
+      parentThreadId: null, canAcceptDirectInput: true,
+    });
+    const catalog: FederatedCatalog = {
+      revision: 3,
+      orderRevision: 2,
+      projectOrder: [],
+      pinnedOrder: [],
+      executors: ["executor-a", "executor-b"].map((executorId) => ({
+        executorId,
+        executorName: executorId === "executor-a" ? "Desk Mac" : "Build Linux",
+        generation: 1,
+        observedAt: 10,
+        stale: false,
+        snapshot: {
+          projects: [], projectThreads: {}, pinnedThreads: { threads: [], nextCursor: null },
+          chatThreads: { threads: [catalogThread("shared", executorId)], nextCursor: null },
+        },
+      })),
+    };
+
+    const paneStore = createMemoryWorkspacePaneStore();
+    render(
+      <App
+        availableExecutorIds={["executor-a", "executor-b"]}
+        executorRuntime={executorA}
+        executorRuntimes={[executorA, executorB]}
+        federatedCatalog={catalog}
+        federatedExecutors={["executor-a", "executor-b"].map((id) => ({
+          apiVersion: "4", appServerSchemaVersion: "0.160.0", baseUrl: `https://${id}.example`, createdAt: 1,
+          displayName: id, enabled: true, generation: 1, id, instanceId: `instance-${id}`,
+          lastError: null, lastSeenAt: 1, status: "ready" as const, updatedAt: 1,
+        }))}
+        moveFederatedCatalogItem={vi.fn().mockResolvedValue(undefined)}
+        refreshFederatedCatalog={vi.fn().mockResolvedValue(undefined)}
+        workspacePaneStore={paneStore}
+      />,
+    );
+
+    const sidebar = within(await screen.findByRole("navigation", { name: "Workspace" }));
+    await userEvent.click(sidebar.getByRole("button", { name: "Chats" }));
+    expect(sidebar.getByText("Desk Mac")).toBeInTheDocument();
+    expect(sidebar.getByText("Build Linux")).toBeInTheDocument();
+    const executorBRow = sidebar.getByRole("button", { name: "Thread executor-b Build Linux" });
+    await userEvent.click(executorBRow);
+
+    expect(await screen.findByRole("heading", { name: "Thread executor-b" })).toBeInTheDocument();
+    await waitFor(() => expect(callsB).toContain("POST /v1/threads/shared/attach"));
+    expect(window.location.pathname).toBe("/executors/executor-b/threads/shared");
+    expect(executorBRow.closest(".kodex-thread-list-button")).toHaveAttribute("data-active", "true");
+
+    const executorARow = sidebar.getByRole("button", { name: "Thread executor-a Desk Mac" });
+    await userEvent.click(executorARow);
+    expect(executorARow.closest(".kodex-thread-list-button")).toHaveAttribute("data-active", "true");
+    await userEvent.click(executorBRow);
+
+    await userEvent.click(sidebar.getByRole("button", { name: "New chat" }));
+    await userEvent.click(screen.getByRole("textbox", { name: "Executor" }));
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() => {
+      const active = paneStore.getState().panes.find((pane) => pane.id === paneStore.getState().activePaneId);
+      expect(active?.target).toEqual({ executorId: "executor-b", mode: "draft" });
+    });
+
+    const executorAProject = {
+      id: "keep-a", name: "Keep A", roots: [{ path: "/executor-a" }], metadata: {}, position: 0,
+      createdAt: 1, updatedAt: 1, recencyAt: null,
+    };
+    executorA.queryClient.setQueryData(queryKeys.projects, [executorAProject]);
+    await userEvent.click(sidebar.getByRole("button", { name: "Projects" }));
+    await userEvent.click(sidebar.getByRole("button", { name: "Add project" }));
+    const projectPicker = within(await screen.findByRole("dialog", { name: "New project" }));
+    await userEvent.click(projectPicker.getByRole("button", { name: "Continue" }));
+    const projectDialog = within(await screen.findByRole("dialog", { name: "Add project" }));
+    await userEvent.click(await projectDialog.findByRole("button", { name: "Use this directory" }));
+    await userEvent.click(projectDialog.getByRole("button", { name: "Add project" }));
+    await waitFor(() => {
+      expect(callsB).toContain("POST /v1/projects");
+      expect(callsA).not.toContain("POST /v1/projects");
+      const active = paneStore.getState().panes.find((pane) => pane.id === paneStore.getState().activePaneId);
+      expect(active?.target).toEqual({ executorId: "executor-b", mode: "draft", projectId: "shared-project" });
+    });
+    expect(executorA.queryClient.getQueryData(queryKeys.projects)).toEqual([executorAProject]);
+  });
+
+  it("does not expose the shell executor sidebar while the federated catalog is unavailable", async () => {
+    window.history.replaceState(null, "", "/executors/executor-a");
+    const callsA: string[] = [];
+    const executorA = runtime("executor-a", callsA, false);
+    const refreshCatalog = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <App
+        availableExecutorIds={["executor-a"]}
+        executorRuntime={executorA}
+        executorRuntimes={[executorA]}
+        federatedCatalog={null}
+        federatedCatalogError="catalog unavailable"
+        federatedExecutors={[]}
+        moveFederatedCatalogItem={vi.fn().mockResolvedValue(undefined)}
+        refreshFederatedCatalog={refreshCatalog}
+      />,
+    );
+
+    const sidebar = within(await screen.findByRole("navigation", { name: "Workspace" }));
+    expect(await sidebar.findByText("Could not load sidebar")).toBeInTheDocument();
+    await userEvent.click(sidebar.getByRole("button", { name: "Chats" }));
+    expect(sidebar.queryByText("Thread executor-a")).not.toBeInTheDocument();
+    await userEvent.click(sidebar.getByRole("button", { name: "Retry" }));
+    expect(refreshCatalog).toHaveBeenCalledTimes(1);
+    await userEvent.click(sidebar.getByRole("button", { name: "New chat" }));
+    const picker = within(await screen.findByRole("dialog", { name: "New chat" }));
+    expect(picker.getByRole("button", { name: "Continue" })).toBeDisabled();
+  });
+
+  it("preserves an open remote project form but blocks creation while its catalog becomes stale", async () => {
+    window.history.replaceState(null, "", "/executors/executor-a");
+    const executorA = runtime("executor-a", [], false);
+    const executorB = runtime("executor-b", [], false);
+    const move = vi.fn().mockResolvedValue(undefined);
+    const refresh = vi.fn().mockResolvedValue(undefined);
+    const app = (catalog: FederatedCatalog) => (
+      <App
+        availableExecutorIds={["executor-a", "executor-b"]}
+        executorRuntime={executorA}
+        executorRuntimes={[executorA, executorB]}
+        federatedCatalog={catalog}
+        federatedExecutors={[registeredExecutor("executor-a"), registeredExecutor("executor-b")]}
+        moveFederatedCatalogItem={move}
+        refreshFederatedCatalog={refresh}
+      />
+    );
+    const view = render(app(projectCatalog(false)));
+
+    const sidebar = within(await screen.findByRole("navigation", { name: "Workspace" }));
+    await userEvent.click(sidebar.getByRole("button", { name: "Add project" }));
+    const picker = within(await screen.findByRole("dialog", { name: "New project" }));
+    await userEvent.click(picker.getByRole("textbox", { name: "Executor" }));
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+    await userEvent.click(picker.getByRole("button", { name: "Continue" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Add project" }));
+    await userEvent.click(await dialog.findByRole("button", { name: "Use this directory" }));
+    expect(dialog.getByText("/executor-b")).toBeInTheDocument();
+
+    view.rerender(app(projectCatalog(true)));
+    expect(await dialog.findByText(/navigation snapshot is stale/)).toBeInTheDocument();
+    expect(dialog.getByRole("button", { name: "Add project" })).toBeDisabled();
+    expect(dialog.getByText("/executor-b")).toBeInTheDocument();
+
+    view.rerender(app(projectCatalog(false)));
+    await waitFor(() => expect(dialog.getByRole("button", { name: "Add project" })).toBeEnabled());
+    expect(dialog.getByText("/executor-b")).toBeInTheDocument();
+  });
+
+  it("preserves remote project edits but blocks save and delete while its catalog becomes stale", async () => {
+    window.history.replaceState(null, "", "/executors/executor-a");
+    const executorA = runtime("executor-a", [], false);
+    const executorB = runtime("executor-b", [], false);
+    const move = vi.fn().mockResolvedValue(undefined);
+    const refresh = vi.fn().mockResolvedValue(undefined);
+    const app = (catalog: FederatedCatalog) => (
+      <App
+        availableExecutorIds={["executor-a", "executor-b"]}
+        executorRuntime={executorA}
+        executorRuntimes={[executorA, executorB]}
+        federatedCatalog={catalog}
+        federatedExecutors={[registeredExecutor("executor-a"), registeredExecutor("executor-b")]}
+        moveFederatedCatalogItem={move}
+        refreshFederatedCatalog={refresh}
+      />
+    );
+    const view = render(app(projectCatalog(false)));
+
+    const sidebar = within(await screen.findByRole("navigation", { name: "Workspace" }));
+    await userEvent.click(await sidebar.findByRole("button", { name: "Project settings for Remote project" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Remote project · Project settings" }));
+    const name = dialog.getByRole("textbox", { name: "Project name" });
+    await userEvent.clear(name);
+    await userEvent.type(name, "Edited remote project");
+    expect(dialog.getByRole("button", { name: "Save project" })).toBeEnabled();
+
+    view.rerender(app(projectCatalog(true)));
+    expect(await dialog.findByText("Project editing paused")).toBeInTheDocument();
+    expect(name).toHaveValue("Edited remote project");
+    expect(dialog.getByRole("button", { name: "Save project" })).toBeDisabled();
+    expect(dialog.getByRole("button", { name: "Delete project" })).toBeDisabled();
+
+    view.rerender(app(projectCatalog(false)));
+    await waitFor(() => expect(dialog.getByRole("button", { name: "Save project" })).toBeEnabled());
+    expect(name).toHaveValue("Edited remote project");
   });
 
   it("preserves each pane's unsent text and attachments while an executor is disabled and restored", async () => {

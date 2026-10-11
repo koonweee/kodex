@@ -237,6 +237,8 @@ M3 is complete on the pinned feature baseline. The web app now bootstraps a fede
 
 Exit: mixed projects and pins share one deliberate order across two tabs and reloads; stale/offline catalogs never delete unseen items or authorize actions.
 
+M4 is complete on the pinned feature baseline. The federator persists bounded, generation-fenced catalog snapshots with page coverage and freshness, reconciles native membership without treating failed or partial reads as deletion, and owns atomic revisioned global order for projects and pins. The web app projects that catalog into the existing Pinned/Projects/Chats sidebar with collision-safe qualified keys, executor labels and filtering; creation, project settings, row actions and deep links resolve through the owning executor. Cached rows remain visible through restart and outage with stale/offline/last-seen state, while generation mismatches and stale snapshots remove creation and mutation authority, including from forms that were already open. Executor management is available in Preferences, and catalog invalidations/refills converge without activating chats. Concurrent move/membership, refresh coalescing, restart cache, stale reply, partial-page and removal coverage passes in the 46-test federator suite; the full frontend suite (189 files, 1,413 passing tests and one skipped test), production build, frontend trim and two independent review passes are clean. The required M0 deployed remote MCP OAuth callback proof remains open.
+
 ### M5 Full remote feature parity
 
 - Scope native account/device-code login/cancel/logout, usage, models, skills, permissions, sparse config edits, MCP/OAuth and plugin operations.

@@ -1,6 +1,6 @@
 import { Alert, Button, Modal, Stack, Text, Textarea, TextInput } from "@mantine/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { Project, UpdateProjectRequest } from "../api/client";
 import { useGatewayClient } from "../api/GatewayClientContext";
@@ -10,7 +10,12 @@ import { errorMessageFrom } from "../shared/values";
 import { refreshProjectState } from "./cache";
 import { projectRootsFromText } from "./roots";
 
-export function ProjectEditor({ project, onDeleted }: { project: Project; onDeleted: () => void }) {
+export function ProjectEditor({ disabled = false, project, onChanged, onDeleted }: {
+  disabled?: boolean;
+  project: Project;
+  onChanged?: () => void;
+  onDeleted: () => void;
+}) {
   const api = useGatewayClient();
   const queryClient = useQueryClient();
   const { publishThreadPaneTimelineAction } = useWorkspace();
@@ -19,14 +24,19 @@ export function ProjectEditor({ project, onDeleted }: { project: Project; onDele
   const [rootsEdit, setRootsEdit] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const save = useMutation({
-    mutationFn: (request: UpdateProjectRequest) => api.updateProject(project.id, request),
-    onSuccess: async () => { await refreshProjectState(queryClient); setNameEdit(null); setRootsEdit(null); },
+    mutationFn: (request: UpdateProjectRequest) => disabled
+      ? Promise.reject(new Error("Project editing is unavailable until the executor catalog is fresh."))
+      : api.updateProject(project.id, request),
+    onSuccess: async () => { await refreshProjectState(queryClient); setNameEdit(null); setRootsEdit(null); onChanged?.(); },
   });
   const remove = useMutation({
-    mutationFn: () => api.deleteProject(project.id),
+    mutationFn: () => disabled
+      ? Promise.reject(new Error("Project editing is unavailable until the executor catalog is fresh."))
+      : api.deleteProject(project.id),
     onSuccess: async () => {
       publishThreadPaneTimelineAction({ executorId, kind: "refresh_snapshot" });
       await refreshProjectState(queryClient);
+      onChanged?.();
       onDeleted();
     },
   });
@@ -38,22 +48,25 @@ export function ProjectEditor({ project, onDeleted }: { project: Project; onDele
   };
   const pending = save.isPending || remove.isPending;
   const error = save.error ?? remove.error;
+  useEffect(() => {
+    if (disabled) setDeleteOpen(false);
+  }, [disabled]);
 
   return (
     <Stack>
-      <form onSubmit={(event) => { event.preventDefault(); save.mutate(changes); }}>
+      <form onSubmit={(event) => { event.preventDefault(); if (!disabled) save.mutate(changes); }}>
         <Stack>
-          <TextInput label="Project name" value={name} onChange={(event) => setNameEdit(event.currentTarget.value)} required disabled={pending} />
-          <Textarea label="Root directories" description="One absolute path per line. Existing chats keep their working directory." value={roots} onChange={(event) => setRootsEdit(event.currentTarget.value)} minRows={3} disabled={pending} />
-          <Button type="submit" loading={save.isPending} disabled={pending || !name.trim() || Object.keys(changes).length === 0}>Save project</Button>
+          <TextInput label="Project name" value={name} onChange={(event) => setNameEdit(event.currentTarget.value)} required disabled={disabled || pending} />
+          <Textarea label="Root directories" description="One absolute path per line. Existing chats keep their working directory." value={roots} onChange={(event) => setRootsEdit(event.currentTarget.value)} minRows={3} disabled={disabled || pending} />
+          <Button type="submit" loading={save.isPending} disabled={disabled || pending || !name.trim() || Object.keys(changes).length === 0}>Save project</Button>
         </Stack>
       </form>
       {error ? <Alert color="red">{errorMessageFrom(error)}</Alert> : null}
-      <Button color="red" variant="subtle" onClick={() => setDeleteOpen(true)} disabled={pending}>Delete project</Button>
+      <Button color="red" variant="subtle" onClick={() => setDeleteOpen(true)} disabled={disabled || pending}>Delete project</Button>
       <Modal opened={deleteOpen} onClose={() => setDeleteOpen(false)} title={`Delete ${project.name}?`}>
         <Stack>
           <Text>Its chats will remain available without a project. Files are unchanged.</Text>
-          <Button color="red" loading={remove.isPending} onClick={() => remove.mutate()}>Delete project</Button>
+          <Button color="red" disabled={disabled} loading={remove.isPending} onClick={() => { if (!disabled) remove.mutate(); }}>Delete project</Button>
         </Stack>
       </Modal>
     </Stack>

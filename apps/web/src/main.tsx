@@ -14,7 +14,25 @@ import { createBrowserWorkspacePaneStore } from "./workspace/paneStore";
 
 initializeKodexColorScheme();
 
-function FederatedApp({ availableExecutorIds, defaultRuntime, defaultRuntimeAvailable, routeError, runtimes, workspaceStorage }: FederatedRuntimeSnapshot) {
+function FederatedApp({
+  availableExecutorIds,
+  catalog,
+  catalogError,
+  catalogRefreshing,
+  defaultRuntime,
+  defaultRuntimeAvailable,
+  executors,
+  moveCatalogItem,
+  probeExecutor,
+  registerExecutor,
+  removeExecutor,
+  refreshCatalog,
+  refreshExecutors,
+  routeError,
+  runtimes,
+  workspaceStorage,
+  updateExecutor,
+}: FederatedRuntimeSnapshot) {
   const workspacePaneStore = useMemo(
     () => createBrowserWorkspacePaneStore(workspaceStorage, runtimes[0]?.connection.executorId ?? defaultRuntime.connection.executorId),
     [defaultRuntime.connection.executorId, runtimes, workspaceStorage],
@@ -24,6 +42,17 @@ function FederatedApp({ availableExecutorIds, defaultRuntime, defaultRuntimeAvai
       executorRuntime={defaultRuntime}
       executorRuntimes={runtimes}
       availableExecutorIds={availableExecutorIds}
+      federatedCatalog={catalog}
+      federatedCatalogError={catalogError}
+      federatedCatalogRefreshing={catalogRefreshing}
+      federatedExecutors={executors}
+      moveFederatedCatalogItem={moveCatalogItem}
+      probeFederatedExecutor={probeExecutor}
+      registerFederatedExecutor={registerExecutor}
+      removeFederatedExecutor={removeExecutor}
+      refreshFederatedCatalog={refreshCatalog}
+      refreshFederatedExecutors={refreshExecutors}
+      updateFederatedExecutor={updateExecutor}
       federatedRouteError={routeError}
       federatedShellAvailable={defaultRuntimeAvailable}
       workspacePaneStore={workspacePaneStore}

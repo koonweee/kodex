@@ -11,6 +11,8 @@ import { McpPreferencesPanel } from "./mcp/McpPreferencesPanel";
 import { ExecutionPreferencesPanel } from "./preferences/ExecutionPreferencesPanel";
 import { AppearancePreferencesPanel } from "./preferences/AppearancePreferencesPanel";
 import { UsagePreferencesPanel } from "./preferences/UsagePreferencesPanel";
+import { ExecutorsPreferencesPanel } from "./preferences/ExecutorsPreferencesPanel";
+import { useFederatedCatalogContext } from "./federation/FederatedCatalogContext";
 import type { AppearanceMode, AppearancePreferences } from "./theme/appearancePreferences";
 import { requestKodexNotificationPermission } from "./notifications/browserNotifications";
 import {
@@ -22,7 +24,7 @@ import {
 } from "./notifications/pushSubscriptions";
 import type { KodexColorSchemeId } from "./theme";
 
-export type PreferenceSection = "appearance" | "execution" | "usage" | "notifications" | "mcp";
+export type PreferenceSection = "appearance" | "execution" | "usage" | "notifications" | "mcp" | "executors";
 
 export type PreferencesModalProps = {
   activeSection?: PreferenceSection;
@@ -45,6 +47,7 @@ export function PreferencesModal({
   onSectionChange,
   opened,
 }: PreferencesModalProps) {
+  const federation = useFederatedCatalogContext();
   const queryClient = useQueryClient();
   const notificationStatusQuery = useQuery({
     enabled: opened && activeSection === "notifications",
@@ -147,6 +150,17 @@ export function PreferencesModal({
           >
             MCP
           </Button>
+          {federation ? (
+            <Button
+              className="kodex-preferences-section-button"
+              data-active={activeSection === "executors" ? "true" : undefined}
+              onClick={() => onSectionChange("executors")}
+              type="button"
+              variant={activeSection === "executors" ? "light" : "subtle"}
+            >
+              Executors
+            </Button>
+          ) : null}
         </Stack>
 
         {activeSection === "appearance" ? (
@@ -182,8 +196,10 @@ export function PreferencesModal({
             testSuccess={testNotificationMutation.isSuccess}
             testing={testNotificationMutation.isPending}
           />
-        ) : (
+        ) : activeSection === "mcp" ? (
           <McpPreferencesPanel />
+        ) : (
+          <ExecutorsPreferencesPanel />
         )}
       </Box>
     </Modal>
