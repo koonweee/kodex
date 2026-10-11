@@ -62,6 +62,42 @@ use crate::{
     },
 };
 
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SelfControlNotificationsRequest {
+    pub enabled: bool,
+    #[serde(default)]
+    pub source: SelfControlSource,
+}
+
+#[utoipa::path(patch, path = "/v1/self-control/threads/{threadId}/notifications",
+    request_body = SelfControlNotificationsRequest,
+    responses((status = 200, body = crate::routes::threads::ThreadNotificationSettingsResponse)))]
+pub async fn update_self_control_notifications(
+    State(state): State<AppState>,
+    Path(thread_id): Path<String>,
+    Json(request): Json<SelfControlNotificationsRequest>,
+) -> ApiResult<Json<crate::routes::threads::ThreadNotificationSettingsResponse>> {
+    let response = crate::routes::threads::update_thread_notifications(
+        State(state.clone()),
+        Path(thread_id.clone()),
+        Json(
+            crate::routes::threads::ThreadNotificationSettingsUpdateRequest {
+                enabled: request.enabled,
+            },
+        ),
+    )
+    .await?;
+    audit_thread_mutation(
+        &state,
+        &thread_id,
+        "self_control.thread_notifications_updated",
+        request.source,
+    )
+    .await?;
+    Ok(response)
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route(
@@ -127,6 +163,10 @@ pub fn router() -> Router<AppState> {
         .route(
             "/v1/self-control/threads/{thread_id}/name",
             patch(rename_self_control_thread),
+        )
+        .route(
+            "/v1/self-control/threads/{thread_id}/notifications",
+            patch(update_self_control_notifications),
         )
         .route(
             "/v1/self-control/threads/{thread_id}/settings",

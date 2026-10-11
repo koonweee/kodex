@@ -327,6 +327,7 @@ impl AppState {
         crate::routes::self_control::update_self_control_thread_settings,
         crate::routes::self_control::archive_self_control_thread,
         crate::routes::self_control::unarchive_self_control_thread,
+        crate::routes::self_control::update_self_control_notifications,
         crate::routes::self_control::mark_self_control_thread_seen,
         crate::routes::self_control::compact_self_control_thread,
         crate::routes::self_control::interrupt_current_self_control_thread,

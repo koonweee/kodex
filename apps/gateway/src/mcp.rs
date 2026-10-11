@@ -33,6 +33,14 @@ pub struct CompactTurnsToolParams {
     pub include_tool_output: bool,
 }
 
+#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadNotificationsToolParams {
+    pub thread_id: String,
+    pub enabled: bool,
+    pub source: Option<Value>,
+}
+
 #[derive(Clone)]
 pub struct KodexControlMcp {
     gateway_url: String,
@@ -972,6 +980,29 @@ impl KodexControlMcp {
                     path_segment(&thread_id)
                 ),
                 Value::Object(body),
+            )
+            .await?,
+        ))
+    }
+
+    #[tool(
+        description = "Enable or mute push notifications for an entire chat, including manual and automated turns. Does not change device permission or select only failed automation runs."
+    )]
+    async fn set_thread_notifications(
+        &self,
+        Parameters(params): Parameters<ThreadNotificationsToolParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut body = json!({"enabled": params.enabled});
+        if let Some(source) = params.source {
+            body["source"] = source;
+        }
+        Ok(json_tool_result(
+            self.patch_json(
+                &format!(
+                    "/v1/self-control/threads/{}/notifications",
+                    path_segment(&params.thread_id)
+                ),
+                body,
             )
             .await?,
         ))

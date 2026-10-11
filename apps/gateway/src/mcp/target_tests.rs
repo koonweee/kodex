@@ -115,3 +115,39 @@ async fn native_control_surface_calls_never_default_to_foreign_mcp_metadata() ->
         .all(|path| path.starts_with("/v1/self-control/threads/kodex-owned-chat/app-surface")));
     Ok(())
 }
+
+#[tokio::test]
+async fn control_notification_tool_uses_guarded_route_and_preserves_source() -> anyhow::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let service = KodexControlMcp::for_test(format!("http://{}", listener.local_addr()?));
+    let app = Router::new().route(
+        "/v1/self-control/threads/chat/notifications",
+        axum::routing::patch(|Json(body): Json<Value>| async move { Json(body) }),
+    );
+    let gateway = tokio::spawn(async move { axum::serve(listener, app).await });
+    let (server_transport, client_transport) = tokio::io::duplex(65536);
+    let server = tokio::spawn(async move {
+        service.serve(server_transport).await?.waiting().await?;
+        anyhow::Ok(())
+    });
+    let client = ().serve(client_transport).await?;
+    for enabled in [false, true] {
+        let args =
+            json!({"threadId":"chat", "enabled":enabled, "source":{"sourceThreadId":"caller"}});
+        let result = client
+            .call_tool(
+                CallToolRequestParams::new("set_thread_notifications")
+                    .with_arguments(args.as_object().unwrap().clone()),
+            )
+            .await?;
+        let body: Value = result.into_typed()?;
+        assert_eq!(
+            body,
+            json!({"enabled":enabled,"source":{"sourceThreadId":"caller"}})
+        );
+    }
+    client.cancel().await?;
+    server.abort();
+    gateway.abort();
+    Ok(())
+}

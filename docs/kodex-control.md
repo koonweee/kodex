@@ -37,6 +37,10 @@ It also exposes resources such as `kodex://status`, `kodex://projects`, `kodex:/
 
 `list_threads` defaults to active threads. Set `archived: true` for archived threads, optionally filtering by project and paginating with the native cursor. Archived pages default to 50 entries and accept limits from 1 to 100. `unarchive_thread` restores a thread through the native runtime without submitting input. Existing sidebar refill events notify other clients; reconnects read native membership again.
 
+## Chat notifications
+
+`set_thread_notifications(threadId, enabled)` changes the existing whole-chat push preference. It affects both manual and automated turns, persists in the gateway, and publishes the same notification-setting event used by browser controls. Reads through existing thread tools expose `notificationsEnabled`. This does not request device permission, change push subscriptions, or provide a failed-automation-runs-only filter. No preference is encoded in an automation prompt.
+
 ## Compact turn reads
 
 `get_compact_turns` reads one native history page, newest turns first. Pass `nextCursor` back as `cursor` for older turns. It does not resume a chat, start inference, update read receipts or store summaries. A failed native read is an error, never empty history; a concurrent revert rejects an obsolete response so the caller can read again.

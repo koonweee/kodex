@@ -1213,6 +1213,22 @@ export interface paths {
         patch: operations["rename_self_control_thread"];
         trace?: never;
     };
+    "/v1/self-control/threads/{threadId}/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["update_self_control_notifications"];
+        trace?: never;
+    };
     "/v1/self-control/threads/{threadId}/pin": {
         parameters: {
             query?: never;
@@ -3173,6 +3189,10 @@ export interface components {
             source?: components["schemas"]["SelfControlSource"];
         };
         SelfControlMutationRequest: {
+            source?: components["schemas"]["SelfControlSource"];
+        };
+        SelfControlNotificationsRequest: {
+            enabled: boolean;
             source?: components["schemas"]["SelfControlSource"];
         };
         SelfControlRenameThreadRequest: {
@@ -5971,6 +5991,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RenameThreadResponse"];
+                };
+            };
+        };
+    };
+    update_self_control_notifications: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlNotificationsRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadNotificationSettingsResponse"];
                 };
             };
         };

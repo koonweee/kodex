@@ -241,3 +241,69 @@ async fn archived_discovery_rejects_unbounded_pages_and_surfaces_read_errors() {
     assert!(requests[0].1.get("projectId").is_none());
     assert_eq!(requests[0].1["limit"], 50);
 }
+
+#[tokio::test]
+async fn control_notifications_persist_and_notify_other_clients_without_activation() {
+    let home = tempfile::tempdir().unwrap();
+    let (state, native) = state(home.path()).await;
+    let mut observer = state.events.subscribe();
+    for enabled in [false, true] {
+        let response = build_router(state.clone())
+            .oneshot(
+                Request::patch("/v1/self-control/threads/thread-1/notifications")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"enabled":enabled,"source":{"sourceThreadId":"caller"}}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(body["notificationsEnabled"], enabled);
+        assert_eq!(
+            state
+                .store
+                .thread_notifications_enabled("thread-1")
+                .await
+                .unwrap(),
+            enabled
+        );
+        let event = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            loop {
+                let event = observer.recv().await.unwrap();
+                if event.kind == "thread.notifications_updated" {
+                    break event;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(event.payload["notificationsEnabled"], enabled);
+        let replay = build_router(state.clone())
+            .oneshot(Request::get("/v1/events").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let replay: Value =
+            serde_json::from_slice(&to_bytes(replay.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert!(replay["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["kind"] == event.kind && row["payload"] == event.payload));
+        let audits = state
+            .store
+            .replay_events(None, None, Some("thread-1".into()))
+            .await
+            .unwrap();
+        assert!(audits.iter().any(
+            |row| row.kind == "self_control.thread_notifications_updated"
+                && row.payload["source"]["sourceThreadId"] == "caller"
+        ));
+    }
+    assert!(native.requests.lock().unwrap().is_empty());
+}

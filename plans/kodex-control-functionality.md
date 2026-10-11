@@ -70,6 +70,18 @@ M2 waiting evidence (2026-10-11; complete):
 
 Exit: a source-grounded audit records what already works and what was changed or requires a product decision; confirmed in-scope improvements are implemented and tested. Do not claim heartbeat/cron parity from tool names alone.
 
+M3 audit (2026-10-11; implementation in progress):
+
+- Recurring admission into an existing chat is already supported by the fixed-interval scheduler, immutable run target IDs, native queue receipts and restart reconciliation. Admission/dispatched status does not claim inference completion. Desktop RRULE/timezone scheduling is not implemented and is not required for these selected workflows.
+- Whole-chat push preferences already persist in the gateway and converge through `thread.notifications_updated`; Control lacked an adapter. The adapter reuses that route and adds the existing mutation provenance audit. It does not claim per-automation failed-run filtering.
+- A fresh standalone/project chat per run is missing. Reusing the existing scheduler requires recording creation intent in the existing run record before native creation, then the acknowledged target before input admission. A lost creation acknowledgment must remain uncertain and must not automatically create another chat. Prompt-based creation would not give the scheduler a recoverable target or preserve delivery guarantees. This bounded extension is justified by the explicitly selected fresh-chat workflow; no second scheduler or general activation index is needed. Implementation and uncertainty/recovery tests remain outstanding.
+
+M3 notification adapter evidence (2026-10-11):
+
+- `set_thread_notifications` calls a guarded adapter over the existing persisted preference and browser event flow; source provenance is retained in the audit store. No new notification policy state or native activation was added.
+- The initial HTTP regression failed with 404. HTTP and actual MCP regressions now pass for mute/unmute, persistence, another client's live/replay notification event, caller provenance and no native calls. The gateway library suite passed (727 passed, 3 intentionally ignored); focused tests passed again after strengthening the audit assertion.
+- Thirty existing frontend thread cache/event tests, frontend build and regenerated-contract typecheck, backend/frontend trims, formatting and diff checks pass. Independent review found no major issues. Fresh-chat automation admission/recovery remains outstanding; M3 and the goal remain active.
+
 ## Verification and review
 
 - Start behavior changes with failing tests when practical. Prefer closest domain/API tests and meaningful native proofs in disposable homes; no tests solely for tool-name strings.
