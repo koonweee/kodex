@@ -6,8 +6,11 @@ use std::{
 
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
-    response::{IntoResponse, Response},
+    http::{HeaderMap, StatusCode},
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        IntoResponse, Response,
+    },
     routing::get,
     Json, Router,
 };
@@ -85,7 +88,272 @@ pub struct UpdateExecutorRequest {
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExecutorListResponse {
+    pub revision: i64,
     pub executors: Vec<ExecutorRecord>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutorRegistryEvent {
+    pub revision: i64,
+    pub executor_id: Option<String>,
+    pub generation: Option<i64>,
+}
+
+#[derive(Clone)]
+pub(crate) struct RegistryWriter {
+    commands: tokio::sync::mpsc::Sender<RegistryCommand>,
+}
+
+struct VerifiedExecutorUpdate {
+    id: String,
+    expected_generation: i64,
+    display_name: Option<String>,
+    enabled: Option<bool>,
+    base_url: String,
+    api_version: String,
+    app_server_schema_version: String,
+    status: ExecutorStatus,
+    last_error: Option<String>,
+    updated_at: i64,
+}
+
+enum RegistryCommand {
+    Insert {
+        record: ExecutorRecord,
+        reply: tokio::sync::oneshot::Sender<anyhow::Result<()>>,
+    },
+    UpdateSparse {
+        id: String,
+        display_name: Option<String>,
+        enabled: Option<bool>,
+        updated_at: i64,
+        reply: tokio::sync::oneshot::Sender<anyhow::Result<Option<ExecutorRecord>>>,
+    },
+    UpdateVerified {
+        update: VerifiedExecutorUpdate,
+        reply: tokio::sync::oneshot::Sender<anyhow::Result<Option<ExecutorRecord>>>,
+    },
+    Delete {
+        id: String,
+        reply: tokio::sync::oneshot::Sender<anyhow::Result<bool>>,
+    },
+    #[cfg(test)]
+    Barrier {
+        entered: tokio::sync::oneshot::Sender<()>,
+        release: tokio::sync::oneshot::Receiver<()>,
+    },
+}
+
+impl RegistryWriter {
+    pub(crate) fn start(
+        store: crate::store::Store,
+        changes: tokio::sync::broadcast::Sender<RegistryChange>,
+    ) -> Self {
+        let (commands, mut receiver) = tokio::sync::mpsc::channel(32);
+        tokio::spawn(async move {
+            while let Some(command) = receiver.recv().await {
+                match command {
+                    RegistryCommand::Insert { record, reply } => {
+                        let result = store.insert_executor(&record).await.map(|revision| {
+                            publish_registry_change(
+                                &changes,
+                                revision,
+                                record.id,
+                                Some(record.generation),
+                            );
+                        });
+                        let _ = reply.send(result);
+                    }
+                    RegistryCommand::UpdateSparse {
+                        id,
+                        display_name,
+                        enabled,
+                        updated_at,
+                        reply,
+                    } => {
+                        let result = store
+                            .update_executor_sparse(
+                                &id,
+                                display_name.as_deref(),
+                                enabled,
+                                updated_at,
+                            )
+                            .await
+                            .map(|updated| {
+                                updated.map(|(record, revision)| {
+                                    publish_registry_change(
+                                        &changes,
+                                        revision,
+                                        record.id.clone(),
+                                        Some(record.generation),
+                                    );
+                                    record
+                                })
+                            });
+                        let _ = reply.send(result);
+                    }
+                    RegistryCommand::UpdateVerified { update, reply } => {
+                        let result = store
+                            .update_executor_verified_endpoint(
+                                &update.id,
+                                update.expected_generation,
+                                update.display_name.as_deref(),
+                                update.enabled,
+                                &update.base_url,
+                                &update.api_version,
+                                &update.app_server_schema_version,
+                                update.status,
+                                update.last_error.as_deref(),
+                                update.updated_at,
+                            )
+                            .await
+                            .map(|updated| {
+                                updated.map(|(record, revision)| {
+                                    publish_registry_change(
+                                        &changes,
+                                        revision,
+                                        record.id.clone(),
+                                        Some(record.generation),
+                                    );
+                                    record
+                                })
+                            });
+                        let _ = reply.send(result);
+                    }
+                    RegistryCommand::Delete { id, reply } => {
+                        let result = store.delete_executor(&id).await.map(|revision| {
+                            revision.is_some_and(|revision| {
+                                publish_registry_change(&changes, revision, id, None);
+                                true
+                            })
+                        });
+                        let _ = reply.send(result);
+                    }
+                    #[cfg(test)]
+                    RegistryCommand::Barrier { entered, release } => {
+                        let _ = entered.send(());
+                        let _ = release.await;
+                    }
+                }
+            }
+        });
+        Self { commands }
+    }
+
+    async fn insert(&self, record: ExecutorRecord) -> anyhow::Result<()> {
+        let (reply, response) = tokio::sync::oneshot::channel();
+        self.commands
+            .send(RegistryCommand::Insert { record, reply })
+            .await
+            .map_err(|_| anyhow::anyhow!("executor registry writer stopped"))?;
+        response
+            .await
+            .map_err(|_| anyhow::anyhow!("executor registry writer stopped"))?
+    }
+
+    async fn update_sparse(
+        &self,
+        id: String,
+        display_name: Option<String>,
+        enabled: Option<bool>,
+        updated_at: i64,
+    ) -> anyhow::Result<Option<ExecutorRecord>> {
+        let response = self
+            .enqueue_sparse(id, display_name, enabled, updated_at)
+            .await?;
+        response
+            .await
+            .map_err(|_| anyhow::anyhow!("executor registry writer stopped"))?
+    }
+
+    async fn enqueue_sparse(
+        &self,
+        id: String,
+        display_name: Option<String>,
+        enabled: Option<bool>,
+        updated_at: i64,
+    ) -> anyhow::Result<tokio::sync::oneshot::Receiver<anyhow::Result<Option<ExecutorRecord>>>>
+    {
+        let (reply, response) = tokio::sync::oneshot::channel();
+        self.commands
+            .send(RegistryCommand::UpdateSparse {
+                id,
+                display_name,
+                enabled,
+                updated_at,
+                reply,
+            })
+            .await
+            .map_err(|_| anyhow::anyhow!("executor registry writer stopped"))?;
+        Ok(response)
+    }
+
+    async fn update_verified(
+        &self,
+        update: VerifiedExecutorUpdate,
+    ) -> anyhow::Result<Option<ExecutorRecord>> {
+        let (reply, response) = tokio::sync::oneshot::channel();
+        self.commands
+            .send(RegistryCommand::UpdateVerified { update, reply })
+            .await
+            .map_err(|_| anyhow::anyhow!("executor registry writer stopped"))?;
+        response
+            .await
+            .map_err(|_| anyhow::anyhow!("executor registry writer stopped"))?
+    }
+
+    async fn delete(&self, id: String) -> anyhow::Result<bool> {
+        let (reply, response) = tokio::sync::oneshot::channel();
+        self.commands
+            .send(RegistryCommand::Delete { id, reply })
+            .await
+            .map_err(|_| anyhow::anyhow!("executor registry writer stopped"))?;
+        response
+            .await
+            .map_err(|_| anyhow::anyhow!("executor registry writer stopped"))?
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn enqueue_sparse_for_test(
+        &self,
+        id: String,
+        display_name: Option<String>,
+        enabled: Option<bool>,
+        updated_at: i64,
+    ) -> tokio::sync::oneshot::Receiver<anyhow::Result<Option<ExecutorRecord>>> {
+        self.enqueue_sparse(id, display_name, enabled, updated_at)
+            .await
+            .unwrap()
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn barrier(&self) -> tokio::sync::oneshot::Sender<()> {
+        let (entered, entered_rx) = tokio::sync::oneshot::channel();
+        let (release, release_rx) = tokio::sync::oneshot::channel();
+        self.commands
+            .send(RegistryCommand::Barrier {
+                entered,
+                release: release_rx,
+            })
+            .await
+            .unwrap();
+        entered_rx.await.unwrap();
+        release
+    }
+}
+
+fn publish_registry_change(
+    changes: &tokio::sync::broadcast::Sender<RegistryChange>,
+    revision: i64,
+    executor_id: String,
+    generation: Option<i64>,
+) {
+    let _ = changes.send(RegistryChange {
+        revision,
+        executor_id,
+        generation,
+    });
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -164,6 +432,7 @@ impl IntoResponse for RegistryError {
 
 pub fn router() -> Router<FederatorState> {
     Router::new()
+        .route("/v1/federation/events", get(registry_events))
         .route(
             "/v1/federation/executors",
             get(list_executors).post(register_executor),
@@ -184,12 +453,99 @@ pub fn router() -> Router<FederatorState> {
 pub(crate) async fn list_executors(
     State(state): State<FederatorState>,
 ) -> Result<Json<ExecutorListResponse>, RegistryError> {
-    let executors = state
+    let (revision, executors) = state
         .store
-        .list_executors()
+        .executor_registry_snapshot()
         .await
         .map_err(RegistryError::internal)?;
-    Ok(Json(ExecutorListResponse { executors }))
+    Ok(Json(ExecutorListResponse {
+        revision,
+        executors,
+    }))
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/federation/events",
+    params(("Last-Event-ID" = Option<i64>, Header, description = "Last applied executor registry revision")),
+    responses((status = 200, description = "Federator registry invalidation stream", body = ExecutorRegistryEvent, content_type = "text/event-stream"))
+)]
+pub(crate) async fn registry_events(
+    State(state): State<FederatorState>,
+    headers: HeaderMap,
+) -> Result<
+    Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>>,
+    RegistryError,
+> {
+    let mut changes = state.registry_changes.subscribe();
+    let current_revision = state
+        .store
+        .executor_registry_revision()
+        .await
+        .map_err(RegistryError::internal)?;
+    let requested_revision = headers
+        .get("last-event-id")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<i64>().ok());
+    let store = state.store.clone();
+    let stream = async_stream::stream! {
+        let mut delivered_revision = requested_revision.unwrap_or(-1);
+        if requested_revision != Some(current_revision) {
+            yield Ok(registry_event(ExecutorRegistryEvent {
+                revision: current_revision,
+                executor_id: None,
+                generation: None,
+            }));
+            delivered_revision = current_revision;
+        }
+        loop {
+            match changes.recv().await {
+                Ok(change) if change.revision == delivered_revision + 1 => {
+                    delivered_revision = change.revision;
+                    yield Ok(registry_event(ExecutorRegistryEvent {
+                        revision: change.revision,
+                        executor_id: Some(change.executor_id),
+                        generation: change.generation,
+                    }));
+                }
+                Ok(change) if change.revision > delivered_revision => {
+                    let Ok(revision) = store.executor_registry_revision().await else {
+                        break;
+                    };
+                    delivered_revision = revision.max(change.revision);
+                    yield Ok(registry_event(ExecutorRegistryEvent {
+                        revision: delivered_revision,
+                        executor_id: None,
+                        generation: None,
+                    }));
+                }
+                Ok(_) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    let Ok(revision) = store.executor_registry_revision().await else {
+                        break;
+                    };
+                    if revision != delivered_revision {
+                        delivered_revision = revision;
+                        yield Ok(registry_event(ExecutorRegistryEvent {
+                            revision,
+                            executor_id: None,
+                            generation: None,
+                        }));
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    };
+    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+}
+
+fn registry_event(change: ExecutorRegistryEvent) -> Event {
+    Event::default()
+        .event("federation.executors_changed")
+        .id(change.revision.to_string())
+        .json_data(change)
+        .expect("executor registry event serializes")
 }
 
 #[utoipa::path(
@@ -265,8 +621,8 @@ pub(crate) async fn register_executor(
         updated_at: now,
     };
     state
-        .store
-        .insert_executor(&record)
+        .registry_writer
+        .insert(record.clone())
         .await
         .map_err(|error| {
             if error.to_string().contains("UNIQUE constraint failed") {
@@ -275,10 +631,6 @@ pub(crate) async fn register_executor(
                 RegistryError::internal(error)
             }
         })?;
-    let _ = state.registry_changes.send(RegistryChange {
-        executor_id: record.id.clone(),
-        generation: Some(record.generation),
-    });
     Ok((StatusCode::CREATED, Json(record)))
 }
 
@@ -335,19 +687,19 @@ pub(crate) async fn update_executor(
         let status = capabilities.status();
         let last_error = capabilities.status_error();
         let updated = state
-            .store
-            .update_executor_verified_endpoint(
-                &executor_id,
-                current.generation,
-                display_name.as_deref(),
-                request.enabled,
-                &endpoint.base_url,
-                &capabilities.api_version,
-                &capabilities.app_server_schema_version,
+            .registry_writer
+            .update_verified(VerifiedExecutorUpdate {
+                id: executor_id.clone(),
+                expected_generation: current.generation,
+                display_name: display_name.clone(),
+                enabled: request.enabled,
+                base_url: endpoint.base_url,
+                api_version: capabilities.api_version,
+                app_server_schema_version: capabilities.app_server_schema_version,
                 status,
-                last_error.as_deref(),
-                now,
-            )
+                last_error,
+                updated_at: now,
+            })
             .await
             .map_err(|error| {
                 if error.to_string().contains("UNIQUE constraint failed") {
@@ -377,10 +729,10 @@ pub(crate) async fn update_executor(
         }
     } else {
         state
-            .store
-            .update_executor_sparse(
-                &executor_id,
-                display_name.as_deref(),
+            .registry_writer
+            .update_sparse(
+                executor_id.clone(),
+                display_name.clone(),
                 request.enabled,
                 unix_seconds(),
             )
@@ -388,10 +740,6 @@ pub(crate) async fn update_executor(
             .map_err(RegistryError::internal)?
             .ok_or_else(RegistryError::not_found)?
     };
-    let _ = state.registry_changes.send(RegistryChange {
-        executor_id: updated.id.clone(),
-        generation: Some(updated.generation),
-    });
     Ok(Json(updated))
 }
 
@@ -406,15 +754,11 @@ pub(crate) async fn delete_executor(
     Path(executor_id): Path<String>,
 ) -> Result<StatusCode, RegistryError> {
     if state
-        .store
-        .delete_executor(&executor_id)
+        .registry_writer
+        .delete(executor_id)
         .await
         .map_err(RegistryError::internal)?
     {
-        let _ = state.registry_changes.send(RegistryChange {
-            executor_id,
-            generation: None,
-        });
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(RegistryError::not_found())

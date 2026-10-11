@@ -1079,6 +1079,7 @@ mod tests {
 
         changes
             .send(crate::RegistryChange {
+                revision: 2,
                 executor_id: "executor-1".to_string(),
                 generation: Some(2),
             })
@@ -1192,6 +1193,7 @@ mod tests {
         );
         changes
             .send(crate::RegistryChange {
+                revision: 1,
                 executor_id: "executor-1".to_string(),
                 generation: Some(1),
             })
@@ -1201,6 +1203,7 @@ mod tests {
             .is_err());
         changes
             .send(crate::RegistryChange {
+                revision: 2,
                 executor_id: "executor-1".to_string(),
                 generation: Some(2),
             })

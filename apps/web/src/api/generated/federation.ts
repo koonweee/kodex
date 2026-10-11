@@ -1346,6 +1346,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/federation/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["registry_events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/federation/executors": {
         parameters: {
             query?: never;
@@ -1918,6 +1934,8 @@ export interface components {
         };
         ExecutorListResponse: {
             executors: components["schemas"]["ExecutorRecord"][];
+            /** Format: int64 */
+            revision: number;
         };
         ExecutorRecord: {
             apiVersion: string;
@@ -1937,6 +1955,13 @@ export interface components {
             status: components["schemas"]["ExecutorStatus"];
             /** Format: int64 */
             updatedAt: number;
+        };
+        ExecutorRegistryEvent: {
+            executorId?: string | null;
+            /** Format: int64 */
+            generation?: number | null;
+            /** Format: int64 */
+            revision: number;
         };
         /** @enum {string} */
         ExecutorStatus: "unknown" | "ready" | "unready" | "incompatible";
@@ -5926,6 +5951,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImageUploadResponse"];
+                };
+            };
+        };
+    };
+    registry_events: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Last applied executor registry revision */
+                "Last-Event-ID"?: number | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Federator registry invalidation stream */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["ExecutorRegistryEvent"];
                 };
             };
         };

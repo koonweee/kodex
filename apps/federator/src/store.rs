@@ -8,7 +8,8 @@ use sqlx::{
 
 use crate::registry::{ExecutorRecord, ExecutorStatus};
 
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
+const REGISTRY_REVISION_KEY: &str = "executor_registry_revision";
 
 #[derive(Clone)]
 pub struct Store {
@@ -36,14 +37,23 @@ impl Store {
                 .execute(&mut *transaction)
                 .await?;
             install_executor_schema(&mut transaction).await?;
-            sqlx::query("PRAGMA user_version = 2")
+            install_registry_revision(&mut transaction).await?;
+            sqlx::query("PRAGMA user_version = 3")
                 .execute(&mut *transaction)
                 .await?;
             transaction.commit().await?;
         } else if version == 1 {
             let mut transaction = pool.begin().await?;
             install_executor_schema(&mut transaction).await?;
-            sqlx::query("PRAGMA user_version = 2")
+            install_registry_revision(&mut transaction).await?;
+            sqlx::query("PRAGMA user_version = 3")
+                .execute(&mut *transaction)
+                .await?;
+            transaction.commit().await?;
+        } else if version == 2 {
+            let mut transaction = pool.begin().await?;
+            install_registry_revision(&mut transaction).await?;
+            sqlx::query("PRAGMA user_version = 3")
                 .execute(&mut *transaction)
                 .await?;
             transaction.commit().await?;
@@ -56,11 +66,16 @@ impl Store {
         if !journal_mode.eq_ignore_ascii_case("wal") {
             bail!("federator sqlite journal_mode is {journal_mode}, expected wal");
         }
-        sqlx::query(
-            "UPDATE executors SET status = 'unknown', last_error = 'Executor has not been checked since federator restart.'",
+        let mut transaction = pool.begin().await?;
+        let reset = sqlx::query(
+            "UPDATE executors SET status = 'unknown', last_error = 'Executor has not been checked since federator restart.' WHERE status != 'unknown' OR last_error IS NULL OR last_error != 'Executor has not been checked since federator restart.'",
         )
-        .execute(&pool)
+        .execute(&mut *transaction)
         .await?;
+        if reset.rows_affected() > 0 {
+            advance_registry_revision(&mut transaction).await?;
+        }
+        transaction.commit().await?;
         Ok(Self { pool })
     }
 
@@ -80,6 +95,30 @@ impl Store {
         rows.into_iter().map(decode_executor).collect()
     }
 
+    pub async fn executor_registry_snapshot(&self) -> anyhow::Result<(i64, Vec<ExecutorRecord>)> {
+        let mut transaction = self.pool.begin().await?;
+        let revision = registry_revision(&mut transaction).await?;
+        let rows = sqlx::query(
+            "SELECT id, generation, display_name, base_url, instance_id, api_version, app_server_schema_version, enabled, status, last_error, last_seen_at, created_at, updated_at FROM executors ORDER BY created_at, id",
+        )
+        .fetch_all(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
+        Ok((
+            revision,
+            rows.into_iter()
+                .map(decode_executor)
+                .collect::<anyhow::Result<_>>()?,
+        ))
+    }
+
+    pub async fn executor_registry_revision(&self) -> anyhow::Result<i64> {
+        let mut transaction = self.pool.begin().await?;
+        let revision = registry_revision(&mut transaction).await?;
+        transaction.commit().await?;
+        Ok(revision)
+    }
+
     pub async fn get_executor(&self, id: &str) -> anyhow::Result<Option<ExecutorRecord>> {
         let row = sqlx::query(
             "SELECT id, generation, display_name, base_url, instance_id, api_version, app_server_schema_version, enabled, status, last_error, last_seen_at, created_at, updated_at FROM executors WHERE id = ?",
@@ -90,7 +129,8 @@ impl Store {
         row.map(decode_executor).transpose()
     }
 
-    pub async fn insert_executor(&self, record: &ExecutorRecord) -> anyhow::Result<()> {
+    pub async fn insert_executor(&self, record: &ExecutorRecord) -> anyhow::Result<i64> {
+        let mut transaction = self.pool.begin().await?;
         sqlx::query(
             "INSERT INTO executors (id, generation, display_name, base_url, instance_id, api_version, app_server_schema_version, enabled, status, last_error, last_seen_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
@@ -107,9 +147,11 @@ impl Store {
         .bind(record.last_seen_at)
         .bind(record.created_at)
         .bind(record.updated_at)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await?;
-        Ok(())
+        let revision = advance_registry_revision(&mut transaction).await?;
+        transaction.commit().await?;
+        Ok(revision)
     }
 
     pub async fn update_executor_sparse(
@@ -118,7 +160,8 @@ impl Store {
         display_name: Option<&str>,
         enabled: Option<bool>,
         updated_at: i64,
-    ) -> anyhow::Result<Option<ExecutorRecord>> {
+    ) -> anyhow::Result<Option<(ExecutorRecord, i64)>> {
+        let mut transaction = self.pool.begin().await?;
         let row = sqlx::query(
             "UPDATE executors SET display_name = COALESCE(?, display_name), enabled = COALESCE(?, enabled), generation = generation + 1, updated_at = ? WHERE id = ? RETURNING id, generation, display_name, base_url, instance_id, api_version, app_server_schema_version, enabled, status, last_error, last_seen_at, created_at, updated_at",
         )
@@ -126,9 +169,16 @@ impl Store {
         .bind(enabled)
         .bind(updated_at)
         .bind(id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *transaction)
         .await?;
-        row.map(decode_executor).transpose()
+        let Some(row) = row else {
+            transaction.commit().await?;
+            return Ok(None);
+        };
+        let record = decode_executor(row)?;
+        let revision = advance_registry_revision(&mut transaction).await?;
+        transaction.commit().await?;
+        Ok(Some((record, revision)))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -144,7 +194,8 @@ impl Store {
         status: ExecutorStatus,
         last_error: Option<&str>,
         updated_at: i64,
-    ) -> anyhow::Result<Option<ExecutorRecord>> {
+    ) -> anyhow::Result<Option<(ExecutorRecord, i64)>> {
+        let mut transaction = self.pool.begin().await?;
         let row = sqlx::query(
             "UPDATE executors SET display_name = COALESCE(?, display_name), enabled = COALESCE(?, enabled), base_url = ?, api_version = ?, app_server_schema_version = ?, status = ?, last_error = ?, last_seen_at = ?, generation = generation + 1, updated_at = ? WHERE id = ? AND generation = ? RETURNING id, generation, display_name, base_url, instance_id, api_version, app_server_schema_version, enabled, status, last_error, last_seen_at, created_at, updated_at",
         )
@@ -159,19 +210,64 @@ impl Store {
         .bind(updated_at)
         .bind(id)
         .bind(expected_generation)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *transaction)
         .await?;
-        row.map(decode_executor).transpose()
+        let Some(row) = row else {
+            transaction.commit().await?;
+            return Ok(None);
+        };
+        let record = decode_executor(row)?;
+        let revision = advance_registry_revision(&mut transaction).await?;
+        transaction.commit().await?;
+        Ok(Some((record, revision)))
     }
 
-    pub async fn delete_executor(&self, id: &str) -> anyhow::Result<bool> {
-        Ok(sqlx::query("DELETE FROM executors WHERE id = ?")
+    pub async fn delete_executor(&self, id: &str) -> anyhow::Result<Option<i64>> {
+        let mut transaction = self.pool.begin().await?;
+        let deleted = sqlx::query("DELETE FROM executors WHERE id = ?")
             .bind(id)
-            .execute(&self.pool)
+            .execute(&mut *transaction)
             .await?
             .rows_affected()
-            > 0)
+            > 0;
+        let revision = if deleted {
+            Some(advance_registry_revision(&mut transaction).await?)
+        } else {
+            None
+        };
+        transaction.commit().await?;
+        Ok(revision)
     }
+}
+
+async fn install_registry_revision(
+    transaction: &mut sqlx::Transaction<'_, Sqlite>,
+) -> anyhow::Result<()> {
+    sqlx::query("INSERT OR IGNORE INTO federation_meta (key, value) VALUES (?, '0')")
+        .bind(REGISTRY_REVISION_KEY)
+        .execute(&mut **transaction)
+        .await?;
+    Ok(())
+}
+
+async fn registry_revision(transaction: &mut sqlx::Transaction<'_, Sqlite>) -> anyhow::Result<i64> {
+    Ok(
+        sqlx::query_scalar("SELECT CAST(value AS INTEGER) FROM federation_meta WHERE key = ?")
+            .bind(REGISTRY_REVISION_KEY)
+            .fetch_one(&mut **transaction)
+            .await?,
+    )
+}
+
+async fn advance_registry_revision(
+    transaction: &mut sqlx::Transaction<'_, Sqlite>,
+) -> anyhow::Result<i64> {
+    Ok(sqlx::query_scalar(
+        "UPDATE federation_meta SET value = CAST(value AS INTEGER) + 1 WHERE key = ? RETURNING CAST(value AS INTEGER)",
+    )
+    .bind(REGISTRY_REVISION_KEY)
+    .fetch_one(&mut **transaction)
+    .await?)
 }
 
 async fn install_executor_schema(
@@ -311,6 +407,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn version_two_registry_migrates_with_a_durable_revision() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("federator.db");
+        let store = Store::connect(&path).await.unwrap();
+        sqlx::query("DELETE FROM federation_meta WHERE key = ?")
+            .bind(REGISTRY_REVISION_KEY)
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        sqlx::query("PRAGMA user_version = 2")
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        store.pool.close().await;
+
+        let migrated = Store::connect(&path).await.unwrap();
+        assert_eq!(migrated.executor_registry_revision().await.unwrap(), 0);
+        let version: i64 = sqlx::query_scalar("PRAGMA user_version")
+            .fetch_one(&migrated.pool)
+            .await
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
+    }
+
+    #[tokio::test]
     async fn verified_endpoint_update_rejects_a_stale_generation_without_partial_changes() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::connect(&dir.path().join("federator.db"))
@@ -344,5 +465,38 @@ mod tests {
         assert_eq!(retained.base_url, "http://127.0.0.1:91");
         assert!(retained.enabled);
         assert_eq!(retained.api_version, "4");
+    }
+
+    #[tokio::test]
+    async fn executor_registry_revision_advances_atomically_and_survives_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("federator.db");
+        let store = Store::connect(&path).await.unwrap();
+        assert_eq!(
+            store.executor_registry_snapshot().await.unwrap(),
+            (0, vec![])
+        );
+
+        assert_eq!(store.insert_executor(&executor("1")).await.unwrap(), 1);
+        let (revision, rows) = store.executor_registry_snapshot().await.unwrap();
+        assert_eq!(revision, 1);
+        assert_eq!(rows.len(), 1);
+        let (updated, revision) = store
+            .update_executor_sparse("1", Some("Renamed"), None, 2)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(revision, 2);
+        assert_eq!(updated.display_name, "Renamed");
+        assert!(store.delete_executor("missing").await.unwrap().is_none());
+        assert_eq!(store.executor_registry_revision().await.unwrap(), 2);
+        assert_eq!(store.delete_executor("1").await.unwrap(), Some(3));
+        drop(store);
+
+        let reopened = Store::connect(&path).await.unwrap();
+        assert_eq!(
+            reopened.executor_registry_snapshot().await.unwrap(),
+            (3, vec![])
+        );
     }
 }

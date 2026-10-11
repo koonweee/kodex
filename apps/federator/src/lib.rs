@@ -17,12 +17,14 @@ use utoipa_swagger_ui::SwaggerUi;
 pub struct State {
     instance_id: String,
     pub(crate) store: store::Store,
+    pub(crate) registry_writer: registry::RegistryWriter,
     pub(crate) registry_changes: broadcast::Sender<RegistryChange>,
     pub(crate) trust: trust::TrustPolicy,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct RegistryChange {
+    pub(crate) revision: i64,
     pub(crate) executor_id: String,
     pub(crate) generation: Option<i64>,
 }
@@ -39,6 +41,7 @@ struct HealthResponse {
 #[openapi(
     paths(
         health,
+        registry::registry_events,
         registry::list_executors,
         registry::get_executor,
         registry::register_executor,
@@ -50,6 +53,7 @@ struct HealthResponse {
         registry::ExecutorRecord,
         registry::ExecutorStatus,
         registry::ExecutorListResponse,
+        registry::ExecutorRegistryEvent,
         registry::RegisterExecutorRequest,
         registry::UpdateExecutorRequest,
         registry::ErrorBody
@@ -177,10 +181,12 @@ pub async fn prepare(
     let prepared = instance::prepare(&config.data_dir, &config.database_path)?;
     let store = store::Store::connect(&config.database_path).await?;
     let (registry_changes, _) = broadcast::channel(128);
+    let registry_writer = registry::RegistryWriter::start(store.clone(), registry_changes.clone());
     let trust = trust::TrustPolicy::new(&config.public_origin)?;
     let state = State {
         instance_id: prepared.identity.id.to_string(),
         store,
+        registry_writer,
         registry_changes,
         trust,
     };
@@ -235,18 +241,23 @@ async fn serve_one(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
+    use std::{
+        convert::Infallible,
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc,
+        },
+        time::Duration,
     };
 
     use axum::{
         body::Body,
         http::{Request, StatusCode},
-        response::IntoResponse,
+        response::{IntoResponse, Response},
     };
     use http_body_util::BodyExt;
     use serde_json::json;
+    use tokio::time::timeout;
     use tower::ServiceExt;
 
     use super::*;
@@ -259,6 +270,23 @@ mod tests {
         primary_request(builder)
             .header("origin", "http://localhost:8787")
             .header("x-kodex-api-version", trust::FEDERATOR_API_VERSION)
+    }
+
+    async fn next_sse_json(body: &mut Body) -> serde_json::Value {
+        loop {
+            let frame = timeout(Duration::from_secs(1), body.frame())
+                .await
+                .expect("SSE event arrives")
+                .expect("SSE remains open")
+                .expect("SSE frame is readable");
+            let Ok(data) = frame.into_data() else {
+                continue;
+            };
+            let text = String::from_utf8(data.to_vec()).unwrap();
+            if let Some(data) = text.lines().find_map(|line| line.strip_prefix("data: ")) {
+                return serde_json::from_str(data).unwrap();
+            }
+        }
     }
 
     async fn spawn_test_executor(
@@ -386,6 +414,7 @@ mod tests {
         let contract = federated_openapi();
         let paths = contract["paths"].as_object().unwrap();
         assert!(paths.contains_key("/v1/federation/executors"));
+        assert!(paths.contains_key("/v1/federation/events"));
         assert!(paths.contains_key("/v1/executors/{executorId}/projects"));
         assert!(paths.contains_key("/v1/executors/{executorId}/events"));
         assert!(!paths.contains_key("/v1/executors/{executorId}/frontend-updates"));
@@ -394,6 +423,314 @@ mod tests {
             paths["/v1/executors/{executorId}/projects"]["get"]["parameters"][0]["name"],
             "executorId"
         );
+    }
+
+    #[tokio::test]
+    async fn registry_events_converge_two_clients_and_reconnect_from_durable_revision() {
+        let (executor_address, executor_task) =
+            spawn_test_executor("registry-event-executor", "events").await;
+        let dir = tempfile::tempdir().unwrap();
+        let config = config::Config {
+            data_dir: dir.path().to_path_buf(),
+            database_path: dir.path().join("federator.db"),
+            ..config::Config::default()
+        };
+        let (_instance, state) = prepare(&config).await.unwrap();
+        let app = primary_router(state, None, config.sandbox_public_url);
+
+        let first = app
+            .clone()
+            .oneshot(
+                primary_request(Request::get("/v1/federation/events"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let second = app
+            .clone()
+            .oneshot(
+                primary_request(Request::get("/v1/federation/events"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(first.status(), StatusCode::OK);
+        assert_eq!(second.status(), StatusCode::OK);
+        let mut first = first.into_body();
+        let mut second = second.into_body();
+        assert_eq!(next_sse_json(&mut first).await["revision"], 0);
+        assert_eq!(next_sse_json(&mut second).await["revision"], 0);
+
+        let created = app
+            .clone()
+            .oneshot(
+                primary_mutation(Request::post("/v1/federation/executors"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "displayName": "Event executor",
+                            "baseUrl": format!("http://{executor_address}")
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(created.status(), StatusCode::CREATED);
+        let created = response_json(created).await;
+        let executor_id = created["id"].as_str().unwrap();
+        for event in [
+            next_sse_json(&mut first).await,
+            next_sse_json(&mut second).await,
+        ] {
+            assert_eq!(event["revision"], 1);
+            assert_eq!(event["executorId"], executor_id);
+            assert_eq!(event["generation"], 1);
+        }
+
+        drop(first);
+        drop(second);
+        let renamed = app
+            .clone()
+            .oneshot(
+                primary_mutation(Request::patch(format!(
+                    "/v1/federation/executors/{executor_id}"
+                )))
+                .header("content-type", "application/json")
+                .body(Body::from(json!({"displayName": "Renamed"}).to_string()))
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(renamed.status(), StatusCode::OK);
+
+        let reconnect = app
+            .clone()
+            .oneshot(
+                primary_request(Request::get("/v1/federation/events"))
+                    .header("last-event-id", "1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let mut reconnect = reconnect.into_body();
+        let refresh = next_sse_json(&mut reconnect).await;
+        assert_eq!(refresh["revision"], 2);
+        assert!(refresh["executorId"].is_null());
+
+        let current = app
+            .clone()
+            .oneshot(
+                primary_request(Request::get("/v1/federation/events"))
+                    .header("last-event-id", "2")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let mut current = current.into_body();
+        let deleted = app
+            .clone()
+            .oneshot(
+                primary_mutation(Request::delete(format!(
+                    "/v1/federation/executors/{executor_id}"
+                )))
+                .body(Body::empty())
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+        let deletion = next_sse_json(&mut current).await;
+        assert_eq!(deletion["revision"], 3);
+        assert_eq!(deletion["executorId"], executor_id);
+        assert!(deletion["generation"].is_null());
+
+        let snapshot = app
+            .oneshot(
+                primary_request(Request::get("/v1/federation/executors"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let snapshot = response_json(snapshot).await;
+        assert_eq!(snapshot["revision"], 3);
+        assert!(snapshot["executors"].as_array().unwrap().is_empty());
+        executor_task.abort();
+    }
+
+    #[tokio::test]
+    async fn cancelled_registry_wait_still_publishes_and_revokes_active_transport() {
+        let executor_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let executor_address = executor_listener.local_addr().unwrap();
+        let executor = Router::new().route(
+            "/v1/events",
+            get(|| async {
+                let stream = async_stream::stream! {
+                    yield Ok::<_, Infallible>("data: executor-live\n\n");
+                    std::future::pending::<()>().await;
+                };
+                Response::builder()
+                    .header("content-type", "text/event-stream")
+                    .header("x-kodex-api-version", "4")
+                    .body(Body::from_stream(stream))
+                    .unwrap()
+            }),
+        );
+        let executor_task =
+            tokio::spawn(async move { axum::serve(executor_listener, executor).await.unwrap() });
+        let dir = tempfile::tempdir().unwrap();
+        let config = config::Config {
+            data_dir: dir.path().to_path_buf(),
+            database_path: dir.path().join("federator.db"),
+            ..config::Config::default()
+        };
+        let (_instance, state) = prepare(&config).await.unwrap();
+        assert_eq!(
+            state
+                .store
+                .insert_executor(&registry::ExecutorRecord {
+                    id: "executor-1".to_string(),
+                    generation: 1,
+                    display_name: "Executor".to_string(),
+                    base_url: format!("http://{executor_address}"),
+                    instance_id: "executor-instance".to_string(),
+                    api_version: "4".to_string(),
+                    app_server_schema_version: "0.160.0".to_string(),
+                    enabled: true,
+                    status: registry::ExecutorStatus::Ready,
+                    last_error: None,
+                    last_seen_at: 1,
+                    created_at: 1,
+                    updated_at: 1,
+                })
+                .await
+                .unwrap(),
+            1
+        );
+        let writer = state.registry_writer.clone();
+        let app = primary_router(state, None, config.sandbox_public_url);
+
+        let proxied = app
+            .clone()
+            .oneshot(
+                primary_request(Request::get("/v1/executors/executor-1/events"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(proxied.status(), StatusCode::OK);
+        let mut proxied = proxied.into_body();
+        let first = timeout(Duration::from_secs(1), proxied.frame())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap()
+            .into_data()
+            .unwrap();
+        assert_eq!(first, "data: executor-live\n\n");
+
+        let events = app
+            .oneshot(
+                primary_request(Request::get("/v1/federation/events"))
+                    .header("last-event-id", "1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let mut events = events.into_body();
+        let release = writer.barrier().await;
+        let cancelled = writer
+            .enqueue_sparse_for_test(
+                "executor-1".to_string(),
+                Some("Cancelled waiter".to_string()),
+                Some(false),
+                2,
+            )
+            .await;
+        drop(cancelled);
+        release.send(()).unwrap();
+
+        let change = next_sse_json(&mut events).await;
+        assert_eq!(change["revision"], 2);
+        assert_eq!(change["executorId"], "executor-1");
+        assert_eq!(change["generation"], 2);
+        let revoked = timeout(Duration::from_secs(1), proxied.frame())
+            .await
+            .expect("registry mutation revokes the active executor stream");
+        assert!(revoked.is_none() || revoked.is_some_and(|frame| frame.is_err()));
+        executor_task.abort();
+    }
+
+    #[tokio::test]
+    async fn reversed_registry_publication_emits_full_refresh_instead_of_partial_coverage() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config::Config {
+            data_dir: dir.path().to_path_buf(),
+            database_path: dir.path().join("federator.db"),
+            ..config::Config::default()
+        };
+        let (_instance, state) = prepare(&config).await.unwrap();
+        let store = state.store.clone();
+        let changes = state.registry_changes.clone();
+        let app = primary_router(state, None, config.sandbox_public_url);
+        let events = app
+            .oneshot(
+                primary_request(Request::get("/v1/federation/events"))
+                    .header("last-event-id", "0")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let mut events = events.into_body();
+
+        for (id, port) in [("executor-a", 9101), ("executor-b", 9102)] {
+            store
+                .insert_executor(&registry::ExecutorRecord {
+                    id: id.to_string(),
+                    generation: 1,
+                    display_name: id.to_string(),
+                    base_url: format!("http://127.0.0.1:{port}"),
+                    instance_id: format!("instance-{id}"),
+                    api_version: "4".to_string(),
+                    app_server_schema_version: "0.160.0".to_string(),
+                    enabled: true,
+                    status: registry::ExecutorStatus::Ready,
+                    last_error: None,
+                    last_seen_at: 1,
+                    created_at: port,
+                    updated_at: port,
+                })
+                .await
+                .unwrap();
+        }
+        changes
+            .send(RegistryChange {
+                revision: 2,
+                executor_id: "executor-b".to_string(),
+                generation: Some(1),
+            })
+            .unwrap();
+        changes
+            .send(RegistryChange {
+                revision: 1,
+                executor_id: "executor-a".to_string(),
+                generation: Some(1),
+            })
+            .unwrap();
+
+        let refresh = next_sse_json(&mut events).await;
+        assert_eq!(refresh["revision"], 2);
+        assert!(refresh["executorId"].is_null());
+        assert!(refresh["generation"].is_null());
     }
 
     #[tokio::test]
@@ -608,6 +945,7 @@ mod tests {
             .await
             .unwrap();
         let listed = response_json(listed).await;
+        assert_eq!(listed["revision"], 4);
         assert_eq!(listed["executors"].as_array().unwrap().len(), 1);
         assert_eq!(listed["executors"][0]["generation"], 3);
         assert_eq!(listed["executors"][0]["displayName"], "Desk Mac renamed");
