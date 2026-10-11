@@ -78,6 +78,14 @@ impl ThreadViewStore {
         }
     }
 
+    pub(crate) async fn history_reset_revision(&self, thread_id: &str) -> i64 {
+        self.sessions
+            .read()
+            .await
+            .get(thread_id)
+            .map_or(0, |view| view.history_reset_revision)
+    }
+
     pub async fn ensure_history_current(&self, thread_id: &str, revision: i64) -> ApiResult<()> {
         if let Some(view) = self.sessions.read().await.get(thread_id) {
             view.ensure_history_current(revision)?;

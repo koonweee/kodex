@@ -43,6 +43,18 @@ It also exposes resources such as `kodex://status`, `kodex://projects`, `kodex:/
 
 The default is five turns and 16,000 Unicode characters of excerpt text. `limit` accepts 1–20 and `maxChars` accepts 256–64,000. Each text field is capped at 4,000 characters, with at most 200 items across the page. `truncated` and `omittedItems` identify shortened results; this is an excerpt rather than an exhaustive transcript. IDs, item types, turn/tool status, exit codes and failure messages remain structured. User and assistant text is included; tool output text requires `includeToolOutput: true`. Binary media, tool arguments and opaque result/config payloads are not returned.
 
+## Multi-thread waiting
+
+`wait_threads` accepts 1–8 distinct `{threadId, afterCursor?}` targets. It observes the newest native turn and native attention state without resuming chats, reading full history, changing queues or marking results seen. An empty idle chat is not a completion. A first call returns an already-completed latest turn; a chat still reported active does not deliver an older answer as current work.
+
+The default wait is 30 seconds, with `timeoutMs` from 0 to 60,000. Zero performs one snapshot attempt. Observations use at most eight concurrent target reads, eight headers per target and a 500 ms fallback interval; relevant events can shorten that interval to 250 ms. Commentary and unrelated events do not trigger matches or extra reads. Snapshot and progress phases each have a five-second bound, so fetching snapshots can add up to ten seconds beyond the event-wait duration. Return progress is one compact turn per target, capped at 8,000 text characters with the compact reader's field/item bounds. No inference or background wait service is involved.
+
+Return each target's `cursor` as `afterCursor` on later calls. The cursor is an opaque observation receipt, not a read acknowledgment or a durable subscription. A current receipt omits already-delivered terminal items, including across intervening active snapshots. `reset: true` signals a gateway runtime change or observed history revert; the returned state is a fresh baseline, not proof of a newly completed turn. Different retained history after a reset can appear in that baseline. Cursors belong to one thread.
+
+`status` is `matched`, `timeout` or `error`; every successful target has current state/progress, and failures appear separately in `errors`. Native waiting-on-approval/user-input flags, system errors, and pending gateway approval requests are attention conditions. Attention receipts include every outstanding request up to 64 IDs; above that bound, the target returns an explicit error directing the caller to `list_approvals`. Approval payloads are not loaded by waiting. Transient native catch-up and snapshot overlap are re-observed within the deadline, then reported as retryable if still unresolved.
+
+MCP cancellation ends the tool call and drops its HTTP request. Dropping a gateway wait future drops its subscription and aborts its request-scoped child reads. Transport disconnect detection may lag; any surviving HTTP handler still expires under the bounds above. New user input does not itself cancel this tool, and it does not reproduce desktop-specific user-input wake behavior.
+
 ## App surfaces
 
 Generated app surfaces let Codex open or update temporary, thread-bound HTML when direct interaction is clearer than chat. They should:

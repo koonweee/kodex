@@ -14,6 +14,8 @@ mod subagents;
 mod target_tests;
 #[cfg(test)]
 mod wait_tests;
+#[cfg(test)]
+mod wait_threads_tests;
 use crate::routes::pins::PinnedThreadListQuery;
 use pins::PinThreadToolParams;
 use subagents::ListSubagentsToolParams;
@@ -1300,6 +1302,20 @@ impl KodexControlMcp {
             ],
         );
         Ok(json_tool_result(self.get_json(&path).await?))
+    }
+
+    #[tool(
+        description = "Wait for up to eight chats to complete or need attention. timeoutMs: 0 returns a snapshot; maximum 60000. Return cursors as afterCursor to omit already-delivered final text. Restart/revert may return reset snapshots. Partial failures are per target. Commentary does not match. Bounded snapshot reads can add latency; user input does not cancel this wait."
+    )]
+    async fn wait_threads(
+        &self,
+        Parameters(params): Parameters<crate::routes::control_wait::WaitThreadsRequest>,
+        context: rmcp::service::RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, McpError> {
+        tokio::select! {
+            _ = context.ct.cancelled() => Ok(json_tool_result(json!({"status":"cancelled"}))),
+            response = self.post_json("/v1/self-control/threads/wait", serde_json::to_value(params).map_err(|error| McpError::internal_error(error.to_string(), None))?) => response.map(json_tool_result),
+        }
     }
 
     #[tool(description = "Wait with bounded polling until a thread is idle")]

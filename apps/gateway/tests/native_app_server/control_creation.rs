@@ -23,6 +23,8 @@ async fn real_native_control_standalone_archive_restore() -> anyhow::Result<()> 
         let id = created["thread"]["id"]
             .as_str()
             .context("missing thread ID")?;
+        let fresh = api(&session.app, "POST", "/v1/self-control/threads/wait", Some(json!({"targets":[{"threadId":id}],"timeoutMs":0}))).await?;
+        anyhow::ensure!(fresh["status"] == "timeout" && fresh["results"][0]["condition"] == "idle", "{fresh}");
         fixture.enqueue([ModelResponse::message("Standalone complete")]);
         start_turn(&session.app, id, "Standalone Control proof").await?;
         session.completed_turn(id, "completed").await?;
@@ -39,6 +41,19 @@ async fn real_native_control_standalone_archive_restore() -> anyhow::Result<()> 
             excerpt.contains("Standalone complete") && excerpt.contains("Standalone Control proof"),
             "{compact}"
         );
+        let first_wait = api(&session.app, "POST", "/v1/self-control/threads/wait", Some(json!({"targets":[{"threadId":id}],"timeoutMs":0}))).await?;
+        anyhow::ensure!(first_wait["status"] == "matched" && first_wait.to_string().contains("Standalone complete"), "{first_wait}");
+        let repeated_wait = api(&session.app, "POST", "/v1/self-control/threads/wait", Some(json!({"targets":[{"threadId":id,"afterCursor":first_wait["results"][0]["cursor"]}],"timeoutMs":0}))).await?;
+        anyhow::ensure!(repeated_wait["status"] == "timeout" && !repeated_wait.to_string().contains("Standalone complete"), "{repeated_wait}");
+        let (held, release) = ModelResponse::gated_message("Second wait completed");
+        fixture.enqueue([held]);
+        start_turn(&session.app, id, "Keep this turn active for the wait proof").await?;
+        let active = api(&session.app, "POST", "/v1/self-control/threads/wait", Some(json!({"targets":[{"threadId":id,"afterCursor":first_wait["results"][0]["cursor"]}],"timeoutMs":0}))).await?;
+        anyhow::ensure!(active["status"] == "timeout" && active["results"][0]["condition"] == "inProgress", "{active}");
+        anyhow::ensure!(!active.to_string().contains("Standalone complete"), "old answer leaked into active wait: {active}");
+        let _ = release.send(());
+        let finished = api(&session.app, "POST", "/v1/self-control/threads/wait", Some(json!({"targets":[{"threadId":id,"afterCursor":active["results"][0]["cursor"]}],"timeoutMs":5000}))).await?;
+        anyhow::ensure!(finished["status"] == "matched" && finished.to_string().contains("Second wait completed"), "{finished}");
         let list = api(&session.app, "GET", "/v1/chats/threads", None).await?;
         anyhow::ensure!(list["threads"]
             .as_array()

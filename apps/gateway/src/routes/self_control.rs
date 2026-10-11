@@ -65,6 +65,10 @@ use crate::{
 pub fn router() -> Router<AppState> {
     Router::new()
         .route(
+            "/v1/self-control/threads/wait",
+            post(crate::routes::control_wait::wait_threads),
+        )
+        .route(
             "/v1/self-control/threads/{thread_id}/turns/compact",
             get(crate::routes::control_reads::get_compact_turns),
         )

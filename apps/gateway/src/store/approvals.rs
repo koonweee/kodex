@@ -11,6 +11,15 @@ use crate::{
 use super::{row_to_approval, Approval, NewApproval, Store};
 
 impl Store {
+    pub(crate) async fn pending_approval_ids(
+        &self,
+        thread_id: &str,
+        limit: i64,
+    ) -> ApiResult<Vec<String>> {
+        Ok(sqlx::query_scalar("select id from approvals where thread_id = ? and status = 'pending' and method = ? order by id limit ?")
+            .bind(thread_id).bind(APP_SURFACE_BRIDGE_APPROVAL_METHOD).bind(limit).fetch_all(&self.pool).await?)
+    }
+
     pub async fn insert_approval(&self, approval: NewApproval) -> ApiResult<Approval> {
         if approval.method != APP_SURFACE_BRIDGE_APPROVAL_METHOD {
             return Err(ApiError::BadRequest(

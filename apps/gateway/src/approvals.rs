@@ -154,6 +154,32 @@ pub async fn create_local(state: &AppState, request: NewApproval) -> ApiResult<A
     Ok(approval)
 }
 
+/// Bounded ID-only attention receipt; never clone tool arguments or full approval payloads.
+pub(crate) async fn attention_ids(state: &AppState, thread_id: &str) -> ApiResult<Vec<String>> {
+    let mirror = state.approvals.inner.lock().await;
+    if !mirror.available {
+        return Err(ApiError::AppServerUnavailable);
+    }
+    let mut ids = state.store.pending_approval_ids(thread_id, 65).await?;
+    ids.extend(
+        mirror
+            .requests
+            .values()
+            .filter(|request| {
+                request.thread_id.as_deref() == Some(thread_id) && is_outstanding(request)
+            })
+            .take(65)
+            .map(|request| request.id.clone()),
+    );
+    if ids.len() > 64 {
+        return Err(ApiError::Conflict(
+            "More than 64 pending requests; inspect this thread with list_approvals".into(),
+        ));
+    }
+    ids.sort();
+    Ok(ids)
+}
+
 pub async fn list_approvals(
     state: &AppState,
     status: Option<String>,

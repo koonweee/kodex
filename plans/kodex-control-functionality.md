@@ -34,7 +34,7 @@ M1 implementation evidence (2026-10-11; independent review passed, no major issu
 - Six focused HTTP tests cover standalone creation/input replay, explicit directory validation, second-client event replay, archived filters/pagination/page bounds and malformed reads. The gateway library suite passed (702 passed, 3 intentionally ignored).
 - A disposable-home test against pinned Codex 0.160.0 passed the standalone create → completed input → archive → discover → restore flow. Frontend build, existing archive/unarchive replay test and both trim scripts passed. No UI implementation changed; cross-client evidence uses gateway events/replay and the existing frontend lifecycle regression.
 
-### M2 — Compact reads and multi-thread supervision
+### M2 — Compact reads and multi-thread supervision — Complete
 
 1. Design a small deterministic compact turn representation from current native/canonical history: turn identity/status, user and assistant text, optional bounded tool output, pagination and explicit truncation. No inference calls or stored summaries. Preserve meaningful tool errors and distinguish failed reads from empty history.
 2. Add a compact read mode/tool with bounded pages and validated limits. Avoid full-history scans or transcript hydration merely to summarize status. Test long outputs, empty/in-progress/failed turns, pagination and stale/reverted reads.
@@ -44,13 +44,22 @@ M1 implementation evidence (2026-10-11; independent review passed, no major issu
 
 Exit: compact reads and waiting provide bounded useful results, no duplicate completed text with a current cursor, and no changes to shared state from observation. No model-generated summaries or new lifecycle storage.
 
-M2 compact-read progress (2026-10-11; items 1–2 complete, waiting remains):
+M2 compact-read evidence (2026-10-11; first implementation chunk):
 
 - Added `get_compact_turns` over one descending native full-item turn page, with no resume, read-receipt mutation, inference or summary storage. The public Rust DTOs generate the MCP-adjacent HTTP contract and frontend types.
 - Defaults/bounds: five turns (1–20), 16,000 excerpt characters (256–64,000), 4,000 characters per text field, and 200 returned items per page. Status/errors, omitted counts, truncation and native older-page cursors are explicit. Tool text is opt-in; arguments, binary media and raw result/config envelopes stay out of the response.
 - Focused tests cover Unicode/text/item limits, multiple tool output blocks sharing a field budget, structured tool failures, active/failed/empty turns, pagination, malformed reads and native revert fencing before any view exists. The gateway suite passed (707 tests, 3 intentionally ignored); the additional multi-block cap regression and focused compact/revert tests passed after that run.
 - The disposable pinned-native proof returns actual user/assistant text and completed status. Generated types, frontend build, backend/frontend trims passed. Independent review reported no major issues. No frontend lifecycle/UI implementation changed.
-- Items 3–5 remain: bounded multi-thread waiting, per-target cursors/errors, timeout progress and cancellation/restart/revert verification. This milestone and the overall goal remain active.
+- The follow-on waiting work is completed in the evidence below.
+
+M2 waiting evidence (2026-10-11; complete):
+
+- Added `wait_threads` and a generated HTTP contract: 1–8 targets, 0–60 second event wait, bounded concurrent metadata/header reads, compact return progress, per-target errors and opaque receipts. Fresh idle chats are not completions; active metadata suppresses older answers. Metadata/header conflicts receive one metadata refresh, and transient snapshot races retry only within the request deadline.
+- Receipt cursors retain observed terminal identity through active snapshots, suppress already-observed final items, and explicitly mark runtime/revert resets. Attention uses native flags plus bounded ID-only approval reads. Every request up to 64 is represented; overflow is explicit and nonretryable rather than silently truncated. No new approval revision cache, durable waiter, transcript store or scheduler was added.
+- Relevant target lifecycle events are coalesced; unrelated traffic does not amplify reads. The fallback cadence recovers missed events. Snapshot/progress phases each have a five-second bound. MCP protocol cancellation and dropping the gateway future are tested; HTTP disconnect detection limits are documented.
+- Fifteen HTTP behavior tests cover mixed targets, existing completion, active/idle/fresh state, timeout progress, per-target errors, cursor reuse, restart/revert, native catch-up, attention changes/overflow, stalled reads, read-race recovery, event noise and cancellation cleanup. Separate native-revert and actual MCP cancellation tests pass.
+- Final gateway library suite: 725 passed, 3 intentionally ignored. The pinned 0.160.0 disposable-runtime proof passes fresh-shell observation, completed receipt reuse, a second active turn without leaking its older answer, completion, archive and restore. Generated types, frontend build, backend/frontend trims, formatting and diff checks pass.
+- Independent review completed in three passes: four initial lifecycle/bounds findings and two follow-up cursor/error findings were fixed and covered; the final pass reported no major issues. No frontend lifecycle/UI behavior changed. M3 and the overall goal remain active.
 
 ### M3 — Automation workflow audit and confirmed improvements
 

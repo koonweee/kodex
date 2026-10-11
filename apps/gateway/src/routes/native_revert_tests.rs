@@ -34,6 +34,7 @@ struct RevertNative {
     requests: Mutex<Vec<(String, Value)>>,
     reverted: AtomicBool,
     hold_next: AtomicBool,
+    wait_headers: AtomicBool,
     started: Notify,
     release: Notify,
 }
@@ -72,6 +73,16 @@ impl AppServer for RevertNative {
                     "initialTurnsPage": page(reverted),
                 }))
                 .await),
+            "thread/turns/list"
+                if params["itemsView"] == "notLoaded"
+                    && self.wait_headers.load(Ordering::SeqCst) =>
+            {
+                let mut headers = page(reverted);
+                for turn in headers["data"].as_array_mut().unwrap() {
+                    turn["items"] = json!([]);
+                }
+                Ok(self.capture(headers).await)
+            }
             "thread/turns/list" if params["itemsView"] == "notLoaded" => Ok(json!({
                 "data":[], "nextCursor":null, "backwardsCursor":null,
             })),
@@ -333,4 +344,32 @@ async fn native_revert_fences_compact_control_reads_without_hydrating_a_view() {
         false,
     )
     .await;
+}
+
+#[tokio::test]
+async fn native_revert_fences_a_wait_header_in_flight() {
+    let (state, native) = state().await;
+    native.wait_headers.store(true, Ordering::SeqCst);
+    native.hold_next.store(true, Ordering::SeqCst);
+    let copy = state.clone();
+    let pending = tokio::spawn(async move {
+        request(
+            &copy,
+            "POST",
+            "/v1/self-control/threads/wait",
+            Some(json!({"targets":[{"threadId":THREAD}],"timeoutMs":0})),
+        )
+        .await
+    });
+    timeout(Duration::from_secs(2), native.started.notified())
+        .await
+        .unwrap();
+    revert(&state, &native).await;
+    native.release.notify_one();
+    let (status, body) = pending.await.unwrap();
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["status"], "error");
+    assert_eq!(body["results"], json!([]));
+    assert_eq!(body["errors"][0]["threadId"], THREAD);
+    assert!(!body.to_string().contains("Remove this message"));
 }
