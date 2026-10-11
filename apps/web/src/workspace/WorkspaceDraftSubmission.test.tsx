@@ -1,12 +1,13 @@
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { useRef } from "react";
 import { expect, it, vi } from "vitest";
 
 import { ThreadPaneComposerBridge } from "../composer/ThreadPaneComposerBridge";
 import type { ComposerDraftStore } from "../composer/useComposerDraftState";
 import { baseRoutes, mockGateway, model, project } from "../test/mvpAppHarness";
+import { renderWithGateway as render } from "../test/GatewayTestProvider";
 import { createMemoryWorkspacePaneStore } from "./paneStore";
 import { WorkspaceProvider, useWorkspace } from "./WorkspaceProvider";
 

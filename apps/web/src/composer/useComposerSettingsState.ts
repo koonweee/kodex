@@ -1,12 +1,8 @@
 import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
-import {
-  getComposerSettings,
-  listModels,
-  type ModelSummary,
-  type Project,
-} from "../api/client";
+import type { ModelSummary, Project } from "../api/client";
+import { useGatewayClient } from "../api/GatewayClientContext";
 import { queryKeys } from "../api/queryKeys";
 import { singleProjectRoot } from "../projects/roots";
 import type { ComposerSettings } from "../ComposerFooterControls";
@@ -25,6 +21,7 @@ export function useComposerSettingsState({
   onError,
   projects,
 }: UseComposerSettingsStateParams) {
+  const api = useGatewayClient();
   const queryClient = useQueryClient();
   const [models, setModels] = useState<ModelSummary[]>([]);
   const [composerDefaults, setComposerDefaults] = useState<ComposerSettings>(DEFAULT_COMPOSER_SETTINGS);
@@ -33,7 +30,7 @@ export function useComposerSettingsState({
     try {
       const nextModels = await queryClient.fetchQuery({
         queryKey: queryKeys.models,
-        queryFn: listModels,
+        queryFn: api.listModels,
       });
       setModels((current) => (sameModelSummaries(current, nextModels) ? current : nextModels));
       const executionCwd = projectId !== null
@@ -42,7 +39,7 @@ export function useComposerSettingsState({
       if (projectId !== null && !executionCwd) return null;
       const settings = await queryClient.fetchQuery({
         queryKey: queryKeys.composerSettings(projectId, executionCwd),
-        queryFn: ({ signal }) => getComposerSettings(projectId, executionCwd, signal),
+        queryFn: ({ signal }) => api.getComposerSettings(projectId, executionCwd, signal),
       });
       const normalized = normalizePersistedComposerSettings(settings, nextModels);
       if (projectId === null && !executionCwd) {
@@ -52,7 +49,7 @@ export function useComposerSettingsState({
     } catch (error) {
       if (models.length === 0) {
         try {
-          const nextModels = await queryClient.fetchQuery({ queryKey: queryKeys.models, queryFn: listModels });
+          const nextModels = await queryClient.fetchQuery({ queryKey: queryKeys.models, queryFn: api.listModels });
           setModels((current) => (sameModelSummaries(current, nextModels) ? current : nextModels));
         } catch (modelsError) {
           onError(modelsError);
@@ -60,7 +57,7 @@ export function useComposerSettingsState({
       }
       return null;
     }
-  }, [models.length, onError, projects, queryClient]);
+  }, [api, models.length, onError, projects, queryClient]);
 
   return {
     composerDefaults,

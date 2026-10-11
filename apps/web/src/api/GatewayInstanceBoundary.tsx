@@ -1,7 +1,7 @@
 import { compatibilityRequired, observeApiVersion } from "./compatibility";
 import { Button, Center, MantineProvider, Stack, Text } from "@mantine/core";
 import type { QueryClient } from "@tanstack/react-query";
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { refreshQueuedInputs } from "../queuedInputs/cache";
 import { refreshAutomationRuns } from "../automations/runsCache";
@@ -21,24 +21,8 @@ import { queryKeys } from "./queryKeys";
 import { refreshNativeConfig } from "./nativeConfigCache";
 import { refreshAppSurfaceSessions } from "../appSurfaces/cache";
 import { refreshThreadSubagents } from "../threads/subagentsCache";
-
-const InstanceStorageContext = createContext<InstanceStorage | null>(null);
-const InstanceConnectionContext = createContext<{
-  beforeConnect: () => Promise<boolean>;
-  onConnected: () => void;
-} | undefined>(undefined);
-
-export function useGatewayInstanceStorage(): InstanceStorage | null {
-  return useContext(InstanceStorageContext);
-}
-
-export function useGatewayInstanceValidation() {
-  return useContext(InstanceConnectionContext)?.beforeConnect;
-}
-
-export function useGatewayStreamConnected() {
-  return useContext(InstanceConnectionContext)?.onConnected;
-}
+import { GatewayRuntimeEnvironmentProvider } from "./GatewayClientContext";
+export { useGatewayInstanceStorage, useGatewayInstanceValidation, useGatewayStreamConnected } from "./GatewayClientContext";
 
 type GatewayInstanceBoundaryProps = { children: ReactNode; queryClient: QueryClient };
 
@@ -154,9 +138,9 @@ function GatewayInstanceGate({ children, queryClient }: GatewayInstanceBoundaryP
 
   if (instance) {
     return (
-      <InstanceStorageContext.Provider key={instance.id} value={instance.storage}>
-        <InstanceConnectionContext.Provider value={connection}>{children}</InstanceConnectionContext.Provider>
-      </InstanceStorageContext.Provider>
+      <GatewayRuntimeEnvironmentProvider key={instance.id} value={{ ...connection, storage: instance.storage }}>
+        {children}
+      </GatewayRuntimeEnvironmentProvider>
     );
   }
 

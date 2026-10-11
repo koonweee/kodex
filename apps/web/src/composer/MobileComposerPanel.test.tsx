@@ -8,6 +8,8 @@ import type { ComponentProps, FormEvent, RefObject } from "react";
 import { NARROW_WORKSPACE_QUERY } from "../shared/layoutBreakpoints";
 
 import { listSkills } from "../api/client";
+import { GatewayClientProvider } from "../api/GatewayClientContext";
+import type { GatewayClient } from "../api/gatewayClient";
 import { createKodexQueryClient } from "../api/queryClient";
 import type { SkillMetadata } from "../api/client";
 import type { ComposerSettings } from "../ComposerFooterControls";
@@ -554,6 +556,7 @@ function renderComposerPanel(props: Partial<ComponentProps<typeof ComposerPanel>
   const queryClient = createKodexQueryClient();
   const node = () => (
     <QueryClientProvider client={queryClient}>
+      <GatewayClientProvider client={{ listSkills, skillIconUrl: (path: string) => new URL(`/v1/skills/icon?path=${encodeURIComponent(path)}`, window.location.origin).toString() } as GatewayClient}>
       <MantineProvider>
         <ComposerPanel
           activeSelectedTurnId={null}
@@ -600,6 +603,7 @@ function renderComposerPanel(props: Partial<ComponentProps<typeof ComposerPanel>
           {...props}
         />
       </MantineProvider>
+      </GatewayClientProvider>
     </QueryClientProvider>
   );
   const view = render(node());

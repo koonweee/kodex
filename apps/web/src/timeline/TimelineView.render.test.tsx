@@ -1,5 +1,5 @@
 import { MantineProvider } from "@mantine/core";
-import { render, screen } from "@testing-library/react";
+import { render as testingRender, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -8,6 +8,9 @@ import { VirtuosoMockContext } from "react-virtuoso";
 import type { EventEnvelope } from "../api/client";
 import { TimelineView } from "./TimelineView";
 import { timelineItem, timelineState } from "./testBuilders";
+import { gatewayTestWrapper } from "../test/GatewayTestProvider";
+
+const render = (ui: Parameters<typeof testingRender>[0]) => testingRender(ui, { wrapper: gatewayTestWrapper });
 
 const retainedDebugEvent: EventEnvelope = {
   id: "retained-debug", seq: 1, kind: "debug_event", codexMethod: null,

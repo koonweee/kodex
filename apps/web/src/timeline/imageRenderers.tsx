@@ -2,7 +2,7 @@ import { Box, Stack, Text } from "@mantine/core";
 import { ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { filePreviewUrl } from "../api/client";
+import { useGatewayClient } from "../api/GatewayClientContext";
 import type { ImageLightboxImage } from "../images/types";
 import { displayableImageSrc, localPreviewPath } from "./rendererShared";
 import type { TimelineItem } from "./reducer";
@@ -16,9 +16,10 @@ export function ImageActivityBlock({
   onImageOpen?: (image: ImageLightboxImage) => void;
   threadId?: string;
 }) {
+  const api = useGatewayClient();
   const directSrc = displayableImageSrc(item.imageSrc) ?? displayableImageSrc(item.path);
   const previewPath = localPreviewPath(item.path) ?? localPreviewPath(item.imageSrc);
-  const src = directSrc ?? (threadId && previewPath ? filePreviewUrl(threadId, previewPath) : null);
+  const src = directSrc ?? (threadId && previewPath ? api.filePreviewUrl(threadId, previewPath) : null);
   const title = item.imageSrc ? item.path || item.text : item.path;
   const metadata = imageActivityMetadata(item);
   return (

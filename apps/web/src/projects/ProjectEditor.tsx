@@ -2,24 +2,26 @@ import { Alert, Button, Modal, Stack, Text, Textarea, TextInput } from "@mantine
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { deleteProject, updateProject, type Project, type UpdateProjectRequest } from "../api/client";
+import type { Project, UpdateProjectRequest } from "../api/client";
+import { useGatewayClient } from "../api/GatewayClientContext";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
 import { errorMessageFrom } from "../shared/values";
 import { refreshProjectState } from "./cache";
 import { projectRootsFromText } from "./roots";
 
 export function ProjectEditor({ project, onDeleted }: { project: Project; onDeleted: () => void }) {
+  const api = useGatewayClient();
   const queryClient = useQueryClient();
   const { publishThreadPaneTimelineAction } = useWorkspace();
   const [nameEdit, setNameEdit] = useState<string | null>(null);
   const [rootsEdit, setRootsEdit] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const save = useMutation({
-    mutationFn: (request: UpdateProjectRequest) => updateProject(project.id, request),
+    mutationFn: (request: UpdateProjectRequest) => api.updateProject(project.id, request),
     onSuccess: async () => { await refreshProjectState(queryClient); setNameEdit(null); setRootsEdit(null); },
   });
   const remove = useMutation({
-    mutationFn: () => deleteProject(project.id),
+    mutationFn: () => api.deleteProject(project.id),
     onSuccess: async () => {
       publishThreadPaneTimelineAction({ kind: "refresh_snapshot" });
       await refreshProjectState(queryClient);

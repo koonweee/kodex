@@ -1,11 +1,12 @@
 import { compactCanonicalPayload } from "../../test/canonicalPayloadFixture";
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import type { EventEnvelope, ThreadTimelineRow, ThreadViewResponse } from "../../api/client";
 import { mockGateway } from "../../test/gatewayMock";
+import { renderWithGateway as render } from "../../test/GatewayTestProvider";
 import { createMemoryWorkspacePaneStore } from "../../workspace/paneStore";
 import { WorkspaceProvider, useWorkspace } from "../../workspace/WorkspaceProvider";
 import { ThreadPane } from "./ThreadPane";

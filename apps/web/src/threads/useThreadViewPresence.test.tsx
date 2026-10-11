@@ -1,7 +1,10 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useThreadViewPresence } from "./useThreadViewPresence";
+import { renderHookWithGateway as renderHook } from "../test/GatewayTestProvider";
+import { GatewayClientProvider } from "../api/GatewayClientContext";
+import type { GatewayClient } from "../api/gatewayClient";
 
 const HEARTBEAT_MS = 5_000;
 const DEFAULT_HEARTBEAT_MS = 10_000;
@@ -189,6 +192,33 @@ describe("useThreadViewPresence", () => {
       path: "/v1/thread-view-presence",
       visibleThreadIds: ["thread-1", "thread-2"],
     });
+  });
+
+  it("clears the old executor and reports through the new executor when its client changes", async () => {
+    const first = {
+      replaceThreadViewPresence: vi.fn(async () => undefined),
+      sendThreadViewPresenceSnapshotBeacon: vi.fn(() => true),
+    } as unknown as GatewayClient;
+    const second = {
+      replaceThreadViewPresence: vi.fn(async () => undefined),
+      sendThreadViewPresenceSnapshotBeacon: vi.fn(() => true),
+    } as unknown as GatewayClient;
+    function Probe({ client }: { client: GatewayClient }) {
+      return <GatewayClientProvider client={client}><Presence /></GatewayClientProvider>;
+    }
+    function Presence() {
+      useThreadViewPresence({ enabled: true, heartbeatMs: HEARTBEAT_MS, threadIds: ["shared-thread"] });
+      return null;
+    }
+    const view = render(<Probe client={first} />);
+    await flushEffects();
+    expect(first.replaceThreadViewPresence).toHaveBeenCalledWith(expect.objectContaining({ visibleThreadIds: ["shared-thread"] }));
+
+    view.rerender(<Probe client={second} />);
+    await flushEffects();
+
+    expect(first.sendThreadViewPresenceSnapshotBeacon).toHaveBeenCalledWith(expect.objectContaining({ visibleThreadIds: [] }));
+    expect(second.replaceThreadViewPresence).toHaveBeenCalledWith(expect.objectContaining({ visibleThreadIds: ["shared-thread"] }));
   });
 });
 

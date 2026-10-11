@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { clearThreadGoal, getThreadGoal, updateThreadGoal, type ThreadGoal } from "../api/client";
+import { GatewayClientProvider } from "../api/GatewayClientContext";
+import type { GatewayClient } from "../api/gatewayClient";
 import { createKodexQueryClient } from "../api/queryClient";
 import { queryKeys } from "../api/queryKeys";
 import { refreshThreadGoals } from "./goalCache";
@@ -22,7 +24,7 @@ const fixture: ThreadGoal = {
 function setup() {
   const client = createKodexQueryClient();
   function wrapper({ children }: { children: ReactNode }) {
-    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    return <QueryClientProvider client={client}><GatewayClientProvider client={{ clearThreadGoal, getThreadGoal, updateThreadGoal } as GatewayClient}>{children}</GatewayClientProvider></QueryClientProvider>;
   }
   return { client, wrapper };
 }

@@ -15,6 +15,7 @@ import {
   type ContextUsage,
 } from "../ComposerFooterControls";
 import type { ModelSummary, TextElement, TimelineSkillMention, UserInput } from "../api/client";
+import { useGatewayClient } from "../api/GatewayClientContext";
 import type { ImageLightboxImage } from "../images/types";
 import { usePaneLayout } from "../shared/PaneLayout";
 import { ExpandedComposerPanel } from "./ExpandedComposerPanel";
@@ -136,8 +137,9 @@ export function ComposerPanel({
   pendingAttachments,
   selectedThreadPresent,
 }: ComposerPanelProps) {
+  const api = useGatewayClient();
   const nativeQueue = useNativeQueue(queueThreadId ?? null);
-  const draftState = useComposerDraftState(composerResetToken, composerDraftKey, composerDraftStore);
+  const draftState = useComposerDraftState(composerResetToken, composerDraftKey, composerDraftStore, api.skillIconUrl);
   const [annotationTouchOpenRevision, setAnnotationTouchOpenRevision] = useState(0);
   const draftDisposable = draftState.composerText.length === 0 && draftState.annotations.length === 0 &&
     pendingAttachments.length === 0 && !isComposerSubmitting && !isDraftComposerTransitioning;

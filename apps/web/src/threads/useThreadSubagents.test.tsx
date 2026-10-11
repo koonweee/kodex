@@ -4,6 +4,8 @@ import type { PropsWithChildren } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { listThreadSubagents, type EventEnvelope, type ThreadSubagentListResponse, type ThreadSubagentSummary } from "../api/client";
+import { GatewayClientProvider } from "../api/GatewayClientContext";
+import type { GatewayClient } from "../api/gatewayClient";
 import { createKodexQueryClient } from "../api/queryClient";
 import { applySubagentsEvent, refreshThreadSubagents } from "./subagentsCache";
 import { useThreadSubagents } from "./useThreadSubagents";
@@ -26,7 +28,7 @@ const page = (subagents: ThreadSubagentSummary[], nextCursor: string | null = nu
 function mountClient() {
   const client = createKodexQueryClient();
   const hook = renderHook(() => useThreadSubagents("ancestor"), {
-    wrapper: ({ children }: PropsWithChildren) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+    wrapper: ({ children }: PropsWithChildren) => <QueryClientProvider client={client}><GatewayClientProvider client={{ listThreadSubagents } as GatewayClient}>{children}</GatewayClientProvider></QueryClientProvider>,
   });
   return { client, hook };
 }

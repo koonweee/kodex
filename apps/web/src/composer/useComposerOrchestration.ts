@@ -12,18 +12,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { refreshQueuedInputs } from "../queuedInputs/cache";
 
 import {
-  compactThread,
-  createQueuedInput,
-  interruptCurrentTurn,
-  submitThreadInput,
-  uploadFiles,
-  uploadImages,
   type ImageUpload,
   type TextElement,
   type TimelineFileAttachment,
   type TimelineSkillMention,
   type UserInput,
 } from "../api/client";
+import { useGatewayClient } from "../api/GatewayClientContext";
 import type { ComposerSettings } from "../ComposerFooterControls";
 import { errorMessageFrom } from "../shared/values";
 import { sameComposerContext, type ComposerContext } from "./settings";
@@ -90,6 +85,7 @@ export function useComposerOrchestration({
   selectedProjectId,
   selectedThreadId,
 }: UseComposerOrchestrationParams) {
+  const api = useGatewayClient();
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [isComposerSubmitting, setIsComposerSubmitting] = useState(false);
   const [isComposerDragActive, setIsComposerDragActive] = useState(false);
@@ -163,7 +159,7 @@ export function useComposerOrchestration({
       }
       setIsComposerSubmitting(true);
       try {
-        await compactThread(selectedThreadId);
+        await api.compactThread(selectedThreadId);
         draftControls.clearText();
         clearPendingAttachments();
       } catch (error) {
@@ -192,7 +188,7 @@ export function useComposerOrchestration({
         const payload = await buildTurnPayload(selectedThreadId, text, attachments, skillInputs, skillTextElements);
         if (intent === "queue") {
           try {
-            await createQueuedInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId);
+            await api.createQueuedInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId);
           } finally {
             void refreshQueuedInputs(queryClient, selectedThreadId);
           }
@@ -210,7 +206,7 @@ export function useComposerOrchestration({
             threadId: selectedThreadId,
           });
         }
-        const result = await submitThreadInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId, intent === "alternate" ? "ifEmpty" : "ifPending");
+        const result = await api.submitThreadInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId, intent === "alternate" ? "ifEmpty" : "ifPending");
         if (result.disposition === "queued") {
           if (optimisticClientRequestId) onOptimisticUserMessageRemoved?.(optimisticClientRequestId);
           void refreshQueuedInputs(queryClient, selectedThreadId);
@@ -253,7 +249,7 @@ export function useComposerOrchestration({
       onThreadTurnStarted(threadId);
       draftControls.clearText();
       const payload = await buildTurnPayload(threadId, text, attachments, skillInputs, skillTextElements);
-      await submitThreadInput(
+      await api.submitThreadInput(
         threadId,
         payload.input,
         payload.attachments,
@@ -284,7 +280,7 @@ export function useComposerOrchestration({
       return;
     }
 
-    await interruptCurrentTurn(selectedThreadId);
+    await api.interruptCurrentTurn(selectedThreadId);
   }
 
   function handleAttachmentInputChange(event: ReactChangeEvent<HTMLInputElement>) {
@@ -386,11 +382,11 @@ export function useComposerOrchestration({
       try {
         uploads =
           imageAttachmentsToUpload.length > 0
-            ? await uploadImages(imageAttachmentsToUpload.map((attachment) => attachment.file))
+            ? await api.uploadImages(imageAttachmentsToUpload.map((attachment) => attachment.file))
             : [];
         fileUploads =
           fileAttachmentsToUpload.length > 0
-            ? await uploadFiles(threadId, fileAttachmentsToUpload.map((attachment) => attachment.file))
+            ? await api.uploadFiles(threadId, fileAttachmentsToUpload.map((attachment) => attachment.file))
             : [];
         if (uploads.length !== imageAttachmentsToUpload.length || fileUploads.length !== fileAttachmentsToUpload.length) {
           throw new Error("Gateway upload response did not match selected attachments");

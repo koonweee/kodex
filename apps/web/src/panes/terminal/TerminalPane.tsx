@@ -2,7 +2,7 @@ import { Alert, Box, Button, Group, Loader, Text } from "@mantine/core";
 import { Plus, RotateCw, Square } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { terminalWebSocketUrl } from "../../api/client";
+import { useGatewayClient } from "../../api/GatewayClientContext";
 import { useInputCapabilities } from "../../shared/inputCapabilities";
 import { errorMessageFrom } from "../../shared/values";
 import {
@@ -34,6 +34,7 @@ const TERMINAL_ACCESSORY_KEYS: Array<{ data: string; label: string }> = [
 ];
 
 export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
+  const api = useGatewayClient();
   const { hasTouchInput } = useInputCapabilities();
   const target = paneTargetRecord(pane);
   const { openNewTerminalPane, setPaneHeaderActions, setPaneTabStatus, updatePane } = useWorkspace();
@@ -220,7 +221,7 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
             className="kodex-terminal-viewport"
             inputSignal={inputSignal}
             onConnectionStateChange={handleConnectionStateChange}
-            webSocketUrl={terminalWebSocketUrl(session.id)}
+            webSocketUrl={api.terminalWebSocketUrl(session.id)}
           />
         ) : null}
       </Box>

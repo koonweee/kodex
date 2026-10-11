@@ -1,12 +1,13 @@
 import { compactCanonicalPayload } from "../../test/canonicalPayloadFixture";
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render as testingRender, screen, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import type { EventEnvelope, ThreadSummary, ThreadViewResponse } from "../../api/client";
 import { mockGateway } from "../../test/gatewayMock";
+import { GatewayTestProvider, renderWithGateway as render } from "../../test/GatewayTestProvider";
 import { createMemoryWorkspacePaneStore } from "../../workspace/paneStore";
 import { WorkspaceProvider, useWorkspace, type ThreadPaneTimelineActionHandler } from "../../workspace/WorkspaceProvider";
 import { ThreadPane } from "./ThreadPane";
@@ -131,8 +132,9 @@ it("loads the canonical initial snapshot after StrictMode cleanup without waitin
     schemaVersion: 1, activePaneId: "pane-strict", dockviewLayout: null,
     panes: [{ id: "pane-strict", kind: "thread", target: { mode: "existing", threadId: "thread-strict" } }],
   });
-  render(
+  testingRender(
     <StrictMode>
+      <GatewayTestProvider>
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         <MantineProvider>
           <WorkspaceProvider paneStore={store} onThreadSnapshotLoaded={onLoaded} onThreadSnapshotLoadFailed={onFailed}
@@ -141,6 +143,7 @@ it("loads the canonical initial snapshot after StrictMode cleanup without waitin
           </WorkspaceProvider>
         </MantineProvider>
       </QueryClientProvider>
+      </GatewayTestProvider>
     </StrictMode>,
   );
 

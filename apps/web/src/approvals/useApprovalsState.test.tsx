@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Approval, ApprovalListResponse, EventEnvelope } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { mockGateway } from "../test/gatewayMock";
+import { GatewayTestProvider } from "../test/GatewayTestProvider";
 import { applyApprovalInvalidation, refreshApprovalSnapshot } from "./cache";
 import { useApprovalsState } from "./useApprovalsState";
 
@@ -22,7 +23,7 @@ function setup() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const onError = vi.fn();
   const hook = renderHook(() => useApprovalsState({ onError }), {
-    wrapper: ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+    wrapper: ({ children }: { children: ReactNode }) => <GatewayTestProvider><QueryClientProvider client={client}>{children}</QueryClientProvider></GatewayTestProvider>,
   });
   return { ...hook, client, onError };
 }

@@ -1,17 +1,18 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { listThreadSubagents } from "../api/client";
+import { useGatewayClient } from "../api/GatewayClientContext";
 import { queryKeys } from "../api/queryKeys";
 
 export function useThreadSubagents(ancestorThreadId: string | null) {
+  const api = useGatewayClient();
   const [open, setOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const query = useInfiniteQuery({
     queryKey: queryKeys.threadSubagents(ancestorThreadId),
     enabled: ancestorThreadId !== null,
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam, signal }) => listThreadSubagents(ancestorThreadId!, { cursor: pageParam, signal }),
+    queryFn: ({ pageParam, signal }) => api.listThreadSubagents(ancestorThreadId!, { cursor: pageParam, signal }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
   const subagents = useMemo(() => query.data?.pages.flatMap((page) => page.subagents) ?? [], [query.data]);

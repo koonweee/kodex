@@ -16,7 +16,8 @@ import { AlertCircle, Sparkles } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import type { EventEnvelope, ThreadRead, ThreadSummary } from "../../api/client";
-import { attachThread, GatewayRequestError, getThreadAppSurface, getThreadTimelinePage } from "../../api/client";
+import { GatewayRequestError } from "../../api/client";
+import { useGatewayClient } from "../../api/GatewayClientContext";
 import { projectEventInvalidatesThread } from "../../projects/cache";
 import { queryKeys } from "../../api/queryKeys";
 import { recordReducerBatch } from "../../events/liveDiagnostics";
@@ -91,6 +92,7 @@ function ExistingThreadPane({
   paneTitle: string | null;
   threadId: string;
 }) {
+  const api = useGatewayClient();
   const { getOptions: getDeliveryOptions } = useThreadDeliveryPreferences();
   const {
     approvals,
@@ -143,7 +145,7 @@ function ExistingThreadPane({
   const [renamePending, setRenamePending] = useState(false);
   const appSurfaceQuery = useQuery({
     queryKey: queryKeys.appSurface(threadId),
-    queryFn: ({ signal }) => getThreadAppSurface(threadId, signal),
+    queryFn: ({ signal }) => api.getThreadAppSurface(threadId, signal),
   });
 
   useEffect(() => {
@@ -179,7 +181,7 @@ function ExistingThreadPane({
         : { phase: "loadingSnapshot", threadId },
     );
     try {
-      const snapshot = await attachThread(threadId, controller.signal, getDeliveryOptions());
+      const snapshot = await api.attachThread(threadId, controller.signal, getDeliveryOptions());
       controller.signal.throwIfAborted();
       if (requestId !== refreshRequestIdRef.current || requestThreadId !== latestThreadIdRef.current) {
         return;
@@ -215,7 +217,7 @@ function ExistingThreadPane({
         void refreshSnapshot();
       }
     }
-  }, [getDeliveryOptions, handleThreadArchived, onThreadSnapshotLoadFailed, onThreadSnapshotLoaded, threadId]);
+  }, [api, getDeliveryOptions, handleThreadArchived, onThreadSnapshotLoadFailed, onThreadSnapshotLoaded, threadId]);
 
   useThreadReadState({
     thread,
@@ -397,7 +399,7 @@ function ExistingThreadPane({
     historyControllerRef.current = controller;
     const snapshotRequestId = refreshRequestIdRef.current;
     setTimeline((current) => setTimelineOlderHistoryLoading(current, true));
-    void getThreadTimelinePage(threadId, { cursor, signal: controller.signal, ...getDeliveryOptions() })
+    void api.getThreadTimelinePage(threadId, { cursor, signal: controller.signal, ...getDeliveryOptions() })
       .then((snapshot) => {
         if (controller.signal.aborted || snapshotRequestId !== refreshRequestIdRef.current || threadId !== latestThreadIdRef.current) return;
         setTimeline((current) => applyTimelineHistoryWindow(current, snapshot));
@@ -412,7 +414,7 @@ function ExistingThreadPane({
       .finally(() => {
         if (historyControllerRef.current === controller) historyControllerRef.current = null;
       });
-  }, [getDeliveryOptions, threadId, timeline.isLoadingOlderHistory, timeline.olderCursor]);
+  }, [api, getDeliveryOptions, threadId, timeline.isLoadingOlderHistory, timeline.olderCursor]);
   const threadApprovals = approvals.filter((approval) => approval.threadId === threadId);
   const isReady = entry.phase === "streamingLive" || entry.phase === "refreshingSnapshot";
   const isInitialSnapshotLoading = (entry.phase === "loadingSnapshot" || entry.phase === "refreshingSnapshot") && !thread;

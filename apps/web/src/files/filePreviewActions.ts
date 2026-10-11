@@ -1,4 +1,4 @@
-import { filePreviewUrl, type TimelineFileAttachment } from "../api/client";
+import type { TimelineFileAttachment } from "../api/client";
 import type { MarkdownPreviewRequest } from "./types";
 
 export type FilePreviewAction =
@@ -15,15 +15,17 @@ export type FilePreviewTarget = {
   title?: string;
 };
 
-export function filePreviewAction(threadId: string, attachment: TimelineFileAttachment): FilePreviewAction {
+type FilePreviewUrl = (threadId: string, path: string) => string;
+
+export function filePreviewAction(filePreviewUrl: FilePreviewUrl, threadId: string, attachment: TimelineFileAttachment): FilePreviewAction {
   return filePreviewActionForTarget(threadId, {
     fileName: attachment.fileName,
     path: attachment.relativePath,
     title: attachment.fileName,
-  });
+  }, filePreviewUrl);
 }
 
-export function filePreviewActionForTarget(threadId: string, target: FilePreviewTarget): FilePreviewAction {
+export function filePreviewActionForTarget(threadId: string, target: FilePreviewTarget, filePreviewUrl: FilePreviewUrl): FilePreviewAction {
   const href = `${filePreviewUrl(threadId, target.path)}${target.fragment ?? ""}`;
   const fileName = target.fileName || fileNameFromPath(target.path) || "download";
   const extension = fileExtensionFromName(fileName);

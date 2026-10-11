@@ -2,6 +2,7 @@ import { Group } from "@mantine/core";
 import type { CSSProperties } from "react";
 
 import type { SkillMetadata } from "../api/client";
+import { useGatewayClient } from "../api/GatewayClientContext";
 import {
   cssUrl,
   skillBrandColor,
@@ -28,6 +29,7 @@ export function MobileSkillCommandSheet({
   onSelect,
   skills,
 }: MobileSkillCommandSheetProps) {
+  const api = useGatewayClient();
   return (
     <MobileTriggerCommandSheet
       activeIndex={activeIndex}
@@ -39,7 +41,7 @@ export function MobileSkillCommandSheet({
       loading={loading}
       loadingLabel="Loading skills..."
       onSelect={(item) => onSelect(item.skill)}
-      renderItem={(item) => <MobileSkillSuggestionContent skill={item.skill} />}
+      renderItem={(item) => <MobileSkillSuggestionContent skill={item.skill} skillIconUrl={api.skillIconUrl} />}
     />
   );
 }
@@ -55,9 +57,9 @@ function skillSuggestionItem(skill: SkillMetadata): SkillSuggestionItem {
   };
 }
 
-function MobileSkillSuggestionContent({ skill }: { skill: SkillMetadata }) {
+function MobileSkillSuggestionContent({ skill, skillIconUrl }: { skill: SkillMetadata; skillIconUrl: (path: string) => string }) {
   const brandColor = skillBrandColor(skill);
-  const iconUrl = skillSmallIconUrl(skill);
+  const iconUrl = skillSmallIconUrl(skill, skillIconUrl);
   const isSvgIcon = skillIconUrlIsSvg(iconUrl);
   const fallbackLabel = skillFallbackIconLabel(skill);
   const iconStyle = brandColor ? ({ "--skill-brand-color": brandColor } as CSSProperties) : undefined;

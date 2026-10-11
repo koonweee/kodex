@@ -1,21 +1,49 @@
 import { MantineProvider } from "@mantine/core";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { createKodexQueryClient } from "../api/queryClient";
 import { queryKeys } from "../api/queryKeys";
 import type { QueueTransfer } from "../api/client";
+import { GatewayClientProvider } from "../api/GatewayClientContext";
+import type { GatewayClient } from "../api/gatewayClient";
 import { mockGateway, requestJson } from "../test/gatewayMock";
+import { renderWithGateway as render } from "../test/GatewayTestProvider";
 import { appendResponseAnnotations } from "../composer/annotations";
 import { NativeQueuePanel } from "./NativeQueuePanel";
 import { useNativeQueue } from "./useNativeQueue";
+import type { NativeQueueController } from "./useNativeQueue";
 import { applyQueueEvent } from "./cache";
 
 afterEach(() => vi.restoreAllMocks());
 const row = (id: string, canSteer = false) => ({ id, threadId: "chat", clientUserMessageId: "reusable", input: [{ type: "text", text: id }], attachments: [], canSteer });
 const saved = (phase: QueueTransfer["phase"]): QueueTransfer => ({ id: "transfer", threadId: "chat", nativeQueueId: "b", clientUserMessageId: "reusable", expectedTurnId: "turn", input: [{ type: "text", text: "Saved correction" }], phase, error: phase === "uncertain" ? "Acknowledgement lost" : null, createdAt: "2026-10-05T00:00:00Z", updatedAt: "2026-10-05T00:00:00Z" });
+
+it("routes colliding queue row mutations through each owning executor", async () => {
+  const first = { deleteQueuedInput: vi.fn(async () => undefined) } as unknown as GatewayClient;
+  const second = { deleteQueuedInput: vi.fn(async () => undefined) } as unknown as GatewayClient;
+  const controller = {
+    busy: false,
+    error: null,
+    mutate: (action: () => Promise<unknown>, onSuccess?: () => void) => { void action().then(onSuccess); },
+    query: { data: { nextCursor: null, queuedInputs: [row("shared-row")], transfers: [] }, error: null },
+    reload: vi.fn(),
+    sendNow: vi.fn(),
+  } as unknown as NativeQueueController;
+  render(<MantineProvider>
+    <GatewayClientProvider client={first}><NativeQueuePanel threadId="shared-thread" queue={controller} canRestoreText onRestoreText={vi.fn()} /></GatewayClientProvider>
+    <GatewayClientProvider client={second}><NativeQueuePanel threadId="shared-thread" queue={controller} canRestoreText onRestoreText={vi.fn()} /></GatewayClientProvider>
+  </MantineProvider>);
+
+  const remove = screen.getAllByRole("button", { name: "Remove" });
+  await userEvent.click(remove[0]);
+  await userEvent.click(remove[1]);
+
+  expect(first.deleteQueuedInput).toHaveBeenCalledWith("shared-thread", "shared-row");
+  expect(second.deleteQueuedInput).toHaveBeenCalledWith("shared-thread", "shared-row");
+});
 function mount(onRestoreText = vi.fn()) {
   const client = createKodexQueryClient();
   function Panel() {

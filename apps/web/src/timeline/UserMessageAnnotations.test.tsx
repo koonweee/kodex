@@ -1,10 +1,13 @@
 import { MantineProvider } from "@mantine/core";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render as testingRender, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { appendResponseAnnotations } from "../composer/annotations";
 import { UserMessageBubble } from "./messageRenderers";
 import type { TimelineItem } from "./reducer";
+import { gatewayTestWrapper } from "../test/GatewayTestProvider";
+
+const render = (ui: Parameters<typeof testingRender>[0]) => testingRender(ui, { wrapper: gatewayTestWrapper });
 
 function renderMessage(text: string, overrides: Partial<TimelineItem> = {}) {
   const item: TimelineItem = { id: "user-1", kind: "user_message", status: "completed", text,

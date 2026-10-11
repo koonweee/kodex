@@ -13,6 +13,8 @@ import {
   validSkillMentionBindings,
 } from "./skillMentions";
 
+const skillIconUrl = (path: string) => `http://localhost:3000/v1/skills/icon?path=${encodeURIComponent(path)}`;
+
 describe("skill mention helpers", () => {
   it("detects active $ tokens and ignores common env vars", () => {
     expect(activeSkillMentionToken("Run $review-fix", "Run $review".length)).toEqual({
@@ -34,7 +36,7 @@ describe("skill mention helpers", () => {
   it("replaces a token and keeps only still-valid bindings", () => {
     const token = activeSkillMentionToken("Run $rev now", "Run $rev".length);
     expect(token).not.toBeNull();
-    const replacement = replaceSkillMentionToken("Run $rev now", token!, skill("review-fix"));
+    const replacement = replaceSkillMentionToken("Run $rev now", token!, skill("review-fix"), skillIconUrl);
 
     expect(replacement.text).toBe("Run $review-fix now");
     expect(replacement.cursor).toBe("Run $review-fix".length);
@@ -92,6 +94,7 @@ describe("skill mention helpers", () => {
         iconSmall: "/skills/review-fix/icon.png",
         shortDescription: "Review loop",
       }),
+      skillIconUrl,
     ).binding;
 
     expect(timelineSkillMentionsFromBindings(text, [binding])).toEqual([
@@ -114,6 +117,7 @@ describe("skill mention helpers", () => {
       "Use $rev",
       { start: "Use ".length, end: "Use $rev".length, query: "rev" },
       skill("review-fix", { displayName: "Review Fix" }),
+      skillIconUrl,
     );
 
     expect(skillInputsFromBindings([replacement.binding])).toEqual([

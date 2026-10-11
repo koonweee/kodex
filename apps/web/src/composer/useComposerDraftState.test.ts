@@ -76,7 +76,8 @@ describe("useComposerDraftState", () => {
   });
 
   it("exposes selected skill metadata synchronously for immediate submit", () => {
-    const { result } = renderHook(() => useComposerDraftState(0));
+    const { result } = renderHook(() => useComposerDraftState(0, undefined, undefined,
+      (path) => `http://localhost:3000/v1/skills/icon?path=${encodeURIComponent(path)}`));
 
     act(() => {
       result.current.updateComposerText("$doc", "$doc".length);

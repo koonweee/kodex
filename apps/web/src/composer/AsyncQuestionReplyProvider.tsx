@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, useRef, useState, type ReactNode } from "react";
-import { submitThreadInput } from "../api/client";
+import { useGatewayClient } from "../api/GatewayClientContext";
 import type { TimelineItem } from "../timeline/state";
 import { canonicalQuestionAnswers, questionReplyClientId } from "./asyncQuestionReplies";
 
@@ -26,6 +26,7 @@ export function AsyncQuestionAnswersProvider({ items, children }: { items: Timel
 export function AsyncQuestionReplyProvider({ threadId, enabled, items = [], children }: {
   threadId: string; enabled: boolean; items?: TimelineItem[]; children: ReactNode;
 }) {
+  const api = useGatewayClient();
   const [states, setStates] = useState<Record<string, ReplyState>>({});
   const answers = useMemo(() => canonicalQuestionAnswers(items), [items]);
   const inFlight = useRef(new Set<string>());
@@ -37,7 +38,7 @@ export function AsyncQuestionReplyProvider({ threadId, enabled, items = [], chil
     inFlight.current.add(key);
     update(key, { pending: true, error: undefined });
     try {
-      await submitThreadInput(threadId, [{ type: "text", text }], [], questionReplyClientId(key));
+      await api.submitThreadInput(threadId, [{ type: "text", text }], [], questionReplyClientId(key));
       update(key, { pending: false, ...(clearDraft ? { draft: "" } : {}) });
     } catch (error) {
       update(key, { pending: false, error: error instanceof Error ? error.message : "Could not send reply" });

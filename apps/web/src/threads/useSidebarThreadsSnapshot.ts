@@ -1,7 +1,7 @@
 import { useCallback, type RefObject } from "react";
 import { useQuery, type QueryClient } from "@tanstack/react-query";
 
-import { getSidebarThreads, type Project, type SidebarThreadSummary, type ThreadSummary } from "../api/client";
+import type { GatewayClient, Project, SidebarThreadSummary, ThreadSummary } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import {
   mergeChatThreadData,
@@ -9,6 +9,7 @@ import {
 } from "./cache";
 
 type SidebarThreadsSnapshotArgs = {
+  api: GatewayClient;
   queryClient: QueryClient;
   routeSelectedThreadRef: RefObject<ThreadSummary | null>;
   selectedThreadIdRef: RefObject<string | null>;
@@ -17,6 +18,7 @@ type SidebarThreadsSnapshotArgs = {
 };
 
 export function useSidebarThreadsSnapshot({
+  api,
   queryClient,
   routeSelectedThreadRef,
   selectedThreadIdRef,
@@ -36,7 +38,7 @@ export function useSidebarThreadsSnapshot({
           .filter(([projectId]) => projectId.length > 0),
       );
       const beforePinnedSnapshot = queryClient.getQueryData<ThreadSummary[]>(queryKeys.pinnedThreads);
-      const snapshot = await getSidebarThreads(signal);
+      const snapshot = await api.getSidebarThreads(signal);
       signal.throwIfAborted();
       queryClient.setQueryData<Project[]>(queryKeys.projects, snapshot.projects);
 

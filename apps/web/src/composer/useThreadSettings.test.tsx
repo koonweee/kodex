@@ -4,6 +4,8 @@ import type { PropsWithChildren } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { getThreadSettings, updateThreadSettings, type EventEnvelope, type ThreadSettingsResponse, type ThreadViewPatch } from "../api/client";
+import { GatewayClientProvider } from "../api/GatewayClientContext";
+import type { GatewayClient } from "../api/gatewayClient";
 import { createKodexQueryClient } from "../api/queryClient";
 import { applyThreadSettingsEvent } from "./threadSettingsCache";
 import { useThreadSettings } from "./useThreadSettings";
@@ -22,7 +24,7 @@ it("cancels an initial stale read on an applied marker and always reads current 
     return new Promise((resolve) => { release = resolve; });
   }).mockResolvedValue({ ...initial, effort: "high", serviceTier: "fast" });
   const hook = renderHook(() => useThreadSettings("chat"), {
-    wrapper: ({ children }: PropsWithChildren) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+    wrapper: ({ children }: PropsWithChildren) => <QueryClientProvider client={client}><GatewayClientProvider client={{ getThreadSettings, updateThreadSettings } as GatewayClient}>{children}</GatewayClientProvider></QueryClientProvider>,
   });
   await waitFor(() => expect(getThreadSettings).toHaveBeenCalledTimes(1));
   act(() => applyThreadSettingsEvent(client, { id: "applied", seq: 10, kind: "thread.settings_updated", threadId: "chat", payload: { threadId: "chat" }, receivedAt: "2026-10-04T00:00:00Z" }));
@@ -46,7 +48,7 @@ it("replaces a pending pre-turn failure after the canonical active lifecycle arr
     return new Promise((_resolve, reject) => { failOld = reject; });
   }).mockResolvedValue({ ...initial, effort: "high", serviceTier: "fast" });
   const hook = renderHook(() => useThreadSettings("chat"), {
-    wrapper: ({ children }: PropsWithChildren) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+    wrapper: ({ children }: PropsWithChildren) => <QueryClientProvider client={client}><GatewayClientProvider client={{ getThreadSettings, updateThreadSettings } as GatewayClient}>{children}</GatewayClientProvider></QueryClientProvider>,
   });
   await waitFor(() => expect(getThreadSettings).toHaveBeenCalledTimes(1));
   const patch: ThreadViewPatch = {

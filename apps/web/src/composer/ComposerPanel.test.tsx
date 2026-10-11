@@ -6,6 +6,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useRef, useState, type ComponentProps, type FormEvent, type ReactElement, type ReactNode, type RefObject } from "react";
 
 import { listSkills } from "../api/client";
+import { GatewayClientProvider } from "../api/GatewayClientContext";
+import type { GatewayClient } from "../api/gatewayClient";
 import { createKodexQueryClient } from "../api/queryClient";
 import type { SkillMetadata } from "../api/client";
 import type { ComposerSettings } from "../ComposerFooterControls";
@@ -51,7 +53,7 @@ function mockSkills(skills: SkillMetadata[]) {
 function queryWrapper() {
   const queryClient = createKodexQueryClient();
   return function TestQueryProvider({ children }: { children: ReactNode }) {
-    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    return <QueryClientProvider client={queryClient}><GatewayClientProvider client={{ listSkills, skillIconUrl: (path: string) => new URL(`/v1/skills/icon?path=${encodeURIComponent(path)}`, window.location.origin).toString() } as GatewayClient}>{children}</GatewayClientProvider></QueryClientProvider>;
   };
 }
 

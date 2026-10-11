@@ -1,9 +1,10 @@
 import { MantineProvider } from "@mantine/core";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useInputCapabilities } from "../../shared/inputCapabilities";
 import type { TerminalSessionInfo } from "../../api/client";
+import { renderWithGateway as render } from "../../test/GatewayTestProvider";
 import { useGatewayTerminalSession } from "../../terminal/useGatewayTerminalSession";
 import type { WorkspacePane } from "../../workspace/paneTypes";
 import { TerminalPane } from "./TerminalPane";

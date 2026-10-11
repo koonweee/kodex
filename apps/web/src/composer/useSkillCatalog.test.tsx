@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { listSkills, type SkillMetadata } from "../api/client";
+import { GatewayClientProvider } from "../api/GatewayClientContext";
+import type { GatewayClient } from "../api/gatewayClient";
 import { createKodexQueryClient } from "../api/queryClient";
 import { useSkillCatalog } from "./useSkillCatalog";
 
@@ -45,7 +47,7 @@ function deferred<T>() {
 function queryWrapper() {
   const queryClient = createKodexQueryClient();
   return function TestQueryProvider({ children }: { children: ReactNode }) {
-    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    return <QueryClientProvider client={queryClient}><GatewayClientProvider client={{ listSkills } as GatewayClient}>{children}</GatewayClientProvider></QueryClientProvider>;
   };
 }
 

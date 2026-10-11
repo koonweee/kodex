@@ -6,7 +6,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 
-import { filePreviewUrl } from "../api/client";
+import { useGatewayClient } from "../api/GatewayClientContext";
 import { fileNameFromPath, filePreviewActionForTarget, type FilePreviewAction } from "../files/filePreviewActions";
 import type { MarkdownPreviewRequest } from "../files/types";
 import type { ImageLightboxImage } from "../images/types";
@@ -27,10 +27,11 @@ export type MarkdownContentProps = {
 };
 
 export function MarkdownContent({ className, onImageOpen, onMarkdownOpen, text, threadId, streaming }: MarkdownContentProps) {
+  const api = useGatewayClient();
   const reveal = useStreamingText(text, streaming);
   const components = useMemo(
-    () => markdownComponents(threadId, onImageOpen, onMarkdownOpen),
-    [onImageOpen, onMarkdownOpen, threadId],
+    () => markdownComponents(api.filePreviewUrl, threadId, onImageOpen, onMarkdownOpen),
+    [api, onImageOpen, onMarkdownOpen, threadId],
   );
 
   return (
@@ -43,18 +44,19 @@ export function MarkdownContent({ className, onImageOpen, onMarkdownOpen, text, 
 }
 
 function markdownComponents(
+  filePreviewUrl: (threadId: string, path: string) => string,
   threadId?: string,
   onImageOpen?: (image: ImageLightboxImage) => void,
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void,
 ): Components {
   return {
     img: ({ alt, src, title }) => {
-      const preview = localImagePreviewHref(threadId, src);
+      const preview = localImagePreviewHref(filePreviewUrl, threadId, src);
       return <img alt={alt} className="kodex-markdown-image" src={preview?.href ?? src} title={title} />;
     },
     a: ({ children, href, title }) => {
-      const imagePreview = localImagePreviewHref(threadId, href);
-      const filePreview = localFilePreviewHref(threadId, href);
+      const imagePreview = localImagePreviewHref(filePreviewUrl, threadId, href);
+      const filePreview = localFilePreviewHref(filePreviewUrl, threadId, href);
       if (imagePreview) {
         return (
           <a
@@ -205,15 +207,15 @@ function reactNodeText(children: ReactNode): string {
     .join("");
 }
 
-function localFilePreviewHref(threadId?: string, href?: string): FilePreviewAction | null {
+function localFilePreviewHref(filePreviewUrl: (threadId: string, path: string) => string, threadId?: string, href?: string): FilePreviewAction | null {
   const target = href ? localFilePreviewActionTarget(href) : null;
   if (!threadId || !target) {
     return null;
   }
-  return filePreviewActionForTarget(threadId, target);
+  return filePreviewActionForTarget(threadId, target, filePreviewUrl);
 }
 
-function localImagePreviewHref(threadId?: string, href?: string): { href: string; path: string } | null {
+function localImagePreviewHref(filePreviewUrl: (threadId: string, path: string) => string, threadId?: string, href?: string): { href: string; path: string } | null {
   const target = href ? localImagePreviewTarget(href) : null;
   if (!threadId || !target) {
     return null;

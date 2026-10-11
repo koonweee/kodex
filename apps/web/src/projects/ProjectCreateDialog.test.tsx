@@ -4,7 +4,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { createProject, listDirectories } from "../api/client";
+import { createProject, listDirectories, type GatewayClient } from "../api/client";
 import { ProjectCreateDialog } from "./ProjectCreateDialog";
 
 vi.mock("../api/client", () => ({ createProject: vi.fn(), listDirectories: vi.fn() }));
@@ -16,7 +16,8 @@ beforeEach(() => {
   }));
 });
 function setup() {
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MantineProvider><ProjectCreateDialog onClose={vi.fn()} onCreated={vi.fn()} /></MantineProvider></QueryClientProvider>);
+  const api = { createProject, listDirectories } as GatewayClient;
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MantineProvider><ProjectCreateDialog api={api} onClose={vi.fn()} onCreated={vi.fn()} /></MantineProvider></QueryClientProvider>);
   return within(screen.getByRole("dialog", { name: "Add project" }));
 }
 

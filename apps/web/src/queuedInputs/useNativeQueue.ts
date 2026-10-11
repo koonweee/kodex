@@ -1,16 +1,17 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 
-import { listQueuedInputs, sendFirstQueuedInputNow, sendQueuedInputNow } from "../api/client";
+import { useGatewayClient } from "../api/GatewayClientContext";
 import { queryKeys } from "../api/queryKeys";
 import { errorMessageFrom } from "../shared/values";
 import { refreshQueuedInputs } from "./cache";
 
 export function useNativeQueue(threadId: string | null) {
+  const api = useGatewayClient();
   const client = useQueryClient();
   const query = useQuery({
     queryKey: queryKeys.queuedInputs(threadId ?? ""), enabled: threadId !== null,
-    queryFn: ({ signal }) => listQueuedInputs(threadId!, signal),
+    queryFn: ({ signal }) => api.listQueuedInputs(threadId!, signal),
   });
   const inFlight = useRef(false);
   const [busy, setBusy] = useState(false);
@@ -31,7 +32,7 @@ export function useNativeQueue(threadId: string | null) {
 
   function sendNow(queueId?: string) {
     if (threadId === null) return false;
-    void mutate(() => queueId === undefined ? sendFirstQueuedInputNow(threadId) : sendQueuedInputNow(threadId, queueId));
+    void mutate(() => queueId === undefined ? api.sendFirstQueuedInputNow(threadId) : api.sendQueuedInputNow(threadId, queueId));
     return true;
   }
 

@@ -1,14 +1,14 @@
 import { isCancelledError, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { listPinnedThreads, setThreadPinned, type SidebarThreadsResponse, type ThreadSummary } from "../api/client";
+import type { GatewayClient, SidebarThreadsResponse, ThreadSummary } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { refreshProjectState } from "../projects/cache";
 import { appendThreadPage, mergeChatThreadData } from "./cache";
 
 export function usePinnedThreads(snapshot: SidebarThreadsResponse | undefined, {
-  onChanged, onError, snapshotUpdatedAt,
-}: { onChanged: () => void; onError: (error: unknown) => void; snapshotUpdatedAt: number }) {
+  api, onChanged, onError, snapshotUpdatedAt,
+}: { api: GatewayClient; onChanged: () => void; onError: (error: unknown) => void; snapshotUpdatedAt: number }) {
   const queryClient = useQueryClient();
   const [cursor, setCursor] = useState<string | null>(null);
   const [paginationState, setPaginationState] = useState<"idle" | "loading" | "error">("idle");
@@ -24,7 +24,7 @@ export function usePinnedThreads(snapshot: SidebarThreadsResponse | undefined, {
     queryFn: async ({ signal }) => {
       const cached = queryClient.getQueryData<ThreadSummary[]>(queryKeys.pinnedThreads);
       if (cached && !queryClient.getQueryState(queryKeys.pinnedThreads)?.isInvalidated) return cached;
-      const response = await listPinnedThreads({ signal });
+      const response = await api.listPinnedThreads({ signal });
       signal.throwIfAborted();
       setCursor(response.nextCursor ?? null);
       return mergeChatThreadData(queryClient.getQueryData<ThreadSummary[]>(queryKeys.pinnedThreads), response.threads, cached);
@@ -32,7 +32,7 @@ export function usePinnedThreads(snapshot: SidebarThreadsResponse | undefined, {
   });
   const pin = useMutation({
     mutationFn: ({ threadId, pinned, beforeThreadId }: { threadId: string; pinned: boolean; beforeThreadId?: string | null }) =>
-      setThreadPinned(threadId, pinned, beforeThreadId),
+      api.setThreadPinned(threadId, pinned, beforeThreadId),
     onSuccess: () => { onChanged(); return refreshProjectState(queryClient); },
     onError,
   });
@@ -44,7 +44,7 @@ export function usePinnedThreads(snapshot: SidebarThreadsResponse | undefined, {
     try {
       const response = await queryClient.fetchQuery({
         queryKey: [...queryKeys.threadPages, "pinned", requestedCursor],
-        queryFn: ({ signal }) => listPinnedThreads({ cursor: requestedCursor, signal }),
+        queryFn: ({ signal }) => api.listPinnedThreads({ cursor: requestedCursor, signal }),
         staleTime: 0,
       });
       queryClient.setQueryData<ThreadSummary[]>(queryKeys.pinnedThreads, (current) => appendThreadPage(current, response.threads));

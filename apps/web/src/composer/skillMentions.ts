@@ -1,4 +1,3 @@
-import { skillIconUrl } from "../api/client";
 import type { SkillMetadata, TextElement, TimelineSkillMention, UserInput } from "../api/client";
 
 export type SkillMentionToken = {
@@ -67,6 +66,7 @@ export function replaceSkillMentionToken(
   text: string,
   token: SkillMentionToken,
   skill: SkillMetadata,
+  skillIconUrl: (path: string) => string,
 ): { binding: SkillMentionBinding; cursor: number; text: string } {
   const insertText = `$${skill.name}`;
   const needsTrailingSpace = token.end >= text.length || !/\s/.test(text[token.end] ?? "");
@@ -218,7 +218,7 @@ export function skillBrandColor(skill: SkillMetadata): string | undefined {
   return trimmed(skill.interface?.brandColor);
 }
 
-export function skillSmallIconUrl(skill: SkillMetadata): string | undefined {
+export function skillSmallIconUrl(skill: SkillMetadata, skillIconUrl: (path: string) => string): string | undefined {
   const iconSmall = trimmed(skill.interface?.iconSmall);
   return iconSmall ? skillIconUrl(iconSmall) : undefined;
 }

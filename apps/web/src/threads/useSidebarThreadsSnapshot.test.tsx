@@ -3,7 +3,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import type { PropsWithChildren } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getSidebarThreads, type SidebarThreadsResponse, type SidebarThreadSummary, type ThreadSummary } from "../api/client";
+import { getSidebarThreads, type GatewayClient, type SidebarThreadsResponse, type SidebarThreadSummary, type ThreadSummary } from "../api/client";
 import { applyProjectEvent, refreshProjectState } from "../projects/cache";
 import { queryKeys } from "../api/queryKeys";
 import { useSidebarThreadsSnapshot } from "./useSidebarThreadsSnapshot";
@@ -24,6 +24,7 @@ function snapshot(assigned: boolean, deleted = false): SidebarThreadsResponse {
 function mountClient() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const hook = renderHook(() => useSidebarThreadsSnapshot({
+    api: { getSidebarThreads } as GatewayClient,
     queryClient: client,
     routeSelectedThreadRef: { current: null },
     selectedThreadIdRef: { current: null },

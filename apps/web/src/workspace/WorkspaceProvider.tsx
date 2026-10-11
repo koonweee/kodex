@@ -10,7 +10,7 @@ import {
   type ThreadSummary,
   type TimelineSkillMention,
 } from "../api/client";
-import { useGatewayInstanceStorage, useGatewayInstanceValidation, useGatewayStreamConnected } from "../api/GatewayInstanceBoundary";
+import { useExecutorConnection, useGatewayInstanceStorage, useGatewayInstanceValidation, useGatewayStreamConnected } from "../api/GatewayClientContext";
 import type { MarkdownPreviewRequest } from "../files/types";
 import type { ImageLightboxImage } from "../images/types";
 import { recordLiveEvent } from "../events/liveDiagnostics";
@@ -196,6 +196,7 @@ export function WorkspaceProvider({
   threadActions = {},
 }: WorkspaceProviderProps) {
   const instanceStorage = useGatewayInstanceStorage();
+  const executorConnection = useExecutorConnection();
   const validateInstance = useGatewayInstanceValidation();
   const handleStreamConnected = useGatewayStreamConnected();
   const paneStore = useMemo(
@@ -370,6 +371,7 @@ export function WorkspaceProvider({
   useEffect(() => {
     const client = createEventStreamClient({
       beforeConnect: validateInstance,
+      connection: executorConnection,
       cursor: liveEventCursorRef.current,
       includeGlobal: true,
       ...getDeliveryOptions(),
@@ -393,7 +395,7 @@ export function WorkspaceProvider({
     deliveryStreamRef.current = client;
     client.connect();
     return () => { deliveryStreamRef.current = null; client.close(); };
-  }, [getDeliveryOptions, handleStreamConnected, publishThreadPaneTimelineAction, subscribedThreadIdsKey, validateInstance]);
+  }, [executorConnection, getDeliveryOptions, handleStreamConnected, publishThreadPaneTimelineAction, subscribedThreadIdsKey, validateInstance]);
 
   useEffect(() => {
     deliveryStreamRef.current?.updateDeliveryOptions({ includeDebugEvents, includeCommandOutputs });

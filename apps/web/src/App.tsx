@@ -21,21 +21,7 @@ import { formatUsageLimitLines } from "./account/rateLimits";
 import { useAccountSession } from "./account/useAccountSession";
 import { useUsageLimits } from "./account/useUsageLimits";
 import {
-  archiveThread,
-  createAutomation,
-  createChatThread,
-  createThread,
-  deleteAutomation,
-  getCapabilities,
-  listAutomations,
-  listChatThreadsPage,
-  listProjects,
-  listThreadsPage,
-  pauseAutomation,
-  renameThread,
-  resumeAutomation,
-  setThreadNotificationsEnabled,
-  updateAutomation,
+  defaultGatewayClient,
   type Approval,
   type Automation,
   type AutomationCreateRequest,
@@ -44,7 +30,8 @@ import {
   type Project,
   type ThreadSummary,
 } from "./api/client";
-import { queryClient } from "./api/queryClient";
+import { ExecutorRuntimeProvider, GatewayClientProvider, useGatewayClient } from "./api/GatewayClientContext";
+import { queryClient, type ExecutorRuntime } from "./api/queryClient";
 import { queryKeys } from "./api/queryKeys";
 import {
   deleteCachedAutomation,
@@ -53,7 +40,6 @@ import {
 } from "./automations/cache";
 import { ThreadPaneComposerBridge } from "./composer/ThreadPaneComposerBridge";
 import { WorkspaceProjectCreateDialog } from "./projects/ProjectCreateDialog";
-import { moveProject } from "./api/client";
 import { refreshProjectState } from "./projects/cache";
 import type { ComposerSettings } from "./ComposerFooterControls";
 import type { ComposerDraftStore } from "./composer/useComposerDraftState";
@@ -152,11 +138,12 @@ function useEventCallback<TArgs extends unknown[], TResult>(
 }
 
 type AppProps = {
+  executorRuntime?: ExecutorRuntime;
   queryClientInstance?: QueryClient;
   workspacePaneStore?: WorkspacePaneStoreAdapter;
 };
 
-export function App({ queryClientInstance = queryClient, workspacePaneStore }: AppProps = {}) {
+export function App({ executorRuntime, queryClientInstance = queryClient, workspacePaneStore }: AppProps = {}) {
   const { preferences, resolvedSchemeId: colorSchemeId, setMode, setTheme, selectTheme } = useAppearancePreferences();
   const [hasComposerTextDraft, setHasComposerTextDraft] = useState(false);
   const colorScheme = useMemo(() => getKodexColorScheme(colorSchemeId), [colorSchemeId]);
@@ -169,28 +156,27 @@ export function App({ queryClientInstance = queryClient, workspacePaneStore }: A
   useEffect(() => installLiveLongTaskObserver(), []);
 
   const isThemeWorkbench = isThemeWorkbenchRoute();
-
-  return (
-    <QueryClientProvider client={queryClientInstance}>
-      <MantineProvider forceColorScheme={colorScheme.mode} theme={theme}>
-        <PwaLifecycle hasComposerTextDraft={hasComposerTextDraft} />
-        {isThemeWorkbench ? (
-          <Suspense fallback={null}>
-            <ThemeWorkbench colorSchemeId={colorSchemeId} onColorSchemeChange={selectTheme} />
-          </Suspense>
-        ) : (
-          <KodexShell
-            colorSchemeId={colorSchemeId}
-            appearance={preferences}
-            onAppearanceModeChange={setMode}
-            onComposerTextDraftPresenceChange={setHasComposerTextDraft}
-            onThemeChange={setTheme}
-            workspacePaneStore={workspacePaneStore}
-          />
-        )}
-      </MantineProvider>
-    </QueryClientProvider>
+  const content = (
+    <MantineProvider forceColorScheme={colorScheme.mode} theme={theme}>
+      <PwaLifecycle hasComposerTextDraft={hasComposerTextDraft} />
+      {isThemeWorkbench ? (
+        <Suspense fallback={null}>
+          <ThemeWorkbench colorSchemeId={colorSchemeId} onColorSchemeChange={selectTheme} />
+        </Suspense>
+      ) : (
+        <KodexShell
+          colorSchemeId={colorSchemeId}
+          appearance={preferences}
+          onAppearanceModeChange={setMode}
+          onComposerTextDraftPresenceChange={setHasComposerTextDraft}
+          onThemeChange={setTheme}
+          workspacePaneStore={workspacePaneStore}
+        />
+      )}
+    </MantineProvider>
   );
+  if (executorRuntime) return <ExecutorRuntimeProvider runtime={executorRuntime}>{content}</ExecutorRuntimeProvider>;
+  return <QueryClientProvider client={queryClientInstance}><GatewayClientProvider client={defaultGatewayClient}>{content}</GatewayClientProvider></QueryClientProvider>;
 }
 
 function KodexShell({
@@ -208,6 +194,7 @@ function KodexShell({
   onThemeChange: (id: KodexColorSchemeId) => void;
   workspacePaneStore?: WorkspacePaneStoreAdapter;
 }) {
+  const gateway = useGatewayClient();
   const [initialRoute] = useState(() => currentKodexRoute());
   const queryClientForShell = useQueryClient();
   const useSingleThreadWorkspace = useNarrowWorkspace();
@@ -290,6 +277,7 @@ function KodexShell({
     scopedSidebarSnapshotStaleTime,
     sidebarThreadsQuery,
   } = useSidebarThreadsSnapshot({
+    api: gateway,
     queryClient: queryClientForShell,
     routeSelectedThreadRef,
     selectedThreadIdRef,
@@ -306,12 +294,12 @@ function KodexShell({
       if (seededProjects) {
         return seededProjects;
       }
-      return listProjects(signal);
+      return gateway.listProjects(signal);
     },
   });
   const capabilitiesQuery = useQuery({
     queryKey: queryKeys.capabilities,
-    queryFn: ({ signal }) => getCapabilities(signal),
+    queryFn: ({ signal }) => gateway.getCapabilities(signal),
     staleTime: Infinity,
   });
   const projects = projectsQuery.data ?? EMPTY_PROJECTS;
@@ -328,7 +316,7 @@ function KodexShell({
           return seededThreads;
         }
         const beforeSnapshot = queryClientForShell.getQueryData<ThreadSummary[]>(queryKeys.projectThreads(project.id));
-        const response = await listThreadsPage(project.id, { signal });
+        const response = await gateway.listThreadsPage(project.id, { signal });
         signal.throwIfAborted();
         setProjectThreadNextCursors((current) => ({ ...current, [project.id]: response.nextCursor ?? null }));
         return mergeProjectThreadData(
@@ -359,7 +347,7 @@ function KodexShell({
         return seededThreads;
       }
       const beforeSnapshot = queryClientForShell.getQueryData<ThreadSummary[]>(queryKeys.chatThreads);
-      const response = await listChatThreadsPage({ signal });
+      const response = await gateway.listChatThreadsPage({ signal });
       signal.throwIfAborted();
       setChatThreadsNextCursor(response.nextCursor ?? null);
       return mergeChatThreadData(
@@ -370,6 +358,7 @@ function KodexShell({
     },
   });
   const nativePinned = usePinnedThreads(sidebarThreadsQuery.data, {
+    api: gateway,
     snapshotUpdatedAt: sidebarThreadsQuery.dataUpdatedAt,
     onChanged: () => publishThreadPaneTimelineAction({ kind: "refresh_snapshot" }),
     onError: reportError,
@@ -379,7 +368,7 @@ function KodexShell({
     queryKey: queryKeys.automations,
     queryFn: async () => {
       const beforeSnapshot = queryClientForShell.getQueryData<Automation[]>(queryKeys.automations);
-      const snapshot = await listAutomations();
+      const snapshot = await gateway.listAutomations();
       const current = queryClientForShell.getQueryData<Automation[]>(queryKeys.automations);
       if (!beforeSnapshot && current && current.length > 0) {
         return current;
@@ -393,37 +382,37 @@ function KodexShell({
   });
   const { usageLimitSnapshot, applyUsageLimitSnapshot } = useUsageLimits();
   const createAutomationMutation = useMutation({
-    mutationFn: createAutomation,
+    mutationFn: gateway.createAutomation,
     onSuccess: (automation) => upsertCachedAutomation(queryClientForShell, automation),
   });
   const updateAutomationMutation = useMutation({
     mutationFn: ({ automationId, request }: { automationId: string; request: AutomationUpdateRequest }) =>
-      updateAutomation(automationId, request),
+      gateway.updateAutomation(automationId, request),
     onSuccess: (automation) => upsertCachedAutomation(queryClientForShell, automation),
   });
   const pauseAutomationMutation = useMutation({
-    mutationFn: pauseAutomation,
+    mutationFn: gateway.pauseAutomation,
     onSuccess: (automation) => upsertCachedAutomation(queryClientForShell, automation),
   });
   const resumeAutomationMutation = useMutation({
-    mutationFn: resumeAutomation,
+    mutationFn: gateway.resumeAutomation,
     onSuccess: (automation) => upsertCachedAutomation(queryClientForShell, automation),
   });
   const deleteAutomationMutation = useMutation({
     mutationFn: async (automationId: string) => {
-      await deleteAutomation(automationId);
+      await gateway.deleteAutomation(automationId);
       return automationId;
     },
     onSuccess: (automationId) => deleteCachedAutomation(queryClientForShell, automationId),
   });
-  const archiveThreadMutation = useMutation({ mutationFn: archiveThread });
+  const archiveThreadMutation = useMutation({ mutationFn: gateway.archiveThread });
   const renameThreadMutation = useMutation({
-    mutationFn: ({ threadId, name }: { threadId: string; name: string }) => renameThread(threadId, name),
+    mutationFn: ({ threadId, name }: { threadId: string; name: string }) => gateway.renameThread(threadId, name),
     onSuccess: (thread) => replaceThread(thread),
   });
   const threadNotificationsMutation = useMutation({
     mutationFn: ({ threadId, enabled }: { threadId: string; enabled: boolean }) =>
-      setThreadNotificationsEnabled(threadId, enabled),
+      gateway.setThreadNotificationsEnabled(threadId, enabled),
   });
   const chatThreads = chatThreadsQuery.data ?? EMPTY_THREADS;
   const pinnedThreads = nativePinned.threads;
@@ -657,7 +646,7 @@ function KodexShell({
   });
 
   function handleMoveProject(projectId: string, beforeProjectId: string | null) {
-    void moveProject(projectId, beforeProjectId).then(() => refreshProjectState(queryClientForShell)).catch(reportError);
+    void gateway.moveProject(projectId, beforeProjectId).then(() => refreshProjectState(queryClientForShell)).catch(reportError);
   }
 
   async function createDraftThreadFromComposer({
@@ -675,8 +664,8 @@ function KodexShell({
     if (projectId && !cwd) throw new Error("Edit this project to choose one root directory before starting a chat.");
     const thread = optimisticThreadSummary(
       projectId
-        ? await createThread(projectId, { ...createThreadOptions(threadSettings), cwd: cwd! })
-        : await createChatThread(firstMessageText, createThreadOptions(threadSettings)),
+        ? await gateway.createThread(projectId, { ...createThreadOptions(threadSettings), cwd: cwd! })
+        : await gateway.createChatThread(firstMessageText, createThreadOptions(threadSettings)),
       firstMessageText,
     );
     void refreshProjectState(queryClientForShell);
@@ -891,7 +880,7 @@ function KodexShell({
     try {
       const response = await queryClientForShell.fetchQuery({
         queryKey: [...queryKeys.threadPages, "chat", cursor],
-        queryFn: ({ signal }) => listChatThreadsPage({ cursor, signal }),
+        queryFn: ({ signal }) => gateway.listChatThreadsPage({ cursor, signal }),
         staleTime: 0,
       });
       queryClientForShell.setQueryData<ThreadSummary[]>(queryKeys.chatThreads, (current) =>
@@ -919,7 +908,7 @@ function KodexShell({
     try {
       const response = await queryClientForShell.fetchQuery({
         queryKey: [...queryKeys.threadPages, "project", projectId, cursor],
-        queryFn: ({ signal }) => listThreadsPage(projectId, { cursor, signal }),
+        queryFn: ({ signal }) => gateway.listThreadsPage(projectId, { cursor, signal }),
         staleTime: 0,
       });
       queryClientForShell.setQueryData<ThreadSummary[]>(queryKeys.projectThreads(projectId), (current) => appendThreadPage(current, response.threads));
@@ -1144,7 +1133,7 @@ function KodexShell({
           selectedMainPane === "thread" && !isSelectedThreadSnapshotDeferred ? routeThreadPaneId ?? unavailableThreadId : null
         }
         />
-        {projectFormOpen ? <WorkspaceProjectCreateDialog onClose={() => setProjectFormOpen(false)} onCreated={(project) => handleCreateThread(project.id)} onError={reportError} /> : null}
+        {projectFormOpen ? <WorkspaceProjectCreateDialog api={gateway} onClose={() => setProjectFormOpen(false)} onCreated={(project) => handleCreateThread(project.id)} onError={reportError} /> : null}
       </WorkspaceProvider>
       {lightboxImage ? (
         <Suspense fallback={null}>

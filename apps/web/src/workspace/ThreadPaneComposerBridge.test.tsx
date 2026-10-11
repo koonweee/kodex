@@ -1,10 +1,11 @@
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { ThreadPaneComposerBridge } from "../composer/ThreadPaneComposerBridge";
+import { renderWithGateway as render } from "../test/GatewayTestProvider";
 import type { ComposerSettings } from "../ComposerFooterControls";
 import type { ThreadSettingsResponse } from "../api/client";
 import {

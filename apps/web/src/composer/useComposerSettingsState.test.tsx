@@ -4,6 +4,8 @@ import type { PropsWithChildren } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { getComposerSettings, listModels, type ComposerSettingsResponse } from "../api/client";
+import { GatewayClientProvider } from "../api/GatewayClientContext";
+import type { GatewayClient } from "../api/gatewayClient";
 import { useComposerSettingsState } from "./useComposerSettingsState";
 
 vi.mock("../api/client", () => ({ getComposerSettings: vi.fn(), listModels: vi.fn() }));
@@ -22,7 +24,7 @@ it("keeps cwd-specific hydration out of global defaults even when responses fini
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const hook = renderHook(() => useComposerSettingsState({
     projects: [], onError: vi.fn(),
-  }), { wrapper: ({ children }: PropsWithChildren) => <QueryClientProvider client={client}>{children}</QueryClientProvider> });
+  }), { wrapper: ({ children }: PropsWithChildren) => <QueryClientProvider client={client}><GatewayClientProvider client={{ getComposerSettings, listModels } as GatewayClient}>{children}</GatewayClientProvider></QueryClientProvider> });
   await act(async () => { await hook.result.current.hydrateComposerDefaults(null, null); });
   let slow!: ReturnType<typeof hook.result.current.hydrateComposerDefaults>;
   await act(async () => { slow = hook.result.current.hydrateComposerDefaults(null, "/slow-repo"); });
@@ -43,7 +45,7 @@ it.each([
   const hook = renderHook(() => useComposerSettingsState({
     projects: [{ id: "project", name: "Project", roots, metadata: {}, position: 0, createdAt: 1, updatedAt: 1, recencyAt: null }],
     onError: vi.fn(),
-  }), { wrapper: ({ children }: PropsWithChildren) => <QueryClientProvider client={client}>{children}</QueryClientProvider> });
+  }), { wrapper: ({ children }: PropsWithChildren) => <QueryClientProvider client={client}><GatewayClientProvider client={{ getComposerSettings, listModels } as GatewayClient}>{children}</GatewayClientProvider></QueryClientProvider> });
   await act(async () => { await hook.result.current.hydrateComposerDefaults("project", "/outside-roots"); });
   if (expectedCwd) expect(getComposerSettings).toHaveBeenCalledWith("project", expectedCwd, expect.any(AbortSignal));
   else expect(getComposerSettings).not.toHaveBeenCalled();

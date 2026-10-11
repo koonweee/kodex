@@ -2,16 +2,20 @@ import userEvent from "@testing-library/user-event";
 import { MantineProvider } from "@mantine/core";
 import { act, fireEvent, render, screen, waitFor, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
 import { AsyncQuestionAnswersProvider, AsyncQuestionReplyProvider } from "../composer/AsyncQuestionReplyProvider";
 import { submitThreadInput } from "../api/client";
+import { GatewayClientProvider } from "../api/GatewayClientContext";
+import type { GatewayClient } from "../api/gatewayClient";
 import { TimelineItemRenderer } from "./renderers";
 import type { TimelineItem } from "./state";
 import { asyncQuestionKey, questionReplyClientId } from "../composer/asyncQuestionReplies";
 vi.mock("../api/client", async (original) => ({ ...await original<typeof import("../api/client")>(), submitThreadInput: vi.fn() }));
 const item: TimelineItem = { id: "question", serverItemId: "native-question", kind: "assistant_message", status: "completed", turnId: "turn", displayOrder: 1, text: "Fallback bullets", debugEvents: [], payload: {}, asyncQuestions: [{ title: "Finish **login**?", options: ["I’ll log in now", "Continue without live validation"] }] };
 function view(enabled = true, visible = true, items: TimelineItem[] = []) {
-  return <MantineProvider><AsyncQuestionReplyProvider threadId="pal" enabled={enabled} items={items}>{visible ? <TimelineItemRenderer item={item} threadId="pal" /> : null}</AsyncQuestionReplyProvider></MantineProvider>;
+  return <GatewayClientProvider client={{ submitThreadInput } as GatewayClient}><MantineProvider><AsyncQuestionReplyProvider threadId="pal" enabled={enabled} items={items}>{visible ? <TimelineItemRenderer item={item} threadId="pal" /> : null}</AsyncQuestionReplyProvider></MantineProvider></GatewayClientProvider>;
 }
+const observer = (children: ReactNode) => <GatewayClientProvider client={{ submitThreadInput } as GatewayClient}>{children}</GatewayClientProvider>;
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 describe("async question card", () => {
   it("renders a Markdown question once, always-open free text and exact choice replies", async () => {
@@ -83,13 +87,13 @@ describe("async question card", () => {
   it("shows persisted answers in read-only observers without exposing input controls", async () => {
     const answer: TimelineItem = { ...item, id: "reply", kind: "user_message", text: "done", asyncQuestions: undefined,
       clientId: questionReplyClientId(asyncQuestionKey(item, 0)) };
-    render(<MantineProvider><AsyncQuestionAnswersProvider items={[item, answer]}><TimelineItemRenderer item={item} /></AsyncQuestionAnswersProvider></MantineProvider>);
+    render(observer(<MantineProvider><AsyncQuestionAnswersProvider items={[item, answer]}><TimelineItemRenderer item={item} /></AsyncQuestionAnswersProvider></MantineProvider>));
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("Input requested"));
     expect(screen.getByRole("blockquote")).toHaveTextContent("done");
   });
   it("does not expose submission controls in an observer or enable unavailable chats", () => {
-    const rendered = render(<MantineProvider><TimelineItemRenderer item={item} /></MantineProvider>);
+    const rendered = render(observer(<MantineProvider><TimelineItemRenderer item={item} /></MantineProvider>));
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "I’ll log in now" })).not.toBeInTheDocument();
     rendered.rerender(view(false));

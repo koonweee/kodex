@@ -100,6 +100,7 @@ export {
   createExecutorGatewayClient,
   createGatewayClient,
   type ExecutorGatewayClientOptions,
+  type GatewayClient,
   type GatewayClientOptions,
 } from "./gatewayClient";
 export {
@@ -112,7 +113,7 @@ export {
 
 import { createGatewayClient } from "./gatewayClient";
 
-const defaultGatewayClient = createGatewayClient();
+export const defaultGatewayClient = createGatewayClient();
 
 export const {
   terminalWebSocketUrl,

@@ -2,7 +2,7 @@ import { Alert, Button, Modal, Stack } from "@mantine/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 
-import { createProject, type CreateProjectRequest, type Project } from "../api/client";
+import type { CreateProjectRequest, GatewayClient, Project } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { createClientRequestId } from "../shared/id";
 import { errorMessageFrom } from "../shared/values";
@@ -10,24 +10,25 @@ import { useWorkspace } from "../workspace/WorkspaceProvider";
 import { refreshProjectState } from "./cache";
 import { DirectoryPicker } from "./DirectoryPicker";
 
-export function WorkspaceProjectCreateDialog({ onClose, onCreated, onError }: {
+export function WorkspaceProjectCreateDialog({ api, onClose, onCreated, onError }: {
+  api: GatewayClient;
   onClose: () => void;
   onCreated: (project: Project) => void;
   onError: (error: unknown) => void;
 }) {
   const { openDraftThreadPane } = useWorkspace();
-  return <ProjectCreateDialog onClose={onClose} onCreated={(project) => {
+  return <ProjectCreateDialog api={api} onClose={onClose} onCreated={(project) => {
     onCreated(project);
     void openDraftThreadPane(project.id).catch(onError);
   }} />;
 }
 
-export function ProjectCreateDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (project: Project) => void }) {
+export function ProjectCreateDialog({ api, onClose, onCreated }: { api: GatewayClient; onClose: () => void; onCreated: (project: Project) => void }) {
   const queryClient = useQueryClient();
   const [root, setRoot] = useState<string | null>(null);
   const attempt = useRef<{ body: string; idempotencyKey: string } | null>(null);
   const create = useMutation({
-    mutationFn: createProject,
+    mutationFn: api.createProject,
     onSuccess: (project) => {
       void refreshProjectState(queryClient);
       queryClient.setQueryData<Project[]>(queryKeys.projects, (current) =>
@@ -51,7 +52,7 @@ export function ProjectCreateDialog({ onClose, onCreated }: { onClose: () => voi
     <Modal opened onClose={onClose} title="Add project" closeOnClickOutside={!create.isPending} closeOnEscape={!create.isPending} withCloseButton={!create.isPending}>
       <form onSubmit={(event) => { event.preventDefault(); submit(); }}>
         <Stack>
-          <DirectoryPicker value={root} onChange={(value) => { setRoot(value); create.reset(); }} disabled={create.isPending} />
+          <DirectoryPicker api={api} value={root} onChange={(value) => { setRoot(value); create.reset(); }} disabled={create.isPending} />
           {create.error ? <Alert color="red">{errorMessageFrom(create.error)}</Alert> : null}
           <Button type="submit" disabled={!root} loading={create.isPending}>Add project</Button>
         </Stack>

@@ -1,11 +1,12 @@
 import { MantineProvider } from "@mantine/core";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { createKodexQueryClient } from "../api/queryClient";
 import { mockGateway } from "../test/gatewayMock";
+import { renderWithGateway as render } from "../test/GatewayTestProvider";
 import { ComposerPanel } from "./ComposerPanel";
 
 const base = "/v1/threads/chat/queued-inputs";

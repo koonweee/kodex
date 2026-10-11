@@ -2,7 +2,8 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Button } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
 
-import { getComposerSettings, type Project } from "../api/client";
+import type { Project } from "../api/client";
+import { useGatewayClient } from "../api/GatewayClientContext";
 import { queryKeys } from "../api/queryKeys";
 import type { ComposerSettings, ComposerSettingsChange, ContextUsage } from "../ComposerFooterControls";
 import type { ImageLightboxImage } from "../images/types";
@@ -55,6 +56,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
   projects,
   skillsInvalidationGeneration,
 }: ThreadPaneComposerBridgeProps) {
+  const api = useGatewayClient();
   const { publishThreadPaneTimelineAction, setPaneComposerTextDraft, setPaneDraftDisposable, updatePane } = useWorkspace();
   const target = paneTargetRecord(pane);
   const existingThreadId = target.mode === "existing" && typeof target.threadId === "string" ? target.threadId : null;
@@ -76,7 +78,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
   const draftDefaultsQuery = useQuery({
     enabled: isDraftPane && !draftComposerEdited && canCompose,
     queryKey: queryKeys.composerSettings(draftProjectId, composerCwd),
-    queryFn: ({ signal }) => getComposerSettings(draftProjectId, composerCwd, signal),
+    queryFn: ({ signal }) => api.getComposerSettings(draftProjectId, composerCwd, signal),
   });
   const effectiveDraftSettings = !draftComposerEdited && draftDefaultsQuery.data
     ? normalizePersistedComposerSettings(draftDefaultsQuery.data, models)

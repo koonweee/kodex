@@ -32,6 +32,7 @@ export function useComposerDraftState(
   resetToken: number,
   draftKey = DEFAULT_COMPOSER_DRAFT_KEY,
   draftStore?: ComposerDraftStore,
+  skillIconUrl?: (path: string) => string,
 ) {
   const activeDraftKey = draftKey || DEFAULT_COMPOSER_DRAFT_KEY;
   const localDraftStoreRef = useRef<ComposerDraftStore>(new Map());
@@ -131,7 +132,7 @@ export function useComposerDraftState(
     if (!token || !skill) {
       return null;
     }
-    const replacement = replaceSkillMentionToken(composerTextRef.current, token, skill);
+    const replacement = replaceSkillMentionToken(composerTextRef.current, token, skill, skillIconUrl ?? (() => ""));
     const nextBindings = [
       ...validSkillMentionBindings(replacement.text, skillBindingsRef.current),
       replacement.binding,

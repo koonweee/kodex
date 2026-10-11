@@ -1,24 +1,26 @@
 import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { clearThreadGoal, getThreadGoal, updateThreadGoal, type ThreadGoalUpdateRequest } from "../api/client";
+import type { ThreadGoalUpdateRequest } from "../api/client";
+import { useGatewayClient } from "../api/GatewayClientContext";
 import { queryKeys } from "../api/queryKeys";
 import { errorMessageFrom } from "../shared/values";
 import { refreshThreadGoals } from "./goalCache";
 
 export function useThreadGoal(threadId: string | null) {
+  const api = useGatewayClient();
   const client = useQueryClient();
   const query = useQuery({
     queryKey: queryKeys.threadGoal(threadId),
     enabled: threadId !== null,
     retry: false,
-    queryFn: ({ signal }) => getThreadGoal(threadId!, signal),
+    queryFn: ({ signal }) => api.getThreadGoal(threadId!, signal),
   });
   const mutationKey = ["change-thread-goal", threadId];
   const mutation = useMutation({
     mutationKey,
     mutationFn: async (operation: { threadId: string | null } & ({ type: "update"; request: ThreadGoalUpdateRequest } | { type: "clear" })) => {
       if (!operation.threadId) throw new Error("Select a chat before setting a goal.");
-      return operation.type === "clear" ? clearThreadGoal(operation.threadId) : updateThreadGoal(operation.threadId, operation.request);
+      return operation.type === "clear" ? api.clearThreadGoal(operation.threadId) : api.updateThreadGoal(operation.threadId, operation.request);
     },
     onSettled: (_result, _error, operation) => operation.threadId ? refreshThreadGoals(client, operation.threadId) : undefined,
   });

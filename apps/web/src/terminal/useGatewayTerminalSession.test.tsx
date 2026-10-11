@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render as testingRender, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,7 +9,14 @@ import {
   type CreateTerminalSession,
   type TerminalSessionInfo,
 } from "../api/client";
+import { GatewayClientProvider } from "../api/GatewayClientContext";
+import type { GatewayClient } from "../api/gatewayClient";
 import { useGatewayTerminalSession } from "./useGatewayTerminalSession";
+
+const api = { createTerminalSession, deleteTerminalSession, listTerminalSessions } as GatewayClient;
+const render = (ui: Parameters<typeof testingRender>[0]) => testingRender(ui, {
+  wrapper: ({ children }) => <GatewayClientProvider client={api}>{children}</GatewayClientProvider>,
+});
 
 vi.mock("../api/client", async (importActual) => {
   const actual = await importActual<typeof import("../api/client")>();

@@ -1,6 +1,7 @@
 import { useEffect, useEffectEvent, useRef } from "react";
 
-import { GatewayRequestError, markThreadSeen, type ThreadRead, type ThreadSummary } from "../api/client";
+import { GatewayRequestError, type ThreadRead, type ThreadSummary } from "../api/client";
+import { useGatewayClient } from "../api/GatewayClientContext";
 import type { TimelineTurn } from "../timeline/state";
 
 export function useThreadReadState({
@@ -13,6 +14,7 @@ export function useThreadReadState({
   onRefresh: () => void;
   onError: (error: unknown) => void;
 }) {
+  const api = useGatewayClient();
   const attemptedRef = useRef<string | null>(null);
   const currentThreadIdRef = useRef(thread?.id);
   currentThreadIdRef.current = thread?.id;
@@ -33,7 +35,7 @@ export function useThreadReadState({
     // seen; a conflict needs fresh canonical visible data, never a guessed ID.
     attemptedRef.current = key;
     const threadId = thread.id;
-    void markThreadSeen(thread.id, { completedTurnId: thread.latestCompletedTurnId, readRevision: thread.readRevision })
+    void api.markThreadSeen(thread.id, { completedTurnId: thread.latestCompletedTurnId, readRevision: thread.readRevision })
       .then((read) => { if (currentThreadIdRef.current === threadId) onRead(read); })
       .catch((error: unknown) => {
         if (currentThreadIdRef.current !== threadId) return;

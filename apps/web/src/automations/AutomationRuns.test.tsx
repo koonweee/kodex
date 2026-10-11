@@ -4,7 +4,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { createKodexQueryClient } from "../api/queryClient";
-import type { AutomationRun } from "../api/client";
+import { createGatewayClient, type AutomationRun } from "../api/client";
+import { GatewayClientProvider } from "../api/GatewayClientContext";
 import { mockGateway } from "../test/gatewayMock";
 import { AutomationRuns } from "./AutomationRuns";
 import { applyAutomationRunEvent, refreshAutomationRuns } from "./runsCache";
@@ -16,7 +17,7 @@ it("shows native admission uncertainty and converges from run markers and reconn
   let rows = [run];
   const gateway = mockGateway({ "GET /v1/automations/automation/runs": () => ({ runs: rows }) });
   const clients = [createKodexQueryClient(), createKodexQueryClient()];
-  const views = clients.map((client) => render(<QueryClientProvider client={client}><MantineProvider env="test"><AutomationRuns automationId="automation" /></MantineProvider></QueryClientProvider>));
+  const views = clients.map((client) => render(<QueryClientProvider client={client}><GatewayClientProvider client={createGatewayClient()}><MantineProvider env="test"><AutomationRuns automationId="automation" /></MantineProvider></GatewayClientProvider></QueryClientProvider>));
   await waitFor(() => expect(screen.getAllByText("Queued")).toHaveLength(2));
   rows = [{ ...run, phase: "uncertain", error: "Native admission acknowledgement was lost" }];
   for (const client of clients) applyAutomationRunEvent(client, { id: "1", seq: 1, kind: "automation.run_updated", threadId: null, payload: { automationId: "automation" }, receivedAt: "2026-10-05T00:00:00Z" });

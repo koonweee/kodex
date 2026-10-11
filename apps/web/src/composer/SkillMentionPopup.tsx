@@ -2,6 +2,7 @@ import { Group } from "@mantine/core";
 import type { CSSProperties } from "react";
 
 import type { SkillMetadata } from "../api/client";
+import { useGatewayClient } from "../api/GatewayClientContext";
 import {
   cssUrl,
   skillBrandColor,
@@ -26,6 +27,7 @@ export function SkillMentionPopup({
   onSelect: (skill: SkillMetadata) => void;
   skills: SkillMetadata[];
 }) {
+  const api = useGatewayClient();
   return (
     <TriggerSuggestionPopup
       activeIndex={activeIndex}
@@ -37,7 +39,7 @@ export function SkillMentionPopup({
       loading={loading}
       loadingLabel="Loading skills..."
       onSelect={(item) => onSelect(item.skill)}
-      renderItem={(item) => <SkillSuggestionContent skill={item.skill} />}
+      renderItem={(item) => <SkillSuggestionContent skill={item.skill} skillIconUrl={api.skillIconUrl} />}
     />
   );
 }
@@ -53,9 +55,9 @@ function skillSuggestionItem(skill: SkillMetadata): SkillSuggestionItem {
   };
 }
 
-function SkillSuggestionContent({ skill }: { skill: SkillMetadata }) {
+function SkillSuggestionContent({ skill, skillIconUrl }: { skill: SkillMetadata; skillIconUrl: (path: string) => string }) {
   const brandColor = skillBrandColor(skill);
-  const iconUrl = skillSmallIconUrl(skill);
+  const iconUrl = skillSmallIconUrl(skill, skillIconUrl);
   const isSvgIcon = skillIconUrlIsSvg(iconUrl);
   const fallbackLabel = skillFallbackIconLabel(skill);
   const iconStyle = brandColor ? ({ "--skill-brand-color": brandColor } as CSSProperties) : undefined;

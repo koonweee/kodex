@@ -1,8 +1,11 @@
 import { MantineProvider } from "@mantine/core";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render as testingRender, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { MarkdownContent } from "./MarkdownContent";
+import { gatewayTestWrapper } from "../test/GatewayTestProvider";
+
+const render = (ui: Parameters<typeof testingRender>[0]) => testingRender(ui, { wrapper: gatewayTestWrapper });
 
 function markdown(text: string, threadId?: string) {
   render(<MantineProvider><MarkdownContent text={text} threadId={threadId} /></MantineProvider>);

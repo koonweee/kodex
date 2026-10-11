@@ -2,10 +2,9 @@ import { Alert, Box, Button, Group, Modal, Stack, Text, Textarea } from "@mantin
 import { useEffect, useState } from "react";
 
 import {
-  deleteQueuedInput, dismissQueueTransfer, reconcileQueueTransfer,
-  reorderQueuedInputs, updateQueuedInput,
   type QueuedInput, type QueueTransfer,
 } from "../api/client";
+import { useGatewayClient } from "../api/GatewayClientContext";
 import { appendResponseAnnotations, type DraftAnnotation } from "../composer/annotations";
 import { ComposerAnnotations } from "../composer/ComposerAnnotations";
 import { errorMessageFrom } from "../shared/values";
@@ -33,6 +32,7 @@ export function NativeQueuePanel({ threadId, queue, onRestoreText, canRestoreTex
   onRestoreText: (text: string) => void;
   canRestoreText: boolean;
 }) {
+  const api = useGatewayClient();
   const { query, busy, error, reload, mutate } = queue;
   const [editing, setEditing] = useState<QueuedInput | null>(null);
   const [edits, setEdits] = useState(new Map<number, QueuedTextEdit>());
@@ -61,7 +61,7 @@ export function NativeQueuePanel({ threadId, queue, onRestoreText, canRestoreTex
     const textEdits = new Map([...edits].map(([index, edit]) => [index,
       edit.dirty ? appendResponseAnnotations(edit.text, edit.annotations) : edit.original,
     ]));
-    void mutate(() => updateQueuedInput(threadId, editing.id, replaceQueueText(editing.input, textEdits)), () => setEditing(null));
+    void mutate(() => api.updateQueuedInput(threadId, editing.id, replaceQueueText(editing.input, textEdits)), () => setEditing(null));
   }
 
   return <>
@@ -70,24 +70,24 @@ export function NativeQueuePanel({ threadId, queue, onRestoreText, canRestoreTex
       <Button size="compact-sm" variant="subtle" onClick={reload}>Reload queue</Button>
     </Alert> : null}
     {rows.length > 0 ? <QueuedMessageList rows={rows} busy={busy} partial={Boolean(query.data?.nextCursor)}
-      onReorder={(ids) => void mutate(() => reorderQueuedInputs(threadId, ids))}
+      onReorder={(ids) => void mutate(() => api.reorderQueuedInputs(threadId, ids))}
       onSendNow={(row) => queue.sendNow(row.id)}
       transferringIds={(query.data?.transfers ?? []).map((transfer) => transfer.nativeQueueId)}
       onEdit={(row) => {
         setEditing(row);
         setEdits(new Map(editableQueueText(row.input).map(({ index, text }) => [index, queuedTextEdit(text)])));
       }}
-      onRemove={(row) => void mutate(() => deleteQueuedInput(threadId, row.id))} /> : null}
+      onRemove={(row) => void mutate(() => api.deleteQueuedInput(threadId, row.id))} /> : null}
     {transfers.length > 0 ? <Box role="region" aria-label="Queue transfers" className="kodex-native-queue">
       {transfers.map((transfer) => <Box key={transfer.id} role="group" aria-label="Queue transfer" className="kodex-native-queue-row">
         <Text size="sm" fw={600}>Delivery uncertain</Text>
         <Text size="sm" style={{ overflowWrap: "anywhere" }}>{queueInputPreview(transfer.input)}</Text>
         {transfer.error ? <Text size="xs" c="red">{transfer.error}</Text> : null}
         <Group gap="xs" wrap="wrap">
-          <Button size="compact-sm" disabled={busy} onClick={() => void mutate(() => reconcileQueueTransfer(transfer.id))}>Reconcile</Button>
+          <Button size="compact-sm" disabled={busy} onClick={() => void mutate(() => api.reconcileQueueTransfer(transfer.id))}>Reconcile</Button>
           <Button size="compact-sm" variant="subtle" onClick={() => setInspecting(transfer)}>Saved input</Button>
           <Button size="compact-sm" variant="subtle" disabled={busy || !canRestoreText || restorableQueueText(transfer.input) === null} onClick={() => setRestoring(transfer)}>Restore to composer</Button>
-          <Button size="compact-sm" variant="subtle" color="red" disabled={busy} onClick={() => void mutate(() => dismissQueueTransfer(transfer.id))}>Dismiss</Button>
+          <Button size="compact-sm" variant="subtle" color="red" disabled={busy} onClick={() => void mutate(() => api.dismissQueueTransfer(transfer.id))}>Dismiss</Button>
         </Group>
         {restorableQueueText(transfer.input) === null ? <Text size="xs">This native input cannot be restored losslessly in the text composer. Open Saved input to copy the complete JSON.</Text> : null}
         {!canRestoreText ? <Text size="xs">Clear the current draft and attachments before restoring saved text.</Text> : null}

@@ -1,8 +1,11 @@
 import { MantineProvider } from "@mantine/core";
-import { act, render, screen } from "@testing-library/react";
+import { act, render as testingRender, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { MarkdownContent } from "./MarkdownContent";
+import { gatewayTestWrapper } from "../test/GatewayTestProvider";
+
+const render = (ui: Parameters<typeof testingRender>[0]) => testingRender(ui, { wrapper: gatewayTestWrapper });
 
 function content(text: string, deltaStart?: number, running = true) {
   return <MantineProvider><MarkdownContent text={text} streaming={running ? { identity: "thread:answer", deltaStart } : undefined} /></MantineProvider>;

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render as testingRender, screen } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -18,6 +18,9 @@ vi.mock("react-markdown", async (importOriginal) => {
 
 import { TimelineItemRenderer } from "./renderers";
 import type { TimelineItem } from "./reducer";
+import { gatewayTestWrapper } from "../test/GatewayTestProvider";
+
+const render = (ui: Parameters<typeof testingRender>[0]) => testingRender(ui, { wrapper: gatewayTestWrapper });
 
 function item(overrides: Partial<TimelineItem>): TimelineItem {
   return {

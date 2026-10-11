@@ -3,7 +3,7 @@ import { useNarrowWorkspace } from "../shared/layoutBreakpoints";
 import { FileText } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { fetchThreadFilePreview } from "../api/client";
+import { useGatewayClient } from "../api/GatewayClientContext";
 import { MarkdownContent } from "../markdown/MarkdownContent";
 import type { MarkdownPreviewRequest } from "./types";
 
@@ -14,6 +14,7 @@ type MarkdownPreviewPaneProps = {
 };
 
 export function MarkdownPreviewPane({ onClose, preview, threadId }: MarkdownPreviewPaneProps) {
+  const api = useGatewayClient();
   const [mode, setMode] = useState<"preview" | "source">("preview");
   const [content, setContent] = useState("");
   const [error, setError] = useState("");
@@ -52,7 +53,7 @@ export function MarkdownPreviewPane({ onClose, preview, threadId }: MarkdownPrev
     let cancelled = false;
     setLoading(true);
     setError("");
-    fetchThreadFilePreview(threadId, preview.path)
+    api.fetchThreadFilePreview(threadId, preview.path)
       .then((text) => {
         if (!cancelled) {
           setContent(text);
@@ -72,7 +73,7 @@ export function MarkdownPreviewPane({ onClose, preview, threadId }: MarkdownPrev
     return () => {
       cancelled = true;
     };
-  }, [preview, threadId]);
+  }, [api, preview, threadId]);
 
   useEffect(() => {
     if (mode !== "source" || loading || error || !preview?.line) {

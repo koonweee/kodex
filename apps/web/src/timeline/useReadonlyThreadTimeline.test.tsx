@@ -4,9 +4,15 @@ import { StrictMode, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { attachThread, getThreadDetail, type EventEnvelope, type ThreadTimelineRow, type ThreadViewPatch, type ThreadViewResponse } from "../api/client";
+import { GatewayClientProvider } from "../api/GatewayClientContext";
+import type { GatewayClient } from "../api/gatewayClient";
 import { ThreadDeliveryProvider } from "./ThreadDeliveryPreferences";
 import type { TimelineState } from "./reducer";
 import { useReadonlyThreadTimeline } from "./useReadonlyThreadTimeline";
+
+const api = { getThreadDetail } as GatewayClient;
+const withApi = ({ children }: { children: ReactNode }) => <GatewayClientProvider client={api}>{children}</GatewayClientProvider>;
+const withApiStrict = ({ children }: { children: ReactNode }) => <GatewayClientProvider client={api}><StrictMode>{children}</StrictMode></GatewayClientProvider>;
 
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
@@ -56,9 +62,9 @@ describe("useReadonlyThreadTimeline", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     vi.mocked(getThreadDetail).mockReset().mockResolvedValue(threadDetail("Stored history", 1));
     let enabled = false;
-    const wrapper = ({ children }: { children: ReactNode }) => <ThreadDeliveryProvider includeDebugEvents={enabled} includeCommandOutputs={enabled}>{children}</ThreadDeliveryProvider>;
+    const wrapper = ({ children }: { children: ReactNode }) => <GatewayClientProvider client={api}><ThreadDeliveryProvider includeDebugEvents={enabled} includeCommandOutputs={enabled}>{children}</ThreadDeliveryProvider></GatewayClientProvider>;
     const first = renderHook(() => useReadonlyThreadTimeline({ onError: vi.fn(), threadId: "thread-1" }), { wrapper });
-    const second = renderHook(() => useReadonlyThreadTimeline({ onError: vi.fn(), threadId: "thread-1" }));
+    const second = renderHook(() => useReadonlyThreadTimeline({ onError: vi.fn(), threadId: "thread-1" }), { wrapper: withApi });
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(2));
     expect(getThreadDetail).toHaveBeenCalledTimes(2);
     const otherStream = FakeEventSource.instances[1];
@@ -84,8 +90,8 @@ describe("useReadonlyThreadTimeline", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     let snapshot = threadDetail("Stored history", 1);
     vi.mocked(getThreadDetail).mockReset().mockImplementation(async () => snapshot);
-    const first = renderHook(() => useReadonlyThreadTimeline({ onError: vi.fn(), threadId: "thread-1" }));
-    const second = renderHook(() => useReadonlyThreadTimeline({ onError: vi.fn(), threadId: "thread-1" }));
+    const first = renderHook(() => useReadonlyThreadTimeline({ onError: vi.fn(), threadId: "thread-1" }), { wrapper: withApi });
+    const second = renderHook(() => useReadonlyThreadTimeline({ onError: vi.fn(), threadId: "thread-1" }), { wrapper: withApi });
     await waitFor(() => expect(timelineText(first.result.current.timeline)).toBe("Stored history"));
     await waitFor(() => expect(timelineText(second.result.current.timeline)).toBe("Stored history"));
     expect(getThreadDetail).toHaveBeenCalledTimes(2);
@@ -112,6 +118,7 @@ describe("useReadonlyThreadTimeline", () => {
         threadId: "thread-1",
         timelineEventFlushDelayMs: 64,
       }),
+      { wrapper: withApi },
     );
 
     await waitFor(() => expect(timelineText(result.current.timeline)).toBe("Base"));
@@ -151,7 +158,7 @@ describe("useReadonlyThreadTimeline", () => {
       .mockReturnValueOnce(refill);
     const onError = vi.fn();
     const onSnapshotThread = vi.fn();
-    const { result } = renderHook(() => useReadonlyThreadTimeline({ onError, onSnapshotThread, threadId: "thread-1" }));
+    const { result } = renderHook(() => useReadonlyThreadTimeline({ onError, onSnapshotThread, threadId: "thread-1" }), { wrapper: withApi });
     await waitFor(() => expect(timelineText(result.current.timeline)).toBe("Removed history"));
     const stream = FakeEventSource.instances[0];
     act(() => stream.emitNamed("thread_view.refresh_required", refreshRequiredEvent(2)));
@@ -196,6 +203,7 @@ describe("useReadonlyThreadTimeline", () => {
         threadId: "thread-1",
         timelineEventFlushDelayMs: 64,
       }),
+      { wrapper: withApi },
     );
 
     await waitFor(() => expect(timelineText(result.current.timeline)).toBe("Base"));
@@ -230,7 +238,7 @@ describe("useReadonlyThreadTimeline", () => {
     const refill = new Promise<ThreadViewResponse>((resolve) => { release = resolve; });
     vi.mocked(getThreadDetail).mockReset().mockResolvedValue(threadDetail("Base", 1));
     const onError = vi.fn();
-    const { result } = renderHook(() => useReadonlyThreadTimeline({ onError, threadId: "thread-1" }), { wrapper: StrictMode });
+    const { result } = renderHook(() => useReadonlyThreadTimeline({ onError, threadId: "thread-1" }), { wrapper: withApiStrict });
     await waitFor(() => expect(timelineText(result.current.timeline)).toBe("Base"));
     const initialReads = vi.mocked(getThreadDetail).mock.calls.length;
     vi.mocked(getThreadDetail).mockReturnValue(refill);
@@ -277,7 +285,7 @@ describe("useReadonlyThreadTimeline", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     vi.mocked(getThreadDetail).mockReset().mockResolvedValue(threadDetail("Base", 1));
     const onError = vi.fn();
-    const { result } = renderHook(() => useReadonlyThreadTimeline({ onError, threadId: "thread-1" }), { wrapper: StrictMode });
+    const { result } = renderHook(() => useReadonlyThreadTimeline({ onError, threadId: "thread-1" }), { wrapper: withApiStrict });
     await waitFor(() => expect(timelineText(result.current.timeline)).toBe("Base"));
     const initialReads = vi.mocked(getThreadDetail).mock.calls.length;
     let releaseEarlier!: (snapshot: ThreadViewResponse) => void;
@@ -321,7 +329,7 @@ describe("useReadonlyThreadTimeline", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     vi.mocked(getThreadDetail).mockReset().mockResolvedValue(threadDetail("Base", 1));
     const onError = vi.fn();
-    const { result, rerender } = renderHook(() => useReadonlyThreadTimeline({ onError, threadId: "thread-1" }), { wrapper: StrictMode });
+    const { result, rerender } = renderHook(() => useReadonlyThreadTimeline({ onError, threadId: "thread-1" }), { wrapper: withApiStrict });
     await waitFor(() => expect(timelineText(result.current.timeline)).toBe("Base"));
     const initialReads = vi.mocked(getThreadDetail).mock.calls.length;
     vi.mocked(getThreadDetail).mockRejectedValue(new Error("Native read unavailable"));
@@ -356,7 +364,7 @@ describe("useReadonlyThreadTimeline", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     vi.mocked(getThreadDetail).mockReset().mockResolvedValue(threadDetail("Base", 1));
     const onError = vi.fn();
-    const { result } = renderHook(() => useReadonlyThreadTimeline({ onError, threadId: "thread-1" }));
+    const { result } = renderHook(() => useReadonlyThreadTimeline({ onError, threadId: "thread-1" }), { wrapper: withApi });
     await waitFor(() => expect(timelineText(result.current.timeline)).toBe("Base"));
     let releaseEarlier!: (snapshot: ThreadViewResponse) => void;
     let releaseNewer!: (snapshot: ThreadViewResponse) => void;

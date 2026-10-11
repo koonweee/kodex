@@ -4,11 +4,10 @@ import { AlertCircle, Sparkles } from "lucide-react";
 import { useCallback, useMemo } from "react";
 
 import {
-  callAppSurfaceBridge,
-  getThreadAppSurface,
   type AppSurfaceBridgeRequest,
   type AppSurfaceBridgeResponse,
 } from "../../api/client";
+import { useGatewayClient } from "../../api/GatewayClientContext";
 import { queryKeys } from "../../api/queryKeys";
 import { AppSurfacePane } from "../../appSurfaces/AppSurfacePane";
 import { errorMessageFrom } from "../../shared/values";
@@ -46,6 +45,7 @@ function ThreadAppSurfacePane({
   targetSessionId = null,
   threadId,
 }: ThreadAppSurfacePaneProps) {
+  const api = useGatewayClient();
   const queryClient = useQueryClient();
 
   const sessionQuery = useQuery({
@@ -55,7 +55,7 @@ function ThreadAppSurfacePane({
       if (!threadId) {
         return null;
       }
-      return getThreadAppSurface(threadId, signal);
+      return api.getThreadAppSurface(threadId, signal);
     },
   });
 
@@ -66,7 +66,7 @@ function ThreadAppSurfacePane({
     }: {
       request: AppSurfaceBridgeRequest;
       sessionId: string;
-    }) => callAppSurfaceBridge(sessionId, request),
+    }) => api.callAppSurfaceBridge(sessionId, request),
   });
 
   const session = sessionQuery.data ?? null;

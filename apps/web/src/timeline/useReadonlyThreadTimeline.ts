@@ -2,8 +2,7 @@ import { useThreadDeliveryPreferences } from "./ThreadDeliveryPreferences";
 import { useEffect, useRef, useState } from "react";
 
 import type { ThreadSummary } from "../api/client";
-import { getThreadDetail } from "../api/client";
-import { useGatewayInstanceValidation, useGatewayStreamConnected } from "../api/GatewayInstanceBoundary";
+import { useExecutorConnection, useGatewayClient, useGatewayInstanceValidation, useGatewayStreamConnected } from "../api/GatewayClientContext";
 import { isApprovalEvent } from "../approvals/state";
 import { createEventStreamClient } from "../events/stream";
 import { applyTimelineEventBatch } from "./batch";
@@ -26,6 +25,8 @@ export function useReadonlyThreadTimeline({
   onSnapshotThread?: (thread: ThreadSummary) => void;
   threadId: string | null;
 }) {
+  const api = useGatewayClient();
+  const executorConnection = useExecutorConnection();
   const { includeDebugEvents, includeCommandOutputs, getOptions: getDeliveryOptions } = useThreadDeliveryPreferences();
   const deliveryStreamRef = useRef<ReturnType<typeof createEventStreamClient> | null>(null);
   const validateInstance = useGatewayInstanceValidation();
@@ -98,7 +99,7 @@ export function useReadonlyThreadTimeline({
         markRefreshing(currentThreadId);
       }
       try {
-        const snapshot = await getThreadDetail(currentThreadId, controller.signal, getDeliveryOptions());
+        const snapshot = await api.getThreadDetail(currentThreadId, controller.signal, getDeliveryOptions());
         if (controller.signal.aborted || cancelled || streamToken.current !== currentToken) {
           return false;
         }
@@ -125,6 +126,7 @@ export function useReadonlyThreadTimeline({
     const connectStream = (cursor: number) => {
       const client = createEventStreamClient({
         beforeConnect: validateInstance,
+        connection: executorConnection,
         cursor,
         threadId: currentThreadId,
         ...getDeliveryOptions(),
@@ -184,7 +186,7 @@ export function useReadonlyThreadTimeline({
       cancelQueuedTimelineEvents();
       requestTimelineRefresh.current = null;
     };
-  }, [cancelQueuedTimelineEvents, enqueueTimelineEvent, handleStreamConnected, threadId, validateInstance, getDeliveryOptions]);
+  }, [api, cancelQueuedTimelineEvents, enqueueTimelineEvent, executorConnection, handleStreamConnected, threadId, validateInstance, getDeliveryOptions]);
 
   useEffect(() => {
     deliveryStreamRef.current?.updateDeliveryOptions({ includeDebugEvents, includeCommandOutputs });

@@ -6,6 +6,8 @@ import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { clearThreadGoal, getThreadGoal, updateThreadGoal, type ThreadGoal } from "../api/client";
+import { GatewayClientProvider } from "../api/GatewayClientContext";
+import type { GatewayClient } from "../api/gatewayClient";
 import { createKodexQueryClient } from "../api/queryClient";
 import { ComposerPanel } from "./ComposerPanel";
 
@@ -24,7 +26,8 @@ const goal: ThreadGoal = {
 
 function composer(props: Partial<ComponentProps<typeof ComposerPanel>> = {}) {
   const client = createKodexQueryClient();
-  const node = (overrides: Partial<ComponentProps<typeof ComposerPanel>>) => <QueryClientProvider client={client}><MantineProvider><ComposerPanel
+  const api = { clearThreadGoal, getThreadGoal, updateThreadGoal, skillIconUrl: (path: string) => path } as GatewayClient;
+  const node = (overrides: Partial<ComponentProps<typeof ComposerPanel>>) => <GatewayClientProvider client={api}><QueryClientProvider client={client}><MantineProvider><ComposerPanel
     activeSelectedTurnId={null} attachmentInputRef={{ current: null }} canCompose composerResetToken={0}
     composerSettings={{ model: "gpt-5.4", fast: false }} composerSettingsError={null}
     goalThreadId="thread-1" isDraftThreadSelected={false} isDraftComposerTransitioning={false}
@@ -33,7 +36,7 @@ function composer(props: Partial<ComponentProps<typeof ComposerPanel>> = {}) {
     onComposerKeyDown={vi.fn()} onComposerPaste={vi.fn()} onComposerSettingsChange={vi.fn()} onImageOpen={vi.fn()}
     onRemovePendingAttachment={vi.fn()} onStopTurn={vi.fn()} onSubmitTurn={(event) => event.preventDefault()}
     pendingAttachments={[]} selectedThreadPresent {...overrides}
-  /></MantineProvider></QueryClientProvider>;
+  /></MantineProvider></QueryClientProvider></GatewayClientProvider>;
   const rendered = render(node(props));
   return { ...rendered, changeProps: (overrides: Partial<ComponentProps<typeof ComposerPanel>>) => rendered.rerender(node({ ...props, ...overrides })) };
 }

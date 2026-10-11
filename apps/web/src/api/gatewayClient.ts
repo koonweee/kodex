@@ -47,6 +47,8 @@ export function createGatewayClient({
   };
 }
 
+export type GatewayClient = ReturnType<typeof createGatewayClient>;
+
 export function createExecutorGatewayClient(
   connection: ExecutorConnection,
   options: ExecutorGatewayClientOptions = {},

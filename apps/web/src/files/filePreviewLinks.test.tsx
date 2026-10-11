@@ -1,8 +1,11 @@
 import { MantineProvider } from "@mantine/core";
-import { render, screen } from "@testing-library/react";
+import { render as testingRender, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { TimelineItemRenderer } from "../timeline/renderers";
 import { MarkdownContent } from "../markdown/MarkdownContent";
+import { gatewayTestWrapper } from "../test/GatewayTestProvider";
+
+const render = (ui: Parameters<typeof testingRender>[0]) => testingRender(ui, { wrapper: gatewayTestWrapper });
 
 describe("local HTML and video links", () => {
   it.each(["index.html", "index.htm", "clip.webm", "clip.mp4"])("opens existing %s links in a new tab without downloading", (name) => {

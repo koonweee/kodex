@@ -2,7 +2,7 @@ import { Box, Text } from "@mantine/core";
 import { Check, Copy } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 
-import { filePreviewUrl } from "../api/client";
+import { useGatewayClient } from "../api/GatewayClientContext";
 import { fileExtension, filePreviewAction } from "../files/filePreviewActions";
 import type { MarkdownPreviewRequest } from "../files/types";
 import { ImageThumbnail } from "../images/ImageThumbnail";
@@ -30,6 +30,7 @@ export function UserMessageBubble({
   threadId?: string;
   toolbarTimestampMs?: number;
 }) {
+  const api = useGatewayClient();
   const parsedAnnotations = parseResponseAnnotations(item.text);
   const copyText = parsedAnnotations ? annotationMessageCopyText(parsedAnnotations) : item.text;
   const images = item.images ?? [];
@@ -41,7 +42,7 @@ export function UserMessageBubble({
         {images.length > 0 ? (
           <Box className="kodex-user-image-grid">
             {images.map((image, index) => {
-              const src = userMessageImageSrc(image, imagePreviewUrlsByPath, threadId);
+              const src = userMessageImageSrc(api.filePreviewUrl, image, imagePreviewUrlsByPath, threadId);
               return src ? (
                 <ImageThumbnail
                   alt=""
@@ -59,6 +60,7 @@ export function UserMessageBubble({
             {fileAttachments.map((attachment) => (
               <UserFileAttachmentTile
                 attachment={attachment}
+                filePreviewUrl={api.filePreviewUrl}
                 key={attachment.id}
                 onMarkdownOpen={onMarkdownOpen}
                 threadId={threadId}
@@ -85,10 +87,12 @@ export function UserMessageBubble({
 
 function UserFileAttachmentTile({
   attachment,
+  filePreviewUrl,
   onMarkdownOpen,
   threadId,
 }: {
   attachment: NonNullable<TimelineItem["fileAttachments"]>[number];
+  filePreviewUrl: (threadId: string, path: string) => string;
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   threadId?: string;
 }) {
@@ -110,7 +114,7 @@ function UserFileAttachmentTile({
       </Box>
     );
   }
-  const action = filePreviewAction(threadId, attachment);
+  const action = filePreviewAction(filePreviewUrl, threadId, attachment);
   if (action.kind === "markdown" && onMarkdownOpen) {
     return (
       <button
@@ -213,6 +217,7 @@ export const AssistantMessageMarkdown = memo(
 AssistantMessageMarkdown.displayName = "AssistantMessageMarkdown";
 
 function userMessageImageSrc(
+  filePreviewUrl: (threadId: string, path: string) => string,
   image: TimelineImage,
   imagePreviewUrlsByPath: Record<string, string>,
   threadId?: string,

@@ -1,7 +1,10 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
+import type { PropsWithChildren } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { GatewayRequestError, markThreadSeen, type ThreadRead, type ThreadSummary } from "../api/client";
+import { GatewayClientProvider } from "../api/GatewayClientContext";
+import type { GatewayClient } from "../api/gatewayClient";
 import type { TimelineTurn } from "../timeline/state";
 import { useThreadReadState } from "./useThreadReadState";
 
@@ -21,6 +24,9 @@ const seen: ThreadRead = {
   readRevision: 11, readStateKnown: true, unreadCompletedAgentTurn: false, updatedAt: "2026-10-05T00:00:00Z",
 };
 const callbacks = () => ({ onRead: vi.fn(), onRefresh: vi.fn(), onError: vi.fn() });
+const wrapper = ({ children }: PropsWithChildren) => (
+  <GatewayClientProvider client={{ markThreadSeen } as GatewayClient}>{children}</GatewayClientProvider>
+);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -35,7 +41,7 @@ describe("canonical visible completion acknowledgment", () => {
     const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
     const { rerender } = renderHook(({ isVisible }) => useThreadReadState({
       thread, turns: [terminal], isVisible, ...handlers,
-    }), { initialProps: { isVisible: false } });
+    }), { initialProps: { isVisible: false }, wrapper });
     expect(markThreadSeen).not.toHaveBeenCalled();
     rerender({ isVisible: true });
     expect(markThreadSeen).not.toHaveBeenCalled();
@@ -50,7 +56,7 @@ describe("canonical visible completion acknowledgment", () => {
     const handlers = callbacks();
     const { rerender } = renderHook(({ turns, current }) => useThreadReadState({
       thread: current, turns, isVisible: true, ...handlers,
-    }), { initialProps: { turns: [] as TimelineTurn[], current: thread } });
+    }), { initialProps: { turns: [] as TimelineTurn[], current: thread }, wrapper });
     expect(markThreadSeen).not.toHaveBeenCalled();
     rerender({ turns: [{ ...terminal, status: "inProgress" }], current: thread });
     expect(markThreadSeen).not.toHaveBeenCalled();
@@ -65,7 +71,7 @@ describe("canonical visible completion acknowledgment", () => {
     vi.mocked(markThreadSeen).mockRejectedValueOnce(new GatewayRequestError("Stale completion", 409));
     const { rerender } = renderHook(({ current, turns }) => useThreadReadState({
       thread: current, turns, isVisible: true, ...handlers,
-    }), { initialProps: { current: thread, turns: [terminal] } });
+    }), { initialProps: { current: thread, turns: [terminal] }, wrapper });
     await waitFor(() => expect(handlers.onRefresh).toHaveBeenCalledTimes(1));
     expect(handlers.onRead).not.toHaveBeenCalled();
     expect(handlers.onError).not.toHaveBeenCalled();
@@ -83,7 +89,7 @@ describe("canonical visible completion acknowledgment", () => {
     vi.mocked(markThreadSeen).mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
     const { rerender } = renderHook(({ current }) => useThreadReadState({
       thread: current, turns: [terminal], isVisible: true, ...handlers,
-    }), { initialProps: { current: thread } });
+    }), { initialProps: { current: thread }, wrapper });
     await waitFor(() => expect(markThreadSeen).toHaveBeenCalledTimes(1));
     rerender({ current: { ...thread, id: "different-chat", latestCompletedTurnId: null, unreadCompletedAgentTurn: false } });
     await act(async () => reject(new GatewayRequestError("Old conflict", 409)));
@@ -95,7 +101,7 @@ describe("canonical visible completion acknowledgment", () => {
   it("allows the same exact receipt on a later foreground transition after a failed write without retrying on render", async () => {
     const handlers = callbacks();
     vi.mocked(markThreadSeen).mockRejectedValueOnce(new TypeError("Offline"));
-    const { rerender } = renderHook(() => useThreadReadState({ thread, turns: [terminal], isVisible: true, ...handlers }));
+    const { rerender } = renderHook(() => useThreadReadState({ thread, turns: [terminal], isVisible: true, ...handlers }), { wrapper });
     await waitFor(() => expect(handlers.onError).toHaveBeenCalledTimes(1));
     rerender();
     expect(markThreadSeen).toHaveBeenCalledTimes(1);
@@ -111,7 +117,7 @@ describe("canonical visible completion acknowledgment", () => {
     const handlers = callbacks();
     vi.mocked(markThreadSeen).mockRejectedValueOnce(new TypeError("Offline"));
     const { rerender } = renderHook(({ snapshot }) => useThreadReadState({ thread: snapshot, turns: [terminal], isVisible: true, ...handlers }),
-      { initialProps: { snapshot: thread } });
+      { initialProps: { snapshot: thread }, wrapper });
     await waitFor(() => expect(handlers.onError).toHaveBeenCalledTimes(1));
     rerender({ snapshot: thread });
     expect(markThreadSeen).toHaveBeenCalledTimes(1);

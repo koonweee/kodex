@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { listSkills, type SkillMetadata } from "../api/client";
+import type { SkillMetadata } from "../api/client";
+import { useGatewayClient } from "../api/GatewayClientContext";
 import { queryKeys } from "../api/queryKeys";
 import { errorMessageFrom } from "../shared/values";
 
@@ -20,13 +21,14 @@ export function useSkillCatalog({
   enabled: boolean;
   invalidationGeneration: number;
 }) {
+  const api = useGatewayClient();
   const queryClient = useQueryClient();
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const queryKey = useMemo(() => queryKeys.skills(cwd ?? null), [cwd]);
   const skillsQuery = useQuery({
     enabled,
     queryKey,
-    queryFn: () => listSkills(cwd ?? null, false),
+    queryFn: () => api.listSkills(cwd ?? null, false),
     placeholderData: keepPreviousData,
   });
 
@@ -37,7 +39,7 @@ export function useSkillCatalog({
   const refresh = useCallback(
     async (forceReload = false) => {
       try {
-        const response = await listSkills(cwd ?? null, forceReload);
+        const response = await api.listSkills(cwd ?? null, forceReload);
         queryClient.setQueryData(queryKey, response);
         setRefreshError(null);
       } catch (error) {
@@ -45,7 +47,7 @@ export function useSkillCatalog({
         // Query keeps the previous successful data while exposing the error state.
       }
     },
-    [cwd, queryClient, queryKey],
+    [api, cwd, queryClient, queryKey],
   );
 
   useEffect(() => {
