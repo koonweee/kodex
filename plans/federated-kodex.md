@@ -201,6 +201,8 @@ M0 is active. The [federation baseline audit](../docs/audits/2026-10-12-federati
 
 Exit: two independently runnable services; stopping/restarting the federator cannot terminate executor jobs or terminals; the federator serves the existing app shell.
 
+M1 is complete on the pinned feature baseline. `kodex-federator` has independent configuration, identity locking, SQLite state, health, primary and sandbox listeners, and starts without Codex. Ordinary `kodex-gateway` startup owns only executor and loopback Control listeners; it does not serve frontend assets or run provider delivery. The federator serves the app shell and isolated sandbox document, persists/replays frontend deployment revisions, and drives service-worker update checks. Listener shutdown tests prove the federator cannot terminate executor work. The existing one-process macOS controller remains runnable only through the explicit `--legacy-combined` transition mode; replacing it with independent launchd/systemd role lifecycle is M7 and is not counted as split deployment evidence here. Backend suites/trims, frontend tests/build/trim, service-controller tests and independent review pass.
+
 ### M2 Executor registration and safe transport
 
 - Implement persisted registry, endpoint/identity validation, duplicate detection, enable/disable/remove, native readiness and API compatibility reporting.
