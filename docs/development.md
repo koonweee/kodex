@@ -147,16 +147,16 @@ Keep pane styling scoped to its intended boundary and pass policies explicitly t
 
 ## Production-style local serving
 
-Build the web app and have the gateway serve the static assets:
+The federator owns the production web assets. During the service-controller transition, the existing one-process local workflow remains available only through the explicit legacy mode:
 
 ```bash
 cd apps/web
 npm run build
 cd ../..
-KODEX_FRONTEND_DIST=apps/web/dist cargo run -p kodex-gateway
+KODEX_FRONTEND_DIST=apps/web/dist cargo run -p kodex-gateway -- --legacy-combined
 ```
 
-Open `http://127.0.0.1:8787`. Keep this setup on localhost or a trusted private network.
+Open `http://127.0.0.1:8787`. Ordinary `cargo run -p kodex-gateway` is an executor backend and does not serve the app. New federation work should use the separate executor and [federator bootstrap](#federator-bootstrap); the legacy flag exists only until the split service controller replaces this local workflow. Keep either setup on localhost or a trusted private network.
 
 Configuration can start from `apps/gateway/config/production.env.example`. With the gateway running, smoke-test it with:
 

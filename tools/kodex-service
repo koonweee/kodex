@@ -17,6 +17,7 @@ import sys
 import tempfile
 import tarfile
 import time
+import urllib.parse
 import urllib.request
 import uuid
 
@@ -183,6 +184,16 @@ class Service:
         config = json.loads(self.config_path.read_text())
         if not isinstance(config['port'], int) or not 1024 <= config['port'] <= 65535:
             raise ServiceError('port must be an integer between 1024 and 65535')
+        if ('federator_port' in config
+                and (not isinstance(config['federator_port'], int)
+                     or not 1024 <= config['federator_port'] <= 65535)):
+            raise ServiceError('federator_port must be an integer between 1024 and 65535')
+        if 'federator_port' in config:
+            origin = urllib.parse.urlsplit(config.get('federator_origin', ''))
+            if (origin.scheme not in ('http', 'https') or not origin.netloc
+                    or origin.username is not None or origin.password is not None
+                    or origin.path not in ('', '/') or origin.query or origin.fragment):
+                raise ServiceError('federator_origin must be an HTTP(S) origin')
         if not Path(config['data_dir']).is_absolute():
             raise ServiceError('data_dir must be an absolute path')
         return config
@@ -316,11 +327,15 @@ class Service:
         raise ServiceError(f'Health check failed at {endpoint}; inspect kodex-service logs')
 
     def notify_frontend_updated(self, revision):
-        endpoint = f"http://127.0.0.1:{self.config()['port']}/v1/frontend-updates"
+        config = self.config()
+        endpoint = f"http://127.0.0.1:{config.get('federator_port', config['port'])}/v1/frontend-updates"
+        headers = {'Content-Type': 'application/json', 'x-kodex-api-version': '4'}
+        if 'federator_port' in config:
+            headers['Host'] = urllib.parse.urlsplit(config['federator_origin']).netloc
         request = urllib.request.Request(
             endpoint,
             data=json.dumps({'revision': revision}).encode(),
-            headers={'Content-Type': 'application/json'},
+            headers=headers,
             method='POST',
         )
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -461,7 +476,9 @@ class Service:
             # Applies on login/crash restart too. Successful exit avoids a port-conflict restart loop.
             print(error, file=sys.stderr)
             return
-        os.execve(release / 'kodex-gateway', [str(release / 'kodex-gateway')], self.environment(release))
+        os.execve(release / 'kodex-gateway',
+                  [str(release / 'kodex-gateway'), '--legacy-combined'],
+                  self.environment(release))
 
 
 @contextlib.contextmanager

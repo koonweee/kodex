@@ -1,6 +1,6 @@
 # Deployment
 
-Kodex supports localhost and trusted private-network deployments. This document covers that security model, gateway configuration, the PWA, and browser notifications.
+Kodex supports localhost and trusted private-network deployments. This document covers that security model, executor configuration, the PWA, and browser notifications. The federator serves the web assets in the split architecture; the executor gateway is backend-only.
 
 ## Security model
 
@@ -31,7 +31,7 @@ Defaults:
 | Native home | `<instance root>/codex-home/` |
 | Image uploads | `${TMPDIR:-/tmp}/kodex/uploads/images` |
 | Codex command | Codex **0.160.0** `app-server --listen stdio://` |
-| Static frontend | Disabled until `KODEX_FRONTEND_DIST` is set |
+| Static frontend | Never served by ordinary executor startup |
 
 Supported environment overrides include:
 
@@ -43,7 +43,6 @@ KODEX_DATA_DIR
 KODEX_UPLOADS_DIR
 KODEX_CODEX_BINARY
 KODEX_CODEX_ARGS
-KODEX_FRONTEND_DIST
 KODEX_VAPID_PUBLIC_KEY
 KODEX_VAPID_PRIVATE_KEY
 KODEX_VAPID_SUBJECT
@@ -51,6 +50,8 @@ KODEX_NOTIFICATIONS_RECHECK_DELAY_MS
 ```
 
 Start from `apps/gateway/config/production.env.example` for a production-style local configuration.
+
+`KODEX_FRONTEND_DIST` belongs to `kodex-federator`. The temporary `kodex-gateway --legacy-combined` transition mode also accepts it so the existing one-process macOS controller remains runnable until the split controller replaces that path. Do not treat the legacy flag as an executor deployment mode.
 
 The native redesign is validated for the intended personal-account deployment. Its startup selects a fresh instance root with a persisted identity and an exclusive process lock. `KODEX_DATA_DIR` selects that root; a `KODEX_DATABASE_PATH` override must resolve to its `gateway.db`. Do not copy old databases or desktop credentials into it. Wrong executable versions and failed native initialization stop startup. Existing production remains a separate operational deployment until an explicit replacement restart is requested.
 

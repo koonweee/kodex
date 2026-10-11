@@ -14,6 +14,7 @@ import { useInterfacePreferences } from "../preferences/useInterfacePreferences"
 import { compatibilityRequired, subscribeCompatibility } from "../api/compatibility";
 import { AnimatedNumericText } from "../ui/AnimatedNumericText";
 import { usePwaUpdateCountdown } from "./usePwaUpdateCountdown";
+import { subscribeToFederatorFrontendUpdates } from "./federatorUpdates";
 
 export function PwaLifecycle({ hasComposerTextDraft = false }: { hasComposerTextDraft?: boolean }) {
   const { preferences } = useInterfacePreferences();
@@ -22,8 +23,12 @@ export function PwaLifecycle({ hasComposerTextDraft = false }: { hasComposerText
 
   useEffect(() => {
     const unsubscribe = subscribeToPwaUpdates(setUpdateState);
+    const unsubscribeFederator = subscribeToFederatorFrontendUpdates();
     void registerPwaServiceWorker().catch(() => undefined);
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      unsubscribeFederator();
+    };
   }, []);
 
   const { countdown, dismissed, updating, error, update, dismiss } = usePwaUpdateCountdown(

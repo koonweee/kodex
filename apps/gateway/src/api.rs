@@ -67,7 +67,6 @@ use crate::{
         directories::{DirectoryEntry, DirectoryListQuery, DirectoryListResponse},
         events::EventListResponse,
         file_preview::FilePreviewQuery,
-        frontend_updates::FrontendUpdateRequest,
         health::{HealthResponse, ReadyResponse},
         mcp::{McpResourceReadQuery, McpServersQuery},
         models::ModelsQuery,
@@ -204,7 +203,6 @@ impl AppState {
         crate::routes::health::healthz,
         crate::routes::health::readyz,
         crate::routes::capabilities::capabilities,
-        crate::routes::frontend_updates::publish_frontend_update,
         crate::routes::terminals::list_terminals,
         crate::routes::terminals::create_terminal,
         crate::routes::terminals::delete_terminal,
@@ -375,7 +373,6 @@ impl AppState {
         PermissionProfileSummary,
         EventEnvelope,
         EventListResponse,
-        FrontendUpdateRequest,
         ProjectChanged,
         ThreadProjectUpdated,
         Project,
@@ -625,7 +622,6 @@ fn executor_routes(openapi: utoipa::openapi::OpenApi) -> Router<AppState> {
         .merge(routes::terminals::router())
         .merge(routes::composer_settings::router())
         .merge(routes::events::router())
-        .merge(routes::frontend_updates::router())
         .merge(routes::projects::router())
         .merge(routes::directories::router())
         .merge(routes::threads::router())
@@ -687,6 +683,7 @@ pub fn build_control_router(state: AppState) -> Router {
 /// compatibility while the service bootstrap is split into two listeners.
 pub fn build_router(state: AppState) -> Router {
     let mut router = executor_routes(ApiDoc::openapi())
+        .merge(routes::frontend_updates::router())
         .merge(routes::self_control::router())
         .merge(routes::pins::control_router())
         .with_state(state.clone());
@@ -720,11 +717,26 @@ mod executor_boundary_tests {
             Arc::new(RecordingAppServer::default()),
         );
 
-        let response = build_executor_router(state)
+        let app = build_executor_router(state);
+        let response = app
+            .clone()
             .oneshot(Request::get("/").body(Body::empty()).unwrap())
             .await
             .unwrap();
-
         assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/frontend-updates")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+        assert!(!executor_openapi()
+            .paths
+            .paths
+            .contains_key("/v1/frontend-updates"));
     }
 }

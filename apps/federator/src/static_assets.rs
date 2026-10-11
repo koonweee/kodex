@@ -90,7 +90,7 @@ async fn inject_runtime_config(
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     };
     let meta = format!(
-        r#"<meta name="kodex-app-surface-sandbox-url" content="{}">"#,
+        r#"<meta name="kodex-federator" content="true"><meta name="kodex-app-surface-sandbox-url" content="{}">"#,
         escape_html_attribute(sandbox_public_url)
     );
     let html = if let Some(offset) = html.find("<head>") {

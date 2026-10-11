@@ -1,4 +1,5 @@
 pub mod config;
+mod frontend_updates;
 pub mod instance;
 pub mod proxy;
 pub mod registry;
@@ -19,6 +20,8 @@ pub struct State {
     pub(crate) store: store::Store,
     pub(crate) registry_writer: registry::RegistryWriter,
     pub(crate) registry_changes: broadcast::Sender<RegistryChange>,
+    pub(crate) frontend_update_writer: frontend_updates::FrontendUpdateWriter,
+    pub(crate) frontend_updates: broadcast::Sender<String>,
     pub(crate) trust: trust::TrustPolicy,
     pub(crate) executor_probe_locks: std::sync::Arc<
         tokio::sync::Mutex<
@@ -46,6 +49,8 @@ struct HealthResponse {
 #[openapi(
     paths(
         health,
+        frontend_updates::publish_frontend_update,
+        frontend_updates::frontend_update_events,
         registry::registry_events,
         registry::list_executors,
         registry::get_executor,
@@ -56,6 +61,7 @@ struct HealthResponse {
     ),
     components(schemas(
         HealthResponse,
+        frontend_updates::FrontendUpdateRequest,
         registry::ExecutorRecord,
         registry::ExecutorStatus,
         registry::ExecutorListResponse,
@@ -141,6 +147,7 @@ pub fn primary_router(
     let mut router = Router::new()
         .route("/healthz", get(health))
         .route("/readyz", get(health))
+        .merge(frontend_updates::router())
         .merge(registry::router())
         .merge(proxy::router())
         .merge(SwaggerUi::new("/docs").external_url_unchecked("/openapi.json", federated_openapi()))
@@ -188,12 +195,17 @@ pub async fn prepare(
     let store = store::Store::connect(&config.database_path).await?;
     let (registry_changes, _) = broadcast::channel(128);
     let registry_writer = registry::RegistryWriter::start(store.clone(), registry_changes.clone());
+    let (frontend_updates, _) = broadcast::channel(16);
+    let frontend_update_writer =
+        frontend_updates::FrontendUpdateWriter::start(store.clone(), frontend_updates.clone());
     let trust = trust::TrustPolicy::new(&config.public_origin)?;
     let state = State {
         instance_id: prepared.identity.id.to_string(),
         store,
         registry_writer,
         registry_changes,
+        frontend_update_writer,
+        frontend_updates,
         trust,
         executor_probe_locks: std::sync::Arc::new(tokio::sync::Mutex::new(
             std::collections::HashMap::new(),
@@ -380,6 +392,8 @@ mod tests {
             .unwrap();
         assert_eq!(shell.status(), 200);
         let body = shell.into_body().collect().await.unwrap().to_bytes();
+        assert!(String::from_utf8_lossy(&body)
+            .contains(r#"<meta name="kodex-federator" content="true">"#));
         assert!(String::from_utf8_lossy(&body).contains(
             r#"<meta name="kodex-app-surface-sandbox-url" content="http://localhost:8790/app-surface-sandbox.html">"#
         ));

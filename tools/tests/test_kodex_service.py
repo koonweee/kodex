@@ -30,6 +30,8 @@ class LifecycleTests(unittest.TestCase):
         self.app.root.mkdir()
         self.app.config_path.write_text(json.dumps({
             'port': 18787, 'data_dir': str(self.root / 'data'),
+            'federator_port': 18790,
+            'federator_origin': 'https://kodex.example.ts.net',
             'path': '/usr/bin:/bin',
         }))
         self.actions = []
@@ -283,9 +285,11 @@ class LifecycleTests(unittest.TestCase):
             self.app.notify_frontend_updated('build-123')
 
         request, timeout = captured[0]
-        self.assertEqual(request.full_url, 'http://127.0.0.1:18787/v1/frontend-updates')
+        self.assertEqual(request.full_url, 'http://127.0.0.1:18790/v1/frontend-updates')
         self.assertEqual(request.get_method(), 'POST')
         self.assertEqual(json.loads(request.data), {'revision': 'build-123'})
+        self.assertEqual(request.headers['X-kodex-api-version'], '4')
+        self.assertEqual(request.headers['Host'], 'kodex.example.ts.net')
         self.assertEqual(timeout, 2)
 
     def test_frontend_build_failure_leaves_index_and_assets_unchanged(self):
@@ -343,6 +347,16 @@ class LifecycleTests(unittest.TestCase):
              patch.object(service.os, 'execve') as execute:
             self.app.execute()
         execute.assert_not_called()
+
+    def test_legacy_controller_explicitly_runs_the_combined_gateway_mode(self):
+        release = self.release('new')
+        service.link(self.app.root / 'current', release)
+        with patch.object(service, 'check_port'), patch.object(service.os, 'execve') as execute:
+            self.app.execute()
+        self.assertEqual(
+            execute.call_args.args[:2],
+            (release / 'kodex-gateway', [str(release / 'kodex-gateway'), '--legacy-combined']),
+        )
 
     def test_stop_waits_for_owned_process_without_killing_listener(self):
         with patch.object(self.app, 'job', return_value={'pid': 123}), \

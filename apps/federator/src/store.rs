@@ -10,6 +10,7 @@ use crate::registry::{ExecutorRecord, ExecutorStatus};
 
 const SCHEMA_VERSION: i64 = 3;
 const REGISTRY_REVISION_KEY: &str = "executor_registry_revision";
+const FRONTEND_REVISION_KEY: &str = "frontend_revision";
 
 #[derive(Clone)]
 pub struct Store {
@@ -117,6 +118,26 @@ impl Store {
         let revision = registry_revision(&mut transaction).await?;
         transaction.commit().await?;
         Ok(revision)
+    }
+
+    pub async fn frontend_revision(&self) -> anyhow::Result<Option<String>> {
+        Ok(
+            sqlx::query_scalar("SELECT value FROM federation_meta WHERE key = ?")
+                .bind(FRONTEND_REVISION_KEY)
+                .fetch_optional(&self.pool)
+                .await?,
+        )
+    }
+
+    pub async fn set_frontend_revision(&self, revision: &str) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO federation_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        )
+        .bind(FRONTEND_REVISION_KEY)
+        .bind(revision)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 
     pub async fn get_executor(&self, id: &str) -> anyhow::Result<Option<ExecutorRecord>> {

@@ -389,22 +389,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/frontend-updates": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["publish_frontend_update"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/mcp/configured-servers": {
         parameters: {
             query?: never;
@@ -1920,9 +1904,6 @@ export interface components {
         };
         FileUploadResponse: {
             files: components["schemas"]["TimelineFileAttachment"][];
-        };
-        FrontendUpdateRequest: {
-            revision: string;
         };
         GatewayCapabilities: {
             apiVersion: components["schemas"]["ApiVersion"];
@@ -4000,28 +3981,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["EventListResponse"];
                 };
-            };
-        };
-    };
-    publish_frontend_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FrontendUpdateRequest"];
-            };
-        };
-        responses: {
-            /** @description Frontend update published */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };
