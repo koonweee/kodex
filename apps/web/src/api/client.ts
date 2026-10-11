@@ -102,6 +102,13 @@ export {
   type ExecutorGatewayClientOptions,
   type GatewayClientOptions,
 } from "./gatewayClient";
+export {
+  createFederationRegistrySubscription,
+  createFederatorClient,
+  type ExecutorRegistryEvent,
+  type FederatorClient,
+  type FederatorClientOptions,
+} from "./federatorClient";
 
 import { createGatewayClient } from "./gatewayClient";
 
