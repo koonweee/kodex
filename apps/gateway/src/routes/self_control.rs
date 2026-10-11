@@ -125,6 +125,10 @@ pub fn router() -> Router<AppState> {
             patch(update_self_control_thread_settings),
         )
         .route(
+            "/v1/self-control/threads/{thread_id}/unarchive",
+            post(unarchive_self_control_thread),
+        )
+        .route(
             "/v1/self-control/threads/{thread_id}/archive",
             post(archive_self_control_thread),
         )
@@ -663,7 +667,8 @@ pub async fn archive_self_control_app_surface(
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SelfControlCreateThreadRequest {
-    pub project_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -705,9 +710,6 @@ pub async fn create_self_control_thread(
     Json(request): Json<SelfControlCreateThreadRequest>,
 ) -> ApiResult<Json<ThreadCommandResponse>> {
     enforce_self_control_depth(request.max_self_control_depth)?;
-    let cwd =
-        crate::routes::projects::project_execution_cwd(&state, &request.project_id, request.cwd)
-            .await?;
     let options = ThreadCreationOptions {
         model: request.model,
         effort: request.effort,
@@ -720,21 +722,45 @@ pub async fn create_self_control_thread(
     };
     options.validate()?;
     let payload = create_thread_payload(&options)?;
-    let mut response = app_server_api::client(&state.app_server)
-        .thread_start(request.project_id.clone(), cwd, payload)
-        .await?;
+    let cwd = match crate::routes::projects::settings_cwd(
+        &state,
+        request.project_id.as_deref(),
+        request.cwd,
+    )
+    .await?
+    {
+        Some(cwd) => cwd,
+        None => crate::routes::threads::dated_chat_cwd(
+            &state.config.projects.home_dir,
+            "Chat",
+            chrono::Local::now().date_naive(),
+        )?,
+    };
+    let client = app_server_api::client(&state.app_server);
+    let mut response = match request.project_id.as_ref() {
+        Some(project_id) => {
+            client
+                .thread_start(project_id.clone(), cwd, payload)
+                .await?
+        }
+        None => client.thread_start_in_cwd(cwd, payload).await?,
+    };
     crate::read_state::catalog_changed(&state, "thread/started", &response.thread.id).await?;
     apply_thread_command_response_state(&state, &mut response).await?;
     broadcast_thread_upserted(
         &state,
-        ThreadUpsertScope::Project,
-        Some(&request.project_id),
+        if request.project_id.is_some() {
+            ThreadUpsertScope::Project
+        } else {
+            ThreadUpsertScope::Chat
+        },
+        request.project_id.as_deref(),
         &response.thread,
     )
     .await?;
     audit_self_control(
         &state,
-        Some(&request.project_id),
+        request.project_id.as_deref(),
         Some(&response.thread.id),
         "self_control.thread_created",
         json!({ "source": request.source.to_value() }),
@@ -1048,6 +1074,32 @@ pub async fn archive_self_control_thread(
 
 #[utoipa::path(
     post,
+    path = "/v1/self-control/threads/{threadId}/unarchive",
+    summary = "Restore an archived thread without starting a turn",
+    request_body = SelfControlMutationRequest,
+    responses((status = 200, body = RawAppServerResponse))
+)]
+pub async fn unarchive_self_control_thread(
+    State(state): State<AppState>,
+    Path(thread_id): Path<String>,
+    request: Option<Json<SelfControlMutationRequest>>,
+) -> ApiResult<Json<RawAppServerResponse>> {
+    let response = app_server_api::client(&state.app_server)
+        .thread_unarchive(thread_id.clone())
+        .await?;
+    crate::read_state::catalog_changed(&state, "thread/unarchived", &thread_id).await?;
+    audit_thread_mutation(
+        &state,
+        &thread_id,
+        "self_control.thread_unarchived",
+        optional_source(request),
+    )
+    .await?;
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    post,
     path = "/v1/self-control/threads/{threadId}/seen",
     summary = "Mark a thread seen through self-control",
     request_body = SelfControlMarkThreadSeenRequest,
@@ -1125,7 +1177,8 @@ pub async fn interrupt_current_self_control_thread(
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SelfControlThreadSpawnRequest {
-    pub project_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
     pub input: Vec<UserInput>,
@@ -1219,7 +1272,7 @@ pub async fn spawn_self_control_thread(
     // never authorize repeating the same key; no partial-spawn repair engine.
     audit_self_control(
         &state,
-        Some(&request.project_id),
+        request.project_id.as_deref(),
         None,
         "self_control.thread_spawn_admitting",
         json!({"idempotencyKey":idempotency_key,"source":request.source.to_value()}),
@@ -1285,7 +1338,7 @@ pub async fn spawn_self_control_thread(
         client_user_message_id: row.client_user_message_id,
         idempotent_replay: false,
     };
-    if let Err(error) = audit_self_control(&state, Some(&request.project_id), Some(&thread_id), "self_control.thread_spawned", json!({"idempotencyKey":response.idempotency_key,"source":request.source.to_value(),"response":response})).await {
+    if let Err(error) = audit_self_control(&state, request.project_id.as_deref(), Some(&thread_id), "self_control.thread_spawned", json!({"idempotencyKey":response.idempotency_key,"source":request.source.to_value(),"response":response})).await {
         // Current caller receives the native ACK. A later replay lacking this
         // audit record sees the durable uncertain intent and cannot resubmit.
         tracing::warn!(%error, "failed to cache accepted Control spawn");

@@ -1315,6 +1315,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/self-control/threads/{threadId}/unarchive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore an archived thread without starting a turn */
+        post: operations["unarchive_self_control_thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/sidebar/threads": {
         parameters: {
             query?: never;
@@ -3072,7 +3089,7 @@ export interface components {
             model?: string | null;
             payload?: unknown;
             permissions?: string | null;
-            projectId: string;
+            projectId?: string | null;
             sandbox?: string | null;
             serviceTier?: string | null;
             source?: components["schemas"]["SelfControlSource"];
@@ -3175,7 +3192,7 @@ export interface components {
             nickname?: string | null;
             payload?: unknown;
             permissions?: string | null;
-            projectId: string;
+            projectId?: string | null;
             role?: string | null;
             sandbox?: string | null;
             serviceTier?: string | null;
@@ -3387,6 +3404,8 @@ export interface components {
             skillMentions?: components["schemas"]["TimelineSkillMention"][];
         };
         ThreadListQuery: {
+            /** @description Return archived threads only; defaults to active threads. */
+            archived?: boolean;
             cursor?: string | null;
             /** Format: int32 */
             limit?: number | null;
@@ -5505,6 +5524,8 @@ export interface operations {
     list_self_control_threads: {
         parameters: {
             query?: {
+                /** @description Return archived threads only; defaults to active threads. */
+                archived?: boolean;
                 projectId?: string | null;
                 cursor?: string | null;
                 limit?: number | null;
@@ -6016,6 +6037,31 @@ export interface operations {
             };
         };
     };
+    unarchive_self_control_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlMutationRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RawAppServerResponse"];
+                };
+            };
+        };
+    };
     get_sidebar_threads: {
         parameters: {
             query?: never;
@@ -6179,6 +6225,8 @@ export interface operations {
     list_threads: {
         parameters: {
             query?: {
+                /** @description Return archived threads only; defaults to active threads. */
+                archived?: boolean;
                 projectId?: string | null;
                 cursor?: string | null;
                 limit?: number | null;

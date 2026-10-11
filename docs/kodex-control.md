@@ -31,6 +31,12 @@ The server exposes guarded tools for:
 
 It also exposes resources such as `kodex://status`, `kodex://projects`, `kodex://threads/{threadId}/app-surface`, and `kodex://automations`.
 
+## Thread creation and archives
+
+`create_thread` and `spawn_thread` accept an optional `projectId`. With a project, `cwd` must match its sole root. Without a project, an absolute `cwd` is accepted; omitting it creates a unique `Chat` directory under `~/Documents/Codex/<date>`, following the standalone chat policy. Creation never guesses project membership. Spawn retains its guarded admission receipt: reuse the same key after an uncertain acknowledgment rather than retrying with a new key.
+
+`list_threads` defaults to active threads. Set `archived: true` for archived threads, optionally filtering by project and paginating with the native cursor. Archived pages default to 50 entries and accept limits from 1 to 100. `unarchive_thread` restores a thread through the native runtime without submitting input. Existing sidebar refill events notify other clients; reconnects read native membership again.
+
 ## App surfaces
 
 Generated app surfaces let Codex open or update temporary, thread-bound HTML when direct interaction is clearer than chat. They should:

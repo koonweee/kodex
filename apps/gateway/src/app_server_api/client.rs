@@ -43,6 +43,28 @@ impl CodexClient {
         ThreadListResponse::from_payload(payload)
     }
 
+    pub async fn thread_list_archived(
+        &self,
+        project_id: Option<String>,
+        cursor: Option<String>,
+        limit: u32,
+    ) -> ApiResult<ThreadListResponse> {
+        let mut params = json!({
+            "cursor": cursor, "limit": limit, "archived": true,
+            "sortKey": "updated_at", "sortDirection": "desc", "useStateDbOnly": true,
+        });
+        // Omission includes every project; native null means unassigned only.
+        if let Some(project_id) = project_id {
+            params["projectId"] = json!(project_id);
+        }
+        ThreadListResponse::from_payload(self.request("thread/list", params).await?)
+    }
+
+    pub async fn thread_unarchive(&self, thread_id: String) -> ApiResult<RawAppServerResponse> {
+        self.raw_request("thread/unarchive", json!({"threadId":thread_id}))
+            .await
+    }
+
     pub async fn thread_list_recent_updated(&self, limit: u32) -> ApiResult<ThreadListResponse> {
         let payload = self
             .request(

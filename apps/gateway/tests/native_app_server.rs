@@ -6,6 +6,8 @@ mod code_mode;
 mod compaction;
 #[path = "native_app_server/config.rs"]
 mod config;
+#[path = "native_app_server/control_creation.rs"]
+mod control_creation;
 #[path = "native_app_server/first_turn_visibility.rs"]
 mod first_turn_visibility;
 #[path = "native_app_server/fixture.rs"]

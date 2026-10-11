@@ -61,6 +61,9 @@ pub fn router() -> Router<AppState> {
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadListQuery {
+    /// Return archived threads only; defaults to active threads.
+    #[serde(default)]
+    pub archived: bool,
     pub project_id: Option<String>,
     pub cursor: Option<String>,
     pub limit: Option<u32>,
@@ -299,6 +302,18 @@ pub async fn list_threads(
     State(state): State<AppState>,
     Query(query): Query<ThreadListQuery>,
 ) -> ApiResult<Json<ThreadListResponse>> {
+    if query.archived {
+        let limit = query.limit.unwrap_or(50);
+        if !(1..=100).contains(&limit) {
+            return Err(ApiError::BadRequest(
+                "Archived list limit must be between 1 and 100".into(),
+            ));
+        }
+        let response = app_server_api::client(&state.app_server)
+            .thread_list_archived(query.project_id, query.cursor, limit)
+            .await?;
+        return Ok(Json(response));
+    }
     let response = match query.project_id {
         Some(project_id) => {
             list_project_threads(&state, project_id, query.cursor, query.limit).await?
@@ -555,7 +570,7 @@ pub(crate) fn create_thread_payload(options: &ThreadCreationOptions) -> ApiResul
     Ok(payload)
 }
 
-fn dated_chat_cwd(
+pub(crate) fn dated_chat_cwd(
     home_dir: &FsPath,
     first_message_text: &str,
     date: NaiveDate,

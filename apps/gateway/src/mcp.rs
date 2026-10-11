@@ -151,9 +151,10 @@ impl KodexControlMcp {
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateThreadToolParams {
-    #[serde(alias = "project_id")]
-    pub project_id: String,
-    /// Execution directory; required when the project has zero or multiple roots.
+    /// Omit for a standalone chat.
+    #[serde(default, alias = "project_id", skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    /// For projects, must match the sole root. For standalone chats, omit to create a dated chat directory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -238,6 +239,9 @@ pub struct AutomationIdToolParams {
 #[derive(Debug, Default, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ListThreadsToolParams {
+    /// Return archived threads only; defaults to active threads.
+    #[serde(default)]
+    pub archived: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -443,9 +447,10 @@ pub struct MarkThreadSeenToolParams {
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SpawnThreadToolParams {
-    #[serde(alias = "project_id")]
-    pub project_id: String,
-    /// Execution directory; independent of the project's organizational roots.
+    /// Omit for a standalone chat.
+    #[serde(default, alias = "project_id", skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    /// For projects, must match the sole root. For standalone chats, omit to create a dated chat directory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
     pub input: Vec<Value>,
@@ -652,6 +657,7 @@ impl KodexControlMcp {
         let path = append_query(
             "/v1/self-control/threads",
             [
+                ("archived", Some(params.archived.to_string())),
                 ("projectId", params.project_id),
                 ("cursor", params.cursor),
                 ("limit", params.limit.map(|limit| limit.to_string())),
@@ -737,7 +743,9 @@ impl KodexControlMcp {
         ))
     }
 
-    #[tool(description = "Create a project-scoped Kodex thread through self-control")]
+    #[tool(
+        description = "Create a project or standalone Kodex thread. Omit projectId for standalone; omitted cwd creates a dated chat directory."
+    )]
     async fn create_thread(
         &self,
         Parameters(params): Parameters<CreateThreadToolParams>,
@@ -841,7 +849,7 @@ impl KodexControlMcp {
     }
 
     #[tool(
-        description = "Create a thread and send its first input atomically through self-control"
+        description = "Create a project or standalone thread and queue its first input in one guarded attempt. Omit projectId for standalone. An uncertain acknowledgment must not be automatically retried with a new key."
     )]
     async fn spawn_thread(
         &self,
@@ -935,6 +943,14 @@ impl KodexControlMcp {
         Parameters(params): Parameters<ThreadMutationToolParams>,
     ) -> Result<CallToolResult, McpError> {
         self.thread_post_tool(params, "archive").await
+    }
+
+    #[tool(description = "Restore an archived Kodex thread without starting a turn")]
+    async fn unarchive_thread(
+        &self,
+        Parameters(params): Parameters<ThreadMutationToolParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.thread_post_tool(params, "unarchive").await
     }
 
     #[tool(description = "List pinned chats in native position order")]
@@ -2005,7 +2021,18 @@ mod tests {
 
         let tools = client.list_all_tools().await?;
         assert!(tools.iter().any(|tool| tool.name == "get_status"));
-        assert_tool_requires(&tools, "create_thread", &["projectId"]);
+        for name in ["create_thread", "spawn_thread"] {
+            let schema = &tools
+                .iter()
+                .find(|tool| tool.name == name)
+                .unwrap()
+                .input_schema;
+            assert!(schema["properties"].get("projectId").is_some());
+            assert!(!schema
+                .get("required")
+                .and_then(Value::as_array)
+                .is_some_and(|fields| fields.iter().any(|field| field == "projectId")));
+        }
         assert_tool_requires(&tools, "send_thread_input", &["threadId", "input"]);
         let input_schema = &tools
             .iter()
