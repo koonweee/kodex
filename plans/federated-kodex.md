@@ -3,6 +3,21 @@
 Status: Proposed
 Date: 2026-10-11
 
+## Pinned implementation baseline
+
+- Baseline commit: `496eb35aae3e25786633c4d2ab8b356f809f430f` (`Plan federated Kodex architecture`).
+- Verified on 2026-10-12 after fetching `origin/main`; local `main` and `origin/main` both pointed to this commit.
+- Feature branch: `codex/federated-kodex`.
+- Implementation worktree: `/Users/jtkw/Projects/kodex-federated`.
+
+All federation implementation, tests, generated contracts, documentation and milestone commits must be developed in this feature worktree against the pinned baseline plus this feature branch's own changes. The original `/Users/jtkw/Projects/kodex` checkout remains on `main` for independent work.
+
+Main may advance during implementation. Do not pull, merge, rebase or cherry-pick later `main`/`origin/main` changes into this branch, and do not periodically refresh the baseline. Do not copy evolving source, generated artifacts or local build outputs from the main worktree to keep the feature current. Resolve implementation questions from this feature checkout and its pinned contracts; later main changes are not an implementation dependency.
+
+Catch up with main only during the final merge-back integration phase. At that point, fetch the then-current main, reconcile its changes with the completed feature, resolve conflicts and rerun the affected contract, regression, cross-executor/two-tab and service-lifecycle checks before merging. Record that integration commit and validation separately; retain the original baseline above as the historical implementation starting point.
+
+This worktree setup does not mark implementation milestones complete or authorize deployment or pushing.
+
 ## Objective and agreed scope
 
 Run one project-first Kodex web workspace across macOS and Linux executors on a personal Tailscale network. Split the current gateway responsibilities into independently supervised federator and executor services. The federator serves the built React app; a separate production UI service is unnecessary.
@@ -36,7 +51,7 @@ Confirmed on 2026-10-12: preserve today's operator-configured callback forwardin
 - Codex sign-in already requests native `account/login/start` with `chatgptDeviceCode`. No credential-copy mechanism or new login protocol is needed.
 - `tools/kodex-service` is macOS/launchd-specific, pins official macOS runtime packages and manages a combined backend/frontend deployment.
 
-Implementation must recheck these anchors against intervening work. The Kodex Control plan is independent; preserve its changes and instance-local ownership.
+Implementation must verify these anchors in the pinned feature checkout and subsequent feature commits, not against a moving main. Preserve the baseline Kodex Control behavior and instance-local ownership; reconcile later independent changes only at merge-back.
 
 ## Service and storage boundaries
 
