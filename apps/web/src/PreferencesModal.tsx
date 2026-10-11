@@ -12,6 +12,8 @@ import { ExecutionPreferencesPanel } from "./preferences/ExecutionPreferencesPan
 import { AppearancePreferencesPanel } from "./preferences/AppearancePreferencesPanel";
 import { UsagePreferencesPanel } from "./preferences/UsagePreferencesPanel";
 import { ExecutorsPreferencesPanel } from "./preferences/ExecutorsPreferencesPanel";
+import { AccountPreferencesPanel } from "./preferences/AccountPreferencesPanel";
+import { ExecutorPreferencesScope } from "./preferences/ExecutorPreferencesScope";
 import { useFederatedCatalogContext } from "./federation/FederatedCatalogContext";
 import type { AppearanceMode, AppearancePreferences } from "./theme/appearancePreferences";
 import { requestKodexNotificationPermission } from "./notifications/browserNotifications";
@@ -24,7 +26,7 @@ import {
 } from "./notifications/pushSubscriptions";
 import type { KodexColorSchemeId } from "./theme";
 
-export type PreferenceSection = "appearance" | "execution" | "usage" | "notifications" | "mcp" | "executors";
+export type PreferenceSection = "appearance" | "account" | "execution" | "usage" | "notifications" | "mcp" | "executors";
 
 export type PreferencesModalProps = {
   activeSection?: PreferenceSection;
@@ -107,6 +109,15 @@ export function PreferencesModal({
         <Stack className="kodex-preferences-sections" gap={4}>
           <Button
             className="kodex-preferences-section-button"
+            data-active={activeSection === "account" ? "true" : undefined}
+            onClick={() => onSectionChange("account")}
+            type="button"
+            variant={activeSection === "account" ? "light" : "subtle"}
+          >
+            Account
+          </Button>
+          <Button
+            className="kodex-preferences-section-button"
             data-active={activeSection === "appearance" ? "true" : undefined}
             onClick={() => onSectionChange("appearance")}
             type="button"
@@ -170,10 +181,12 @@ export function PreferencesModal({
             onModeChange={onModeChange}
             onThemeChange={onThemeChange}
           />
+        ) : activeSection === "account" ? (
+          <ExecutorPreferencesScope><AccountPreferencesPanel /></ExecutorPreferencesScope>
         ) : activeSection === "execution" ? (
-          <ExecutionPreferencesPanel />
+          <ExecutorPreferencesScope><ExecutionPreferencesPanel /></ExecutorPreferencesScope>
         ) : activeSection === "usage" ? (
-          <UsagePreferencesPanel />
+          <ExecutorPreferencesScope><UsagePreferencesPanel /></ExecutorPreferencesScope>
         ) : activeSection === "notifications" ? (
           <NotificationsPreferencesPanel
             disableError={disableNotificationsMutation.error}
@@ -197,7 +210,7 @@ export function PreferencesModal({
             testing={testNotificationMutation.isPending}
           />
         ) : activeSection === "mcp" ? (
-          <McpPreferencesPanel />
+          <ExecutorPreferencesScope><McpPreferencesPanel /></ExecutorPreferencesScope>
         ) : (
           <ExecutorsPreferencesPanel />
         )}

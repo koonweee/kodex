@@ -1187,13 +1187,14 @@ function KodexShell({
           sidebarCollapsed={sidebarCollapsed}
           useSingleThreadWorkspace={useSingleThreadWorkspace}
           workspaceSidebarProps={{
-          account, approvals: federationMode ? [] : approvals, chatThreads: sidebarChatThreads, dataState: federationMode ? {
+          account: federationMode ? null : account, approvals: federationMode ? [] : approvals, chatThreads: sidebarChatThreads, dataState: federationMode ? {
             chatThreads: federatedSidebarModel ? "loaded" : federatedCatalogState?.error ? "error" : "loading",
             pinnedThreads: federatedSidebarModel ? "loaded" : federatedCatalogState?.error ? "error" : "loading",
             projects: federatedSidebarModel ? "loaded" : federatedCatalogState?.error ? "error" : "loading",
             projectThreadsById: Object.fromEntries(sidebarProjects.map((project) => [project.id, "loaded"])),
           } : sidebarDataState, hoveredThreadActionId,
           itemContextById: federatedSidebarModel?.contextById,
+          manageAccountInPreferences: federationMode,
           executorFilter: federatedSidebar.executorFilter,
           executorFilterOptions: federatedCatalogState?.catalog?.executors.map((entry) => ({
             label: entry.executorName,
@@ -1227,7 +1228,7 @@ function KodexShell({
           selectedThreadId: selectedMainPane === "thread"
             ? (federationMode ? federatedSidebar.selectedThreadKey : selectedThreadId)
             : null,
-          showDebugEvents, showCommandOutputs, sidebarWidth, threadsByProjectId: sidebarThreadsByProjectId, usageLimitLines,
+          showDebugEvents, showCommandOutputs, sidebarWidth, threadsByProjectId: sidebarThreadsByProjectId, usageLimitLines: federationMode ? null : usageLimitLines,
           onUnpinThread: federationMode ? (threadId) => federatedSidebar.setPinned(threadId, false) : stableHandleUnpinThread,
         }}
         resolveSidebarTarget={federatedSidebarModel?.resolveTarget}

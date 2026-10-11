@@ -1,10 +1,12 @@
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { consumeRateLimitResetCredit, getRateLimits, type RateLimitsResponse } from "../api/client";
+import { consumeRateLimitResetCredit, getRateLimits, type GatewayClient, type RateLimitsResponse } from "../api/client";
 import { UsagePreferencesPanel } from "./UsagePreferencesPanel";
+import { GatewayClientProvider, GatewayRuntimeEnvironmentProvider } from "../api/GatewayClientContext";
 
 vi.mock("../api/client", () => ({ consumeRateLimitResetCredit: vi.fn(), getRateLimits: vi.fn() }));
 afterEach(() => { vi.resetAllMocks(); vi.unstubAllGlobals(); });
@@ -21,7 +23,7 @@ function data(): RateLimitsResponse {
 function setup(value = data(), client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })) {
   vi.mocked(getRateLimits).mockResolvedValue(value);
   return render(<QueryClientProvider client={client}>
-    <MantineProvider><UsagePreferencesPanel /></MantineProvider>
+    <GatewayClientProvider client={{ getRateLimits, consumeRateLimitResetCredit } as unknown as GatewayClient}><MantineProvider><UsagePreferencesPanel /></MantineProvider></GatewayClientProvider>
   </QueryClientProvider>);
 }
 
@@ -84,6 +86,42 @@ describe("Usage preferences", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry reset" }));
     expect(await screen.findByText("This reset was already applied.")).toBeInTheDocument();
     expect(vi.mocked(consumeRateLimitResetCredit).mock.calls[0][0]).toEqual(vi.mocked(consumeRateLimitResetCredit).mock.calls[1][0]);
+  });
+
+  it("preserves but disables an ambiguous reset retry while the executor is unavailable", async () => {
+    vi.mocked(getRateLimits).mockResolvedValue(data());
+    vi.mocked(consumeRateLimitResetCredit).mockRejectedValueOnce(new Error("Connection lost"));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    function Harness() {
+      const [available, setAvailable] = useState(true);
+      return <>
+        <button onClick={() => setAvailable((value) => !value)}>Toggle executor</button>
+        <GatewayRuntimeEnvironmentProvider value={{ available, storage: null }}>
+          <UsagePreferencesPanel />
+        </GatewayRuntimeEnvironmentProvider>
+      </>;
+    }
+    render(<QueryClientProvider client={client}>
+      <GatewayClientProvider client={{ getRateLimits, consumeRateLimitResetCredit } as unknown as GatewayClient}>
+        <MantineProvider><Harness /></MantineProvider>
+      </GatewayClientProvider>
+    </QueryClientProvider>);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Use reset: Weekly gift" }));
+    const retry = await screen.findByRole("button", { name: "Retry reset" });
+    expect(retry).toBeEnabled();
+    const attempt = vi.mocked(consumeRateLimitResetCredit).mock.calls[0]?.[0];
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle executor" }));
+    expect(retry).toBeDisabled();
+    fireEvent.click(retry);
+    expect(consumeRateLimitResetCredit).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle executor" }));
+    vi.mocked(consumeRateLimitResetCredit).mockResolvedValueOnce({ outcome: "alreadyRedeemed" });
+    fireEvent.click(retry);
+    await waitFor(() => expect(consumeRateLimitResetCredit).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(consumeRateLimitResetCredit).mock.calls[1]?.[0]).toEqual(attempt);
   });
 
   it("can create a reset attempt when randomUUID is unavailable", async () => {

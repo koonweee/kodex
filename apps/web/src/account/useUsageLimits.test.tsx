@@ -3,28 +3,30 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getRateLimits } from "../api/client";
+import type { GatewayClient, RateLimitsResponse } from "../api/client";
+import { GatewayClientProvider } from "../api/GatewayClientContext";
 import { queryKeys } from "../api/queryKeys";
 import { applyAccountEvent, refreshAccountQueries } from "./cache";
 import { useUsageLimits } from "./useUsageLimits";
 
-vi.mock("../api/client", () => ({ getRateLimits: vi.fn() }));
+const getRateLimits = vi.fn<GatewayClient["getRateLimits"]>();
 afterEach(() => vi.resetAllMocks());
 const snapshot = (usedPercent: number) => ({ primary: { usedPercent } });
 const response = (usedPercent: number) => ({ rateLimits: snapshot(usedPercent), rawPayload: {} });
 
 function setup() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const api = { getRateLimits } as unknown as GatewayClient;
   const hook = renderHook(useUsageLimits, { wrapper: ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    <QueryClientProvider client={client}><GatewayClientProvider client={api}>{children}</GatewayClientProvider></QueryClientProvider>
   ) });
   return { ...hook, client };
 }
 
 describe("usage limit reads", () => {
   it("keeps reset details from a full read when a live window update overlaps it", async () => {
-    let finish!: (value: Awaited<ReturnType<typeof getRateLimits>>) => void;
-    vi.mocked(getRateLimits).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    let finish!: (value: RateLimitsResponse) => void;
+    getRateLimits.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
     const { result, client } = setup();
     await waitFor(() => expect(getRateLimits).toHaveBeenCalledTimes(1));
     act(() => result.current.applyUsageLimitSnapshot(snapshot(20)));
@@ -33,7 +35,7 @@ describe("usage limit reads", () => {
     expect(result.current.usageLimitSnapshot?.primary?.usedPercent).toBe(20);
   });
   it("preserves credits and reset details through sparse native updates", async () => {
-    vi.mocked(getRateLimits).mockResolvedValueOnce({
+    getRateLimits.mockResolvedValueOnce({
       ...response(20), rateLimits: { primary: { usedPercent: 20, resetsAt: 2000000000, windowDurationMins: 300 }, credits: { balance: "42", hasCredits: true, unlimited: false } },
       rateLimitResetCredits: { availableCount: 1, credits: null },
     });
@@ -50,7 +52,7 @@ describe("usage limit reads", () => {
 
   it("refills two clients after a reset and recovers a missed reset on reconnect", async () => {
     let used = 100;
-    vi.mocked(getRateLimits).mockImplementation(async () => response(used));
+    getRateLimits.mockImplementation(async () => response(used));
     const a = setup();
     const b = setup();
     await waitFor(() => expect(a.result.current.usageLimitSnapshot?.primary?.usedPercent).toBe(100));
@@ -69,24 +71,24 @@ describe("usage limit reads", () => {
   });
   it("keeps a live update over a snapshot already in flight, then accepts a later native read", async () => {
     let finish!: (value: ReturnType<typeof response>) => void;
-    vi.mocked(getRateLimits).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    getRateLimits.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
     const { result, client } = setup();
     await waitFor(() => expect(getRateLimits).toHaveBeenCalledTimes(1));
     act(() => result.current.applyUsageLimitSnapshot(snapshot(20)));
     await act(async () => finish(response(90)));
     await waitFor(() => expect(result.current.usageLimitSnapshot?.primary?.usedPercent).toBe(20));
-    vi.mocked(getRateLimits).mockResolvedValueOnce(response(40));
+    getRateLimits.mockResolvedValueOnce(response(40));
     await act(async () => { await client.invalidateQueries({ queryKey: queryKeys.rateLimits }); });
     await waitFor(() => expect(result.current.usageLimitSnapshot?.primary?.usedPercent).toBe(40));
   });
   it("clears the prior account's live usage and ignores its pending read after account change", async () => {
     let finishOld!: (value: ReturnType<typeof response>) => void;
-    vi.mocked(getRateLimits).mockReturnValueOnce(new Promise((resolve) => { finishOld = resolve; }));
+    getRateLimits.mockReturnValueOnce(new Promise((resolve) => { finishOld = resolve; }));
     const { result, client } = setup();
     await waitFor(() => expect(getRateLimits).toHaveBeenCalledTimes(1));
     act(() => result.current.applyUsageLimitSnapshot(snapshot(20)));
     await waitFor(() => expect(result.current.usageLimitSnapshot?.primary?.usedPercent).toBe(20));
-    vi.mocked(getRateLimits).mockResolvedValueOnce(response(70));
+    getRateLimits.mockResolvedValueOnce(response(70));
     await act(async () => {
       applyAccountEvent(client, {
         id: "account-change", seq: 2, kind: "account.updated", payload: { authMode: "chatgpt" }, receivedAt: "2026-10-04T00:00:00Z",

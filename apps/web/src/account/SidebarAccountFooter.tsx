@@ -22,6 +22,7 @@ const ACCOUNT_TEXT = {
 
 export function SidebarAccountMenu({
   account,
+  manageAccountInPreferences = false,
   onLogout,
   onSelectAutomations,
   onOpenPreferences,
@@ -32,6 +33,7 @@ export function SidebarAccountMenu({
   usageLimitLines,
 }: {
   account: AccountResponse | null;
+  manageAccountInPreferences?: boolean;
   onLogout: () => void;
   onSelectAutomations: () => void;
   onOpenPreferences: (section?: PreferenceSection) => void;
@@ -47,6 +49,7 @@ export function SidebarAccountMenu({
       <SettingsMenu
         accountEmail={account?.account?.email ?? null}
         isAuthenticated={Boolean(account?.account)}
+        manageAccountInPreferences={manageAccountInPreferences}
         onLogin={loginFlow.start}
         onLogout={onLogout}
         onSelectAutomations={onSelectAutomations}
@@ -64,6 +67,7 @@ export function SidebarAccountMenu({
 
 function SettingsMenu({
   accountEmail,
+  manageAccountInPreferences,
   onLogin,
   isAuthenticated,
   onLogout,
@@ -76,6 +80,7 @@ function SettingsMenu({
   usageLimitLines,
 }: {
   accountEmail: string | null;
+  manageAccountInPreferences: boolean;
   onLogin: () => void;
   isAuthenticated: boolean;
   onLogout: () => void;
@@ -144,7 +149,18 @@ function SettingsMenu({
         >
           {ACCOUNT_TEXT.preferences}
         </Menu.Item>
-        {isAuthenticated ? (
+        {manageAccountInPreferences ? (
+          <Menu.Item
+            className="kodex-settings-menu-item"
+            leftSection={<CircleUserRound size={14} />}
+            onClick={() => {
+              setOpened(false);
+              onOpenPreferences("account");
+            }}
+          >
+            Accounts
+          </Menu.Item>
+        ) : isAuthenticated ? (
           <Menu.Item
             className="kodex-settings-menu-item"
             leftSection={<LogOut size={14} />}

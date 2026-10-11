@@ -381,7 +381,14 @@ export function WorkspaceProvider({
 
   const { includeDebugEvents, includeCommandOutputs, getOptions: getDeliveryOptions } = useThreadDeliveryPreferences();
   const deliveryStreamsRef = useRef(new Set<ReturnType<typeof createEventStreamClient>>());
-  const subscribedThreadIdsByExecutor = useMemo(() => workspaceSubscribedThreadIdsByExecutor(workspace.panes), [workspace.panes]);
+  const [liveEventSubscriberExecutorIds, setLiveEventSubscriberExecutorIds] = useState<ReadonlySet<string>>(() => new Set());
+  const subscribedThreadIdsByExecutor = useMemo(() => {
+    const subscriptions = workspaceSubscribedThreadIdsByExecutor(workspace.panes);
+    for (const executorId of liveEventSubscriberExecutorIds) {
+      if (!subscriptions.has(executorId)) subscriptions.set(executorId, []);
+    }
+    return subscriptions;
+  }, [liveEventSubscriberExecutorIds, workspace.panes]);
   const subscribedThreadIdsKey = Array.from(subscribedThreadIdsByExecutor, ([executorId, threadIds]) => `${executorId}\n${threadIds.join("\n")}`).join("\n\n");
 
   useEffect(() => {
@@ -453,9 +460,21 @@ export function WorkspaceProvider({
     const handlers = liveEventHandlersByExecutorRef.current.get(executorId) ?? new Set<WorkspaceLiveEventHandler>();
     handlers.add(handler);
     liveEventHandlersByExecutorRef.current.set(executorId, handlers);
+    setLiveEventSubscriberExecutorIds((current) => {
+      if (current.has(executorId)) return current;
+      return new Set([...current, executorId]);
+    });
     return () => {
       handlers.delete(handler);
-      if (handlers.size === 0) liveEventHandlersByExecutorRef.current.delete(executorId);
+      if (handlers.size === 0) {
+        liveEventHandlersByExecutorRef.current.delete(executorId);
+        setLiveEventSubscriberExecutorIds((current) => {
+          if (!current.has(executorId)) return current;
+          const next = new Set(current);
+          next.delete(executorId);
+          return next;
+        });
+      }
     };
   }, []);
 
@@ -986,6 +1005,10 @@ export function useWorkspace() {
     throw new Error("useWorkspace must be used within WorkspaceProvider");
   }
   return value;
+}
+
+export function useOptionalWorkspace() {
+  return useContext(WorkspaceContext);
 }
 
 function duplicateWorkspacePane(pane: WorkspacePane): WorkspacePane {

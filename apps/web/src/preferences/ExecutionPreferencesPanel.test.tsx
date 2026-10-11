@@ -5,6 +5,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { mockGateway, requestJson } from "../test/gatewayMock";
+import { createGatewayClient } from "../api/client";
+import { GatewayClientProvider } from "../api/GatewayClientContext";
 import { ExecutionPreferencesPanel } from "./ExecutionPreferencesPanel";
 
 const firstTarget = { filePath: "/dedicated/config.toml", version: "native-v1" };
@@ -44,7 +46,7 @@ const saved = { saved: true, write: { status: "ok", filePath: firstTarget.filePa
 
 function renderPanel() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={client}><MantineProvider env="test"><ExecutionPreferencesPanel /></MantineProvider></QueryClientProvider>);
+  return render(<QueryClientProvider client={client}><GatewayClientProvider client={createGatewayClient()}><MantineProvider env="test"><ExecutionPreferencesPanel /></MantineProvider></GatewayClientProvider></QueryClientProvider>);
 }
 
 const originalScrollIntoView = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollIntoView");

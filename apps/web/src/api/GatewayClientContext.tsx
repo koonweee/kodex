@@ -235,11 +235,13 @@ export function ExecutorRuntimeBoundary({
   executorId,
   fallback = null,
   preserveChildrenWhenUnavailable = false,
+  showChildrenWhenUnavailable = false,
 }: {
   children: ReactNode;
   executorId: string;
   fallback?: ReactNode;
   preserveChildrenWhenUnavailable?: boolean;
+  showChildrenWhenUnavailable?: boolean;
 }) {
   const currentConnection = useExecutorConnection();
   const registry = useContext(ExecutorRuntimeRegistryContext);
@@ -253,7 +255,11 @@ export function ExecutorRuntimeBoundary({
     }
     return (
       <ExecutorRuntimeProvider available={available} runtime={runtime}>
-        <div aria-hidden={available ? undefined : true} inert={available ? undefined : true} style={{ display: available ? "contents" : "none" }}>
+        <div
+          aria-hidden={!available && !showChildrenWhenUnavailable ? true : undefined}
+          inert={!available && !showChildrenWhenUnavailable ? true : undefined}
+          style={{ display: !available && !showChildrenWhenUnavailable ? "none" : "contents" }}
+        >
           {children}
         </div>
         {available ? null : fallback}

@@ -4,6 +4,8 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { queryKeys } from "../api/queryKeys";
+import type { GatewayClient } from "../api/client";
+import { GatewayClientProvider } from "../api/GatewayClientContext";
 import { McpPreferencesPanel } from "./McpPreferencesPanel";
 
 const apiMocks = vi.hoisted(() => ({
@@ -13,7 +15,7 @@ const apiMocks = vi.hoisted(() => ({
 vi.mock("../api/client", async (importOriginal) => ({ ...(await importOriginal<typeof import("../api/client")>()), ...apiMocks }));
 function renderPanel() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return { queryClient, ...render(<QueryClientProvider client={queryClient}><MantineProvider env="test"><McpPreferencesPanel /></MantineProvider></QueryClientProvider>) };
+  return { queryClient, ...render(<QueryClientProvider client={queryClient}><GatewayClientProvider client={apiMocks as unknown as GatewayClient}><MantineProvider env="test"><McpPreferencesPanel /></MantineProvider></GatewayClientProvider></QueryClientProvider>) };
 }
 
 describe("MCP runtime preferences", () => {

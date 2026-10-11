@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { getAccount, logout } from "../api/client";
+import { useGatewayClient } from "../api/GatewayClientContext";
 import { queryKeys } from "../api/queryKeys";
 import { refreshAccountQueries } from "./cache";
 
@@ -9,13 +9,14 @@ type UseAccountSessionParams = {
 };
 
 export function useAccountSession({ onError }: UseAccountSessionParams) {
+  const api = useGatewayClient();
   const queryClient = useQueryClient();
   const accountQuery = useQuery({
     queryKey: queryKeys.account,
-    queryFn: ({ signal }) => getAccount(signal),
+    queryFn: ({ signal }) => api.getAccount(signal),
   });
   const logoutMutation = useMutation({
-    mutationFn: logout,
+    mutationFn: api.logout,
     onError,
     onSuccess: () => refreshAccountQueries(queryClient, { reset: true }),
   });

@@ -438,13 +438,33 @@ describe("WorkspaceProvider pane commands", () => {
     expect(screen.getByTestId("executor-a-events")).toHaveTextContent("1");
     expect(screen.getByTestId("executor-b-events")).toHaveTextContent("1");
   });
+
+  it("keeps a global event channel open for an executor with a live settings subscriber and no pane", async () => {
+    const store = createMemoryWorkspacePaneStore(workspaceState([]));
+
+    render(
+      <ExecutorRuntimeRegistryProvider runtimes={[executorRuntime("executor-a"), executorRuntime("executor-b")]}>
+        <WorkspaceProvider paneStore={store}><ExecutorBSubscriber /></WorkspaceProvider>
+      </ExecutorRuntimeRegistryProvider>,
+    );
+
+    await waitFor(() => expect(streamClients).toHaveLength(1));
+    expect(streamClients[0]?.connection?.executorId).toBe("executor-b");
+    expect(streamClients[0]?.threadIds).toEqual([]);
+  });
 });
 
+function ExecutorBSubscriber() {
+  const { subscribeLiveEvent } = useWorkspace();
+  useEffect(() => subscribeLiveEvent("executor-b", () => undefined), [subscribeLiveEvent]);
+  return null;
+}
+
 function StreamCounters() {
-  const workspace = useWorkspace();
+  const { subscribeLiveEvent } = useWorkspace();
   const [counts, setCounts] = useState({ first: 0, second: 0 });
-  useEffect(() => workspace.subscribeLiveEvent("executor-a", () => setCounts((value) => ({ ...value, first: value.first + 1 }))), [workspace]);
-  useEffect(() => workspace.subscribeLiveEvent("executor-b", () => setCounts((value) => ({ ...value, second: value.second + 1 }))), [workspace]);
+  useEffect(() => subscribeLiveEvent("executor-a", () => setCounts((value) => ({ ...value, first: value.first + 1 }))), [subscribeLiveEvent]);
+  useEffect(() => subscribeLiveEvent("executor-b", () => setCounts((value) => ({ ...value, second: value.second + 1 }))), [subscribeLiveEvent]);
   return <><span data-testid="executor-a-events">{counts.first}</span><span data-testid="executor-b-events">{counts.second}</span></>;
 }
 

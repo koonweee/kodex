@@ -5,6 +5,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { queryKeys } from "../api/queryKeys";
+import { createGatewayClient } from "../api/client";
+import { GatewayClientProvider } from "../api/GatewayClientContext";
 import { mockGateway, requestJson } from "../test/gatewayMock";
 import { McpPreferencesPanel } from "./McpPreferencesPanel";
 
@@ -19,7 +21,7 @@ const saved = { saved: true, write: { status: "ok", filePath: target.filePath, v
 
 function renderPanel() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return { client, ...render(<QueryClientProvider client={client}><MantineProvider env="test"><McpPreferencesPanel /></MantineProvider></QueryClientProvider>) };
+  return { client, ...render(<QueryClientProvider client={client}><GatewayClientProvider client={createGatewayClient()}><MantineProvider env="test"><McpPreferencesPanel /></MantineProvider></GatewayClientProvider></QueryClientProvider>) };
 }
 afterEach(() => vi.restoreAllMocks());
 

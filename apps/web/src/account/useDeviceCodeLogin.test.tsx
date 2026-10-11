@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { mockGateway } from "../test/gatewayMock";
+import { createGatewayClient } from "../api/client";
+import { GatewayClientProvider } from "../api/GatewayClientContext";
 import { applyAccountEvent } from "./cache";
 import { useDeviceCodeLogin } from "./useDeviceCodeLogin";
 
@@ -14,7 +16,7 @@ afterEach(() => vi.restoreAllMocks());
 function clientHook() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const hook = renderHook(() => useDeviceCodeLogin(loggedOut), {
-    wrapper: ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+    wrapper: ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}><GatewayClientProvider client={createGatewayClient()}>{children}</GatewayClientProvider></QueryClientProvider>,
   });
   return { ...hook, client };
 }

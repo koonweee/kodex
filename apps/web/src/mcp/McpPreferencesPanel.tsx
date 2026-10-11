@@ -4,12 +4,11 @@ import { RotateCw, Server } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import {
-  GatewayRequestError, addMcpServer, listConfiguredMcpServers, listMcpServers,
-  removeMcpServer, updateMcpServer, readMcpResource, reloadMcpServers,
-  setMcpServerEnabled, startMcpOAuthLogin,
+  GatewayRequestError,
   type ConfiguredMcpServer, type McpResource, type McpServerInstallRequest,
   type McpServerUpdateRequest, type NativeConfigWriteTarget,
 } from "../api/client";
+import { useExecutorRuntimeAvailable, useGatewayClient } from "../api/GatewayClientContext";
 import { refreshNativeConfig } from "../api/nativeConfigCache";
 import { queryKeys } from "../api/queryKeys";
 import { NativeConfigWriteFeedback } from "../preferences/NativeConfigWriteFeedback";
@@ -26,6 +25,8 @@ type ConfigAction =
   | { kind: "remove"; server: string; writeTarget: NativeConfigWriteTarget };
 
 export function McpPreferencesPanel() {
+  const api = useGatewayClient();
+  const available = useExecutorRuntimeAvailable();
   const queryClient = useQueryClient();
   const [selectedServerName, setSelectedServerName] = useState<string | null>(null);
   const [selectedResource, setSelectedResource] = useState<McpResource | null>(null);
@@ -33,15 +34,15 @@ export function McpPreferencesPanel() {
   const [needsReview, setNeedsReview] = useState(false);
   const [removeConfirm, setRemoveConfirm] = useState<{ server: string; writeTarget: NativeConfigWriteTarget } | null>(null);
 
-  const serversQuery = useQuery({ queryFn: ({ signal }) => listMcpServers(signal), queryKey: queryKeys.mcpServers });
-  const configuredQuery = useQuery({ queryFn: ({ signal }) => listConfiguredMcpServers(signal), queryKey: queryKeys.mcpConfiguredServers });
+  const serversQuery = useQuery({ queryFn: ({ signal }) => api.listMcpServers(signal), queryKey: queryKeys.mcpServers });
+  const configuredQuery = useQuery({ queryFn: ({ signal }) => api.listConfiguredMcpServers(signal), queryKey: queryKeys.mcpConfiguredServers });
   const mergedServers = useMemo(() => mergeMcpServers(configuredQuery.data?.servers ?? [], serversQuery.data?.servers ?? []), [configuredQuery.data, serversQuery.data]);
   const selectedServer = mergedServers.find((server) => server.name === selectedServerName) ?? mergedServers[0] ?? null;
   const writeTarget = configuredQuery.data?.writeTarget;
   const canReview = Boolean(writeTarget) && !configuredQuery.isFetching && !configuredQuery.error && (!editor?.server || Boolean(configuredQuery.data?.servers.some((server) => server.name === editor.server?.name)));
 
   const reloadMutation = useMutation({
-    mutationFn: reloadMcpServers,
+    mutationFn: api.reloadMcpServers,
     onSuccess: async () => {
       await queryClient.cancelQueries({ queryKey: queryKeys.mcpServers });
       await queryClient.invalidateQueries({ queryKey: queryKeys.mcpServers });
@@ -50,10 +51,10 @@ export function McpPreferencesPanel() {
   const mutation = useMutation({
     mutationFn: (action: ConfigAction) => {
       switch (action.kind) {
-        case "add": return addMcpServer(action.request);
-        case "edit": return updateMcpServer(action.server, action.request);
-        case "toggle": return setMcpServerEnabled(action.server, action.enabled, action.writeTarget);
-        case "remove": return removeMcpServer(action.server, action.writeTarget);
+        case "add": return api.addMcpServer(action.request);
+        case "edit": return api.updateMcpServer(action.server, action.request);
+        case "toggle": return api.setMcpServerEnabled(action.server, action.enabled, action.writeTarget);
+        case "remove": return api.removeMcpServer(action.server, action.writeTarget);
       }
     },
     onSuccess: async () => {
@@ -69,14 +70,14 @@ export function McpPreferencesPanel() {
       }
     },
   });
-  const oauthMutation = useMutation({ mutationFn: startMcpOAuthLogin });
+  const oauthMutation = useMutation({ mutationFn: api.startMcpOAuthLogin });
   const selectedOAuthAttempt = oauthMutation.variables === selectedServer?.name;
   const resourceQuery = useQuery({
     enabled: Boolean(selectedServer?.runtime && selectedResource),
-    queryFn: () => readMcpResource(selectedServer!.name, selectedResource!.uri),
+    queryFn: () => api.readMcpResource(selectedServer!.name, selectedResource!.uri),
     queryKey: queryKeys.mcpResource(selectedServer?.name ?? "none", selectedResource?.uri ?? "none"),
   });
-  const writesDisabled = !writeTarget || Boolean(configuredQuery.error) || mutation.isPending || needsReview;
+  const writesDisabled = !available || !writeTarget || Boolean(configuredQuery.error) || mutation.isPending || needsReview;
 
   function selectServer(server: MergedMcpServer) {
     setSelectedServerName(server.name);
@@ -113,7 +114,7 @@ export function McpPreferencesPanel() {
     <Group justify="space-between" wrap="nowrap">
       <Text className="kodex-preferences-panel-title" fw={650}>MCP</Text>
       <Group gap={6} wrap="nowrap">
-        <Button aria-label="Reload MCP servers" disabled={reloadMutation.isPending} leftSection={<RotateCw size={15} />} loading={reloadMutation.isPending} onClick={() => reloadMutation.mutate()} size="xs" variant="subtle">Reload</Button>
+        <Button aria-label="Reload MCP servers" disabled={!available || reloadMutation.isPending} leftSection={<RotateCw size={15} />} loading={reloadMutation.isPending} onClick={() => reloadMutation.mutate()} size="xs" variant="subtle">Reload</Button>
         <Button disabled={writesDisabled} onClick={() => openEditor()} size="xs" variant="light">Add server</Button>
       </Group>
     </Group>
@@ -137,7 +138,7 @@ export function McpPreferencesPanel() {
     {mergedServers.length ? <Box className="kodex-mcp-layout">
       <McpServerList onSelect={selectServer} selectedName={selectedServer?.name} servers={mergedServers} />
       {selectedServer ? <McpServerDetail
-        configured={selectedServer.configured} writesDisabled={writesDisabled}
+        actionsDisabled={!available} configured={selectedServer.configured} writesDisabled={writesDisabled}
         oauthError={selectedOAuthAttempt ? oauthMutation.error?.message : undefined}
         oauthLoading={selectedOAuthAttempt && oauthMutation.isPending}
         oauthUrl={selectedOAuthAttempt ? oauthMutation.data?.authorizationUrl ?? null : null}
@@ -151,7 +152,7 @@ export function McpPreferencesPanel() {
       existingServer={editor.server} writeTarget={editor.writeTarget} onClose={() => setEditor(null)}
       onCreate={(request) => mutation.mutate({ kind: "add", request })}
       onUpdate={(request) => { if (editor.server) mutation.mutate({ kind: "edit", server: editor.server.name, request }); }}
-      pending={mutation.isPending} error={needsReview ? undefined : mutation.error?.message} needsReview={needsReview} canReview={canReview} onReview={reviewLatest}
+      pending={mutation.isPending} disabled={!available} error={needsReview ? undefined : mutation.error?.message} needsReview={needsReview} canReview={canReview} onReview={reviewLatest}
     /> : null}
   </Stack>;
 }

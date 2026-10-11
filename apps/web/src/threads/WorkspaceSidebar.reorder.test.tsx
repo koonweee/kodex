@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NARROW_WORKSPACE_QUERY } from "../shared/layoutBreakpoints";
 
-import type { Project, ThreadSummary } from "../api/client";
+import { createGatewayClient, type Project, type ThreadSummary } from "../api/client";
+import { GatewayClientProvider } from "../api/GatewayClientContext";
 import * as instanceBoundary from "../api/GatewayInstanceBoundary";
 import { createInstanceStorage } from "../api/instanceStorage";
 import { WorkspaceSidebar } from "./WorkspaceSidebar";
@@ -576,7 +577,7 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar
         />
       </AppShell>
     </MantineProvider>,
-    { wrapper: ({ children }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider> },
+    { wrapper: ({ children }) => <QueryClientProvider client={queryClient}><GatewayClientProvider client={createGatewayClient()}>{children}</GatewayClientProvider></QueryClientProvider> },
   );
 }
 

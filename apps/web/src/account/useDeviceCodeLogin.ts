@@ -1,11 +1,13 @@
 import { skipToken, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
-import { cancelLogin, startLogin, type AccountLoginCompleted, type AccountResponse, type LoginStartResponse } from "../api/client";
+import type { AccountLoginCompleted, AccountResponse, LoginStartResponse } from "../api/client";
+import { useGatewayClient } from "../api/GatewayClientContext";
 import { queryKeys } from "../api/queryKeys";
 import { refreshAccountQueries } from "./cache";
 
 export function useDeviceCodeLogin(account: AccountResponse | null) {
+  const api = useGatewayClient();
   const queryClient = useQueryClient();
   const [opened, setOpened] = useState(false);
   const [login, setLogin] = useState<LoginStartResponse | null>(null);
@@ -15,7 +17,7 @@ export function useDeviceCodeLogin(account: AccountResponse | null) {
     queryFn: skipToken,
   });
   const start = useMutation({
-    mutationFn: startLogin,
+    mutationFn: api.startLogin,
     onMutate: () => {
       setOpened(true);
       setError(null);
@@ -25,7 +27,7 @@ export function useDeviceCodeLogin(account: AccountResponse | null) {
     onError: (cause) => setError(cause.message),
   });
   const cancel = useMutation({
-    mutationFn: cancelLogin,
+    mutationFn: api.cancelLogin,
     onSuccess: () => {
       setOpened(false);
       setLogin(null);

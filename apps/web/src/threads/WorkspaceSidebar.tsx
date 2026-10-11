@@ -107,6 +107,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   sidebarSnapshotStatus,
   hoveredThreadActionId,
   itemContextById,
+  manageAccountInPreferences = false,
   onArchiveThread,
   onCreateChat,
   onCreateProject,
@@ -160,6 +161,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   sidebarSnapshotStatus?: SidebarSnapshotStatus;
   hoveredThreadActionId: string | null;
   itemContextById?: Record<string, FederatedSidebarItemContext>;
+  manageAccountInPreferences?: boolean;
   onArchiveThread: (threadId: string) => void;
   onCreateChat: () => void;
   onCreateProject: () => void;
@@ -454,6 +456,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
             <Box className="kodex-sidebar-header">
               <SidebarAccountMenu
                 account={account}
+                manageAccountInPreferences={manageAccountInPreferences}
                 onLogout={onLogout}
                 onSelectAutomations={onSelectAutomations}
                 onOpenPreferences={onOpenPreferences}

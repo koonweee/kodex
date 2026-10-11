@@ -1,18 +1,20 @@
 import { useMutation, useMutationState, useQueryClient } from "@tanstack/react-query";
 
-import { consumeRateLimitResetCredit } from "../api/client";
+import type { GatewayClient } from "../api/client";
+import { useGatewayClient } from "../api/GatewayClientContext";
 import { queryKeys } from "../api/queryKeys";
 import { createClientRequestId } from "../shared/id";
 import { refreshUsageQueries } from "./cache";
 
-type Request = Parameters<typeof consumeRateLimitResetCredit>[0];
-type Response = Awaited<ReturnType<typeof consumeRateLimitResetCredit>>;
+type Request = Parameters<GatewayClient["consumeRateLimitResetCredit"]>[0];
+type Response = Awaited<ReturnType<GatewayClient["consumeRateLimitResetCredit"]>>;
 
 export function useResetCredit() {
+  const api = useGatewayClient();
   const client = useQueryClient();
   const mutation = useMutation({
     mutationKey: queryKeys.resetCredit,
-    mutationFn: consumeRateLimitResetCredit,
+    mutationFn: api.consumeRateLimitResetCredit,
     retry: false,
     // An unresolved attempt survives closing/reopening Preferences. Account
     // changes clear this mutation history along with the account queries.

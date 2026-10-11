@@ -5,13 +5,14 @@ import type { ConfiguredMcpServer, McpServerInstallRequest, McpServerUpdateReque
 import { StoredSecretRows } from "./McpSecretRows";
 import { initialMcpForm, mcpCreateRequest, mcpFormError, mcpLeafEdits, type McpForm } from "./mcpForm";
 
-export function McpEditorModal({ existingServer, writeTarget, onClose, onCreate, onUpdate, pending, error, needsReview, canReview, onReview }: {
+export function McpEditorModal({ existingServer, writeTarget, onClose, onCreate, onUpdate, pending, disabled = false, error, needsReview, canReview, onReview }: {
   existingServer?: ConfiguredMcpServer;
   writeTarget: NativeConfigWriteTarget;
   onClose: () => void;
   onCreate: (request: McpServerInstallRequest) => void;
   onUpdate: (request: McpServerUpdateRequest) => void;
   pending: boolean;
+  disabled?: boolean;
   error?: string;
   needsReview: boolean;
   canReview: boolean;
@@ -31,7 +32,7 @@ export function McpEditorModal({ existingServer, writeTarget, onClose, onCreate,
   function submit() {
     const problem = mcpFormError(form);
     setValidation(problem);
-    if (problem || pending || needsReview) return;
+    if (problem || pending || disabled || needsReview) return;
     if (requiresCommandConfirmation) { setLocalCommandConfirmed(true); return; }
     if (editing) onUpdate({ writeTarget, edits });
     else onCreate(mcpCreateRequest(form, writeTarget));
@@ -39,9 +40,10 @@ export function McpEditorModal({ existingServer, writeTarget, onClose, onCreate,
   return <Modal centered opened onClose={onClose} size={560} title={editing ? "Edit MCP server" : "Add MCP server"}>
     <Stack gap={12}>
       <Text c="dimmed" size="xs">Configuration file: {writeTarget.filePath}</Text>
+      {disabled ? <Alert color="yellow" variant="light">Reconnect this executor to save the draft.</Alert> : null}
       {needsReview ? <Alert color="yellow" variant="light"><Stack gap={8}>
         <Text size="sm">Native configuration changed elsewhere. Your unsaved draft remains below. Reviewing the latest configuration replaces this draft with the latest values; reapply your changes before saving.</Text>
-        <Button disabled={!canReview} onClick={onReview} size="xs" variant="light">Review latest configuration</Button>
+        <Button disabled={disabled || !canReview} onClick={onReview} size="xs" variant="light">Review latest configuration</Button>
       </Stack></Alert> : null}
       {error || validation ? <Alert color="red" variant="light">{error ?? validation}</Alert> : null}
       <TextInput disabled={editing || pending} label="Name" value={form.name} onChange={(event) => change("name", event.currentTarget.value)} />
@@ -66,7 +68,7 @@ export function McpEditorModal({ existingServer, writeTarget, onClose, onCreate,
       <Switch label="Required" checked={form.required} disabled={pending} onChange={(event) => change("required", event.currentTarget.checked)} />
       <Group justify="flex-end">
         <Button onClick={onClose} size="xs" variant="subtle">Cancel</Button>
-        <Button disabled={needsReview || (editing && edits.length === 0)} loading={pending} onClick={submit} size="xs">{requiresCommandConfirmation ? "Confirm local command" : editing ? "Save changes" : "Add server"}</Button>
+        <Button disabled={disabled || needsReview || (editing && edits.length === 0)} loading={pending} onClick={submit} size="xs">{requiresCommandConfirmation ? "Confirm local command" : editing ? "Save changes" : "Add server"}</Button>
       </Group>
     </Stack>
   </Modal>;

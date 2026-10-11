@@ -2,6 +2,7 @@ import { Alert, Button, Group, Loader, Paper, Progress, Stack, Text } from "@man
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { RateLimitWindow } from "../api/client";
+import { useExecutorRuntimeAvailable, useGatewayClient } from "../api/GatewayClientContext";
 import { refreshUsageQueries } from "../account/cache";
 import { formatCreditsRemaining, usageLimitSnapshotFromResponse } from "../account/rateLimits";
 import { usageQueryOptions } from "../account/useUsageLimits";
@@ -16,8 +17,10 @@ const outcomeMessages = {
 };
 
 export function UsagePreferencesPanel() {
+  const api = useGatewayClient();
+  const available = useExecutorRuntimeAvailable();
   const queryClient = useQueryClient();
-  const query = useQuery(usageQueryOptions(queryClient));
+  const query = useQuery(usageQueryOptions(queryClient, api));
   const reset = useResetCredit();
   const snapshot = query.data ? usageLimitSnapshotFromResponse(query.data) : null;
   const resets = query.data?.rateLimitResetCredits;
@@ -27,7 +30,7 @@ export function UsagePreferencesPanel() {
     <Stack className="kodex-preferences-panel kodex-usage-panel" gap={16}>
       <Group justify="space-between">
         <Text className="kodex-preferences-panel-title" fw={650}>Usage</Text>
-        <Button size="xs" variant="subtle" disabled={query.isFetching || reset.isPending} onClick={() => void refreshUsageQueries(queryClient)}>Refresh usage</Button>
+        <Button size="xs" variant="subtle" disabled={!available || query.isFetching || reset.isPending} onClick={() => void refreshUsageQueries(queryClient)}>Refresh usage</Button>
       </Group>
       {query.isPending ? <Group gap="xs"><Loader size="xs" /><Text size="sm">Loading usage…</Text></Group> : null}
       {query.error ? <Alert color="red">Could not refresh usage. {query.error.message}</Alert> : null}
@@ -43,7 +46,7 @@ export function UsagePreferencesPanel() {
           {reset.error ? <Alert color="red">
             <Stack gap="xs">
               <Text size="sm">Could not confirm the reset. Retry to check the same attempt. {reset.error.message}</Text>
-              <Group><Button variant="light" size="xs" onClick={() => reset.variables && reset.useReset(reset.variables.creditId)}>Retry reset</Button></Group>
+              <Group><Button variant="light" size="xs" disabled={!available} onClick={() => reset.variables && reset.useReset(reset.variables.creditId)}>Retry reset</Button></Group>
             </Stack>
           </Alert> : null}
           {!query.isPending && !resets ? <Text size="sm" c="dimmed">Reset information unavailable.</Text> : null}
@@ -62,7 +65,7 @@ export function UsagePreferencesPanel() {
                   {!usable && !expired ? <Text size="xs" c="dimmed">{credit.status === "redeeming" ? "Reset in progress" : "Unavailable"}</Text> : null}
                 </Stack>
                   <Button variant="light" size="xs" aria-label={`Use reset: ${name}`}
-                    disabled={!usable || reset.isPending || Boolean(reset.error && reset.variables?.creditId !== credit.id)}
+                    disabled={!available || !usable || reset.isPending || Boolean(reset.error && reset.variables?.creditId !== credit.id)}
                     loading={reset.isPending && reset.variables?.creditId === credit.id}
                     onClick={() => reset.useReset(credit.id)}>Use reset</Button>
               </div>

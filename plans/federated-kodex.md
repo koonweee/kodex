@@ -249,6 +249,8 @@ M4 is complete on the pinned feature baseline. The federator persists bounded, g
 
 Exit: the full feature matrix passes through remote routes; credentials and app bridges cannot cross executors; remote MCP OAuth succeeds using the documented operator callback setup as agreed. A generic 'OAuth is unsupported remotely' notice is not parity.
 
+M5 is active. Account/device-code operations, usage and reset credits, execution defaults, model and permission reads, native config writes, MCP inventory/resources/reload and MCP OAuth now run inside an explicitly selected executor runtime and query cache. The selector remounts captured native config forms when its executor changes, and the selected executor retains a global event subscription even without an open workspace pane so account and configuration updates converge. Federation mode routes the sidebar account entry to this scoped surface instead of presenting one shell executor's account as federation-wide state. Automation aggregation, generated-app bridge isolation, deployed sandbox/media validation and the agreed remote MCP OAuth callback proof remain open.
+
 ### M6 Federated notifications and recovery
 
 - Implement the claim/outcome delivery boundary using existing durable attempt rules, source eligibility and exact-turn previews.

@@ -1,28 +1,34 @@
 import { queryOptions, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
-import { getRateLimits, type RateLimitSnapshot, type RateLimitsResponse } from "../api/client";
+import type { GatewayClient, RateLimitSnapshot, RateLimitsResponse } from "../api/client";
+import { useGatewayClient } from "../api/GatewayClientContext";
 import { queryKeys } from "../api/queryKeys";
 import { usageLimitSnapshotFromResponse } from "./rateLimits";
 
 export function useUsageLimits() {
+  const api = useGatewayClient();
   const queryClient = useQueryClient();
-  const query = useQuery(usageQueryOptions(queryClient));
+  const query = useQuery(usageQueryOptions(queryClient, api));
   const applyUsageLimitSnapshot = useCallback((snapshot: RateLimitSnapshot) => {
-    queryClient.setQueryData<RateLimitsResponse>(queryKeys.rateLimits, (current) => {
-      const previous = current ? usageLimitSnapshotFromResponse(current) : null;
-      return { ...current, rawPayload: current?.rawPayload ?? {}, rateLimits: mergeUsageUpdate(previous, snapshot) };
-    });
+    applyUsageLimitSnapshotToCache(queryClient, snapshot);
   }, [queryClient]);
   return { usageLimitSnapshot: query.data ? usageLimitSnapshotFromResponse(query.data) : null, applyUsageLimitSnapshot };
 }
 
-export function usageQueryOptions(queryClient: QueryClient) {
+export function applyUsageLimitSnapshotToCache(queryClient: QueryClient, snapshot: RateLimitSnapshot) {
+  queryClient.setQueryData<RateLimitsResponse>(queryKeys.rateLimits, (current) => {
+    const previous = current ? usageLimitSnapshotFromResponse(current) : null;
+    return { ...current, rawPayload: current?.rawPayload ?? {}, rateLimits: mergeUsageUpdate(previous, snapshot) };
+  });
+}
+
+export function usageQueryOptions(queryClient: QueryClient, api: Pick<GatewayClient, "getRateLimits">) {
   return queryOptions({
     queryKey: queryKeys.rateLimits,
     queryFn: async ({ signal }) => {
       const before = queryClient.getQueryData<RateLimitsResponse>(queryKeys.rateLimits);
-      const response = await getRateLimits(signal);
+      const response = await api.getRateLimits(signal);
       const current = queryClient.getQueryData<RateLimitsResponse>(queryKeys.rateLimits);
       // Retain newer live windows while completing the full metadata read.
       // Reset/account invalidations cancel this read separately through signal.

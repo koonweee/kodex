@@ -4,6 +4,8 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { EventEnvelope } from "../api/client";
+import { createGatewayClient } from "../api/client";
+import { GatewayClientProvider } from "../api/GatewayClientContext";
 import { mockGateway } from "../test/gatewayMock";
 import { applyAccountEvent } from "./cache";
 import { SidebarAccountMenu } from "./SidebarAccountFooter";
@@ -27,7 +29,7 @@ function setup(routes: Parameters<typeof mockGateway>[0] = {}) {
     ...routes,
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  render(<QueryClientProvider client={client}><MantineProvider env="test"><Harness /></MantineProvider></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><GatewayClientProvider client={createGatewayClient()}><MantineProvider env="test"><Harness /></MantineProvider></GatewayClientProvider></QueryClientProvider>);
   return { client, gateway };
 }
 

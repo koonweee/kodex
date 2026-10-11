@@ -1,10 +1,11 @@
 import { Alert, Anchor, Box, Button, Group, Loader, ScrollArea, Stack, Text } from "@mantine/core";
 import { ExternalLink, FileText, KeyRound } from "lucide-react";
 
-import { readMcpResource, type ConfiguredMcpServer, type McpResource, type McpServerStatus } from "../api/client";
+import type { ConfiguredMcpServer, McpResource, McpResourceReadResponse, McpServerStatus } from "../api/client";
 import { authLabel } from "./mcpTypes";
 
 type McpServerDetailProps = {
+  actionsDisabled: boolean;
   configured?: ConfiguredMcpServer;
   writesDisabled: boolean;
   oauthError?: string;
@@ -19,13 +20,14 @@ type McpServerDetailProps = {
   resource: McpResource | null;
   resourceError?: string;
   resourceLoading: boolean;
-  resourceResponse?: Awaited<ReturnType<typeof readMcpResource>>;
+  resourceResponse?: McpResourceReadResponse;
   removeConfirming: boolean;
   server?: McpServerStatus;
   serverName: string;
 };
 
 export function McpServerDetail({
+  actionsDisabled,
   configured,
   writesDisabled,
   oauthError,
@@ -72,7 +74,7 @@ export function McpServerDetail({
             </>
           ) : null}
           {server && (server.authStatus === "notLoggedIn" || server.authStatus === "oAuth") ? (
-            <Button leftSection={<KeyRound size={15} />} loading={oauthLoading} onClick={onLogin} size="xs" type="button" variant="light">
+            <Button disabled={actionsDisabled} leftSection={<KeyRound size={15} />} loading={oauthLoading} onClick={onLogin} size="xs" type="button" variant="light">
               Log in
             </Button>
           ) : null}
@@ -132,6 +134,7 @@ export function McpServerDetail({
             {server.resources.map((item) => (
               <Button
                 className="kodex-mcp-resource-row"
+                disabled={actionsDisabled}
                 key={item.uri}
                 leftSection={<FileText size={14} />}
                 onClick={() => onReadResource(item)}

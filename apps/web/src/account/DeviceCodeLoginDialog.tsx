@@ -1,20 +1,23 @@
 import { Alert, Button, CopyButton, Group, Modal, Stack, Text, TextInput } from "@mantine/core";
 
 import type { useDeviceCodeLogin } from "./useDeviceCodeLogin";
+import { useExecutorRuntimeAvailable } from "../api/GatewayClientContext";
 
 export function DeviceCodeLoginDialog({ flow }: { flow: ReturnType<typeof useDeviceCodeLogin> }) {
+  const available = useExecutorRuntimeAvailable();
   return (
     <Modal
       opened={flow.opened}
       onClose={flow.close}
       title="Sign in with ChatGPT"
       closeOnClickOutside={false}
-      closeOnEscape={!flow.busy}
-      withCloseButton={!flow.busy}
+      closeOnEscape={!flow.busy && (!flow.login || available)}
+      withCloseButton={!flow.busy && (!flow.login || available)}
       size="sm"
     >
       <Stack>
         {flow.error ? <Alert color="red" role="alert">{flow.error}</Alert> : null}
+        {!available && flow.login ? <Alert color="yellow">Reconnect this executor to cancel or complete sign-in.</Alert> : null}
         {flow.login ? (
           <>
             <Text>Open the sign-in page, then enter this one-time code.</Text>
@@ -31,10 +34,10 @@ export function DeviceCodeLoginDialog({ flow }: { flow: ReturnType<typeof useDev
           </>
         ) : flow.busy ? <Text role="status">Requesting a sign-in code…</Text> : null}
         <Group justify="flex-end">
-          <Button variant="default" onClick={flow.close} disabled={flow.busy}>
+          <Button variant="default" onClick={flow.close} disabled={flow.busy || Boolean(flow.login && !available)}>
             {flow.login ? "Cancel sign-in" : "Close"}
           </Button>
-          {!flow.login && !flow.busy ? <Button onClick={flow.start}>Try again</Button> : null}
+          {!flow.login && !flow.busy ? <Button disabled={!available} onClick={flow.start}>Try again</Button> : null}
         </Group>
       </Stack>
     </Modal>

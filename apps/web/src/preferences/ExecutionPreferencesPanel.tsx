@@ -3,7 +3,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Shield } from "lucide-react";
 import { useState } from "react";
 
-import { GatewayRequestError, getComposerSettings, listModels, listPermissionProfiles, persistComposerSettings, type ComposerSettingsUpdateRequest } from "../api/client";
+import {
+  GatewayRequestError,
+  type ComposerSettingsResponse,
+  type ComposerSettingsUpdateRequest,
+  type ModelSummary,
+  type PermissionProfileSummary,
+} from "../api/client";
+import { useExecutorRuntimeAvailable, useGatewayClient } from "../api/GatewayClientContext";
 import { refreshNativeConfig } from "../api/nativeConfigCache";
 import { NativeConfigWriteFeedback } from "./NativeConfigWriteFeedback";
 import { queryKeys } from "../api/queryKeys";
@@ -12,13 +19,15 @@ import { compatibleEffort, modelFullLabel, reasoningEffortLabel, selectedModel }
 const CODEX_DEFAULT_VALUE = "__kodex_codex_default__";
 
 export function ExecutionPreferencesPanel() {
+  const api = useGatewayClient();
+  const available = useExecutorRuntimeAvailable();
   const queryClient = useQueryClient();
   const [needsReview, setNeedsReview] = useState(false);
-  const settings = useQuery({ queryKey: queryKeys.composerSettings(null), queryFn: ({ signal }) => getComposerSettings(null, null, signal) });
-  const models = useQuery({ queryKey: queryKeys.models, queryFn: listModels });
-  const profiles = useQuery({ queryKey: queryKeys.permissionProfiles(null), queryFn: ({ signal }) => listPermissionProfiles(null, signal) });
+  const settings = useQuery({ queryKey: queryKeys.composerSettings(null), queryFn: ({ signal }) => api.getComposerSettings(null, null, signal) });
+  const models = useQuery({ queryKey: queryKeys.models, queryFn: api.listModels });
+  const profiles = useQuery({ queryKey: queryKeys.permissionProfiles(null), queryFn: ({ signal }) => api.listPermissionProfiles(null, signal) });
   const mutation = useMutation({
-    mutationFn: persistComposerSettings,
+    mutationFn: api.persistComposerSettings,
     onSuccess: async () => { await refreshNativeConfig(queryClient); },
     onError: async (error) => {
       if (error instanceof GatewayRequestError && error.code === "config_version_conflict") {
@@ -29,7 +38,7 @@ export function ExecutionPreferencesPanel() {
   });
   function save(fields: Omit<ComposerSettingsUpdateRequest, "writeTarget">) {
     const writeTarget = settings.data?.writeTarget;
-    if (!writeTarget || needsReview || settings.error || mutation.isPending) return;
+    if (!available || !writeTarget || needsReview || settings.error || mutation.isPending) return;
     mutation.mutate({ ...fields, writeTarget });
   }
   function setApprovalMode(mode: ExecutionApprovalMode) {
@@ -52,7 +61,7 @@ export function ExecutionPreferencesPanel() {
     {needsReview ? <Alert color="yellow" variant="light">
       <Stack gap={8}>
         <Text size="sm">Native configuration changed elsewhere. Review the current values before choosing again.</Text>
-        <Button disabled={settings.isFetching || Boolean(settings.error) || !settings.data?.writeTarget} onClick={() => { setNeedsReview(false); mutation.reset(); }} size="xs" variant="light">Review latest configuration</Button>
+        <Button disabled={!available || settings.isFetching || Boolean(settings.error) || !settings.data?.writeTarget} onClick={() => { setNeedsReview(false); mutation.reset(); }} size="xs" variant="light">Review latest configuration</Button>
       </Stack>
     </Alert> : null}
     {mutation.data?.write && (mutation.data.write.status === "okOverridden" || mutation.data.notificationError)
@@ -63,7 +72,7 @@ export function ExecutionPreferencesPanel() {
       models={models.data} modelsError={models.error} modelsLoading={models.isLoading}
       settings={settings.data} settingsError={settings.error} settingsLoading={settings.isLoading}
       saving={mutation.isPending} saveError={needsReview ? null : mutation.error}
-      disabled={needsReview || !settings.data?.writeTarget || Boolean(settings.error)}
+      disabled={!available || needsReview || !settings.data?.writeTarget || Boolean(settings.error)}
       onDefaultEffortChange={(effort) => {
         if (effort !== (settings.data?.effort ?? null)) save({ effort });
       }}
@@ -98,16 +107,16 @@ function ExecutionPreferencesControls({
   onDefaultModelChange,
   onPermissionProfileChange,
 }: {
-  profiles?: Awaited<ReturnType<typeof listPermissionProfiles>>;
+  profiles?: PermissionProfileSummary[];
   profilesError: Error | null;
   profilesLoading: boolean;
-  models?: Awaited<ReturnType<typeof listModels>>;
+  models?: ModelSummary[];
   modelsError: Error | null;
   modelsLoading: boolean;
   saving: boolean;
   disabled: boolean;
   saveError: Error | null;
-  settings?: Awaited<ReturnType<typeof getComposerSettings>>;
+  settings?: ComposerSettingsResponse;
   settingsError: Error | null;
   settingsLoading: boolean;
   onApprovalModeChange: (mode: ExecutionApprovalMode) => void;
