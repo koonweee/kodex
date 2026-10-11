@@ -1,8 +1,3 @@
-import createClient from "openapi-fetch";
-
-import { compatibleFetch } from "./compatibility";
-import type { paths } from "./generated/schema";
-
 export type ExecutorConnection = {
   readonly executorId: string;
   readonly instanceId: string;
@@ -80,21 +75,6 @@ export function createExecutorFetch(
       return Promise.reject(error);
     }
   };
-}
-
-export function createExecutorOpenApiClient(
-  connection: ExecutorConnection,
-  {
-    baseUrl = browserOrigin(),
-    fetch = compatibleFetch,
-  }: { baseUrl?: string; fetch?: FetchLike } = {},
-) {
-  const binding = snapshotConnection(connection);
-  const federatorOrigin = new URL(baseUrl).origin;
-  return createClient<paths>({
-    baseUrl: federatorOrigin,
-    fetch: createExecutorFetch(binding, fetch, federatorOrigin),
-  });
 }
 
 export function snapshotConnection(connection: ExecutorConnection): ExecutorConnection {

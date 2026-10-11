@@ -99,6 +99,7 @@ export { GatewayRequestError } from "./gatewayClientShared";
 export {
   createExecutorGatewayClient,
   createGatewayClient,
+  type ExecutorGatewayClientOptions,
   type GatewayClientOptions,
 } from "./gatewayClient";
 

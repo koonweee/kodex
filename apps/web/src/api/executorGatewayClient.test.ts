@@ -2,26 +2,32 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { File as NodeFile } from "node:buffer";
 
 import { createExecutorGatewayClient } from "./client";
+import { compatibilityRequired, resetCompatibilityForTests } from "./compatibility";
 
 describe("executor gateway client", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    resetCompatibilityForTests();
+    vi.unstubAllGlobals();
+  });
 
   it("keeps colliding native IDs on their owning executor", async () => {
     const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = new Request(input, init);
+      expect(request.headers.get("x-kodex-api-version")).toBe("4");
       return Response.json({
         id: "shared-project",
         name: request.url.includes("executor-a") ? "Project A" : "Project B",
         cwd: "/workspace",
       }, { headers: { "x-kodex-api-version": "4" } });
     });
+    vi.stubGlobal("fetch", fetch);
     const first = createExecutorGatewayClient(
       { executorId: "executor-a", instanceId: "instance-a" },
-      { baseUrl: "https://kodex.example", fetch },
+      { baseUrl: "https://kodex.example" },
     );
     const second = createExecutorGatewayClient(
       { executorId: "executor-b", instanceId: "instance-b" },
-      { baseUrl: "https://kodex.example", fetch },
+      { baseUrl: "https://kodex.example" },
     );
 
     await expect(first.getProject("shared-project")).resolves.toMatchObject({ name: "Project A" });
@@ -35,7 +41,7 @@ describe("executor gateway client", () => {
   it("qualifies resource and WebSocket URLs", () => {
     const client = createExecutorGatewayClient(
       { executorId: "executor/a", instanceId: "instance-a" },
-      { baseUrl: "https://kodex.example", fetch: vi.fn() },
+      { baseUrl: "https://kodex.example" },
     );
 
     expect(client.filePreviewUrl("thread/1", "notes.md")).toBe(
@@ -100,5 +106,60 @@ describe("executor gateway client", () => {
     expect(request.keepalive).toBe(true);
     expect(request.headers.get("x-kodex-api-version")).toBe("4");
     expect(request.headers.get("x-kodex-expected-instance")).toBe("instance-a");
+  });
+
+  it("contains executor incompatibility while sharing the federator epoch boundary", async () => {
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init);
+      if (request.url.includes("executor-a")) {
+        return Response.json({
+          code: "executor_incompatible",
+          message: "Executor API/native version is incompatible.",
+          retryable: false,
+        }, { status: 409, headers: { "x-kodex-api-version": "4" } });
+      }
+      return Response.json(
+        { id: "shared-project", name: "Project", cwd: "/workspace" },
+        { headers: { "x-kodex-api-version": "4" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetch);
+    const first = createExecutorGatewayClient(
+      { executorId: "executor-a", instanceId: "instance-a" },
+      { baseUrl: "https://kodex.example" },
+    );
+    const second = createExecutorGatewayClient(
+      { executorId: "executor-b", instanceId: "instance-b" },
+      { baseUrl: "https://kodex.example" },
+    );
+
+    await expect(first.getProject("shared-project")).rejects.toThrow("Executor API/native version is incompatible.");
+    expect(compatibilityRequired()).toBe(false);
+    await expect(second.getProject("shared-project")).resolves.toMatchObject({ id: "shared-project" });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("blocks every executor after either observes a future federator epoch", async () => {
+    const fetch = vi.fn(async () => Response.json({}, {
+      headers: { "x-kodex-api-version": "future" },
+    }));
+    vi.stubGlobal("fetch", fetch);
+    const first = createExecutorGatewayClient(
+      { executorId: "executor-a", instanceId: "instance-a" },
+      { baseUrl: "https://kodex.example" },
+    );
+    const second = createExecutorGatewayClient(
+      { executorId: "executor-b", instanceId: "instance-b" },
+      { baseUrl: "https://kodex.example" },
+    );
+
+    await expect(first.getProject("shared-project")).rejects.toThrow("Update Kodex");
+    expect(compatibilityRequired()).toBe(true);
+    await expect(second.createProject({
+      idempotencyKey: "blocked-project",
+      name: "Blocked",
+      roots: [{ path: "/workspace" }],
+    })).rejects.toThrow("Update Kodex");
+    expect(fetch).toHaveBeenCalledOnce();
   });
 });

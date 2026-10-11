@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   createExecutorFetch,
-  createExecutorOpenApiClient,
   executorApiUrl,
   executorWebSocketUrl,
   type ExecutorConnection,
@@ -39,31 +38,6 @@ describe("executor connection transport", () => {
 
     expect(response.status).toBe(204);
     expect(upstream).toHaveBeenCalledOnce();
-  });
-
-  it("creates a generated client bound to one federator origin", async () => {
-    const upstream = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const request = new Request(input, init);
-      expect(request.url).toBe("https://kodex.example/v1/executors/executor%2Fa/capabilities");
-      expect(request.headers.get("x-kodex-expected-instance")).toBe("instance-a");
-      return Response.json({
-        gateway: { apiVersion: "4", instanceId: "instance-a" },
-        appServer: {
-          ready: true,
-          schemaVersion: "0.160.0",
-          detectedVersionMatchesSchema: true,
-        },
-      });
-    });
-    const client = createExecutorOpenApiClient(connection, {
-      baseUrl: "https://kodex.example",
-      fetch: upstream,
-    });
-
-    const result = await client.GET("/v1/capabilities");
-
-    expect(result.error).toBeUndefined();
-    expect(result.data?.gateway.instanceId).toBe("instance-a");
   });
 
   it("builds qualified HTTP and WebSocket URLs without losing query data", () => {

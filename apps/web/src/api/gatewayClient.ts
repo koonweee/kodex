@@ -16,6 +16,10 @@ export type GatewayClientOptions = {
   routeUrl?: (route: string) => string;
 };
 
+export type ExecutorGatewayClientOptions = {
+  baseUrl?: string;
+};
+
 export function createGatewayClient({
   baseUrl = getApiBaseUrl(),
   compatibilityRequired: isCompatibilityRequired = compatibilityRequired,
@@ -45,7 +49,7 @@ export function createGatewayClient({
 
 export function createExecutorGatewayClient(
   connection: ExecutorConnection,
-  options: Omit<GatewayClientOptions, "routeUrl"> = {},
+  options: ExecutorGatewayClientOptions = {},
 ) {
   const binding = snapshotConnection(connection);
   const baseUrl = options.baseUrl ?? getApiBaseUrl();
@@ -53,9 +57,8 @@ export function createExecutorGatewayClient(
     throw new Error("Executor gateway clients require a federator base URL.");
   }
   const federatorOrigin = new URL(baseUrl).origin;
-  const fetch = createExecutorFetch(binding, options.fetch ?? compatibleFetch, federatorOrigin);
+  const fetch = createExecutorFetch(binding, compatibleFetch, federatorOrigin);
   return createGatewayClient({
-    ...options,
     baseUrl: federatorOrigin,
     fetch,
     routeUrl: (route) => executorApiUrl(binding, route, federatorOrigin),
