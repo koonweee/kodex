@@ -2221,6 +2221,7 @@ export interface components {
              * @example Daily status
              */
             name: string;
+            newThread?: null | components["schemas"]["AutomationNewThread"];
             /**
              * @description Non-empty prompt to enqueue into the target thread at each scheduled firing.
              * @example Summarize current repo state and next actions.
@@ -2229,7 +2230,7 @@ export interface components {
             /** @description Initial schedule. startAt is an absolute instant; repeatEvery is a fixed duration. */
             schedule: components["schemas"]["AutomationSchedule"];
             /** @description Target thread id that will receive the queued automation prompt. */
-            targetThreadId: string;
+            targetThreadId?: string | null;
         };
         AutomationDeleteResponse: {
             id: string;
@@ -2245,6 +2246,7 @@ export interface components {
             /** Format: date-time */
             lastRunAt?: string | null;
             name: string;
+            newThread?: null | components["schemas"]["AutomationNewThread"];
             /**
              * Format: date-time
              * @description Next due firing instant in UTC.
@@ -2255,7 +2257,7 @@ export interface components {
             provenance?: unknown;
             schedule: components["schemas"]["AutomationSchedule"];
             status: components["schemas"]["AutomationStatus"];
-            targetThreadId: string;
+            targetThreadId?: string | null;
             /** Format: date-time */
             updatedAt: string;
         };
@@ -2264,6 +2266,13 @@ export interface components {
         };
         AutomationListResponse: {
             automations: components["schemas"]["AutomationDto"][];
+        };
+        /** @description Fresh chat settings captured by each automation run. Omitted settings use native defaults. */
+        AutomationNewThread: {
+            cwd?: string | null;
+            effort?: string | null;
+            model?: string | null;
+            projectId?: string | null;
         };
         AutomationRepeatEvery: {
             /** @description Interval unit. The gateway canonicalizes this to seconds for storage and scheduling. */
@@ -2287,10 +2296,11 @@ export interface components {
             error?: string | null;
             id: string;
             nativeQueueId?: string | null;
+            newThread?: null | components["schemas"]["AutomationNewThread"];
             phase: components["schemas"]["AutomationRunPhase"];
             /** Format: date-time */
             scheduledFor?: string | null;
-            targetThreadId: string;
+            targetThreadId?: string | null;
             turnId?: string | null;
             /** Format: date-time */
             updatedAt: string;
@@ -2315,6 +2325,7 @@ export interface components {
         AutomationUpdateRequest: {
             /** @description Replacement non-empty display name. Omit to keep the current name. */
             name?: string | null;
+            newThread?: null | components["schemas"]["AutomationNewThread"];
             /** @description Replacement non-empty prompt. Omit to keep the current prompt. */
             prompt?: string | null;
             schedule?: null | components["schemas"]["AutomationSchedule"];
@@ -3116,10 +3127,11 @@ export interface components {
         SelfControlAutomationCreateRequest: {
             enabled?: boolean | null;
             name: string;
+            newThread?: null | components["schemas"]["AutomationNewThread"];
             prompt: string;
             schedule: components["schemas"]["AutomationSchedule"];
             source?: components["schemas"]["SelfControlSource"];
-            targetThreadId: string;
+            targetThreadId?: string | null;
         };
         SelfControlAutomationResponse: {
             automation: components["schemas"]["AutomationDto"];
@@ -3138,9 +3150,10 @@ export interface components {
         };
         SelfControlAutomationValidateRequest: {
             name: string;
+            newThread?: null | components["schemas"]["AutomationNewThread"];
             prompt: string;
             schedule: components["schemas"]["AutomationSchedule"];
-            targetThreadId: string;
+            targetThreadId?: string | null;
         };
         SelfControlAutomationValidateResponse: {
             /** Format: int64 */

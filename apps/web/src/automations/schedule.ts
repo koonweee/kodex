@@ -7,6 +7,7 @@ export type AutomationFormValues = {
   repeatValue: number;
   startAtLocal: string;
   targetThreadId: string | null;
+  newThread?: Automation["newThread"];
 };
 
 export function automationFormValues(
@@ -18,7 +19,8 @@ export function automationFormValues(
     prompt: automation?.prompt ?? "",
     ...displayRepeatEvery(automation?.schedule.repeatEvery),
     startAtLocal: localDateTimeInputValue(automation?.schedule.startAt ?? new Date().toISOString()),
-    targetThreadId: automation?.targetThreadId ?? fallbackThreadId,
+    targetThreadId: automation?.newThread ? null : automation?.targetThreadId ?? fallbackThreadId,
+    newThread: automation?.newThread,
   };
 }
 
@@ -77,7 +79,7 @@ export function automationValidationError(values: AutomationFormValues): string 
   if (!values.name.trim()) {
     return "Name is required.";
   }
-  if (!values.targetThreadId) {
+  if (!values.targetThreadId && !values.newThread) {
     return "Target thread is required.";
   }
   if (!values.startAtLocal || !startAtIsoFromLocalInput(values.startAtLocal)) {

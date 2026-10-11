@@ -221,7 +221,8 @@ pub struct SendThreadInputToolParams {
 pub struct CreateAutomationToolParams {
     pub name: String,
     pub prompt: String,
-    pub target_thread_id: String,
+    pub target_thread_id: Option<String>,
+    pub new_thread: Option<crate::store::AutomationNewThread>,
     pub schedule: Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
@@ -242,6 +243,7 @@ pub struct UpdateAutomationToolParams {
     pub prompt: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_thread_id: Option<String>,
+    pub new_thread: Option<crate::store::AutomationNewThread>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schedule: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -516,7 +518,8 @@ pub struct AutomationMutationToolParams {
 pub struct ValidateAutomationToolParams {
     pub name: String,
     pub prompt: String,
-    pub target_thread_id: String,
+    pub target_thread_id: Option<String>,
+    pub new_thread: Option<crate::store::AutomationNewThread>,
     pub schedule: Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,

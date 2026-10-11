@@ -2325,7 +2325,8 @@ mod tests {
             .create_automation(NewAutomation {
                 name: "Now".to_string(),
                 prompt: "run this now".to_string(),
-                target_thread_id: "thread-1".to_string(),
+                target_thread_id: Some("thread-1".to_string()),
+                new_thread: None,
                 start_at,
                 repeat_every_seconds: 60,
                 next_run_at: start_at,
@@ -6538,7 +6539,8 @@ mod tests {
             .create_automation(crate::store::NewAutomation {
                 name: "Status".to_string(),
                 prompt: "Summarize status".to_string(),
-                target_thread_id: "thread-1".to_string(),
+                target_thread_id: Some("thread-1".to_string()),
+                new_thread: None,
                 start_at,
                 repeat_every_seconds: 30,
                 next_run_at: start_at,
@@ -6565,7 +6567,7 @@ mod tests {
             .unwrap();
         assert_eq!(runs.len(), 1);
         let run = &runs[0];
-        assert_eq!(run.target_thread_id, "thread-1");
+        assert_eq!(run.target_thread_id.as_deref(), Some("thread-1"));
         assert_eq!(run.scheduled_for, Some(start_at));
         assert_eq!(run.phase, crate::store::AutomationRunPhase::Dispatched);
         assert_eq!(run.turn_id.as_deref(), Some("native-queue-turn"));
@@ -6628,7 +6630,8 @@ mod tests {
             .create_automation(crate::store::NewAutomation {
                 name: "Status".to_string(),
                 prompt: "Summarize status".to_string(),
-                target_thread_id: "thread-1".to_string(),
+                target_thread_id: Some("thread-1".to_string()),
+                new_thread: None,
                 start_at,
                 repeat_every_seconds: 30,
                 next_run_at: start_at,
@@ -6696,7 +6699,8 @@ mod tests {
             .create_automation(crate::store::NewAutomation {
                 name: "Status".to_string(),
                 prompt: "Summarize status".to_string(),
-                target_thread_id: "thread-1".to_string(),
+                target_thread_id: Some("thread-1".to_string()),
+                new_thread: None,
                 start_at,
                 repeat_every_seconds: 30,
                 next_run_at: start_at,

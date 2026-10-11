@@ -46,8 +46,8 @@ impl Store {
             let pending: bool = sqlx::query_scalar("select exists(select 1 from automation_runs where automation_id = ? and scheduled_for is not null and phase in ('admitting', 'queued', 'startRequested', 'uncertain'))")
                 .bind(&current.id).fetch_one(&mut *tx).await?;
             if !pending {
-                let run = sqlx::query("insert or ignore into automation_runs (id, automation_id, target_thread_id, scheduled_for, phase, created_at, updated_at) values (?, ?, ?, ?, 'admitting', ?, ?) returning *")
-                    .bind(Uuid::new_v4().to_string()).bind(&current.id).bind(&current.target_thread_id)
+                let run = sqlx::query("insert or ignore into automation_runs (id, automation_id, target_thread_id, new_thread, scheduled_for, phase, created_at, updated_at) values (?, ?, ?, ?, ?, 'admitting', ?, ?) returning *")
+                    .bind(Uuid::new_v4().to_string()).bind(&current.id).bind(&current.target_thread_id).bind(current.new_thread.as_ref().map(serde_json::to_string).transpose()?)
                     .bind(observed.next_run_at).bind(now).bind(now).fetch_optional(&mut *tx).await?;
                 if let Some(run) = run {
                     batch.runs.push(row_to_automation_run(run)?);
@@ -61,12 +61,24 @@ impl Store {
 
     pub async fn create_automation_run_now(&self, automation_id: &str) -> ApiResult<AutomationRun> {
         let now = Utc::now();
-        let row = sqlx::query("insert into automation_runs (id, automation_id, target_thread_id, scheduled_for, phase, created_at, updated_at) select ?, id, target_thread_id, null, 'admitting', ?, ? from automations where id = ? and deleted_at is null returning *")
+        let row = sqlx::query("insert into automation_runs (id, automation_id, target_thread_id, new_thread, scheduled_for, phase, created_at, updated_at) select ?, id, target_thread_id, new_thread, null, 'admitting', ?, ? from automations where id = ? and deleted_at is null returning *")
             .bind(Uuid::new_v4().to_string()).bind(now).bind(now).bind(automation_id)
             .fetch_optional(&self.pool).await?;
         row.map(row_to_automation_run)
             .transpose()?
             .ok_or_else(|| ApiError::NotFound(format!("automation {automation_id}")))
+    }
+
+    /// Save the acknowledged creation target before any input write. A restart
+    /// fence or prior binding cannot be overwritten by a late creation reply.
+    pub async fn bind_automation_run_thread(
+        &self,
+        id: &str,
+        thread_id: &str,
+    ) -> ApiResult<Option<AutomationRun>> {
+        sqlx::query("update automation_runs set target_thread_id = ?, updated_at = ? where id = ? and phase = 'admitting' and target_thread_id is null and new_thread is not null returning *")
+            .bind(thread_id).bind(Utc::now()).bind(id).fetch_optional(&self.pool).await?
+            .map(row_to_automation_run).transpose()
     }
 
     pub async fn get_automation_run(&self, id: &str) -> ApiResult<AutomationRun> {

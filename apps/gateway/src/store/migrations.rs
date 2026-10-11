@@ -164,50 +164,7 @@ impl Store {
         )
         .execute(&self.pool)
         .await?;
-        sqlx::query(
-            r#"
-            create table if not exists automations (
-                id text primary key,
-                name text not null,
-                prompt text not null,
-                provenance text,
-                target_thread_id text not null,
-                start_at text not null,
-                repeat_every_seconds integer not null,
-                next_run_at text not null,
-                status text not null,
-                paused_reason text,
-                last_run_at text,
-                last_native_queue_id text,
-                last_error text,
-                consecutive_failure_count integer not null default 0,
-                created_at text not null,
-                updated_at text not null,
-                deleted_at text
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-        sqlx::query(
-            r#"
-            create table if not exists automation_runs (
-                id text primary key,
-                automation_id text not null,
-                target_thread_id text not null,
-                scheduled_for text,
-                phase text not null check (phase in ('admitting', 'queued', 'startRequested', 'dispatched', 'rejected', 'uncertain', 'removed')),
-                native_queue_id text,
-                turn_id text,
-                error text,
-                created_at text not null,
-                updated_at text not null,
-                unique (automation_id, scheduled_for)
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
+        self.install_automation_schema().await?;
         sqlx::query(
             "create index if not exists automations_due_idx on automations (status, deleted_at, next_run_at)",
         )

@@ -38,9 +38,8 @@ use crate::{
         approvals::{ApprovalListQuery, ApprovalListResponse},
         automations::{
             automation_to_dto, repeat_every_seconds, validate_name_and_prompt,
-            validate_target_thread, AutomationDeleteResponse, AutomationDto, AutomationListQuery,
-            AutomationListResponse, AutomationResponse, AutomationSchedule,
-            AutomationUpdateRequest,
+            AutomationDeleteResponse, AutomationDto, AutomationListQuery, AutomationListResponse,
+            AutomationResponse, AutomationSchedule, AutomationUpdateRequest,
         },
         events::{EventListResponse, EventsQuery},
         projects::{Project, ProjectListResponse},
@@ -1399,7 +1398,8 @@ pub async fn spawn_self_control_thread(
 pub struct SelfControlAutomationCreateRequest {
     pub name: String,
     pub prompt: String,
-    pub target_thread_id: String,
+    pub target_thread_id: Option<String>,
+    pub new_thread: Option<crate::store::AutomationNewThread>,
     pub schedule: AutomationSchedule,
     #[serde(default)]
     pub enabled: Option<bool>,
@@ -1438,7 +1438,12 @@ pub async fn create_self_control_automation(
     Json(request): Json<SelfControlAutomationCreateRequest>,
 ) -> ApiResult<Json<SelfControlAutomationResponse>> {
     validate_name_and_prompt(&request.name, &request.prompt)?;
-    validate_target_thread(&state, &request.target_thread_id).await?;
+    crate::routes::automations::validate_automation_target(
+        &state,
+        request.target_thread_id.as_deref(),
+        request.new_thread.as_ref(),
+    )
+    .await?;
     let repeat_every_seconds = repeat_every_seconds(&request.schedule.repeat_every)?;
     let enabled = request.enabled.unwrap_or(false);
     let automation = state
@@ -1447,6 +1452,7 @@ pub async fn create_self_control_automation(
             name: request.name,
             prompt: request.prompt,
             target_thread_id: request.target_thread_id,
+            new_thread: request.new_thread,
             start_at: request.schedule.start_at,
             repeat_every_seconds,
             next_run_at: request.schedule.start_at,
@@ -1485,8 +1491,13 @@ pub async fn update_self_control_automation(
     if let Some(prompt) = request.update.prompt.as_deref() {
         validate_name_and_prompt("placeholder", prompt)?;
     }
-    if let Some(target_thread_id) = request.update.target_thread_id.as_deref() {
-        validate_target_thread(&state, target_thread_id).await?;
+    if request.update.target_thread_id.is_some() || request.update.new_thread.is_some() {
+        crate::routes::automations::validate_automation_target(
+            &state,
+            request.update.target_thread_id.as_deref(),
+            request.update.new_thread.as_ref(),
+        )
+        .await?;
     }
     let (start_at, repeat_every_seconds, next_run_at) = match request.update.schedule {
         Some(schedule) => {
@@ -1507,6 +1518,7 @@ pub async fn update_self_control_automation(
                 name: request.update.name,
                 prompt: request.update.prompt,
                 target_thread_id: request.update.target_thread_id,
+                new_thread: request.update.new_thread,
                 start_at,
                 repeat_every_seconds,
                 next_run_at,
@@ -1595,7 +1607,8 @@ pub struct SelfControlAutomationRunNowResponse {
 pub struct SelfControlAutomationValidateRequest {
     pub name: String,
     pub prompt: String,
-    pub target_thread_id: String,
+    pub target_thread_id: Option<String>,
+    pub new_thread: Option<crate::store::AutomationNewThread>,
     pub schedule: AutomationSchedule,
 }
 
@@ -1678,9 +1691,14 @@ pub async fn run_self_control_automation_now(
         .map(|Json(request)| request.source)
         .unwrap_or_default();
     let automation = state.store.get_automation(&automation_id).await?;
-    validate_target_thread(&state, &automation.target_thread_id).await?;
+    crate::routes::automations::validate_automation_target(
+        &state,
+        automation.target_thread_id.as_deref(),
+        automation.new_thread.as_ref(),
+    )
+    .await?;
     let run = crate::automations::run_now(&state, &automation_id).await?;
-    if let Err(error) = audit_self_control(&state, None, Some(&run.target_thread_id), "self_control.automation_run_now", json!({"automationId":automation_id, "runId":run.id, "nativeQueueId":run.native_queue_id, "source":source.to_value()})).await {
+    if let Err(error) = audit_self_control(&state, None, run.target_thread_id.as_deref(), "self_control.automation_run_now", json!({"automationId":automation_id, "runId":run.id, "nativeQueueId":run.native_queue_id, "source":source.to_value()})).await {
         tracing::warn!(%error, "failed to audit Control automation run");
     }
     Ok(Json(SelfControlAutomationRunNowResponse {
@@ -1701,7 +1719,12 @@ pub async fn validate_self_control_automation(
     Json(request): Json<SelfControlAutomationValidateRequest>,
 ) -> ApiResult<Json<SelfControlAutomationValidateResponse>> {
     validate_name_and_prompt(&request.name, &request.prompt)?;
-    validate_target_thread(&state, &request.target_thread_id).await?;
+    crate::routes::automations::validate_automation_target(
+        &state,
+        request.target_thread_id.as_deref(),
+        request.new_thread.as_ref(),
+    )
+    .await?;
     let repeat_every_seconds = repeat_every_seconds(&request.schedule.repeat_every)?;
     Ok(Json(SelfControlAutomationValidateResponse {
         valid: true,

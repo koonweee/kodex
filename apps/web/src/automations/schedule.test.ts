@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { displayRepeatEvery, formatAutomationInterval } from "./schedule";
+import { automationFormValues, automationValidationError, displayRepeatEvery, formatAutomationInterval } from "./schedule";
 import { threadLabelById } from "./threadOptions";
 import type { Automation } from "../api/client";
 
@@ -40,4 +40,12 @@ describe("automation schedule helpers", () => {
   it("does not expose raw thread ids when a target thread is unavailable", () => {
     expect(threadLabelById([], "019dfba5-ef44-78c3-8056-1edb7b20e13a")).toBe("Unknown thread");
   });
+});
+
+it("preserves a fresh-chat destination when editing despite a selected fallback chat", () => {
+  const newThread = { projectId: "project", cwd: "/repo", model: "chosen", effort: "high" };
+  const values = automationFormValues({ ...automation, targetThreadId: null, newThread }, "fallback-chat");
+  expect(values.targetThreadId).toBeNull();
+  expect(values.newThread).toEqual(newThread);
+  expect(automationValidationError(values)).toBeNull();
 });

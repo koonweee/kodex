@@ -20,10 +20,12 @@ pub async fn recover_automations_after_restart(state: &AppState) -> ApiResult<()
     let runs = state.store.list_outstanding_automation_runs().await?;
     let mut targets = BTreeMap::<String, Vec<AutomationRun>>::new();
     for run in runs {
-        targets
-            .entry(run.target_thread_id.clone())
-            .or_default()
-            .push(run);
+        let Some(target) = run.target_thread_id.clone() else {
+            // Lost creation replies cannot be recovered by guessing or starting again.
+            broadcast_run_update(state, &run).await;
+            continue;
+        };
+        targets.entry(target).or_default().push(run);
     }
     let client = app_server_api::client(&state.app_server);
     for (target, runs) in targets {

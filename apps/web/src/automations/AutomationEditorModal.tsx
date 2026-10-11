@@ -93,7 +93,7 @@ export function AutomationEditorModal({
       return;
     }
     const startAt = startAtIsoFromLocalInput(values.startAtLocal);
-    if (!startAt || !values.targetThreadId) {
+    if (!startAt || (!values.targetThreadId && !values.newThread)) {
       return;
     }
 
@@ -111,14 +111,15 @@ export function AutomationEditorModal({
         await onUpdate(automation.id, {
           name: values.name.trim(),
           prompt: values.prompt.trim(),
-          targetThreadId: values.targetThreadId,
+          ...(!values.newThread && values.targetThreadId !== automation.targetThreadId
+            ? { targetThreadId: values.targetThreadId } : {}),
           schedule,
         });
       } else {
         await onCreate({
           name: values.name.trim(),
           prompt: values.prompt.trim(),
-          targetThreadId: values.targetThreadId,
+          ...(values.newThread ? { newThread: values.newThread } : { targetThreadId: values.targetThreadId }),
           schedule,
         });
       }
@@ -169,6 +170,12 @@ export function AutomationEditorModal({
         required
         value={values.name}
       />
+      {values.newThread ? (
+        <Stack gap={4}>
+          <Text size="sm" fw={500}>New chat for each run</Text>
+          <Text size="sm" c="dimmed">{values.newThread.cwd ?? (values.newThread.projectId ? "In the configured project" : "In a new dated chat directory")}</Text>
+        </Stack>
+      ) : (
       <Select
         className="kodex-automation-mobile-input"
         comboboxProps={{ width: "target" }}
@@ -199,6 +206,8 @@ export function AutomationEditorModal({
         }}
         value={values.targetThreadId}
       />
+      )}
+
       <TextInput
         className="kodex-automation-mobile-input"
         label="Start"

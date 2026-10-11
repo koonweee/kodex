@@ -9,6 +9,39 @@ for (const shape of [
 ]) {
   test.describe(shape.name, () => {
     test.use({ viewport: { width: shape.width, height: 844 }, hasTouch: shape.hasTouch, isMobile: shape.isMobile });
+    test("editing a fresh-chat automation preserves its destination in both clients", async ({ context }) => {
+      const fixture = await nativeSettingsFixture(context);
+      const newThread = { projectId: "project", cwd: "/repo", model: "chosen", effort: "high" };
+      const automation = { id: "fresh", name: "Fresh report", prompt: "Report", targetThreadId: null, newThread, schedule: { startAt: "2030-01-01T00:00:00Z", repeatEvery: { value: 1, unit: "hours" as const } }, nextRunAt: "2030-01-01T00:00:00Z", status: "paused" as const, consecutiveFailureCount: 0, createdAt: "2026-10-11T00:00:00Z", updatedAt: "2026-10-11T00:00:00Z" };
+      fixture.automations.push(automation);
+      fixture.automationRuns.set("fresh", []);
+      const writes: unknown[] = [];
+      await context.route("**/v1/automations/fresh", async (route) => {
+        if (route.request().method() !== "PATCH") return route.fallback();
+        writes.push(route.request().postDataJSON());
+        await route.fulfill({ json: { automation } });
+      });
+      try {
+        for (const id of ["first", "second"]) {
+          const page = await fixture.page(id, "/automations");
+          const row = page.getByText("Fresh report", { exact: true });
+          if (shape.hasTouch) await row.tap(); else await row.click();
+          await expect(page.getByText("New chat for each run", { exact: true })).toBeVisible();
+          await expect(page.getByLabel("Target thread")).toHaveCount(0);
+          await page.getByRole("textbox", { name: /^Name/ }).fill("Edited report");
+          const save = page.getByRole("button", { name: "Save", exact: true });
+          if (shape.hasTouch) await save.tap(); else await save.click();
+        }
+        expect(writes).toHaveLength(2);
+        for (const body of writes) {
+          expect(body).toMatchObject({ name: "Edited report" });
+          expect(body).not.toHaveProperty("newThread");
+          expect(body).not.toHaveProperty("targetThreadId");
+        }
+      } finally { await fixture.close(); }
+      expect(fixture.unexpected).toEqual([]);
+      expect(fixture.errors).toEqual([]);
+    });
     test("automation admission state converges without retrying uncertain runs", async ({ context }) => {
       const fixture = await nativeSettingsFixture(context);
       const automationId = "scheduled-review";

@@ -151,3 +151,39 @@ async fn control_notification_tool_uses_guarded_route_and_preserves_source() -> 
     gateway.abort();
     Ok(())
 }
+
+#[tokio::test]
+async fn fresh_automation_tools_forward_typed_creation_settings_without_existing_chat(
+) -> anyhow::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let service = KodexControlMcp::for_test(format!("http://{}", listener.local_addr()?));
+    let app = Router::new().fallback(any(|Json(body): Json<Value>| async move { Json(body) }));
+    let gateway = tokio::spawn(async move { axum::serve(listener, app).await });
+    let (server_transport, client_transport) = tokio::io::duplex(65536);
+    let server = tokio::spawn(async move {
+        service.serve(server_transport).await?.waiting().await?;
+        anyhow::Ok(())
+    });
+    let client = ().serve(client_transport).await?;
+    for name in [
+        "create_automation",
+        "validate_automation",
+        "update_automation",
+    ] {
+        let args = json!({"automationId":"automation", "name":"Report", "prompt":"Report", "newThread":{"projectId":"project","model":"chosen","effort":"high"}, "schedule":{"startAt":"2030-01-01T00:00:00Z","repeatEvery":{"value":1,"unit":"hours"}}});
+        let result = client
+            .call_tool(
+                CallToolRequestParams::new(name).with_arguments(args.as_object().unwrap().clone()),
+            )
+            .await?;
+        let body: Value = result.into_typed()?;
+        assert!(body["targetThreadId"].is_null());
+        assert_eq!(body["newThread"]["projectId"], "project");
+        assert_eq!(body["newThread"]["model"], "chosen");
+        assert_eq!(body["newThread"]["effort"], "high");
+    }
+    client.cancel().await?;
+    server.abort();
+    gateway.abort();
+    Ok(())
+}

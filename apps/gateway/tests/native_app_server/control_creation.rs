@@ -109,3 +109,67 @@ async fn real_native_control_standalone_archive_restore() -> anyhow::Result<()> 
     result??;
     Ok(())
 }
+
+#[tokio::test]
+#[ignore = "requires explicit pinned real Codex executable and loopback access"]
+async fn real_native_fresh_chat_automation_runs() -> anyhow::Result<()> {
+    let mut fixture = Fixture::new().await?;
+    fixture.config.projects.home_dir = fixture.workspace.clone();
+    let mut session = NativeSession::start(&fixture).await?;
+    let result = timeout(Duration::from_secs(45), async {
+        let created = api(&session.app,"POST","/v1/self-control/automations",Some(json!({
+            "name":"Fresh report", "prompt":"Report progress", "newThread":{},
+            "schedule":{"startAt":"2030-01-01T00:00:00Z","repeatEvery":{"value":1,"unit":"hours"}}
+        }))).await?;
+        let id = created["automation"]["id"]
+            .as_str()
+            .context("automation id missing")?;
+        let mut threads = Vec::new();
+        for _ in 0..2 {
+            fixture.enqueue([ModelResponse::message("Fresh report complete")]);
+            let result = api(
+                &session.app,
+                "POST",
+                &format!("/v1/self-control/automations/{id}/run-now"),
+                Some(json!({})),
+            )
+            .await?;
+            let run = &result["run"];
+            anyhow::ensure!(
+                run["phase"] == "dispatched" || run["phase"] == "queued",
+                "{result}"
+            );
+            let thread = run["targetThreadId"]
+                .as_str()
+                .context("target missing")?
+                .to_owned();
+            session.completed_turn(&thread, "completed").await?;
+            let compact = api(
+                &session.app,
+                "GET",
+                &format!("/v1/self-control/threads/{thread}/turns/compact?limit=1"),
+                None,
+            )
+            .await?;
+            anyhow::ensure!(
+                compact.to_string().contains("Fresh report complete"),
+                "{compact}"
+            );
+            threads.push(thread);
+        }
+        anyhow::ensure!(threads[0] != threads[1]);
+        let runs = api(
+            &session.app,
+            "GET",
+            &format!("/v1/automations/{id}/runs"),
+            None,
+        )
+        .await?;
+        anyhow::ensure!(runs["runs"].as_array().context("runs missing")?.len() == 2);
+        Ok::<_, anyhow::Error>(())
+    })
+    .await;
+    session.shutdown().await?;
+    result??;
+    Ok(())
+}

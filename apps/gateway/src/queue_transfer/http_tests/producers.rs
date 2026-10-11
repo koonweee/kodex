@@ -77,7 +77,8 @@ async fn admitted_run(state: &AppState) -> AutomationRun {
         .create_automation(NewAutomation {
             name: "Producer fixture".into(),
             prompt: "Native source input".into(),
-            target_thread_id: THREAD.into(),
+            target_thread_id: Some(THREAD.into()),
+            new_thread: None,
             start_at: now,
             next_run_at: now,
             repeat_every_seconds: 60,

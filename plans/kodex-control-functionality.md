@@ -1,6 +1,6 @@
 # Kodex Control functionality improvements
 
-Status: Active
+Status: Complete
 
 ## Objective
 
@@ -61,7 +61,7 @@ M2 waiting evidence (2026-10-11; complete):
 - Final gateway library suite: 725 passed, 3 intentionally ignored. The pinned 0.160.0 disposable-runtime proof passes fresh-shell observation, completed receipt reuse, a second active turn without leaking its older answer, completion, archive and restore. Generated types, frontend build, backend/frontend trims, formatting and diff checks pass.
 - Independent review completed in three passes: four initial lifecycle/bounds findings and two follow-up cursor/error findings were fixed and covered; the final pass reported no major issues. No frontend lifecycle/UI behavior changed. M3 and the overall goal remain active.
 
-### M3 — Automation workflow audit and confirmed improvements
+### M3 — Automation workflow audit and confirmed improvements — Complete
 
 1. Inspect existing automation scheduler, Control tools, run records and notifications. Record concrete support/gaps for recurring work in an existing chat, a new standalone/project chat per run, and notification preferences. Desktop heartbeat/cron naming is not a required implementation structure.
 2. Implement only confirmed gaps needed for those workflows using existing scheduler/run/native primitives. Reuse existing notification controls where adequate; keep notification policy out of prompts. Do not create a second scheduler or general startup activation index.
@@ -74,13 +74,36 @@ M3 audit (2026-10-11; implementation in progress):
 
 - Recurring admission into an existing chat is already supported by the fixed-interval scheduler, immutable run target IDs, native queue receipts and restart reconciliation. Admission/dispatched status does not claim inference completion. Desktop RRULE/timezone scheduling is not implemented and is not required for these selected workflows.
 - Whole-chat push preferences already persist in the gateway and converge through `thread.notifications_updated`; Control lacked an adapter. The adapter reuses that route and adds the existing mutation provenance audit. It does not claim per-automation failed-run filtering.
-- A fresh standalone/project chat per run is missing. Reusing the existing scheduler requires recording creation intent in the existing run record before native creation, then the acknowledged target before input admission. A lost creation acknowledgment must remain uncertain and must not automatically create another chat. Prompt-based creation would not give the scheduler a recoverable target or preserve delivery guarantees. This bounded extension is justified by the explicitly selected fresh-chat workflow; no second scheduler or general activation index is needed. Implementation and uncertainty/recovery tests remain outstanding.
+- A fresh standalone/project chat per run was missing. Reusing the existing scheduler requires recording creation intent in the existing run record before native creation, then the acknowledged target before input admission. A lost creation acknowledgment must remain uncertain and must not automatically create another chat. Prompt-based creation would not give the scheduler a recoverable target or preserve delivery guarantees. This bounded extension is justified by the explicitly selected fresh-chat workflow; no second scheduler or general activation index is needed. The implementation below adds this extension, including uncertainty/recovery tests.
 
 M3 notification adapter evidence (2026-10-11):
 
 - `set_thread_notifications` calls a guarded adapter over the existing persisted preference and browser event flow; source provenance is retained in the audit store. No new notification policy state or native activation was added.
 - The initial HTTP regression failed with 404. HTTP and actual MCP regressions now pass for mute/unmute, persistence, another client's live/replay notification event, caller provenance and no native calls. The gateway library suite passed (727 passed, 3 intentionally ignored); focused tests passed again after strengthening the audit assertion.
-- Thirty existing frontend thread cache/event tests, frontend build and regenerated-contract typecheck, backend/frontend trims, formatting and diff checks pass. Independent review found no major issues. Fresh-chat automation admission/recovery remains outstanding; M3 and the goal remain active.
+- Thirty existing frontend thread cache/event tests, frontend build and regenerated-contract typecheck, backend/frontend trims, formatting and diff checks pass. Independent review found no major issues. Fresh-chat automation admission/recovery is covered by the following implementation chunk.
+
+M3 fresh-chat implementation (2026-10-11; complete):
+
+- Definitions accept exactly one of `targetThreadId` or typed `newThread` (optional project, directory, model, effort). The existing scheduler copies that intent into each run, binds the native ID before queuing, and leaves unconfirmed creation uncertain without guessing or retries. Existing-chat queue/pause/admission semantics are retained. Updates are sparse and do not overwrite other clients' omitted fields.
+- Current native automation tables evolve atomically to allow an unconfirmed target; existing rows, provenance and uncertain receipts survive upgrade/reopen. No legacy instance roots are opened or imported. No second scheduler, general activation index or inference-completion store was added.
+- Native creation publishes the normal hydrated thread upsert for sidebar live/replay convergence. Independent review caught and fixed the initially insufficient catalog-only notification; re-review found no major issues.
+- The browser displays fresh-chat mode and retains it during edits. Unchanged destination settings are omitted from updates so a stale editor cannot restore an older destination. Destination creation/switching is exposed through Control; a new browser destination picker is not part of this tool-focused improvement.
+- Failed-runs-only notification filtering remains a distinct unimplemented policy: attributing terminal inference failures to an automation (especially in reused chats) needs semantics beyond existing admission records. Whole-chat push control satisfies the selected notification-preference workflow without inventing that policy. Fixed-duration scheduling remains unchanged; no desktop heartbeat/cron parity is claimed.
+
+Final validation and completion audit (2026-10-11):
+
+| Requirement | Current evidence |
+| --- | --- |
+| M1 projectless create/spawn, settings/root checks and guarded admission | Optional native project DTOs and existing directory policy in `self_control.rs`; standalone/spawn/project-root HTTP tests pass in the current gateway suite. |
+| M1 archived discovery/restore and cross-client convergence | Native paginated archived filter and unarchive route; live/replay test plus browser unarchive marker refresh handling remain present. The pinned-runtime archive/discover/restore proof passes again. |
+| M2 deterministic compact reads | `control_reads.rs` bounds turns/text/items and fences reverts; formatting/binary/failure/pagination/revert regressions pass. Current native proof reads actual user/assistant content without summary inference. |
+| M2 multi-thread wait | `control_wait.rs` bounds targets/duration/read phases and uses per-target observation receipts; all fifteen wait behavior tests, native revert tests and actual MCP cancellation regression pass. Current native proof covers idle, completion, receipt reuse and an active later turn. |
+| M3 audit and selected workflow gaps | Existing-chat fixed-duration admission retained; fresh standalone/project creation, immutable run intent, ambiguous replies, restart fence, project roots, schema preservation/reopen, sparse updates and Control notification preferences are tested. Distinct notification and scheduling limitations are documented explicitly. |
+| Public contracts and clients | Rust DTOs generate checked-in OpenAPI TypeScript; actual MCP create/update/validate fresh-target forwarding passes. Browser editing preserves fresh destinations without replaying unchanged target settings. |
+| Validation and independent review | Current full gateway library suite: 735 passed, 3 intentionally ignored; added actual MCP fresh-target test also passes. Both pinned 0.160.0 Control proofs pass. Ten automation unit tests and six bundled-Chromium desktop/narrow-fine/narrow-touch tests pass, including two-client event/reconnect coverage. Frontend build and both trims pass. Independent review and follow-up checks report no major issues after fixing normal sidebar publication. |
+| Scope and delivery | README, Control docs, this plan and the index are updated. No new scheduler, inference summaries, duplicate transcript state, automatic ambiguous-write retry, legacy import, deployment, production restart or push. Excluded features remain excluded. |
+
+The optional agent-browser skill/executable was unavailable in this session; the required browser-observable behavior was validated with Playwright's bundled Chromium. No installed Chrome was launched. All M1–M3 exits are satisfied within the stated tool-focused scope.
 
 ## Verification and review
 

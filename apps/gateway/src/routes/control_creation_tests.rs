@@ -307,3 +307,96 @@ async fn control_notifications_persist_and_notify_other_clients_without_activati
     }
     assert!(native.requests.lock().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn control_automation_accepts_fresh_chat_target_without_creating_chat() {
+    let home = tempfile::tempdir().unwrap();
+    let (state, native) = state(home.path()).await;
+    let (status, body) = post(
+        &state,
+        "/v1/self-control/automations",
+        json!({
+            "name":"Fresh report", "prompt":"Report progress", "newThread":{"cwd":home.path()},
+            "schedule":{"startAt":"2026-10-12T00:00:00Z","repeatEvery":{"value":1,"unit":"hours"}}
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["automation"]["newThread"]["cwd"],
+        home.path().to_string_lossy().as_ref()
+    );
+    assert!(body["automation"]["targetThreadId"].is_null());
+    assert_eq!(body["pausedByDefault"], true);
+    assert!(!native
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|(method, _)| method == "thread/start"));
+}
+
+#[tokio::test]
+async fn fresh_automation_rejects_ambiguous_target_and_relative_directory() {
+    let home = tempfile::tempdir().unwrap();
+    let (state, native) = state(home.path()).await;
+    for target in [
+        json!({}),
+        json!({"targetThreadId":"existing", "newThread":{}}),
+        json!({"newThread":{"cwd":"relative"}}),
+    ] {
+        let mut request = json!({"name":"Report","prompt":"Report","schedule":{"startAt":"2026-10-12T00:00:00Z","repeatEvery":{"value":1,"unit":"hours"}}});
+        request
+            .as_object_mut()
+            .unwrap()
+            .extend(target.as_object().unwrap().clone());
+        let (status, body) = post(&state, "/v1/self-control/automations", request).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    }
+    assert!(native.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn fresh_project_automation_uses_native_root_and_rejects_an_override() {
+    let home = tempfile::tempdir().unwrap();
+    let (state, native) = state(home.path()).await;
+    native.native_projects.lock().unwrap().insert("project".into(), json!({
+        "id":"project", "name":"Project", "roots":[{"path":home.path()}], "metadata":{}, "position":0,"createdAt":1,"updatedAt":2
+    }));
+    let mut request = json!({"name":"Report","prompt":"Report","newThread":{"projectId":"project"},"schedule":{"startAt":"2030-01-01T00:00:00Z","repeatEvery":{"value":1,"unit":"hours"}}});
+    let (status, body) = post(&state, "/v1/self-control/automations", request.clone()).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let id = body["automation"]["id"].as_str().unwrap();
+    let (status, result) = post(
+        &state,
+        &format!("/v1/self-control/automations/{id}/run-now"),
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    assert!(result["run"]["targetThreadId"].is_string());
+    let starts: Vec<_> = native
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(m, _)| m == "thread/start")
+        .cloned()
+        .collect();
+    assert_eq!(starts.len(), 1);
+    assert_eq!(starts[0].1["projectId"], "project");
+    assert_eq!(starts[0].1["cwd"], home.path().to_string_lossy().as_ref());
+    request["newThread"]["cwd"] = json!("/outside");
+    let (status, _) = post(&state, "/v1/self-control/automations", request).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        native
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(m, _)| m == "thread/start")
+            .count(),
+        1
+    );
+}

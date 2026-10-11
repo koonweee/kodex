@@ -11,6 +11,7 @@ use crate::{
     store::{Automation, AutomationRun, AutomationRunPhase as Phase, NewEvent},
 };
 
+mod fresh;
 mod recovery;
 #[cfg(test)]
 mod tests;
@@ -85,7 +86,19 @@ async fn admit(state: &AppState, run: AutomationRun) -> ApiResult<AutomationRun>
             .await
         }
     };
-    if let Err(error) = activate_target(state, &run.target_thread_id).await {
+    let run = if run.target_thread_id.is_none() {
+        fresh::create_target(state, run).await?
+    } else {
+        run
+    };
+    if run.phase != Phase::Admitting {
+        return Ok(run);
+    }
+    let target = run
+        .target_thread_id
+        .as_deref()
+        .ok_or_else(|| ApiError::BadGateway("automation run has no target".into()))?;
+    if let Err(error) = activate_target(state, target).await {
         return change(
             state,
             &run,
@@ -97,9 +110,7 @@ async fn admit(state: &AppState, run: AutomationRun) -> ApiResult<AutomationRun>
         .await;
     }
     let input = vec![json!({"type":"text", "text":automation.prompt, "text_elements":[]})];
-    let row = match queue_transfer::enqueue(state, &run.target_thread_id, input, run.id.clone())
-        .await
-    {
+    let row = match queue_transfer::enqueue(state, target, input, run.id.clone()).await {
         Ok(row) => row,
         Err(error) => {
             let (phase, message) = if matches!(
@@ -140,14 +151,15 @@ pub(super) async fn start_if_idle(
     let Some(queue_id) = run.native_queue_id.as_ref() else {
         return state.store.get_automation_run(&run.id).await;
     };
-    let _guard = state.thread_input_locks.lock(&run.target_thread_id).await;
+    let target = run
+        .target_thread_id
+        .as_deref()
+        .ok_or_else(|| ApiError::BadGateway("queued automation run has no target".into()))?;
+    let _guard = state.thread_input_locks.lock(target).await;
     let client = app_server_api::client(&state.app_server);
     // Active work remains native queued work. Unknown read state cannot
     // authorize a start or turn an acknowledged admission into a retry error.
-    if !matches!(
-        queue_transfer::active_turn(&client, &run.target_thread_id).await,
-        Ok(None)
-    ) {
+    if !matches!(queue_transfer::active_turn(&client, target).await, Ok(None)) {
         return state.store.get_automation_run(&run.id).await;
     }
     let Some(starting) = state
@@ -165,7 +177,7 @@ pub(super) async fn start_if_idle(
         return state.store.get_automation_run(&run.id).await;
     };
     match client
-        .queue_start(run.target_thread_id.clone(), Some(queue_id.clone()))
+        .queue_start(target.to_owned(), Some(queue_id.clone()))
         .await
     {
         Ok(ack) => {
@@ -283,7 +295,7 @@ async fn broadcast_run_update(state: &AppState, run: &AutomationRun) {
             .store
             .append_event(NewEvent {
                 project_id: None,
-                thread_id: Some(run.target_thread_id.clone()),
+                thread_id: run.target_thread_id.clone(),
                 turn_id: None,
                 item_id: None,
                 kind: AUTOMATION_RUN_UPDATED_EVENT.into(),
@@ -313,7 +325,7 @@ pub async fn broadcast_automation_upsert(
         .store
         .append_event(NewEvent {
             project_id: None,
-            thread_id: Some(automation.target_thread_id.clone()),
+            thread_id: automation.target_thread_id.clone(),
             turn_id: None,
             item_id: None,
             kind: AUTOMATION_UPSERT_EVENT.to_string(),

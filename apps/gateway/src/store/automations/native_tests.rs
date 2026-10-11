@@ -46,7 +46,8 @@ async fn automation(store: &Store) -> crate::store::Automation {
         .create_automation(NewAutomation {
             name: "Check".into(),
             prompt: "Report status".into(),
-            target_thread_id: "original-target".into(),
+            target_thread_id: Some("original-target".into()),
+            new_thread: None,
             start_at: start(),
             repeat_every_seconds: 60,
             next_run_at: start(),
@@ -155,7 +156,10 @@ async fn run_now_is_independent_and_the_target_survives_definition_edits_and_reo
         1,
         "run-now must not block scheduled admission"
     );
-    assert_eq!(scheduled[0].target_thread_id, "edited-target");
+    assert_eq!(
+        scheduled[0].target_thread_id.as_deref(),
+        Some("edited-target")
+    );
     let before = store.get_automation(&automation.id).await.unwrap();
     store
         .transition_automation_run(
@@ -179,8 +183,9 @@ async fn run_now_is_independent_and_the_target_survives_definition_edits_and_reo
             .get_automation_run(&run.id)
             .await
             .unwrap()
-            .target_thread_id,
-        "original-target"
+            .target_thread_id
+            .as_deref(),
+        Some("original-target")
     );
 }
 

@@ -11,6 +11,9 @@ use crate::{
     store::{AutomationStatus, AutomationUpdate, NewAutomation, Store},
 };
 
+#[path = "fresh_tests.rs"]
+mod fresh_tests;
+
 #[derive(Default)]
 struct Native {
     requests: Mutex<Vec<(String, Value)>>,
@@ -19,6 +22,8 @@ struct Native {
     active: Mutex<bool>,
     add_lost: Mutex<bool>,
     start_lost: Mutex<bool>,
+    create_lost: Mutex<bool>,
+    restart_during_create: Mutex<bool>,
     early_receipt: Mutex<bool>,
     early_start_receipt: Mutex<bool>,
     resume_error: Mutex<bool>,
@@ -58,6 +63,28 @@ impl AppServer for Native {
             .push((method.into(), params.clone()));
         let active = *self.active.lock().unwrap();
         match method {
+            "thread/start" => {
+                let state = self.state.lock().unwrap().upgrade().unwrap();
+                let runs = state.store.list_outstanding_automation_runs().await?;
+                assert!(
+                    runs.iter().any(|run| run.target_thread_id.is_none()
+                        && run.new_thread.is_some()
+                        && run.phase == Phase::Admitting),
+                    "persist creation intent before native write"
+                );
+                if *self.restart_during_create.lock().unwrap() {
+                    state
+                        .store
+                        .invalidate_automation_admissions_after_restart()
+                        .await?;
+                }
+                if *self.create_lost.lock().unwrap() {
+                    return Err(ApiError::BadGateway("creation reply lost".into()));
+                }
+                Ok(
+                    json!({"thread":{"id":uuid::Uuid::new_v4().to_string(),"cwd":params["cwd"],"projectId":params["projectId"],"createdAt":1,"updatedAt":2,"status":{"type":"idle"},"turns":[]}}),
+                )
+            }
             "thread/resume" | "thread/read" => {
                 if method == "thread/resume" && *self.resume_error.lock().unwrap() {
                     return Err(ApiError::BadGateway("target unavailable".into()));
@@ -84,13 +111,13 @@ impl AppServer for Native {
                 let client = params["clientUserMessageId"].as_str().unwrap();
                 let run = state.store.get_automation_run(client).await.unwrap();
                 assert_eq!(run.phase, Phase::Admitting, "persist before queue/add");
-                assert_eq!(run.target_thread_id, params["threadId"]);
+                assert_eq!(run.target_thread_id.as_deref(), params["threadId"].as_str());
                 let row = json!({"id":format!("native-{client}"),"clientUserMessageId":client,"input":params["input"]});
                 self.rows.lock().unwrap().push(row.clone());
                 if *self.early_receipt.lock().unwrap() {
                     observe_user_receipt(
                         &state,
-                        &run.target_thread_id,
+                        run.target_thread_id.as_deref().unwrap(),
                         "receipt-turn",
                         Some(client),
                     )
@@ -125,7 +152,7 @@ impl AppServer for Native {
                 if *self.early_start_receipt.lock().unwrap() {
                     observe_user_receipt(
                         &state,
-                        &run.target_thread_id,
+                        run.target_thread_id.as_deref().unwrap(),
                         "early-start-turn",
                         Some(&run.id),
                     )
@@ -162,7 +189,8 @@ async fn fixture() -> (Arc<AppState>, Arc<Native>, Automation) {
         .create_automation(NewAutomation {
             name: "Scheduled check".into(),
             prompt: "Native-only input".into(),
-            target_thread_id: "original-target".into(),
+            target_thread_id: Some("original-target".into()),
+            new_thread: None,
             start_at: start,
             repeat_every_seconds: 60,
             next_run_at: start,
@@ -442,7 +470,8 @@ async fn one_admission_bookkeeping_error_does_not_strand_other_claimed_schedules
         .create_automation(NewAutomation {
             name: "Independent schedule".into(),
             prompt: "Second prompt".into(),
-            target_thread_id: "second-target".into(),
+            target_thread_id: Some("second-target".into()),
+            new_thread: None,
             start_at: first.start_at,
             next_run_at: first.start_at,
             repeat_every_seconds: 60,

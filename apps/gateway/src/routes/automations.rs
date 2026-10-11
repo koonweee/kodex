@@ -61,7 +61,8 @@ pub struct AutomationCreateRequest {
     #[schema(example = "Summarize current repo state and next actions.")]
     pub prompt: String,
     /// Target thread id that will receive the queued automation prompt.
-    pub target_thread_id: String,
+    pub target_thread_id: Option<String>,
+    pub new_thread: Option<crate::store::AutomationNewThread>,
     /// Initial schedule. startAt is an absolute instant; repeatEvery is a fixed duration.
     pub schedule: AutomationSchedule,
 }
@@ -75,6 +76,7 @@ pub struct AutomationUpdateRequest {
     pub prompt: Option<String>,
     /// Replacement target thread id. Omit to keep the current target thread.
     pub target_thread_id: Option<String>,
+    pub new_thread: Option<crate::store::AutomationNewThread>,
     /// Replacement full schedule. When provided, the gateway resets nextRunAt to schedule.startAt.
     pub schedule: Option<AutomationSchedule>,
 }
@@ -103,7 +105,8 @@ pub struct AutomationDto {
     pub id: String,
     pub name: String,
     pub prompt: String,
-    pub target_thread_id: String,
+    pub target_thread_id: Option<String>,
+    pub new_thread: Option<crate::store::AutomationNewThread>,
     pub schedule: AutomationSchedule,
     /// Next due firing instant in UTC.
     pub next_run_at: DateTime<Utc>,
@@ -183,13 +186,19 @@ pub async fn create_automation(
 ) -> ApiResult<Json<AutomationResponse>> {
     validate_name_and_prompt(&request.name, &request.prompt)?;
     let repeat_every_seconds = repeat_every_seconds(&request.schedule.repeat_every)?;
-    validate_target_thread(&state, &request.target_thread_id).await?;
+    crate::routes::automations::validate_automation_target(
+        &state,
+        request.target_thread_id.as_deref(),
+        request.new_thread.as_ref(),
+    )
+    .await?;
     let automation = state
         .store
         .create_automation(NewAutomation {
             name: request.name,
             prompt: request.prompt,
             target_thread_id: request.target_thread_id,
+            new_thread: request.new_thread,
             start_at: request.schedule.start_at,
             repeat_every_seconds,
             next_run_at: request.schedule.start_at,
@@ -226,8 +235,13 @@ pub async fn update_automation(
     if let Some(prompt) = request.prompt.as_deref() {
         validate_non_empty("prompt", prompt)?;
     }
-    if let Some(target_thread_id) = request.target_thread_id.as_deref() {
-        validate_target_thread(&state, target_thread_id).await?;
+    if request.target_thread_id.is_some() || request.new_thread.is_some() {
+        crate::routes::automations::validate_automation_target(
+            &state,
+            request.target_thread_id.as_deref(),
+            request.new_thread.as_ref(),
+        )
+        .await?;
     }
     let (start_at, repeat_every_seconds, next_run_at) = match request.schedule {
         Some(schedule) => {
@@ -249,6 +263,7 @@ pub async fn update_automation(
                 name: request.name,
                 prompt: request.prompt,
                 target_thread_id: request.target_thread_id,
+                new_thread: request.new_thread,
                 start_at,
                 repeat_every_seconds,
                 next_run_at,
@@ -304,6 +319,7 @@ pub(crate) fn automation_to_dto(automation: Automation) -> AutomationDto {
         name: automation.name,
         prompt: automation.prompt,
         target_thread_id: automation.target_thread_id,
+        new_thread: automation.new_thread,
         schedule: AutomationSchedule {
             start_at: automation.start_at,
             repeat_every: AutomationRepeatEvery {
@@ -360,4 +376,22 @@ pub(crate) fn repeat_every_seconds(repeat_every: &AutomationRepeatEvery) -> ApiR
         )));
     }
     Ok(seconds)
+}
+
+pub(crate) async fn validate_automation_target(
+    state: &AppState,
+    thread_id: Option<&str>,
+    new_thread: Option<&crate::store::AutomationNewThread>,
+) -> ApiResult<()> {
+    match (thread_id, new_thread) {
+        (Some(thread), None) => validate_target_thread(state, thread).await,
+        (None, Some(new)) => {
+            super::projects::settings_cwd(state, new.project_id.as_deref(), new.cwd.clone())
+                .await?;
+            Ok(())
+        }
+        _ => Err(ApiError::BadRequest(
+            "supply exactly one of targetThreadId or newThread".into(),
+        )),
+    }
 }

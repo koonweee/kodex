@@ -75,7 +75,7 @@ export function AutomationsPane({
             </Text>
             <Box className="kodex-automation-mobile-meta">
               <Text c="dimmed" size="xs">
-                {threadLabelById(threadOptions, row.original.targetThreadId)}
+                {(row.original.newThread ? "New chat each run" : threadLabelById(threadOptions, row.original.targetThreadId ?? ""))}
               </Text>
               <Group gap="xs" mt={6} wrap="wrap">
                 <Badge data-tone={row.original.status === "active" ? "success" : "neutral"} variant="light">
@@ -93,7 +93,7 @@ export function AutomationsPane({
         ),
       },
       {
-        accessorFn: (row) => threadLabelById(threadOptions, row.targetThreadId),
+        accessorFn: (row) => (row.newThread ? "New chat each run" : threadLabelById(threadOptions, row.targetThreadId ?? "")),
         header: "Target thread",
         id: "targetThread",
         size: 220,

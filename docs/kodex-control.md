@@ -37,6 +37,18 @@ It also exposes resources such as `kodex://status`, `kodex://projects`, `kodex:/
 
 `list_threads` defaults to active threads. Set `archived: true` for archived threads, optionally filtering by project and paginating with the native cursor. Archived pages default to 50 entries and accept limits from 1 to 100. `unarchive_thread` restores a thread through the native runtime without submitting input. Existing sidebar refill events notify other clients; reconnects read native membership again.
 
+## Automation destinations
+
+Automation creation and validation accept exactly one of `targetThreadId` (reuse a chat) or `newThread` (create a fresh chat for each run). For example, `newThread: {}` uses a new dated standalone directory; `newThread: {projectId: "…"}` uses that native project's root. Optional `cwd`, `model` and `effort` are explicit creation settings. Project root checks apply at validation and firing. Settings omitted from new-chat creation use native defaults. Unknown creation fields are rejected.
+
+Updating either destination replaces the previous one; omit both to retain it. The browser shows and preserves fresh-chat destinations while editing names, prompts and schedules; configure or switch destination mode through Control. Self-control automations remain paused by default until explicitly enabled. Schedules retain existing fixed-duration intervals, not desktop RRULE/timezone semantics.
+
+Every claimed run saves its destination before native writes. The acknowledged fresh chat ID is saved before input is queued. Run records expose that ID as `targetThreadId`; it stays null if creation was not confirmed. An uncertain creation or admission is never automatically retried. A late creation reply after restart cannot authorize input. A native chat may exist after a lost reply, and no scan or guess is used to assign it. Explicit run-now calls are separate attempts and may create separate chats. Outstanding scheduled uncertainty blocks later scheduled admissions under the existing policy.
+
+`queued` and `dispatched` describe input admission, not inference completion; native receipt/events can advance a run after its initial response. Fresh chats publish the normal sidebar update. Existing queued recovery uses each run's saved target, not an edited automation definition. The schema update preserves current native gateway automation records atomically; it does not open or import older instance roots.
+
+Whole-chat push preferences are available below. Failed-runs-only notification policy is not implemented: that would require a separate definition of inference failure and per-run notification attribution, especially when input joins an existing chat. This work reuses the existing chat control without adding that policy or encoding it in prompts.
+
 ## Chat notifications
 
 `set_thread_notifications(threadId, enabled)` changes the existing whole-chat push preference. It affects both manual and automated turns, persists in the gateway, and publishes the same notification-setting event used by browser controls. Reads through existing thread tools expose `notificationsEnabled`. This does not request device permission, change push subscriptions, or provide a failed-automation-runs-only filter. No preference is encoded in an automation prompt.

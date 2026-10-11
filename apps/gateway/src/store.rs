@@ -1,3 +1,4 @@
+use rmcp::schemars;
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
@@ -361,13 +362,24 @@ impl AutomationStatus {
     }
 }
 
+/// Fresh chat settings captured by each automation run. Omitted settings use native defaults.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AutomationNewThread {
+    pub project_id: Option<String>,
+    pub cwd: Option<String>,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Automation {
     pub id: String,
     pub name: String,
     pub prompt: String,
-    pub target_thread_id: String,
+    pub target_thread_id: Option<String>,
+    pub new_thread: Option<AutomationNewThread>,
     pub start_at: DateTime<Utc>,
     pub repeat_every_seconds: i64,
     pub next_run_at: DateTime<Utc>,
@@ -386,7 +398,8 @@ pub struct Automation {
 pub struct NewAutomation {
     pub name: String,
     pub prompt: String,
-    pub target_thread_id: String,
+    pub target_thread_id: Option<String>,
+    pub new_thread: Option<AutomationNewThread>,
     pub start_at: DateTime<Utc>,
     pub repeat_every_seconds: i64,
     pub next_run_at: DateTime<Utc>,
@@ -400,6 +413,7 @@ pub struct AutomationUpdate {
     pub name: Option<String>,
     pub prompt: Option<String>,
     pub target_thread_id: Option<String>,
+    pub new_thread: Option<AutomationNewThread>,
     pub start_at: Option<DateTime<Utc>>,
     pub repeat_every_seconds: Option<i64>,
     pub next_run_at: Option<DateTime<Utc>>,
@@ -452,7 +466,8 @@ impl AutomationRunPhase {
 pub struct AutomationRun {
     pub id: String,
     pub automation_id: String,
-    pub target_thread_id: String,
+    pub target_thread_id: Option<String>,
+    pub new_thread: Option<AutomationNewThread>,
     pub scheduled_for: Option<DateTime<Utc>>,
     pub phase: AutomationRunPhase,
     pub native_queue_id: Option<String>,
@@ -546,6 +561,10 @@ fn row_to_automation(row: sqlx::sqlite::SqliteRow) -> ApiResult<Automation> {
         name: row.try_get("name")?,
         prompt: row.try_get("prompt")?,
         target_thread_id: row.try_get("target_thread_id")?,
+        new_thread: row
+            .try_get::<Option<String>, _>("new_thread")?
+            .map(|value| serde_json::from_str(&value))
+            .transpose()?,
         start_at: row.try_get("start_at")?,
         repeat_every_seconds: row.try_get("repeat_every_seconds")?,
         next_run_at: row.try_get("next_run_at")?,
@@ -566,6 +585,10 @@ fn row_to_automation_run(row: sqlx::sqlite::SqliteRow) -> ApiResult<AutomationRu
         id: row.try_get("id")?,
         automation_id: row.try_get("automation_id")?,
         target_thread_id: row.try_get("target_thread_id")?,
+        new_thread: row
+            .try_get::<Option<String>, _>("new_thread")?
+            .map(|value| serde_json::from_str(&value))
+            .transpose()?,
         scheduled_for: row.try_get("scheduled_for")?,
         phase: AutomationRunPhase::from_persisted(&row.try_get::<String, _>("phase")?)?,
         native_queue_id: row.try_get("native_queue_id")?,
