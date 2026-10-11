@@ -4,6 +4,7 @@ pub mod proxy;
 pub mod registry;
 mod static_assets;
 pub mod store;
+pub mod trust;
 
 use axum::{routing::get, Json, Router};
 use serde::Serialize;
@@ -17,6 +18,7 @@ pub struct State {
     instance_id: String,
     pub(crate) store: store::Store,
     pub(crate) registry_changes: broadcast::Sender<RegistryChange>,
+    pub(crate) trust: trust::TrustPolicy,
 }
 
 #[derive(Debug, Clone)]
@@ -117,6 +119,7 @@ pub fn primary_router(
     frontend_dist: Option<std::path::PathBuf>,
     sandbox_public_url: String,
 ) -> Router {
+    let trust = state.trust.clone();
     let mut router = Router::new()
         .route("/healthz", get(health))
         .route("/readyz", get(health))
@@ -128,6 +131,7 @@ pub fn primary_router(
         router = static_assets::attach_primary(router, dist, sandbox_public_url);
     }
     router
+        .layer(axum::middleware::from_fn_with_state(trust, trust::enforce))
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
 }
@@ -165,10 +169,12 @@ pub async fn prepare(
     let prepared = instance::prepare(&config.data_dir, &config.database_path)?;
     let store = store::Store::connect(&config.database_path).await?;
     let (registry_changes, _) = broadcast::channel(128);
+    let trust = trust::TrustPolicy::new(&config.public_origin)?;
     let state = State {
         instance_id: prepared.identity.id.to_string(),
         store,
         registry_changes,
+        trust,
     };
     Ok((prepared, state))
 }
@@ -237,6 +243,16 @@ mod tests {
 
     use super::*;
 
+    fn primary_request(builder: axum::http::request::Builder) -> axum::http::request::Builder {
+        builder.header("host", "localhost:8787")
+    }
+
+    fn primary_mutation(builder: axum::http::request::Builder) -> axum::http::request::Builder {
+        primary_request(builder)
+            .header("origin", "http://localhost:8787")
+            .header("x-kodex-api-version", trust::FEDERATOR_API_VERSION)
+    }
+
     #[tokio::test]
     async fn serves_health_and_app_shell_without_codex() {
         let dir = tempfile::tempdir().unwrap();
@@ -262,17 +278,26 @@ mod tests {
         let app = primary_router(state, Some(dist.clone()), config.sandbox_public_url.clone());
         let health = app
             .clone()
-            .oneshot(Request::get("/healthz").body(Body::empty()).unwrap())
+            .oneshot(
+                primary_request(Request::get("/healthz"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(health.status(), 200);
+        assert_eq!(health.headers()["x-kodex-api-version"], "4");
         let body = health.into_body().collect().await.unwrap().to_bytes();
         let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(body["service"], "kodex-federator");
         assert_eq!(body["ready"], true);
         let shell = app
             .clone()
-            .oneshot(Request::get("/").body(Body::empty()).unwrap())
+            .oneshot(
+                primary_request(Request::get("/"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(shell.status(), 200);
@@ -287,7 +312,11 @@ mod tests {
         ] {
             let primary_sandbox = app
                 .clone()
-                .oneshot(Request::get(path).body(Body::empty()).unwrap())
+                .oneshot(
+                    primary_request(Request::get(path))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
                 .await
                 .unwrap();
             assert_eq!(primary_sandbox.status(), 404, "{path}");
@@ -421,7 +450,7 @@ mod tests {
         let created = app
             .clone()
             .oneshot(
-                Request::post("/v1/federation/executors")
+                primary_mutation(Request::post("/v1/federation/executors"))
                     .header("content-type", "application/json")
                     .body(Body::from(request.to_string()))
                     .unwrap(),
@@ -438,9 +467,11 @@ mod tests {
         let proxied = app
             .clone()
             .oneshot(
-                Request::get(format!("/v1/executors/{executor_id}/projects"))
-                    .body(Body::empty())
-                    .unwrap(),
+                primary_request(Request::get(format!(
+                    "/v1/executors/{executor_id}/projects"
+                )))
+                .body(Body::empty())
+                .unwrap(),
             )
             .await
             .unwrap();
@@ -451,9 +482,11 @@ mod tests {
         let blocked_control = app
             .clone()
             .oneshot(
-                Request::get(format!("/v1/executors/{executor_id}/self-control/status"))
-                    .body(Body::empty())
-                    .unwrap(),
+                primary_request(Request::get(format!(
+                    "/v1/executors/{executor_id}/self-control/status"
+                )))
+                .body(Body::empty())
+                .unwrap(),
             )
             .await
             .unwrap();
@@ -462,7 +495,7 @@ mod tests {
         let duplicate = app
             .clone()
             .oneshot(
-                Request::post("/v1/federation/executors")
+                primary_mutation(Request::post("/v1/federation/executors"))
                     .header("content-type", "application/json")
                     .body(Body::from(request.to_string()))
                     .unwrap(),
@@ -472,18 +505,22 @@ mod tests {
         assert_eq!(duplicate.status(), StatusCode::CONFLICT);
 
         let rename = app.clone().oneshot(
-            Request::patch(format!("/v1/federation/executors/{executor_id}"))
-                .header("content-type", "application/json")
-                .body(Body::from(
-                    json!({"displayName": "Desk Mac renamed"}).to_string(),
-                ))
-                .unwrap(),
+            primary_mutation(Request::patch(format!(
+                "/v1/federation/executors/{executor_id}"
+            )))
+            .header("content-type", "application/json")
+            .body(Body::from(
+                json!({"displayName": "Desk Mac renamed"}).to_string(),
+            ))
+            .unwrap(),
         );
         let disable = app.clone().oneshot(
-            Request::patch(format!("/v1/federation/executors/{executor_id}"))
-                .header("content-type", "application/json")
-                .body(Body::from(json!({"enabled": false}).to_string()))
-                .unwrap(),
+            primary_mutation(Request::patch(format!(
+                "/v1/federation/executors/{executor_id}"
+            )))
+            .header("content-type", "application/json")
+            .body(Body::from(json!({"enabled": false}).to_string()))
+            .unwrap(),
         );
         let (renamed, disabled) = tokio::join!(rename, disable);
         let renamed = renamed.unwrap();
@@ -504,9 +541,11 @@ mod tests {
         let converged = app
             .clone()
             .oneshot(
-                Request::get(format!("/v1/federation/executors/{executor_id}"))
-                    .body(Body::empty())
-                    .unwrap(),
+                primary_request(Request::get(format!(
+                    "/v1/federation/executors/{executor_id}"
+                )))
+                .body(Body::empty())
+                .unwrap(),
             )
             .await
             .unwrap();
@@ -521,7 +560,7 @@ mod tests {
         let reopened = primary_router(reopened_state, None, config.sandbox_public_url);
         let listed = reopened
             .oneshot(
-                Request::get("/v1/federation/executors")
+                primary_request(Request::get("/v1/federation/executors"))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -539,13 +578,17 @@ mod tests {
     #[tokio::test]
     async fn replaced_v3_executor_cannot_execute_a_v4_federated_mutation() {
         let executed = Arc::new(AtomicBool::new(false));
+        let reached = Arc::new(AtomicBool::new(false));
         let executor_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let executor_address = executor_listener.local_addr().unwrap();
         let old_mutation = axum::routing::post({
             let executed = executed.clone();
+            let reached = reached.clone();
             move |headers: axum::http::HeaderMap| {
                 let executed = executed.clone();
+                let reached = reached.clone();
                 async move {
+                    reached.store(true, Ordering::SeqCst);
                     let status = if headers
                         .get("x-kodex-api-version")
                         .is_some_and(|value| value == "3")
@@ -613,25 +656,48 @@ mod tests {
             .await
             .unwrap();
         let app = primary_router(state, None, config.sandbox_public_url);
+        for version in [None, Some("3")] {
+            let mut request = primary_request(Request::post("/v1/executors/executor-1/projects"))
+                .header("content-type", "application/json")
+                .header("origin", "http://localhost:8787");
+            if let Some(version) = version {
+                request = request.header("x-kodex-api-version", version);
+            }
+            let response = app
+                .clone()
+                .oneshot(
+                    request
+                        .body(Body::from(r#"{"name":"must not run"}"#))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::CONFLICT);
+            assert_eq!(response.headers()["x-kodex-api-version"], "4");
+            let response = response_json(response).await;
+            assert_eq!(response["code"], "client_update_required");
+            assert!(!reached.load(Ordering::SeqCst));
+        }
+
         let response = app
             .clone()
             .oneshot(
-                Request::post("/v1/executors/executor-1/projects")
+                primary_mutation(Request::post("/v1/executors/executor-1/projects"))
                     .header("content-type", "application/json")
-                    .header("x-kodex-api-version", "3")
                     .body(Body::from(r#"{"name":"must not run"}"#))
                     .unwrap(),
             )
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert!(reached.load(Ordering::SeqCst));
         assert!(!executed.load(Ordering::SeqCst));
 
         for path in ["projects", "events"] {
             let response = app
                 .clone()
                 .oneshot(
-                    Request::get(format!("/v1/executors/executor-1/{path}"))
+                    primary_request(Request::get(format!("/v1/executors/executor-1/{path}")))
                         .header("accept", "text/event-stream")
                         .body(Body::empty())
                         .unwrap(),

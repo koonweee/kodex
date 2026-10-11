@@ -43,7 +43,7 @@ App surfaces require a sandbox document on a different browser origin. Loopback 
 
 ### Federator bootstrap
 
-The federation feature branch includes an independently runnable hub bootstrap. It does not start Codex and uses a separate fresh state root. Until executor registration and proxying land, it serves health endpoints and the built web shell only:
+The federation feature branch includes an independently runnable hub. It does not start Codex and uses a separate fresh state root. It serves the built web shell, owns the executor registry, and proxies supported executor API routes through qualified URLs:
 
 ```bash
 KODEX_FEDERATOR_DATA_DIR="$(mktemp -d)/federator" \
@@ -51,7 +51,7 @@ KODEX_FRONTEND_DIST="$PWD/apps/web/dist" \
 cargo run -p kodex-federator
 ```
 
-The primary listener defaults to `127.0.0.1:8787`; the isolated sandbox listener defaults to `127.0.0.1:8790`. Override them with `KODEX_FEDERATOR_BIND` and `KODEX_FEDERATOR_SANDBOX_BIND`. The primary response injects the sandbox document URL into the app shell; it defaults to `http://localhost:8790/app-surface-sandbox.html` and remote deployments set the browser-reachable distinct origin with `KODEX_FEDERATOR_SANDBOX_PUBLIC_URL`. The sandbox document is unavailable on the primary origin, and the sandbox origin does not serve the app shell. These listeners remain localhost/trusted-VPN surfaces and are not public-safe.
+The primary listener defaults to `127.0.0.1:8787`; the isolated sandbox listener defaults to `127.0.0.1:8790`. Override them with `KODEX_FEDERATOR_BIND` and `KODEX_FEDERATOR_SANDBOX_BIND`. Set `KODEX_FEDERATOR_PUBLIC_ORIGIN` to the exact browser-visible HTTP(S) origin; it defaults to `http://localhost:8787`. The primary listener rejects a different `Host`, rejects hostile or null browser origins, and requires the current `x-kodex-api-version` on every mutation. Browser mutations also require the exact configured origin; originless callers must supply the current version as their deliberate service-call contract. WebSocket upgrades always require the exact browser origin. Responses advertise the federator/browser epoch independently of the executor response. The primary response injects the sandbox document URL into the app shell; it defaults to `http://localhost:8790/app-surface-sandbox.html` and remote deployments set the browser-reachable distinct origin with `KODEX_FEDERATOR_SANDBOX_PUBLIC_URL`. The sandbox document is unavailable on the primary origin, and the sandbox origin does not serve the app shell. These listeners remain localhost/trusted-VPN surfaces and are not public-safe.
 
 Sign in from **Account settings → Sign in with ChatGPT**. Kodex displays the native device code and verification link; app-server owns polling, expiry and authentication. This avoids the browser-login callback listener shared with Codex desktop. Cancellation targets the displayed native login ID, so cancelling an old attempt cannot cancel a newer attempt from another tab. Login remains global to this Kodex runtime.
 

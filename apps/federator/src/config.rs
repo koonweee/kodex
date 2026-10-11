@@ -7,6 +7,7 @@ pub struct Config {
     pub data_dir: PathBuf,
     pub database_path: PathBuf,
     pub frontend_dist: Option<PathBuf>,
+    pub public_origin: String,
     pub sandbox_public_url: String,
 }
 
@@ -19,6 +20,7 @@ impl Default for Config {
             database_path: data_dir.join("federator.db"),
             data_dir,
             frontend_dist: None,
+            public_origin: "http://localhost:8787".to_string(),
             sandbox_public_url: "http://localhost:8790/app-surface-sandbox.html".to_string(),
         }
     }
@@ -50,6 +52,9 @@ impl Config {
         if let Ok(url) = env::var("KODEX_FEDERATOR_SANDBOX_PUBLIC_URL") {
             config.sandbox_public_url = url;
         }
+        if let Ok(url) = env::var("KODEX_FEDERATOR_PUBLIC_ORIGIN") {
+            config.public_origin = url;
+        }
         config
     }
 }
@@ -74,6 +79,7 @@ mod tests {
         assert_eq!(config.sandbox_bind, "127.0.0.1:8790".parse().unwrap());
         assert!(config.data_dir.ends_with(".kodex/federated-v1/federator"));
         assert_eq!(config.database_path, config.data_dir.join("federator.db"));
+        assert_eq!(config.public_origin, "http://localhost:8787");
         assert_eq!(
             config.sandbox_public_url,
             "http://localhost:8790/app-surface-sandbox.html"
