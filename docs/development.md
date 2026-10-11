@@ -41,6 +41,18 @@ To proxy to another local gateway, set `VITE_KODEX_PROXY_TARGET`. To call anothe
 
 App surfaces require a sandbox document on a different browser origin. Loopback development swaps `localhost` and `127.0.0.1` automatically. Remote browsers and HTTPS or non-loopback deployments must set `VITE_KODEX_APP_SURFACE_SANDBOX_URL` to the sandbox HTML on a distinct origin.
 
+### Federator bootstrap
+
+The federation feature branch includes an independently runnable hub bootstrap. It does not start Codex and uses a separate fresh state root. Until executor registration and proxying land, it serves health endpoints and the built web shell only:
+
+```bash
+KODEX_FEDERATOR_DATA_DIR="$(mktemp -d)/federator" \
+KODEX_FRONTEND_DIST="$PWD/apps/web/dist" \
+cargo run -p kodex-federator
+```
+
+The primary listener defaults to `127.0.0.1:8787`; the isolated sandbox listener defaults to `127.0.0.1:8790`. Override them with `KODEX_FEDERATOR_BIND` and `KODEX_FEDERATOR_SANDBOX_BIND`. The primary response injects the sandbox document URL into the app shell; it defaults to `http://localhost:8790/app-surface-sandbox.html` and remote deployments set the browser-reachable distinct origin with `KODEX_FEDERATOR_SANDBOX_PUBLIC_URL`. The sandbox document is unavailable on the primary origin, and the sandbox origin does not serve the app shell. These listeners remain localhost/trusted-VPN surfaces and are not public-safe.
+
 Sign in from **Account settings → Sign in with ChatGPT**. Kodex displays the native device code and verification link; app-server owns polling, expiry and authentication. This avoids the browser-login callback listener shared with Codex desktop. Cancellation targets the displayed native login ID, so cancelling an old attempt cannot cancel a newer attempt from another tab. Login remains global to this Kodex runtime.
 
 Device-code authentication must be enabled in personal ChatGPT security settings or by the workspace administrator. Issuing a code does not establish whether the eventual account is eligible. Cancellation stops this native login attempt; it does not revoke the provider-issued code. See [Codex authentication guidance](https://learn.chatgpt.com/docs/auth).

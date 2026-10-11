@@ -11,6 +11,9 @@ type AppSurfacePaneBridge = ComponentProps<typeof AppSurfacePane>["onBridgeReque
 describe("AppSurfacePane", () => {
   beforeEach(() => {
     vi.stubEnv("VITE_KODEX_APP_SURFACE_SANDBOX_URL", "");
+    document
+      .querySelector('meta[name="kodex-app-surface-sandbox-url"]')
+      ?.remove();
   });
 
   afterEach(() => {
@@ -125,6 +128,20 @@ describe("AppSurfacePane", () => {
     });
     expect(resourceMessage.params.permissions).toEqual({});
     expect(resourceMessage.params.sandbox).toBe("allow-scripts allow-forms");
+  });
+
+  it("uses the federator runtime sandbox origin", () => {
+    const meta = document.createElement("meta");
+    meta.name = "kodex-app-surface-sandbox-url";
+    meta.content = "https://kodex-sandbox.tailnet.example/app-surface-sandbox.html";
+    document.head.append(meta);
+
+    renderPane(appSurfaceSession());
+
+    expect(screen.getByTitle(/app surface:/i)).toHaveAttribute(
+      "src",
+      "https://kodex-sandbox.tailnet.example/app-surface-sandbox.html",
+    );
   });
 
   it("sends the app surface document when the proxy ready message is missed", async () => {

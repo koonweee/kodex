@@ -54,6 +54,7 @@ export default defineConfig({
       },
       injectManifest: {
         globPatterns: ["**/*.{js,css,html,ico,png,webmanifest}"],
+        globIgnores: ["app-surface-sandbox.html"],
       },
     }),
     {

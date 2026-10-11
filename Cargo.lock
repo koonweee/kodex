@@ -1814,6 +1814,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "kodex-federator"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "http-body-util",
+ "percent-encoding",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tempfile",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "kodex-gateway"
 version = "0.1.0"
 dependencies = [

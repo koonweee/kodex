@@ -137,6 +137,7 @@ The real push-provider browser proof is manual-only; run it from your own termin
 
 | Path | Purpose |
 | --- | --- |
+| `apps/federator` | Rust federation hub bootstrap, independent state, primary web origin, and sandbox origin |
 | `apps/gateway` | Rust gateway, Codex app-server adapter, API, persistence, and host integrations |
 | `apps/web` | React, TypeScript, and Vite progressive web app |
 | `runtime/kodex` | Built-in skills for guarded agent access to Kodex |

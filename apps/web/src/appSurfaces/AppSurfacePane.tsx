@@ -393,7 +393,12 @@ function resolveAppSurfaceDocumentUrl(documentUrl: string): string {
 }
 
 function resolveAppSurfaceSandboxUrl(): string | null {
-  const configured = import.meta.env.VITE_KODEX_APP_SURFACE_SANDBOX_URL;
+  const configured =
+    (typeof document === "undefined"
+      ? null
+      : document
+          .querySelector<HTMLMetaElement>('meta[name="kodex-app-surface-sandbox-url"]')
+          ?.getAttribute("content")) || import.meta.env.VITE_KODEX_APP_SURFACE_SANDBOX_URL;
   if (typeof window === "undefined") {
     return configured || null;
   }
