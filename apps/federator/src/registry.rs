@@ -118,6 +118,18 @@ struct VerifiedExecutorUpdate {
     updated_at: i64,
 }
 
+struct ExecutorProbeUpdate {
+    id: String,
+    expected_generation: i64,
+    api_version: String,
+    app_server_schema_version: String,
+    status: ExecutorStatus,
+    last_error: Option<String>,
+    last_seen_at: i64,
+    updated_at: i64,
+    bump_generation: bool,
+}
+
 enum RegistryCommand {
     Insert {
         record: ExecutorRecord,
@@ -132,6 +144,10 @@ enum RegistryCommand {
     },
     UpdateVerified {
         update: VerifiedExecutorUpdate,
+        reply: tokio::sync::oneshot::Sender<anyhow::Result<Option<ExecutorRecord>>>,
+    },
+    UpdateProbe {
+        update: ExecutorProbeUpdate,
         reply: tokio::sync::oneshot::Sender<anyhow::Result<Option<ExecutorRecord>>>,
     },
     Delete {
@@ -206,6 +222,33 @@ impl RegistryWriter {
                                 update.status,
                                 update.last_error.as_deref(),
                                 update.updated_at,
+                            )
+                            .await
+                            .map(|updated| {
+                                updated.map(|(record, revision)| {
+                                    publish_registry_change(
+                                        &changes,
+                                        revision,
+                                        record.id.clone(),
+                                        Some(record.generation),
+                                    );
+                                    record
+                                })
+                            });
+                        let _ = reply.send(result);
+                    }
+                    RegistryCommand::UpdateProbe { update, reply } => {
+                        let result = store
+                            .update_executor_probe(
+                                &update.id,
+                                update.expected_generation,
+                                &update.api_version,
+                                &update.app_server_schema_version,
+                                update.status,
+                                update.last_error.as_deref(),
+                                update.last_seen_at,
+                                update.updated_at,
+                                update.bump_generation,
                             )
                             .await
                             .map(|updated| {
@@ -296,6 +339,20 @@ impl RegistryWriter {
         let (reply, response) = tokio::sync::oneshot::channel();
         self.commands
             .send(RegistryCommand::UpdateVerified { update, reply })
+            .await
+            .map_err(|_| anyhow::anyhow!("executor registry writer stopped"))?;
+        response
+            .await
+            .map_err(|_| anyhow::anyhow!("executor registry writer stopped"))?
+    }
+
+    async fn update_probe(
+        &self,
+        update: ExecutorProbeUpdate,
+    ) -> anyhow::Result<Option<ExecutorRecord>> {
+        let (reply, response) = tokio::sync::oneshot::channel();
+        self.commands
+            .send(RegistryCommand::UpdateProbe { update, reply })
             .await
             .map_err(|_| anyhow::anyhow!("executor registry writer stopped"))?;
         response
@@ -443,6 +500,10 @@ pub fn router() -> Router<FederatorState> {
                 .patch(update_executor)
                 .delete(delete_executor),
         )
+        .route(
+            "/v1/federation/executors/{executor_id}/probe",
+            axum::routing::post(probe_executor_status),
+        )
 }
 
 #[utoipa::path(
@@ -565,6 +626,116 @@ pub(crate) async fn get_executor(
         .map_err(RegistryError::internal)?
         .map(Json)
         .ok_or_else(RegistryError::not_found)
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/federation/executors/{executorId}/probe",
+    params(("executorId" = String, Path)),
+    responses((status = 200, body = ExecutorRecord), (status = 404, body = ErrorBody), (status = 409, body = ErrorBody))
+)]
+pub(crate) async fn probe_executor_status(
+    State(state): State<FederatorState>,
+    Path(executor_id): Path<String>,
+) -> Result<Json<ExecutorRecord>, RegistryError> {
+    state
+        .store
+        .get_executor(&executor_id)
+        .await
+        .map_err(RegistryError::internal)?
+        .ok_or_else(RegistryError::not_found)?;
+    let probe_lock = {
+        let mut locks = state.executor_probe_locks.lock().await;
+        locks.retain(|_, probe_lock| probe_lock.strong_count() > 0);
+        match locks.get(&executor_id).and_then(std::sync::Weak::upgrade) {
+            Some(probe_lock) => probe_lock,
+            None => {
+                let probe_lock = std::sync::Arc::new(tokio::sync::Mutex::new(()));
+                locks.insert(executor_id.clone(), std::sync::Arc::downgrade(&probe_lock));
+                probe_lock
+            }
+        }
+    };
+    let _probe_guard = probe_lock.lock().await;
+    let current = state
+        .store
+        .get_executor(&executor_id)
+        .await
+        .map_err(RegistryError::internal)?
+        .ok_or_else(RegistryError::not_found)?;
+    let now = unix_seconds();
+    let result = match validate_executor_probe_endpoint(&current.base_url).await {
+        Ok(endpoint) => probe_executor(&endpoint).await,
+        Err(error) => Err(error),
+    };
+    let (api_version, schema_version, status, last_error, last_seen_at, identity_mismatch) =
+        match result {
+            Ok(capabilities) if capabilities.instance_id == current.instance_id => {
+                let status = capabilities.status();
+                let last_error = capabilities.status_error();
+                (
+                    capabilities.api_version,
+                    capabilities.app_server_schema_version,
+                    status,
+                    last_error,
+                    now,
+                    false,
+                )
+            }
+            Ok(_) => (
+                current.api_version.clone(),
+                current.app_server_schema_version.clone(),
+                ExecutorStatus::Unknown,
+                Some("Endpoint belongs to a different executor instance.".to_string()),
+                current.last_seen_at,
+                true,
+            ),
+            Err(error) => (
+                current.api_version.clone(),
+                current.app_server_schema_version.clone(),
+                ExecutorStatus::Unknown,
+                Some(error.message().to_string()),
+                current.last_seen_at,
+                false,
+            ),
+        };
+    let bump_generation = identity_mismatch
+        || current.api_version != api_version
+        || current.app_server_schema_version != schema_version
+        || current.status != status;
+    let updated = state
+        .registry_writer
+        .update_probe(ExecutorProbeUpdate {
+            id: executor_id,
+            expected_generation: current.generation,
+            api_version,
+            app_server_schema_version: schema_version,
+            status,
+            last_error,
+            last_seen_at,
+            updated_at: now,
+            bump_generation,
+        })
+        .await
+        .map_err(RegistryError::internal)?;
+    match updated {
+        Some(updated) => Ok(Json(updated)),
+        None => {
+            if state
+                .store
+                .get_executor(&current.id)
+                .await
+                .map_err(RegistryError::internal)?
+                .is_none()
+            {
+                Err(RegistryError::not_found())
+            } else {
+                Err(RegistryError::conflict(
+                    "Executor registration changed while its status was being checked; refresh and retry.",
+                ))
+            }
+        }
+    }
 }
 
 #[utoipa::path(
@@ -1022,6 +1193,9 @@ fn unix_seconds() -> i64 {
         .unwrap_or_default()
         .as_secs() as i64
 }
+
+#[cfg(test)]
+mod status_tests;
 
 #[cfg(test)]
 mod tests {

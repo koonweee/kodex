@@ -211,6 +211,8 @@ Exit: two independently runnable services; stopping/restarting the federator can
 
 Exit: local and remote executors use the same boundary; replacement, stale replies, wrong identity, recursion and unsupported versions cannot dispatch commands.
 
+M2 is complete on the pinned feature baseline. The federator now persists and publishes a revisioned executor registry, verifies endpoint identity and compatibility, fences replacements with generations, and proxies the executor allowlist over streaming HTTP, SSE and WebSockets. Transport tests cover multipart and binary bodies, range responses, exact upstream failures, redirects, WebSocket protocol negotiation and terminal shutdown. Registry tests cover two-client convergence and reconnect, cancellation-independent publication, replacement and stale-generation rejection, explicit readiness refreshes, and colliding native IDs on two executor fixtures. Generated OpenAPI and frontend types are current. The full 36-test federator suite, backend trim and frontend build/trim pass, and independent review found no remaining major or medium issues. M0's deployed remote MCP OAuth callback proof remains open and is not implied by this transport milestone.
+
 ### M3 Executor-scoped frontend and core workflows
 
 - Replace singleton API/capability/compatibility/event state with explicit connection contexts and independent query caches.

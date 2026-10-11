@@ -222,6 +222,44 @@ impl Store {
         Ok(Some((record, revision)))
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_executor_probe(
+        &self,
+        id: &str,
+        expected_generation: i64,
+        api_version: &str,
+        app_server_schema_version: &str,
+        status: ExecutorStatus,
+        last_error: Option<&str>,
+        last_seen_at: i64,
+        updated_at: i64,
+        bump_generation: bool,
+    ) -> anyhow::Result<Option<(ExecutorRecord, i64)>> {
+        let mut transaction = self.pool.begin().await?;
+        let row = sqlx::query(
+            "UPDATE executors SET api_version = ?, app_server_schema_version = ?, status = ?, last_error = ?, last_seen_at = ?, generation = generation + ?, updated_at = ? WHERE id = ? AND generation = ? RETURNING id, generation, display_name, base_url, instance_id, api_version, app_server_schema_version, enabled, status, last_error, last_seen_at, created_at, updated_at",
+        )
+        .bind(api_version)
+        .bind(app_server_schema_version)
+        .bind(status.as_str())
+        .bind(last_error)
+        .bind(last_seen_at)
+        .bind(i64::from(bump_generation))
+        .bind(updated_at)
+        .bind(id)
+        .bind(expected_generation)
+        .fetch_optional(&mut *transaction)
+        .await?;
+        let Some(row) = row else {
+            transaction.commit().await?;
+            return Ok(None);
+        };
+        let record = decode_executor(row)?;
+        let revision = advance_registry_revision(&mut transaction).await?;
+        transaction.commit().await?;
+        Ok(Some((record, revision)))
+    }
+
     pub async fn delete_executor(&self, id: &str) -> anyhow::Result<Option<i64>> {
         let mut transaction = self.pool.begin().await?;
         let deleted = sqlx::query("DELETE FROM executors WHERE id = ?")

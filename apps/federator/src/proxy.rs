@@ -420,4 +420,7 @@ impl IntoResponse for ProxyError {
 }
 
 #[cfg(test)]
+mod routing_tests;
+
+#[cfg(test)]
 mod tests;

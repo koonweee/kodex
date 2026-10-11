@@ -20,6 +20,11 @@ pub struct State {
     pub(crate) registry_writer: registry::RegistryWriter,
     pub(crate) registry_changes: broadcast::Sender<RegistryChange>,
     pub(crate) trust: trust::TrustPolicy,
+    pub(crate) executor_probe_locks: std::sync::Arc<
+        tokio::sync::Mutex<
+            std::collections::HashMap<String, std::sync::Weak<tokio::sync::Mutex<()>>>,
+        >,
+    >,
 }
 
 #[derive(Debug, Clone)]
@@ -44,6 +49,7 @@ struct HealthResponse {
         registry::registry_events,
         registry::list_executors,
         registry::get_executor,
+        registry::probe_executor_status,
         registry::register_executor,
         registry::update_executor,
         registry::delete_executor
@@ -189,6 +195,9 @@ pub async fn prepare(
         registry_writer,
         registry_changes,
         trust,
+        executor_probe_locks: std::sync::Arc::new(tokio::sync::Mutex::new(
+            std::collections::HashMap::new(),
+        )),
     };
     Ok((prepared, state))
 }
