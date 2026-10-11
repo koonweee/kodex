@@ -1,4 +1,5 @@
 import type { EventEnvelope, ThreadDeliveryOptions } from "../api/client";
+import { executorApiUrl, snapshotConnection, type ExecutorConnection } from "../api/executorConnection";
 
 type EventSourceLike = {
   addEventListener?: (type: string, listener: (event: MessageEvent<string>) => void) => void;
@@ -11,6 +12,7 @@ type EventSourceLike = {
 type EventSourceCtor = new (url: string) => EventSourceLike;
 
 type EventStreamClientOptions = ThreadDeliveryOptions & {
+  connection?: ExecutorConnection;
   EventSourceCtor?: EventSourceCtor;
   beforeConnect?: () => Promise<boolean>;
   cursor?: number;
@@ -68,6 +70,7 @@ const GATEWAY_SSE_EVENT_TYPES = [
 export function createEventStreamClient({
   EventSourceCtor = globalThis.EventSource as EventSourceCtor | undefined,
   beforeConnect,
+  connection,
   cursor,
   excludeThreadId,
   includeGlobal,
@@ -79,6 +82,7 @@ export function createEventStreamClient({
   onEvent,
   onStatusChange,
 }: EventStreamClientOptions) {
+  const binding = connection ? snapshotConnection(connection) : undefined;
   let closed = false;
   let eventSource: EventSourceLike | null = null;
   let lastSeq = cursor;
@@ -112,7 +116,7 @@ export function createEventStreamClient({
       if (!isCurrent()) return;
       eventSource?.close();
       const source = new EventSourceCtor(
-        eventStreamUrl({ cursor: lastSeq, excludeThreadId, includeGlobal, threadId, threadIds, ...deliveryOptions }),
+        eventStreamUrl({ connection: binding, cursor: lastSeq, excludeThreadId, includeGlobal, threadId, threadIds, ...deliveryOptions }),
       );
       eventSource = source;
       hasStarted = true;
@@ -188,6 +192,7 @@ export function createEventStreamClient({
 }
 
 function eventStreamUrl({
+  connection,
   cursor,
   excludeThreadId,
   includeGlobal,
@@ -196,6 +201,7 @@ function eventStreamUrl({
   threadId,
   threadIds,
 }: {
+  connection?: ExecutorConnection;
   cursor?: number;
   excludeThreadId?: string | null;
   includeGlobal?: boolean;
@@ -226,5 +232,8 @@ function eventStreamUrl({
   if (excludeThreadId) {
     url.searchParams.set("excludeThreadId", excludeThreadId);
   }
-  return `${url.pathname}${url.search}`;
+  const route = `${url.pathname}${url.search}`;
+  if (!connection) return route;
+  const qualified = new URL(executorApiUrl(connection, route, baseUrl));
+  return `${qualified.pathname}${qualified.search}`;
 }

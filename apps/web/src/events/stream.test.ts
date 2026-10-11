@@ -149,6 +149,56 @@ describe("event stream client", () => {
     first.close(); second.close();
   });
 
+  it("keeps executor identity explicit on independent streams", () => {
+    const first = createEventStreamClient({
+      EventSourceCtor: FakeEventSource,
+      connection: { executorId: "executor/a", instanceId: "instance-a" },
+      threadId: "shared-thread",
+      onEvent: vi.fn(),
+    });
+    const second = createEventStreamClient({
+      EventSourceCtor: FakeEventSource,
+      connection: { executorId: "executor-b", instanceId: "instance-b" },
+      threadId: "shared-thread",
+      onEvent: vi.fn(),
+    });
+
+    first.connect();
+    second.connect();
+
+    expect(FakeEventSource.instances[0].url).toBe(
+      "/v1/executors/executor%2Fa/events?threadId=shared-thread",
+    );
+    expect(FakeEventSource.instances[1].url).toBe(
+      "/v1/executors/executor-b/events?threadId=shared-thread",
+    );
+    first.close();
+    second.close();
+  });
+
+  it("reconnects to its original executor when the source connection is mutated", () => {
+    vi.useFakeTimers();
+    const connection = { executorId: "executor-a", instanceId: "instance-a" };
+    const client = createEventStreamClient({
+      EventSourceCtor: FakeEventSource,
+      connection,
+      cursor: 4,
+      reconnectDelayMs: 250,
+      onEvent: vi.fn(),
+    });
+    client.connect();
+    FakeEventSource.instances[0].emit({ seq: 8 });
+    connection.executorId = "executor-b";
+    connection.instanceId = "instance-b";
+    FakeEventSource.instances[0].fail();
+    vi.advanceTimersByTime(250);
+
+    expect(FakeEventSource.instances[1].url).toBe(
+      "/v1/executors/executor-a/events?cursor=8",
+    );
+    client.close();
+  });
+
   it("starts fresh streams without a replay cursor", () => {
     const client = createEventStreamClient({
       EventSourceCtor: FakeEventSource,
