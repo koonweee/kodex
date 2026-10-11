@@ -665,13 +665,7 @@ fn finish_router(router: Router) -> Router {
 /// federator route allowlist.
 pub fn build_executor_router(state: AppState) -> Router {
     let instance_id = state.config.instance.id.clone();
-    let mut router = executor_routes(executor_openapi()).with_state(state.clone());
-    // The existing single-machine service still serves the frontend from this
-    // process. M1 moves these assets to the federator atomically with the
-    // service-packaging change.
-    if let Some(dist_dir) = state.config.frontend.dist_dir.clone() {
-        router = static_assets::attach_frontend(router, dist_dir);
-    }
+    let router = executor_routes(executor_openapi()).with_state(state);
     finish_router(router.layer(middleware::from_fn_with_state(
         instance_id,
         crate::instance_precondition::enforce,
@@ -702,4 +696,35 @@ pub fn build_router(state: AppState) -> Router {
     }
 
     finish_router(router)
+}
+
+#[cfg(test)]
+mod executor_boundary_tests {
+    use std::sync::Arc;
+
+    use axum::{body::Body, http::Request};
+    use tower::ServiceExt;
+
+    use super::*;
+    use crate::{app_server::tests::RecordingAppServer, config::Config, store::Store};
+
+    #[tokio::test]
+    async fn executor_listener_never_serves_frontend_assets() {
+        let frontend = tempfile::tempdir().unwrap();
+        std::fs::write(frontend.path().join("index.html"), "<main>frontend</main>").unwrap();
+        let mut config = Config::default();
+        config.frontend.dist_dir = Some(frontend.path().to_path_buf());
+        let state = AppState::new(
+            config,
+            Store::in_memory().await.unwrap(),
+            Arc::new(RecordingAppServer::default()),
+        );
+
+        let response = build_executor_router(state)
+            .oneshot(Request::get("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+    }
 }
