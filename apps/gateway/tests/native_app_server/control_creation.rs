@@ -26,6 +26,19 @@ async fn real_native_control_standalone_archive_restore() -> anyhow::Result<()> 
         fixture.enqueue([ModelResponse::message("Standalone complete")]);
         start_turn(&session.app, id, "Standalone Control proof").await?;
         session.completed_turn(id, "completed").await?;
+        let compact = api(
+            &session.app,
+            "GET",
+            &format!("/v1/self-control/threads/{id}/turns/compact?limit=1"),
+            None,
+        )
+        .await?;
+        anyhow::ensure!(compact["turns"][0]["status"] == "completed", "{compact}");
+        let excerpt = compact.to_string();
+        anyhow::ensure!(
+            excerpt.contains("Standalone complete") && excerpt.contains("Standalone Control proof"),
+            "{compact}"
+        );
         let list = api(&session.app, "GET", "/v1/chats/threads", None).await?;
         anyhow::ensure!(list["threads"]
             .as_array()

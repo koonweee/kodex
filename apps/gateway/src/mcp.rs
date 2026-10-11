@@ -18,6 +18,19 @@ use crate::routes::pins::PinnedThreadListQuery;
 use pins::PinThreadToolParams;
 use subagents::ListSubagentsToolParams;
 
+#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactTurnsToolParams {
+    pub thread_id: String,
+    pub cursor: Option<String>,
+    /// Number of turns, from 1 to 20; defaults to 5.
+    pub limit: Option<u32>,
+    /// Total excerpt text budget, from 256 to 64000 Unicode characters; defaults to 16000.
+    pub max_chars: Option<usize>,
+    #[serde(default)]
+    pub include_tool_output: bool,
+}
+
 #[derive(Clone)]
 pub struct KodexControlMcp {
     gateway_url: String,
@@ -685,6 +698,31 @@ impl KodexControlMcp {
             ))
             .await?,
         ))
+    }
+
+    #[tool(
+        description = "Read compact native turns newest-first without activating the chat or marking it seen. Deterministic excerpts, not model summaries. Pass nextCursor for older turns; truncation is explicit. Tool text is opt-in; errors/status remain visible."
+    )]
+    async fn get_compact_turns(
+        &self,
+        Parameters(params): Parameters<CompactTurnsToolParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let path = append_query(
+            &format!(
+                "/v1/self-control/threads/{}/turns/compact",
+                path_segment(&params.thread_id)
+            ),
+            [
+                ("cursor", params.cursor),
+                ("limit", params.limit.map(|v| v.to_string())),
+                ("maxChars", params.max_chars.map(|v| v.to_string())),
+                (
+                    "includeToolOutput",
+                    Some(params.include_tool_output.to_string()),
+                ),
+            ],
+        );
+        Ok(json_tool_result(self.get_json(&path).await?))
     }
 
     #[tool(description = "Read a page of a Kodex thread timeline through self-control")]

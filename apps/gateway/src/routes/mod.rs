@@ -9,6 +9,9 @@ pub mod composer_settings;
 mod config_writes;
 #[cfg(test)]
 mod control_creation_tests;
+pub mod control_reads;
+#[cfg(test)]
+mod control_reads_tests;
 pub mod directories;
 pub mod events;
 pub(crate) mod file_content;

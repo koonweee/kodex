@@ -44,6 +44,14 @@ M1 implementation evidence (2026-10-11; independent review passed, no major issu
 
 Exit: compact reads and waiting provide bounded useful results, no duplicate completed text with a current cursor, and no changes to shared state from observation. No model-generated summaries or new lifecycle storage.
 
+M2 compact-read progress (2026-10-11; items 1–2 complete, waiting remains):
+
+- Added `get_compact_turns` over one descending native full-item turn page, with no resume, read-receipt mutation, inference or summary storage. The public Rust DTOs generate the MCP-adjacent HTTP contract and frontend types.
+- Defaults/bounds: five turns (1–20), 16,000 excerpt characters (256–64,000), 4,000 characters per text field, and 200 returned items per page. Status/errors, omitted counts, truncation and native older-page cursors are explicit. Tool text is opt-in; arguments, binary media and raw result/config envelopes stay out of the response.
+- Focused tests cover Unicode/text/item limits, multiple tool output blocks sharing a field budget, structured tool failures, active/failed/empty turns, pagination, malformed reads and native revert fencing before any view exists. The gateway suite passed (707 tests, 3 intentionally ignored); the additional multi-block cap regression and focused compact/revert tests passed after that run.
+- The disposable pinned-native proof returns actual user/assistant text and completed status. Generated types, frontend build, backend/frontend trims passed. Independent review reported no major issues. No frontend lifecycle/UI implementation changed.
+- Items 3–5 remain: bounded multi-thread waiting, per-target cursors/errors, timeout progress and cancellation/restart/revert verification. This milestone and the overall goal remain active.
+
 ### M3 — Automation workflow audit and confirmed improvements
 
 1. Inspect existing automation scheduler, Control tools, run records and notifications. Record concrete support/gaps for recurring work in an existing chat, a new standalone/project chat per run, and notification preferences. Desktop heartbeat/cron naming is not a required implementation structure.

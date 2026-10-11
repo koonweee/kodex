@@ -1315,6 +1315,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/self-control/threads/{threadId}/turns/compact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_compact_turns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/self-control/threads/{threadId}/unarchive": {
         parameters: {
             query?: never;
@@ -2297,6 +2313,32 @@ export interface components {
             cursor?: string | null;
             /** Format: int32 */
             limit?: number | null;
+        };
+        CompactItem: {
+            error?: string | null;
+            /** Format: int64 */
+            exitCode?: number | null;
+            id: string;
+            itemType: string;
+            phase?: string | null;
+            status?: string | null;
+            success?: boolean | null;
+            text?: string | null;
+            truncated: boolean;
+        };
+        CompactTurn: {
+            error?: string | null;
+            id: string;
+            items: components["schemas"]["CompactItem"][];
+            omittedItems: number;
+            status: string;
+            truncated: boolean;
+        };
+        CompactTurnsResponse: {
+            nextCursor?: string | null;
+            threadId: string;
+            truncated: boolean;
+            turns: components["schemas"]["CompactTurn"][];
         };
         /** @enum {string} */
         ComposerPermissionsPreset: "default" | "autoReview" | "fullAccess";
@@ -6033,6 +6075,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadViewResponse"];
+                };
+            };
+        };
+    };
+    get_compact_turns: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+                limit?: number | null;
+                maxChars?: number | null;
+                includeToolOutput?: boolean;
+            };
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompactTurnsResponse"];
                 };
             };
         };

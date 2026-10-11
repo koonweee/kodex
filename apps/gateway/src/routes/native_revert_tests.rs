@@ -324,3 +324,13 @@ async fn native_revert_does_not_recreate_pending_input_from_a_late_accepted_ack(
         ]
     );
 }
+
+#[tokio::test]
+async fn native_revert_fences_compact_control_reads_without_hydrating_a_view() {
+    assert_stale_read_fenced(
+        "GET",
+        &format!("/v1/self-control/threads/{THREAD}/turns/compact"),
+        false,
+    )
+    .await;
+}

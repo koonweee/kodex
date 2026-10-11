@@ -304,6 +304,7 @@ impl AppState {
         crate::routes::mcp::read_mcp_resource,
         crate::routes::mcp::start_mcp_oauth_login,
         crate::routes::mcp::reload_mcp_servers,
+        crate::routes::control_reads::get_compact_turns,
         crate::routes::self_control::self_control_status,
         crate::routes::self_control::list_self_control_projects,
         crate::routes::self_control::get_self_control_project,
