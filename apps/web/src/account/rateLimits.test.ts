@@ -10,7 +10,7 @@ import {
 describe("rate limit usage formatting", () => {
   it("includes positive credits even when plan windows are unavailable", () => {
     expect(formatUsageLimitLines({ credits: { hasCredits: true, unlimited: false, balance: "1234.5" } }))
-      .toEqual({ primary: "", credits: "1,234.5 credits remaining" });
+      .toEqual({ primary: "", credits: "1,235 credits remaining" });
     for (const balance of ["0", "-1", "", "unknown"]) {
       expect(formatUsageLimitLines({ credits: { hasCredits: false, unlimited: false, balance } })).toBeNull();
     }

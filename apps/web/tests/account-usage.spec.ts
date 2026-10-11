@@ -5,7 +5,7 @@ import { nativeSettingsFixture } from "./native-settings.fixture";
 async function openUsage(page: Page, narrow = false) {
   if (narrow) await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
   await page.getByRole("button", { name: "Account settings", exact: true }).click();
-  await expect(page.getByRole("menuitem", { name: "Usage details" })).toContainText("123.5 credits remaining");
+  await expect(page.getByRole("menuitem", { name: "Usage details" })).toContainText("124 credits remaining");
   await page.getByRole("menuitem", { name: "Usage details" }).click();
   const dialog = page.getByRole("dialog", { name: "Preferences", exact: true });
   await expect(dialog.getByText("Weekly limit", { exact: true })).toBeVisible();

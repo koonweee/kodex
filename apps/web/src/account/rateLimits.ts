@@ -59,7 +59,7 @@ export function creditBalance(snapshot: RateLimitSnapshot | null): number | null
 export function formatCreditsRemaining(snapshot: RateLimitSnapshot | null): string {
   if (snapshot?.credits?.unlimited) return "Unlimited credits";
   const balance = creditBalance(snapshot);
-  return balance === null ? "Credits unavailable" : `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 }).format(balance)} credits remaining`;
+  return balance === null ? "Credits unavailable" : `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(balance)} credits remaining`;
 }
 
 function formatUsageLimitLine(window: RateLimitWindow, fallbackLabel: string, now: Date) {
