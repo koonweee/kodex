@@ -27,6 +27,7 @@ pub struct InstanceConfig {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ServerConfig {
     pub bind: SocketAddr,
+    pub control_bind: SocketAddr,
     pub trusted_network_only: bool,
 }
 
@@ -77,6 +78,9 @@ impl Default for Config {
                 bind: "127.0.0.1:8787"
                     .parse()
                     .expect("default bind address is valid"),
+                control_bind: "127.0.0.1:8788"
+                    .parse()
+                    .expect("default control bind address is valid"),
                 trusted_network_only: true,
             },
             codex: CodexConfig {
@@ -112,10 +116,19 @@ impl Config {
     pub fn from_env() -> Self {
         let mut config = Self::default();
 
-        if let Ok(bind) = env::var("KODEX_BIND") {
+        let executor_bind_was_set = if let Ok(bind) = env::var("KODEX_BIND") {
             config.server.bind = bind
                 .parse()
                 .unwrap_or_else(|err| panic!("invalid KODEX_BIND: {err}"));
+            true
+        } else {
+            false
+        };
+
+        if let Ok(bind) = env::var("KODEX_CONTROL_BIND") {
+            config.server.control_bind = parse_control_bind(&bind);
+        } else if executor_bind_was_set {
+            config.server.control_bind = derived_control_bind(config.server.bind);
         }
 
         if let Ok(path) = env::var("KODEX_DATABASE_PATH") {
@@ -155,6 +168,30 @@ impl Config {
 
         config
     }
+}
+
+fn parse_control_bind(bind: &str) -> SocketAddr {
+    let address = bind
+        .parse::<SocketAddr>()
+        .unwrap_or_else(|err| panic!("invalid KODEX_CONTROL_BIND: {err}"));
+    assert!(
+        address.ip().is_loopback(),
+        "KODEX_CONTROL_BIND must use a loopback address"
+    );
+    address
+}
+
+fn derived_control_bind(executor: SocketAddr) -> SocketAddr {
+    let port = executor
+        .port()
+        .checked_add(1)
+        .expect("KODEX_BIND port 65535 requires an explicit KODEX_CONTROL_BIND");
+    let ip = if executor.is_ipv6() {
+        "[::1]"
+    } else {
+        "127.0.0.1"
+    };
+    format!("{ip}:{port}").parse().unwrap()
 }
 
 fn default_data_dir() -> PathBuf {
@@ -203,6 +240,36 @@ mod tests {
         assert_eq!(
             Config::default().server.bind,
             "127.0.0.1:8787".parse::<SocketAddr>().unwrap()
+        );
+        assert_eq!(
+            Config::default().server.control_bind,
+            "127.0.0.1:8788".parse::<SocketAddr>().unwrap()
+        );
+        assert_ne!(
+            Config::default().server.bind,
+            Config::default().server.control_bind
+        );
+    }
+
+    #[test]
+    fn control_bind_rejects_non_loopback_addresses() {
+        assert_eq!(
+            parse_control_bind("127.0.0.1:9001"),
+            "127.0.0.1:9001".parse().unwrap()
+        );
+        assert!(std::panic::catch_unwind(|| parse_control_bind("0.0.0.0:9001")).is_err());
+        assert!(std::panic::catch_unwind(|| parse_control_bind("100.64.0.1:9001")).is_err());
+    }
+
+    #[test]
+    fn control_bind_derives_from_a_custom_executor_port() {
+        assert_eq!(
+            derived_control_bind("127.0.0.1:8788".parse().unwrap()),
+            "127.0.0.1:8789".parse().unwrap()
+        );
+        assert_eq!(
+            derived_control_bind("[::]:9000".parse().unwrap()),
+            "[::1]:9001".parse().unwrap()
         );
     }
 

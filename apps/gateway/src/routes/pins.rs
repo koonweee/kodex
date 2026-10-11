@@ -22,10 +22,13 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/v1/pinned-threads", get(list_pinned_threads))
         .route("/v1/threads/{thread_id}/pin", post(set_thread_pinned))
-        .route(
-            "/v1/self-control/threads/{thread_id}/pin",
-            post(self_control_set_thread_pinned),
-        )
+}
+
+pub fn control_router() -> Router<AppState> {
+    Router::new().route(
+        "/v1/self-control/threads/{thread_id}/pin",
+        post(self_control_set_thread_pinned),
+    )
 }
 
 #[derive(Debug, Deserialize, IntoParams, ToSchema, schemars::JsonSchema)]

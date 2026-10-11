@@ -606,8 +606,19 @@ impl AppState {
 )]
 pub struct ApiDoc;
 
-pub fn build_router(state: AppState) -> Router {
-    let mut router = Router::new()
+/// Canonical public executor API contract. Local-only Control paths are kept
+/// out of generated browser types as well as the federation-facing listener.
+pub fn executor_openapi() -> utoipa::openapi::OpenApi {
+    let mut openapi = ApiDoc::openapi();
+    openapi
+        .paths
+        .paths
+        .retain(|path, _| !path.starts_with("/v1/self-control"));
+    openapi
+}
+
+fn executor_routes(openapi: utoipa::openapi::OpenApi) -> Router<AppState> {
+    Router::new()
         .merge(routes::health::router())
         .merge(routes::capabilities::router())
         .merge(routes::terminals::router())
@@ -635,14 +646,10 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::permission_profiles::router())
         .merge(routes::skills::router())
         .merge(routes::mcp::router())
-        .merge(routes::self_control::router())
-        .merge(SwaggerUi::new("/docs").url("/openapi.json", ApiDoc::openapi()))
-        .with_state(state.clone());
+        .merge(SwaggerUi::new("/docs").url("/openapi.json", openapi))
+}
 
-    if let Some(dist_dir) = state.config.frontend.dist_dir.clone() {
-        router = static_assets::attach_frontend(router, dist_dir);
-    }
-
+fn finish_router(router: Router) -> Router {
     router
         .layer(middleware::from_fn(crate::api_compatibility::enforce))
         .layer(middleware::from_fn(
@@ -650,4 +657,44 @@ pub fn build_router(state: AppState) -> Router {
         ))
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
+}
+
+/// Browser/federator-facing executor API. Agent-only Control routes are
+/// intentionally absent so an exposed executor listener cannot bypass the
+/// federator route allowlist.
+pub fn build_executor_router(state: AppState) -> Router {
+    let mut router = executor_routes(executor_openapi()).with_state(state.clone());
+    // The existing single-machine service still serves the frontend from this
+    // process. M1 moves these assets to the federator atomically with the
+    // service-packaging change.
+    if let Some(dist_dir) = state.config.frontend.dist_dir.clone() {
+        router = static_assets::attach_frontend(router, dist_dir);
+    }
+    finish_router(router)
+}
+
+/// Loopback-only agent Control API. It deliberately excludes every browser
+/// route so managed agents cannot select a different executor through this
+/// listener.
+pub fn build_control_router(state: AppState) -> Router {
+    finish_router(
+        routes::self_control::router()
+            .merge(routes::pins::control_router())
+            .with_state(state),
+    )
+}
+
+/// Transitional combined router retained for tests and source-checkout
+/// compatibility while the service bootstrap is split into two listeners.
+pub fn build_router(state: AppState) -> Router {
+    let mut router = executor_routes(ApiDoc::openapi())
+        .merge(routes::self_control::router())
+        .merge(routes::pins::control_router())
+        .with_state(state.clone());
+
+    if let Some(dist_dir) = state.config.frontend.dist_dir.clone() {
+        router = static_assets::attach_frontend(router, dist_dir);
+    }
+
+    finish_router(router)
 }

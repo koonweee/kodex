@@ -137,6 +137,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(env['KODEX_DATA_DIR'], str(self.root / 'data'))
         self.assertEqual(env['KODEX_CODEX_BINARY'], str(release / 'codex'))
         self.assertEqual(env['KODEX_FRONTEND_DIST'], str(release / 'frontend'))
+        self.assertEqual(env['KODEX_CONTROL_BIND'], '127.0.0.1:0')
 
     def test_rollback_requires_explicit_data_compatibility_acknowledgment(self):
         with self.assertRaisesRegex(service.ServiceError, 'data-compatible'):

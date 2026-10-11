@@ -1,6 +1,4 @@
-use utoipa::OpenApi;
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("{}", kodex_gateway::api::ApiDoc::openapi().to_json()?);
+    println!("{}", kodex_gateway::api::executor_openapi().to_json()?);
     Ok(())
 }

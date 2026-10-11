@@ -103,7 +103,7 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::{
-        api::{build_router, AppState},
+        api::{build_control_router, build_executor_router, build_router, AppState},
         app_server::{tests::RecordingAppServer, AppServer, InboundMessage},
         app_server_api::{ThreadLiveState, UserInput},
         automations,
@@ -148,6 +148,84 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(openapi.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn executor_and_control_listeners_expose_disjoint_route_sets() {
+        let (state, _) = test_state().await;
+        let executor = build_executor_router(state.clone());
+        let control = build_control_router(state);
+
+        let executor_health = executor
+            .clone()
+            .oneshot(Request::get("/healthz").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(executor_health.status(), StatusCode::OK);
+
+        let executor_control = executor
+            .clone()
+            .oneshot(
+                Request::get("/v1/self-control/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(executor_control.status(), StatusCode::NOT_FOUND);
+
+        let executor_pin = executor
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/threads/thread-1/pin")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"pinned":true}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(executor_pin.status(), StatusCode::NOT_FOUND);
+
+        let executor_openapi = executor
+            .oneshot(Request::get("/openapi.json").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(executor_openapi.status(), StatusCode::OK);
+        let executor_openapi = response_json(executor_openapi).await;
+        assert!(executor_openapi["paths"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .all(|path| !path.starts_with("/v1/self-control")));
+
+        let local_control = control
+            .clone()
+            .oneshot(
+                Request::get("/v1/self-control/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(local_control.status(), StatusCode::OK);
+
+        let local_control_pin = control
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/threads/thread-1/pin")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"pinned":true}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(local_control_pin.status(), StatusCode::NOT_FOUND);
+
+        let control_browser_api = control
+            .oneshot(Request::get("/v1/projects").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(control_browser_api.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

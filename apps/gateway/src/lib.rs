@@ -33,4 +33,4 @@ pub mod thread_view_patch;
 mod thread_view_projection;
 pub mod turn_lifecycle;
 
-pub use api::{build_router, AppState};
+pub use api::{build_control_router, build_executor_router, build_router, AppState};

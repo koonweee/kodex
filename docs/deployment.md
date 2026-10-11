@@ -25,6 +25,7 @@ Defaults:
 | Setting | Default |
 | --- | --- |
 | Gateway bind | `127.0.0.1:8787` |
+| Local Control bind | `127.0.0.1:8788` |
 | Instance root | `~/.kodex/native-v1/` |
 | Database | `<instance root>/gateway.db` |
 | Native home | `<instance root>/codex-home/` |
@@ -36,6 +37,7 @@ Supported environment overrides include:
 
 ```text
 KODEX_BIND
+KODEX_CONTROL_BIND
 KODEX_DATABASE_PATH
 KODEX_DATA_DIR
 KODEX_UPLOADS_DIR

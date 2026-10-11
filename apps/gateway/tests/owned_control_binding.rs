@@ -29,6 +29,7 @@ while IFS= read -r line; do :; done
     let mut child = Command::new(binary)
         .env("KODEX_DATA_DIR", dir.path().join("instance"))
         .env("KODEX_BIND", "127.0.0.1:0")
+        .env("KODEX_CONTROL_BIND", "127.0.0.1:0")
         .env("KODEX_CODEX_BINARY", &fake)
         .env("KODEX_GATEWAY_URL", "http://foreign.invalid:8787")
         .env("KODEX_GATEWAY_BINARY", "/foreign/desktop/gateway")
@@ -71,12 +72,10 @@ while IFS= read -r line; do :; done
         );
         let client = reqwest::Client::new();
         loop {
-            if let Ok(response) = client.get(url.join("v1/capabilities")?).send().await {
+            if let Ok(response) = client.get(url.join("v1/self-control/status")?).send().await {
                 if response.status().is_success() {
                     let body = response.json::<serde_json::Value>().await?;
-                    anyhow::ensure!(body["gateway"]["instanceId"]
-                        .as_str()
-                        .is_some_and(|id| !id.is_empty()));
+                    anyhow::ensure!(body["gatewayReady"] == true);
                     break;
                 }
             }

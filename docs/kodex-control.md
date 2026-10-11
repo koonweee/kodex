@@ -18,9 +18,9 @@ The gateway binary hosts the built-in MCP server:
 kodex-gateway mcp kodex-control
 ```
 
-Managed Kodex launches provide the actual bound gateway URL and running executable to their own Codex child through `KODEX_GATEWAY_URL` and `KODEX_GATEWAY_BINARY`. The built-in registration forwards these native `env_vars` to the MCP process. This supports an ephemeral or custom port and avoids an HTTP bootstrap lookup, a Cargo build, or accidentally invoking another installed gateway. Inherited Control bindings are stripped before setting the owned values. Wildcard listeners use loopback; a specific private/VPN listener also receives the child-only remote opt-in required to reach that address. This does not make the gateway safe for public exposure.
+Managed Kodex launches provide the actual loopback Control listener and running executable to their own Codex child through `KODEX_GATEWAY_URL` and `KODEX_GATEWAY_BINARY`. The built-in registration forwards these native `env_vars` to the MCP process. This supports an ephemeral or custom Control port and avoids an HTTP bootstrap lookup, a Cargo build, or accidentally invoking another installed gateway. Inherited Control bindings are stripped before setting the owned values. The browser/federation listener does not expose `/v1/self-control`; the separate Control listener does not expose browser APIs.
 
-Normal source-checkout gateway launches use the same setup as the installed service. Direct MCP invocations can set `KODEX_GATEWAY_URL`; otherwise the server defaults to `http://127.0.0.1:8787`. Non-loopback URLs require `KODEX_ALLOW_REMOTE_SELF_CONTROL=1`.
+Normal source-checkout gateway launches use the same setup as the installed service. `KODEX_CONTROL_BIND` defaults to `127.0.0.1:8788`; when only a custom `KODEX_BIND` is supplied, Control uses the following loopback port. Direct MCP invocations can set `KODEX_GATEWAY_URL`; otherwise the MCP client defaults to the standard Control listener at `http://127.0.0.1:8788`. The installed service allocates an ephemeral loopback Control port and passes its actual address directly to its owned app-server child. Non-loopback URLs remain an explicit unsupported escape hatch guarded by `KODEX_ALLOW_REMOTE_SELF_CONTROL=1`; managed executor launches bind Control to loopback.
 
 The server exposes guarded tools for:
 

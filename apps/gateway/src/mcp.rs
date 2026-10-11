@@ -52,7 +52,7 @@ pub struct KodexControlMcp {
 impl KodexControlMcp {
     pub fn from_env() -> Result<Self, McpError> {
         let gateway_url = std::env::var("KODEX_GATEWAY_URL")
-            .unwrap_or_else(|_| "http://127.0.0.1:8787".to_string());
+            .unwrap_or_else(|_| "http://127.0.0.1:8788".to_string());
         validate_gateway_url(&gateway_url).map_err(|error| {
             McpError::invalid_params("invalid KODEX_GATEWAY_URL", Some(json!({ "error": error })))
         })?;

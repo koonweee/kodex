@@ -1,6 +1,6 @@
 # Federated Kodex implementation plan
 
-Status: Proposed
+Status: Active
 Date: 2026-10-11
 
 ## Pinned implementation baseline
@@ -188,6 +188,8 @@ Codex device-code authentication is centrally usable while credentials stay nati
 - Record exact platform/runtime packages and validation hosts available. Lack of a required real platform proof remains an open exit condition.
 
 Exit: ownership and preservation tests exist; API changes have a concrete Rust contract direction; no active work has been retargeted or production changed.
+
+M0 is active. The [federation baseline audit](../docs/audits/2026-10-12-federation-baseline.md) records route/URL/worker ownership, the preservation-test map, the qualified Rust contract direction, the Tailscale/loopback endpoint policy, pinned native and notification semantics, and the available platform evidence. The first failing boundary test established that browser/federation and local Control listeners must expose disjoint route sets. The required remote-executor MCP OAuth callback proof remains open, so M0 is not complete. No service was deployed or restarted.
 
 ### M1 Split service bootstraps and packaging boundaries
 

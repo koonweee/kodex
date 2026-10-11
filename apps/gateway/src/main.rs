@@ -4,14 +4,14 @@ use anyhow::Context;
 use kodex_gateway::{
     app_server::{DynAppServer, InboundMessage, JsonRpcAppServer},
     automations::{recover_automations_after_restart, start_automation_scheduler},
-    build_router,
+    build_control_router, build_executor_router,
     config::Config,
     events::run_inbound_ingest,
     store::Store,
     terminal::start_terminal_cleanup,
     AppState,
 };
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -45,13 +45,17 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(config.server.bind)
         .await
-        .context("binding the owned gateway listener")?;
+        .context("binding the executor listener")?;
     config.server.bind = listener.local_addr()?;
+    let control_listener = tokio::net::TcpListener::bind(config.server.control_bind)
+        .await
+        .context("binding the loopback Control listener")?;
+    config.server.control_bind = control_listener.local_addr()?;
     let (inbound_tx, inbound_rx) = mpsc::channel(1024);
     let supervisor = JsonRpcAppServer::start_with_control(
         &config.codex,
         inbound_tx,
-        config.server.bind,
+        config.server.control_bind,
         &std::env::current_exe()?,
     )
     .await
@@ -59,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
     let app_server: DynAppServer = supervisor.clone();
 
     let state = AppState::new(config, store, app_server);
-    run_gateway(state, supervisor, inbound_rx, listener).await
+    run_gateway(state, supervisor, inbound_rx, listener, control_listener).await
 }
 
 async fn run_gateway(
@@ -67,6 +71,7 @@ async fn run_gateway(
     supervisor: Arc<JsonRpcAppServer>,
     inbound_rx: mpsc::Receiver<InboundMessage>,
     listener: tokio::net::TcpListener,
+    control_listener: tokio::net::TcpListener,
 ) -> anyhow::Result<()> {
     let mut import_worker = None;
     let result: anyhow::Result<()> = async {
@@ -79,12 +84,42 @@ async fn run_gateway(
         state.notifications.start_delivery_worker(state.clone());
         tokio::spawn(run_inbound_ingest(inbound_rx, state.clone()));
 
-        let app = build_router(state.clone());
-        tracing::info!(bind = %state.config.server.bind, "kodex gateway listening");
+        let executor_app = build_executor_router(state.clone());
+        let control_app = build_control_router(state.clone());
+        tracing::info!(
+            executor_bind = %state.config.server.bind,
+            control_bind = %state.config.server.control_bind,
+            "kodex executor listening"
+        );
 
-        axum::serve(listener, app)
-            .with_graceful_shutdown(shutdown_signal())
-            .await?;
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let mut executor_task = tokio::spawn(serve_until_shutdown(
+            listener,
+            executor_app,
+            shutdown_rx.clone(),
+        ));
+        let mut control_task = tokio::spawn(serve_until_shutdown(
+            control_listener,
+            control_app,
+            shutdown_rx,
+        ));
+
+        let (completed_listener, first_result) = tokio::select! {
+            result = &mut executor_task => (Some("executor"), Some(result)),
+            result = &mut control_task => (Some("Control"), Some(result)),
+            _ = shutdown_signal() => (None, None),
+        };
+        let _ = shutdown_tx.send(true);
+        if completed_listener != Some("executor") {
+            executor_task.await.context("joining executor listener")??;
+        }
+        if completed_listener != Some("Control") {
+            control_task.await.context("joining Control listener")??;
+        }
+        if let Some(result) = first_result {
+            result
+                .with_context(|| format!("joining {} listener", completed_listener.unwrap()))??;
+        }
         Ok(())
     }
     .await;
@@ -95,6 +130,18 @@ async fn run_gateway(
     result?;
     native_shutdown?;
     Ok(())
+}
+
+async fn serve_until_shutdown(
+    listener: tokio::net::TcpListener,
+    router: axum::Router,
+    mut shutdown: watch::Receiver<bool>,
+) -> std::io::Result<()> {
+    axum::serve(listener, router)
+        .with_graceful_shutdown(async move {
+            while !*shutdown.borrow() && shutdown.changed().await.is_ok() {}
+        })
+        .await
 }
 
 #[cfg(all(test, unix))]
@@ -132,7 +179,8 @@ while IFS= read -r line; do :; done
         store.pool().close().await;
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let result = run_gateway(state, server.clone(), receiver, listener).await;
+        let control_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let result = run_gateway(state, server.clone(), receiver, listener, control_listener).await;
         let still_ready = server.is_ready();
         server.shutdown().await.unwrap();
         assert!(result.is_err());

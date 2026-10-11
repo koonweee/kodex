@@ -193,6 +193,7 @@ class Service:
         env.update({
             'PATH': config['path'], 'LANG': 'en_US.UTF-8',
             'KODEX_BIND': f"127.0.0.1:{config['port']}",
+            'KODEX_CONTROL_BIND': '127.0.0.1:0',
             'KODEX_DATA_DIR': config['data_dir'],
             'KODEX_CODEX_BINARY': str(release / 'codex'),
             'KODEX_FRONTEND_DIST': str(release / 'frontend'),
