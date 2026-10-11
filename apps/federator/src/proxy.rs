@@ -6,7 +6,7 @@ use axum::{
         ws::{Message as BrowserMessage, WebSocket, WebSocketUpgrade},
         Path, Query, State,
     },
-    http::{header, HeaderMap, Method, Request, StatusCode},
+    http::{header, HeaderMap, HeaderValue, Method, Request, StatusCode},
     response::{IntoResponse, Response},
     routing::{any, get},
     Json, Router,
@@ -38,15 +38,25 @@ async fn proxy_terminal_websocket(
     State(state): State<FederatorState>,
     Path((executor_id, terminal_id)): Path<(String, String)>,
     Query(query): Query<TerminalWebSocketQuery>,
-    ws: WebSocketUpgrade,
+    headers: HeaderMap,
+    mut ws: WebSocketUpgrade,
 ) -> Response {
     if query.api_version.as_deref() != Some(crate::trust::FEDERATOR_API_VERSION) {
         return ProxyError::client_update_required().into_response();
     }
-    match connect_terminal_websocket(&state, &executor_id, &terminal_id).await {
-        Ok((upstream, binding, changes)) => ws
-            .on_upgrade(move |browser| bridge_websockets(browser, upstream, binding, changes))
-            .into_response(),
+    let requested_protocols = match requested_protocols(&headers) {
+        Ok(protocols) => protocols,
+        Err(error) => return error.into_response(),
+    };
+    match connect_terminal_websocket(&state, &executor_id, &terminal_id, requested_protocols).await
+    {
+        Ok((upstream, binding, changes, selected_protocol)) => {
+            if let Some(protocol) = selected_protocol {
+                ws.set_selected_protocol(protocol);
+            }
+            ws.on_upgrade(move |browser| bridge_websockets(browser, upstream, binding, changes))
+                .into_response()
+        }
         Err(error) => error.into_response(),
     }
 }
@@ -64,11 +74,13 @@ async fn connect_terminal_websocket(
     state: &FederatorState,
     executor_id: &str,
     terminal_id: &str,
+    requested_protocols: Vec<String>,
 ) -> Result<
     (
         UpstreamWebSocket,
         ExecutorRecord,
         tokio::sync::broadcast::Receiver<crate::RegistryChange>,
+        Option<HeaderValue>,
     ),
     ProxyError,
 > {
@@ -76,6 +88,7 @@ async fn connect_terminal_websocket(
         state,
         executor_id,
         terminal_id,
+        requested_protocols,
         WEBSOCKET_SETUP_TIMEOUT,
     )
     .await
@@ -85,18 +98,20 @@ async fn connect_terminal_websocket_with_timeout(
     state: &FederatorState,
     executor_id: &str,
     terminal_id: &str,
+    requested_protocols: Vec<String>,
     timeout: std::time::Duration,
 ) -> Result<
     (
         UpstreamWebSocket,
         ExecutorRecord,
         tokio::sync::broadcast::Receiver<crate::RegistryChange>,
+        Option<HeaderValue>,
     ),
     ProxyError,
 > {
     tokio::time::timeout(
         timeout,
-        connect_terminal_websocket_inner(state, executor_id, terminal_id),
+        connect_terminal_websocket_inner(state, executor_id, terminal_id, requested_protocols),
     )
     .await
     .map_err(|_| ProxyError::upstream("Executor WebSocket setup timed out."))?
@@ -106,11 +121,13 @@ async fn connect_terminal_websocket_inner(
     state: &FederatorState,
     executor_id: &str,
     terminal_id: &str,
+    requested_protocols: Vec<String>,
 ) -> Result<
     (
         UpstreamWebSocket,
         ExecutorRecord,
         tokio::sync::broadcast::Receiver<crate::RegistryChange>,
+        Option<HeaderValue>,
     ),
     ProxyError,
 > {
@@ -145,10 +162,16 @@ async fn connect_terminal_websocket_inner(
             .parse()
             .expect("supported API version is a valid header value"),
     );
+    if !requested_protocols.is_empty() {
+        request.headers_mut().insert(
+            header::SEC_WEBSOCKET_PROTOCOL,
+            HeaderValue::from_str(&requested_protocols.join(", "))
+                .map_err(|_| ProxyError::upstream("Browser offered an invalid subprotocol."))?,
+        );
+    }
+    let stream = wrap_executor_stream(tcp, &url).await?;
     let (upstream, response) =
-        tokio_tungstenite::client_async_tls_with_config(request, tcp, None, None)
-            .await
-            .map_err(|error| ProxyError::upstream(format!("Executor WebSocket failed: {error}")))?;
+        perform_executor_websocket_handshake(stream, request, &requested_protocols).await?;
     if response
         .headers()
         .get(API_VERSION_HEADER)
@@ -158,8 +181,208 @@ async fn connect_terminal_websocket_inner(
             "Executor WebSocket did not confirm the required API version.",
         ));
     }
+    let selected_protocol = selected_subprotocol(response.headers(), &requested_protocols)?;
     ensure_binding_current(state, &binding).await?;
-    Ok((upstream, binding, changes))
+    Ok((upstream, binding, changes, selected_protocol))
+}
+
+fn requested_protocols(headers: &HeaderMap) -> Result<Vec<String>, ProxyError> {
+    let mut protocols = Vec::new();
+    for value in headers.get_all(header::SEC_WEBSOCKET_PROTOCOL) {
+        let value = value
+            .to_str()
+            .map_err(|_| ProxyError::upstream("Browser offered an invalid subprotocol."))?;
+        for protocol in value.split(',').map(str::trim) {
+            if !is_http_token(protocol) {
+                return Err(ProxyError::upstream(
+                    "Browser offered an invalid subprotocol.",
+                ));
+            }
+            protocols.push(protocol.to_string());
+        }
+    }
+    Ok(protocols)
+}
+
+fn is_http_token(value: &str) -> bool {
+    !value.is_empty()
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(
+                    byte,
+                    b'!' | b'#'
+                        | b'$'
+                        | b'%'
+                        | b'&'
+                        | b'\''
+                        | b'*'
+                        | b'+'
+                        | b'-'
+                        | b'.'
+                        | b'^'
+                        | b'_'
+                        | b'`'
+                        | b'|'
+                        | b'~'
+                )
+        })
+}
+
+async fn wrap_executor_stream(
+    tcp: tokio::net::TcpStream,
+    url: &url::Url,
+) -> Result<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>, ProxyError> {
+    if url.scheme() == "ws" {
+        return Ok(tokio_tungstenite::MaybeTlsStream::Plain(tcp));
+    }
+    let host = url
+        .host_str()
+        .ok_or_else(|| ProxyError::internal("executor WebSocket URL has no host"))?;
+    let server_name = rustls::pki_types::ServerName::try_from(host.to_string())
+        .map_err(|_| ProxyError::upstream("Executor WebSocket host is invalid for TLS."))?;
+    let root_store =
+        rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let config = rustls::ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+    let stream = tokio_rustls::TlsConnector::from(std::sync::Arc::new(config))
+        .connect(server_name, tcp)
+        .await
+        .map_err(|error| ProxyError::upstream(format!("Executor WebSocket TLS failed: {error}")))?;
+    Ok(tokio_tungstenite::MaybeTlsStream::Rustls(stream))
+}
+
+async fn perform_executor_websocket_handshake(
+    mut stream: tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    request: tokio_tungstenite::tungstenite::handshake::client::Request,
+    requested_protocols: &[String],
+) -> Result<
+    (
+        UpstreamWebSocket,
+        tokio_tungstenite::tungstenite::handshake::client::Response,
+    ),
+    ProxyError,
+> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio_tungstenite::tungstenite::handshake::machine::TryParse;
+
+    let (wire_request, key) =
+        tokio_tungstenite::tungstenite::handshake::client::generate_request(request)
+            .map_err(|error| ProxyError::upstream(format!("Invalid WebSocket request: {error}")))?;
+    stream.write_all(&wire_request).await.map_err(|error| {
+        ProxyError::upstream(format!("Executor WebSocket write failed: {error}"))
+    })?;
+    stream.flush().await.map_err(|error| {
+        ProxyError::upstream(format!("Executor WebSocket flush failed: {error}"))
+    })?;
+
+    let mut received = Vec::with_capacity(2048);
+    let (consumed, response) = loop {
+        if received.len() >= 64 * 1024 {
+            return Err(ProxyError::upstream(
+                "Executor WebSocket handshake headers were too large.",
+            ));
+        }
+        let read = stream.read_buf(&mut received).await.map_err(|error| {
+            ProxyError::upstream(format!("Executor WebSocket read failed: {error}"))
+        })?;
+        if read == 0 {
+            return Err(ProxyError::upstream(
+                "Executor closed during the WebSocket handshake.",
+            ));
+        }
+        match tokio_tungstenite::tungstenite::handshake::client::Response::try_parse(&received)
+            .map_err(|error| {
+                ProxyError::upstream(format!("Invalid executor WebSocket response: {error}"))
+            })? {
+            Some(parsed) => break parsed,
+            None => continue,
+        }
+    };
+    validate_websocket_response(&response, &key, requested_protocols)?;
+    let tail = received.split_off(consumed);
+    let websocket = tokio_tungstenite::WebSocketStream::from_partially_read(
+        stream,
+        tail,
+        tokio_tungstenite::tungstenite::protocol::Role::Client,
+        None,
+    )
+    .await;
+    Ok((websocket, response))
+}
+
+fn validate_websocket_response(
+    response: &tokio_tungstenite::tungstenite::handshake::client::Response,
+    key: &str,
+    requested_protocols: &[String],
+) -> Result<(), ProxyError> {
+    if response.status() != StatusCode::SWITCHING_PROTOCOLS
+        || !header_has_token(response.headers(), header::UPGRADE, "websocket")
+        || !header_has_token(response.headers(), header::CONNECTION, "upgrade")
+    {
+        return Err(ProxyError::upstream(
+            "Executor returned an invalid WebSocket upgrade response.",
+        ));
+    }
+    let expected_accept =
+        tokio_tungstenite::tungstenite::handshake::derive_accept_key(key.as_bytes());
+    if response
+        .headers()
+        .get(header::SEC_WEBSOCKET_ACCEPT)
+        .is_none_or(|value| value.as_bytes() != expected_accept.as_bytes())
+    {
+        return Err(ProxyError::upstream(
+            "Executor returned an invalid WebSocket accept key.",
+        ));
+    }
+    if response
+        .headers()
+        .contains_key(header::SEC_WEBSOCKET_EXTENSIONS)
+    {
+        return Err(ProxyError::upstream(
+            "Executor selected an unsupported WebSocket extension.",
+        ));
+    }
+    selected_subprotocol(response.headers(), requested_protocols)?;
+    Ok(())
+}
+
+fn header_has_token(headers: &HeaderMap, name: header::HeaderName, expected: &str) -> bool {
+    headers.get_all(name).iter().any(|value| {
+        value.to_str().is_ok_and(|value| {
+            value
+                .split(',')
+                .any(|token| token.trim().eq_ignore_ascii_case(expected))
+        })
+    })
+}
+
+fn selected_subprotocol(
+    headers: &HeaderMap,
+    requested_protocols: &[String],
+) -> Result<Option<HeaderValue>, ProxyError> {
+    let mut values = headers.get_all(header::SEC_WEBSOCKET_PROTOCOL).iter();
+    let Some(selected) = values.next() else {
+        return Ok(None);
+    };
+    if values.next().is_some() {
+        return Err(ProxyError::upstream(
+            "Executor selected multiple WebSocket subprotocols.",
+        ));
+    }
+    let selected_text = selected
+        .to_str()
+        .map_err(|_| ProxyError::upstream("Executor selected an invalid WebSocket subprotocol."))?;
+    if !is_http_token(selected_text)
+        || !requested_protocols
+            .iter()
+            .any(|offered| offered == selected_text)
+    {
+        return Err(ProxyError::upstream(
+            "Executor selected a WebSocket subprotocol the browser did not offer.",
+        ));
+    }
+    Ok(Some(selected.clone()))
 }
 
 async fn load_routable_binding(
@@ -653,6 +876,7 @@ struct ProxyErrorBody {
     message: String,
 }
 
+#[derive(Debug)]
 struct ProxyError {
     status: StatusCode,
     code: &'static str,
@@ -734,11 +958,11 @@ mod tests {
     };
 
     use axum::{
-        body::Body,
+        body::{Body, Bytes},
         extract::{ws::WebSocketUpgrade, Path},
-        http::HeaderValue,
+        http::{HeaderValue, Uri},
         response::Response,
-        routing::get,
+        routing::{get, post},
         Router,
     };
     use http_body_util::BodyExt;
@@ -771,6 +995,172 @@ mod tests {
         ] {
             assert!(validate_proxy_path(path).is_err(), "{path}");
         }
+    }
+
+    #[tokio::test]
+    async fn http_proxy_preserves_multipart_ranges_and_errors_but_rejects_redirects() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let executor = Router::new()
+            .route(
+                "/v1/uploads/images",
+                post(|headers: HeaderMap, body: Bytes| async move {
+                    assert_eq!(headers[EXPECTED_INSTANCE_HEADER], "executor-instance");
+                    assert_eq!(headers[API_VERSION_HEADER], "4");
+                    assert_eq!(
+                        headers[header::CONTENT_TYPE],
+                        "multipart/form-data; boundary=kodex-boundary"
+                    );
+                    Response::builder()
+                        .status(StatusCode::CREATED)
+                        .header(API_VERSION_HEADER, "4")
+                        .header(header::CONTENT_TYPE, "application/octet-stream")
+                        .header("x-executor-result", "binary")
+                        .body(Body::from(body))
+                        .unwrap()
+                }),
+            )
+            .route(
+                "/v1/threads/{thread_id}/files/preview",
+                get(|headers: HeaderMap| async move {
+                    assert_eq!(headers[header::RANGE], "bytes=4-7");
+                    Response::builder()
+                        .status(StatusCode::PARTIAL_CONTENT)
+                        .header(API_VERSION_HEADER, "4")
+                        .header(header::CONTENT_TYPE, "video/mp4")
+                        .header(header::CONTENT_RANGE, "bytes 4-7/12")
+                        .header(header::ACCEPT_RANGES, "bytes")
+                        .body(Body::from(vec![4_u8, 5, 6, 7]))
+                        .unwrap()
+                }),
+            )
+            .route(
+                "/v1/projects",
+                get(|uri: Uri| async move {
+                    if uri.query() == Some("mode=redirect") {
+                        Response::builder()
+                            .status(StatusCode::TEMPORARY_REDIRECT)
+                            .header(API_VERSION_HEADER, "4")
+                            .header(header::LOCATION, "http://127.0.0.1:1/escape")
+                            .body(Body::empty())
+                            .unwrap()
+                    } else {
+                        Response::builder()
+                            .status(StatusCode::UNPROCESSABLE_ENTITY)
+                            .header(API_VERSION_HEADER, "4")
+                            .header(header::CONTENT_TYPE, "application/json")
+                            .header("x-executor-error", "preserved")
+                            .body(Body::from(
+                                r#"{"code":"native_error","message":"exact executor body"}"#,
+                            ))
+                            .unwrap()
+                    }
+                }),
+            );
+        let executor_task =
+            tokio::spawn(async move { axum::serve(listener, executor).await.unwrap() });
+        let dir = tempfile::tempdir().unwrap();
+        let config = crate::config::Config {
+            data_dir: dir.path().to_path_buf(),
+            database_path: dir.path().join("federator.db"),
+            ..crate::config::Config::default()
+        };
+        let (_instance, state) = crate::prepare(&config).await.unwrap();
+        state
+            .store
+            .insert_executor(&ExecutorRecord {
+                id: "executor-1".to_string(),
+                generation: 1,
+                display_name: "Executor".to_string(),
+                base_url: format!("http://{address}"),
+                instance_id: "executor-instance".to_string(),
+                api_version: "4".to_string(),
+                app_server_schema_version: "0.160.0".to_string(),
+                enabled: true,
+                status: ExecutorStatus::Ready,
+                last_error: None,
+                last_seen_at: 1,
+                created_at: 1,
+                updated_at: 1,
+            })
+            .await
+            .unwrap();
+
+        let multipart = vec![
+            b'-', b'-', b'k', b'o', b'd', b'e', b'x', b'-', b'b', b'o', b'u', b'n', b'd', b'a',
+            b'r', b'y', b'\r', b'\n', 0, 255, 1, 254,
+        ];
+        let uploaded = proxy_executor_inner(
+            &state,
+            "executor-1",
+            "uploads/images",
+            Request::post("/v1/uploads/images")
+                .header(
+                    header::CONTENT_TYPE,
+                    "multipart/form-data; boundary=kodex-boundary",
+                )
+                .body(Body::from(multipart.clone()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(uploaded.status(), StatusCode::CREATED);
+        assert_eq!(uploaded.headers()["x-executor-result"], "binary");
+        assert_eq!(
+            uploaded.into_body().collect().await.unwrap().to_bytes(),
+            multipart
+        );
+
+        let ranged = proxy_executor_inner(
+            &state,
+            "executor-1",
+            "threads/thread-1/files/preview",
+            Request::get("/v1/threads/thread-1/files/preview?path=video.mp4")
+                .header(header::RANGE, "bytes=4-7")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(ranged.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(ranged.headers()[header::CONTENT_RANGE], "bytes 4-7/12");
+        assert_eq!(ranged.headers()[header::ACCEPT_RANGES], "bytes");
+        assert_eq!(
+            ranged.into_body().collect().await.unwrap().to_bytes(),
+            vec![4_u8, 5, 6, 7]
+        );
+
+        let error = proxy_executor_inner(
+            &state,
+            "executor-1",
+            "projects",
+            Request::get("/v1/projects?mode=error")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(error.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(error.headers()["x-executor-error"], "preserved");
+        assert_eq!(
+            error.into_body().collect().await.unwrap().to_bytes(),
+            r#"{"code":"native_error","message":"exact executor body"}"#
+        );
+
+        let redirect = proxy_executor_inner(
+            &state,
+            "executor-1",
+            "projects",
+            Request::get("/v1/projects?mode=redirect")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .err()
+        .expect("executor redirects fail closed");
+        assert_eq!(redirect.status, StatusCode::BAD_GATEWAY);
+        assert_eq!(redirect.code, "executor_proxy_failed");
+        executor_task.abort();
     }
 
     #[test]
@@ -839,6 +1229,7 @@ mod tests {
             &state,
             "executor-1",
             "terminal-1",
+            Vec::new(),
             Duration::from_millis(50),
         )
         .await
@@ -864,6 +1255,16 @@ mod tests {
                         upstream_handshakes.fetch_add(1, Ordering::SeqCst);
                         assert_eq!(headers[EXPECTED_INSTANCE_HEADER], "executor-instance");
                         assert_eq!(headers[API_VERSION_HEADER], "4");
+                        let ws = if terminal_id == "subprotocol" {
+                            assert_eq!(headers[header::SEC_WEBSOCKET_PROTOCOL], "v2, v1");
+                            ws.protocols(["v1"])
+                        } else if terminal_id == "invalid-subprotocol" {
+                            let mut ws = ws;
+                            ws.set_selected_protocol(HeaderValue::from_static("executor-only"));
+                            ws
+                        } else {
+                            ws
+                        };
                         let mut response = ws.on_upgrade(move |mut socket| async move {
                             if terminal_id == "blocked" {
                                 std::future::pending::<()>().await;
@@ -931,6 +1332,7 @@ mod tests {
             .await
             .unwrap();
         let changes = state.registry_changes.clone();
+        let direct_state = state.clone();
         let app = crate::primary_router(state, None, config.sandbox_public_url);
         let federator_task =
             tokio::spawn(async move { axum::serve(public_listener, app).await.unwrap() });
@@ -957,6 +1359,28 @@ mod tests {
         }
         assert_eq!(upstream_handshakes.load(Ordering::SeqCst), 0);
 
+        let (mut declined, _, _, selected) = connect_terminal_websocket(
+            &direct_state,
+            "executor-1",
+            "declined-subprotocol",
+            vec!["optional.v1".to_string()],
+        )
+        .await
+        .expect("an executor may decline every offered subprotocol");
+        assert!(selected.is_none());
+        declined.close(None).await.unwrap();
+        let invalid = connect_terminal_websocket(
+            &direct_state,
+            "executor-1",
+            "invalid-subprotocol",
+            vec!["browser-only".to_string()],
+        )
+        .await
+        .err()
+        .expect("an executor cannot select an unoffered subprotocol");
+        assert_eq!(invalid.status, StatusCode::BAD_GATEWAY);
+        assert_eq!(upstream_handshakes.load(Ordering::SeqCst), 2);
+
         let url = format!("{base_url}?apiVersion=4");
         let mut request =
             tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(
@@ -978,7 +1402,7 @@ mod tests {
             client.next().await.unwrap().unwrap().into_data(),
             b"terminal bytes".as_slice()
         );
-        assert_eq!(upstream_handshakes.load(Ordering::SeqCst), 1);
+        assert_eq!(upstream_handshakes.load(Ordering::SeqCst), 3);
 
         let browser_close_url = format!(
             "ws://{public_address}/v1/executors/executor-1/terminals/browser-close/ws?apiVersion=4"
@@ -1044,6 +1468,29 @@ mod tests {
         assert_eq!(u16::from(executor_close.code), 4002);
         assert_eq!(executor_close.reason, "executor reason");
 
+        let subprotocol_url = format!(
+            "ws://{public_address}/v1/executors/executor-1/terminals/subprotocol/ws?apiVersion=4"
+        );
+        let mut subprotocol_request =
+            tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(
+                subprotocol_url,
+            )
+            .unwrap();
+        subprotocol_request.headers_mut().insert(
+            header::ORIGIN,
+            format!("http://{public_address}").parse().unwrap(),
+        );
+        subprotocol_request.headers_mut().insert(
+            header::SEC_WEBSOCKET_PROTOCOL,
+            HeaderValue::from_static("v2, v1"),
+        );
+        let (mut subprotocol_client, response) =
+            tokio_tungstenite::connect_async(subprotocol_request)
+                .await
+                .unwrap();
+        assert_eq!(response.headers()[header::SEC_WEBSOCKET_PROTOCOL], "v1");
+        subprotocol_client.close(None).await.unwrap();
+
         let blocked_url = format!(
             "ws://{public_address}/v1/executors/executor-1/terminals/blocked/ws?apiVersion=4"
         );
@@ -1059,7 +1506,7 @@ mod tests {
         let (blocked_client, _) = tokio_tungstenite::connect_async(blocked_request)
             .await
             .unwrap();
-        assert_eq!(upstream_handshakes.load(Ordering::SeqCst), 4);
+        assert_eq!(upstream_handshakes.load(Ordering::SeqCst), 7);
         let (mut blocked_sink, mut blocked_stream) = blocked_client.split();
         let blocked_sender = tokio::spawn(async move {
             let payload = vec![0_u8; 1024 * 1024];
