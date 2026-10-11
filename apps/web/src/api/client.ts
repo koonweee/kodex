@@ -2,6 +2,12 @@ import { compatibleFetch, compatibilityRequired } from "./compatibility";
 import createClient from "openapi-fetch";
 
 import type { components, paths } from "./generated/schema";
+import type { components as federationComponents } from "./generated/federation";
+
+export type FederatedExecutor = federationComponents["schemas"]["ExecutorRecord"];
+export type FederatedExecutorListResponse = federationComponents["schemas"]["ExecutorListResponse"];
+export type RegisterFederatedExecutorRequest = federationComponents["schemas"]["RegisterExecutorRequest"];
+export type UpdateFederatedExecutorRequest = federationComponents["schemas"]["UpdateExecutorRequest"];
 
 export type ThreadDeliveryOptions = Pick<NonNullable<paths["/v1/threads/{threadId}"]["get"]["parameters"]["query"]>, "includeDebugEvents" | "includeCommandOutputs">;
 
