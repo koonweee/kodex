@@ -1,5 +1,5 @@
 use crate::{
-    api::{build_router, AppState},
+    api::{build_control_router, AppState},
     app_server::AppServer,
     config::Config,
     error::{ApiError, ApiResult},
@@ -102,7 +102,7 @@ async fn state(status: &str) -> (AppState, Arc<Native>) {
     )
 }
 async fn wait(state: &AppState, input: Value) -> (StatusCode, Value) {
-    let response = build_router(state.clone())
+    let response = build_control_router(state.clone())
         .oneshot(
             Request::post("/v1/self-control/threads/wait")
                 .header("content-type", "application/json")

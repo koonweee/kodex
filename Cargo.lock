@@ -1879,7 +1879,6 @@ dependencies = [
  "utoipa",
  "utoipa-swagger-ui",
  "uuid",
- "web-push",
 ]
 
 [[package]]

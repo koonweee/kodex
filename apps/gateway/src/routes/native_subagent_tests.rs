@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use tower::ServiceExt;
 
 use crate::{
-    api::{build_router, AppState},
+    api::{build_executor_router, AppState},
     app_server::{tests::RecordingAppServer, InboundMessage},
     config::Config,
     events::ingest_inbound,
@@ -34,7 +34,7 @@ fn child(id: &str, parent: &str, status: &str, capability: Value) -> Value {
 }
 
 async fn get(state: &AppState, path: &str) -> (StatusCode, Value) {
-    let response = build_router(state.clone())
+    let response = build_executor_router(state.clone())
         .oneshot(Request::get(path).body(Body::empty()).unwrap())
         .await
         .unwrap();
@@ -254,7 +254,7 @@ async fn native_subagent_explicit_input_denial_prevents_native_queue_admission()
     let (state, native) = state().await;
     *native.next_response.lock().unwrap() =
         Some(json!({"thread":child("child","root","active",json!(false))}));
-    let response = build_router(state.clone())
+    let response = build_executor_router(state.clone())
         .oneshot(
             Request::post("/v1/threads/child/queued-inputs")
                 .header("content-type", "application/json")
@@ -284,7 +284,7 @@ async fn native_subagent_atomic_input_forwards_native_denial_without_queuing() {
         .lock()
         .unwrap()
         .push(crate::error::ApiError::BadGateway(error.into()));
-    let response = build_router(state.clone())
+    let response = build_executor_router(state.clone())
         .oneshot(
             Request::post("/v1/threads/child/input")
                 .header("content-type", "application/json")
@@ -321,7 +321,7 @@ async fn native_subagent_input_denial_cannot_delete_or_steer_a_native_queue_row(
     let (state, native) = state().await;
     *native.next_response.lock().unwrap() =
         Some(json!({"thread":child("child","root","active",json!(false))}));
-    let response = build_router(state.clone())
+    let response = build_executor_router(state.clone())
         .oneshot(
             Request::post("/v1/threads/child/queued-inputs/native-row/steer")
                 .body(Body::empty())
@@ -359,7 +359,7 @@ async fn native_subagent_unknown_input_capability_does_not_infer_denial_from_rol
         json!({"thread":child("child","root","notLoaded",Value::Null)}),
         json!({"data":[],"nextCursor":null,"backwardsCursor":null}),
     ]);
-    let response = build_router(state.clone())
+    let response = build_executor_router(state.clone())
         .oneshot(
             Request::post("/v1/threads/child/queued-inputs")
                 .header("content-type", "application/json")

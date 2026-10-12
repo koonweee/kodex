@@ -14,7 +14,7 @@ use tokio::{
 use tower::ServiceExt;
 
 use crate::{
-    api::{build_router, AppState},
+    api::{build_executor_router, AppState},
     app_server::{AppServer, InboundMessage},
     config::Config,
     error::{ApiError, ApiResult},
@@ -182,7 +182,7 @@ async fn state() -> (AppState, Arc<NativeQueue>) {
 }
 
 async fn request(state: &AppState, method: &str, path: &str, body: Value) -> (StatusCode, Value) {
-    let response = build_router(state.clone())
+    let response = build_executor_router(state.clone())
         .oneshot(
             Request::builder()
                 .method(method)
@@ -383,7 +383,7 @@ async fn native_http_queue_has_no_retry_endpoint_or_old_status_contract() {
 }
 
 async fn stream(state: &AppState, cursor: i64) -> Body {
-    let response = build_router(state.clone())
+    let response = build_executor_router(state.clone())
         .oneshot(
             Request::get(format!(
                 "/v1/events?threadId=other-chat&includeGlobal=true&cursor={cursor}"

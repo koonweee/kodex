@@ -16,7 +16,7 @@ use tokio::{
 use tower::ServiceExt;
 
 use crate::{
-    api::{build_router, AppState},
+    api::{build_control_router, build_executor_router, AppState},
     app_server::{AppServer, InboundMessage},
     app_server_api,
     config::Config,
@@ -149,7 +149,12 @@ async fn request(
     path: &str,
     body: Option<Value>,
 ) -> (StatusCode, Value) {
-    let response = build_router(state.clone())
+    let router = if path.starts_with("/v1/self-control/") {
+        build_control_router(state.clone())
+    } else {
+        build_executor_router(state.clone())
+    };
+    let response = router
         .oneshot(
             Request::builder()
                 .method(method)

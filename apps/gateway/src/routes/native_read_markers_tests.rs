@@ -21,7 +21,7 @@ use tokio::{
 use tower::ServiceExt;
 
 use crate::{
-    api::{build_router, AppState},
+    api::{build_executor_router, AppState},
     app_server::{AppServer, InboundMessage},
     config::Config,
     error::{ApiError, ApiResult},
@@ -231,7 +231,7 @@ async fn request(
     path: &str,
     body: Option<Value>,
 ) -> (StatusCode, Value) {
-    let response = build_router(state.clone())
+    let response = build_executor_router(state.clone())
         .oneshot(
             Request::builder()
                 .method(method)
@@ -298,7 +298,7 @@ async fn seen(
 
 async fn stream(state: &AppState) -> Body {
     let cursor = state.store.latest_event_seq().await.unwrap();
-    let response = build_router(state.clone())
+    let response = build_executor_router(state.clone())
         .oneshot(
             Request::get(format!("/v1/events?threadId={THREAD}&cursor={cursor}"))
                 .header("accept", "text/event-stream")

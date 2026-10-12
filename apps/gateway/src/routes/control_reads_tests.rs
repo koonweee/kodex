@@ -1,5 +1,5 @@
 use crate::{
-    api::{build_router, AppState},
+    api::{build_control_router, AppState},
     app_server::tests::RecordingAppServer,
     config::Config,
     store::Store,
@@ -20,7 +20,7 @@ async fn read(payload: Value, query: &str) -> (StatusCode, Value, Arc<RecordingA
         Store::in_memory().await.unwrap(),
         native.clone(),
     );
-    let response = build_router(state)
+    let response = build_control_router(state)
         .oneshot(
             Request::get(format!(
                 "/v1/self-control/threads/chat/turns/compact{query}"

@@ -8,7 +8,8 @@ use serde_json::Value;
 use tower::ServiceExt;
 
 use crate::{
-    app_server::tests::RecordingAppServer, build_router, config::Config, store::Store, AppState,
+    app_server::tests::RecordingAppServer, build_executor_router, config::Config, store::Store,
+    AppState,
 };
 
 async fn state() -> AppState {
@@ -21,7 +22,7 @@ async fn state() -> AppState {
 
 #[tokio::test]
 async fn removed_preview_routes_are_not_served() {
-    let app = build_router(state().await);
+    let app = build_executor_router(state().await);
     for (method, path) in [
         (Method::POST, "/v1/project-previews/reload"),
         (Method::POST, "/v1/projects/project-1/preview-services"),
@@ -70,7 +71,7 @@ async fn removed_preview_routes_are_not_served() {
 
 #[tokio::test]
 async fn removed_preview_contract_keeps_native_projects_file_previews_and_app_surfaces() {
-    let response = build_router(state().await)
+    let response = build_executor_router(state().await)
         .oneshot(Request::get("/openapi.json").body(Body::empty()).unwrap())
         .await
         .unwrap();

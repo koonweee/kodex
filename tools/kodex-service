@@ -22,7 +22,6 @@ import urllib.parse
 import urllib.request
 import uuid
 
-LABEL = 'dev.kodex.gateway'
 LAUNCHCTL = '/bin/launchctl'
 SYSTEMCTL = '/usr/bin/systemctl'
 
@@ -226,11 +225,10 @@ class Service:
     def __init__(self, root, agents=None, *, platform_name=None, role=None, units=None):
         self.root = root.expanduser().resolve()
         self.platform_name = platform_name or sys.platform
-        self.role = role or 'legacy'
-        if self.role not in ('legacy', 'executor', 'federator'):
+        self.role = role
+        if self.role not in ('executor', 'federator'):
             raise ServiceError(f'Unknown service role {self.role}')
-        suffix = 'gateway' if self.role == 'legacy' else self.role
-        self.label = f'dev.kodex.{suffix}'
+        self.label = f'dev.kodex.{self.role}'
         self.config_path = self.root / 'config.json'
         extension = 'plist' if self.platform_name == 'darwin' else 'service'
         self.definition = self.root / f'{self.label}.{extension}'
@@ -238,7 +236,7 @@ class Service:
             self.login_definition = (agents or Path.home() / 'Library/LaunchAgents') / self.definition.name
         else:
             self.login_definition = (units or Path.home() / '.config/systemd/user') / self.definition.name
-        # Retain these names for installed legacy controllers and operation tests.
+        # Retain these aliases for shared operation code and tests.
         self.plist = self.definition
         self.login_plist = self.login_definition
         self.domain = f'gui/{os.getuid()}'
@@ -250,21 +248,11 @@ class Service:
         return self.validate_config(json.loads(self.config_path.read_text()))
 
     def validate_config(self, config):
-        configured_role = config.get('role', 'legacy')
+        configured_role = config.get('role')
         if configured_role != self.role:
             raise ServiceError(f'Configuration belongs to {configured_role}, not {self.role}')
         if not isinstance(config['port'], int) or not 1024 <= config['port'] <= 65535:
             raise ServiceError('port must be an integer between 1024 and 65535')
-        if ('federator_port' in config
-                and (not isinstance(config['federator_port'], int)
-                     or not 1024 <= config['federator_port'] <= 65535)):
-            raise ServiceError('federator_port must be an integer between 1024 and 65535')
-        if 'federator_port' in config:
-            origin = urllib.parse.urlsplit(config.get('federator_origin', ''))
-            if (origin.scheme not in ('http', 'https') or not origin.netloc
-                    or origin.username is not None or origin.password is not None
-                    or origin.path not in ('', '/') or origin.query or origin.fragment):
-                raise ServiceError('federator_origin must be an HTTP(S) origin')
         if self.role == 'federator':
             if (not isinstance(config.get('sandbox_port'), int)
                     or not 1024 <= config['sandbox_port'] <= 65535
@@ -310,15 +298,13 @@ class Service:
         config = self.config()
         env = {key: os.environ[key] for key in ('HOME', 'USER', 'LOGNAME', 'TMPDIR') if key in os.environ}
         env.update({'PATH': config['path'], 'LANG': 'en_US.UTF-8'})
-        if self.role in ('legacy', 'executor'):
+        if self.role == 'executor':
             env.update({
                 'KODEX_BIND': f"127.0.0.1:{config['port']}",
                 'KODEX_CONTROL_BIND': '127.0.0.1:0',
                 'KODEX_DATA_DIR': config['data_dir'],
                 'KODEX_CODEX_BINARY': str(release / 'codex'),
             })
-            if self.role == 'legacy':
-                env['KODEX_FRONTEND_DIST'] = str(release / 'frontend')
         else:
             env.update({
                 'KODEX_FEDERATOR_BIND': f"127.0.0.1:{config['port']}",
@@ -331,9 +317,9 @@ class Service:
         # Explicit, narrowly scoped optional settings; never import an old production env file.
         optional = config.get('environment', {})
         allowed = {'RUST_LOG'}
-        if self.role in ('legacy', 'federator'):
+        if self.role == 'federator':
             allowed |= {'KODEX_VAPID_PUBLIC_KEY', 'KODEX_VAPID_PRIVATE_KEY', 'KODEX_VAPID_SUBJECT'}
-        if self.role in ('legacy', 'executor'):
+        if self.role == 'executor':
             allowed.add('KODEX_NOTIFICATIONS_RECHECK_DELAY_MS')
         if set(optional) - allowed or any(not isinstance(value, str) for value in optional.values()):
             raise ServiceError('Unsupported environment setting in service config')
@@ -343,10 +329,7 @@ class Service:
     def command(self, release):
         if self.role == 'federator':
             return [release / 'kodex-federator']
-        command = [release / 'kodex-gateway']
-        if self.role == 'legacy':
-            command.append('--legacy-combined')
-        return command
+        return [release / 'kodex-gateway']
 
     def check_login_owner(self):
         if self.login_plist.exists():
@@ -413,8 +396,8 @@ class Service:
             'KeepAlive': {'SuccessfulExit': False},
             'ThrottleInterval': 30,
             'ExitTimeOut': 20,
-            'StandardOutPath': str(logs / 'gateway.log'),
-            'StandardErrorPath': str(logs / 'gateway-error.log'),
+            'StandardOutPath': str(logs / 'service.log'),
+            'StandardErrorPath': str(logs / 'service-error.log'),
         }
         self.plist.write_bytes(plistlib.dumps(payload))
         if self.login_plist.exists():
@@ -465,7 +448,7 @@ class Service:
                 except ProcessLookupError:
                     return
                 time.sleep(0.2)
-            raise ServiceError('Gateway did not exit; release was not replaced')
+            raise ServiceError('Service did not exit; release was not replaced')
 
     def health(self, release, *, expected_pid=None, api_version=None):
         config = self.config()
@@ -477,10 +460,10 @@ class Service:
         sandbox_host = (urllib.parse.urlsplit(config['sandbox_public_url']).netloc
                         if self.role == 'federator' else None)
         manifest = json.loads((release / 'manifest.json').read_text())
-        if manifest.get('role', 'legacy') != self.role:
-            raise ServiceError(f'Release belongs to {manifest.get("role", "legacy")}, not {self.role}')
+        if manifest.get('role') != self.role:
+            raise ServiceError(f'Release belongs to {manifest.get("role")}, not {self.role}')
         expected_index = ((release / 'frontend/index.html').read_bytes()
-                          if self.role in ('legacy', 'federator') else None)
+                          if self.role == 'federator' else None)
         expected_sandbox = ((release / 'frontend/app-surface-sandbox.html').read_bytes()
                             if self.role == 'federator' else None)
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -500,7 +483,7 @@ class Service:
                         return response.read()
                 job = self.job()
                 if expected_pid is not None and (not job or job['pid'] != expected_pid):
-                    raise ServiceError('Gateway PID changed during frontend deployment; process unchanged by controller')
+                    raise ServiceError('Federator PID changed during frontend deployment; process unchanged by controller')
                 if not job or not job['pid']:
                     raise ValueError('job has no running process')
                 if self.platform_name == 'darwin':
@@ -538,12 +521,12 @@ class Service:
 
     def notify_frontend_updated(self, revision):
         config = self.config()
-        endpoint = f"http://127.0.0.1:{config.get('federator_port', config['port'])}/v1/frontend-updates"
-        headers = {'Content-Type': 'application/json', 'x-kodex-api-version': '4'}
-        if 'federator_port' in config:
-            headers['Host'] = urllib.parse.urlsplit(config['federator_origin']).netloc
-        elif self.role == 'federator':
-            headers['Host'] = urllib.parse.urlsplit(config['public_origin']).netloc
+        endpoint = f"http://127.0.0.1:{config['port']}/v1/frontend-updates"
+        headers = {
+            'Content-Type': 'application/json',
+            'x-kodex-api-version': '4',
+            'Host': urllib.parse.urlsplit(config['public_origin']).netloc,
+        }
         request = urllib.request.Request(
             endpoint,
             data=json.dumps({'revision': revision}).encode(),
@@ -553,7 +536,7 @@ class Service:
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         with opener.open(request, timeout=2) as response:
             if response.status != 204:
-                raise ServiceError(f'Gateway rejected frontend update notification with HTTP {response.status}')
+                raise ServiceError(f'Federator rejected frontend update notification with HTTP {response.status}')
 
     def autostart(self, enabled):
         if self.platform_name == 'linux':
@@ -586,7 +569,7 @@ class Service:
         stage = Path(tempfile.mkdtemp(prefix='.stage-', dir=releases))
         try:
             manifest = {'role': self.role}
-            if self.role in ('legacy', 'executor'):
+            if self.role == 'executor':
                 source = (repo / 'apps/gateway/src/schema.rs').read_text()
                 version = re.search(r'APP_SERVER_SCHEMA_VERSION: &str = "([^"]+)"', source)[1]
                 native = acquire_native(version, stage)
@@ -594,14 +577,13 @@ class Service:
                      '--target-dir', repo / 'target'], cwd=repo)
                 shutil.copy2(repo / 'target/release/kodex-gateway', stage / 'kodex-gateway')
                 manifest.update(schema_version=version, native=native)
-            if self.role in ('legacy', 'federator'):
-                if self.role == 'federator':
-                    source = (repo / 'apps/federator/src/trust.rs').read_text()
-                    api_version = re.search(r'FEDERATOR_API_VERSION: &str = "([^"]+)"', source)[1]
-                    manifest['api_version'] = api_version
-                    run(['cargo', 'build', '--release', '--locked', '-p', 'kodex-federator',
-                         '--target-dir', repo / 'target'], cwd=repo)
-                    shutil.copy2(repo / 'target/release/kodex-federator', stage / 'kodex-federator')
+            if self.role == 'federator':
+                source = (repo / 'apps/federator/src/trust.rs').read_text()
+                api_version = re.search(r'FEDERATOR_API_VERSION: &str = "([^"]+)"', source)[1]
+                manifest['api_version'] = api_version
+                run(['cargo', 'build', '--release', '--locked', '-p', 'kodex-federator',
+                     '--target-dir', repo / 'target'], cwd=repo)
+                shutil.copy2(repo / 'target/release/kodex-federator', stage / 'kodex-federator')
                 run(['npm', 'ci'], cwd=repo / 'apps/web')
                 build_env = dict(os.environ, VITE_KODEX_API_BASE_URL='')
                 run(['npm', 'run', 'build'], cwd=repo / 'apps/web', env=build_env)
@@ -617,28 +599,23 @@ class Service:
             raise
 
     def update_frontend(self, repo):
-        if self.role == 'executor':
+        if self.role != 'federator':
             raise ServiceError('Executor releases do not contain web assets')
         repo = repo.resolve(strict=True)
         release = (self.root / 'current').resolve(strict=True)
         frontend = release / 'frontend'
         if frontend.is_symlink() or not frontend.is_dir():
             raise ServiceError('Current frontend must be a real directory; service unchanged')
-        source = (repo / 'apps/gateway/src/schema.rs').read_text()
         manifest = json.loads((release / 'manifest.json').read_text())
-        if self.role == 'legacy':
-            schema = re.search(r'APP_SERVER_SCHEMA_VERSION: &str = "([^"\n]+)"', source)
-            if not schema or schema[1] != manifest['schema_version']:
-                raise ServiceError('Checkout schema differs from current release; use a full update')
         source = (repo / 'apps/web/src/api/compatibility.ts').read_text()
         version = re.search(r'const API_VERSION = "([^"\n]+)"', source)
         if not version:
             raise ServiceError('Cannot determine frontend API version; service unchanged')
-        if self.role == 'federator' and version[1] != manifest.get('api_version'):
+        if version[1] != manifest.get('api_version'):
             raise ServiceError('Checkout API version differs from current federator; use a full update')
         job = self.job()
         if not job or not job['pid']:
-            raise ServiceError('Frontend deployment requires the installed gateway to be running')
+            raise ServiceError('Frontend deployment requires the installed federator to be running')
         pid = job['pid']
         self.health(release, expected_pid=pid, api_version=version[1])
         stage = Path(tempfile.mkdtemp(prefix='.frontend-', dir=release))
@@ -669,7 +646,7 @@ class Service:
                 try:
                     self.health(release, expected_pid=pid, api_version=version[1])
                 except Exception as rollback_error:
-                    raise ServiceError('Frontend rolled back, but gateway health failed; '
+                    raise ServiceError('Frontend rolled back, but federator health failed; '
                                        'no process was stopped or started') from rollback_error
                 if not isinstance(error, Exception):
                     raise
@@ -682,7 +659,7 @@ class Service:
         finally:
             if not keep_backup:
                 shutil.rmtree(stage)
-        print(f'Frontend updated; gateway PID {pid} unchanged')
+        print(f'Frontend updated; federator PID {pid} unchanged')
 
     def update(self, repo):
         release = self.build(repo)  # Build failures cannot stop or replace the live release.
@@ -691,7 +668,7 @@ class Service:
         if current.exists():
             link(self.root / 'previous', current.resolve())
         link(current, release)
-        # Keep the management controller independent of gateway rollback.
+        # Keep the management controller independent of runtime rollback.
         link(self.root / 'controller', release)
         link(self.root / 'kodex-service', self.root / 'controller/kodex-service')
         shutil.rmtree(self.root / 'bootstrap-controller', ignore_errors=True)

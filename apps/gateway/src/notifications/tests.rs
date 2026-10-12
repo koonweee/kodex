@@ -1,5 +1,6 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
+use async_trait::async_trait;
 use serde_json::Value;
 
 use super::*;
@@ -7,7 +8,7 @@ use crate::{
     app_server::AppServer,
     config::Config,
     error::ApiError,
-    store::{NewPushSubscription, NotificationDeliveryStatus, Store},
+    store::{NotificationDeliveryStatus, Store},
 };
 
 const THREAD_ID: &str = "notification-thread";
@@ -70,55 +71,21 @@ impl AppServer for PreviewAppServer {
     }
 }
 
-#[derive(Default)]
-struct PreviewPushSender {
-    payloads: Mutex<Vec<NotificationPayload>>,
-}
-
-#[async_trait]
-impl PushSender for PreviewPushSender {
-    async fn send(
-        &self,
-        _subscription: &PushSubscription,
-        payload: &NotificationPayload,
-    ) -> PushDeliveryOutcome {
-        self.payloads.lock().unwrap().push(payload.clone());
-        PushDeliveryOutcome::Sent
-    }
-}
-
 async fn preview_fixture(
     turn_id: Option<&str>,
     items_response: Value,
     items_error: Option<&'static str>,
-) -> (
-    AppState,
-    Arc<PreviewAppServer>,
-    Arc<PreviewPushSender>,
-    String,
-) {
+) -> (AppState, Arc<PreviewAppServer>, String) {
     let server = Arc::new(PreviewAppServer {
         requests: Mutex::new(Vec::new()),
         items_response,
         items_error,
     });
-    let sender = Arc::new(PreviewPushSender::default());
     let state = AppState::new(
         Config::default(),
         Store::in_memory().await.unwrap(),
         server.clone(),
-    )
-    .with_notification_sender(sender.clone());
-    state
-        .store
-        .upsert_push_subscription(NewPushSubscription {
-            endpoint: "https://push.example/preview-test".into(),
-            p256dh: "public".into(),
-            auth: "auth".into(),
-            user_agent: None,
-        })
-        .await
-        .unwrap();
+    );
     let delivery = state
         .store
         .create_notification_delivery(NewNotificationDelivery {
@@ -130,7 +97,7 @@ async fn preview_fixture(
         })
         .await
         .unwrap();
-    (state, server, sender, delivery.id)
+    (state, server, delivery.id)
 }
 
 fn item_entry(item: Value) -> Value {
@@ -139,7 +106,7 @@ fn item_entry(item: Value) -> Value {
 
 #[tokio::test]
 async fn notification_preview_reads_only_delivery_turn_and_prefers_its_final_answer() {
-    let (state, server, sender, delivery_id) = preview_fixture(
+    let (state, server, delivery_id) = preview_fixture(
         Some(DELIVERY_TURN_ID),
         json!({"data": [
             item_entry(json!({"id": "newer-comment", "type": "agentMessage", "phase": "commentary", "text": "Newer commentary."})),
@@ -150,18 +117,16 @@ async fn notification_preview_reads_only_delivery_turn_and_prefers_its_final_ans
     )
     .await;
 
-    process_due_deliveries(state.clone()).await.unwrap();
-
-    let payloads = sender.payloads.lock().unwrap();
-    assert_eq!(payloads.len(), 1);
+    let claims = claim_federated_deliveries(&state, 10).await.unwrap();
+    assert_eq!(claims.len(), 1);
+    let payload = &claims[0].payload;
     assert_eq!(
-        payloads[0].body.as_deref(),
+        payload.body.as_deref(),
         Some("Target answer. For this delivery.")
     );
-    assert_eq!(payloads[0].title, "Delivery chat");
-    assert_eq!(payloads[0].thread_id.as_deref(), Some(THREAD_ID));
-    assert_eq!(payloads[0].route, format!("/threads/{THREAD_ID}"));
-    drop(payloads);
+    assert_eq!(payload.title, "Delivery chat");
+    assert_eq!(payload.thread_id.as_deref(), Some(THREAD_ID));
+    assert_eq!(payload.route, format!("/threads/{THREAD_ID}"));
     assert_eq!(
         state
             .store
@@ -169,7 +134,7 @@ async fn notification_preview_reads_only_delivery_turn_and_prefers_its_final_ans
             .await
             .unwrap()
             .status,
-        NotificationDeliveryStatus::Sent
+        NotificationDeliveryStatus::Processing
     );
     let requests = server.requests.lock().unwrap();
     assert_eq!(
@@ -194,7 +159,7 @@ async fn notification_preview_reads_only_delivery_turn_and_prefers_its_final_ans
 
 #[tokio::test]
 async fn notification_without_final_answer_uses_newest_native_agent_text() {
-    let (state, _, sender, _) = preview_fixture(
+    let (state, _, _) = preview_fixture(
         Some(DELIVERY_TURN_ID),
         json!({"data": [
             item_entry(json!({"id": "newer-agent", "type": "agentMessage", "text": "Latest update."})),
@@ -202,21 +167,18 @@ async fn notification_without_final_answer_uses_newest_native_agent_text() {
         ], "nextCursor": null, "backwardsCursor": null}),
         None,
     ).await;
-    process_due_deliveries(state).await.unwrap();
-    let payloads = sender.payloads.lock().unwrap();
-    assert_eq!(payloads.len(), 1);
-    assert_eq!(payloads[0].body.as_deref(), Some("Latest update."));
+    let claims = claim_federated_deliveries(&state, 10).await.unwrap();
+    assert_eq!(claims.len(), 1);
+    assert_eq!(claims[0].payload.body.as_deref(), Some("Latest update."));
 }
 
 #[tokio::test]
 async fn notification_without_delivery_turn_does_not_borrow_another_answer() {
-    let (state, server, sender, _) = preview_fixture(None, json!({}), None).await;
-    process_due_deliveries(state).await.unwrap();
-
-    let payloads = sender.payloads.lock().unwrap();
-    assert_eq!(payloads.len(), 1);
+    let (state, server, _) = preview_fixture(None, json!({}), None).await;
+    let claims = claim_federated_deliveries(&state, 10).await.unwrap();
+    assert_eq!(claims.len(), 1);
     assert_eq!(
-        payloads[0].body.as_deref(),
+        claims[0].payload.body.as_deref(),
         Some(UNREAD_AGENT_MESSAGE_FALLBACK_BODY)
     );
     assert!(!server
@@ -234,16 +196,14 @@ async fn notification_empty_or_truncated_item_page_uses_generic_body_without_fol
         json!({"data": [item_entry(json!({"id": "latest-tool", "type": "commandExecution", "aggregatedOutput": "Do not preview tool output"}))], "nextCursor": "answer-outside-bound", "backwardsCursor": null}),
         json!({"data": [item_entry(json!({"id": "blank-answer", "type": "agentMessage", "phase": "final_answer", "text": " \n\t "}))], "nextCursor": null, "backwardsCursor": null}),
     ] {
-        let (state, server, sender, delivery_id) =
+        let (state, server, delivery_id) =
             preview_fixture(Some(DELIVERY_TURN_ID), page, None).await;
-        process_due_deliveries(state.clone()).await.unwrap();
-        let payloads = sender.payloads.lock().unwrap();
-        assert_eq!(payloads.len(), 1);
+        let claims = claim_federated_deliveries(&state, 10).await.unwrap();
+        assert_eq!(claims.len(), 1);
         assert_eq!(
-            payloads[0].body.as_deref(),
+            claims[0].payload.body.as_deref(),
             Some(UNREAD_AGENT_MESSAGE_FALLBACK_BODY)
         );
-        drop(payloads);
         assert_eq!(
             state
                 .store
@@ -251,7 +211,7 @@ async fn notification_empty_or_truncated_item_page_uses_generic_body_without_fol
                 .await
                 .unwrap()
                 .status,
-            NotificationDeliveryStatus::Sent
+            NotificationDeliveryStatus::Processing
         );
         assert_eq!(
             server
@@ -291,10 +251,12 @@ async fn notification_item_read_failures_retry_instead_of_sending_unrelated_or_g
             None,
         ),
     ] {
-        let (state, server, sender, delivery_id) =
+        let (state, server, delivery_id) =
             preview_fixture(Some(DELIVERY_TURN_ID), page, error).await;
-        process_due_deliveries(state.clone()).await.unwrap();
-        assert!(sender.payloads.lock().unwrap().is_empty());
+        assert!(claim_federated_deliveries(&state, 10)
+            .await
+            .unwrap()
+            .is_empty());
         let delivery = state
             .store
             .get_notification_delivery(&delivery_id)
@@ -320,7 +282,7 @@ async fn notification_item_read_failures_retry_instead_of_sending_unrelated_or_g
 
 #[tokio::test]
 async fn federator_claim_returns_prepared_payload_and_fences_a_late_outcome() {
-    let (state, _, _, _) = preview_fixture(
+    let (state, _, _) = preview_fixture(
         Some(DELIVERY_TURN_ID),
         json!({"data": [item_entry(json!({"id": "answer", "type": "agentMessage", "phase": "final_answer", "text": "Exact answer"}))]}),
         None,

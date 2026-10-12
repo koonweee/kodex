@@ -55,7 +55,7 @@ flowchart LR
 
 Each executor gateway supervises its local `codex app-server`, translates the native protocol, and owns machine-local features such as terminals, automations, files and eligible notification jobs. The federator serves the web app, routes qualified operations, owns browser push subscriptions/provider calls and aggregates badges across executors. The web client is a projection of federator, gateway and app-server state rather than a second source of truth.
 
-See [Architecture](docs/architecture.md) for component boundaries and state ownership. Fresh split-role installation and lifecycle on macOS/Linux are documented in [Federated Kodex services](docs/federated-service.md). The existing [macOS combined-service guide](docs/macos-service.md) remains the reference for the currently installed transitional service until an explicit fresh cutover.
+See [Architecture](docs/architecture.md) for component boundaries and state ownership. Fresh split-role installation and lifecycle on macOS/Linux are documented in [Federated Kodex services](docs/federated-service.md). The existing combined macOS installation remains frozen on its installed controller and release until an explicit fresh cutover; its limited operating notes are in [Legacy macOS service](docs/macos-service.md).
 
 ## Quick start
 
@@ -65,13 +65,24 @@ You will need:
 - The stable Rust toolchain.
 - Node.js and npm.
 
-Start a disposable development instance:
+Start a disposable executor on its split-role port:
 
 ```bash
-KODEX_DATA_DIR="$(mktemp -d)/instance" KODEX_CODEX_BINARY=/absolute/path/to/codex cargo run -p kodex-gateway
+KODEX_BIND=127.0.0.1:8789 \
+KODEX_DATA_DIR="$(mktemp -d)/executor" \
+KODEX_CODEX_BINARY=/absolute/path/to/codex \
+cargo run -p kodex-gateway
 ```
 
-In another terminal, start the web client:
+Start the federator in another terminal:
+
+```bash
+KODEX_FEDERATOR_DATA_DIR="$(mktemp -d)/federator" \
+KODEX_FEDERATOR_PUBLIC_ORIGIN=http://127.0.0.1:5173 \
+cargo run -p kodex-federator
+```
+
+Then start the web client:
 
 ```bash
 cd apps/web
@@ -79,7 +90,7 @@ npm install
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173`. The development server proxies API requests to the gateway at `http://127.0.0.1:8787`.
+Open `http://127.0.0.1:5173`. The development server proxies API requests to the federator at `http://127.0.0.1:8787`; register `http://127.0.0.1:8789` as the executor.
 
 The new startup path defaults to `~/.kodex/native-v1/`: its gateway database, identity marker and `codex-home/` are independent of the old Kodex database and Codex desktop home. The instance marker now uses format 4 for the reduced gateway schema; native lifecycle state and retired one-shot app submission fields are absent. Earlier marked instances are also rejected; select a new empty `KODEX_DATA_DIR` rather than migrating them. Nonempty unrecognized stores are rejected; no history, credentials, projects or schedules are imported. Sign in and configure the fresh instance deliberately. Production cutover remains gated on the redesign tests; do not point development runs at old stores.
 
@@ -155,9 +166,9 @@ The real push-provider browser proof is manual-only; run it from your own termin
 - [Kodex Control](docs/kodex-control.md) — built-in MCP server and application-owned skills.
 - [Plans](plans/index.md) — completed milestones, active work, and future extensions.
 
-For persistent hosting on your Mac, use the [login service and update commands](docs/macos-service.md). The service runs a compiled release independently of your development checkout and works with private Tailscale HTTPS. It downloads the complete official Codex runtime pinned to the checked-in app-server schema and verifies its checksum; it does not extract binaries from the desktop app.
+For persistent hosting, use the [split-role service commands](docs/federated-service.md). Each executor and federator runs a compiled release independently of the development checkout and works through private Tailscale HTTPS. Executor updates download the complete official Codex runtime pinned to the checked-in app-server schema and verify its checksum; they do not extract binaries from the desktop app.
 
-For compatible UI changes, `./tools/kodex-service update-frontend --repo "$PWD"` builds and deploys only frontend assets while keeping the gateway, active chats, and terminals running. Use the full `update` command for backend changes. Full updates, restarts and rollbacks run as independent one-shot launchd jobs; inspect `operation-status` for completion, or use `--wait` to follow logs without owning the worker lifetime.
+For compatible UI changes, `~/.local/share/kodex/federator/kodex-service update-frontend --repo "$PWD"` builds and deploys only federator frontend assets while executors, active chats and terminals keep running. Use the selected role's full `update` command for backend changes. Full updates, restarts and rollbacks run as independent one-shot service-manager jobs; inspect `operation-status` for completion, or use `--wait` to follow logs without owning the worker lifetime.
 
 ## Project status
 

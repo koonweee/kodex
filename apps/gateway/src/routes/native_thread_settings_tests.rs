@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use tower::ServiceExt;
 
 use crate::{
-    api::{build_router, AppState},
+    api::{build_executor_router, AppState},
     app_server::{tests::RecordingAppServer, InboundMessage},
     config::Config,
     events::ingest_inbound,
@@ -35,7 +35,7 @@ async fn native_settings_read_uses_the_full_effective_resume_response() {
         "model":"custom-native-model", "reasoningEffort":"high", "serviceTier":"fast",
         "activePermissionProfile":{"id":"custom-profile","extends":":workspace"}
     }));
-    let response = build_router(state)
+    let response = build_executor_router(state)
         .oneshot(
             Request::get("/v1/threads/thread-1/settings")
                 .body(Body::empty())
@@ -61,7 +61,7 @@ async fn native_settings_read_uses_the_full_effective_resume_response() {
 #[tokio::test]
 async fn native_settings_write_ack_does_not_publish_unapplied_values() {
     let (state, native) = state().await;
-    let response = build_router(state.clone())
+    let response = build_executor_router(state.clone())
         .oneshot(
             Request::patch("/v1/threads/thread-1/settings")
                 .header("content-type", "application/json")
@@ -120,7 +120,7 @@ async fn applied_native_settings_notification_only_invalidates_authoritative_rea
 async fn draft_effort_is_native_session_config_without_losing_other_overrides() {
     let (state, native) = state().await;
     let project = native.seed_project("Draft settings".into(), "/tmp".into());
-    let response = build_router(state).oneshot(Request::post("/v1/threads")
+    let response = build_executor_router(state).oneshot(Request::post("/v1/threads")
         .header("content-type", "application/json")
         .body(Body::from(json!({"projectId":project.id,"effort":"xhigh","payload":{"config":{"unrelated":"retained"}}}).to_string())).unwrap()).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);

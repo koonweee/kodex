@@ -517,7 +517,7 @@ async fn lagged_sse_invalidates_the_approval_snapshot_at_the_existing_cursor() {
     state.events = tokio::sync::broadcast::channel(2).0;
     super::initialize(&state).await.unwrap();
     let before = snapshot(&state).await;
-    let response = crate::build_router(state.clone())
+    let response = crate::build_executor_router(state.clone())
         .oneshot(
             Request::get("/v1/events?includeGlobal=true")
                 .header("accept", "text/event-stream")

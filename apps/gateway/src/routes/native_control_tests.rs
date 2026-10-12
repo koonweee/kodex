@@ -13,7 +13,7 @@ use tokio::{
 use tower::ServiceExt;
 
 use crate::{
-    api::{build_router, AppState},
+    api::{build_control_router, AppState},
     app_server::AppServer,
     config::Config,
     error::{ApiError, ApiResult},
@@ -108,7 +108,7 @@ async fn state(native: Native) -> (AppState, Arc<Native>) {
 }
 
 async fn spawn(state: &AppState) -> (StatusCode, Value) {
-    let response = build_router(state.clone())
+    let response = build_control_router(state.clone())
         .oneshot(
             Request::post("/v1/self-control/thread-spawns")
                 .header("content-type", "application/json")

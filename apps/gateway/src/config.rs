@@ -14,7 +14,6 @@ pub struct Config {
     pub database: DatabaseConfig,
     pub uploads: UploadsConfig,
     pub projects: ProjectsConfig,
-    pub frontend: FrontendConfig,
     pub notifications: NotificationsConfig,
 }
 
@@ -54,15 +53,7 @@ pub struct ProjectsConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub struct FrontendConfig {
-    pub dist_dir: Option<PathBuf>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct NotificationsConfig {
-    pub vapid_public_key: Option<String>,
-    pub vapid_private_key: Option<String>,
-    pub vapid_subject: Option<String>,
     pub recheck_delay_ms: u64,
 }
 
@@ -101,11 +92,7 @@ impl Default for Config {
             projects: ProjectsConfig {
                 home_dir: home_dir(),
             },
-            frontend: FrontendConfig { dist_dir: None },
             notifications: NotificationsConfig {
-                vapid_public_key: None,
-                vapid_private_key: None,
-                vapid_subject: None,
                 recheck_delay_ms: 2_000,
             },
         }
@@ -147,19 +134,6 @@ impl Config {
             config.codex.args = args.split_whitespace().map(str::to_string).collect();
         }
 
-        if let Ok(dist_dir) = env::var("KODEX_FRONTEND_DIST") {
-            config.frontend.dist_dir = Some(expand_home(dist_dir));
-        }
-
-        if let Ok(key) = env::var("KODEX_VAPID_PUBLIC_KEY") {
-            config.notifications.vapid_public_key = Some(key);
-        }
-        if let Ok(key) = env::var("KODEX_VAPID_PRIVATE_KEY") {
-            config.notifications.vapid_private_key = Some(key);
-        }
-        if let Ok(subject) = env::var("KODEX_VAPID_SUBJECT") {
-            config.notifications.vapid_subject = Some(subject);
-        }
         if let Ok(delay_ms) = env::var("KODEX_NOTIFICATIONS_RECHECK_DELAY_MS") {
             config.notifications.recheck_delay_ms = delay_ms.parse().unwrap_or_else(|err| {
                 panic!("invalid KODEX_NOTIFICATIONS_RECHECK_DELAY_MS: {err}")

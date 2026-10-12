@@ -9,7 +9,7 @@ use tempfile::tempdir;
 use tower::ServiceExt;
 
 use crate::{
-    api::{build_router, AppState},
+    api::{build_control_router, build_executor_router, AppState},
     app_server::tests::RecordingAppServer,
     config::Config,
     store::Store,
@@ -43,6 +43,14 @@ pub(super) async fn response_json(response: axum::response::Response) -> Value {
     serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap()).unwrap()
 }
 
+fn router_for(state: AppState, path: &str) -> axum::Router {
+    if path.starts_with("/v1/self-control/") {
+        build_control_router(state)
+    } else {
+        build_executor_router(state)
+    }
+}
+
 #[tokio::test]
 async fn create_project_uses_native_identity_and_does_not_create_a_gateway_record() {
     let (state, server) = test_state().await;
@@ -54,7 +62,7 @@ async fn create_project_uses_native_identity_and_does_not_create_a_gateway_recor
         .lock()
         .unwrap()
         .push(json!({"project": native_project("native-project-1", &cwd)}));
-    let response = build_router(state.clone())
+    let response = build_executor_router(state.clone())
         .oneshot(
             Request::post("/v1/projects")
                 .header("content-type", "application/json")
@@ -92,7 +100,7 @@ async fn list_projects_reads_all_native_pages_in_native_order() {
         json!({"data": [native_project("native-first", "/workspace/one")], "nextCursor": "second-page"}),
         json!({"data": [native_project("native-second", "/workspace/two")], "nextCursor": null}),
     ]);
-    let response = build_router(state)
+    let response = build_executor_router(state)
         .oneshot(Request::get("/v1/projects").body(Body::empty()).unwrap())
         .await
         .unwrap();
@@ -117,7 +125,7 @@ async fn read_project_uses_native_metadata_without_a_gateway_record() {
         .lock()
         .unwrap()
         .push(json!({"project": native_project("native-project-1", "/workspace")}));
-    let response = build_router(state)
+    let response = build_executor_router(state)
         .oneshot(
             Request::get("/v1/projects/native-project-1")
                 .body(Body::empty())
@@ -146,7 +154,7 @@ async fn thread_creation_forwards_the_native_project_id() {
             .lock()
             .unwrap()
             .push(json!({"project": native_project("native-project-1", "/workspace")}));
-        let response = build_router(state)
+        let response = router_for(state, endpoint)
             .oneshot(
                 Request::post(endpoint)
                     .header("content-type", "application/json")
@@ -171,7 +179,7 @@ async fn thread_creation_forwards_the_native_project_id() {
 #[tokio::test]
 async fn project_thread_listing_uses_native_membership() {
     let (state, server) = test_state().await;
-    let response = build_router(state)
+    let response = build_executor_router(state)
         .oneshot(
             Request::get("/v1/threads?projectId=native-project-1")
                 .body(Body::empty())
@@ -195,7 +203,7 @@ async fn another_client_refetches_changed_native_project_metadata() {
         "native-project-1".to_string(),
         native_project("native-project-1", "/workspace"),
     );
-    let app = build_router(state.clone());
+    let app = build_executor_router(state.clone());
     let first = app
         .clone()
         .oneshot(Request::get("/v1/projects").body(Body::empty()).unwrap())
@@ -242,7 +250,7 @@ async fn project_settings_and_permissions_use_the_native_working_directory() {
             native_project("native-project-1", "/native/workspace"),
         );
         server.queued_responses.lock().unwrap().push(payload);
-        let response = build_router(state)
+        let response = build_executor_router(state)
             .oneshot(
                 Request::get(format!("{endpoint}?projectId=native-project-1"))
                     .body(Body::empty())
@@ -270,7 +278,7 @@ async fn a_rootless_native_project_remains_readable_without_breaking_the_sidebar
         .lock()
         .unwrap()
         .insert("rootless".to_string(), project);
-    let app = build_router(state);
+    let app = build_executor_router(state);
 
     for endpoint in [
         "/v1/projects",
@@ -304,7 +312,7 @@ async fn rootless_projects_cannot_fall_back_to_the_process_working_directory() {
         .lock()
         .unwrap()
         .insert("rootless".to_string(), project);
-    let response = build_router(state)
+    let response = build_executor_router(state)
         .oneshot(
             Request::post("/v1/threads")
                 .header("content-type", "application/json")

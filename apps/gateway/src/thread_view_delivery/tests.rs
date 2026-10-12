@@ -90,7 +90,7 @@ fn canonical_item_omits_duplicate_envelope_but_retains_correlation_and_skills() 
 #[tokio::test]
 async fn two_sse_clients_receive_the_same_projection_with_different_details() {
     use crate::{
-        api::{build_router, AppState},
+        api::{build_executor_router, AppState},
         app_server::{tests::RecordingAppServer, InboundMessage},
         config::Config,
         events::ingest_inbound,
@@ -120,7 +120,7 @@ async fn two_sse_clients_receive_the_same_projection_with_different_details() {
         Store::in_memory().await.unwrap(),
         Arc::new(RecordingAppServer::default()),
     );
-    let router = build_router(state.clone());
+    let router = build_executor_router(state.clone());
     let mut bodies = Vec::new();
     for options in ["", "&includeDebugEvents=true&includeCommandOutputs=true"] {
         let response = router
@@ -264,7 +264,7 @@ fn typed_and_wire_policy_match_for_every_detail_combination() {
 #[tokio::test]
 async fn canonical_http_reads_apply_the_same_independent_detail_policy() {
     use crate::{
-        api::{build_router, AppState},
+        api::{build_executor_router, AppState},
         app_server::tests::RecordingAppServer,
         config::Config,
         store::Store,
@@ -317,7 +317,10 @@ async fn canonical_http_reads_apply_the_same_independent_detail_policy() {
                 .uri(uri)
                 .body(Body::empty())
                 .unwrap();
-            let response = build_router(state.clone()).oneshot(request).await.unwrap();
+            let response = build_executor_router(state.clone())
+                .oneshot(request)
+                .await
+                .unwrap();
             assert_eq!(response.status(), StatusCode::OK);
             let body: Value =
                 serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())

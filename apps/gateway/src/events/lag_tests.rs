@@ -13,7 +13,7 @@ use tokio::{
 use tower::ServiceExt;
 
 use crate::{
-    api::{build_router, AppState},
+    api::{build_executor_router, AppState},
     app_server::{tests::RecordingAppServer, InboundMessage},
     config::Config,
     store::{NewEvent, Store},
@@ -40,7 +40,7 @@ async fn lagged_sse_closes_at_previous_cursor_and_reconnect_replays_missed_proje
         })
         .await
         .unwrap();
-    let app = build_router(state.clone());
+    let app = build_executor_router(state.clone());
     let response = app
         .clone()
         .oneshot(

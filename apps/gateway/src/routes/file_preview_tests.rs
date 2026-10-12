@@ -1,5 +1,5 @@
 use crate::{
-    api::{build_router, AppState},
+    api::{build_executor_router, AppState},
     app_server::tests::RecordingAppServer,
     config::Config,
     store::Store,
@@ -25,7 +25,11 @@ async fn fixture() -> (Router, Arc<RecordingAppServer>, tempfile::TempDir) {
         Store::in_memory().await.unwrap(),
         native.clone(),
     );
-    (build_router(state), native, tempfile::tempdir().unwrap())
+    (
+        build_executor_router(state),
+        native,
+        tempfile::tempdir().unwrap(),
+    )
 }
 
 async fn request(

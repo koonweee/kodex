@@ -249,34 +249,6 @@ pub struct ThreadRead {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PushSubscription {
-    pub id: String,
-    pub endpoint: String,
-    pub p256dh: String,
-    pub auth: String,
-    pub user_agent: Option<String>,
-    pub enabled: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone)]
-pub struct NewPushSubscription {
-    pub endpoint: String,
-    pub p256dh: String,
-    pub auth: String,
-    pub user_agent: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PushSubscriptionStatus {
-    pub subscription: Option<PushSubscription>,
-    pub subscribed: bool,
-}
-
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum NotificationDeliveryStatus {
@@ -658,19 +630,6 @@ fn row_to_thread_notification_setting(
     Ok(ThreadNotificationSetting {
         thread_id: row.try_get("thread_id")?,
         notifications_enabled: row.try_get::<i64, _>("notifications_enabled")? != 0,
-        updated_at: row.try_get("updated_at")?,
-    })
-}
-
-fn row_to_push_subscription(row: sqlx::sqlite::SqliteRow) -> ApiResult<PushSubscription> {
-    Ok(PushSubscription {
-        id: row.try_get("id")?,
-        endpoint: row.try_get("endpoint")?,
-        p256dh: row.try_get("p256dh")?,
-        auth: row.try_get("auth")?,
-        user_agent: row.try_get("user_agent")?,
-        enabled: row.try_get::<i64, _>("enabled")? != 0,
-        created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
     })
 }

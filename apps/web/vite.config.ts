@@ -85,9 +85,13 @@ export default defineConfig({
     proxy: {
       "/v1": {
         target: gatewayProxyTarget,
+        changeOrigin: false,
         ws: true,
       },
-      "/openapi.json": gatewayProxyTarget,
+      "/openapi.json": {
+        target: gatewayProxyTarget,
+        changeOrigin: false,
+      },
     },
   },
   test: {

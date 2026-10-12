@@ -50,7 +50,7 @@ KODEX_NOTIFICATIONS_RECHECK_DELAY_MS
 
 Start from `apps/gateway/config/production.env.example` for a production-style local configuration.
 
-`KODEX_FRONTEND_DIST` belongs to `kodex-federator`. The temporary `kodex-gateway --legacy-combined` transition mode also accepts it so the existing one-process macOS controller remains runnable until the split controller replaces that path. Do not treat the legacy flag as an executor deployment mode.
+`KODEX_FRONTEND_DIST` belongs only to `kodex-federator`. Executor releases contain no frontend assets or browser Push provider configuration.
 
 The native redesign is validated for the intended personal-account deployment. Its startup selects a fresh instance root with a persisted identity and an exclusive process lock. `KODEX_DATA_DIR` selects that root; a `KODEX_DATABASE_PATH` override must resolve to its `gateway.db`. Do not copy old databases or desktop credentials into it. Wrong executable versions and failed native initialization stop startup. Existing production remains a separate operational deployment until an explicit replacement restart is requested.
 

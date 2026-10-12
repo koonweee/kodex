@@ -16,7 +16,7 @@ use tokio::{
 use tower::ServiceExt;
 
 use crate::{
-    api::{build_router, AppState},
+    api::{build_executor_router, AppState},
     app_server::{AppServer, InboundMessage},
     config::Config,
     error::{ApiError, ApiResult},
@@ -152,7 +152,7 @@ async fn state(active: bool, hold_first: bool) -> (AppState, Arc<AttachNative>) 
 }
 
 async fn attach(state: &AppState) -> (StatusCode, Value) {
-    let response = build_router(state.clone())
+    let response = build_executor_router(state.clone())
         .oneshot(
             Request::post(format!("/v1/threads/{THREAD}/attach"))
                 .body(Body::empty())

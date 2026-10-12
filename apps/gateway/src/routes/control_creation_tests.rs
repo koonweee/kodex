@@ -1,5 +1,5 @@
 use crate::{
-    api::{build_router, AppState},
+    api::{build_control_router, build_executor_router, AppState},
     app_server::tests::RecordingAppServer,
     config::Config,
     store::Store,
@@ -23,7 +23,7 @@ async fn state(home: &std::path::Path) -> (AppState, Arc<RecordingAppServer>) {
 }
 
 async fn post(state: &AppState, path: &str, input: Value) -> (StatusCode, Value) {
-    let response = build_router(state.clone())
+    let response = build_control_router(state.clone())
         .oneshot(
             Request::post(path)
                 .header("content-type", "application/json")
@@ -63,7 +63,7 @@ async fn projectless_creation_uses_chat_directory_and_cannot_inject_project() {
     .unwrap();
     assert_eq!(event.payload["scope"], "chat");
     assert!(event.project_id.is_none());
-    let replay = build_router(state.clone())
+    let replay = build_executor_router(state.clone())
         .oneshot(Request::get("/v1/events").body(Body::empty()).unwrap())
         .await
         .unwrap();
@@ -146,7 +146,7 @@ async fn archived_discovery_forwards_native_filter_and_pagination_without_activa
     let (state, native) = state(home.path()).await;
     *native.next_response.lock().unwrap() =
         Some(json!({"data":[],"nextCursor":"next","backwardsCursor":null}));
-    let response = build_router(state)
+    let response = build_control_router(state)
         .oneshot(
             Request::get(
                 "/v1/self-control/threads?archived=true&projectId=project-1&cursor=page&limit=5",
@@ -187,7 +187,7 @@ async fn unarchive_notifies_other_clients_and_replays_refill() {
         .unwrap();
     assert_eq!(event.kind, "thread.subagents_changed");
     assert_eq!(event.payload["changedThreadId"], "thread-1");
-    let response = build_router(state)
+    let response = build_executor_router(state)
         .oneshot(Request::get("/v1/events").body(Body::empty()).unwrap())
         .await
         .unwrap();
@@ -214,7 +214,7 @@ async fn archived_discovery_rejects_unbounded_pages_and_surfaces_read_errors() {
     let home = tempfile::tempdir().unwrap();
     let (state, native) = state(home.path()).await;
     for limit in [0, 101] {
-        let response = build_router(state.clone())
+        let response = build_control_router(state.clone())
             .oneshot(
                 Request::get(format!(
                     "/v1/self-control/threads?archived=true&limit={limit}"
@@ -228,7 +228,7 @@ async fn archived_discovery_rejects_unbounded_pages_and_surfaces_read_errors() {
     }
     assert!(native.requests.lock().unwrap().is_empty());
     *native.next_response.lock().unwrap() = Some(json!({"malformed":true}));
-    let response = build_router(state)
+    let response = build_control_router(state)
         .oneshot(
             Request::get("/v1/self-control/threads?archived=true")
                 .body(Body::empty())
@@ -248,7 +248,7 @@ async fn control_notifications_persist_and_notify_other_clients_without_activati
     let (state, native) = state(home.path()).await;
     let mut observer = state.events.subscribe();
     for enabled in [false, true] {
-        let response = build_router(state.clone())
+        let response = build_control_router(state.clone())
             .oneshot(
                 Request::patch("/v1/self-control/threads/thread-1/notifications")
                     .header("content-type", "application/json")
@@ -283,7 +283,7 @@ async fn control_notifications_persist_and_notify_other_clients_without_activati
         .await
         .unwrap();
         assert_eq!(event.payload["notificationsEnabled"], enabled);
-        let replay = build_router(state.clone())
+        let replay = build_executor_router(state.clone())
             .oneshot(Request::get("/v1/events").body(Body::empty()).unwrap())
             .await
             .unwrap();

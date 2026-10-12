@@ -16,7 +16,7 @@ use http_body_util::BodyExt;
 use kodex_gateway::{
     app_server::{AppServer, InboundMessage, JsonRpcAppServer},
     app_server_api::{CodexClient, SortDirection, ThreadItemsListPage},
-    build_router,
+    build_executor_router,
     config::Config,
     events::ingest_inbound,
     native_runtime::{prepare_instance, PreparedInstance},
@@ -331,7 +331,7 @@ impl NativeSession {
                 return Err(error.into());
             }
         };
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
         let thread_views = state.thread_views.clone();
         let fixture_state = state.clone();
         let relay = tokio::spawn(async move {

@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use tower::ServiceExt;
 
 use crate::{
-    api::{build_router, AppState},
+    api::{build_executor_router, AppState},
     app_server::{tests::RecordingAppServer, InboundMessage},
     config::Config,
     events::ingest_inbound,
@@ -34,7 +34,7 @@ fn goal(status: &str) -> Value {
 #[tokio::test]
 async fn native_goal_reads_and_clears_return_authoritative_results_without_activation() {
     let (state, native) = state().await;
-    let app = build_router(state);
+    let app = build_executor_router(state);
     for (request, method, result) in [
         (
             Request::get("/v1/threads/thread-1/goal"),
@@ -83,7 +83,7 @@ async fn native_goal_reads_and_clears_return_authoritative_results_without_activ
 #[tokio::test]
 async fn native_goal_set_preserves_sparse_and_explicit_null_updates() {
     let (state, native) = state().await;
-    let app = build_router(state.clone());
+    let app = build_executor_router(state.clone());
     for patch in [
         json!({"objective":"Finish the feature"}),
         json!({"status":"paused"}),
@@ -181,7 +181,7 @@ async fn native_goal_notifications_invalidate_model_and_client_changes_for_other
 #[tokio::test]
 async fn native_goal_set_rejects_unknown_status_before_native_write() {
     let (state, native) = state().await;
-    let response = build_router(state)
+    let response = build_executor_router(state)
         .oneshot(
             Request::patch("/v1/threads/thread-1/goal")
                 .header("content-type", "application/json")
@@ -197,7 +197,7 @@ async fn native_goal_set_rejects_unknown_status_before_native_write() {
 #[tokio::test]
 async fn native_goal_contract_is_typed_in_openapi_and_sparse_nullable_in_requests() {
     let (state, _) = state().await;
-    let response = build_router(state)
+    let response = build_executor_router(state)
         .oneshot(Request::get("/openapi.json").body(Body::empty()).unwrap())
         .await
         .unwrap();
@@ -253,7 +253,7 @@ async fn native_goal_contract_is_typed_in_openapi_and_sparse_nullable_in_request
 #[tokio::test]
 async fn native_goal_malformed_responses_surface_gateway_errors() {
     let (state, native) = state().await;
-    let app = build_router(state);
+    let app = build_executor_router(state);
     for request in [
         Request::get("/v1/threads/thread-1/goal"),
         Request::patch("/v1/threads/thread-1/goal"),

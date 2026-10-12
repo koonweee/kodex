@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use tower::ServiceExt;
 
 use crate::{
-    api::{build_router, AppState},
+    api::{build_executor_router, AppState},
     app_server::tests::RecordingAppServer,
     config::Config,
     store::Store,
@@ -43,7 +43,7 @@ fn active_header() -> Value {
 }
 
 async fn stop(state: AppState) -> (StatusCode, Value) {
-    let response = build_router(state)
+    let response = build_executor_router(state)
         .oneshot(
             Request::post("/v1/threads/thread-1/interrupt-current")
                 .body(Body::empty())

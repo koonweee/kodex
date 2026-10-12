@@ -1809,14 +1809,6 @@ export interface components {
             hasCredits: boolean;
             unlimited: boolean;
         };
-        CurrentPushSubscriptionQuery: {
-            endpoint: string;
-        };
-        CurrentPushSubscriptionResponse: {
-            configured: boolean;
-            subscribed: boolean;
-            subscription?: null | components["schemas"]["PushSubscriptionResponse"];
-        };
         DirectoryEntry: {
             name: string;
             path: string;
@@ -2156,11 +2148,6 @@ export interface components {
             threadId?: string | null;
             title: string;
         };
-        NotificationStatusResponse: {
-            configured: boolean;
-            subscriptionsEnabled: boolean;
-            vapidPublicKey?: string | null;
-        };
         PendingTimelineRequestSummary: {
             /** Format: date-time */
             createdAt: string;
@@ -2277,31 +2264,6 @@ export interface components {
             /** @enum {string} */
             status: "transfer";
             transfer: components["schemas"]["QueueTransfer"];
-        };
-        PushSubscriptionDeleteResponse: {
-            subscription?: null | components["schemas"]["PushSubscriptionResponse"];
-        };
-        PushSubscriptionKeysRequest: {
-            auth: string;
-            p256dh: string;
-        };
-        PushSubscriptionResponse: {
-            /** Format: date-time */
-            createdAt: string;
-            enabled: boolean;
-            endpoint: string;
-            id: string;
-            /** Format: date-time */
-            updatedAt: string;
-            userAgent?: string | null;
-        };
-        PushSubscriptionUpsertRequest: {
-            endpoint: string;
-            keys: components["schemas"]["PushSubscriptionKeysRequest"];
-            userAgent?: string | null;
-        };
-        PushSubscriptionUpsertResponse: {
-            subscription: components["schemas"]["PushSubscriptionResponse"];
         };
         /**
          * @description Recoverable input for one native-queue-to-steer transfer. Ordinary queued
@@ -2733,12 +2695,6 @@ export interface components {
         };
         /** @enum {string} */
         TerminalSessionStatus: "running" | "exited";
-        TestNotificationResponse: {
-            activeSubscriptionCount: number;
-            configured: boolean;
-            deliveryIds: string[];
-            enqueued: boolean;
-        };
         TextElement: {
             byteRange: components["schemas"]["ByteRange"];
             placeholder?: string | null;

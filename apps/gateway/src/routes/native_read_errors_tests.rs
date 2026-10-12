@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use tower::ServiceExt;
 
 use crate::{
-    api::{build_router, AppState},
+    api::{build_executor_router, AppState},
     app_server::tests::RecordingAppServer,
     config::Config,
     error::ApiError,
@@ -29,7 +29,7 @@ async fn native_history_failures_return_without_hidden_rollout_retries() {
             .lock()
             .unwrap()
             .push(ApiError::BadGateway(message.to_owned()));
-        let app = build_router(AppState::new(
+        let app = build_executor_router(AppState::new(
             Config::default(),
             Store::in_memory().await.unwrap(),
             native.clone(),

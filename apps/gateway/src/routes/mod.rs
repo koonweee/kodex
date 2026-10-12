@@ -21,7 +21,6 @@ pub(crate) mod file_content;
 pub mod file_preview;
 #[cfg(test)]
 mod file_preview_tests;
-pub mod frontend_updates;
 pub mod health;
 pub mod mcp;
 pub mod models;
@@ -75,24 +74,15 @@ pub mod turns;
 pub mod uploads;
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::HashMap,
-        sync::{
-            atomic::{AtomicUsize, Ordering},
-            Arc, Mutex as StdMutex,
-        },
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex as StdMutex,
     };
 
     use async_trait::async_trait;
     use axum::{
         body::{to_bytes, Body},
-        http::{
-            header::{
-                ACCEPT_ENCODING, CACHE_CONTROL, CONTENT_ENCODING, CONTENT_SECURITY_POLICY,
-                CONTENT_TYPE,
-            },
-            Request, StatusCode,
-        },
+        http::{header::CONTENT_SECURITY_POLICY, Request, StatusCode},
     };
     use chrono::TimeZone;
     use http_body_util::BodyExt;
@@ -103,20 +93,16 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::{
-        api::{build_control_router, build_executor_router, build_router, AppState},
+        api::{build_control_router, build_executor_router, AppState},
         app_server::{tests::RecordingAppServer, AppServer, InboundMessage},
         app_server_api::{ThreadLiveState, UserInput},
         automations,
         config::Config,
         error::{ApiError, ApiResult},
         events::ingest_inbound,
-        notifications::{
-            process_due_deliveries, NotificationKind, NotificationPayload, PushDeliveryOutcome,
-            PushSender,
-        },
+        notifications::NotificationKind,
         store::{
-            EventEnvelope, NewApproval, NewAutomation, NewEvent, NewNotificationDelivery,
-            NewPushSubscription, NotificationDeliveryStatus, PushSubscription, Store,
+            EventEnvelope, NewApproval, NewAutomation, NewEvent, NotificationDeliveryStatus, Store,
         },
         thread_view,
     };
@@ -134,7 +120,7 @@ mod tests {
     #[tokio::test]
     async fn health_and_openapi_routes_exist() {
         let (state, _) = test_state().await;
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let health = app
             .clone()
@@ -275,7 +261,7 @@ mod tests {
     #[tokio::test]
     async fn thread_view_presence_route_tracks_visible_and_hidden_clients() {
         let (state, _) = test_state().await;
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let visible = app
             .clone()
@@ -312,7 +298,7 @@ mod tests {
     #[tokio::test]
     async fn thread_view_presence_snapshot_route_replaces_visible_threads_for_client() {
         let (state, _) = test_state().await;
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let visible = app
             .clone()
@@ -357,7 +343,7 @@ mod tests {
     #[tokio::test]
     async fn default_routes_do_not_emit_wildcard_cors() {
         let (state, _) = test_state().await;
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let response = app
             .clone()
@@ -381,309 +367,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn notification_status_reports_vapid_configuration() {
-        let (mut state, _) = test_state().await;
-        Arc::make_mut(&mut state.config)
-            .notifications
-            .vapid_public_key = Some("public-key".to_string());
-        Arc::make_mut(&mut state.config)
-            .notifications
-            .vapid_private_key = Some("private-key".to_string());
-        Arc::make_mut(&mut state.config).notifications.vapid_subject =
-            Some("mailto:admin@example.test".to_string());
-        let app = build_router(state.clone());
-
-        let response = app
-            .oneshot(
-                Request::get("/v1/notifications/status")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["configured"], true);
-        assert_eq!(body["subscriptionsEnabled"], true);
-        assert_eq!(body["vapidPublicKey"], "public-key");
-    }
-
-    #[tokio::test]
-    async fn notification_subscription_routes_create_update_and_delete() {
-        let (state, _) = test_state().await;
-        let app = build_router(state);
-        let create_body = json!({
-            "endpoint": "https://push.example/sub-1",
-            "keys": {
-                "p256dh": "public-1",
-                "auth": "auth-1"
-            },
-            "userAgent": "browser one"
-        });
-
-        let response = app
-            .clone()
-            .oneshot(
-                Request::post("/v1/notifications/subscriptions")
-                    .header("content-type", "application/json")
-                    .body(Body::from(create_body.to_string()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::CREATED);
-        let body = response_json(response).await;
-        let subscription_id = body["subscription"]["id"].as_str().unwrap().to_string();
-        assert_eq!(
-            body["subscription"]["endpoint"],
-            "https://push.example/sub-1"
-        );
-
-        let update_body = json!({
-            "endpoint": "https://push.example/sub-1",
-            "keys": {
-                "p256dh": "public-2",
-                "auth": "auth-2"
-            },
-            "userAgent": "browser two"
-        });
-        let response = app
-            .clone()
-            .oneshot(
-                Request::post("/v1/notifications/subscriptions")
-                    .header("content-type", "application/json")
-                    .body(Body::from(update_body.to_string()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::CREATED);
-        let body = response_json(response).await;
-        assert_eq!(body["subscription"]["id"], subscription_id);
-        assert!(body["subscription"].get("p256dh").is_none());
-        assert!(body["subscription"].get("auth").is_none());
-        assert_eq!(body["subscription"]["enabled"], true);
-
-        let response = app
-            .oneshot(
-                Request::delete(format!("/v1/notifications/subscriptions/{subscription_id}"))
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["subscription"]["id"], subscription_id);
-        assert_eq!(body["subscription"]["enabled"], false);
-    }
-
-    #[tokio::test]
-    async fn current_notification_subscription_reports_endpoint_status_and_disables_by_endpoint() {
-        let (mut state, _) = test_state().await;
-        Arc::make_mut(&mut state.config)
-            .notifications
-            .vapid_public_key = Some("public-key".to_string());
-        Arc::make_mut(&mut state.config)
-            .notifications
-            .vapid_private_key = Some("private-key".to_string());
-        Arc::make_mut(&mut state.config).notifications.vapid_subject =
-            Some("mailto:admin@example.test".to_string());
-        state
-            .store
-            .upsert_push_subscription(NewPushSubscription {
-                endpoint: "https://push.example/current".to_string(),
-                p256dh: "public".to_string(),
-                auth: "auth".to_string(),
-                user_agent: Some("browser".to_string()),
-            })
-            .await
-            .unwrap();
-        let app = build_router(state);
-
-        let missing = app
-            .clone()
-            .oneshot(
-                Request::get(
-                    "/v1/notifications/subscription/current?endpoint=https%3A%2F%2Fpush.example%2Fmissing",
-                )
-                .body(Body::empty())
-                .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(missing.status(), StatusCode::OK);
-        let body = response_json(missing).await;
-        assert_eq!(body["configured"], true);
-        assert_eq!(body["subscribed"], false);
-        assert!(body["subscription"].is_null());
-
-        let enabled = app
-            .clone()
-            .oneshot(
-                Request::get(
-                    "/v1/notifications/subscription/current?endpoint=https%3A%2F%2Fpush.example%2Fcurrent",
-                )
-                .body(Body::empty())
-                .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(enabled.status(), StatusCode::OK);
-        let body = response_json(enabled).await;
-        assert_eq!(body["configured"], true);
-        assert_eq!(body["subscribed"], true);
-        assert_eq!(
-            body["subscription"]["endpoint"],
-            "https://push.example/current"
-        );
-
-        let disabled = app
-            .clone()
-            .oneshot(
-                Request::delete(
-                    "/v1/notifications/subscription/current?endpoint=https%3A%2F%2Fpush.example%2Fcurrent",
-                )
-                .body(Body::empty())
-                .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(disabled.status(), StatusCode::OK);
-        let body = response_json(disabled).await;
-        assert_eq!(body["subscribed"], false);
-        assert_eq!(body["subscription"]["enabled"], false);
-
-        let disabled_status = app
-            .oneshot(
-                Request::get(
-                    "/v1/notifications/subscription/current?endpoint=https%3A%2F%2Fpush.example%2Fcurrent",
-                )
-                .body(Body::empty())
-                .unwrap(),
-            )
-            .await
-            .unwrap();
-        let body = response_json(disabled_status).await;
-        assert_eq!(body["subscribed"], false);
-        assert_eq!(body["subscription"]["enabled"], false);
-    }
-
-    #[tokio::test]
-    async fn current_notification_subscription_reports_unconfigured_state() {
-        let (state, _) = test_state().await;
-        let app = build_router(state);
-
-        let response = app
-            .oneshot(
-                Request::get(
-                    "/v1/notifications/subscription/current?endpoint=https%3A%2F%2Fpush.example%2Fcurrent",
-                )
-                .body(Body::empty())
-                .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["configured"], false);
-        assert_eq!(body["subscribed"], false);
-    }
-
-    #[tokio::test]
-    async fn test_notification_route_reports_configuration_and_enqueues_for_active_subscriptions() {
-        let (state, _) = test_state().await;
-        let app = build_router(state);
-        let unconfigured = app
-            .oneshot(
-                Request::post("/v1/notifications/test")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(unconfigured.status(), StatusCode::OK);
-        let body = response_json(unconfigured).await;
-        assert_eq!(body["configured"], false);
-        assert_eq!(body["enqueued"], false);
-
-        let (mut state, _) = test_state().await;
-        Arc::make_mut(&mut state.config)
-            .notifications
-            .vapid_public_key = Some("public-key".to_string());
-        Arc::make_mut(&mut state.config)
-            .notifications
-            .vapid_private_key = Some("private-key".to_string());
-        Arc::make_mut(&mut state.config).notifications.vapid_subject =
-            Some("mailto:admin@example.test".to_string());
-        let app = build_router(state.clone());
-        let no_active = app
-            .oneshot(
-                Request::post("/v1/notifications/test")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let body = response_json(no_active).await;
-        assert_eq!(body["configured"], true);
-        assert_eq!(body["activeSubscriptionCount"], 0);
-        assert_eq!(body["enqueued"], false);
-
-        state
-            .store
-            .upsert_push_subscription(NewPushSubscription {
-                endpoint: "https://push.example/active".to_string(),
-                p256dh: "public".to_string(),
-                auth: "auth".to_string(),
-                user_agent: None,
-            })
-            .await
-            .unwrap();
-        let sender = Arc::new(RecordingPushSender::new(PushDeliveryOutcome::Sent));
-        state = state.with_notification_sender(sender);
-        let app = build_router(state.clone());
-        let active = app
-            .oneshot(
-                Request::post("/v1/notifications/test")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let body = response_json(active).await;
-        assert_eq!(body["configured"], true);
-        assert_eq!(body["activeSubscriptionCount"], 1);
-        assert_eq!(body["enqueued"], true);
-        let delivery_id = body["deliveryIds"][0].as_str().unwrap();
-        let delivery = state
-            .store
-            .get_notification_delivery(delivery_id)
-            .await
-            .unwrap();
-        assert_eq!(delivery.kind, "test");
-    }
-
-    #[tokio::test]
     async fn terminal_turn_upsert_schedules_unread_agent_message_delivery() {
         let (mut state, app_server) = test_state().await;
         Arc::make_mut(&mut state.config)
             .notifications
             .recheck_delay_ms = 0;
-        let sender = Arc::new(RecordingPushSender::new(PushDeliveryOutcome::Sent));
-        state = state.with_notification_sender(sender.clone());
-        state
-            .store
-            .upsert_push_subscription(NewPushSubscription {
-                endpoint: "https://push.example/sub-1".to_string(),
-                p256dh: "public".to_string(),
-                auth: "auth".to_string(),
-                user_agent: None,
-            })
-            .await
-            .unwrap();
         app_server.queued_responses.lock().unwrap().extend([
             notification_thread_summary_response(
                 "thread-1",
@@ -715,24 +403,24 @@ mod tests {
         .await
         .unwrap();
 
-        process_due_deliveries(state.clone()).await.unwrap();
-        let payloads = sender.payloads.lock().unwrap();
-        assert_eq!(payloads.len(), 1);
-        assert_eq!(payloads[0].kind, NotificationKind::UnreadAgentMessage);
-        assert_eq!(payloads[0].thread_id.as_deref(), Some("thread-1"));
+        let claims = crate::notifications::claim_federated_deliveries(&state, 10)
+            .await
+            .unwrap();
+        assert_eq!(claims.len(), 1);
+        let payload = &claims[0].payload;
+        assert_eq!(payload.kind, NotificationKind::UnreadAgentMessage);
+        assert_eq!(payload.thread_id.as_deref(), Some("thread-1"));
         assert_eq!(
-            payloads[0].title,
+            payload.title,
             "Octopus Heart Facts With An Overly Long Thread T..."
         );
         assert_eq!(
-            payloads[0].body.as_deref(),
+            payload.body.as_deref(),
             Some("Yes, octopuses actually have three hearts. They use two for their gills.")
         );
-        assert_eq!(payloads[0].route, "/threads/thread-1");
-        assert_eq!(payloads[0].badge_count, Some(0));
-        assert!(payloads[0]
-            .read_revision
-            .is_some_and(|revision| revision > 0));
+        assert_eq!(payload.route, "/threads/thread-1");
+        assert_eq!(payload.badge_count, Some(0));
+        assert!(payload.read_revision.is_some_and(|revision| revision > 0));
         assert_eq!(
             app_server
                 .requests
@@ -827,18 +515,6 @@ mod tests {
         Arc::make_mut(&mut state.config)
             .notifications
             .recheck_delay_ms = 0;
-        let sender = Arc::new(RecordingPushSender::new(PushDeliveryOutcome::Sent));
-        state = state.with_notification_sender(sender.clone());
-        state
-            .store
-            .upsert_push_subscription(NewPushSubscription {
-                endpoint: "https://push.example/sub-1".to_string(),
-                p256dh: "public".to_string(),
-                auth: "auth".to_string(),
-                user_agent: None,
-            })
-            .await
-            .unwrap();
         let completed = state
             .store
             .record_thread_completion("thread-1", "turn-1")
@@ -872,8 +548,13 @@ mod tests {
         .await
         .unwrap();
 
-        process_due_deliveries(state.clone()).await.unwrap();
-        assert_eq!(sender.payloads.lock().unwrap().len(), 1);
+        assert_eq!(
+            crate::notifications::claim_federated_deliveries(&state, 10)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[tokio::test]
@@ -882,18 +563,6 @@ mod tests {
         Arc::make_mut(&mut state.config)
             .notifications
             .recheck_delay_ms = 0;
-        let sender = Arc::new(RecordingPushSender::new(PushDeliveryOutcome::Sent));
-        state = state.with_notification_sender(sender.clone());
-        state
-            .store
-            .upsert_push_subscription(NewPushSubscription {
-                endpoint: "https://push.example/sub-1".to_string(),
-                p256dh: "public".to_string(),
-                auth: "auth".to_string(),
-                user_agent: None,
-            })
-            .await
-            .unwrap();
         state
             .store
             .set_thread_notifications_enabled("thread-1", false)
@@ -916,8 +585,10 @@ mod tests {
         .await
         .unwrap();
 
-        process_due_deliveries(state.clone()).await.unwrap();
-        assert!(sender.payloads.lock().unwrap().is_empty());
+        assert!(crate::notifications::claim_federated_deliveries(&state, 10)
+            .await
+            .unwrap()
+            .is_empty());
         assert!(app_server.requests.lock().unwrap().is_empty());
     }
 
@@ -927,18 +598,6 @@ mod tests {
         Arc::make_mut(&mut state.config)
             .notifications
             .recheck_delay_ms = 0;
-        let sender = Arc::new(RecordingPushSender::new(PushDeliveryOutcome::Sent));
-        state = state.with_notification_sender(sender.clone());
-        state
-            .store
-            .upsert_push_subscription(NewPushSubscription {
-                endpoint: "https://push.example/sub-1".to_string(),
-                p256dh: "public".to_string(),
-                auth: "auth".to_string(),
-                user_agent: None,
-            })
-            .await
-            .unwrap();
         state
             .thread_presence
             .record_view("client-1", "thread-1", true);
@@ -965,8 +624,10 @@ mod tests {
         .await
         .unwrap();
 
-        process_due_deliveries(state.clone()).await.unwrap();
-        assert!(sender.payloads.lock().unwrap().is_empty());
+        assert!(crate::notifications::claim_federated_deliveries(&state, 10)
+            .await
+            .unwrap()
+            .is_empty());
         assert_eq!(
             app_server.requests.lock().unwrap().as_slice(),
             &[(
@@ -982,18 +643,6 @@ mod tests {
         Arc::make_mut(&mut state.config)
             .notifications
             .recheck_delay_ms = 0;
-        let sender = Arc::new(RecordingPushSender::new(PushDeliveryOutcome::Sent));
-        state = state.with_notification_sender(sender.clone());
-        state
-            .store
-            .upsert_push_subscription(NewPushSubscription {
-                endpoint: "https://push.example/sub-1".to_string(),
-                p256dh: "public".to_string(),
-                auth: "auth".to_string(),
-                user_agent: None,
-            })
-            .await
-            .unwrap();
         state.thread_presence.record_view_at(
             "client-1",
             "thread-1",
@@ -1025,8 +674,13 @@ mod tests {
         .await
         .unwrap();
 
-        process_due_deliveries(state.clone()).await.unwrap();
-        assert_eq!(sender.payloads.lock().unwrap().len(), 1);
+        assert_eq!(
+            crate::notifications::claim_federated_deliveries(&state, 10)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[tokio::test]
@@ -1050,18 +704,6 @@ mod tests {
             Arc::make_mut(&mut state.config)
                 .notifications
                 .recheck_delay_ms = 0;
-            let sender = Arc::new(RecordingPushSender::new(PushDeliveryOutcome::Sent));
-            state = state.with_notification_sender(sender.clone());
-            state
-                .store
-                .upsert_push_subscription(NewPushSubscription {
-                    endpoint: "https://push.example/sub-1".to_string(),
-                    p256dh: "public".to_string(),
-                    auth: "auth".to_string(),
-                    user_agent: None,
-                })
-                .await
-                .unwrap();
             *app_server.next_response.lock().unwrap() = Some(notification_thread_summary_response(
                 "thread-subagent",
                 "Subagent",
@@ -1086,8 +728,10 @@ mod tests {
             .await
             .unwrap();
 
-            process_due_deliveries(state.clone()).await.unwrap();
-            assert!(sender.payloads.lock().unwrap().is_empty());
+            assert!(crate::notifications::claim_federated_deliveries(&state, 10)
+                .await
+                .unwrap()
+                .is_empty());
             let deliveries = state.store.list_notification_deliveries().await.unwrap();
             assert_eq!(deliveries.len(), 1);
             assert_eq!(deliveries[0].status, NotificationDeliveryStatus::Sent);
@@ -1104,287 +748,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn permanent_push_failure_disables_stale_subscription() {
-        let (state, _) = test_state().await;
-        let sender = Arc::new(RecordingPushSender::new(PushDeliveryOutcome::StaleEndpoint));
-        let state = state.with_notification_sender(sender);
-        state
-            .store
-            .upsert_push_subscription(NewPushSubscription {
-                endpoint: "https://push.example/stale".to_string(),
-                p256dh: "public".to_string(),
-                auth: "auth".to_string(),
-                user_agent: None,
-            })
-            .await
-            .unwrap();
-
-        state
-            .notifications
-            .deliver_payload(
-                &state,
-                NotificationPayload {
-                    kind: NotificationKind::UnreadAgentMessage,
-                    thread_id: Some("thread-1".to_string()),
-                    title: "Thread".to_string(),
-                    body: Some("Thread\nAgent has a new message.".to_string()),
-                    route: "/threads/thread-1".to_string(),
-                    badge_count: Some(1),
-                    read_revision: Some(1),
-                },
-            )
-            .await
-            .unwrap();
-        assert!(state
-            .store
-            .list_enabled_push_subscriptions()
-            .await
-            .unwrap()
-            .is_empty());
-    }
-
-    #[tokio::test]
-    async fn temporary_push_failure_keeps_subscription_enabled() {
-        let (state, _) = test_state().await;
-        let sender = Arc::new(RecordingPushSender::new(
-            PushDeliveryOutcome::TemporaryFailure,
-        ));
-        let state = state.with_notification_sender(sender);
-        state
-            .store
-            .upsert_push_subscription(NewPushSubscription {
-                endpoint: "https://push.example/temporary".to_string(),
-                p256dh: "public".to_string(),
-                auth: "auth".to_string(),
-                user_agent: None,
-            })
-            .await
-            .unwrap();
-
-        state
-            .notifications
-            .deliver_payload(
-                &state,
-                NotificationPayload {
-                    kind: NotificationKind::UnreadAgentMessage,
-                    thread_id: Some("thread-1".to_string()),
-                    title: "Thread".to_string(),
-                    body: Some("Thread\nAgent has a new message.".to_string()),
-                    route: "/threads/thread-1".to_string(),
-                    badge_count: Some(1),
-                    read_revision: Some(1),
-                },
-            )
-            .await
-            .unwrap();
-
-        let subscriptions = state.store.list_enabled_push_subscriptions().await.unwrap();
-        assert_eq!(subscriptions.len(), 1);
-        assert_eq!(subscriptions[0].endpoint, "https://push.example/temporary");
-    }
-
-    #[tokio::test]
-    async fn durable_notification_delivery_retries_temporary_failure_without_disabling_subscription(
-    ) {
-        let (state, _) = test_state().await;
-        let sender = Arc::new(RecordingPushSender::new(
-            PushDeliveryOutcome::TemporaryFailure,
-        ));
-        let state = state.with_notification_sender(sender);
-        state
-            .store
-            .upsert_push_subscription(NewPushSubscription {
-                endpoint: "https://push.example/temporary".to_string(),
-                p256dh: "public".to_string(),
-                auth: "auth".to_string(),
-                user_agent: None,
-            })
-            .await
-            .unwrap();
-        let delivery = state
-            .store
-            .create_notification_delivery(NewNotificationDelivery {
-                kind: "test".to_string(),
-                thread_id: None,
-                turn_id: None,
-                payload: Some(json!({
-                    "kind": "test",
-                    "title": "Kodex test notification",
-                    "body": "Push notifications are working.",
-                    "route": "/",
-                    "badgeCount": 0
-                })),
-                available_at: chrono::Utc::now(),
-            })
-            .await
-            .unwrap();
-
-        process_due_deliveries(state.clone()).await.unwrap();
-
-        let delivery = state
-            .store
-            .get_notification_delivery(&delivery.id)
-            .await
-            .unwrap();
-        assert_eq!(delivery.status, NotificationDeliveryStatus::Pending);
-        assert_eq!(delivery.attempt_count, 1);
-        assert!(delivery
-            .last_error
-            .as_deref()
-            .unwrap()
-            .contains("temporary"));
-        let subscriptions = state.store.list_enabled_push_subscriptions().await.unwrap();
-        assert_eq!(subscriptions.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn durable_notification_delivery_disables_only_stale_endpoint() {
-        let (state, _) = test_state().await;
-        state
-            .store
-            .upsert_push_subscription(NewPushSubscription {
-                endpoint: "https://push.example/stale".to_string(),
-                p256dh: "public".to_string(),
-                auth: "auth".to_string(),
-                user_agent: None,
-            })
-            .await
-            .unwrap();
-        state
-            .store
-            .upsert_push_subscription(NewPushSubscription {
-                endpoint: "https://push.example/active".to_string(),
-                p256dh: "public".to_string(),
-                auth: "auth".to_string(),
-                user_agent: None,
-            })
-            .await
-            .unwrap();
-        let sender = Arc::new(SelectivePushSender {
-            stale_endpoint: "https://push.example/stale".to_string(),
-            payloads: StdMutex::new(Vec::new()),
-        });
-        let state = state.with_notification_sender(sender);
-        let delivery = state
-            .store
-            .create_notification_delivery(NewNotificationDelivery {
-                kind: "test".to_string(),
-                thread_id: None,
-                turn_id: None,
-                payload: Some(json!({
-                    "kind": "test",
-                    "title": "Kodex test notification",
-                    "body": "Push notifications are working.",
-                    "route": "/",
-                    "badgeCount": 0
-                })),
-                available_at: chrono::Utc::now(),
-            })
-            .await
-            .unwrap();
-
-        process_due_deliveries(state.clone()).await.unwrap();
-
-        let delivery = state
-            .store
-            .get_notification_delivery(&delivery.id)
-            .await
-            .unwrap();
-        assert_eq!(delivery.status, NotificationDeliveryStatus::Sent);
-        let subscriptions = state.store.list_enabled_push_subscriptions().await.unwrap();
-        assert_eq!(subscriptions.len(), 1);
-        assert_eq!(subscriptions[0].endpoint, "https://push.example/active");
-    }
-
-    #[tokio::test]
-    async fn durable_notification_delivery_retry_skips_already_sent_subscription() {
-        let (state, _) = test_state().await;
-        state
-            .store
-            .upsert_push_subscription(NewPushSubscription {
-                endpoint: "https://push.example/active".to_string(),
-                p256dh: "public".to_string(),
-                auth: "auth".to_string(),
-                user_agent: None,
-            })
-            .await
-            .unwrap();
-        state
-            .store
-            .upsert_push_subscription(NewPushSubscription {
-                endpoint: "https://push.example/flaky".to_string(),
-                p256dh: "public".to_string(),
-                auth: "auth".to_string(),
-                user_agent: None,
-            })
-            .await
-            .unwrap();
-        let sender = Arc::new(FlakyEndpointPushSender {
-            flaky_endpoint: "https://push.example/flaky".to_string(),
-            attempts_by_endpoint: StdMutex::new(HashMap::new()),
-        });
-        let state = state.with_notification_sender(sender.clone());
-        let delivery = state
-            .store
-            .create_notification_delivery(NewNotificationDelivery {
-                kind: "test".to_string(),
-                thread_id: None,
-                turn_id: None,
-                payload: Some(json!({
-                    "kind": "test",
-                    "title": "Kodex test notification",
-                    "body": "Push notifications are working.",
-                    "route": "/",
-                    "badgeCount": 0
-                })),
-                available_at: chrono::Utc::now(),
-            })
-            .await
-            .unwrap();
-
-        process_due_deliveries(state.clone()).await.unwrap();
-        let retry = state
-            .store
-            .get_notification_delivery(&delivery.id)
-            .await
-            .unwrap();
-        assert_eq!(retry.status, NotificationDeliveryStatus::Pending);
-        assert_eq!(retry.delivered_subscription_ids.len(), 1);
-
-        state
-            .store
-            .mark_notification_delivery_retry(
-                &delivery.id,
-                chrono::Utc::now(),
-                "retry now".to_string(),
-                &retry.delivered_subscription_ids,
-            )
-            .await
-            .unwrap();
-        process_due_deliveries(state.clone()).await.unwrap();
-
-        let delivery = state
-            .store
-            .get_notification_delivery(&delivery.id)
-            .await
-            .unwrap();
-        assert_eq!(delivery.status, NotificationDeliveryStatus::Sent);
-        let attempts_by_endpoint = sender.attempts_by_endpoint.lock().unwrap();
-        assert_eq!(
-            attempts_by_endpoint.get("https://push.example/active"),
-            Some(&1)
-        );
-        assert_eq!(
-            attempts_by_endpoint.get("https://push.example/flaky"),
-            Some(&2)
-        );
-    }
-
-    #[tokio::test]
     async fn self_control_status_reports_gateway_and_app_server_readiness() {
         let (state, app_server) = test_state().await;
         app_server.ready.store(false, Ordering::SeqCst);
-        let app = build_router(state);
+        let app = build_control_router(state);
 
         let response = app
             .oneshot(
@@ -1406,7 +773,7 @@ mod tests {
     async fn shell_routes_report_readiness_capabilities_docs_and_openapi_paths() {
         let (state, app_server) = test_state().await;
         app_server.ready.store(false, Ordering::SeqCst);
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let ready = app
             .clone()
@@ -1501,11 +868,8 @@ mod tests {
             "/v1/account/rate-limits",
             "/v1/models",
             "/v1/permission-profiles",
-            "/v1/notifications/status",
-            "/v1/notifications/subscription/current",
-            "/v1/notifications/subscriptions",
-            "/v1/notifications/subscriptions/{subscriptionId}",
-            "/v1/notifications/test",
+            "/v1/notifications/deliveries/claim",
+            "/v1/notifications/deliveries/{deliveryId}/outcome",
             "/v1/skills",
             "/v1/mcp/configured-servers",
             "/v1/mcp/servers",
@@ -1514,37 +878,6 @@ mod tests {
             "/v1/mcp/servers/{server}/resources/read",
             "/v1/mcp/servers/{server}/oauth-login",
             "/v1/mcp/reload",
-            "/v1/self-control/status",
-            "/v1/self-control/projects",
-            "/v1/self-control/projects/{projectId}",
-            "/v1/self-control/threads",
-            "/v1/self-control/sidebar/threads",
-            "/v1/self-control/threads/{threadId}",
-            "/v1/self-control/threads/{threadId}/timeline/pages",
-            "/v1/self-control/threads/{threadId}/subagents",
-            "/v1/self-control/threads/{threadId}/queued-inputs",
-            "/v1/self-control/threads/{threadId}/attach",
-            "/v1/self-control/threads/{threadId}/resume",
-            "/v1/self-control/threads/{threadId}/fork",
-            "/v1/self-control/threads/{threadId}/name",
-            "/v1/self-control/threads/{threadId}/settings",
-            "/v1/self-control/threads/{threadId}/archive",
-            "/v1/self-control/threads/{threadId}/pin",
-            "/v1/self-control/threads/{threadId}/seen",
-            "/v1/self-control/threads/{threadId}/compact",
-            "/v1/self-control/threads/{threadId}/interrupt-current",
-            "/v1/self-control/threads/{threadId}/input",
-            "/v1/self-control/thread-spawns",
-            "/v1/self-control/automations",
-            "/v1/self-control/automations/{automationId}",
-            "/v1/self-control/automations/{automationId}/pause",
-            "/v1/self-control/automations/{automationId}/resume",
-            "/v1/self-control/automations/{automationId}/run-now",
-            "/v1/self-control/automations/validate",
-            "/v1/self-control/approvals",
-            "/v1/self-control/approvals/{approvalId}",
-            "/v1/self-control/approvals/{approvalId}/decision",
-            "/v1/self-control/events",
         ] {
             assert!(openapi["paths"].get(path).is_some(), "missing {path}");
         }
@@ -1644,7 +977,7 @@ mod tests {
         *app_server.readiness_error.lock().unwrap() = Some(
             "configured Codex executable reports 0.159.0; required version is 0.160.0".to_string(),
         );
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let ready = app
             .oneshot(Request::get("/readyz").body(Body::empty()).unwrap())
@@ -1664,7 +997,7 @@ mod tests {
     async fn project_routes_create_list_get_and_require_native_create_fields() {
         let (state, _) = test_state().await;
         let cwd = std::env::current_dir().unwrap().display().to_string();
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let missing = app
             .clone()
@@ -1719,7 +1052,7 @@ mod tests {
             "Kodex".to_string(),
             std::env::current_dir().unwrap().display().to_string(),
         );
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let body = json!({"projectId": project.id, "payload": {"prompt": "hi"}}).to_string();
         let response = app
@@ -1747,7 +1080,7 @@ mod tests {
     #[tokio::test]
     async fn rename_thread_rejects_blank_name_before_app_server_call() {
         let (state, app_server) = test_state().await;
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -1775,7 +1108,7 @@ mod tests {
             .lock()
             .unwrap()
             .extend([json!({}), json!({ "thread": renamed_thread })]);
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -1817,7 +1150,7 @@ mod tests {
             "cwd": "/workspace"
         }));
         let mut receiver = state.events.subscribe();
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let body = json!({"projectId": project.id, "payload": {"prompt": "hi"}}).to_string();
         let response = app
@@ -1865,7 +1198,7 @@ mod tests {
     async fn self_control_thread_create_and_input_preserve_native_queue_and_source_audit() {
         let (state, app_server) = test_state().await;
         let project = app_server.seed_project("Kodex".to_string(), "/workspace/kodex".to_string());
-        let app = build_router(state.clone());
+        let app = build_control_router(state.clone());
         let created = app
             .clone()
             .oneshot(
@@ -1968,7 +1301,7 @@ mod tests {
             .lock()
             .unwrap()
             .push(ApiError::NotFound("thread stale-thread".to_string()));
-        let app = build_router(state);
+        let app = build_control_router(state);
 
         let response = app
             .oneshot(
@@ -1987,7 +1320,7 @@ mod tests {
     #[tokio::test]
     async fn self_control_thread_input_queues_loaded_fresh_shell_without_resume() {
         let (state, app_server) = test_state().await;
-        let response = build_router(state)
+        let response = build_control_router(state)
             .oneshot(
                 Request::post("/v1/self-control/threads/thread-1/input")
                     .header("content-type", "application/json")
@@ -2039,7 +1372,7 @@ mod tests {
             json!({"thread":cold}),
             json!({"thread":thread_summary("thread-1"),"cwd":"/workspace"}),
         ]);
-        let response = build_router(state)
+        let response = build_control_router(state)
             .oneshot(
                 Request::post("/v1/self-control/threads/thread-1/input")
                     .header("content-type", "application/json")
@@ -2082,7 +1415,7 @@ mod tests {
         ] {
             let mut body = extra;
             body["input"] = json!([{"type":"text","text":"invalid"}]);
-            let response = build_router(state.clone())
+            let response = build_control_router(state.clone())
                 .oneshot(
                     Request::post("/v1/self-control/threads/thread-1/input")
                         .header("content-type", "application/json")
@@ -2103,7 +1436,7 @@ mod tests {
     async fn self_control_source_type_must_be_kodex_control() {
         let (state, app_server) = test_state().await;
         let project = app_server.seed_project("Kodex".to_string(), "/workspace/kodex".to_string());
-        let app = build_router(state);
+        let app = build_control_router(state);
 
         let response = app
             .oneshot(
@@ -2140,7 +1473,7 @@ mod tests {
                     "backwardsCursor": null
                 }),
             );
-        let app = build_router(state);
+        let app = build_control_router(state);
 
         let projects = app
             .clone()
@@ -2210,7 +1543,7 @@ mod tests {
     #[tokio::test]
     async fn self_control_thread_lifecycle_routes_append_audit_events() {
         let (state, app_server) = test_state().await;
-        let app = build_router(state.clone());
+        let app = build_control_router(state.clone());
         let thread_id = "thread-1";
         let source_value = json!({
             "sourceThreadId": "source-thread",
@@ -2350,7 +1683,7 @@ mod tests {
     async fn self_control_spawn_is_idempotent_and_enforces_depth() {
         let (state, app_server) = test_state().await;
         let project = app_server.seed_project("Kodex".to_string(), "/workspace/kodex".to_string());
-        let app = build_router(state);
+        let app = build_control_router(state);
         let request = json!({
             "projectId": project.id,
             "input": [{"type": "text", "text": "start spawned thread"}],
@@ -2458,7 +1791,7 @@ mod tests {
             })
             .await
             .unwrap();
-        let app = build_router(state.clone());
+        let app = build_control_router(state.clone());
 
         let response = app
             .oneshot(
@@ -2539,7 +1872,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let app = build_router(state);
+        let app = build_control_router(state);
 
         let denied = app
             .clone()
@@ -2614,7 +1947,7 @@ mod tests {
             })
             .await
             .unwrap();
-        let app = build_router(state);
+        let app = build_control_router(state);
 
         let replay = app
             .clone()
@@ -2661,7 +1994,7 @@ mod tests {
             "model":"native-effective-model", "reasoningEffort":"medium", "serviceTier":null,
             "approvalPolicy":"never", "approvalsReviewer":"user", "sandbox":{"type":"readOnly"}
         }));
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let body = json!({
             "projectId": project.id,
@@ -2767,7 +2100,7 @@ mod tests {
                 }
             }),
         ]);
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -2807,7 +2140,7 @@ mod tests {
     #[tokio::test]
     async fn thread_settings_update_rejects_permissions_and_sandbox_conflict() {
         let (state, app_server) = test_state().await;
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -2848,7 +2181,7 @@ mod tests {
                 "nextCursor": null
             }),
         ]);
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -2904,7 +2237,7 @@ mod tests {
             json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
             json!({"turn": {"id": "turn-1", "status": "inProgress"}}),
         ]);
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let create = app
             .clone()
@@ -2984,7 +2317,7 @@ mod tests {
             "nextCursor": null,
             "backwardsCursor": null
         }));
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(Request::get("/v1/threads").body(Body::empty()).unwrap())
@@ -3022,7 +2355,7 @@ mod tests {
             "model":"gpt-5.4", "reasoningEffort":"high", "serviceTier":"fast",
             "approvalPolicy":"on-request", "approvalsReviewer":"auto_review", "sandbox":{"type":"workspaceWrite"}
         }));
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let body = json!({
             "firstMessageText": "Build the Chat Sidebar!",
@@ -3089,7 +2422,7 @@ mod tests {
             "cwd": "/workspace/chat"
         }));
         let mut receiver = state.events.subscribe();
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let body = json!({"firstMessageText": "Build the Chat Sidebar!"}).to_string();
         let response = app
@@ -3141,7 +2474,7 @@ mod tests {
         *app_server.next_response.lock().unwrap() = Some(json!({
             "data": [thread], "nextCursor": null, "backwardsCursor": null
         }));
-        let response = build_router(state)
+        let response = build_executor_router(state)
             .oneshot(
                 Request::get("/v1/chats/threads")
                     .body(Body::empty())
@@ -3186,7 +2519,7 @@ mod tests {
             "nextCursor": "next-page",
             "backwardsCursor": null
         }));
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -3234,7 +2567,7 @@ mod tests {
             "nextCursor": null,
             "backwardsCursor": null
         }));
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -3256,7 +2589,7 @@ mod tests {
         let (state, app_server) = test_state().await;
         let cwd = std::env::current_dir().unwrap().display().to_string();
         let project = app_server.seed_project("Kodex".to_string(), cwd.clone());
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -3379,7 +2712,7 @@ mod tests {
                 json!({"data":[section_thread],"nextCursor":"section-next","backwardsCursor":null}),
             );
         app_server.queued_responses.lock().unwrap().extend(queued);
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .clone()
@@ -3564,7 +2897,7 @@ mod tests {
         app_server
             .projects
             .seed_project("Two".to_string(), "/workspace/two".to_string());
-        let app = build_router(state);
+        let app = build_executor_router(state);
         let release = app_server.release.clone();
 
         let request = tokio::spawn(async move {
@@ -3608,7 +2941,7 @@ mod tests {
             "nextCursor": null,
             "backwardsCursor": null
         }));
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -3638,7 +2971,7 @@ mod tests {
                 "nextCursor": null
             }),
         ]);
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -3686,7 +3019,7 @@ mod tests {
             json!({"authorizationUrl": "https://auth.example.test/login"}),
             json!({}),
         ]);
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let resource = app
             .clone()
@@ -3764,7 +3097,7 @@ mod tests {
             .lock()
             .unwrap()
             .push(ApiError::BadGateway("app-server offline".to_string()));
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(Request::get("/v1/mcp/servers").body(Body::empty()).unwrap())
@@ -3803,7 +3136,7 @@ mod tests {
             },
             "origins": {}
         }));
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -3844,7 +3177,7 @@ mod tests {
     #[tokio::test]
     async fn thread_routes_map_read_resume_fork_and_archive() {
         let (state, app_server) = test_state().await;
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         assert_ok(
             app.clone()
@@ -3944,7 +3277,7 @@ mod tests {
                 "thread": thread_summary("thread-1"),
                 "initialTurnsPage": {"data": [], "nextCursor": null, "backwardsCursor": null}
             }));
-            let response = build_router(state)
+            let response = build_executor_router(state)
                 .oneshot(
                     Request::post("/v1/threads/thread-1/attach")
                         .body(Body::empty())
@@ -3998,7 +3331,7 @@ mod tests {
             })
             .await
             .unwrap();
-        let app = build_router(state);
+        let app = build_executor_router(state);
         app_server.queued_responses.lock().unwrap().extend([
             json!({
                 "thread": {
@@ -4098,7 +3431,7 @@ mod tests {
     #[tokio::test]
     async fn thread_detail_returns_recent_history_window_without_draining_full_pages() {
         let (state, app_server) = test_state().await;
-        let app = build_router(state);
+        let app = build_executor_router(state);
         app_server.queued_responses.lock().unwrap().extend([
             json!({
                 "thread": {
@@ -4168,7 +3501,7 @@ mod tests {
     #[tokio::test]
     async fn thread_timeline_page_prepends_older_history_to_loaded_window() {
         let (state, app_server) = test_state().await;
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
         app_server.queued_responses.lock().unwrap().extend([
             json!({
                 "thread": {
@@ -4297,7 +3630,7 @@ mod tests {
     #[tokio::test]
     async fn thread_timeline_page_stale_cursor_resets_to_recent_window() {
         let (state, app_server) = test_state().await;
-        let app = build_router(state);
+        let app = build_executor_router(state);
         app_server.queued_responses.lock().unwrap().extend([
             thread_shell_response("thread-1"),
             json!({
@@ -4398,7 +3731,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -4442,7 +3775,7 @@ mod tests {
             .unwrap();
         let app_server = Arc::new(BlockingThreadReadAppServer::default());
         let state = AppState::new(Config::default(), store, app_server.clone());
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let response = tokio::spawn(async move {
             app.oneshot(
@@ -4490,7 +3823,7 @@ mod tests {
             .await
             .unwrap();
         let mut receiver = state.events.subscribe();
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         app_server.queued_responses.lock().unwrap().push(json!({
             "data": [
@@ -4551,7 +3884,7 @@ mod tests {
         let mut section_thread = thread_summary("thread-1");
         section_thread["section"] = section.clone();
         section_thread["sectionEnteredAt"] = json!(99);
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         *app_server.next_response.lock().unwrap() = Some(json!({
             "data": [section_thread.clone(), thread_summary("thread-2")],
@@ -4598,7 +3931,7 @@ mod tests {
     async fn thread_notification_settings_route_persists_and_broadcasts() {
         let (state, _) = test_state().await;
         let mut receiver = state.events.subscribe();
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let response = app
             .clone()
@@ -4656,7 +3989,7 @@ mod tests {
             .push(ApiError::BadGateway(
                 "app-server error -32602: project not found: missing".to_string(),
             ));
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -4719,7 +4052,7 @@ mod tests {
         std::fs::write(&pdf, b"%PDF-1.7\npreview pdf").unwrap();
         let download = dir.path().join("data.csv");
         std::fs::write(&download, b"alpha,beta\n1,2\n").unwrap();
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         for (path, bytes, content_type) in &images {
             let response = app
@@ -4842,7 +4175,7 @@ mod tests {
         let mut thread = thread_read_response("thread-1", 0);
         thread["thread"]["cwd"] = json!(dir.path().display().to_string());
         app_server.queued_responses.lock().unwrap().push(thread);
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -4873,7 +4206,7 @@ mod tests {
         .unwrap();
         let markdown = dir.path().join("skill.md");
         std::fs::write(&markdown, "# Skill").unwrap();
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .clone()
@@ -4926,7 +4259,7 @@ mod tests {
         std::fs::write(&invalid_markdown, b"\xff\xfe\xfd").unwrap();
         let invalid_pdf = dir.path().join("bad.pdf");
         std::fs::write(&invalid_pdf, b"not a pdf").unwrap();
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         for (thread_id, path, expected_status) in [
             ("thread-missing", image.as_path(), StatusCode::NOT_FOUND),
@@ -4964,7 +4297,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let image = dir.path().join("preview.local");
         std::fs::write(&image, b"\x89PNG\r\n\x1a\npreview image").unwrap();
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -4981,7 +4314,7 @@ mod tests {
     #[tokio::test]
     async fn turn_routes_map_start_steer_and_interrupt() {
         let (state, app_server) = test_state().await;
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         assert_ok(
             app.clone()
@@ -5044,7 +4377,7 @@ mod tests {
     #[tokio::test]
     async fn generated_ui_routes_are_removed_and_legacy_html_is_rejected() {
         let (state, _app_server) = test_state().await;
-        let app = build_router(state);
+        let app = build_control_router(state);
 
         let old_route = app
             .clone()
@@ -5093,9 +4426,10 @@ mod tests {
     async fn app_surface_upsert_read_document_bridge_and_archive() {
         let (state, app_server) = test_state().await;
         let mut events = state.events.subscribe();
-        let app = build_router(state.clone());
+        let control_app = build_control_router(state.clone());
+        let app = build_executor_router(state.clone());
 
-        let created = app
+        let created = control_app
             .clone()
             .oneshot(
                 Request::post("/v1/self-control/threads/thread-1/app-surface")
@@ -5181,7 +4515,7 @@ mod tests {
         assert_eq!(presentation_event.payload["sessionId"], session_id);
         assert_eq!(presentation_event.payload["title"], "MCP-style dashboard");
 
-        let presentation = app
+        let presentation = control_app
             .clone()
             .oneshot(
                 Request::post("/v1/self-control/threads/thread-1/app-surface/presentation")
@@ -5688,7 +5022,7 @@ mod tests {
             );
         }
 
-        let archived = app
+        let archived = control_app
             .clone()
             .oneshot(
                 Request::delete("/v1/self-control/threads/thread-1/app-surface")
@@ -5760,7 +5094,7 @@ mod tests {
             .lock()
             .unwrap()
             .push(json!({"turn": {"id": "turn-started", "status": "inProgress"}}));
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -5799,7 +5133,7 @@ mod tests {
             .lock()
             .unwrap()
             .push(json!({"turnId": "turn-started"}));
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -5851,7 +5185,7 @@ mod tests {
             .lock()
             .unwrap()
             .push(json!({"ok": true}));
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -5892,7 +5226,7 @@ mod tests {
             .lock()
             .unwrap()
             .push(thread_read_response("thread-1", 0));
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -5938,7 +5272,7 @@ mod tests {
                 }]
             }]
         }));
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -5976,7 +5310,7 @@ mod tests {
             skills_list_response("/workspace", "old-skill", "/skills/old/SKILL.md"),
             skills_list_response("/workspace", "new-skill", "/skills/new/SKILL.md"),
         ]);
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let first = app
             .clone()
@@ -6022,7 +5356,7 @@ mod tests {
     #[tokio::test]
     async fn app_server_skills_changed_delivers_global_sse_event() {
         let (state, _) = test_state().await;
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
         let response = app
             .oneshot(
                 Request::get("/v1/events")
@@ -6054,7 +5388,7 @@ mod tests {
     #[tokio::test]
     async fn turn_start_forwards_only_present_composer_settings() {
         let (state, app_server) = test_state().await;
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         assert_ok(
             app.clone()
@@ -6230,7 +5564,7 @@ mod tests {
     #[tokio::test]
     async fn rejected_turn_start_does_not_persist_local_settings_overlay() {
         let (state, app_server) = test_state().await;
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let rejected = app
             .clone()
@@ -6281,7 +5615,7 @@ mod tests {
     #[tokio::test]
     async fn turn_routes_forward_typed_image_inputs_and_reject_invalid_input() {
         let (state, app_server) = test_state().await;
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         assert_ok(
             app.clone()
@@ -6367,7 +5701,7 @@ mod tests {
             json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
             json!({"turn": {"id": "turn-started", "status": "inProgress"}}),
         ]);
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let response = app
             .oneshot(
@@ -6408,7 +5742,7 @@ mod tests {
     #[tokio::test]
     async fn automation_routes_validate_persist_and_broadcast_state() {
         let (state, app_server) = test_state().await;
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let invalid = app
             .clone()
@@ -6512,7 +5846,7 @@ mod tests {
     async fn self_control_automation_defaults_paused_and_persists_provenance() {
         let (state, app_server) = test_state().await;
         let mut receiver = state.events.subscribe();
-        let app = build_router(state.clone());
+        let app = build_control_router(state.clone());
 
         let created = app
             .clone()
@@ -6848,7 +6182,7 @@ mod tests {
         let (mut state, _) = test_state().await;
         let dir = tempdir().unwrap();
         Arc::make_mut(&mut state.config).uploads.dir = dir.path().join("uploads");
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let accepted = app
             .clone()
@@ -6907,7 +6241,7 @@ mod tests {
             .lock()
             .unwrap()
             .extend([thread, image_thread]);
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let accepted = app
             .clone()
@@ -6976,7 +6310,7 @@ mod tests {
         let mut thread = thread_read_response("thread-1", 0);
         thread["thread"]["cwd"] = json!(cwd.display().to_string());
         app_server.queued_responses.lock().unwrap().push(thread);
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -7005,7 +6339,7 @@ mod tests {
         let (mut state, _) = test_state().await;
         let dir = tempdir().unwrap();
         Arc::make_mut(&mut state.config).uploads.dir = dir.path().join("uploads");
-        let app = build_router(state);
+        let app = build_executor_router(state);
         let mut corrupt_png = VALID_1X1_PNG.to_vec();
         corrupt_png[53] = 0xbf;
         corrupt_png[55] = 0xdb;
@@ -7035,7 +6369,7 @@ mod tests {
         let (mut state, _) = test_state().await;
         let dir = tempdir().unwrap();
         Arc::make_mut(&mut state.config).uploads.dir = dir.path().join("uploads");
-        let app = build_router(state);
+        let app = build_executor_router(state);
         let oversized = vec![b'x'; 25 * 1024 * 1024 + 1];
 
         let response = app
@@ -7123,7 +6457,7 @@ mod tests {
         let store = Store::in_memory().await.unwrap();
         let app_server = Arc::new(RetryableAppServer);
         let state = AppState::new(Config::default(), store, app_server);
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -7233,7 +6567,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let response = app
             .clone()
@@ -7316,7 +6650,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let app = build_router(state);
+        let app = build_executor_router(state);
         let path = format!("/v1/approvals/{}/decision", approval.id);
 
         let first = tokio::spawn({
@@ -7375,7 +6709,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -7394,7 +6728,7 @@ mod tests {
     #[tokio::test]
     async fn account_and_model_routes_map_to_app_server_methods() {
         let (state, app_server) = test_state().await;
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         assert_ok(
             app.clone()
@@ -7475,7 +6809,7 @@ mod tests {
     async fn frontend_critical_routes_return_product_shaped_contracts() {
         let (state, app_server) = test_state().await;
         let cwd = std::env::current_dir().unwrap().display().to_string();
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         *app_server.next_response.lock().unwrap() = Some(json!({
             "data": [{
@@ -7614,7 +6948,7 @@ mod tests {
     #[tokio::test]
     async fn product_shaped_response_drift_returns_bad_gateway() {
         let (state, app_server) = test_state().await;
-        let app = build_router(state);
+        let app = build_executor_router(state);
         *app_server.next_response.lock().unwrap() = Some(json!({"data": [{"name": "missing id"}]}));
 
         let response = app
@@ -7629,7 +6963,7 @@ mod tests {
     #[tokio::test]
     async fn account_notifications_flow_through_event_stream() {
         let (state, _) = test_state().await;
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
         let mut live_clients = Vec::new();
         for _ in 0..2 {
             let response = app
@@ -7694,261 +7028,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn frontend_static_serving_returns_index_and_api_routes_win() {
-        let (mut state, _) = test_state().await;
-        let dist = tempdir().unwrap();
-        std::fs::write(
-            dist.path().join("index.html"),
-            "<!doctype html><title>Kodex UI</title><main>Kodex UI</main>",
-        )
-        .unwrap();
-        state.config = Arc::new(Config {
-            frontend: crate::config::FrontendConfig {
-                dist_dir: Some(dist.path().to_path_buf()),
-            },
-            ..Config::default()
-        });
-        let app = build_router(state);
-
-        let root = app
-            .clone()
-            .oneshot(Request::get("/").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(root.status(), StatusCode::OK);
-        assert_eq!(
-            root.headers()
-                .get(CACHE_CONTROL)
-                .and_then(|value| value.to_str().ok()),
-            Some("no-cache")
-        );
-        assert!(response_text(root).await.contains("Kodex UI"));
-
-        let fallback = app
-            .clone()
-            .oneshot(
-                Request::get("/threads/thread-1")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(fallback.status(), StatusCode::OK);
-        assert_eq!(
-            fallback
-                .headers()
-                .get(CACHE_CONTROL)
-                .and_then(|value| value.to_str().ok()),
-            Some("no-cache")
-        );
-        assert!(response_text(fallback).await.contains("Kodex UI"));
-
-        let health = app
-            .clone()
-            .oneshot(Request::get("/healthz").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(health.status(), StatusCode::OK);
-        assert!(health.headers().get(CACHE_CONTROL).is_none());
-        assert_eq!(response_json(health).await["status"], "ok");
-
-        let events = app
-            .oneshot(
-                Request::get("/v1/events")
-                    .header(ACCEPT_ENCODING, "gzip")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(events.status(), StatusCode::OK);
-        assert!(events.headers().get(CACHE_CONTROL).is_none());
-        assert_ne!(
-            events
-                .headers()
-                .get(CONTENT_TYPE)
-                .and_then(|value| value.to_str().ok()),
-            Some("text/html")
-        );
-        assert!(events.headers().get(CONTENT_ENCODING).is_none());
-    }
-
-    #[tokio::test]
-    async fn frontend_static_serving_uses_vite_asset_cache_headers() {
-        let (mut state, _) = test_state().await;
-        let dist = tempdir().unwrap();
-        let assets = dist.path().join("assets");
-        std::fs::create_dir(&assets).unwrap();
-        std::fs::write(
-            dist.path().join("index.html"),
-            "<!doctype html><title>Kodex UI</title>",
-        )
-        .unwrap();
-        std::fs::write(dist.path().join("manifest.webmanifest"), "{}").unwrap();
-        std::fs::write(dist.path().join("service-worker.js"), "self.skipWaiting();").unwrap();
-        std::fs::write(
-            assets.join("index-BG6bYKqW.js"),
-            "console.log('hashed static asset loaded for compression validation');",
-        )
-        .unwrap();
-        std::fs::write(
-            assets.join("index-DLWtEkjL.js"),
-            "console.log('all-letter hash');",
-        )
-        .unwrap();
-        std::fs::write(assets.join("component.css"), ".component {}").unwrap();
-        std::fs::write(assets.join("logo.svg"), "<svg></svg>").unwrap();
-        state.config = Arc::new(Config {
-            frontend: crate::config::FrontendConfig {
-                dist_dir: Some(dist.path().to_path_buf()),
-            },
-            ..Config::default()
-        });
-        let app = build_router(state);
-
-        let hashed_asset = app
-            .clone()
-            .oneshot(
-                Request::get("/assets/index-BG6bYKqW.js")
-                    .header(ACCEPT_ENCODING, "gzip")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(hashed_asset.status(), StatusCode::OK);
-        assert_eq!(
-            hashed_asset
-                .headers()
-                .get(CACHE_CONTROL)
-                .and_then(|value| value.to_str().ok()),
-            Some("public, max-age=31536000, immutable")
-        );
-        assert_eq!(
-            hashed_asset
-                .headers()
-                .get(CONTENT_ENCODING)
-                .and_then(|value| value.to_str().ok()),
-            Some("gzip")
-        );
-
-        let all_letter_hash_asset = app
-            .clone()
-            .oneshot(
-                Request::get("/assets/index-DLWtEkjL.js")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(all_letter_hash_asset.status(), StatusCode::OK);
-        assert_eq!(
-            all_letter_hash_asset
-                .headers()
-                .get(CACHE_CONTROL)
-                .and_then(|value| value.to_str().ok()),
-            Some("public, max-age=31536000, immutable")
-        );
-
-        let unhashed_asset = app
-            .clone()
-            .oneshot(
-                Request::get("/assets/logo.svg")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(unhashed_asset.status(), StatusCode::OK);
-        assert_eq!(
-            unhashed_asset
-                .headers()
-                .get(CACHE_CONTROL)
-                .and_then(|value| value.to_str().ok()),
-            Some("no-cache")
-        );
-
-        let long_unhashed_asset = app
-            .clone()
-            .oneshot(
-                Request::get("/assets/component.css")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(long_unhashed_asset.status(), StatusCode::OK);
-        assert_eq!(
-            long_unhashed_asset
-                .headers()
-                .get(CACHE_CONTROL)
-                .and_then(|value| value.to_str().ok()),
-            Some("no-cache")
-        );
-
-        let manifest = app
-            .clone()
-            .oneshot(
-                Request::get("/manifest.webmanifest")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(manifest.status(), StatusCode::OK);
-        assert_eq!(
-            manifest
-                .headers()
-                .get(CACHE_CONTROL)
-                .and_then(|value| value.to_str().ok()),
-            Some("no-cache")
-        );
-
-        let service_worker = app
-            .oneshot(
-                Request::get("/service-worker.js")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(service_worker.status(), StatusCode::OK);
-        assert_eq!(
-            service_worker
-                .headers()
-                .get(CACHE_CONTROL)
-                .and_then(|value| value.to_str().ok()),
-            Some("no-cache")
-        );
-    }
-
-    #[tokio::test]
-    async fn missing_frontend_build_keeps_api_only_development_working() {
-        let (mut state, _) = test_state().await;
-        let dist = tempdir().unwrap();
-        state.config = Arc::new(Config {
-            frontend: crate::config::FrontendConfig {
-                dist_dir: Some(dist.path().join("missing")),
-            },
-            ..Config::default()
-        });
-        let app = build_router(state);
-
-        let health = app
-            .clone()
-            .oneshot(Request::get("/healthz").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(health.status(), StatusCode::OK);
-
-        let fallback = app
-            .oneshot(Request::get("/not-an-api").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(fallback.status(), StatusCode::NOT_FOUND);
-    }
-
-    #[tokio::test]
     async fn event_replay_excludes_timeline_history_and_keeps_operational_events() {
         let (state, _) = test_state().await;
         state
@@ -7995,7 +7074,7 @@ mod tests {
             })
             .await
             .unwrap();
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -8058,7 +7137,7 @@ mod tests {
             })
             .await
             .unwrap();
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let response = app
             .clone()
@@ -8137,7 +7216,7 @@ mod tests {
             })
             .await
             .unwrap();
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -8192,7 +7271,7 @@ mod tests {
                     .unwrap();
             }
         }
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let response = app
             .oneshot(
@@ -8255,7 +7334,7 @@ mod tests {
             })
             .await
             .unwrap();
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let response = app
             .oneshot(
@@ -8315,7 +7394,7 @@ mod tests {
             })
             .await
             .unwrap();
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let response = app
             .oneshot(
@@ -8374,7 +7453,7 @@ mod tests {
         .await
         .unwrap()
         .unwrap();
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
         let response = app
             .oneshot(
                 Request::get("/v1/events?threadIds=unrelated&includeGlobal=true&cursor=0")
@@ -8420,7 +7499,7 @@ mod tests {
             })
             .await
             .unwrap();
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let response = app
             .oneshot(
@@ -8523,7 +7602,7 @@ mod tests {
             })
             .await
             .unwrap();
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let response = app
             .oneshot(
@@ -8563,7 +7642,7 @@ mod tests {
     #[tokio::test]
     async fn sse_allows_live_selected_thread_view_item_deltas_without_replay() {
         let (state, _) = test_state().await;
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let response = app
             .oneshot(
@@ -8648,7 +7727,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let response = app
             .oneshot(
@@ -8687,7 +7766,7 @@ mod tests {
     #[tokio::test]
     async fn sse_global_stream_compacts_non_selected_thread_view_patches() {
         let (state, _) = test_state().await;
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let response = app
             .oneshot(
@@ -8734,7 +7813,7 @@ mod tests {
     #[tokio::test]
     async fn sse_selected_thread_stream_keeps_thread_view_patch_rows() {
         let (state, _) = test_state().await;
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let response = app
             .oneshot(
@@ -8778,7 +7857,7 @@ mod tests {
     #[tokio::test]
     async fn sse_global_stream_excludes_selected_thread_when_requested() {
         let (state, _) = test_state().await;
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let response = app
             .oneshot(
@@ -8830,7 +7909,7 @@ mod tests {
     #[tokio::test]
     async fn sse_delivers_selected_thread_notifications_updates() {
         let (state, _) = test_state().await;
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let response = app
             .oneshot(
@@ -8872,7 +7951,7 @@ mod tests {
     #[tokio::test]
     async fn sse_delivers_selected_thread_gateway_errors() {
         let (state, _) = test_state().await;
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let response = app
             .oneshot(
@@ -8910,7 +7989,7 @@ mod tests {
     #[tokio::test]
     async fn sse_rejects_thread_and_exclude_thread_together() {
         let (state, _) = test_state().await;
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let response = app
             .oneshot(
@@ -8942,7 +8021,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let response = app
             .oneshot(
@@ -8989,7 +8068,7 @@ mod tests {
             })
             .await
             .unwrap();
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -9014,7 +8093,7 @@ mod tests {
     #[tokio::test]
     async fn sse_delivers_native_thread_name_updates_to_each_client() {
         let (state, _) = test_state().await;
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
         let mut clients = Vec::new();
         for _ in 0..2 {
             let response = app
@@ -9061,7 +8140,7 @@ mod tests {
     #[tokio::test]
     async fn sse_allows_live_thread_token_usage_notifications() {
         let (state, _) = test_state().await;
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let response = app
             .oneshot(
@@ -9107,7 +8186,7 @@ mod tests {
     #[tokio::test]
     async fn sse_allows_live_account_rate_limit_notifications() {
         let (state, _) = test_state().await;
-        let app = build_router(state.clone());
+        let app = build_executor_router(state.clone());
 
         let response = app
             .oneshot(
@@ -9154,78 +8233,6 @@ mod tests {
         assert!(chunk.contains(&format!("id: {}", rate_limits.seq)));
         assert!(chunk.contains("account/rateLimits/updated"));
         assert!(chunk.contains("\"usedPercent\":12"));
-    }
-
-    struct RecordingPushSender {
-        outcome: PushDeliveryOutcome,
-        payloads: StdMutex<Vec<NotificationPayload>>,
-    }
-
-    impl RecordingPushSender {
-        fn new(outcome: PushDeliveryOutcome) -> Self {
-            Self {
-                outcome,
-                payloads: StdMutex::new(Vec::new()),
-            }
-        }
-    }
-
-    #[async_trait]
-    impl PushSender for RecordingPushSender {
-        async fn send(
-            &self,
-            _subscription: &PushSubscription,
-            payload: &NotificationPayload,
-        ) -> PushDeliveryOutcome {
-            self.payloads.lock().unwrap().push(payload.clone());
-            self.outcome.clone()
-        }
-    }
-
-    struct SelectivePushSender {
-        stale_endpoint: String,
-        payloads: StdMutex<Vec<NotificationPayload>>,
-    }
-
-    #[async_trait]
-    impl PushSender for SelectivePushSender {
-        async fn send(
-            &self,
-            subscription: &PushSubscription,
-            payload: &NotificationPayload,
-        ) -> PushDeliveryOutcome {
-            self.payloads.lock().unwrap().push(payload.clone());
-            if subscription.endpoint == self.stale_endpoint {
-                PushDeliveryOutcome::StaleEndpoint
-            } else {
-                PushDeliveryOutcome::Sent
-            }
-        }
-    }
-
-    struct FlakyEndpointPushSender {
-        flaky_endpoint: String,
-        attempts_by_endpoint: StdMutex<HashMap<String, usize>>,
-    }
-
-    #[async_trait]
-    impl PushSender for FlakyEndpointPushSender {
-        async fn send(
-            &self,
-            subscription: &PushSubscription,
-            _payload: &NotificationPayload,
-        ) -> PushDeliveryOutcome {
-            let mut attempts_by_endpoint = self.attempts_by_endpoint.lock().unwrap();
-            let attempts = attempts_by_endpoint
-                .entry(subscription.endpoint.clone())
-                .or_insert(0);
-            *attempts += 1;
-            if subscription.endpoint == self.flaky_endpoint && *attempts == 1 {
-                PushDeliveryOutcome::TemporaryFailure
-            } else {
-                PushDeliveryOutcome::Sent
-            }
-        }
     }
 
     fn thread_read_response(thread_id: &str, completed_turns: usize) -> Value {

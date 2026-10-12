@@ -16,7 +16,7 @@ use tokio::{
 use tower::ServiceExt;
 
 use crate::{
-    api::{build_router, AppState},
+    api::{build_executor_router, AppState},
     app_server::{AppServer, InboundMessage},
     app_server_api::ThreadLiveState,
     config::Config,
@@ -90,7 +90,7 @@ async fn state(native: Arc<Native>) -> AppState {
 }
 
 async fn compact(state: AppState) -> (StatusCode, Value) {
-    let response = build_router(state)
+    let response = build_executor_router(state)
         .oneshot(
             Request::post("/v1/threads/native-chat/compact")
                 .body(Body::empty())

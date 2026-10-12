@@ -9,7 +9,7 @@ import sys
 def main(runtime, argv=None):
     parser = argparse.ArgumentParser(description=runtime['__doc__'])
     parser.add_argument('--root', type=Path)
-    parser.add_argument('--role', choices=['legacy', 'executor', 'federator'])
+    parser.add_argument('--role', choices=['executor', 'federator'])
     commands = parser.add_subparsers(dest='command', required=True)
     install = commands.add_parser('install', help='configure and schedule initial build/start; autostart initially off')
     install.add_argument('--port', type=int)
@@ -42,18 +42,18 @@ def main(runtime, argv=None):
         if (invoked_root / 'config.json').exists():
             root = invoked_root
         else:
-            root = Path.home() / '.local/share/kodex'
-            if args.role in ('executor', 'federator'):
-                root /= args.role
+            if args.role is None:
+                raise error('--role executor or --role federator is required for a fresh installation')
+            root = Path.home() / '.local/share/kodex' / args.role
     role = args.role
     config_path = root.expanduser() / 'config.json'
     if role is None and config_path.exists():
-        role = json.loads(config_path.read_text()).get('role', 'legacy')
-    role = role or 'legacy'
+        role = json.loads(config_path.read_text()).get('role')
+    if role is None:
+        raise error('--role executor or --role federator is required')
     if args.command == 'install':
         args.port = args.port or (8789 if role == 'executor' else 8787)
-        args.data_dir = args.data_dir or (Path.home() / '.kodex' /
-            ('native-v1' if role == 'legacy' else f'federated-v1/{role}'))
+        args.data_dir = args.data_dir or Path.home() / '.kodex' / f'federated-v1/{role}'
     app = runtime['Service'](root, role=role)
     operations = runtime['Operations'](app, Path(runtime['__file__']), runtime)
     if args.command == '_run':
@@ -75,15 +75,17 @@ def main(runtime, argv=None):
             raise error(job['error'])
         return
     if args.command == 'logs':
-        names = ('service.log', 'service-error.log') if app.platform_name == 'linux' \
-            else ('gateway.log', 'gateway-error.log')
+        names = ('service.log', 'service-error.log')
         runtime['run'](['/usr/bin/tail', '-n', '100', '-F',
                         app.root / 'logs' / names[0], app.root / 'logs' / names[1]])
         return
     if args.command == 'status':
+        config = app.config()
+        url = (config['public_origin'] if app.role == 'federator'
+               else f"http://127.0.0.1:{config['port']}")
         print(json.dumps({'role': app.role, 'job': app.job(), 'autostart': app.autostart_enabled(),
                           'current': str((app.root / 'current').resolve()),
-                          'url': f"http://127.0.0.1:{app.config()['port']}"}, indent=2))
+                          'url': url}, indent=2))
         return
     with runtime['locked'](app.root):
         if args.command == 'install':

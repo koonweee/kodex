@@ -117,22 +117,6 @@ impl Store {
             .await?;
         sqlx::query(
             r#"
-            create table if not exists push_subscriptions (
-                id text primary key,
-                endpoint text not null unique,
-                p256dh text not null,
-                auth text not null,
-                user_agent text,
-                enabled integer not null default 1,
-                created_at text not null,
-                updated_at text not null
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-        sqlx::query(
-            r#"
             create table if not exists notification_deliveries (
                 id text primary key,
                 kind text not null,
@@ -283,7 +267,6 @@ mod tests {
                 "automations",
                 "events",
                 "notification_deliveries",
-                "push_subscriptions",
                 "queue_transfers",
                 "thread_notification_settings",
                 "thread_read_revision",

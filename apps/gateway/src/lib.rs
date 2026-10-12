@@ -22,7 +22,6 @@ pub mod read_state;
 pub mod routes;
 pub mod schema;
 pub mod skills;
-pub mod static_assets;
 pub mod store;
 pub mod subagents;
 pub mod terminal;
@@ -34,6 +33,4 @@ pub mod thread_view_patch;
 mod thread_view_projection;
 pub mod turn_lifecycle;
 
-pub use api::{
-    build_control_router, build_executor_router, build_router, executor_openapi, AppState,
-};
+pub use api::{build_control_router, build_executor_router, executor_openapi, AppState};

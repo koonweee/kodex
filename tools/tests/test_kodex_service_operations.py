@@ -36,10 +36,10 @@ class OperationTests(unittest.TestCase):
         self.repo = self.root / 'checkout'
         self.repo.mkdir()
         self.app = service.Service(self.root / 'installed', self.root / 'agents',
-                                   platform_name='darwin')
+                                   platform_name='darwin', role='executor')
         self.app.root.mkdir()
         self.app.config_path.write_text(json.dumps({
-            'port': 18787, 'data_dir': str(self.root / 'data'),
+            'role': 'executor', 'port': 18787, 'data_dir': str(self.root / 'data'),
             'path': '/usr/bin:/bin', 'repo': str(self.repo),
         }))
         service.link(self.app.root / 'current', self.release('initial'))
@@ -219,7 +219,7 @@ loader = importlib.machinery.SourceFileLoader('isolated_service_controller', sys
 spec = importlib.util.spec_from_loader(loader.name, loader)
 service = importlib.util.module_from_spec(spec)
 loader.exec_module(service)
-app = service.Service(Path(sys.argv[3]))
+app = service.Service(Path(sys.argv[3]), role='executor')
 operations = Operations(app, Path(sys.argv[2]), service.__dict__)
 """
         command = [sys.executable, '-c', prelude + body, str(TOOLS), str(SOURCE),
@@ -319,7 +319,16 @@ class CommandTests(unittest.TestCase):
         with patch.object(service.sys, 'platform', 'darwin'), \
              patch.object(service.os, 'getuid', return_value=501), \
              contextlib.redirect_stdout(io.StringIO()):
-            return cli.main(self.runtime, ['--root', str(self.root), *args])
+            return cli.main(self.runtime, [
+                '--root', str(self.root), '--role', 'executor', *args,
+            ])
+
+    def test_fresh_root_requires_explicit_split_role(self):
+        with patch.object(service.sys, 'platform', 'darwin'), \
+             patch.object(service.os, 'getuid', return_value=501):
+            with self.assertRaisesRegex(service.ServiceError, '--role executor or --role federator'):
+                cli.main(self.runtime, ['--root', str(self.root), 'status'])
+        self.runtime['Service'].assert_not_called()
 
     def test_full_operations_default_submit_without_running_or_waiting(self):
         for args in [('update', '--repo', str(self.root)), ('restart',),
@@ -387,6 +396,24 @@ class CommandTests(unittest.TestCase):
         self.operations.execute.assert_not_called()
         self.operations.submit.assert_not_called()
         self.operations.wait.assert_not_called()
+
+    def test_federator_status_reports_its_browser_visible_origin(self):
+        self.app.role = 'federator'
+        self.app.config.return_value = {
+            'repo': str(self.root), 'port': 18787,
+            'public_origin': 'https://kodex.example.ts.net',
+        }
+        self.app.job.return_value = None
+        self.app.autostart_enabled.return_value = False
+        output = io.StringIO()
+        with patch.object(service.sys, 'platform', 'darwin'), \
+             patch.object(service.os, 'getuid', return_value=501), \
+             contextlib.redirect_stdout(output):
+            cli.main(self.runtime, [
+                '--root', str(self.root), '--role', 'federator', 'status',
+            ])
+        self.assertEqual(json.loads(output.getvalue())['url'],
+                         'https://kodex.example.ts.net')
 
 
 class FreshInstallTests(unittest.TestCase):

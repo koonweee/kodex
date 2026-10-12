@@ -27,25 +27,44 @@ class LifecycleTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
         self.app = service.Service(self.root / 'installed', self.root / 'agents',
-                                   platform_name='darwin')
+                                   platform_name='darwin', role='federator')
         self.app.root.mkdir()
         self.app.config_path.write_text(json.dumps({
-            'port': 18787, 'data_dir': str(self.root / 'data'),
-            'federator_port': 18790,
-            'federator_origin': 'https://kodex.example.ts.net',
+            'role': 'federator', 'port': 18790, 'sandbox_port': 18791,
+            'data_dir': str(self.root / 'data'),
+            'public_origin': 'https://kodex.example.ts.net',
+            'sandbox_public_url': 'https://kodex-sandbox.example.ts.net/app-surface-sandbox.html',
             'path': '/usr/bin:/bin',
         }))
         self.actions = []
 
-    def release(self, name):
-        path = self.app.root / 'releases' / name
+    def release(self, name, app=None):
+        app = app or self.app
+        path = app.root / 'releases' / name
         path.mkdir(parents=True)
-        (path / 'frontend').mkdir()
-        (path / 'frontend/index.html').write_text(name)
-        (path / 'kodex-gateway').write_text('gateway')
-        (path / 'codex').write_text('native')
-        (path / 'manifest.json').write_text(json.dumps({'schema_version': '0.160.0'}))
+        if app.role == 'federator':
+            (path / 'frontend').mkdir()
+            (path / 'frontend/index.html').write_text(name)
+            (path / 'frontend/app-surface-sandbox.html').write_text('sandbox')
+            (path / 'kodex-federator').write_text('federator')
+            manifest = {'role': 'federator', 'api_version': '1'}
+        else:
+            (path / 'kodex-gateway').write_text('gateway')
+            (path / 'codex').write_text('native')
+            manifest = {'role': 'executor', 'schema_version': '0.160.0'}
+        (path / 'manifest.json').write_text(json.dumps(manifest))
         return path
+
+    def executor_app(self):
+        app = service.Service(self.root / 'executor-installed', self.root / 'agents',
+                              platform_name='darwin', role='executor')
+        app.root.mkdir(exist_ok=True)
+        app.config_path.write_text(json.dumps({
+            'role': 'executor', 'port': 18787,
+            'data_dir': str(self.root / 'executor-data'),
+            'path': '/usr/bin:/bin', 'environment': {},
+        }))
+        return app
 
     def test_port_conflict_is_detected(self):
         with socket.socket() as listener:
@@ -137,10 +156,9 @@ class LifecycleTests(unittest.TestCase):
         self.assertNotIn('CODEX_HOME', env)
         self.assertNotIn('OPENAI_API_KEY', env)
         self.assertNotIn('ENV', env)
-        self.assertEqual(env['KODEX_DATA_DIR'], str(self.root / 'data'))
-        self.assertEqual(env['KODEX_CODEX_BINARY'], str(release / 'codex'))
+        self.assertEqual(env['KODEX_FEDERATOR_DATA_DIR'], str(self.root / 'data'))
         self.assertEqual(env['KODEX_FRONTEND_DIST'], str(release / 'frontend'))
-        self.assertEqual(env['KODEX_CONTROL_BIND'], '127.0.0.1:0')
+        self.assertNotIn('KODEX_CODEX_BINARY', env)
 
     def test_rollback_requires_explicit_data_compatibility_acknowledgment(self):
         with self.assertRaisesRegex(service.ServiceError, 'data-compatible'):
@@ -162,28 +180,25 @@ class LifecycleTests(unittest.TestCase):
             self.app.autostart(False)
         self.assertTrue(self.app.login_plist.exists())
 
-    def test_build_packages_release_and_forces_same_origin(self):
+    def test_federator_build_packages_release_and_forces_same_origin(self):
         repo = self.root / 'repo'
-        for folder in ('tools', 'apps/gateway/src', 'apps/web/dist', 'target/release',
+        for folder in ('tools', 'apps/federator/src', 'apps/web/dist', 'target/release',
                        'runtime/kodex/skills'):
             (repo / folder).mkdir(parents=True)
-        (repo / 'apps/gateway/src/schema.rs').write_text('APP_SERVER_SCHEMA_VERSION: &str = "0.160.0"')
+        (repo / 'apps/federator/src/trust.rs').write_text('FEDERATOR_API_VERSION: &str = "1"')
         for name in service.CONTROLLER_FILES:
             (repo / 'tools' / name).write_text('controller')
-        (repo / 'target/release/kodex-gateway').write_text('executable')
+        (repo / 'target/release/kodex-federator').write_text('executable')
         (repo / 'apps/web/dist/index.html').write_text('frontend')
-        def acquire(version, stage):
-            self.assertEqual(version, '0.160.0')
-            (stage / 'codex').write_text('native executable')
-            return {'asset':'official-package', 'sha256':'verified'}
-        with patch.object(service, 'acquire_native', side_effect=acquire), \
+        with patch.object(service, 'acquire_native') as acquire, \
              patch.object(service, 'run') as commands, \
              patch.dict(service.os.environ, {'VITE_KODEX_API_BASE_URL': 'http://other-gateway'}):
             release = self.app.build(repo)
+        acquire.assert_not_called()
         build = next(call for call in commands.call_args_list if call.args[0][:3] == ['npm', 'run', 'build'])
         self.assertEqual(build.kwargs['env']['VITE_KODEX_API_BASE_URL'], '')
         self.assertEqual((release / 'frontend/index.html').read_text(), 'frontend')
-        self.assertEqual((release / 'codex').read_text(), 'native executable')
+        self.assertEqual((release / 'kodex-federator').read_text(), 'executable')
         for name in service.CONTROLLER_FILES:
             self.assertEqual((release / name).read_text(), 'controller')
 
@@ -194,9 +209,8 @@ class LifecycleTests(unittest.TestCase):
         (old / 'frontend/assets').mkdir()
         (old / 'frontend/assets/old-abcdefgh.js').write_text('old chunk')
         repo = self.root / 'repo'
-        for folder in ('apps/gateway/src', 'apps/web/src/api', 'apps/web/dist/assets'):
+        for folder in ('apps/web/src/api', 'apps/web/dist/assets'):
             (repo / folder).mkdir(parents=True)
-        (repo / 'apps/gateway/src/schema.rs').write_text('APP_SERVER_SCHEMA_VERSION: &str = "0.160.0"')
         (repo / 'apps/web/src/api/compatibility.ts').write_text('const API_VERSION = "1" satisfies unknown;')
         (repo / 'apps/web/dist/index.html').write_text('new frontend')
         (repo / 'apps/web/dist/assets/new-abcdefgh.js').write_text('new chunk')
@@ -227,7 +241,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual((old / 'frontend/assets/new-abcdefgh.js').read_text(), 'new chunk')
         self.assertEqual((self.app.root / 'current').resolve(), old)
         self.assertEqual((self.app.root / 'previous').resolve(), previous)
-        self.assertEqual((old / 'kodex-gateway').read_text(), 'gateway')
+        self.assertEqual((old / 'kodex-federator').read_text(), 'federator')
         native.assert_not_called()
         stop.assert_not_called()
         start.assert_not_called()
@@ -306,11 +320,11 @@ class LifecycleTests(unittest.TestCase):
         swap.assert_not_called()
         self.assertFalse(any(path.name.startswith('.frontend-') for path in old.iterdir()))
 
-    def test_frontend_schema_mismatch_refuses_before_build(self):
+    def test_frontend_api_mismatch_refuses_before_build(self):
         old, _, repo = self.frontend_fixture()
-        (repo / 'apps/gateway/src/schema.rs').write_text('APP_SERVER_SCHEMA_VERSION: &str = "0.999.0"')
+        (repo / 'apps/web/src/api/compatibility.ts').write_text('const API_VERSION = "999";')
         with patch.object(service, 'run') as commands, patch.object(self.app, 'health') as health:
-            with self.assertRaisesRegex(service.ServiceError, 'schema'):
+            with self.assertRaisesRegex(service.ServiceError, 'API version'):
                 self.app.update_frontend(repo)
         commands.assert_not_called()
         health.assert_not_called()
@@ -349,14 +363,14 @@ class LifecycleTests(unittest.TestCase):
             self.app.execute()
         execute.assert_not_called()
 
-    def test_legacy_controller_explicitly_runs_the_combined_gateway_mode(self):
+    def test_federator_controller_runs_only_the_federator_binary(self):
         release = self.release('new')
         service.link(self.app.root / 'current', release)
         with patch.object(service, 'check_port'), patch.object(service.os, 'execve') as execute:
             self.app.execute()
         self.assertEqual(
             execute.call_args.args[:2],
-            (release / 'kodex-gateway', [str(release / 'kodex-gateway'), '--legacy-combined']),
+            (release / 'kodex-federator', [str(release / 'kodex-federator')]),
         )
 
     def test_stop_waits_for_owned_process_without_killing_listener(self):
@@ -369,37 +383,37 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(probe.call_args_list, [unittest.mock.call(123, 0), unittest.mock.call(123, 0)])
 
     def test_wrong_native_version_refuses_build_before_commands(self):
+        app = self.executor_app()
         repo = self.root / 'repo'
         (repo / 'apps/gateway/src').mkdir(parents=True)
         (repo / 'apps/gateway/src/schema.rs').write_text('APP_SERVER_SCHEMA_VERSION: &str = "0.160.0"')
         with patch.object(service, 'acquire_native', side_effect=service.ServiceError('version mismatch')), \
              patch.object(service, 'run') as commands:
             with self.assertRaisesRegex(service.ServiceError, 'version mismatch'):
-                self.app.build(repo)
+                app.build(repo)
         commands.assert_not_called()
 
-    def health_fixture(self, instance='owned', ready=True):
+    def health_fixture(self, ready=True, service_name='kodex-federator'):
         import io
         from types import SimpleNamespace
         release = self.release('health')
-        (self.root / 'data').mkdir()
-        (self.root / 'data/instance.json').write_text(json.dumps({'id': 'owned'}))
         responses = {
-            '/v1/capabilities': json.dumps({'gateway': {'instanceId': instance, 'apiVersion': '1'}, 'appServer': {
-                'schemaVersion': '0.160.0', 'detectedVersionMatchesSchema': True}}).encode(),
-            '/readyz': json.dumps({'ready': ready}).encode(), '/': b'health',
+            '/healthz': json.dumps({'ready': ready, 'service': service_name}).encode(),
+            '/': b'health',
+            '/app-surface-sandbox.html': b'sandbox',
         }
-        opener = SimpleNamespace(open=lambda url, timeout: io.BytesIO(responses[urllib.parse.urlparse(url).path]))
+        opener = SimpleNamespace(open=lambda request, timeout: io.BytesIO(
+            responses[urllib.parse.urlparse(request.full_url).path]))
         return release, opener
 
-    def test_health_requires_ready_native_and_exact_instance(self):
+    def test_health_requires_ready_federator_and_exact_service(self):
         from types import SimpleNamespace
-        for instance, ready in [('other', True), ('owned', False)]:
-            with self.subTest(instance=instance, ready=ready):
-                if (self.root / 'data').exists():
-                    service.shutil.rmtree(self.root / 'data')
-                    service.shutil.rmtree(self.app.root / 'releases/health')
-                release, opener = self.health_fixture(instance, ready)
+        for service_name, ready in [('other', True), ('kodex-federator', False)]:
+            with self.subTest(service_name=service_name, ready=ready):
+                health_release = self.app.root / 'releases/health'
+                if health_release.exists():
+                    service.shutil.rmtree(health_release)
+                release, opener = self.health_fixture(ready, service_name)
                 with patch.object(self.app, 'job', return_value={'pid': 42}), \
                      patch.object(service.subprocess, 'run', return_value=SimpleNamespace(stdout='42')), \
                      patch.object(service.urllib.request, 'build_opener', return_value=opener), \
@@ -408,14 +422,12 @@ class LifecycleTests(unittest.TestCase):
                     with self.assertRaisesRegex(service.ServiceError, 'Health check failed'):
                         self.app.health(release)
 
-    def test_frontend_api_mismatch_fails_before_build(self):
+    def test_running_federator_api_mismatch_fails_before_build(self):
         from types import SimpleNamespace
         release, opener = self.health_fixture()
         service.link(self.app.root / 'current', release)
         repo = self.root / 'repo'
-        (repo / 'apps/gateway/src').mkdir(parents=True)
         (repo / 'apps/web/src/api').mkdir(parents=True)
-        (repo / 'apps/gateway/src/schema.rs').write_text('APP_SERVER_SCHEMA_VERSION: &str = "0.160.0"')
         (repo / 'apps/web/src/api/compatibility.ts').write_text('const API_VERSION = "future";')
         with patch.object(self.app, 'job', return_value={'pid': 42}), \
              patch.object(service.subprocess, 'run', return_value=SimpleNamespace(stdout='42')), \
@@ -548,23 +560,25 @@ class LifecycleTests(unittest.TestCase):
         download.assert_not_called()
 
     def test_corrupt_download_leaves_the_live_release_running(self):
-        old = self.release('old')
-        service.link(self.app.root / 'current', old)
+        app = self.executor_app()
+        old = self.release('old', app)
+        service.link(app.root / 'current', old)
         repo = self.root / 'repo'
         (repo / 'apps/gateway/src').mkdir(parents=True)
         (repo / 'apps/gateway/src/schema.rs').write_text('APP_SERVER_SCHEMA_VERSION: &str = "0.160.0"')
         with patch.object(service.platform, 'machine', return_value='arm64'), \
              patch.object(service.urllib.request, 'urlopen', return_value=io.BytesIO(b'corrupt')), \
-             patch.object(self.app, 'stop') as stop:
+             patch.object(app, 'stop') as stop:
             with self.assertRaisesRegex(service.ServiceError, 'checksum'):
-                self.app.update(repo)
+                app.update(repo)
         stop.assert_not_called()
-        self.assertEqual((self.app.root / 'current').resolve(), old)
+        self.assertEqual((app.root / 'current').resolve(), old)
         self.assertFalse(any(path.name.startswith('.stage-') for path in old.parent.iterdir()))
 
     def test_failed_helper_startup_leaves_the_live_release_running(self):
-        old = self.release('old')
-        service.link(self.app.root / 'current', old)
+        app = self.executor_app()
+        old = self.release('old', app)
+        service.link(app.root / 'current', old)
         repo = self.root / 'repo'
         (repo / 'apps/gateway/src').mkdir(parents=True)
         (repo / 'apps/gateway/src/schema.rs').write_text('APP_SERVER_SCHEMA_VERSION: &str = "0.160.0"')
@@ -574,11 +588,11 @@ class LifecycleTests(unittest.TestCase):
              patch.object(service.urllib.request, 'urlopen', return_value=io.BytesIO(data)), \
              patch.object(service, 'native_version', return_value='0.160.0'), \
              patch.object(service, 'run', side_effect=service.subprocess.CalledProcessError(1, 'host')), \
-             patch.object(self.app, 'stop') as stop:
+             patch.object(app, 'stop') as stop:
             with self.assertRaises(service.subprocess.CalledProcessError):
-                self.app.update(repo)
+                app.update(repo)
         stop.assert_not_called()
-        self.assertEqual((self.app.root / 'current').resolve(), old)
+        self.assertEqual((app.root / 'current').resolve(), old)
 
     def test_explicit_rollback_swaps_releases_without_touching_data(self):
         old, new = self.release('old'), self.release('new')

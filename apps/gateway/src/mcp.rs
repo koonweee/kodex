@@ -2066,7 +2066,8 @@ fn queue_is_empty(value: &Value) -> bool {
 mod tests {
     use super::*;
     use crate::{
-        api::build_router, app_server::tests::RecordingAppServer, config::Config, store::Store,
+        api::build_control_router, app_server::tests::RecordingAppServer, config::Config,
+        store::Store,
     };
     use serde_json::json;
     use std::sync::Arc;
@@ -2096,7 +2097,7 @@ mod tests {
             Store::in_memory().await?,
             Arc::new(RecordingAppServer::default()),
         );
-        let router = build_router(state.clone());
+        let router = build_control_router(state.clone());
         let server = tokio::spawn(async move { axum::serve(listener, router).await });
         let service = KodexControlMcp::for_test(gateway_url);
         let (server_transport, client_transport) = tokio::io::duplex(64 * 1024);
@@ -2290,7 +2291,7 @@ mod tests {
             app_server.clone(),
         );
         let project = app_server.seed_project("Kodex".to_string(), "/workspace".to_string());
-        let router = build_router(state);
+        let router = build_control_router(state);
         let server = tokio::spawn(async move { axum::serve(listener, router).await });
         let service = KodexControlMcp::for_test(gateway_url);
         let (server_transport, client_transport) = tokio::io::duplex(64 * 1024);

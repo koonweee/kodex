@@ -9,7 +9,7 @@ use tempfile::tempdir;
 use tower::ServiceExt;
 
 use crate::{
-    api::{build_router, AppState},
+    api::{build_executor_router, AppState},
     app_server::tests::RecordingAppServer,
     config::Config,
     store::Store,
@@ -18,7 +18,7 @@ use crate::{
 async fn app(home: &std::path::Path) -> axum::Router {
     let mut config = Config::default();
     config.projects.home_dir = home.into();
-    build_router(AppState::new(
+    build_executor_router(AppState::new(
         config,
         Store::in_memory().await.unwrap(),
         Arc::new(RecordingAppServer::default()),

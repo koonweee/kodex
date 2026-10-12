@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use tower::ServiceExt;
 
 use crate::{
-    api::{build_router, AppState},
+    api::{build_executor_router, AppState},
     app_server::AppServer,
     config::Config,
     error::{ApiError, ApiResult},
@@ -76,7 +76,7 @@ async fn state(native: Arc<NativeInput>) -> AppState {
     AppState::new(Config::default(), Store::in_memory().await.unwrap(), native)
 }
 async fn send(state: &AppState, path: &str, body: Value) -> (StatusCode, Value) {
-    let response = build_router(state.clone())
+    let response = build_executor_router(state.clone())
         .oneshot(
             Request::post(path)
                 .header("content-type", "application/json")
@@ -267,7 +267,7 @@ async fn stale_nonempty_tab_queues_after_native_work_is_removed_and_other_tab_re
         other_tab_events.recv().await.unwrap().kind,
         crate::queue::QUEUE_CHANGED_EVENT
     );
-    let refill = build_router(state.clone())
+    let refill = build_executor_router(state.clone())
         .oneshot(
             Request::get(format!("/v1/threads/{THREAD}/queued-inputs"))
                 .body(Body::empty())

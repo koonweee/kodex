@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use tower::ServiceExt;
 
 use crate::{
-    api::{build_router, AppState},
+    api::{build_executor_router, AppState},
     app_server::tests::RecordingAppServer,
     config::Config,
     store::Store,
@@ -33,7 +33,7 @@ async fn account_usage_reads_preserve_reset_details_and_unknown_details() {
         let summary = json!({"availableCount":2,"credits":credits});
         *native.next_response.lock().unwrap() =
             Some(json!({"rateLimits":{},"rateLimitResetCredits":summary}));
-        let response = build_router(state.clone())
+        let response = build_executor_router(state.clone())
             .oneshot(
                 Request::builder()
                     .uri("/v1/account/rate-limits")
@@ -63,7 +63,7 @@ async fn account_usage_reset_forwards_identity_and_refills_both_clients() {
     for outcome in ["reset", "nothingToReset", "noCredit", "alreadyRedeemed"] {
         *native.next_response.lock().unwrap() = Some(json!({"outcome":outcome}));
         let params = json!({"creditId":"chosen", "idempotencyKey":"logical-attempt"});
-        let response = build_router(state.clone())
+        let response = build_executor_router(state.clone())
             .oneshot(
                 Request::builder()
                     .method("POST")
@@ -107,7 +107,7 @@ async fn account_usage_reset_failure_refills_without_retrying_the_write() {
         .lock()
         .unwrap()
         .push(crate::error::ApiError::AppServerUnavailable);
-    let response = build_router(state.clone())
+    let response = build_executor_router(state.clone())
         .oneshot(
             Request::builder()
                 .method("POST")

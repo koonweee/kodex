@@ -19,15 +19,26 @@ sudo apt-get install -y build-essential pkg-config libsqlite3-dev curl jq sqlite
 
 ## Local development
 
-Start the gateway from the repository root:
+Start an executor from the repository root:
 
 ```bash
-KODEX_DATA_DIR="$(mktemp -d)/instance" KODEX_CODEX_BINARY=/absolute/path/to/codex cargo run -p kodex-gateway
+KODEX_BIND=127.0.0.1:8789 \
+KODEX_DATA_DIR="$(mktemp -d)/executor" \
+KODEX_CODEX_BINARY=/absolute/path/to/codex \
+cargo run -p kodex-gateway
 ```
 
 Use disposable instances during the native redesign. The default new root is `~/.kodex/native-v1/`; `gateway.db` and `codex-home/` must stay inside the selected instance root. Startup refuses unrecognized existing state and takes an exclusive instance lock. Old state stays unopened, with no migration.
 
-Start the web client in another terminal:
+Start the federator in another terminal:
+
+```bash
+KODEX_FEDERATOR_DATA_DIR="$(mktemp -d)/federator" \
+KODEX_FEDERATOR_PUBLIC_ORIGIN=http://127.0.0.1:5173 \
+cargo run -p kodex-federator
+```
+
+Then start the web client:
 
 ```bash
 cd apps/web
@@ -35,9 +46,9 @@ npm install
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173`. Vite proxies `/v1` and `/openapi.json` to `http://127.0.0.1:8787` by default.
+Open `http://127.0.0.1:5173`. Vite proxies `/v1` and `/openapi.json` to the federator at `http://127.0.0.1:8787` by default. Register `http://127.0.0.1:8789` as the executor.
 
-To proxy to another local gateway, set `VITE_KODEX_PROXY_TARGET`. To call another gateway origin directly, set `VITE_KODEX_API_BASE_URL`. Service-worker registration and Web Push require the frontend and API to share an origin; they are disabled when this variable points to a different origin. Use the Vite proxy for development PWA badge and notification checks.
+To proxy to another local federator, set `VITE_KODEX_PROXY_TARGET`. To call another federator origin directly, set `VITE_KODEX_API_BASE_URL`. Service-worker registration and Web Push require the frontend and API to share an origin; they are disabled when this variable points to a different origin. Use the Vite proxy for development PWA badge and notification checks.
 
 App surfaces require a sandbox document on a different browser origin. Loopback development swaps `localhost` and `127.0.0.1` automatically. Remote browsers and HTTPS or non-loopback deployments must set `VITE_KODEX_APP_SURFACE_SANDBOX_URL` to the sandbox HTML on a distinct origin.
 
@@ -147,21 +158,29 @@ Keep pane styling scoped to its intended boundary and pass policies explicitly t
 
 ## Production-style local serving
 
-The federator owns the production web assets. During the service-controller transition, the existing one-process local workflow remains available only through the explicit legacy mode:
+The federator owns the production web assets. Build the web app, then run the executor and federator as separate processes with separate fresh state roots:
 
 ```bash
 cd apps/web
 npm run build
 cd ../..
-KODEX_FRONTEND_DIST=apps/web/dist cargo run -p kodex-gateway -- --legacy-combined
+KODEX_BIND=127.0.0.1:8789 \
+KODEX_DATA_DIR="$(mktemp -d)/executor" \
+KODEX_CODEX_BINARY=/absolute/path/to/codex \
+cargo run -p kodex-gateway
+
+# In another terminal from the repository root:
+KODEX_FEDERATOR_DATA_DIR="$(mktemp -d)/federator" \
+KODEX_FRONTEND_DIST="$PWD/apps/web/dist" \
+cargo run -p kodex-federator
 ```
 
-Open `http://127.0.0.1:8787`. Ordinary `cargo run -p kodex-gateway` is an executor backend and does not serve the app. New federation work should use the separate executor and [federator bootstrap](#federator-bootstrap); the legacy flag exists only until the split service controller replaces this local workflow. Keep either setup on localhost or a trusted private network.
+Open `http://localhost:8787`, then register `http://127.0.0.1:8789` as an executor. `kodex-gateway` is always an executor backend and never serves the app. Keep both listeners on localhost or a trusted private network.
 
-Configuration can start from `apps/gateway/config/production.env.example`. With the gateway running, smoke-test it with:
+Executor configuration can start from `apps/gateway/config/production.env.example`. With the executor running, smoke-test it with:
 
 ```bash
-apps/gateway/scripts/smoke.sh http://127.0.0.1:8787
+apps/gateway/scripts/smoke.sh http://127.0.0.1:8789
 ```
 
 ## Generated contracts

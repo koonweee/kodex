@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use tower::ServiceExt;
 
 use crate::{
-    api::{build_router, AppState},
+    api::{build_executor_router, AppState},
     app_server::tests::RecordingAppServer,
     config::Config,
     store::Store,
@@ -24,7 +24,7 @@ async fn state() -> (AppState, Arc<RecordingAppServer>, tempfile::TempDir) {
 }
 
 async fn request(state: &AppState, method: Method, path: &str, body: Value) -> (StatusCode, Value) {
-    let response = build_router(state.clone())
+    let response = build_executor_router(state.clone())
         .oneshot(
             Request::builder()
                 .method(method)

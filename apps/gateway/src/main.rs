@@ -4,7 +4,7 @@ use anyhow::Context;
 use kodex_gateway::{
     app_server::{DynAppServer, InboundMessage, JsonRpcAppServer},
     automations::{recover_automations_after_restart, start_automation_scheduler},
-    build_control_router, build_executor_router, build_router,
+    build_control_router, build_executor_router,
     config::Config,
     events::run_inbound_ingest,
     store::Store,
@@ -28,11 +28,7 @@ async fn main() -> anyhow::Result<()> {
             .init();
         return kodex_gateway::mcp::run_kodex_control_stdio().await;
     }
-    let legacy_combined = args == ["--legacy-combined"];
-    anyhow::ensure!(
-        args.is_empty() || legacy_combined,
-        "unsupported kodex-gateway arguments"
-    );
+    anyhow::ensure!(args.is_empty(), "unsupported kodex-gateway arguments");
 
     tracing_subscriber::registry()
         .with(
@@ -69,15 +65,7 @@ async fn main() -> anyhow::Result<()> {
     let app_server: DynAppServer = supervisor.clone();
 
     let state = AppState::new(config, store, app_server);
-    run_gateway(
-        state,
-        supervisor,
-        inbound_rx,
-        listener,
-        control_listener,
-        legacy_combined,
-    )
-    .await
+    run_gateway(state, supervisor, inbound_rx, listener, control_listener).await
 }
 
 async fn run_gateway(
@@ -86,7 +74,6 @@ async fn run_gateway(
     inbound_rx: mpsc::Receiver<InboundMessage>,
     listener: tokio::net::TcpListener,
     control_listener: tokio::net::TcpListener,
-    legacy_combined: bool,
 ) -> anyhow::Result<()> {
     let mut import_worker = None;
     let result: anyhow::Result<()> = async {
@@ -96,16 +83,9 @@ async fn run_gateway(
         recover_automations_after_restart(&state).await?;
         start_automation_scheduler(state.clone());
         start_terminal_cleanup(state.terminals.clone());
-        if legacy_combined {
-            state.notifications.start_delivery_worker(state.clone());
-        }
         tokio::spawn(run_inbound_ingest(inbound_rx, state.clone()));
 
-        let executor_app = if legacy_combined {
-            build_router(state.clone())
-        } else {
-            build_executor_router(state.clone())
-        };
+        let executor_app = build_executor_router(state.clone());
         let control_app = build_control_router(state.clone());
         tracing::info!(
             executor_bind = %state.config.server.bind,
@@ -201,15 +181,7 @@ while IFS= read -r line; do :; done
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let control_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let result = run_gateway(
-            state,
-            server.clone(),
-            receiver,
-            listener,
-            control_listener,
-            false,
-        )
-        .await;
+        let result = run_gateway(state, server.clone(), receiver, listener, control_listener).await;
         let still_ready = server.is_ready();
         server.shutdown().await.unwrap();
         assert!(result.is_err());

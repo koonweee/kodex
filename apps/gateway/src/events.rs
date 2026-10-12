@@ -973,15 +973,13 @@ async fn timeline_turn_upsert_event(
             })
             .await?;
         events.push(planned);
-        state
-            .notifications
-            .enqueue_unread_agent_message_recheck(
-                state,
-                thread_id.clone(),
-                Some(turn.id.clone()),
-                Duration::from_millis(state.config.notifications.recheck_delay_ms),
-            )
-            .await?;
+        crate::notifications::enqueue_unread_agent_message_recheck(
+            state,
+            thread_id.clone(),
+            Some(turn.id.clone()),
+            Duration::from_millis(state.config.notifications.recheck_delay_ms),
+        )
+        .await?;
     }
     Ok(NormalizedTimelineEvents { events })
 }

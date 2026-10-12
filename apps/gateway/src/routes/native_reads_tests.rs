@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use tower::ServiceExt;
 
 use crate::{
-    api::{build_router, AppState},
+    api::{build_executor_router, AppState},
     app_server::tests::RecordingAppServer,
     config::Config,
     error::ApiError,
@@ -58,7 +58,7 @@ async fn stop(state: AppState, native: &RecordingAppServer) -> axum::response::R
         .lock()
         .unwrap()
         .insert(0, json!({"goal":null}));
-    build_router(state)
+    build_executor_router(state)
         .oneshot(
             Request::post("/v1/threads/thread-1/interrupt-current")
                 .body(Body::empty())
@@ -80,7 +80,7 @@ async fn file_preview_reads_only_native_metadata() {
     let mut metadata = summary("idle");
     metadata["thread"]["cwd"] = json!(directory.path().display().to_string());
     native.queued_responses.lock().unwrap().push(metadata);
-    let response = build_router(state)
+    let response = build_executor_router(state)
         .oneshot(
             Request::get("/v1/threads/thread-1/files/preview?path=notes.md")
                 .body(Body::empty())
@@ -144,7 +144,7 @@ async fn file_preview_maps_only_exact_native_missing_thread_failures() {
     ] {
         let (state, native) = state().await;
         native.queued_errors.lock().unwrap().push(error);
-        let response = build_router(state)
+        let response = build_executor_router(state)
             .oneshot(
                 Request::get("/v1/threads/thread-1/files/preview?path=notes.md")
                     .body(Body::empty())

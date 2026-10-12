@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use tower::ServiceExt;
 
 use crate::{
-    api::{build_router, AppState},
+    api::{build_control_router, AppState},
     app_server::AppServer,
     app_surfaces::MCP_APP_MIME_TYPE,
     config::Config,
@@ -83,7 +83,7 @@ async fn state(wrong_read_id: bool) -> (AppState, Arc<Native>) {
 }
 
 async fn request(state: &AppState, method: Method, path: &str, body: Value) -> (StatusCode, Value) {
-    let response = build_router(state.clone())
+    let response = build_control_router(state.clone())
         .oneshot(
             Request::builder()
                 .method(method)

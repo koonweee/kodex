@@ -44,6 +44,11 @@ class RoleLifecycleTests(unittest.TestCase):
         app.config_path.write_text(json.dumps(config))
         return app
 
+    def test_legacy_combined_role_is_rejected(self):
+        with self.assertRaisesRegex(service.ServiceError, 'Unknown service role legacy'):
+            service.Service(self.root / 'legacy', self.root / 'agents',
+                            platform_name='darwin', role='legacy')
+
     def release(self, app):
         release = app.root / 'releases/release'
         release.mkdir(parents=True)

@@ -6,12 +6,20 @@ use serde_json::json;
 use tower::ServiceExt;
 
 use super::tests::{native_project, response_json, test_state};
-use crate::build_router;
+use crate::{build_control_router, build_executor_router, AppState};
+
+fn router_for(state: AppState, path: &str) -> axum::Router {
+    if path.starts_with("/v1/self-control/") {
+        build_control_router(state)
+    } else {
+        build_executor_router(state)
+    }
+}
 
 #[tokio::test]
 async fn removed_chat_project_assignment_is_not_served_or_forwarded() {
     let (state, server) = test_state().await;
-    let app = build_router(state);
+    let app = build_executor_router(state);
     for project_id in [json!("project-2"), json!(null)] {
         let response = app
             .clone()
@@ -50,7 +58,7 @@ async fn native_project_read_preserves_all_roots_metadata_and_native_timestamps(
         .lock()
         .unwrap()
         .insert("project-1".into(), project.clone());
-    let response = build_router(state)
+    let response = build_executor_router(state)
         .oneshot(
             Request::get("/v1/projects/project-1")
                 .body(Body::empty())
@@ -68,7 +76,7 @@ async fn native_project_create_passes_roots_without_creating_directories() {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().join("not-created");
     let body = json!({"name":"Virtual project", "roots":[{"path":root}], "metadata":{"color":"red"}, "idempotencyKey":"stable-create"});
-    let response = build_router(state)
+    let response = build_executor_router(state)
         .oneshot(
             Request::post("/v1/projects")
                 .header("content-type", "application/json")
@@ -96,7 +104,7 @@ async fn native_project_multiple_roots_cannot_choose_an_arbitrary_execution_cwd(
             .lock()
             .unwrap()
             .insert("project-1".into(), project);
-        let response = build_router(state)
+        let response = router_for(state, endpoint)
             .oneshot(
                 Request::post(endpoint)
                     .header("content-type", "application/json")
@@ -118,7 +126,7 @@ async fn native_project_multiple_roots_cannot_choose_an_arbitrary_execution_cwd(
 #[tokio::test]
 async fn native_unassigned_listing_is_independent_of_scratch_directories() {
     let (state, server) = test_state().await;
-    let response = build_router(state)
+    let response = build_executor_router(state)
         .oneshot(
             Request::get("/v1/chats/threads")
                 .body(Body::empty())
@@ -163,7 +171,7 @@ async fn native_project_update_preserves_omitted_fields_and_forwards_explicit_em
             .lock()
             .unwrap()
             .push(json!({"project":native_project("project-1","/workspace")}));
-        let response = build_router(state)
+        let response = build_executor_router(state)
             .oneshot(
                 Request::patch("/v1/projects/project-1")
                     .header("content-type", "application/json")
@@ -185,7 +193,7 @@ async fn native_project_move_and_delete_forward_single_native_commands() {
     for before in [json!("project-2"), json!(null)] {
         let (state, server) = test_state().await;
         server.queued_responses.lock().unwrap().push(json!({}));
-        let response = build_router(state)
+        let response = build_executor_router(state)
             .oneshot(
                 Request::post("/v1/projects/project-1/move")
                     .header("content-type", "application/json")
@@ -205,7 +213,7 @@ async fn native_project_move_and_delete_forward_single_native_commands() {
     }
     let (state, server) = test_state().await;
     server.queued_responses.lock().unwrap().push(json!({}));
-    let response = build_router(state)
+    let response = build_executor_router(state)
         .oneshot(
             Request::delete("/v1/projects/project-1")
                 .body(Body::empty())
@@ -236,7 +244,7 @@ async fn explicit_execution_cwd_cannot_override_the_single_project_root() {
                 .lock()
                 .unwrap()
                 .insert("project-1".into(), project);
-            let response = build_router(state)
+            let response = router_for(state, endpoint)
                 .oneshot(
                     Request::post(endpoint)
                         .header("content-type", "application/json")
@@ -273,7 +281,7 @@ async fn project_config_queries_cannot_override_missing_or_multiple_roots() {
                 .lock()
                 .unwrap()
                 .insert("project-1".into(), project);
-            let app = build_router(state);
+            let app = build_executor_router(state);
             let response = app
                 .clone()
                 .oneshot(
@@ -371,7 +379,7 @@ async fn project_terminal_cwd_cannot_override_the_native_project_root() {
         "project-1".into(),
         native_project("project-1", root.path().to_str().unwrap()),
     );
-    let response = build_router(state.clone())
+    let response = build_executor_router(state.clone())
         .oneshot(
             Request::post("/v1/terminals")
                 .header("content-type", "application/json")
@@ -401,7 +409,7 @@ async fn native_project_changes_replay_globally_and_another_client_refetches_nat
         .lock()
         .unwrap()
         .insert("project-1".into(), project);
-    let app = build_router(state.clone());
+    let app = build_executor_router(state.clone());
     let initial = app
         .clone()
         .oneshot(Request::get("/v1/projects").body(Body::empty()).unwrap())

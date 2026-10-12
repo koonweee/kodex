@@ -1,7 +1,7 @@
 use super::*;
 
 async fn steer_first(state: &AppState) -> (StatusCode, Value) {
-    let response = build_router(state.clone())
+    let response = build_executor_router(state.clone())
         .oneshot(
             Request::post(format!("{BASE}/steer-first"))
                 .body(Body::empty())

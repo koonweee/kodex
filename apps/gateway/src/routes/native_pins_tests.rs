@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use tower::ServiceExt;
 
 use crate::{
-    api::{build_router, AppState},
+    api::{build_control_router, build_executor_router, AppState},
     app_server::tests::RecordingAppServer,
     config::Config,
     store::Store,
@@ -27,7 +27,12 @@ async fn state() -> (AppState, Arc<RecordingAppServer>) {
 }
 
 async fn request(state: &AppState, method: Method, path: &str, body: Value) -> (StatusCode, Value) {
-    let response = build_router(state.clone())
+    let router = if path.starts_with("/v1/self-control/") {
+        build_control_router(state.clone())
+    } else {
+        build_executor_router(state.clone())
+    };
+    let response = router
         .oneshot(
             Request::builder()
                 .method(method)
@@ -97,10 +102,7 @@ async fn pinned_only_mutations_use_native_order_and_refill_both_clients() {
 
 #[tokio::test]
 async fn custom_section_routes_are_removed_without_native_mutations() {
-    let (mut state, native) = state().await;
-    let frontend = tempfile::tempdir().unwrap();
-    std::fs::write(frontend.path().join("index.html"), "<main>Frontend</main>").unwrap();
-    Arc::make_mut(&mut state.config).frontend.dist_dir = Some(frontend.path().to_path_buf());
+    let (state, native) = state().await;
     for (method, path) in [
         (Method::GET, "/v1/thread-sections"),
         (Method::POST, "/v1/thread-sections"),

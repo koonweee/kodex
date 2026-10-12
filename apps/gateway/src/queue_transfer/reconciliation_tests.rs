@@ -222,7 +222,7 @@ async fn transfer_refills_reach_selected_and_workspace_http_sse_and_reconnect_re
         .create_queue_transfer("chat", "new-row", "original", "original-turn", vec![])
         .await
         .unwrap();
-    let app = crate::api::build_router(state.clone());
+    let app = crate::api::build_executor_router(state.clone());
     let mut streams = Vec::new();
     for uri in [
         "/v1/events?threadId=chat&cursor=0",

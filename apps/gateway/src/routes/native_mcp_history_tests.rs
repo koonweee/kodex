@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 use tower::ServiceExt;
 
 use crate::{
-    api::{build_router, AppState},
+    api::{build_executor_router, AppState},
     app_server::AppServer,
     app_surfaces::MCP_APP_MIME_TYPE,
     config::Config,
@@ -103,7 +103,7 @@ impl AppServer for Native {
 }
 
 async fn request(state: &AppState, method: Method, suffix: &str) -> Value {
-    let response = build_router(state.clone())
+    let response = build_executor_router(state.clone())
         .oneshot(
             Request::builder()
                 .method(method)
@@ -246,7 +246,7 @@ async fn reopened_cached_surfaces_survive_current_older_and_attached_history_unc
             public["session"],
             serde_json::to_value(super::app_surfaces::session_dto(original.clone())).unwrap()
         );
-        let document = build_router(state.clone())
+        let document = build_executor_router(state.clone())
             .oneshot(
                 Request::get(public["session"]["documentUrl"].as_str().unwrap())
                     .body(Body::empty())

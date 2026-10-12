@@ -70,12 +70,6 @@ use crate::{
         health::{HealthResponse, ReadyResponse},
         mcp::{McpResourceReadQuery, McpServersQuery},
         models::ModelsQuery,
-        notifications::{
-            CurrentPushSubscriptionQuery, CurrentPushSubscriptionResponse,
-            NotificationStatusResponse, PushSubscriptionDeleteResponse, PushSubscriptionResponse,
-            PushSubscriptionUpsertRequest, PushSubscriptionUpsertResponse,
-            TestNotificationResponse,
-        },
         permission_profiles::PermissionProfilesQuery,
         pins::{PinnedThreadListQuery, SelfControlThreadPinRequest, ThreadPinRequest},
         projects::{
@@ -123,7 +117,6 @@ use crate::{
             ImageUploadResponse,
         },
     },
-    static_assets,
     store::{
         AppSurfaceCsp, AppSurfaceGrants, AppSurfacePermissions, AppSurfaceProvider,
         AppSurfaceResourceGrant, AppSurfaceSession, AppSurfaceSessionStatus, AppSurfaceToolGrant,
@@ -148,7 +141,6 @@ pub struct AppState {
     pub(crate) app_surface_imports: crate::app_surfaces::AppSurfaceImports,
     pub events: broadcast::Sender<EventEnvelope>,
     pub skills: crate::skills::SkillCatalogCache,
-    pub notifications: crate::notifications::NotificationService,
     pub thread_presence: crate::thread_presence::ThreadPresence,
     pub thread_views: ThreadViewStore,
     pub thread_input_locks: crate::turn_lifecycle::ThreadInputLocks,
@@ -160,8 +152,6 @@ pub struct AppState {
 impl AppState {
     pub fn new(config: Config, store: Store, app_server: DynAppServer) -> Self {
         let (events, _) = broadcast::channel(1024);
-        let notifications =
-            crate::notifications::NotificationService::from_config(&config.notifications);
         let config = Arc::new(config);
         let terminals = crate::terminal::TerminalManager::new(
             config.projects.home_dir.clone(),
@@ -175,7 +165,6 @@ impl AppState {
             app_surface_imports: crate::app_surfaces::AppSurfaceImports::default(),
             events,
             skills: crate::skills::SkillCatalogCache::default(),
-            notifications,
             thread_presence: crate::thread_presence::ThreadPresence::default(),
             thread_views: ThreadViewStore::default(),
             thread_input_locks: crate::turn_lifecycle::ThreadInputLocks::default(),
@@ -183,14 +172,6 @@ impl AppState {
             queue_steer_guards: crate::queue_steer_guard::QueueSteerGuards::default(),
             terminals,
         }
-    }
-
-    pub fn with_notification_sender(
-        mut self,
-        sender: Arc<dyn crate::notifications::PushSender>,
-    ) -> Self {
-        self.notifications = crate::notifications::NotificationService::new(sender);
-        self
     }
 }
 
@@ -284,12 +265,6 @@ impl AppState {
         crate::routes::account::read_rate_limits,
         crate::routes::account::consume_reset_credit,
         crate::routes::models::list_models,
-        crate::routes::notifications::notification_status,
-        crate::routes::notifications::upsert_push_subscription,
-        crate::routes::notifications::delete_push_subscription,
-        crate::routes::notifications::current_push_subscription,
-        crate::routes::notifications::delete_current_push_subscription,
-        crate::routes::notifications::test_notification,
         crate::routes::notifications::claim_notification_deliveries,
         crate::routes::notifications::complete_notification_delivery,
         crate::routes::thread_presence::update_thread_view_presence,
@@ -521,14 +496,6 @@ impl AppState {
         RateLimitsResponse,
         ModelsQuery,
         ModelListResponse,
-        NotificationStatusResponse,
-        PushSubscriptionResponse,
-        PushSubscriptionUpsertRequest,
-        PushSubscriptionUpsertResponse,
-        PushSubscriptionDeleteResponse,
-        CurrentPushSubscriptionQuery,
-        CurrentPushSubscriptionResponse,
-        TestNotificationResponse,
         ThreadViewPresenceRequest,
         ThreadViewPresenceSnapshotRequest,
         SkillsQuery,
@@ -625,8 +592,8 @@ pub fn executor_openapi() -> utoipa::openapi::OpenApi {
     openapi
 }
 
-fn executor_routes(openapi: utoipa::openapi::OpenApi, legacy_combined: bool) -> Router<AppState> {
-    let router = Router::new()
+fn executor_routes(openapi: utoipa::openapi::OpenApi) -> Router<AppState> {
+    Router::new()
         .merge(routes::health::router())
         .merge(routes::capabilities::router())
         .merge(routes::terminals::router())
@@ -653,12 +620,7 @@ fn executor_routes(openapi: utoipa::openapi::OpenApi, legacy_combined: bool) -> 
         .merge(routes::permission_profiles::router())
         .merge(routes::skills::router())
         .merge(routes::mcp::router())
-        .merge(SwaggerUi::new("/docs").url("/openapi.json", openapi));
-    if legacy_combined {
-        router.merge(routes::notifications::router())
-    } else {
-        router
-    }
+        .merge(SwaggerUi::new("/docs").url("/openapi.json", openapi))
 }
 
 fn finish_router(router: Router) -> Router {
@@ -676,7 +638,7 @@ fn finish_router(router: Router) -> Router {
 /// federator route allowlist.
 pub fn build_executor_router(state: AppState) -> Router {
     let instance_id = state.config.instance.id.clone();
-    let router = executor_routes(executor_openapi(), false).with_state(state);
+    let router = executor_routes(executor_openapi()).with_state(state);
     finish_router(router.layer(middleware::from_fn_with_state(
         instance_id,
         crate::instance_precondition::enforce,
@@ -694,22 +656,6 @@ pub fn build_control_router(state: AppState) -> Router {
     )
 }
 
-/// Transitional combined router retained for tests and source-checkout
-/// compatibility while the service bootstrap is split into two listeners.
-pub fn build_router(state: AppState) -> Router {
-    let mut router = executor_routes(ApiDoc::openapi(), true)
-        .merge(routes::frontend_updates::router())
-        .merge(routes::self_control::router())
-        .merge(routes::pins::control_router())
-        .with_state(state.clone());
-
-    if let Some(dist_dir) = state.config.frontend.dist_dir.clone() {
-        router = static_assets::attach_frontend(router, dist_dir);
-    }
-
-    finish_router(router)
-}
-
 #[cfg(test)]
 mod executor_boundary_tests {
     use std::sync::Arc;
@@ -722,12 +668,8 @@ mod executor_boundary_tests {
 
     #[tokio::test]
     async fn executor_listener_never_serves_frontend_assets() {
-        let frontend = tempfile::tempdir().unwrap();
-        std::fs::write(frontend.path().join("index.html"), "<main>frontend</main>").unwrap();
-        let mut config = Config::default();
-        config.frontend.dist_dir = Some(frontend.path().to_path_buf());
         let state = AppState::new(
-            config,
+            Config::default(),
             Store::in_memory().await.unwrap(),
             Arc::new(RecordingAppServer::default()),
         );

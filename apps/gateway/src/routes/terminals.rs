@@ -194,7 +194,7 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::{
-        api::{build_router, AppState},
+        api::{build_executor_router, AppState},
         app_server::tests::RecordingAppServer,
         config::Config,
         store::Store,
@@ -216,7 +216,7 @@ mod tests {
     #[tokio::test]
     async fn terminal_routes_create_list_and_delete_sessions() {
         let state = test_state().await;
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let created = app
             .clone()
@@ -257,7 +257,7 @@ mod tests {
     #[tokio::test]
     async fn terminal_create_rejects_missing_cwd() {
         let state = test_state().await;
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
@@ -278,7 +278,7 @@ mod tests {
     #[tokio::test]
     async fn terminal_delete_missing_session_returns_not_found() {
         let state = test_state().await;
-        let app = build_router(state);
+        let app = build_executor_router(state);
 
         let response = app
             .oneshot(
