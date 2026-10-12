@@ -4,6 +4,10 @@ import type { Automation, EventEnvelope } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { applyAutomationEvent, deleteAutomationById, upsertAutomation } from "./state";
 
+type AutomationCacheOperation =
+  | { automation: Automation; kind: "upsert"; revision: number }
+  | { automationId: string; kind: "delete"; revision: number };
+
 export function mergeAutomationData(
   current: Automation[] | undefined,
   snapshot: Automation[],
@@ -28,6 +32,8 @@ export function mergeAutomationData(
 }
 
 export function upsertCachedAutomation(queryClient: QueryClient, automation: Automation) {
+  const revision = advanceAutomationRevision(queryClient);
+  appendAutomationOperation(queryClient, { automation, kind: "upsert", revision });
   queryClient.setQueryData<string[]>(queryKeys.automationTombstones, (current) =>
     (current ?? []).filter((id) => id !== automation.id),
   );
@@ -37,6 +43,8 @@ export function upsertCachedAutomation(queryClient: QueryClient, automation: Aut
 }
 
 export function deleteCachedAutomation(queryClient: QueryClient, automationId: string) {
+  const revision = advanceAutomationRevision(queryClient);
+  appendAutomationOperation(queryClient, { automationId, kind: "delete", revision });
   queryClient.setQueryData<string[]>(queryKeys.automationTombstones, (current) =>
     current?.includes(automationId) ? current : [...(current ?? []), automationId],
   );
@@ -45,11 +53,50 @@ export function deleteCachedAutomation(queryClient: QueryClient, automationId: s
   );
 }
 
+export function automationRevision(queryClient: QueryClient): number {
+  return queryClient.getQueryData<number>(queryKeys.automationRevision) ?? 0;
+}
+
+export function reconcileAutomationSnapshot(
+  queryClient: QueryClient,
+  snapshot: Automation[],
+  loadRevision: number,
+): Automation[] {
+  const revision = automationRevision(queryClient);
+  let reconciled = mergeAutomationData(undefined, snapshot);
+  for (const operation of queryClient.getQueryData<AutomationCacheOperation[]>(queryKeys.automationOperations) ?? []) {
+    if (operation.revision <= loadRevision) continue;
+    reconciled = operation.kind === "upsert"
+      ? upsertAutomation(reconciled, operation.automation)
+      : deleteAutomationById(reconciled, operation.automationId);
+  }
+  queryClient.setQueryData<string[]>(queryKeys.automationTombstones, []);
+  queryClient.setQueryData<AutomationCacheOperation[]>(queryKeys.automationOperations, (current) =>
+    (current ?? []).filter((operation) => operation.revision > revision),
+  );
+  return reconciled;
+}
+
+function advanceAutomationRevision(queryClient: QueryClient): number {
+  const revision = automationRevision(queryClient) + 1;
+  queryClient.setQueryData<number>(queryKeys.automationRevision, revision);
+  return revision;
+}
+
+function appendAutomationOperation(queryClient: QueryClient, operation: AutomationCacheOperation) {
+  queryClient.setQueryData<AutomationCacheOperation[]>(queryKeys.automationOperations, (current) => [
+    ...(current ?? []),
+    operation,
+  ]);
+}
+
 export function applyCachedAutomationEvent(queryClient: QueryClient, event: EventEnvelope) {
   if (event.kind === "automation.item_upsert") {
-    queryClient.setQueryData<Automation[]>(queryKeys.automations, (current) =>
-      applyAutomationEvent(current ?? [], event),
-    );
+    const current = queryClient.getQueryData<Automation[]>(queryKeys.automations) ?? [];
+    const next = applyAutomationEvent(current, event);
+    const automationId = automationUpsertIdFromPayload(event.payload);
+    const automation = automationId ? next.find((item) => item.id === automationId) : undefined;
+    if (automation) upsertCachedAutomation(queryClient, automation);
     return;
   }
   if (event.kind === "automation.item_deleted") {
@@ -58,6 +105,12 @@ export function applyCachedAutomationEvent(queryClient: QueryClient, event: Even
       deleteCachedAutomation(queryClient, id);
     }
   }
+}
+
+function automationUpsertIdFromPayload(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const id = (payload as { id?: unknown }).id;
+  return typeof id === "string" ? id : null;
 }
 
 function automationDeleteIdFromPayload(payload: unknown): string | null {

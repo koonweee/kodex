@@ -31,7 +31,7 @@ import {
 import type { FederatedCatalog, FederatedExecutor, QualifiedCatalogRef, RegisterExecutorRequest, UpdateExecutorRequest } from "./api/federatorClient";
 import { ExecutorRuntimeBoundary, ExecutorRuntimeRegistryProvider, FederatedShellRuntimeProvider, GatewayClientProvider, useExecutorConnection, useGatewayClient } from "./api/GatewayClientContext";
 import { queryClient, type ExecutorRuntime } from "./api/queryClient";
-import { FederatedCatalogProvider } from "./federation/FederatedCatalogContext";
+import { FederatedCatalogProvider, useFederatedCatalogContext } from "./federation/FederatedCatalogContext";
 import { FederatedProjectCreateFlow } from "./federation/FederatedProjectCreateFlow";
 import { FederatedProjectSettingsModal } from "./federation/FederatedProjectSettingsModal";
 import { useFederatedSidebarController } from "./federation/useFederatedSidebarController";
@@ -283,6 +283,7 @@ function KodexShell({
   workspacePaneStore?: WorkspacePaneStoreAdapter;
 }) {
   const gateway = useGatewayClient();
+  const federatedContext = useFederatedCatalogContext();
   const executorId = useExecutorConnection()?.executorId ?? "local";
   const [initialRoute] = useState(() => currentKodexRoute());
   const queryClientForShell = useQueryClient();
@@ -458,7 +459,7 @@ function KodexShell({
     onError: reportError,
   });
   const automationsQuery = useQuery({
-    enabled: selectedMainPane === "automations",
+    enabled: selectedMainPane === "automations" && !federatedContext,
     queryKey: queryKeys.automations,
     queryFn: async () => {
       const beforeSnapshot = queryClientForShell.getQueryData<Automation[]>(queryKeys.automations);
@@ -1155,6 +1156,7 @@ function KodexShell({
           automationsPaneProps={{
           automations,
           defaultThreadId: selectedThreadId,
+          executorId,
           isLoading: automationsQuery.isLoading,
           onCreateAutomation: handleCreateAutomation,
           onDeleteAutomation: handleDeleteAutomation,
@@ -1162,6 +1164,7 @@ function KodexShell({
           onResumeAutomation: handleResumeAutomation,
           onShowMobileSidebar: handleShowMobileSidebar,
           onUpdateAutomation: handleUpdateAutomation,
+          preferredExecutorId,
           threadOptions: automationTargetThreadOptions,
         }}
         executorId={executorId}

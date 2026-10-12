@@ -4,6 +4,8 @@ export const queryKeys = {
   automationRunsRoot: ["automation-runs"] as const,
   automationRuns: (automationId: string) => ["automation-runs", automationId] as const,
   automations: ["automations"] as const,
+  automationOperations: ["automations", "operations"] as const,
+  automationRevision: ["automations", "revision"] as const,
   automationTombstones: ["automations", "tombstones"] as const,
   capabilities: ["capabilities"] as const,
   chatThreads: ["threads", "chat"] as const,

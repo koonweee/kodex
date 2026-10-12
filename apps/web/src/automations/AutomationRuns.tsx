@@ -13,14 +13,15 @@ const phaseLabels: Record<AutomationRun["phase"], string> = {
   dispatched: "Dispatched", rejected: "Rejected", uncertain: "Delivery uncertain", removed: "Removed",
 };
 
-export function AutomationRuns({ automationId }: { automationId: string }) {
+export function AutomationRuns({ automationId, disabled = false }: { automationId: string; disabled?: boolean }) {
   const api = useGatewayClient();
   const client = useQueryClient();
-  const query = useQuery({ queryKey: queryKeys.automationRuns(automationId), queryFn: ({ signal }) => api.listAutomationRuns(automationId, signal) });
+  const query = useQuery({ enabled: !disabled, queryKey: queryKeys.automationRuns(automationId), queryFn: ({ signal }) => api.listAutomationRuns(automationId, signal) });
   return <Stack gap="sm" mah={280} style={{ overflowY: "auto" }} role="region" aria-label="Automation runs">
-    <Group justify="space-between"><Text fw={600}>Recent runs</Text><Button size="compact-sm" variant="subtle" onClick={() => void refreshAutomationRuns(client, automationId)}>Refresh runs</Button></Group>
+    <Group justify="space-between"><Text fw={600}>Recent runs</Text><Button disabled={disabled} size="compact-sm" variant="subtle" onClick={() => void refreshAutomationRuns(client, automationId)}>Refresh runs</Button></Group>
     {query.error ? <Alert color="red">{errorMessageFrom(query.error)}</Alert> : null}
-    {query.isPending ? <Text size="sm">Loading runs…</Text> : null}
+    {query.isPending && !disabled ? <Text size="sm">Loading runs…</Text> : null}
+    {query.isPending && disabled ? <Text size="sm" c="dimmed">Run history is unavailable while this executor is offline.</Text> : null}
     {query.data?.length === 0 ? <Text size="sm" c="dimmed">No runs recorded.</Text> : null}
     {query.data?.map((run) => <Stack key={run.id} gap={4}>
       <Group gap="xs"><Badge variant="light" color={run.phase === "uncertain" ? "yellow" : run.phase === "rejected" ? "red" : "gray"}>{phaseLabels[run.phase]}</Badge><Text size="xs" c="dimmed">{formatAutomationDate(run.createdAt)}</Text></Group>

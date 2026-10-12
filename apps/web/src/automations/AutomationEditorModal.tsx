@@ -37,6 +37,7 @@ const REPEAT_UNIT_OPTIONS = [
 
 export function AutomationEditorModal({
   automation,
+  disabled = false,
   fallbackThreadId,
   onClose,
   onCreate,
@@ -48,6 +49,7 @@ export function AutomationEditorModal({
   threadOptions,
 }: {
   automation: Automation | null;
+  disabled?: boolean;
   fallbackThreadId: string | null;
   onClose: () => void;
   onCreate: (request: AutomationCreateRequest) => Promise<Automation>;
@@ -87,6 +89,7 @@ export function AutomationEditorModal({
   }, [automation, fallbackThreadId, opened]);
 
   async function handleSave() {
+    if (disabled) return;
     const validationError = automationValidationError(values);
     if (validationError) {
       setError(validationError);
@@ -132,7 +135,7 @@ export function AutomationEditorModal({
   }
 
   async function handleAction(action: "delete" | "pause" | "resume") {
-    if (!automation) {
+    if (!automation || disabled) {
       return;
     }
     if (action === "delete" && !deletePendingConfirmation) {
@@ -263,6 +266,7 @@ export function AutomationEditorModal({
       title={title}
     >
       <Stack className="kodex-automation-modal-form" gap="md">
+        {disabled ? <Alert color="yellow">Reconnect this executor to change the automation.</Alert> : null}
         {error ? (
           <Alert color="red" icon={<AlertCircle size={16} />}>
             {error}
@@ -299,14 +303,14 @@ export function AutomationEditorModal({
             {promptFields()}
           </>
         )}
-        {automation && opened ? <AutomationRuns automationId={automation.id} /> : null}
+        {automation && opened ? <AutomationRuns automationId={automation.id} disabled={disabled} /> : null}
         <Group className="kodex-automation-modal-footer" justify="space-between" wrap="nowrap">
           <Group gap="xs" wrap="nowrap">
             {automation ? (
               <>
                 <AdaptiveIconButton
                   color="red"
-                  disabled={isSubmitting}
+                  disabled={disabled || isSubmitting}
                   label={deletePendingConfirmation ? "Confirm delete" : "Delete"}
                   loading={submittingAction === "delete"}
                   onClick={() => void handleAction("delete")}
@@ -316,7 +320,7 @@ export function AutomationEditorModal({
                 </AdaptiveIconButton>
                 <AdaptiveIconButton
                   className="kodex-automation-status-action"
-                  disabled={isSubmitting}
+                  disabled={disabled || isSubmitting}
                   label={automation.status === "paused" ? "Resume" : "Pause"}
                   loading={submittingAction === "pause" || submittingAction === "resume"}
                   onClick={() => void handleAction(automation.status === "paused" ? "resume" : "pause")}
@@ -328,7 +332,7 @@ export function AutomationEditorModal({
             ) : null}
           </Group>
           <Group gap="xs" wrap="nowrap">
-            <AdaptiveIconButton label="Save" loading={submittingAction === "save"} onClick={() => void handleSave()} variant="filled">
+            <AdaptiveIconButton disabled={disabled || isSubmitting} label="Save" loading={submittingAction === "save"} onClick={() => void handleSave()} variant="filled">
               <Save />
             </AdaptiveIconButton>
           </Group>

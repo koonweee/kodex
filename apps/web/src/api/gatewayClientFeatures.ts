@@ -35,10 +35,11 @@ export function createGatewayFeatures({
   requestUrl,
   transportFetch,
 }: GatewayClientDependencies) {
-  async function listAutomations(threadId?: string): Promise<Automation[]> {
+  async function listAutomations(threadId?: string, signal?: AbortSignal): Promise<Automation[]> {
     const response = await unwrap(
       api.GET("/v1/automations", {
         params: threadId ? { query: { threadId } } : undefined,
+        signal,
       }),
     );
     return response.automations;

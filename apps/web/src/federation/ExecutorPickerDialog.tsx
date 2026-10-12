@@ -15,7 +15,7 @@ export function ExecutorPickerDialog({
   preferredExecutorId,
 }: {
   choices: ExecutorChoice[];
-  kind: "chat" | "project";
+  kind: "automation" | "chat" | "project";
   onClose: () => void;
   onConfirm: (executorId: string) => void;
   opened: boolean;
@@ -30,7 +30,7 @@ export function ExecutorPickerDialog({
     if (opened) setExecutorId(fallback);
   }, [fallback, opened]);
 
-  const noun = kind === "project" ? "project" : "chat";
+  const noun = kind === "project" ? "project" : kind === "automation" ? "automation" : "chat";
   return (
     <Modal centered onClose={onClose} opened={opened} title={`New ${noun}`}>
       <Stack>
