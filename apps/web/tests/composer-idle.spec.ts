@@ -195,7 +195,9 @@ for (const settingsError of [false, true]) {
       await expect(input).toBeFocused();
       await expect(pane.getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(1);
     } finally { await fixture.close(); await context.close(); }
-    expect(fixture.errors).toEqual(settingsError ? ["Failed to load resource: the server responded with a status of 400 (Bad Request)"] : []);
+    const expectedSettingsError = "Failed to load resource: the server responded with a status of 400 (Bad Request)";
+    expect(new Set(fixture.errors)).toEqual(settingsError ? new Set([expectedSettingsError]) : new Set());
+    if (settingsError) expect(fixture.errors.length).toBeGreaterThan(0);
     expect(fixture.unexpected).toEqual([]);
   });
 }

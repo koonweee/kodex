@@ -29,21 +29,25 @@ async function mountMessages(page: Page) {
         applyKodexColorScheme(document.documentElement, scheme);
         for (const [name, value] of Object.entries(scheme.rootVariables)) document.documentElement.style.setProperty(name, value);
         const theme = createKodexMantineTheme(scheme);
+        const { GatewayClientProvider } = await import('/src/api/GatewayClientContext.tsx');
+        const { createGatewayClient } = await import('/src/api/gatewayClient.ts');
         const { UserMessageBubble, AssistantMessageMarkdown } = await import('/src/timeline/messageRenderers.tsx');
         const item = (id, text, kind = 'user_message') => ({
           id, text, kind, status: 'completed', turnId: 'turn', displayOrder: 1, payload: {}, debugEvents: [],
         });
         createRoot(document.getElementById('root')).render(
-          React.createElement(MantineProvider, { theme, forceColorScheme: scheme.mode },
-            React.createElement('div', { style: { display: 'grid', gap: '16px' } },
-              React.createElement(UserMessageBubble, {
-                imagePreviewUrlsByPath: {}, item: item('user', 'First question'), toolbarTimestampMs: Date.now(),
-              }),
-              React.createElement(AssistantMessageMarkdown, {
-                item: { ...item('answer', 'Assistant answer', 'assistant_message'), messagePhase: 'final_answer' },
-                text: 'Assistant answer', toolbarTimestampMs: Date.now(),
-              }),
-              React.createElement('button', { id: 'outside' }, 'Outside message')
+          React.createElement(GatewayClientProvider, { client: createGatewayClient() },
+            React.createElement(MantineProvider, { theme, forceColorScheme: scheme.mode },
+              React.createElement('div', { style: { display: 'grid', gap: '16px' } },
+                React.createElement(UserMessageBubble, {
+                  imagePreviewUrlsByPath: {}, item: item('user', 'First question'), toolbarTimestampMs: Date.now(),
+                }),
+                React.createElement(AssistantMessageMarkdown, {
+                  item: { ...item('answer', 'Assistant answer', 'assistant_message'), messagePhase: 'final_answer' },
+                  text: 'Assistant answer', toolbarTimestampMs: Date.now(),
+                }),
+                React.createElement('button', { id: 'outside' }, 'Outside message')
+              )
             )
           )
         );

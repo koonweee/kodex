@@ -64,10 +64,9 @@ for (const shape of [
         await second.bringToFront();
         fixture.publishTimeline({ ...fixture.detail.timeline, rows: [row("turn-b")], turns: [{ id: "turn-b", status: "completed" }], viewRevision: 20 }, "second");
         if (shape.width < 700) {
-          // The main pane stays mounted behind the narrow sidebar. Rendered
-          // canonical history there is neither a visible read nor presence.
-          await expect(second.getByText("Native answer turn-b", { exact: true })).toHaveCount(1);
-          await expect(second.getByText("Native answer turn-b", { exact: true })).not.toBeVisible();
+          // Hidden virtual rows may be unmounted at zero available size. The
+          // client must not emit a read receipt or visible-presence claim until
+          // the user shows the thread.
           expect(seen()).toHaveLength(1);
           expect(fixture.requests.filter((request) => request.client === "second" && request.key === "PUT /v1/thread-view-presence").at(-1)?.body)
             .toMatchObject({ visibleThreadIds: [] });

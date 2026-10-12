@@ -509,7 +509,7 @@ test("keeps long timeline content inside the thread viewer", async ({ page }) =>
     });
   });
 
-  await page.goto("/threads/thread-1");
+  await page.goto("/executors/local/threads/thread-1");
   await page.getByRole("button", { name: "Account settings", exact: true }).click();
   await page.getByRole("menuitemcheckbox", { name: "Show command outputs", exact: true }).click();
   await page.keyboard.press("Escape");
@@ -531,7 +531,7 @@ test("keeps long timeline content inside the thread viewer", async ({ page }) =>
   await commandSummary.scrollIntoViewIfNeeded();
   await expect(commandSummary).toBeVisible();
   await expect(commandSummary).toHaveCSS("text-overflow", "ellipsis");
-  await commandSummary.locator("xpath=ancestor::summary").click();
+  await commandSummary.locator("xpath=ancestor::summary").evaluate((summary: HTMLElement) => summary.click());
 
   const commandOutput = page.locator(".kodex-command-panel .kodex-timeline-output").first();
   await expect(commandOutput).toBeVisible();
@@ -662,7 +662,7 @@ test("keeps followed live output pinned to the scroll parent bottom", async ({ p
     });
 
     await page.setViewportSize({ width: 820, height: 760 });
-    await page.goto("/threads/thread-1");
+    await page.goto("/executors/local/threads/thread-1");
     await expect(page.getByText("Follow seed 13")).toBeVisible();
     await expect.poll(() => streams.size).toBe(1);
     const viewer = page.locator(".kodex-timeline-scroll");
@@ -863,7 +863,7 @@ test("keeps large file changes and following skill messages from overlapping", a
   });
 
   await page.setViewportSize({ width: 820, height: 760 });
-  await page.goto("/threads/thread-1");
+  await page.goto("/executors/local/threads/thread-1");
 
   await expect(page.getByLabel("Implement Review Loop skill")).toBeVisible();
   await expect(page.getByText("23 files changed")).toBeVisible();
@@ -873,6 +873,7 @@ test("keeps large file changes and following skill messages from overlapping", a
   await page.getByLabel("Expand 23 files changed").click();
   await page.getByText("Modified").first().click();
   await expect(page.getByLabel(/file diff for src\/generated-/i).first()).toBeVisible();
+  await page.locator(".kodex-timeline-scroll").evaluate((node) => { node.scrollTop = node.scrollHeight; });
   await expect(page.getByLabel("Implement Review Loop skill")).toBeVisible();
   await expectNoRenderedTimelineOverlap(page);
 });
@@ -892,13 +893,13 @@ test("lets thread titles use the expanded sidebar width before truncating", asyn
     }
 
     const response =
-      key === "GET /v1/threads"
+      key === "GET /v1/sidebar/threads"
         ? {
             body: {
-              threads: [{ ...thread, name: longTitle, status: "idle" }],
-              nextCursor: null,
-              backwardsCursor: null,
-              rawPayload: {},
+              projects: [project],
+              projectThreads: { [project.id]: { threads: [{ ...thread, name: longTitle, status: "idle" }] } },
+              chatThreads: { threads: [] },
+              pinnedThreads: { threads: [] },
             },
           }
         : ["GET /v1/threads/thread-1", "POST /v1/threads/thread-1/attach"].includes(key)
@@ -916,7 +917,7 @@ test("lets thread titles use the expanded sidebar width before truncating", asyn
     });
   });
 
-  await page.goto("/threads/thread-1");
+  await page.goto("/executors/local/threads/thread-1");
 
   const threadButton = page.locator(".kodex-thread-list-button").first();
   await expect(threadButton).toBeVisible();
@@ -998,7 +999,7 @@ test("resolves a pending approval", async ({ page }) => {
     });
   });
 
-  await page.goto("/threads/thread-1");
+  await page.goto("/executors/local/threads/thread-1");
 
   const threadCard = page.getByRole("button", { name: /^frontend mvp(?: needs approval)?$/i });
   await expect(threadCard.getByText(/needs approval/i)).toBeVisible();
@@ -1019,15 +1020,19 @@ test("opens preferences from the settings menu and switches between dark and lig
   const dialog = page.getByRole("dialog", { name: /preferences/i });
   await expect(dialog).toBeVisible();
 
+  await dialog.getByRole("radiogroup", { name: "Browse themes", exact: true }).getByText("Dark", { exact: true }).click();
   const dracula = dialog.getByRole("radio", { name: /dracula/i });
   await dracula.click();
   await expect(dracula).toHaveAttribute("aria-checked", "true");
+  await dialog.getByRole("radiogroup", { name: "Appearance mode", exact: true }).getByText("Dark", { exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("data-kodex-color-scheme", "dracula");
   await expect(page.locator("html")).toHaveAttribute("data-mantine-color-scheme", "dark");
 
+  await dialog.getByRole("radiogroup", { name: "Browse themes", exact: true }).getByText("Light", { exact: true }).click();
   const paperLight = dialog.getByRole("radio", { name: /paper light/i });
   await paperLight.click();
   await expect(paperLight).toHaveAttribute("aria-checked", "true");
+  await dialog.getByRole("radiogroup", { name: "Appearance mode", exact: true }).getByText("Light", { exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("data-kodex-color-scheme", "paper-light");
   await expect(page.locator("html")).toHaveAttribute("data-mantine-color-scheme", "light");
 });
@@ -1431,6 +1436,7 @@ test("composer clears native fast service tier without replaying settings on sen
   await expect.poll(() => submittedBody).toEqual({
     input: [{ type: "text", text: "Use normal speed" }],
     clientUserMessageId: expect.any(String),
+    queueIfPending: true,
   });
 });
 

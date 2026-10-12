@@ -288,6 +288,8 @@ M7 is active. The service controller now supports fresh, independent `executor` 
 
 Exit: all prior milestone exits, generated artifacts, relevant suites/trims and independent reviews pass; manual/native/platform evidence is recorded; no unverified required behavior is called complete.
 
+M8 is active at the automated implementation boundary. The [implementation validation audit](../docs/audits/2026-10-12-federated-kodex-validation.md) maps the acceptance matrix to backend, frontend, transport, two-tab, browser and service-controller evidence and records the fresh rollout runbook. README, architecture, deployment/service guidance and contributor state-ownership rules now describe native membership with federator-owned executor-qualified presentation order. Generated contract exporters have unique Cargo targets, stale single-executor browser fixtures use the qualified route/storage contract, and the complete two-worker bundled-Chromium run passes 368 cases with 92 explicitly gated skips. The final independent rereview found no remaining major or medium issues. The audit keeps the deployed Tailscale sandbox/media path, remote OAuth callback, real Push/device run, real split macOS/Linux lifecycle and gated native-browser cases explicitly pending. Therefore M8 and the overall plan remain active rather than claiming rollout readiness.
+
 ## Acceptance matrix
 
 | Scenario | Required evidence |

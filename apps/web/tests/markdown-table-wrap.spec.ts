@@ -8,7 +8,7 @@ test("assistant tables keep words intact and scroll within the table when needed
   const text = [
     "| Area | Pal | Kirbot-pa |",
     "| --- | --- | --- |",
-    "| Runtime | Main session and independent task threads | Persistent side sessions and orchestration state |",
+    "| Runtime | Main session and independent task threads | PersistentSideSessionsAndOrchestrationState |",
     "| Delegation | Main searches, inspects, and delegates | Workers can delegate, consult, and message other sessions |",
   ].join("\n");
   const id = "answer-table";
@@ -27,7 +27,7 @@ test("assistant tables keep words intact and scroll within the table when needed
   };
 
   try {
-    const page = await fixture.page("table-wrap", "/threads/settings-chat");
+    const page = await fixture.page("table-wrap");
     await page.setViewportSize({ width: 950, height: 900 });
     const table = page.getByRole("table");
     await expect(table).toBeVisible();

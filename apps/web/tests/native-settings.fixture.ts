@@ -405,7 +405,7 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
       held.delete(key);
       await reply.send();
     },
-    async page(client: string, path = "/threads/settings-chat") {
+    async page(client: string, path = "/executors/local/threads/settings-chat") {
       const page = await context.newPage();
       clients.set(page, client);
       // Keep late pagehide beacons inside this disposable fixture too.

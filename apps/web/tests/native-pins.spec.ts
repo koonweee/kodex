@@ -17,8 +17,8 @@ for (const shape of [
         { ...fixture.state.threads[0], id: "former-section", name: "Former section chat", projectId: null, rawPayload: { sectionId: "native-custom-section" } },
       );
       try {
-        const first = await fixture.page("first", "/threads/history");
-        const second = await fixture.page("second", "/threads/history");
+        const first = await fixture.page("first", "/executors/local/threads/history");
+        const second = await fixture.page("second", "/executors/local/threads/history");
         for (const page of [first, second]) await expect(page.getByText(preservedHistory, { exact: true })).toBeVisible();
         await expect.poll(() => fixture.connected("first") && fixture.connected("second")).toBe(true);
         const initialConnections = new Map(fixture.connections);
@@ -104,9 +104,9 @@ test.describe("narrow pinned recovery", () => {
     const fixture = await nativeProjectsFixture(context);
     fixture.pinThread("history", true);
     try {
-      const first = await fixture.page("first", "/threads/history");
-      const second = await fixture.page("second", "/threads/unlisted");
-      await expect(second.getByText(preservedHistory, { exact: true })).toBeVisible();
+      const first = await fixture.page("first", "/executors/local/threads/history");
+      const second = await fixture.page("second", "/executors/local/threads/unlisted");
+      await expect(second.locator('.kodex-thread-pane[data-workspace-pane-active="true"]').getByText(preservedHistory, { exact: true })).toBeVisible();
       await expect.poll(() => fixture.connected("first") && fixture.connected("second")).toBe(true);
       const initialConnections = new Map(fixture.connections);
 
@@ -138,7 +138,7 @@ test.describe("narrow pinned recovery", () => {
       expect(reads()).toBeGreaterThan(beforeReads);
       expect(fixture.state.threads.find((entry) => entry.id === "unlisted")).toMatchObject({ projectId: "alpha", cwd: executionCwd, pinned: true });
       await second.getByRole("button", { name: "Show thread", exact: true }).click();
-      await expect(second.getByText(preservedHistory, { exact: true })).toBeVisible();
+      await expect(second.locator('.kodex-thread-pane[data-workspace-pane-active="true"]').getByText(preservedHistory, { exact: true })).toBeVisible();
     } finally { await fixture.close(); }
     expect(fixture.unexpected).toEqual([]);
     expect(fixture.errors).toEqual([]);

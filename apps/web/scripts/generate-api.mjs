@@ -8,13 +8,13 @@ const web = fileURLToPath(new URL("../", import.meta.url));
 const temporary = mkdtempSync(join(tmpdir(), "kodex-openapi-"));
 try {
   const contracts = [
-    ["kodex-gateway", "schema.ts"],
-    ["kodex-federator", "federation.ts"],
+    ["kodex-gateway", "export_gateway_openapi", "schema.ts"],
+    ["kodex-federator", "export_federation_openapi", "federation.ts"],
   ];
-  for (const [packageName, outputName] of contracts) {
+  for (const [packageName, exampleName, outputName] of contracts) {
     const schema = execFileSync(
       "cargo",
-      ["run", "--quiet", "--locked", "-p", packageName, "--example", "export_openapi"],
+      ["run", "--quiet", "--locked", "-p", packageName, "--example", exampleName],
       { cwd: web, maxBuffer: 16 * 1024 * 1024 },
     );
     const input = join(temporary, `${packageName}.json`);

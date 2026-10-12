@@ -23,7 +23,7 @@ for (const shape of [
       });
       try {
         for (const id of ["first", "second"]) {
-          const page = await fixture.page(id, "/automations");
+          const page = await fixture.page(id, "/executors/local/automations");
           const row = page.getByText("Fresh report", { exact: true });
           if (shape.hasTouch) await row.tap(); else await row.click();
           await expect(page.getByText("New chat for each run", { exact: true })).toBeVisible();
@@ -49,8 +49,8 @@ for (const shape of [
       const run: AutomationRun = { id: "run-1", automationId, targetThreadId: "settings-chat", nativeQueueId: "native-row", phase: "queued", createdAt: "2026-10-05T00:00:00Z", updatedAt: "2026-10-05T00:00:00Z" };
       fixture.automationRuns.set(automationId, [run]);
       try {
-        const first = await fixture.page("first", "/automations");
-        const second = await fixture.page("second", "/automations");
+        const first = await fixture.page("first", "/executors/local/automations");
+        const second = await fixture.page("second", "/executors/local/automations");
         for (const page of [first, second]) {
           const row = page.getByText("Scheduled review", { exact: true });
           if (shape.hasTouch) await row.tap(); else await row.click();

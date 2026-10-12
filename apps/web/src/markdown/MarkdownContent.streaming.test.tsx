@@ -140,6 +140,27 @@ describe("live Markdown presentation", () => {
     expect(container.querySelectorAll("[data-stream-born]")).toHaveLength(0);
   });
 
+  it("preserves a selected streamed suffix when later text is appended", () => {
+    animations();
+    const { rerender, container } = render(content("Seed"));
+    rerender(content("Seed selected suffix", 4));
+    const spans = container.querySelectorAll("[data-stream-born]");
+    const selection = window.getSelection()!;
+    const range = document.createRange();
+    range.setStart(spans[0].firstChild!, 0);
+    range.setEnd(spans[spans.length - 1].firstChild!, spans[spans.length - 1].textContent!.length);
+    act(() => {
+      selection.removeAllRanges();
+      selection.addRange(range);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+
+    rerender(content("Seed selected suffix and later text", 20));
+
+    expect(selection.toString()).toBe(" selected suffix");
+    expect(container).toHaveTextContent("Seed selected suffix and later text");
+  });
+
   it("does no animation work with reduced motion", () => {
     const matchMedia = window.matchMedia;
     vi.spyOn(window, "matchMedia").mockImplementation(query => ({ ...matchMedia(query), matches: query === "(prefers-reduced-motion: reduce)" }));

@@ -114,6 +114,7 @@ test("loading older history preserves the latest reading anchor through concurre
     await expect(loadOlder).toBeVisible();
     await loadOlder.click();
     await expect.poll(() => releaseOlder !== null).toBe(true);
+    await expect.poll(() => fixture.connected("prepend-anchor")).toBe(true);
 
     const delta = `\n\n${"Live output below the reading anchor grows without moving it. ".repeat(80)}`;
     const revision = 3;

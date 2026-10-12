@@ -81,7 +81,7 @@ for (const shape of [
 
         await send(first, "Use native settings", shape.hasTouch);
         await expect.poll(() => fixture.requests.filter((entry) => entry.key === "POST /v1/threads/settings-chat/input").map((entry) => entry.body))
-          .toEqual([{ input: [{ type: "text", text: "Use native settings" }], clientUserMessageId: expect.any(String) }]);
+          .toEqual([{ input: [{ type: "text", text: "Use native settings" }], clientUserMessageId: expect.any(String), queueIfPending: true }]);
         await expect(activePane(second).getByRole("button", { name: "Stop turn", exact: true })).toBeVisible();
         await send(second, "Use native settings when queued", shape.hasTouch, "Queue message");
         await expect.poll(() => fixture.requests.filter((entry) => entry.key === "POST /v1/threads/settings-chat/queued-inputs").map((entry) => entry.body))

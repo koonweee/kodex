@@ -25,6 +25,7 @@ import { projectEventInvalidatesThread } from "../../projects/cache";
 import { queryKeys } from "../../api/queryKeys";
 import { recordReducerBatch } from "../../events/liveDiagnostics";
 import { errorMessageFrom } from "../../shared/values";
+import { useTextSelectionPreservation } from "../../shared/useTextSelectionPreservation";
 import { applyTimelineEventBatch } from "../../timeline/batch";
 import { idleTimelineEntry, type TimelineEntry } from "../../timeline/entry";
 import {
@@ -135,6 +136,8 @@ function ExistingThreadPane({
   const [timelineOverflowBelow, setTimelineOverflowBelow] = useState(false);
   const [thread, setThread] = useState<ThreadSummary | null>(seededThread);
   const [timeline, setTimeline] = useState<TimelineState>(() => createTimelineState());
+  const selectionRootRef = useRef<HTMLDivElement>(null);
+  useTextSelectionPreservation(selectionRootRef, timeline.rows);
   const snapshotControllerRef = useRef<AbortController | null>(null);
   const historyControllerRef = useRef<AbortController | null>(null);
   const refreshInFlightRef = useRef(false);
@@ -668,7 +671,7 @@ function ExistingThreadPane({
       {isUnavailable ? (
         <ThreadUnavailablePane paneId={pane.id} onBrowseThreads={onShowMobileSidebar} />
       ) : (
-        <Box className="kodex-thread-content" data-subagent-sidebar={paneAside ? "open" : "closed"}>
+        <Box className="kodex-thread-content" data-subagent-sidebar={paneAside ? "open" : "closed"} ref={selectionRootRef}>
           <div
             className="kodex-thread-scroll-frame"
             data-overflow-above={timelineOverflowAbove ? "true" : undefined}

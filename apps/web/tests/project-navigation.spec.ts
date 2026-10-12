@@ -65,13 +65,13 @@ for (const shape of [
         await route.fulfill({ json: routes[key] });
       });
 
-      await page.goto("/projects/project-1");
+      await page.goto("/executors/local/projects/project-1");
       const main = page.getByRole("main", { name: "Project", exact: true });
       await expect(main.getByRole("heading", { name: "Kodex" })).toBeVisible();
       await expect(main.getByText(projectCwd)).toBeVisible();
       await expect(main.getByRole("button", { name: /add service|add preview|restart proxy/i })).toHaveCount(0);
 
-      if (shape.width < 700) await main.getByRole("button", { name: "Projects", exact: true }).click();
+      if (shape.width < 700) await main.getByRole("button", { name: "Show sidebar", exact: true }).click();
       const workspace = page.getByRole("navigation", { name: "Workspace" });
       const chat = workspace.getByRole("button", { name: "Project chat", exact: true });
       if (shape.hasTouch) await chat.tap();

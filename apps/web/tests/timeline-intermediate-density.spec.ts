@@ -13,215 +13,211 @@ for (const layout of [
   { name: "a regular fine-pointer pane", viewport: { width: 1100, height: 800 }, hasTouch: false },
   { name: "a compact touch pane", viewport: { width: 390, height: 844 }, hasTouch: true },
 ]) {
-  test(`intermediate summaries keep one density when collapsed and expanded in ${layout.name}`, async ({ browser }) => {
-    const context = await browser.newContext({ viewport: layout.viewport, hasTouch: layout.hasTouch });
-    const fixture = await nativeSettingsFixture(context);
-    fixture.detail.timeline = intermediateTimeline();
+  test.describe(layout.name, () => {
+    test.use({ viewport: layout.viewport, hasTouch: layout.hasTouch });
 
-    try {
-      const page = await fixture.page("intermediate-density");
-      const activity = page.locator(".kodex-activity-group");
-      const activitySummary = activity.locator(":scope > summary");
-      const files = page.locator(".kodex-file-changes-panel");
-      const filesSummary = files.locator(":scope > summary");
+    test(`intermediate summaries keep one density when collapsed and expanded in ${layout.name}`, async ({ context }) => {
+      const fixture = await nativeSettingsFixture(context);
+      fixture.detail.timeline = intermediateTimeline();
 
-      await expect(activitySummary).toBeVisible();
-      await expect(filesSummary).toBeVisible();
+      try {
+        const page = await fixture.page("intermediate-density");
+        const activity = page.locator(".kodex-activity-group");
+        const activitySummary = activity.locator(":scope > summary");
+        const files = page.locator(".kodex-file-changes-panel");
+        const filesSummary = files.locator(":scope > summary");
 
-      const activityCollapsed = await verticalGeometry(activitySummary, ".kodex-activity-heading");
-      const filesCollapsed = await verticalGeometry(filesSummary, ".kodex-file-changes-title");
+        await expect(activitySummary).toBeVisible();
+        await expect(filesSummary).toBeVisible();
 
-      await activitySummary.click();
-      await filesSummary.click();
+        const activityCollapsed = await verticalGeometry(activitySummary, ".kodex-activity-heading");
+        const filesCollapsed = await verticalGeometry(filesSummary, ".kodex-file-changes-title");
 
-      const activityExpanded = await verticalGeometry(activitySummary, ".kodex-activity-heading");
-      const filesExpanded = await verticalGeometry(filesSummary, ".kodex-file-changes-title");
-      const commandSummary = activity.locator(".kodex-activity-item > summary").first();
-      const fileSummary = files.locator(".kodex-file-change-summary").first();
-      const commandExpanded = await verticalGeometry(commandSummary, ".kodex-activity-heading");
-      const fileExpanded = await verticalGeometry(fileSummary, ".kodex-file-change-action");
-      const activityContents = activity.locator(":scope > .kodex-activity-contents");
+        await activitySummary.evaluate((summary: HTMLElement) => summary.click());
+        await filesSummary.evaluate((summary: HTMLElement) => summary.click());
 
-      await expect.poll(() => verticalGap(activitySummary, activityContents)).toBeCloseTo(4, 0);
-      await commandSummary.click();
-      const commandPanel = activity.locator(".kodex-activity-item > .kodex-command-panel").first();
-      await expect.poll(() => verticalGap(commandSummary, commandPanel)).toBeCloseTo(4, 0);
+        const activityExpanded = await verticalGeometry(activitySummary, ".kodex-activity-heading");
+        const filesExpanded = await verticalGeometry(filesSummary, ".kodex-file-changes-title");
+        const commandSummary = activity.locator(".kodex-activity-item > summary").first();
+        const fileSummary = files.locator(".kodex-file-change-summary").first();
+        const commandExpanded = await verticalGeometry(commandSummary, ".kodex-activity-heading");
+        const fileExpanded = await verticalGeometry(fileSummary, ".kodex-file-change-action");
+        const activityContents = activity.locator(":scope > .kodex-activity-contents");
 
-      expect(Math.abs(activityExpanded.height - activityCollapsed.height)).toBeLessThanOrEqual(1);
-      // The expanded file header gains its separator border without changing its
-      // content inset or density.
-      expect(Math.abs(filesExpanded.height - filesCollapsed.height)).toBeLessThanOrEqual(1);
-      expectUniformDensity([
-        activityCollapsed,
-        activityExpanded,
-        filesCollapsed,
-        filesExpanded,
-        commandExpanded,
-        fileExpanded,
-      ]);
-      expect(fixture.unexpected).toEqual([]);
-      expect(fixture.errors).toEqual([]);
-    } finally {
-      await fixture.close();
-      await context.close();
-    }
+        await expect.poll(() => verticalGap(activitySummary, activityContents)).toBeCloseTo(4, 0);
+        await commandSummary.click();
+        const commandPanel = activity.locator(".kodex-activity-item > .kodex-command-panel").first();
+        await expect.poll(() => verticalGap(commandSummary, commandPanel)).toBeCloseTo(4, 0);
+
+        expect(Math.abs(activityExpanded.height - activityCollapsed.height)).toBeLessThanOrEqual(1);
+        // The expanded file header gains its separator border without changing its
+        // content inset or density.
+        expect(Math.abs(filesExpanded.height - filesCollapsed.height)).toBeLessThanOrEqual(1);
+        expectUniformDensity([
+          activityCollapsed,
+          activityExpanded,
+          filesCollapsed,
+          filesExpanded,
+          commandExpanded,
+          fileExpanded,
+        ]);
+        expect(fixture.unexpected).toEqual([]);
+        expect(fixture.errors).toEqual([]);
+      } finally {
+        await fixture.close();
+      }
+    });
+
+    test(`compact markers and substantive items use their assigned density in ${layout.name}`, async ({ context }) => {
+      const fixture = await nativeSettingsFixture(context);
+      fixture.detail.timeline = mixedDensityTimeline();
+
+      try {
+        const page = await fixture.page("mixed-density");
+        const contextCompacted = page.getByText("Context compacted", { exact: true });
+        const plan = page.getByText("Inspect then patch", { exact: true });
+        await expect(contextCompacted).toBeVisible();
+        await expect(plan).toBeVisible();
+
+        const contextBox = await contextCompacted.boundingBox();
+        expect(contextBox).not.toBeNull();
+        expect(contextBox!.height).toBeGreaterThanOrEqual(30);
+        expect(contextBox!.height).toBeLessThanOrEqual(34);
+
+        const planRow = page.locator(".kodex-turn-group").filter({ has: plan });
+        const planGeometry = await verticalGeometry(planRow, ":scope > .kodex-timeline-item");
+        expect(planGeometry.topInset).toBeGreaterThanOrEqual(5);
+        expect(planGeometry.topInset).toBeLessThanOrEqual(7);
+        expect(planGeometry.bottomInset).toBeGreaterThanOrEqual(0);
+        expect(planGeometry.bottomInset).toBeLessThanOrEqual(1);
+        expect(fixture.unexpected).toEqual([]);
+        expect(fixture.errors).toEqual([]);
+      } finally {
+        await fixture.close();
+      }
+    });
+
+    test(`work boundaries use the regular leading gap in ${layout.name}`, async ({ context }) => {
+      const fixture = await nativeSettingsFixture(context);
+      fixture.detail.timeline = workBoundaryTimeline();
+
+      try {
+        const page = await fixture.page("work-density");
+        const work = page.locator(".kodex-work-row");
+        await expect(work).toContainText("Worked for 1s");
+
+        const workRow = page.locator(".kodex-turn-group").filter({ has: work });
+        const workGeometry = await verticalGeometry(workRow, ":scope > .kodex-work-row");
+        expect(workGeometry.topInset).toBeGreaterThanOrEqual(5);
+        expect(workGeometry.topInset).toBeLessThanOrEqual(7);
+        expect(workGeometry.bottomInset).toBeGreaterThanOrEqual(0);
+        expect(workGeometry.bottomInset).toBeLessThanOrEqual(1);
+        expect(fixture.unexpected).toEqual([]);
+        expect(fixture.errors).toEqual([]);
+      } finally {
+        await fixture.close();
+      }
+    });
+
+    test(`compact activity rows keep equal visual gaps from neighboring prose in ${layout.name}`, async ({ context }) => {
+      const fixture = await nativeSettingsFixture(context);
+      fixture.detail.timeline = activityBoundaryTimeline();
+
+      try {
+        const page = await fixture.page("activity-boundary-density");
+        const rows = page.locator(".kodex-turn-group");
+        await expect(rows).toHaveCount(3);
+
+        const activityHeading = rows.nth(1).locator(".kodex-activity-heading");
+        const gapBefore = await verticalGap(rows.nth(0).locator(":scope > .kodex-timeline-item"), activityHeading);
+        const gapAfter = await verticalGap(activityHeading, rows.nth(2).locator(":scope > .kodex-timeline-item"));
+
+        expect(gapAfter, `gap before activity: ${gapBefore}px`).toBeCloseTo(gapBefore, 0);
+        expect(gapBefore).toBeGreaterThanOrEqual(12);
+        expect(gapBefore).toBeLessThanOrEqual(15);
+        expect(fixture.unexpected).toEqual([]);
+        expect(fixture.errors).toEqual([]);
+      } finally {
+        await fixture.close();
+      }
+    });
+
+    test(`bordered timeline surfaces keep the regular visual gap before the next message in ${layout.name}`, async ({ context }) => {
+      const fixture = await nativeSettingsFixture(context);
+      fixture.detail.timeline = fileSurfaceBoundaryTimeline();
+
+      try {
+        const page = await fixture.page("file-surface-boundary-density");
+        const rows = page.locator(".kodex-turn-group");
+        await expect(rows).toHaveCount(2);
+
+        const gap = await verticalGap(
+          rows.nth(0).locator(".kodex-file-changes-panel"),
+          rows.nth(1).locator(".kodex-user-message-bubble"),
+        );
+        const surfaceRow = await verticalGeometry(rows.nth(0), ".kodex-file-changes-panel");
+        expect(gap).toBeGreaterThanOrEqual(11);
+        expect(gap).toBeLessThanOrEqual(13);
+        expect(surfaceRow.bottomInset).toBeGreaterThanOrEqual(0);
+        expect(surfaceRow.bottomInset).toBeLessThanOrEqual(1);
+        expect(fixture.unexpected).toEqual([]);
+        expect(fixture.errors).toEqual([]);
+      } finally {
+        await fixture.close();
+      }
+    });
+
+    test(`expanded work ending in a bordered surface keeps the regular visual gap before the next message in ${layout.name}`, async ({ context }) => {
+      const fixture = await nativeSettingsFixture(context);
+      fixture.detail.timeline = expandedWorkSurfaceBoundaryTimeline();
+
+      try {
+        const page = await fixture.page("expanded-work-surface-boundary-density");
+        const pane = page.locator(".kodex-thread-pane-existing");
+        const rows = page.locator(".kodex-timeline-virtual-row > .kodex-turn-group");
+        await expect(rows).toHaveCount(2);
+        await expect(pane.locator('[data-initial-bottom-aligned="true"]')).toBeVisible();
+        const work = rows.nth(0).locator(":scope > .kodex-work-row");
+        await work.locator(":scope > summary").click();
+        await expect(work).toHaveAttribute("open", "");
+        await expect(work.locator(".kodex-file-changes-panel")).toBeVisible();
+
+        await expect.poll(async () => {
+          const gap = await verticalGap(
+            work.locator(".kodex-file-changes-panel"),
+            rows.nth(1).locator(".kodex-user-message-bubble"),
+          );
+          return gap >= 11 && gap <= 13;
+        }).toBe(true);
+        expect(fixture.unexpected).toEqual([]);
+        expect(fixture.errors).toEqual([]);
+      } finally {
+        await fixture.close();
+      }
+    });
+
+    test(`empty file-change rows do not create surfaced boundary spacing in ${layout.name}`, async ({ context }) => {
+      const fixture = await nativeSettingsFixture(context);
+      const timeline = fileSurfaceBoundaryTimeline();
+      timeline.rows[0] = { ...fileChangesRow(1), fileChanges: [] };
+      fixture.detail.timeline = timeline;
+
+      try {
+        const page = await fixture.page("empty-file-surface-boundary-density");
+        const rows = page.locator(".kodex-timeline-virtual-row > .kodex-turn-group");
+        await expect(rows).toHaveCount(2);
+
+        const userRow = await verticalGeometry(rows.nth(1), ".kodex-user-message-bubble");
+        expect(userRow.topInset).toBeGreaterThanOrEqual(5);
+        expect(userRow.topInset).toBeLessThanOrEqual(7);
+        expect(fixture.unexpected).toEqual([]);
+        expect(fixture.errors).toEqual([]);
+      } finally {
+        await fixture.close();
+      }
+    });
+
   });
-
-  test(`compact markers and substantive items use their assigned density in ${layout.name}`, async ({ browser }) => {
-    const context = await browser.newContext({ viewport: layout.viewport, hasTouch: layout.hasTouch });
-    const fixture = await nativeSettingsFixture(context);
-    fixture.detail.timeline = mixedDensityTimeline();
-
-    try {
-      const page = await fixture.page("mixed-density");
-      const contextCompacted = page.getByText("Context compacted", { exact: true });
-      const plan = page.getByText("Inspect then patch", { exact: true });
-      await expect(contextCompacted).toBeVisible();
-      await expect(plan).toBeVisible();
-
-      const contextBox = await contextCompacted.boundingBox();
-      expect(contextBox).not.toBeNull();
-      expect(contextBox!.height).toBeGreaterThanOrEqual(30);
-      expect(contextBox!.height).toBeLessThanOrEqual(34);
-
-      const planRow = page.locator(".kodex-turn-group").filter({ has: plan });
-      const planGeometry = await verticalGeometry(planRow, ":scope > .kodex-timeline-item");
-      expect(planGeometry.topInset).toBeGreaterThanOrEqual(5);
-      expect(planGeometry.topInset).toBeLessThanOrEqual(7);
-      expect(planGeometry.bottomInset).toBeGreaterThanOrEqual(0);
-      expect(planGeometry.bottomInset).toBeLessThanOrEqual(1);
-      expect(fixture.unexpected).toEqual([]);
-      expect(fixture.errors).toEqual([]);
-    } finally {
-      await fixture.close();
-      await context.close();
-    }
-  });
-
-  test(`work boundaries use the regular leading gap in ${layout.name}`, async ({ browser }) => {
-    const context = await browser.newContext({ viewport: layout.viewport, hasTouch: layout.hasTouch });
-    const fixture = await nativeSettingsFixture(context);
-    fixture.detail.timeline = workBoundaryTimeline();
-
-    try {
-      const page = await fixture.page("work-density");
-      const work = page.locator(".kodex-work-row");
-      await expect(work).toContainText("Worked for 1s");
-
-      const workRow = page.locator(".kodex-turn-group").filter({ has: work });
-      const workGeometry = await verticalGeometry(workRow, ":scope > .kodex-work-row");
-      expect(workGeometry.topInset).toBeGreaterThanOrEqual(5);
-      expect(workGeometry.topInset).toBeLessThanOrEqual(7);
-      expect(workGeometry.bottomInset).toBeGreaterThanOrEqual(0);
-      expect(workGeometry.bottomInset).toBeLessThanOrEqual(1);
-      expect(fixture.unexpected).toEqual([]);
-      expect(fixture.errors).toEqual([]);
-    } finally {
-      await fixture.close();
-      await context.close();
-    }
-  });
-
-  test(`compact activity rows keep equal visual gaps from neighboring prose in ${layout.name}`, async ({ browser }) => {
-    const context = await browser.newContext({ viewport: layout.viewport, hasTouch: layout.hasTouch });
-    const fixture = await nativeSettingsFixture(context);
-    fixture.detail.timeline = activityBoundaryTimeline();
-
-    try {
-      const page = await fixture.page("activity-boundary-density");
-      const rows = page.locator(".kodex-turn-group");
-      await expect(rows).toHaveCount(3);
-
-      const activityHeading = rows.nth(1).locator(".kodex-activity-heading");
-      const gapBefore = await verticalGap(rows.nth(0).locator(":scope > .kodex-timeline-item"), activityHeading);
-      const gapAfter = await verticalGap(activityHeading, rows.nth(2).locator(":scope > .kodex-timeline-item"));
-
-      expect(gapAfter, `gap before activity: ${gapBefore}px`).toBeCloseTo(gapBefore, 0);
-      expect(gapBefore).toBeGreaterThanOrEqual(12);
-      expect(gapBefore).toBeLessThanOrEqual(15);
-      expect(fixture.unexpected).toEqual([]);
-      expect(fixture.errors).toEqual([]);
-    } finally {
-      await fixture.close();
-      await context.close();
-    }
-  });
-
-  test(`bordered timeline surfaces keep the regular visual gap before the next message in ${layout.name}`, async ({ browser }) => {
-    const context = await browser.newContext({ viewport: layout.viewport, hasTouch: layout.hasTouch });
-    const fixture = await nativeSettingsFixture(context);
-    fixture.detail.timeline = fileSurfaceBoundaryTimeline();
-
-    try {
-      const page = await fixture.page("file-surface-boundary-density");
-      const rows = page.locator(".kodex-turn-group");
-      await expect(rows).toHaveCount(2);
-
-      const gap = await verticalGap(
-        rows.nth(0).locator(".kodex-file-changes-panel"),
-        rows.nth(1).locator(".kodex-user-message-bubble"),
-      );
-      const surfaceRow = await verticalGeometry(rows.nth(0), ".kodex-file-changes-panel");
-      expect(gap).toBeGreaterThanOrEqual(11);
-      expect(gap).toBeLessThanOrEqual(13);
-      expect(surfaceRow.bottomInset).toBeGreaterThanOrEqual(0);
-      expect(surfaceRow.bottomInset).toBeLessThanOrEqual(1);
-      expect(fixture.unexpected).toEqual([]);
-      expect(fixture.errors).toEqual([]);
-    } finally {
-      await fixture.close();
-      await context.close();
-    }
-  });
-
-  test(`expanded work ending in a bordered surface keeps the regular visual gap before the next message in ${layout.name}`, async ({ browser }) => {
-    const context = await browser.newContext({ viewport: layout.viewport, hasTouch: layout.hasTouch });
-    const fixture = await nativeSettingsFixture(context);
-    fixture.detail.timeline = expandedWorkSurfaceBoundaryTimeline();
-
-    try {
-      const page = await fixture.page("expanded-work-surface-boundary-density");
-      const rows = page.locator(".kodex-timeline-virtual-row > .kodex-turn-group");
-      await expect(rows).toHaveCount(2);
-      await rows.nth(0).locator(":scope > .kodex-work-row > summary").click({ force: true });
-
-      const gap = await verticalGap(
-        rows.nth(0).locator(".kodex-file-changes-panel"),
-        rows.nth(1).locator(".kodex-user-message-bubble"),
-      );
-      expect(gap).toBeGreaterThanOrEqual(11);
-      expect(gap).toBeLessThanOrEqual(13);
-      expect(fixture.unexpected).toEqual([]);
-      expect(fixture.errors).toEqual([]);
-    } finally {
-      await fixture.close();
-      await context.close();
-    }
-  });
-
-  test(`empty file-change rows do not create surfaced boundary spacing in ${layout.name}`, async ({ browser }) => {
-    const context = await browser.newContext({ viewport: layout.viewport, hasTouch: layout.hasTouch });
-    const fixture = await nativeSettingsFixture(context);
-    const timeline = fileSurfaceBoundaryTimeline();
-    timeline.rows[0] = { ...fileChangesRow(1), fileChanges: [] };
-    fixture.detail.timeline = timeline;
-
-    try {
-      const page = await fixture.page("empty-file-surface-boundary-density");
-      const rows = page.locator(".kodex-timeline-virtual-row > .kodex-turn-group");
-      await expect(rows).toHaveCount(2);
-
-      const userRow = await verticalGeometry(rows.nth(1), ".kodex-user-message-bubble");
-      expect(userRow.topInset).toBeGreaterThanOrEqual(5);
-      expect(userRow.topInset).toBeLessThanOrEqual(7);
-      expect(fixture.unexpected).toEqual([]);
-      expect(fixture.errors).toEqual([]);
-    } finally {
-      await fixture.close();
-      await context.close();
-    }
-  });
-
 }
 
 async function verticalGeometry(container: Locator, contentSelector: string): Promise<VerticalGeometry> {

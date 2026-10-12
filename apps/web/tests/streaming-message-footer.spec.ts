@@ -111,11 +111,11 @@ for (const shape of [
         publish(text);
         await expect(message).toContainText("Second result");
         await expect(copy).toBeHidden();
-        const before = await message.boundingBox();
+        const beforeHeight = await stableHeight(message);
         publish(text, true);
         await expect(copy).toBeVisible();
-        const after = await message.boundingBox();
-        expect(Math.abs(after!.height - before!.height)).toBeLessThan(1);
+        const afterHeight = await stableHeight(message);
+        expect(Math.abs(afterHeight - beforeHeight)).toBeLessThan(1);
       } finally { await fixture.close(); }
       expect(fixture.errors).toEqual([]);
       expect(fixture.unexpected).toEqual([]);
@@ -160,4 +160,19 @@ async function verticalGap(before: Locator, after: Locator) {
   expect(beforeBox).not.toBeNull();
   expect(afterBox).not.toBeNull();
   return afterBox!.y - (beforeBox!.y + beforeBox!.height);
+}
+
+async function stableHeight(locator: Locator) {
+  return locator.evaluate(async (element) => {
+    let previous = element.getBoundingClientRect().height;
+    let stableFrames = 0;
+    for (let frame = 0; frame < 30; frame += 1) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const current = element.getBoundingClientRect().height;
+      stableFrames = Math.abs(current - previous) < 0.1 ? stableFrames + 1 : 0;
+      previous = current;
+      if (stableFrames >= 2) return current;
+    }
+    return previous;
+  });
 }

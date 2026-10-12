@@ -104,7 +104,7 @@ test.describe("automatic pane placement", () => {
       await expect(activeDraft(page).getByRole("textbox", { name: /message composer/i })).toHaveValue("Keep bottom-right tab");
       await page.screenshot({ path: test.info().outputPath("capacity-falls-back-to-bottom-right-tab.png"), animations: "disabled" });
       await expect.poll(() => page.evaluate(() => {
-        const saved = localStorage.getItem("kodex.instance.native-settings-fixture:kodex.workspace.panes.v1");
+        const saved = localStorage.getItem("kodex.instance.native-settings-fixture:kodex.workspace.panes.v2");
         return saved ? Object.keys(JSON.parse(saved).dockviewLayout?.panels ?? {}).length : 0;
       })).toBe(7);
       await page.reload();

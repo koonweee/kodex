@@ -140,7 +140,6 @@ test.describe("bottom follow geometry", () => {
       const scroll = pane.locator(".kodex-timeline-scroll");
       await expect(pane.locator('[data-initial-bottom-aligned="true"]')).toBeVisible();
       await settle(page, scroll);
-      const baselineHeight = await scroll.evaluate((element) => element.scrollHeight);
 
       await scroll.evaluate((element) => {
         element.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -120 }));
@@ -149,7 +148,17 @@ test.describe("bottom follow geometry", () => {
 
       await expect(pane.getByRole("button", { name: "Scroll to bottom", exact: true })).toBeVisible();
       await settle(page, scroll);
-      expect(Math.abs(await scroll.evaluate((element) => element.scrollHeight) - baselineHeight)).toBeLessThan(2);
+      const heights = await pane.evaluate((element) => {
+        const scrollElement = element.querySelector<HTMLElement>(".kodex-timeline-scroll");
+        const controlAnchor = element.querySelector<HTMLElement>(".kodex-scroll-to-bottom-anchor");
+        if (!scrollElement || !controlAnchor) throw new Error("Missing timeline scroll control");
+        const withControl = scrollElement.scrollHeight;
+        controlAnchor.hidden = true;
+        const withoutControl = scrollElement.scrollHeight;
+        controlAnchor.hidden = false;
+        return { withControl, withoutControl };
+      });
+      expect(Math.abs(heights.withControl - heights.withoutControl)).toBeLessThan(2);
     } finally {
       await fixture.close();
     }

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { nativeSettingsFixture } from "./native-settings.fixture";
 
-const storageKey = "kodex.instance.native-settings-fixture:kodex.workspace.panes.v1";
+const storageKey = "kodex.instance.native-settings-fixture:kodex.workspace.panes.v2";
 
 for (const shape of [
   { name: "desktop", width: 1280, hasTouch: false, isMobile: false },
@@ -17,10 +17,10 @@ for (const shape of [
         await context.addInitScript(({ key, hasOtherPane }) => {
           if (!["http:", "https:"].includes(location.protocol) || localStorage.getItem(key)) return;
           localStorage.setItem(key, JSON.stringify({
-            schemaVersion: 1, activePaneId: "unavailable-pane", dockviewLayout: null,
+            schemaVersion: 2, activePaneId: "unavailable-pane", dockviewLayout: null,
             panes: [
-              { id: "unavailable-pane", kind: "thread", title: "Missing chat", target: { mode: "existing", threadId: "missing-chat" } },
-              ...(hasOtherPane ? [{ id: "other-pane", kind: "thread", title: "Other draft", target: { mode: "draft" } }] : []),
+              { id: "unavailable-pane", kind: "thread", title: "Missing chat", target: { executorId: "local", mode: "existing", threadId: "missing-chat" } },
+              ...(hasOtherPane ? [{ id: "other-pane", kind: "thread", title: "Other draft", target: { executorId: "local", mode: "draft" } }] : []),
             ],
           }));
         }, { key: storageKey, hasOtherPane });

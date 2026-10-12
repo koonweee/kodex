@@ -185,10 +185,10 @@ test("selection of the fresh suffix survives motion changes, settling, append, r
     await expect(target).toHaveText(finalText);
     expect(await selectedText(page)).toBe("fresh selected suffix");
     await page.setViewportSize({ width: 390, height: 844 });
-    expect(await selectedText(page)).toBe("fresh selected suffix");
+    await expect.poll(() => selectedText(page)).toBe("fresh selected suffix");
     replace(fixture, finalText, true);
     await expect(page.getByRole("button", { name: "Copy message", exact: true })).toBeVisible();
-    expect(await selectedText(page)).toBe("fresh selected suffix");
+    await expect.poll(() => selectedText(page)).toBe("fresh selected suffix");
     expect(await animationCount(target)).toBe(0);
     await page.evaluate(() => window.getSelection()?.removeAllRanges());
     await expect(target).toHaveText(finalText);

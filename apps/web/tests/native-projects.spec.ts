@@ -17,8 +17,8 @@ for (const shape of shapes) {
       const fixture = await nativeProjectsFixture(context);
       await projectDirectoriesFixture(context);
       try {
-        const first = await fixture.page("first", "/threads/history");
-        const second = await fixture.page("second", "/threads/history");
+        const first = await fixture.page("first", "/executors/local/threads/history");
+        const second = await fixture.page("second", "/executors/local/threads/history");
         for (const page of [first, second]) {
           await expectProject(page, "Alpha");
           await expect(page.getByText(preservedHistory, { exact: true })).toBeVisible();
@@ -113,8 +113,8 @@ test.describe("unlisted detail recovery", () => {
   test("deletion and real stream reopen recover unlisted membership without stale responses winning", async ({ context }) => {
     const fixture = await nativeProjectsFixture(context);
     try {
-      const first = await fixture.page("first", "/projects/alpha");
-      const second = await fixture.page("second", "/threads/unlisted");
+      const first = await fixture.page("first", "/executors/local/projects/alpha");
+      const second = await fixture.page("second", "/executors/local/threads/unlisted");
       await expect(first.getByRole("heading", { name: "Alpha", exact: true })).toBeVisible();
       await expectUnlistedProject(second, "Alpha");
       await expect(second.getByText(preservedHistory, { exact: true })).toBeVisible();
@@ -216,7 +216,7 @@ async function expectUnlistedProject(page: Page, name: string | null) {
   await action.click();
   const draft = page.locator('.kodex-thread-pane[data-workspace-pane-active="true"]');
   await expect(draft.getByRole("button", { name: `Project: ${name}`, exact: true })).toBeVisible();
-  await page.locator(".dv-tab").filter({ hasText: "New thread" }).locator(".dv-default-tab-action").click();
+  await page.locator(".dv-tab").filter({ hasText: "New thread" }).locator(".dv-default-tab-action").evaluate((action: HTMLElement) => action.click());
   await page.locator(".dv-tab").filter({ hasText: "Unlisted history" }).click();
   await expect(page.getByText(preservedHistory, { exact: true })).toBeVisible();
 }
