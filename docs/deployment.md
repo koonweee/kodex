@@ -2,6 +2,8 @@
 
 Kodex supports localhost and trusted private-network deployments. This document covers that security model, executor configuration, the PWA, and browser notifications. The federator serves the web assets in the split architecture; the executor gateway is backend-only.
 
+Service installation and lifecycle on macOS/Linux are documented in [Federated Kodex services](federated-service.md), including systemd lingering, independent role updates, Tailscale Serve/grants and the platform evidence table.
+
 ## Security model
 
 Kodex does not have a gateway authentication or authorization layer. Do not expose it directly to the public internet.

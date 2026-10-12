@@ -1,4 +1,4 @@
-"""Durable one-shot launchd jobs, independent of the gateway and its callers."""
+"""Durable one-shot per-user jobs, independent of services and callers."""
 import json
 import os
 from pathlib import Path
@@ -55,10 +55,18 @@ class Operations:
             job.update(state='failed', error='Operation worker was interrupted; inspect logs before retrying')
             self._save(job)
         elif job['state'] == 'queued' and time.time() - job['createdAt'] > 30:
-            probe = subprocess.run([self.runtime['LAUNCHCTL'], 'print',
-                                    f"{self.app.domain}/{job['label']}"],
-                                   capture_output=True, text=True)
-            if probe.returncode or not re.search(r'\bpid = \d+', probe.stdout):
+            if self.app.platform_name == 'linux':
+                probe = subprocess.run([self.runtime['SYSTEMCTL'], '--user', 'show', job['label'],
+                                        '--property=ActiveState', '--property=MainPID'],
+                                       capture_output=True, text=True)
+                active = not probe.returncode and ('ActiveState=active' in probe.stdout
+                                                    or re.search(r'MainPID=[1-9]\d*', probe.stdout))
+            else:
+                probe = subprocess.run([self.runtime['LAUNCHCTL'], 'print',
+                                        f"{self.app.domain}/{job['label']}"],
+                                       capture_output=True, text=True)
+                active = not probe.returncode and re.search(r'\bpid = \d+', probe.stdout)
+            if not active:
                 job.update(state='failed', error='Operation worker is unavailable; no automatic retry')
                 self._save(job)
 
@@ -99,20 +107,34 @@ class Operations:
         environment = {key: os.environ[key] for key in ('HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG')
                        if key in os.environ}
         environment.update(PATH=config['path'], PYTHONUNBUFFERED='1')
+        arguments = [sys.executable, str(path / 'kodex-service'), '--root', str(self.app.root),
+                     '--role', self.app.role, '_operation-run', job_id]
         plist = {'Label': job['label'], 'RunAtLoad': True, 'KeepAlive': False,
-                 'ProgramArguments': [sys.executable, str(path / 'kodex-service'),
-                                      '--root', str(self.app.root), '_operation-run', job_id],
+                 'ProgramArguments': arguments,
                  'WorkingDirectory': str(self.app.root), 'EnvironmentVariables': environment,
                  'StandardOutPath': str(log), 'StandardErrorPath': str(log)}
         definition = path / 'worker.plist'
         definition.write_bytes(plistlib.dumps(plist))
         definition.chmod(0o600)
         try:
-            self.runtime['run']([self.runtime['LAUNCHCTL'], 'bootstrap', self.app.domain, definition])
+            if self.app.platform_name == 'linux':
+                command = [self.runtime['SYSTEMCTL'].replace('systemctl', 'systemd-run'), '--user',
+                           f"--unit={job['label']}", '--property=Type=oneshot',
+                           f"--property=WorkingDirectory={self.app.root}",
+                           f"--property=StandardOutput=append:{log}",
+                           f"--property=StandardError=append:{log}"]
+                command.extend(f'--setenv={key}={value}' for key, value in environment.items())
+                self.runtime['run'](command + [str(argument) for argument in arguments])
+            else:
+                self.runtime['run']([self.runtime['LAUNCHCTL'], 'bootstrap', self.app.domain, definition])
         except BaseException as error:
             # An interrupted observer does not cancel an already accepted worker.
-            probe = subprocess.run([self.runtime['LAUNCHCTL'], 'print',
-                                    f"{self.app.domain}/{job['label']}"], capture_output=True)
+            if self.app.platform_name == 'linux':
+                probe = subprocess.run([self.runtime['SYSTEMCTL'], '--user', 'show', job['label']],
+                                       capture_output=True)
+            else:
+                probe = subprocess.run([self.runtime['LAUNCHCTL'], 'print',
+                                        f"{self.app.domain}/{job['label']}"], capture_output=True)
             if probe.returncode:
                 job.update(state='failed', error=str(error) or type(error).__name__)
                 self._save(job)

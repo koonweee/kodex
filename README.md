@@ -55,7 +55,7 @@ flowchart LR
 
 Each executor gateway supervises its local `codex app-server`, translates the native protocol, and owns machine-local features such as terminals, automations, files and eligible notification jobs. The federator serves the web app, routes qualified operations, owns browser push subscriptions/provider calls and aggregates badges across executors. The web client is a projection of federator, gateway and app-server state rather than a second source of truth.
 
-See [Architecture](docs/architecture.md) for component boundaries and state ownership.
+See [Architecture](docs/architecture.md) for component boundaries and state ownership. Fresh split-role installation and lifecycle on macOS/Linux are documented in [Federated Kodex services](docs/federated-service.md). The existing [macOS combined-service guide](docs/macos-service.md) remains the reference for the currently installed transitional service until an explicit fresh cutover.
 
 ## Quick start
 

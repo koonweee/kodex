@@ -26,7 +26,8 @@ class LifecycleTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
-        self.app = service.Service(self.root / 'installed', self.root / 'agents')
+        self.app = service.Service(self.root / 'installed', self.root / 'agents',
+                                   platform_name='darwin')
         self.app.root.mkdir()
         self.app.config_path.write_text(json.dumps({
             'port': 18787, 'data_dir': str(self.root / 'data'),
@@ -234,7 +235,7 @@ class LifecycleTests(unittest.TestCase):
         for call in health.call_args_list:
             self.assertEqual(call.kwargs['expected_pid'], 42)
             self.assertEqual(call.kwargs['api_version'], '1')
-        notify.assert_called_once_with(hashlib.sha256(b'new frontend').hexdigest())
+        notify.assert_called_once_with(service.frontend_revision(repo / 'apps/web/dist'))
 
     def test_frontend_failed_health_rolls_back_only_frontend_and_keeps_new_chunks(self):
         old, previous, repo = self.frontend_fixture()

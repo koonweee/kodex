@@ -8,11 +8,15 @@ import sys
 
 def main(runtime, argv=None):
     parser = argparse.ArgumentParser(description=runtime['__doc__'])
-    parser.add_argument('--root', type=Path, default=Path.home() / '.local/share/kodex')
+    parser.add_argument('--root', type=Path)
+    parser.add_argument('--role', choices=['legacy', 'executor', 'federator'])
     commands = parser.add_subparsers(dest='command', required=True)
     install = commands.add_parser('install', help='configure and schedule initial build/start; autostart initially off')
-    install.add_argument('--port', type=int, default=8787)
-    install.add_argument('--data-dir', type=Path, default=Path.home() / '.kodex/native-v1')
+    install.add_argument('--port', type=int)
+    install.add_argument('--sandbox-port', type=int, default=8790)
+    install.add_argument('--public-origin')
+    install.add_argument('--sandbox-public-url')
+    install.add_argument('--data-dir', type=Path)
     for command in ('install', 'update', 'update-frontend'):
         sub = install if command == 'install' else commands.add_parser(command)
         sub.add_argument('--repo', type=Path)
@@ -30,9 +34,27 @@ def main(runtime, argv=None):
     commands.add_parser('_operation-run', help=argparse.SUPPRESS).add_argument('id')
     args = parser.parse_args(argv)
     error = runtime['ServiceError']
-    if sys.platform != 'darwin' or os.getuid() == 0:
-        raise error('Run as your normal logged-in macOS user, not root')
-    app = runtime['Service'](args.root)
+    if sys.platform not in ('darwin', 'linux') or os.getuid() == 0:
+        raise error('Run as your normal macOS or Linux user, not root')
+    root = args.root
+    if root is None:
+        invoked_root = Path(sys.argv[0]).expanduser().absolute().parent
+        if (invoked_root / 'config.json').exists():
+            root = invoked_root
+        else:
+            root = Path.home() / '.local/share/kodex'
+            if args.role in ('executor', 'federator'):
+                root /= args.role
+    role = args.role
+    config_path = root.expanduser() / 'config.json'
+    if role is None and config_path.exists():
+        role = json.loads(config_path.read_text()).get('role', 'legacy')
+    role = role or 'legacy'
+    if args.command == 'install':
+        args.port = args.port or (8789 if role == 'executor' else 8787)
+        args.data_dir = args.data_dir or (Path.home() / '.kodex' /
+            ('native-v1' if role == 'legacy' else f'federated-v1/{role}'))
+    app = runtime['Service'](root, role=role)
     operations = runtime['Operations'](app, Path(runtime['__file__']), runtime)
     if args.command == '_run':
         app.execute()
@@ -53,11 +75,13 @@ def main(runtime, argv=None):
             raise error(job['error'])
         return
     if args.command == 'logs':
-        runtime['run'](['/usr/bin/tail', '-n', '100', '-F', app.root / 'logs/gateway.log',
-                        app.root / 'logs/gateway-error.log'])
+        names = ('service.log', 'service-error.log') if app.platform_name == 'linux' \
+            else ('gateway.log', 'gateway-error.log')
+        runtime['run'](['/usr/bin/tail', '-n', '100', '-F',
+                        app.root / 'logs' / names[0], app.root / 'logs' / names[1]])
         return
     if args.command == 'status':
-        print(json.dumps({'job': app.job(), 'autostart': app.login_plist.exists(),
+        print(json.dumps({'role': app.role, 'job': app.job(), 'autostart': app.autostart_enabled(),
                           'current': str((app.root / 'current').resolve()),
                           'url': f"http://127.0.0.1:{app.config()['port']}"}, indent=2))
         return
@@ -67,17 +91,37 @@ def main(runtime, argv=None):
             if app.config_path.exists():
                 raise error('Already configured; use update --repo /path/to/kodex')
             if app.job() is not None or app.login_plist.exists():
-                raise error('A Kodex launchd installation already exists; use its management command')
+                raise error('A Kodex service-manager installation already exists; use its management command')
             runtime['check_port'](args.port)
-            app.config_path.write_text(json.dumps({
-                'port': args.port, 'data_dir': str(args.data_dir.expanduser().resolve()),
+            if role == 'federator':
+                runtime['check_port'](args.sandbox_port)
+            config = {
+                'role': role, 'port': args.port, 'data_dir': str(args.data_dir.expanduser().resolve()),
                 'path': os.environ.get('PATH', '/usr/bin:/bin'), 'environment': {},
                 'repo': str((args.repo or Path(runtime['__file__']).resolve().parent.parent).resolve()),
-            }, indent=2) + '\n')
-            app.config_path.chmod(0o600)
-            app.config()
-            runtime['link'](app.root / 'kodex-service', app.root / 'controller/kodex-service')
-            app.write_plist()
+                **({'sandbox_port': args.sandbox_port,
+                    'public_origin': args.public_origin or f'http://localhost:{args.port}',
+                    'sandbox_public_url': args.sandbox_public_url
+                        or f'http://localhost:{args.sandbox_port}/app-surface-sandbox.html'}
+                   if role == 'federator' else {}),
+            }
+            app.validate_config(config)
+            bootstrapped = False
+            try:
+                app.bootstrap_controller(runtime['__file__'])
+                bootstrapped = True
+                staged_config = app.config_path.with_suffix('.new')
+                staged_config.write_text(json.dumps(config, indent=2) + '\n')
+                staged_config.chmod(0o600)
+                staged_config.replace(app.config_path)
+                app.write_plist()
+            except BaseException:
+                app.config_path.unlink(missing_ok=True)
+                app.config_path.with_suffix('.new').unlink(missing_ok=True)
+                app.definition.unlink(missing_ok=True)
+                if bootstrapped:
+                    app.remove_bootstrap_controller()
+                raise
         if args.command in ('install', 'update', 'restart', 'rollback'):
             action = 'update' if args.command == 'install' else args.command
             repo = (args.repo or Path(app.config()['repo'])) if action == 'update' else None

@@ -1,5 +1,7 @@
 # Kodex on macOS: login service and private HTTPS
 
+This page describes the existing transitional combined gateway service. New federated installations use independent executor and federator roots and launchd labels; see [Federated Kodex services](federated-service.md). The split controller does not overwrite this installation unless an operator deliberately selects its root.
+
 Run the compiled gateway under your normal macOS account using launchd. The gateway serves the built frontend and supervises its dedicated Codex app-server; Node and Cargo are build tools, not production servers. This is a login service, not a pre-login boot daemon. The Mac must remain awake for remote access.
 
 ## Install

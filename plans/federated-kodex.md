@@ -276,6 +276,8 @@ M6 is active. Executor completion jobs remain the sole durable source and are ex
 
 Exit: clean installs, logout/reboot persistence, independent updates and frontend-only updates pass on supported macOS/Linux hosts; unsupported/unverified architectures are not claimed supported.
 
+M7 is active. The service controller now supports fresh, independent `executor` and `federator` roots and labels on macOS launchd and Linux systemd user services. Role releases package only their owned artifacts: executors contain the gateway and checksum-pinned official Codex runtime, while federators contain the federator plus the complete primary/sandbox frontend bundle. Linux x86-64 and ARM64 package digests are pinned alongside the existing macOS pins; unknown targets fail before download. Full updates, restart, rollback and status remain per role, Linux operations use `systemd-run --user`, and frontend-only atomic exchange is federator-only. The runbook records loopback ports, Tailscale Serve/grant boundaries, explicit lingering, fresh state/sign-in, native queue restart behavior, backup and rollback. Controller tests pass on macOS, but no split-role host lifecycle or Linux reboot/update/rollback run was authorized, so every platform row remains explicitly unverified and the M7 exit is open.
+
 ### M8 Integrated validation and fresh rollout readiness
 
 - Run the complete acceptance matrix with one federator, a macOS executor and a Linux executor; exercise two same-user tabs.

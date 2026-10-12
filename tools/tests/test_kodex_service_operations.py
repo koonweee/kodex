@@ -35,7 +35,8 @@ class OperationTests(unittest.TestCase):
         self.root = Path(self.temporary.name).resolve()
         self.repo = self.root / 'checkout'
         self.repo.mkdir()
-        self.app = service.Service(self.root / 'installed', self.root / 'agents')
+        self.app = service.Service(self.root / 'installed', self.root / 'agents',
+                                   platform_name='darwin')
         self.app.root.mkdir()
         self.app.config_path.write_text(json.dumps({
             'port': 18787, 'data_dir': str(self.root / 'data'),
@@ -386,6 +387,80 @@ class CommandTests(unittest.TestCase):
         self.operations.execute.assert_not_called()
         self.operations.submit.assert_not_called()
         self.operations.wait.assert_not_called()
+
+
+class FreshInstallTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name).resolve() / 'installed'
+        self.home = self.root.parent / 'home'
+        self.home.mkdir()
+        self.repo = self.root.parent / 'checkout'
+        self.repo.mkdir()
+
+    def command(self, *args, runtime=None):
+        selected_runtime = runtime or service.__dict__
+        with patch.object(service.sys, 'platform', 'darwin'), \
+             patch.object(service.os, 'getuid', return_value=501), \
+             patch.object(service.Path, 'home', return_value=self.home), \
+             patch.object(service.Service, 'job', return_value=None), \
+             patch.object(service, 'check_port'), \
+             contextlib.redirect_stdout(io.StringIO()):
+            return cli.main(selected_runtime, [
+                '--root', str(self.root), '--role', 'federator', *args,
+            ])
+
+    def test_invalid_origin_leaves_no_partial_install_and_corrected_retry_succeeds(self):
+        operations = Mock(spec=operations_module.Operations, unsafe=True)
+        operations.submit.return_value = {
+            'id': 'operation-123', 'state': 'queued', 'action': 'update',
+            'logPath': str(self.root / 'operation.log'), 'error': None,
+        }
+        runtime = dict(service.__dict__, Operations=Mock(return_value=operations),
+                       check_port=Mock())
+        with self.assertRaisesRegex(service.ServiceError, 'distinct origin'):
+            self.command(
+                'install', '--repo', str(self.repo),
+                '--public-origin', 'https://kodex.example.ts.net',
+                '--sandbox-public-url',
+                'https://kodex.example.ts.net/app-surface-sandbox.html',
+                runtime=runtime,
+            )
+        self.assertFalse((self.root / 'config.json').exists())
+        self.assertFalse((self.root / 'controller').exists())
+        self.assertFalse((self.root / 'kodex-service').exists())
+
+        self.command(
+            'install', '--repo', str(self.repo),
+            '--public-origin', 'https://kodex.example.ts.net',
+            '--sandbox-public-url',
+            'https://kodex-sandbox.example.ts.net/app-surface-sandbox.html',
+            runtime=runtime,
+        )
+        self.assertEqual(json.loads((self.root / 'config.json').read_text())['role'], 'federator')
+        controller = (self.root / 'controller').resolve(strict=True)
+        for name in service.CONTROLLER_FILES:
+            self.assertTrue((controller / name).is_file())
+        self.assertTrue((self.root / 'kodex-service').resolve(strict=True).is_file())
+
+    def test_failed_initial_build_can_submit_retry_from_installed_controller(self):
+        with patch.object(service, 'run'):
+            self.command('install', '--repo', str(self.repo))
+        job_id = (self.root / 'operations/latest').read_text().strip()
+        installed = (self.root / 'kodex-service').resolve(strict=True)
+        app = service.Service(self.root, self.home / 'agents', platform_name='darwin',
+                              role='federator')
+        operations = operations_module.Operations(app, installed, service.__dict__)
+        with patch.object(app, 'update', side_effect=service.ServiceError('initial build failed')):
+            failed = operations.execute(job_id)
+        self.assertEqual(failed['state'], 'failed')
+
+        recovered = operations_module.Operations(app, installed, service.__dict__)
+        with patch.object(service, 'run'):
+            retry = recovered.submit('update', repo=self.repo)
+        self.assertNotEqual(retry['id'], job_id)
+        self.assertEqual(retry['state'], 'queued')
 
 
 if __name__ == '__main__':
