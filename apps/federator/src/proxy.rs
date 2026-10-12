@@ -284,7 +284,7 @@ impl ExecutorRouteAllowlist {
             .expect("executor OpenAPI contains paths");
         let mut rules = Vec::new();
         for (path, item) in paths {
-            if path == FRONTEND_UPDATE_PATH {
+            if path == FRONTEND_UPDATE_PATH || path.starts_with("/v1/notifications/deliveries/") {
                 continue;
             }
             let Some(item) = item.as_object() else {

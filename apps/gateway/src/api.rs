@@ -290,6 +290,8 @@ impl AppState {
         crate::routes::notifications::current_push_subscription,
         crate::routes::notifications::delete_current_push_subscription,
         crate::routes::notifications::test_notification,
+        crate::routes::notifications::claim_notification_deliveries,
+        crate::routes::notifications::complete_notification_delivery,
         crate::routes::thread_presence::update_thread_view_presence,
         crate::routes::thread_presence::replace_thread_view_presence,
         crate::routes::skills::list_skills,
@@ -608,15 +610,22 @@ pub struct ApiDoc;
 /// out of generated browser types as well as the federation-facing listener.
 pub fn executor_openapi() -> utoipa::openapi::OpenApi {
     let mut openapi = ApiDoc::openapi();
-    openapi
-        .paths
-        .paths
-        .retain(|path, _| !path.starts_with("/v1/self-control"));
+    openapi.paths.paths.retain(|path, _| {
+        !path.starts_with("/v1/self-control")
+            && !matches!(
+                path.as_str(),
+                "/v1/notifications/status"
+                    | "/v1/notifications/subscriptions"
+                    | "/v1/notifications/subscriptions/{subscriptionId}"
+                    | "/v1/notifications/subscription/current"
+                    | "/v1/notifications/test"
+            )
+    });
     openapi
 }
 
-fn executor_routes(openapi: utoipa::openapi::OpenApi) -> Router<AppState> {
-    Router::new()
+fn executor_routes(openapi: utoipa::openapi::OpenApi, legacy_combined: bool) -> Router<AppState> {
+    let router = Router::new()
         .merge(routes::health::router())
         .merge(routes::capabilities::router())
         .merge(routes::terminals::router())
@@ -638,12 +647,17 @@ fn executor_routes(openapi: utoipa::openapi::OpenApi) -> Router<AppState> {
         .merge(routes::automations::router())
         .merge(routes::account::router())
         .merge(routes::models::router())
-        .merge(routes::notifications::router())
+        .merge(routes::notifications::executor_router())
         .merge(routes::thread_presence::router())
         .merge(routes::permission_profiles::router())
         .merge(routes::skills::router())
         .merge(routes::mcp::router())
-        .merge(SwaggerUi::new("/docs").url("/openapi.json", openapi))
+        .merge(SwaggerUi::new("/docs").url("/openapi.json", openapi));
+    if legacy_combined {
+        router.merge(routes::notifications::router())
+    } else {
+        router
+    }
 }
 
 fn finish_router(router: Router) -> Router {
@@ -661,7 +675,7 @@ fn finish_router(router: Router) -> Router {
 /// federator route allowlist.
 pub fn build_executor_router(state: AppState) -> Router {
     let instance_id = state.config.instance.id.clone();
-    let router = executor_routes(executor_openapi()).with_state(state);
+    let router = executor_routes(executor_openapi(), false).with_state(state);
     finish_router(router.layer(middleware::from_fn_with_state(
         instance_id,
         crate::instance_precondition::enforce,
@@ -682,7 +696,7 @@ pub fn build_control_router(state: AppState) -> Router {
 /// Transitional combined router retained for tests and source-checkout
 /// compatibility while the service bootstrap is split into two listeners.
 pub fn build_router(state: AppState) -> Router {
-    let mut router = executor_routes(ApiDoc::openapi())
+    let mut router = executor_routes(ApiDoc::openapi(), true)
         .merge(routes::frontend_updates::router())
         .merge(routes::self_control::router())
         .merge(routes::pins::control_router())
@@ -738,5 +752,20 @@ mod executor_boundary_tests {
             .paths
             .paths
             .contains_key("/v1/frontend-updates"));
+    }
+
+    #[test]
+    fn executor_contract_exposes_claims_but_not_provider_or_subscription_ownership() {
+        let paths = executor_openapi().paths.paths;
+        assert!(paths.contains_key("/v1/notifications/deliveries/claim"));
+        assert!(paths.contains_key("/v1/notifications/deliveries/{deliveryId}/outcome"));
+        for local_provider_path in [
+            "/v1/notifications/status",
+            "/v1/notifications/subscriptions",
+            "/v1/notifications/subscription/current",
+            "/v1/notifications/test",
+        ] {
+            assert!(!paths.contains_key(local_provider_path));
+        }
     }
 }

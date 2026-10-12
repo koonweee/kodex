@@ -127,6 +127,31 @@ describe("service worker push handling", () => {
     );
   });
 
+  it("keeps colliding federated thread notifications distinct and opens the qualified route", async () => {
+    const openWindow = vi.fn().mockResolvedValue(undefined);
+    const { listeners, showNotification } = await installServiceWorker({ openWindow });
+    const pending: Array<Promise<unknown>> = [];
+    const payload = {
+      executorId: "linux",
+      kind: "unreadAgentMessage",
+      route: "/executors/linux/threads/same-id",
+      threadId: "same-id",
+      title: "Remote answer",
+    };
+    listeners.get("push")?.({ data: { json: () => payload }, waitUntil: (promise: Promise<unknown>) => pending.push(promise) });
+    await Promise.all(pending.splice(0));
+    expect(showNotification).toHaveBeenCalledWith("Remote answer", expect.objectContaining({
+      tag: "kodex-unread-agent-message:linux:same-id",
+    }));
+
+    listeners.get("notificationclick")?.({
+      notification: { close: vi.fn(), data: payload },
+      waitUntil: (promise: Promise<unknown>) => pending.push(promise),
+    });
+    await Promise.all(pending);
+    expect(openWindow).toHaveBeenCalledWith("https://kodex.test/executors/linux/threads/same-id");
+  });
+
   it("keeps notification clicks origin-bound and handles the root route", async () => {
     const openWindow = vi.fn().mockResolvedValue(undefined);
     const close = vi.fn();

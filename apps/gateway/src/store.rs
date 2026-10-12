@@ -21,6 +21,7 @@ mod notifications;
 mod queue_transfers;
 mod threads;
 
+pub use notifications::FederatedNotificationClaim;
 pub use queue_transfers::{QueueTransfer, QueueTransferPhase};
 
 pub(crate) const EVENT_REPLAY_LIMIT: i64 = 500;
@@ -321,6 +322,8 @@ pub struct NotificationDelivery {
     pub attempt_count: i64,
     pub available_at: DateTime<Utc>,
     pub processing_started_at: Option<DateTime<Utc>>,
+    #[serde(skip)]
+    pub claim_id: Option<String>,
     pub sent_at: Option<DateTime<Utc>>,
     pub last_error: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -677,7 +680,7 @@ fn notification_delivery_select_sql(suffix: &str) -> String {
         r#"
         select id, kind, thread_id, turn_id, payload_json, delivered_subscription_ids_json,
                status, attempt_count,
-               available_at, processing_started_at, sent_at, last_error, created_at, updated_at
+               available_at, processing_started_at, claim_id, sent_at, last_error, created_at, updated_at
         from notification_deliveries
         {suffix}
         "#
@@ -701,6 +704,7 @@ fn row_to_notification_delivery(row: sqlx::sqlite::SqliteRow) -> ApiResult<Notif
         attempt_count: row.try_get("attempt_count")?,
         available_at: row.try_get("available_at")?,
         processing_started_at: row.try_get("processing_started_at")?,
+        claim_id: row.try_get("claim_id")?,
         sent_at: row.try_get("sent_at")?,
         last_error: row.try_get("last_error")?,
         created_at: row.try_get("created_at")?,

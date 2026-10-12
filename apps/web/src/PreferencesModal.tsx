@@ -25,6 +25,7 @@ import {
   loadBrowserPushNotificationState,
 } from "./notifications/pushSubscriptions";
 import type { KodexColorSchemeId } from "./theme";
+import { notificationQueryClient } from "./notifications/unreadBadge";
 
 export type PreferenceSection = "appearance" | "account" | "execution" | "usage" | "notifications" | "mcp" | "executors";
 
@@ -51,16 +52,17 @@ export function PreferencesModal({
 }: PreferencesModalProps) {
   const federation = useFederatedCatalogContext();
   const queryClient = useQueryClient();
+  const notificationsClient = notificationQueryClient(queryClient);
   const notificationStatusQuery = useQuery({
     enabled: opened && activeSection === "notifications",
     queryFn: ({ signal }) => getNotificationStatus(signal),
     queryKey: queryKeys.notificationStatus,
-  });
+  }, notificationsClient);
   const currentPushStateQuery = useQuery({
     enabled: opened && activeSection === "notifications",
     queryFn: ({ signal }) => loadBrowserPushNotificationState(signal),
     queryKey: ["notifications", "current-device"],
-  });
+  }, notificationsClient);
   const enableNotificationsMutation = useMutation({
     mutationFn: async () => {
       const status = notificationStatusQuery.data ?? (await getNotificationStatus());
@@ -76,21 +78,21 @@ export function PreferencesModal({
     },
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.notificationStatus }),
-        queryClient.invalidateQueries({ queryKey: ["notifications", "current-device"] }),
+        notificationsClient.invalidateQueries({ queryKey: queryKeys.notificationStatus }),
+        notificationsClient.invalidateQueries({ queryKey: ["notifications", "current-device"] }),
       ]);
     },
   });
   const disableNotificationsMutation = useMutation({
     mutationFn: disableBrowserPushNotifications,
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["notifications", "current-device"] });
+      await notificationsClient.invalidateQueries({ queryKey: ["notifications", "current-device"] });
     },
   });
   const testNotificationMutation = useMutation({
     mutationFn: sendTestNotification,
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["notifications", "current-device"] });
+      await notificationsClient.invalidateQueries({ queryKey: ["notifications", "current-device"] });
     },
   });
 

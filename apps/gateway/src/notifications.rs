@@ -361,6 +361,63 @@ pub async fn process_due_deliveries(state: AppState) -> ApiResult<()> {
     Ok(())
 }
 
+pub async fn claim_federated_deliveries(
+    state: &AppState,
+    limit: i64,
+) -> ApiResult<Vec<crate::routes::notifications::NotificationDeliveryClaim>> {
+    let now = Utc::now();
+    let claimed = state
+        .store
+        .claim_due_notification_deliveries_for_federator(
+            limit.clamp(1, DELIVERY_CLAIM_LIMIT),
+            now,
+            now - DELIVERY_PROCESSING_STALE_AFTER,
+        )
+        .await?;
+    let mut ready = Vec::new();
+    for claim in claimed {
+        match notification_payload_for_delivery(state, &claim.delivery).await {
+            Ok(Some(payload)) => {
+                ready.push(crate::routes::notifications::NotificationDeliveryClaim {
+                    delivery_id: claim.delivery.id,
+                    claim_id: claim.claim_id,
+                    attempt_count: claim.delivery.attempt_count,
+                    payload,
+                    delivered_subscription_ids: claim.delivery.delivered_subscription_ids,
+                })
+            }
+            Ok(None) => {
+                state
+                    .store
+                    .complete_federated_notification_claim(
+                        &claim.delivery.id,
+                        &claim.claim_id,
+                        &[],
+                        0,
+                        0,
+                        None,
+                    )
+                    .await?;
+            }
+            Err(error) => {
+                state
+                    .store
+                    .complete_federated_notification_claim(
+                        &claim.delivery.id,
+                        &claim.claim_id,
+                        &[],
+                        1,
+                        0,
+                        None,
+                    )
+                    .await?;
+                tracing::warn!(delivery_id = claim.delivery.id, %error, "notification preview preparation failed");
+            }
+        }
+    }
+    Ok(ready)
+}
+
 async fn process_delivery(state: AppState, delivery: NotificationDelivery) -> ApiResult<()> {
     let payload = notification_payload_for_delivery(&state, &delivery).await?;
     let Some(payload) = payload else {

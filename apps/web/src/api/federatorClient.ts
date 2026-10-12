@@ -53,6 +53,21 @@ export function createFederatorClient({
       params: { path: { kind } },
       body: request,
     })),
+    getNotificationStatus: (signal?: AbortSignal) => unwrap(api.GET("/v1/notifications/status", { signal, cache: "no-store" })),
+    getCurrentPushSubscriptionStatus: (endpoint: string, signal?: AbortSignal) => unwrap(api.GET("/v1/notifications/subscription/current", { params: { query: { endpoint } }, signal, cache: "no-store" })),
+    upsertPushSubscription: (
+      subscription: PushSubscription,
+      userAgent: string | null = typeof navigator === "undefined" ? null : navigator.userAgent,
+    ) => {
+      const value = subscription.toJSON();
+      const endpoint = value.endpoint;
+      const auth = value.keys?.auth;
+      const p256dh = value.keys?.p256dh;
+      if (!endpoint || !auth || !p256dh) throw new Error("Push subscription is missing endpoint or keys");
+      return unwrap(api.POST("/v1/notifications/subscriptions", { body: { endpoint, keys: { auth, p256dh }, userAgent } }));
+    },
+    deleteCurrentPushSubscription: (endpoint: string) => unwrap(api.DELETE("/v1/notifications/subscription/current", { params: { query: { endpoint } } })),
+    sendTestNotification: () => unwrap(api.POST("/v1/notifications/test", {})),
   };
 }
 

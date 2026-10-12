@@ -317,3 +317,50 @@ async fn notification_item_read_failures_retry_instead_of_sending_unrelated_or_g
         );
     }
 }
+
+#[tokio::test]
+async fn federator_claim_returns_prepared_payload_and_fences_a_late_outcome() {
+    let (state, _, _, _) = preview_fixture(
+        Some(DELIVERY_TURN_ID),
+        json!({"data": [item_entry(json!({"id": "answer", "type": "agentMessage", "phase": "final_answer", "text": "Exact answer"}))]}),
+        None,
+    )
+    .await;
+    let first = claim_federated_deliveries(&state, 10).await.unwrap();
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].payload.body.as_deref(), Some("Exact answer"));
+
+    sqlx::query("update notification_deliveries set processing_started_at = ? where id = ?")
+        .bind(Utc::now() - ChronoDuration::minutes(6))
+        .bind(&first[0].delivery_id)
+        .execute(state.store.pool())
+        .await
+        .unwrap();
+    let second = claim_federated_deliveries(&state, 10).await.unwrap();
+    assert_eq!(second.len(), 1);
+    assert_ne!(first[0].claim_id, second[0].claim_id);
+    assert!(!state
+        .store
+        .complete_federated_notification_claim(
+            &first[0].delivery_id,
+            &first[0].claim_id,
+            &[],
+            0,
+            0,
+            None,
+        )
+        .await
+        .unwrap());
+    assert!(state
+        .store
+        .complete_federated_notification_claim(
+            &second[0].delivery_id,
+            &second[0].claim_id,
+            &["browser-a".into()],
+            0,
+            0,
+            None,
+        )
+        .await
+        .unwrap());
+}

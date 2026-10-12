@@ -2,6 +2,7 @@ pub mod catalog;
 pub mod config;
 mod frontend_updates;
 pub mod instance;
+pub mod notifications;
 pub mod proxy;
 pub mod registry;
 mod static_assets;
@@ -26,6 +27,8 @@ pub struct State {
     pub(crate) frontend_update_writer: frontend_updates::FrontendUpdateWriter,
     pub(crate) frontend_updates: broadcast::Sender<String>,
     pub(crate) trust: trust::TrustPolicy,
+    pub(crate) notifications_config: std::sync::Arc<config::NotificationsConfig>,
+    pub(crate) notifications: notifications::NotificationService,
     pub(crate) executor_probe_locks: std::sync::Arc<
         tokio::sync::Mutex<
             std::collections::HashMap<String, std::sync::Weak<tokio::sync::Mutex<()>>>,
@@ -70,7 +73,14 @@ struct HealthResponse {
         registry::probe_executor_status,
         registry::register_executor,
         registry::update_executor,
-        registry::delete_executor
+        registry::delete_executor,
+        notifications::notification_status,
+        notifications::upsert_push_subscription,
+        notifications::delete_push_subscription,
+        notifications::current_push_subscription,
+        notifications::delete_current_push_subscription,
+        notifications::test_notification,
+        notifications::unread_badge
     ),
     components(schemas(
         HealthResponse,
@@ -87,7 +97,18 @@ struct HealthResponse {
         registry::ExecutorRegistryEvent,
         registry::RegisterExecutorRequest,
         registry::UpdateExecutorRequest,
-        registry::ErrorBody
+        registry::ErrorBody,
+        notifications::NotificationStatusResponse,
+        notifications::PushSubscriptionKeysRequest,
+        notifications::PushSubscriptionUpsertRequest,
+        notifications::PushSubscriptionResponse,
+        notifications::PushSubscriptionUpsertResponse,
+        notifications::PushSubscriptionDeleteResponse,
+        notifications::CurrentPushSubscriptionQuery,
+        notifications::CurrentPushSubscriptionResponse,
+        notifications::TestNotificationResponse,
+        notifications::BadgeSource,
+        notifications::AggregateUnreadBadgeResponse
     ))
 )]
 pub struct ApiDoc;
@@ -113,7 +134,7 @@ pub fn federated_openapi() -> serde_json::Value {
         .as_object()
         .expect("executor OpenAPI contains paths")
     {
-        if path == "/v1/frontend-updates" {
+        if path == "/v1/frontend-updates" || path.starts_with("/v1/notifications/deliveries/") {
             continue;
         }
         let Some(suffix) = path.strip_prefix("/v1") else {
@@ -169,6 +190,7 @@ pub fn primary_router(
         .merge(catalog::router())
         .merge(frontend_updates::router())
         .merge(registry::router())
+        .merge(notifications::router())
         .merge(proxy::router())
         .merge(SwaggerUi::new("/docs").external_url_unchecked("/openapi.json", federated_openapi()))
         .with_state(state);
@@ -225,6 +247,7 @@ pub async fn prepare(
     let frontend_update_writer =
         frontend_updates::FrontendUpdateWriter::start(store.clone(), frontend_updates.clone());
     let trust = trust::TrustPolicy::new(&config.public_origin)?;
+    let notifications = notifications::NotificationService::from_config(&config.notifications);
     let state = State {
         instance_id: prepared.identity.id.to_string(),
         store,
@@ -235,6 +258,8 @@ pub async fn prepare(
         frontend_update_writer,
         frontend_updates,
         trust,
+        notifications_config: std::sync::Arc::new(config.notifications.clone()),
+        notifications,
         executor_probe_locks: std::sync::Arc::new(tokio::sync::Mutex::new(
             std::collections::HashMap::new(),
         )),
@@ -251,6 +276,9 @@ pub async fn serve(
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> anyhow::Result<()> {
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let worker = state
+        .notifications
+        .start_worker(state.clone(), shutdown_rx.clone());
     let mut primary_task = tokio::spawn(serve_one(
         primary,
         primary_router(state, frontend_dist.clone(), sandbox_public_url),
@@ -273,6 +301,7 @@ pub async fn serve(
     if !sandbox_task.is_finished() {
         sandbox_task.await??;
     }
+    worker.await?;
     Ok(())
 }
 
@@ -493,7 +522,10 @@ mod tests {
         assert!(paths.contains_key("/v1/federation/catalog/order/{kind}/move"));
         assert!(paths.contains_key("/v1/executors/{executorId}/projects"));
         assert!(paths.contains_key("/v1/executors/{executorId}/events"));
+        assert!(paths.contains_key("/v1/notifications/status"));
+        assert!(paths.contains_key("/v1/threads/unread-badge"));
         assert!(!paths.contains_key("/v1/executors/{executorId}/frontend-updates"));
+        assert!(!paths.contains_key("/v1/executors/{executorId}/notifications/deliveries/claim"));
         assert!(paths.keys().all(|path| !path.contains("self-control")));
         assert_eq!(
             paths["/v1/executors/{executorId}/projects"]["get"]["parameters"][0]["name"],

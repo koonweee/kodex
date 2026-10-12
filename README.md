@@ -44,14 +44,16 @@ A Rust gateway manages Codex and local capabilities, while a responsive React PW
 
 ```mermaid
 flowchart LR
-    Browser[Browser / installed PWA] -->|HTTP, SSE, WebSocket| Gateway[Kodex gateway]
+    Browser[Browser / installed PWA] -->|HTTP, SSE, WebSocket| Federator[Kodex federator]
+    Federator -->|qualified HTTP, SSE, WebSocket| Gateway[Executor gateway]
     Gateway -->|JSON-RPC over stdio| Codex[Codex app-server]
-    Gateway --> SQLite[(Local SQLite)]
+    Federator --> FederatorSQLite[(Federator SQLite)]
+    Gateway --> ExecutorSQLite[(Executor SQLite)]
     Gateway --> Host[Files, terminals, uploads]
     Codex --> Projects[Your project workspaces]
 ```
 
-The gateway supervises an external `codex app-server`, translates its protocol into a browser-oriented API, brokers approvals, and owns local features such as terminals, automations, file serving, and notifications. The web client is a projection of gateway and app-server state rather than a second source of truth.
+Each executor gateway supervises its local `codex app-server`, translates the native protocol, and owns machine-local features such as terminals, automations, files and eligible notification jobs. The federator serves the web app, routes qualified operations, owns browser push subscriptions/provider calls and aggregates badges across executors. The web client is a projection of federator, gateway and app-server state rather than a second source of truth.
 
 See [Architecture](docs/architecture.md) for component boundaries and state ownership.
 

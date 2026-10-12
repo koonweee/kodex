@@ -1,12 +1,8 @@
 import type { components } from "./generated/schema";
 import type {
-  CurrentPushSubscriptionStatusResponse,
-  NotificationStatusResponse,
   PromotionOutcome,
-  PushSubscriptionUpsertResponse,
   QueuedInput,
   QueuedInputListResponse,
-  TestNotificationResponse,
   ThreadCompactResponse,
   TimelineFileAttachment,
   UserInput,
@@ -16,45 +12,6 @@ import { unwrap, type GatewayClientDependencies } from "./gatewayClientShared";
 export function createGatewayQueue({
   api,
 }: GatewayClientDependencies) {
-  async function getNotificationStatus(signal?: AbortSignal): Promise<NotificationStatusResponse> {
-    return unwrap(api.GET("/v1/notifications/status", { signal, cache: "no-store" }));
-  }
-  async function getCurrentPushSubscriptionStatus(
-    endpoint: string,
-    signal?: AbortSignal,
-  ): Promise<CurrentPushSubscriptionStatusResponse> {
-    return unwrap(api.GET("/v1/notifications/subscription/current", { params: { query: { endpoint } }, signal, cache: "no-store" }));
-  }
-  async function upsertPushSubscription(
-    subscription: PushSubscription,
-    userAgent: string | null = typeof navigator === "undefined" ? null : navigator.userAgent,
-  ): Promise<PushSubscriptionUpsertResponse> {
-    const value = subscription.toJSON();
-    const endpoint = value.endpoint;
-    const auth = value.keys?.auth;
-    const p256dh = value.keys?.p256dh;
-    if (!endpoint || !auth || !p256dh) {
-      throw new Error("Push subscription is missing endpoint or keys");
-    }
-    return unwrap(
-      api.POST("/v1/notifications/subscriptions", {
-        body: {
-          endpoint,
-          keys: {
-            auth,
-            p256dh,
-          },
-          userAgent,
-        },
-      }),
-    );
-  }
-  async function deleteCurrentPushSubscription(endpoint: string): Promise<CurrentPushSubscriptionStatusResponse> {
-    return unwrap(api.DELETE("/v1/notifications/subscription/current", { params: { query: { endpoint } } }));
-  }
-  async function sendTestNotification(): Promise<TestNotificationResponse> {
-    return unwrap(api.POST("/v1/notifications/test"));
-  }
   async function submitThreadInput(
     threadId: string,
     input: UserInput[],
@@ -126,11 +83,6 @@ export function createGatewayQueue({
   }
 
   return {
-    getNotificationStatus,
-    getCurrentPushSubscriptionStatus,
-    upsertPushSubscription,
-    deleteCurrentPushSubscription,
-    sendTestNotification,
     submitThreadInput,
     compactThread,
     listQueuedInputs,

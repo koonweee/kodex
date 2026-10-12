@@ -262,6 +262,8 @@ M5 is active. Account/device-code operations, usage and reset credits, execution
 
 Exit: notification behavior matches characterized baseline across the split; all available automated proofs pass and manual provider/device checks have explicit results rather than assumed success.
 
+M6 is active. Executor completion jobs remain the sole durable source and are exposed only through an internal federator claim/outcome contract with expiring claim tokens, late-outcome fencing, exact-turn preview preparation and retained successful subscription IDs. Ordinary executor mode no longer exposes or runs provider/subscription controls. The federator owns VAPID configuration, subscriptions, provider calls, durable zero-executor Test jobs and bounded concurrent source polling; its worker survives local retries/restarts, disables only stale endpoints and qualifies notification routes/tags by executor. Aggregate badges keep per-executor freshness and last-known counts across transient failures, fence stale registry generations and never synthesize a completion notification from badge/history state. The generated public contract hides internal claim routes, and the PWA uses one federator-wide badge cache with event, reconnect/foreground and worker recovery. Full Rust and frontend suites, generated contracts, production build and trims pass. The real push-provider/device command has not been run in this no-deployment implementation session, so the M6 exit remains open pending that explicit user-run result.
+
 ### M7 macOS and Linux installation and operations
 
 - Extend/refactor the local service tool for separate federator/executor install, update, restart, status, logs and rollback. Keep shared packaging logic small and platform supervisors explicit.

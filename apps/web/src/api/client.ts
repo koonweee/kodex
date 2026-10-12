@@ -89,10 +89,10 @@ export type UserInput = components["schemas"]["UserInput"];
 export type ImageUpload = components["schemas"]["ImageUpload"];
 export type TimelineFileAttachment = components["schemas"]["TimelineFileAttachment"];
 export type CreateThreadOptions = Omit<components["schemas"]["CreateThreadRequest"], "payload" | "projectId">;
-export type NotificationStatusResponse = components["schemas"]["NotificationStatusResponse"];
-export type PushSubscriptionUpsertResponse = components["schemas"]["PushSubscriptionUpsertResponse"];
-export type CurrentPushSubscriptionStatusResponse = components["schemas"]["CurrentPushSubscriptionResponse"];
-export type TestNotificationResponse = components["schemas"]["TestNotificationResponse"];
+export type NotificationStatusResponse = federationComponents["schemas"]["NotificationStatusResponse"];
+export type PushSubscriptionUpsertResponse = federationComponents["schemas"]["PushSubscriptionUpsertResponse"];
+export type CurrentPushSubscriptionStatusResponse = federationComponents["schemas"]["CurrentPushSubscriptionResponse"];
+export type TestNotificationResponse = federationComponents["schemas"]["TestNotificationResponse"];
 export type CreateTerminalSession = components["schemas"]["CreateTerminalSession"];
 export type TerminalDeleteResponse = components["schemas"]["TerminalDeleteResponse"];
 export type TerminalSessionInfo = components["schemas"]["TerminalSessionInfo"];
@@ -114,8 +114,18 @@ export {
 } from "./federatorClient";
 
 import { createGatewayClient } from "./gatewayClient";
+import { createFederatorClient } from "./federatorClient";
 
 export const defaultGatewayClient = createGatewayClient();
+export const defaultFederatorClient = createFederatorClient();
+
+export const {
+  getNotificationStatus,
+  getCurrentPushSubscriptionStatus,
+  upsertPushSubscription,
+  deleteCurrentPushSubscription,
+  sendTestNotification,
+} = defaultFederatorClient;
 
 export const {
   terminalWebSocketUrl,
@@ -159,11 +169,6 @@ export const {
   markThreadSeen,
   replaceThreadViewPresence,
   sendThreadViewPresenceSnapshotBeacon,
-  getNotificationStatus,
-  getCurrentPushSubscriptionStatus,
-  upsertPushSubscription,
-  deleteCurrentPushSubscription,
-  sendTestNotification,
   submitThreadInput,
   compactThread,
   listQueuedInputs,

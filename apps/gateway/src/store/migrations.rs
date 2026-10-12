@@ -144,6 +144,7 @@ impl Store {
                 attempt_count integer not null default 0,
                 available_at text not null,
                 processing_started_at text,
+                claim_id text,
                 sent_at text,
                 last_error text,
                 created_at text not null,
@@ -153,6 +154,16 @@ impl Store {
         )
         .execute(&self.pool)
         .await?;
+        let has_claim_id: bool = sqlx::query_scalar(
+            "select exists(select 1 from pragma_table_info('notification_deliveries') where name = 'claim_id')",
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        if !has_claim_id {
+            sqlx::query("alter table notification_deliveries add column claim_id text")
+                .execute(&self.pool)
+                .await?;
+        }
         sqlx::query(
             r#"
             create table if not exists thread_notification_settings (

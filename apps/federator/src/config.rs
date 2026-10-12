@@ -9,6 +9,14 @@ pub struct Config {
     pub frontend_dist: Option<PathBuf>,
     pub public_origin: String,
     pub sandbox_public_url: String,
+    pub notifications: NotificationsConfig,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct NotificationsConfig {
+    pub vapid_public_key: Option<String>,
+    pub vapid_private_key: Option<String>,
+    pub vapid_subject: Option<String>,
 }
 
 impl Default for Config {
@@ -22,6 +30,7 @@ impl Default for Config {
             frontend_dist: None,
             public_origin: "http://localhost:8787".to_string(),
             sandbox_public_url: "http://localhost:8790/app-surface-sandbox.html".to_string(),
+            notifications: NotificationsConfig::default(),
         }
     }
 }
@@ -55,6 +64,9 @@ impl Config {
         if let Ok(url) = env::var("KODEX_FEDERATOR_PUBLIC_ORIGIN") {
             config.public_origin = url;
         }
+        config.notifications.vapid_public_key = env::var("KODEX_VAPID_PUBLIC_KEY").ok();
+        config.notifications.vapid_private_key = env::var("KODEX_VAPID_PRIVATE_KEY").ok();
+        config.notifications.vapid_subject = env::var("KODEX_VAPID_SUBJECT").ok();
         config
     }
 }

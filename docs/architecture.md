@@ -1,16 +1,18 @@
 # Architecture
 
-Kodex is a browser-based workspace built around an external Codex app-server. Its design keeps the browser thin, the gateway authoritative for shared product state, and app-server authoritative for native Codex state.
+Kodex is a browser-based workspace built around machine-local Codex app-servers. Its design keeps the browser thin, the federator authoritative for cross-executor presentation and delivery state, each gateway authoritative for executor-local product state, and app-server authoritative for native Codex state.
 
 ## Components
 
 | Component | Responsibility |
 | --- | --- |
 | React PWA | Renders projects, threads, timelines, approvals, terminals, settings, and app surfaces. Holds only browser-local interaction state where possible. |
-| Rust gateway | Supervises app-server, exposes HTTP/SSE/WebSocket APIs, brokers approvals, projects app-server state, and owns local capabilities. |
+| Rust federator | Serves the PWA, registers executors, routes qualified transports, stores shared catalog order, owns browser push subscriptions/provider delivery and aggregates unread badges. |
+| Rust executor gateway | Supervises one local app-server, exposes the federation-facing API plus a separate loopback Control API, brokers approvals, projects app-server state, and owns machine-local capabilities. |
 | Codex app-server | Runs Codex sessions and owns durable transcripts, ordinary queues, native organization/settings and Codex account state. |
-| SQLite | Stores promotion transfers, generated-app grants, read markers, automation schedules/run correlation, notifications and diagnostic events. Native queue payloads/order, projects, pins/order, thread settings and approvals are not persisted here. |
-| Host integrations | Provide PTY terminal sessions, supported local-file previews, uploads and static frontend serving. |
+| Federator SQLite | Stores executor bindings, bounded catalog metadata/order, push subscriptions, diagnostic notification attempts and last-known badge sources. |
+| Executor SQLite | Stores promotion transfers, generated-app grants, read markers, automation schedules/run correlation, eligible completion notification jobs and diagnostic events. Native queue payloads/order, projects, pins/order, thread settings and approvals are not persisted here. |
+| Host integrations | Executors provide PTYs, supported local-file previews and uploads. The federator serves the frontend and isolated app-surface sandbox assets. |
 
 ## State ownership
 
@@ -18,7 +20,7 @@ Shared state must survive reloads, reconnects, and multiple browser tabs. Kodex 
 
 - App-server owns native project roots, metadata, order and thread membership, pinned membership and member order, descendant relationships and input capabilities, durable transcript history, Codex session lifecycle, effective thread settings and native approval requests. Project roots organize chats; they neither grant filesystem permissions nor change existing chat working directories.
 - Gateway mirrors native approvals in connection-scoped memory and projects canonical thread state.
-- App-server owns ordinary queued input, order and dispatch. The gateway owns narrow promotion-transfer recovery, read state, automation schedules/run correlation, notifications and generated-app grants.
+- App-server owns ordinary queued input, order and dispatch. Each executor gateway owns narrow promotion-transfer recovery, read state, automation schedules/run correlation, eligible completion notification jobs and generated-app grants. The federator owns browser push subscriptions/provider delivery and aggregate badge freshness; it never reconstructs missed notifications from transcript history.
 - The browser may own drafts, focus, open dialogs, scroll position, and other per-tab presentation state.
 
 Selecting an already-visible desktop pane activates its Dockview group without reopening the panel content, preserving the timeline’s current reading position. Hidden tabs use native panel focus to reveal their content. This focus and scroll behavior is local to each browser tab. Thread tabs reuse the sidebar running spinner and unread completion pulse, with running taking precedence. With fine hover input, the indicator shares the close slot: hover or keyboard focus reveals Close, and leaving restores the indicator. With coarse or non-hover input, Close stays visible beside the indicator. They project shared thread summaries and fall back to the mounted pane’s canonical status when a chat is outside the loaded sidebar pages; they do not keep a separate unread state.

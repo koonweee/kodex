@@ -40,6 +40,11 @@ fn allowlist_comes_from_executor_contract_and_excludes_control() {
     assert!(!allowlist.allows(&Method::GET, "/v1/self-control/status"));
     assert!(!allowlist.allows(&Method::GET, "/v1/federation/executors"));
     assert!(!allowlist.allows(&Method::POST, FRONTEND_UPDATE_PATH));
+    assert!(!allowlist.allows(&Method::POST, "/v1/notifications/deliveries/claim"));
+    assert!(!allowlist.allows(
+        &Method::POST,
+        "/v1/notifications/deliveries/delivery-1/outcome"
+    ));
     assert!(!allowlist.allows(&Method::DELETE, "/v1/projects"));
 }
 

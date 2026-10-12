@@ -11,7 +11,7 @@ use crate::{
     CatalogChange,
 };
 
-const SCHEMA_VERSION: i64 = 5;
+const SCHEMA_VERSION: i64 = 6;
 const REGISTRY_REVISION_KEY: &str = "executor_registry_revision";
 const FRONTEND_REVISION_KEY: &str = "frontend_revision";
 const CATALOG_REVISION_KEY: &str = "catalog_revision";
@@ -58,7 +58,8 @@ impl Store {
             install_executor_schema(&mut transaction).await?;
             install_registry_revision(&mut transaction).await?;
             install_catalog_schema(&mut transaction).await?;
-            sqlx::query("PRAGMA user_version = 5")
+            install_notification_schema(&mut transaction).await?;
+            sqlx::query("PRAGMA user_version = 6")
                 .execute(&mut *transaction)
                 .await?;
             transaction.commit().await?;
@@ -67,7 +68,8 @@ impl Store {
             install_executor_schema(&mut transaction).await?;
             install_registry_revision(&mut transaction).await?;
             install_catalog_schema(&mut transaction).await?;
-            sqlx::query("PRAGMA user_version = 5")
+            install_notification_schema(&mut transaction).await?;
+            sqlx::query("PRAGMA user_version = 6")
                 .execute(&mut *transaction)
                 .await?;
             transaction.commit().await?;
@@ -75,14 +77,16 @@ impl Store {
             let mut transaction = pool.begin().await?;
             install_registry_revision(&mut transaction).await?;
             install_catalog_schema(&mut transaction).await?;
-            sqlx::query("PRAGMA user_version = 5")
+            install_notification_schema(&mut transaction).await?;
+            sqlx::query("PRAGMA user_version = 6")
                 .execute(&mut *transaction)
                 .await?;
             transaction.commit().await?;
         } else if version == 3 {
             let mut transaction = pool.begin().await?;
             install_catalog_schema(&mut transaction).await?;
-            sqlx::query("PRAGMA user_version = 5")
+            install_notification_schema(&mut transaction).await?;
+            sqlx::query("PRAGMA user_version = 6")
                 .execute(&mut *transaction)
                 .await?;
             transaction.commit().await?;
@@ -91,7 +95,15 @@ impl Store {
             sqlx::query("ALTER TABLE catalog_snapshots ADD COLUMN refresh_error TEXT")
                 .execute(&mut *transaction)
                 .await?;
-            sqlx::query("PRAGMA user_version = 5")
+            install_notification_schema(&mut transaction).await?;
+            sqlx::query("PRAGMA user_version = 6")
+                .execute(&mut *transaction)
+                .await?;
+            transaction.commit().await?;
+        } else if version == 5 {
+            let mut transaction = pool.begin().await?;
+            install_notification_schema(&mut transaction).await?;
+            sqlx::query("PRAGMA user_version = 6")
                 .execute(&mut *transaction)
                 .await?;
             transaction.commit().await?;
@@ -520,6 +532,57 @@ async fn install_catalog_schema(
             position INTEGER NOT NULL,
             PRIMARY KEY (kind, executor_id, native_id),
             UNIQUE (kind, position)
+        )
+        "#,
+    )
+    .execute(&mut **transaction)
+    .await?;
+    Ok(())
+}
+
+async fn install_notification_schema(
+    transaction: &mut sqlx::Transaction<'_, Sqlite>,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        "INSERT OR IGNORE INTO federation_meta (key, value) VALUES ('badge_revision', '0')",
+    )
+    .execute(&mut **transaction)
+    .await?;
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS push_subscriptions (
+            id TEXT PRIMARY KEY, endpoint TEXT NOT NULL UNIQUE, p256dh TEXT NOT NULL,
+            auth TEXT NOT NULL, user_agent TEXT, enabled INTEGER NOT NULL,
+            created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+        )
+        "#,
+    )
+    .execute(&mut **transaction)
+    .await?;
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS notification_deliveries (
+            id TEXT PRIMARY KEY, payload_json TEXT NOT NULL,
+            delivered_subscription_ids_json TEXT NOT NULL DEFAULT '[]',
+            status TEXT NOT NULL, attempt_count INTEGER NOT NULL DEFAULT 0,
+            available_at INTEGER NOT NULL, processing_started_at INTEGER,
+            sent_at INTEGER, last_error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+        )
+        "#,
+    )
+    .execute(&mut **transaction)
+    .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS notification_deliveries_due_idx ON notification_deliveries(status, available_at, processing_started_at, created_at)",
+    )
+    .execute(&mut **transaction)
+    .await?;
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS executor_badges (
+            executor_id TEXT PRIMARY KEY REFERENCES executors(id) ON DELETE CASCADE,
+            generation INTEGER NOT NULL, count INTEGER NOT NULL, native_read_revision INTEGER NOT NULL,
+            observed_at INTEGER NOT NULL, last_error TEXT
         )
         "#,
     )

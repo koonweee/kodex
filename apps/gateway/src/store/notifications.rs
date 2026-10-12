@@ -14,6 +14,12 @@ use super::{
     ThreadNotificationSetting,
 };
 
+#[derive(Debug, Clone)]
+pub struct FederatedNotificationClaim {
+    pub delivery: NotificationDelivery,
+    pub claim_id: String,
+}
+
 impl Store {
     pub async fn thread_notifications_enabled(&self, thread_id: &str) -> ApiResult<bool> {
         let row = sqlx::query(
@@ -346,6 +352,7 @@ impl Store {
                 set status = 'processing',
                     attempt_count = attempt_count + 1,
                     processing_started_at = ?,
+                    claim_id = null,
                     last_error = null,
                     updated_at = ?
                 where id = ?
@@ -374,6 +381,146 @@ impl Store {
         Ok(claimed)
     }
 
+    pub async fn claim_due_notification_deliveries_for_federator(
+        &self,
+        limit: i64,
+        now: DateTime<Utc>,
+        stale_processing_before: DateTime<Utc>,
+    ) -> ApiResult<Vec<FederatedNotificationClaim>> {
+        let rows = sqlx::query(
+            r#"
+            select id
+            from notification_deliveries
+            where (status = 'pending' and available_at <= ?)
+               or (status = 'processing' and processing_started_at is not null and processing_started_at <= ?)
+            order by available_at asc, created_at asc, id asc
+            limit ?
+            "#,
+        )
+        .bind(now)
+        .bind(stale_processing_before)
+        .bind(limit.max(1))
+        .fetch_all(&self.pool)
+        .await?;
+        let mut claims = Vec::new();
+        for row in rows {
+            let id: String = row.try_get("id")?;
+            let claim_id = Uuid::new_v4().to_string();
+            let affected = sqlx::query(
+                r#"
+                update notification_deliveries
+                set status = 'processing', attempt_count = attempt_count + 1,
+                    processing_started_at = ?, claim_id = ?, last_error = null, updated_at = ?
+                where id = ? and (
+                    (status = 'pending' and available_at <= ?)
+                    or (status = 'processing' and processing_started_at is not null and processing_started_at <= ?)
+                )
+                "#,
+            )
+            .bind(now)
+            .bind(&claim_id)
+            .bind(now)
+            .bind(&id)
+            .bind(now)
+            .bind(stale_processing_before)
+            .execute(&self.pool)
+            .await?
+            .rows_affected();
+            if affected > 0 {
+                claims.push(FederatedNotificationClaim {
+                    delivery: self.get_notification_delivery(&id).await?,
+                    claim_id,
+                });
+            }
+        }
+        Ok(claims)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn complete_federated_notification_claim(
+        &self,
+        id: &str,
+        claim_id: &str,
+        delivered_subscription_ids: &[String],
+        temporary_failure_count: usize,
+        stale_endpoint_count: usize,
+        payload: Option<&Value>,
+    ) -> ApiResult<bool> {
+        let Some(current) = sqlx::query(&notification_delivery_select_sql(
+            "where id = ? and status = 'processing' and claim_id = ?",
+        ))
+        .bind(id)
+        .bind(claim_id)
+        .fetch_optional(&self.pool)
+        .await?
+        .map(row_to_notification_delivery)
+        .transpose()?
+        else {
+            return Ok(false);
+        };
+        let mut delivered = current.delivered_subscription_ids;
+        for subscription_id in delivered_subscription_ids {
+            if !delivered.contains(subscription_id) {
+                delivered.push(subscription_id.clone());
+            }
+        }
+        let now = Utc::now();
+        let delivered_json = serde_json::to_string(&delivered)?;
+        let payload_json = payload.map(serde_json::to_string).transpose()?;
+        let (status, available_at, sent_at, error) = if temporary_failure_count > 0 {
+            if current.attempt_count < 3 {
+                (
+                    "pending",
+                    now + chrono::Duration::seconds((current.attempt_count.max(1) * 2).min(30)),
+                    None,
+                    Some(format!(
+                        "{temporary_failure_count} temporary push delivery failure(s)"
+                    )),
+                )
+            } else {
+                (
+                    "failed",
+                    current.available_at,
+                    None,
+                    Some(format!(
+                        "{temporary_failure_count} temporary push delivery failure(s)"
+                    )),
+                )
+            }
+        } else if stale_endpoint_count > 0 && delivered.is_empty() {
+            (
+                "failed",
+                current.available_at,
+                None,
+                Some(format!("{stale_endpoint_count} stale push endpoint(s)")),
+            )
+        } else {
+            ("sent", current.available_at, Some(now), None)
+        };
+        let affected = sqlx::query(
+            r#"
+            update notification_deliveries
+            set status = ?, available_at = ?, payload_json = coalesce(?, payload_json),
+                delivered_subscription_ids_json = ?, processing_started_at = null, claim_id = null,
+                sent_at = ?, last_error = ?, updated_at = ?
+            where id = ? and status = 'processing' and claim_id = ?
+            "#,
+        )
+        .bind(status)
+        .bind(available_at)
+        .bind(payload_json)
+        .bind(delivered_json)
+        .bind(sent_at)
+        .bind(error)
+        .bind(now)
+        .bind(id)
+        .bind(claim_id)
+        .execute(&self.pool)
+        .await?
+        .rows_affected();
+        Ok(affected == 1)
+    }
+
     pub async fn mark_notification_delivery_sent(
         &self,
         id: &str,
@@ -390,6 +537,7 @@ impl Store {
                 payload_json = coalesce(?, payload_json),
                 delivered_subscription_ids_json = ?,
                 processing_started_at = null,
+                claim_id = null,
                 sent_at = ?,
                 last_error = null,
                 updated_at = ?
@@ -422,6 +570,7 @@ impl Store {
                 available_at = ?,
                 delivered_subscription_ids_json = ?,
                 processing_started_at = null,
+                claim_id = null,
                 last_error = ?,
                 updated_at = ?
             where id = ?
@@ -454,6 +603,7 @@ impl Store {
                 payload_json = coalesce(?, payload_json),
                 delivered_subscription_ids_json = ?,
                 processing_started_at = null,
+                claim_id = null,
                 last_error = ?,
                 updated_at = ?
             where id = ?
@@ -508,6 +658,59 @@ mod tests {
             .thread_notifications_enabled("thread-1")
             .await
             .unwrap());
+    }
+
+    #[tokio::test]
+    async fn federator_claims_are_reissued_with_new_tokens_and_reject_late_outcomes() {
+        let store = Store::in_memory().await.unwrap();
+        let delivery = store
+            .create_notification_delivery(NewNotificationDelivery {
+                kind: "unreadAgentMessage".to_string(),
+                thread_id: Some("thread-1".to_string()),
+                turn_id: Some("turn-1".to_string()),
+                payload: Some(json!({"title": "Ready"})),
+                available_at: Utc::now(),
+            })
+            .await
+            .unwrap();
+        let now = Utc::now();
+        let first = store
+            .claim_due_notification_deliveries_for_federator(10, now, now)
+            .await
+            .unwrap();
+        assert_eq!(first.len(), 1);
+
+        let second = store
+            .claim_due_notification_deliveries_for_federator(10, now, now)
+            .await
+            .unwrap();
+        assert_eq!(second.len(), 1);
+        assert_ne!(first[0].claim_id, second[0].claim_id);
+        assert!(!store
+            .complete_federated_notification_claim(
+                &delivery.id,
+                &first[0].claim_id,
+                &[],
+                0,
+                0,
+                None,
+            )
+            .await
+            .unwrap());
+        assert!(store
+            .complete_federated_notification_claim(
+                &delivery.id,
+                &second[0].claim_id,
+                &["browser-a".to_string()],
+                0,
+                0,
+                None,
+            )
+            .await
+            .unwrap());
+        let saved = store.get_notification_delivery(&delivery.id).await.unwrap();
+        assert_eq!(saved.status, NotificationDeliveryStatus::Sent);
+        assert_eq!(saved.delivered_subscription_ids, vec!["browser-a"]);
     }
 
     #[tokio::test]

@@ -121,5 +121,8 @@ function notificationTag(payload: KodexNotificationPayload): string {
   if (payload.kind === "test") {
     return "kodex-test-notification";
   }
-  return payload.threadId ? `kodex-unread-agent-message:${payload.threadId}` : "kodex-unread-agent-message";
+  if (!payload.threadId) return "kodex-unread-agent-message";
+  return payload.executorId
+    ? `kodex-unread-agent-message:${payload.executorId}:${payload.threadId}`
+    : `kodex-unread-agent-message:${payload.threadId}`;
 }

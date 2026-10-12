@@ -3,9 +3,9 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createKodexQueryClient } from "../api/queryClient";
+import { createKodexQueryClient, queryClient as federatorQueryClient } from "../api/queryClient";
 import { queryKeys } from "../api/queryKeys";
-import { refreshUnreadBadge } from "./unreadBadge";
+import { notificationQueryClient, refreshUnreadBadge } from "./unreadBadge";
 import { useKodexNotifications } from "./useKodexNotifications";
 
 const getUnreadBadge = vi.hoisted(() => vi.fn());
@@ -15,11 +15,39 @@ const originalSet = navigator.setAppBadge;
 const originalClear = navigator.clearAppBadge;
 afterEach(() => {
   vi.restoreAllMocks(); getUnreadBadge.mockReset();
+  document.head.querySelector('meta[name="kodex-federator"]')?.remove();
+  federatorQueryClient.clear();
   Object.defineProperty(navigator, "setAppBadge", { configurable: true, value: originalSet });
   Object.defineProperty(navigator, "clearAppBadge", { configurable: true, value: originalClear });
 });
 
 describe("authoritative unread badge", () => {
+  it("keeps federator notification state in one cache across executor runtime swaps and recovery", async () => {
+    const marker = document.createElement("meta");
+    marker.name = "kodex-federator";
+    marker.content = "true";
+    document.head.append(marker);
+    const firstRuntime = createKodexQueryClient();
+    const secondRuntime = createKodexQueryClient();
+    expect(notificationQueryClient(firstRuntime)).toBe(federatorQueryClient);
+    expect(notificationQueryClient(secondRuntime)).toBe(federatorQueryClient);
+    federatorQueryClient.setQueryData(["notifications", "status"], { configured: true });
+    getUnreadBadge.mockResolvedValue({ count: 2, readRevision: 1 });
+
+    const first = renderHook(() => useKodexNotifications(), {
+      wrapper: ({ children }: { children: ReactNode }) => <QueryClientProvider client={firstRuntime}>{children}</QueryClientProvider>,
+    });
+    await waitFor(() => expect(federatorQueryClient.getQueryData(queryKeys.unreadBadge)).toEqual({ count: 2, readRevision: 1 }));
+    first.unmount();
+    renderHook(() => useKodexNotifications(), {
+      wrapper: ({ children }: { children: ReactNode }) => <QueryClientProvider client={secondRuntime}>{children}</QueryClientProvider>,
+    });
+    expect(federatorQueryClient.getQueryData(["notifications", "status"])).toEqual({ configured: true });
+
+    window.dispatchEvent(new Event("online"));
+    await waitFor(() => expect(federatorQueryClient.getQueryState(["notifications", "status"])?.isInvalidated).toBe(true));
+  });
+
   it("waits for the shared aggregate instead of clearing from empty or paginated sidebar data", async () => {
     const setAppBadge = vi.fn().mockResolvedValue(undefined);
     const clearAppBadge = vi.fn().mockResolvedValue(undefined);

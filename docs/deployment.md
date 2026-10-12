@@ -43,9 +43,6 @@ KODEX_DATA_DIR
 KODEX_UPLOADS_DIR
 KODEX_CODEX_BINARY
 KODEX_CODEX_ARGS
-KODEX_VAPID_PUBLIC_KEY
-KODEX_VAPID_PRIVATE_KEY
-KODEX_VAPID_SUBJECT
 KODEX_NOTIFICATIONS_RECHECK_DELAY_MS
 ```
 
@@ -75,7 +72,7 @@ The gateway permits eight sessions, keeps at most 1 MiB of reconnect output per 
 
 ## Browser notifications
 
-Web Push is optional. Configure VAPID values on the gateway:
+Web Push is optional. In the split deployment, configure VAPID values only on the federator:
 
 ```bash
 KODEX_VAPID_PUBLIC_KEY=<base64url-public-key>
@@ -83,15 +80,15 @@ KODEX_VAPID_PRIVATE_KEY=<base64url-private-key>
 KODEX_VAPID_SUBJECT=mailto:you@example.com
 ```
 
-`KODEX_NOTIFICATIONS_RECHECK_DELAY_MS` defaults to `2000`. The gateway records delivery attempts, retries temporary failures without resending to endpoints that already accepted a delivery, and disables stale endpoints only when the push service reports that they are gone.
+`KODEX_NOTIFICATIONS_RECHECK_DELAY_MS` defaults to `2000` on each executor and controls when a captured completion is rechecked for eligibility and its exact-turn preview. Executors retain those durable completion jobs. The federator claims them with expiring tokens, owns subscriptions and provider calls, and reports recipient outcomes so retries skip endpoints that already accepted the delivery. A lost provider acknowledgment can still duplicate a notification; no completion-history scan or catch-up summary is added.
 
-Preferences > Notifications reconciles the current browser subscription with gateway state. Use its Test action to verify delivery. For deeper local diagnosis, inspect the `notification_deliveries` and `push_subscriptions` SQLite tables.
+Preferences > Notifications reconciles the current browser subscription with federator state. Its Test action creates a durable federator job and works with zero registered executors. For diagnosis, inspect `push_subscriptions` and diagnostic `notification_deliveries` in `federator.db`; executor `notification_deliveries` contain captured completion jobs. Aggregate badge responses preserve the last known count for an unavailable executor and report incomplete source coverage instead of treating that executor as zero.
 
 Reconnection and returning to a tab refill notification status, including changes from another tab. Enable/Disable success is shown only while the current authoritative device status confirms it. Missing browser capabilities, registration failures and gateway errors remain visible; a failed status read is not treated as a disabled subscription.
 
 Browser subscription status does not confirm your device's OS notification settings. On macOS with Chrome 152 or newer, an installed Kodex PWA has its own OS notification permission. Check System Settings > Notifications > Kodex and its app-icon badge setting if alerts or Dock badges do not appear. A successful `setAppBadge()` call can leave the Dock badge invisible when those settings disallow it. See [Chrome's macOS notification guidance](https://developer.chrome.com/blog/notification-attribution-macos). Kodex’s Enabled status confirms the browser subscription; it does not establish that OS-level delivery is enabled.
 
-Push on phones and tablets requires a secure browser context. Localhost is accepted for development; remote access over a private network generally needs HTTPS termination. HTTPS does not make a public deployment safe—the gateway must remain private.
+Push on phones and tablets requires a secure browser context. Localhost is accepted for development; remote access over a private network generally needs HTTPS termination. HTTPS does not make a public deployment safe—the federator and executors must remain private under the documented Tailscale boundary.
 
 ## Fresh launch verification
 

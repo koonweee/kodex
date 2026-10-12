@@ -1819,7 +1819,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-stream",
+ "async-trait",
  "axum",
+ "chrono",
  "futures-util",
  "http-body-util",
  "kodex-gateway",
@@ -1841,6 +1843,7 @@ dependencies = [
  "utoipa",
  "utoipa-swagger-ui",
  "uuid",
+ "web-push",
  "webpki-roots 1.0.7",
 ]
 

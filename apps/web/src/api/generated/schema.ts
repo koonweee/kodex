@@ -517,39 +517,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/notifications/status": {
+    "/v1/notifications/deliveries/claim": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["notification_status"];
+        get?: never;
         put?: never;
-        post?: never;
+        post: operations["claim_notification_deliveries"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/notifications/subscription/current": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["current_push_subscription"];
-        put?: never;
-        post?: never;
-        delete: operations["delete_current_push_subscription"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/notifications/subscriptions": {
+    "/v1/notifications/deliveries/{deliveryId}/outcome": {
         parameters: {
             query?: never;
             header?: never;
@@ -558,39 +542,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["upsert_push_subscription"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/notifications/subscriptions/{subscriptionId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["delete_push_subscription"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/notifications/test": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["test_notification"];
+        post: operations["complete_notification_delivery"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2166,6 +2118,43 @@ export interface components {
             clientUserMessageId: string;
             id: string;
             input: unknown[];
+        };
+        NotificationClaimRequest: {
+            /** Format: int64 */
+            limit?: number;
+        };
+        NotificationClaimResponse: {
+            claims: components["schemas"]["NotificationDeliveryClaim"][];
+        };
+        NotificationDeliveryClaim: {
+            /** Format: int64 */
+            attemptCount: number;
+            claimId: string;
+            deliveredSubscriptionIds: string[];
+            deliveryId: string;
+            payload: components["schemas"]["NotificationPayload"];
+        };
+        /** @enum {string} */
+        NotificationKind: "unreadAgentMessage" | "test";
+        NotificationOutcomeRequest: {
+            claimId: string;
+            deliveredSubscriptionIds?: string[];
+            staleEndpointCount?: number;
+            temporaryFailureCount?: number;
+        };
+        NotificationOutcomeResponse: {
+            accepted: boolean;
+        };
+        NotificationPayload: {
+            /** Format: int64 */
+            badgeCount?: number | null;
+            body?: string | null;
+            kind: components["schemas"]["NotificationKind"];
+            /** Format: int64 */
+            readRevision?: number | null;
+            route: string;
+            threadId?: string | null;
+            title: string;
         };
         NotificationStatusResponse: {
             configured: boolean;
@@ -4216,68 +4205,7 @@ export interface operations {
             };
         };
     };
-    notification_status: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NotificationStatusResponse"];
-                };
-            };
-        };
-    };
-    current_push_subscription: {
-        parameters: {
-            query: {
-                endpoint: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CurrentPushSubscriptionResponse"];
-                };
-            };
-        };
-    };
-    delete_current_push_subscription: {
-        parameters: {
-            query: {
-                endpoint: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CurrentPushSubscriptionResponse"];
-                };
-            };
-        };
-    };
-    upsert_push_subscription: {
+    claim_notification_deliveries: {
         parameters: {
             query?: never;
             header?: never;
@@ -4286,56 +4214,41 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["PushSubscriptionUpsertRequest"];
+                "application/json": components["schemas"]["NotificationClaimRequest"];
             };
         };
         responses: {
-            201: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PushSubscriptionUpsertResponse"];
+                    "application/json": components["schemas"]["NotificationClaimResponse"];
                 };
             };
         };
     };
-    delete_push_subscription: {
+    complete_notification_delivery: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                subscriptionId: string;
+                deliveryId: string;
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationOutcomeRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PushSubscriptionDeleteResponse"];
-                };
-            };
-        };
-    };
-    test_notification: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TestNotificationResponse"];
+                    "application/json": components["schemas"]["NotificationOutcomeResponse"];
                 };
             };
         };
