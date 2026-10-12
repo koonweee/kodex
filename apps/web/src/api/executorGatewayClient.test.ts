@@ -55,6 +55,29 @@ describe("executor gateway client", () => {
     );
   });
 
+  it("loads app surface documents through the immutable executor route", async () => {
+    const requests: Request[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (request: Request) => {
+      requests.push(request);
+      return new Response("<main>Executor app</main>", { headers: { "Content-Type": "text/html" } });
+    }));
+    const client = createExecutorGatewayClient(
+      { executorId: "executor-a", instanceId: "instance-a" },
+      { baseUrl: "https://kodex.example" },
+    );
+
+    await expect(client.fetchAppSurfaceDocument(
+      "/v1/app-surfaces/session-1/document?revision=2",
+    )).resolves.toBe("<main>Executor app</main>");
+    expect(requests[0]?.url).toBe(
+      "https://kodex.example/v1/executors/executor-a/app-surfaces/session-1/document?revision=2",
+    );
+    expect(requests[0]?.headers.get("x-kodex-expected-instance")).toBe("instance-a");
+    await expect(client.fetchAppSurfaceDocument("https://attacker.example/v1/app-surfaces/session-1/document"))
+      .rejects.toThrow("outside the executor API");
+    expect(requests).toHaveLength(1);
+  });
+
   it("qualifies manual preview and multipart requests exactly once", async () => {
     const requests: Request[] = [];
     vi.stubGlobal("fetch", vi.fn(async (request: Request) => {

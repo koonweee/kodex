@@ -47,6 +47,10 @@ function ThreadAppSurfacePane({
 }: ThreadAppSurfacePaneProps) {
   const api = useGatewayClient();
   const queryClient = useQueryClient();
+  const loadDocument = useCallback(
+    (documentUrl: string, signal?: AbortSignal) => api.fetchAppSurfaceDocument(documentUrl, signal),
+    [api],
+  );
 
   const sessionQuery = useQuery({
     enabled: threadId !== null,
@@ -141,6 +145,7 @@ function ThreadAppSurfacePane({
     <AppSurfacePane
       colorSchemeId={colorSchemeId}
       isBridgePending={bridgeMutation.isPending}
+      loadDocument={loadDocument}
       onBridgeRequest={handleBridgeRequest}
       session={visibleSession}
     />

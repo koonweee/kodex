@@ -107,5 +107,9 @@ async function showChat(page: Page, width: number, touch: boolean) {
     return;
   }
   await click(page.getByRole("button", { name: "Switch workspace pane", exact: true }), touch);
-  await click(page.getByRole("dialog", { name: "Active panes", exact: true }).getByRole("button", { name: "Native settings chat", exact: true }), touch);
+  await click(
+    page.getByRole("dialog", { name: "Active panes", exact: true })
+      .getByRole("button", { name: /^Native settings chat(?: Thread in progress)?$/ }),
+    touch,
+  );
 }

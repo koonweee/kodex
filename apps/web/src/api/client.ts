@@ -143,6 +143,7 @@ export const {
   getThreadTimelinePage,
   listThreadSubagents,
   getThreadAppSurface,
+  fetchAppSurfaceDocument,
   callAppSurfaceBridge,
   archiveThread,
   renameThread,

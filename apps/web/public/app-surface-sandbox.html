@@ -27,13 +27,22 @@
       let appFrame = null;
       const SANDBOX_PROXY_READY = "ui/notifications/sandbox-proxy-ready";
       const SANDBOX_RESOURCE_READY = "ui/notifications/sandbox-resource-ready";
+      const hostOrigin = (() => {
+        try {
+          return new URL(document.referrer).origin;
+        } catch {
+          return null;
+        }
+      })();
 
       function isRecord(value) {
         return value && typeof value === "object" && !Array.isArray(value);
       }
 
       function postJsonRpcNotification(method, params = {}) {
-        window.parent.postMessage({ jsonrpc: "2.0", method, params }, "*");
+        if (hostOrigin) {
+          window.parent.postMessage({ jsonrpc: "2.0", method, params }, hostOrigin);
+        }
       }
 
       function ensureFrame() {
@@ -74,7 +83,7 @@
       }
 
       window.addEventListener("message", (event) => {
-        if (event.source === appFrame?.contentWindow) {
+        if (!hostOrigin || event.source !== window.parent || event.origin !== hostOrigin) {
           return;
         }
         const data = event.data;
@@ -114,7 +123,9 @@
         if (isRecord(data) && typeof data.method === "string" && data.method.startsWith("ui/notifications/sandbox-")) {
           return;
         }
-        window.parent.postMessage(data, "*");
+        if (hostOrigin) {
+          window.parent.postMessage(data, hostOrigin);
+        }
       });
 
       postJsonRpcNotification(SANDBOX_PROXY_READY);

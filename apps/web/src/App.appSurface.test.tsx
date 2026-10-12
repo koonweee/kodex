@@ -235,7 +235,7 @@ describe("app surface pane integration", () => {
 
 function postAppSurfaceMessage(data: unknown) {
   const iframe = screen.getByTitle(/app surface:/i) as HTMLIFrameElement;
-  const event = new MessageEvent("message", { data });
+  const event = new MessageEvent("message", { data, origin: new URL(iframe.src).origin });
   Object.defineProperty(event, "source", { value: iframe.contentWindow });
   act(() => {
     window.dispatchEvent(event);

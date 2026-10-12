@@ -7,6 +7,7 @@ import type { AppSurfaceBridgeRequest, AppSurfaceSession } from "../api/client";
 import { AppSurfacePane } from "./AppSurfacePane";
 
 type AppSurfacePaneBridge = ComponentProps<typeof AppSurfacePane>["onBridgeRequest"];
+const SANDBOX_ORIGIN = "http://127.0.0.1:3000";
 
 describe("AppSurfacePane", () => {
   beforeEach(() => {
@@ -46,6 +47,26 @@ describe("AppSurfacePane", () => {
         revision: 3,
       });
     });
+  });
+
+  it.each([
+    { label: "wrong origin", origin: "https://attacker.example", source: "iframe" },
+    { label: "wrong source", origin: "sandbox", source: "window" },
+  ])("rejects bridge requests from the $label", async ({ origin, source }) => {
+    const onBridgeRequest = vi.fn().mockResolvedValue({ result: {} }) as unknown as AppSurfacePaneBridge;
+    renderPane(appSurfaceSession(), { onBridgeRequest });
+    const iframe = screen.getByTitle(/app surface:/i) as HTMLIFrameElement;
+
+    postFromProxy(
+      { jsonrpc: "2.0", id: "crossed", method: "tools/call", params: { name: "crossed" } },
+      {
+        origin: origin === "sandbox" ? new URL(iframe.src).origin : origin,
+        source: source === "iframe" ? iframe.contentWindow : window,
+      },
+    );
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    expect(onBridgeRequest).not.toHaveBeenCalled();
   });
 
   it("ignores removed legacy app surface submit messages", () => {
@@ -114,7 +135,7 @@ describe("AppSurfacePane", () => {
             html: expect.stringContaining("kodex-app-surface-theme"),
           }),
         }),
-        "*",
+        "http://127.0.0.1:3000",
       );
     });
     const resourceMessage = postMessage.mock.calls.find((call) => call[0]?.method === "ui/notifications/sandbox-resource-ready")?.[0];
@@ -162,7 +183,7 @@ describe("AppSurfacePane", () => {
             html: expect.stringContaining("<button>Pick</button>"),
           }),
         }),
-        "*",
+        SANDBOX_ORIGIN,
       );
     });
   });
@@ -185,7 +206,7 @@ describe("AppSurfacePane", () => {
             html: expect.stringContaining("<button>Pick</button>"),
           }),
         }),
-        "*",
+        SANDBOX_ORIGIN,
       );
     });
     postMessage.mockClear();
@@ -201,7 +222,7 @@ describe("AppSurfacePane", () => {
             html: expect.stringContaining("<button>Pick</button>"),
           }),
         }),
-        "*",
+        SANDBOX_ORIGIN,
       );
     });
   });
@@ -238,7 +259,7 @@ describe("AppSurfacePane", () => {
         expect.objectContaining({
           method: "ui/notifications/sandbox-resource-ready",
         }),
-        "*",
+        SANDBOX_ORIGIN,
       );
     });
     postMessage.mockClear();
@@ -256,7 +277,7 @@ describe("AppSurfacePane", () => {
           method: "ui/notifications/tool-input",
           params: { arguments: { amount: 100000 } },
         },
-        "*",
+        SANDBOX_ORIGIN,
       );
       expect(postMessage).toHaveBeenCalledWith(
         {
@@ -264,7 +285,7 @@ describe("AppSurfacePane", () => {
           method: "ui/notifications/tool-result",
           params: { content: [{ type: "text", text: "Budget rows" }] },
         },
-        "*",
+        SANDBOX_ORIGIN,
       );
     });
     postMessage.mockClear();
@@ -275,7 +296,7 @@ describe("AppSurfacePane", () => {
         expect.objectContaining({
           method: "ui/notifications/sandbox-resource-ready",
         }),
-        "*",
+        SANDBOX_ORIGIN,
       );
     });
     postMessage.mockClear();
@@ -293,7 +314,7 @@ describe("AppSurfacePane", () => {
           method: "ui/notifications/tool-input",
           params: { arguments: { amount: 100000 } },
         },
-        "*",
+        SANDBOX_ORIGIN,
       );
       expect(postMessage).toHaveBeenCalledWith(
         {
@@ -301,7 +322,7 @@ describe("AppSurfacePane", () => {
           method: "ui/notifications/tool-result",
           params: { content: [{ type: "text", text: "Budget rows" }] },
         },
-        "*",
+        SANDBOX_ORIGIN,
       );
     });
   });
@@ -376,7 +397,7 @@ describe("AppSurfacePane", () => {
             protocolVersion: "2026-01-26",
           }),
         },
-        "*",
+        SANDBOX_ORIGIN,
       );
     });
 
@@ -388,7 +409,7 @@ describe("AppSurfacePane", () => {
           method: "ui/notifications/tool-input",
           params: { arguments: { color: "blue" } },
         },
-        "*",
+        SANDBOX_ORIGIN,
       );
       expect(postMessage).toHaveBeenCalledWith(
         {
@@ -396,7 +417,7 @@ describe("AppSurfacePane", () => {
           method: "ui/notifications/tool-result",
           params: { content: [{ type: "text", text: "Rendered sketch" }] },
         },
-        "*",
+        SANDBOX_ORIGIN,
       );
     });
 
@@ -408,6 +429,49 @@ describe("AppSurfacePane", () => {
       revision: 4,
     }, 4);
     expect(postMessage.mock.calls).toHaveLength(callsAfterInitialize);
+  });
+
+  it("discards a held bridge completion after the iframe session is replaced", async () => {
+    let resolveBridge: (response: { id: string; result: Record<string, unknown> }) => void = () => undefined;
+    const onBridgeRequest = vi.fn(() => new Promise((resolve) => {
+      resolveBridge = resolve;
+    })) as unknown as AppSurfacePaneBridge;
+    const firstSession = appSurfaceSession({
+      provenance: { toolInput: { from: "old revision" } },
+      revision: 1,
+    });
+    const rendered = renderPane(firstSession, { onBridgeRequest });
+    const firstIframe = screen.getByTitle(/app surface:/i) as HTMLIFrameElement;
+    const firstPostMessage = mockProxyPostMessage(firstIframe).postMessage;
+
+    postFromApp({
+      jsonrpc: "2.0",
+      id: "same-request-id",
+      method: "ui/initialize",
+      params: { appInfo: { name: "Old app" }, appCapabilities: {}, protocolVersion: "2026-01-26" },
+      revision: 1,
+    }, 1);
+    await waitFor(() => expect(onBridgeRequest).toHaveBeenCalledTimes(1));
+
+    const replacementSession = appSurfaceSession({
+      bridgeToken: "bridge-token-2",
+      id: "session-2",
+      documentUrl: "/v1/app-surfaces/session-2/document?revision=2",
+      provenance: { toolInput: { from: "new revision" } },
+      revision: 2,
+    });
+    const defaultBridge: AppSurfacePaneBridge = async (request) => ({ id: request.id, result: {} });
+    rendered.rerender(appSurfacePaneElement(replacementSession, { onBridgeRequest }, defaultBridge));
+    const replacementIframe = await screen.findByTitle(/app surface:/i) as HTMLIFrameElement;
+    const replacementPostMessage = mockProxyPostMessage(replacementIframe).postMessage;
+    firstPostMessage.mockClear();
+    replacementPostMessage.mockClear();
+
+    resolveBridge({ id: "same-request-id", result: { authorizedFor: "old revision" } });
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    expect(firstPostMessage).not.toHaveBeenCalled();
+    expect(replacementPostMessage).not.toHaveBeenCalled();
   });
 
   it("forwards ui/open-link through the bridge without opening browser windows itself", async () => {
@@ -505,7 +569,7 @@ describe("AppSurfacePane", () => {
           id: "call-1",
           result: { ok: true },
         },
-        "*",
+        SANDBOX_ORIGIN,
       );
     });
     expect(postMessage.mock.calls[0]?.[0]).not.toHaveProperty("error");
@@ -535,7 +599,7 @@ describe("AppSurfacePane", () => {
           id: "call-1",
           error: { code: -32001, message: "Approval required" },
         },
-        "*",
+        SANDBOX_ORIGIN,
       );
     });
     expect(postMessage.mock.calls[0]?.[0]).not.toHaveProperty("result");
@@ -564,7 +628,7 @@ describe("AppSurfacePane", () => {
           id: "call-1",
           result: {},
         },
-        "*",
+        SANDBOX_ORIGIN,
       );
     });
     expect(postMessage.mock.calls[0]?.[0]).not.toHaveProperty("error");
@@ -594,7 +658,7 @@ describe("AppSurfacePane", () => {
           id: "call-1",
           result: {},
         },
-        "*",
+        SANDBOX_ORIGIN,
       );
     });
     expect(postMessage.mock.calls[0]?.[0]).not.toHaveProperty("error");
@@ -641,6 +705,11 @@ function appSurfacePaneElement(
       <AppSurfacePane
         colorSchemeId={overrides.colorSchemeId ?? "oled-black"}
         isBridgePending={false}
+        loadDocument={async (documentUrl, signal) => {
+          const response = await fetch(documentUrl, { headers: { Accept: "text/html" }, signal });
+          if (!response.ok) throw new Error(`App surface document failed to load. (${response.status})`);
+          return response.text();
+        }}
         onBridgeRequest={overrides.onBridgeRequest ?? defaultBridge}
         session={session}
       />
@@ -669,10 +738,16 @@ function postProxyReady() {
   postFromProxy({ jsonrpc: "2.0", method: "ui/notifications/sandbox-proxy-ready", params: {} });
 }
 
-function postFromProxy(data: unknown) {
+function postFromProxy(
+  data: unknown,
+  overrides: { origin?: string; source?: MessageEventSource | null } = {},
+) {
   const iframe = screen.getByTitle(/app surface:/i) as HTMLIFrameElement;
-  const event = new MessageEvent("message", { data });
-  Object.defineProperty(event, "source", { value: iframe.contentWindow });
+  const event = new MessageEvent("message", {
+    data,
+    origin: overrides.origin ?? new URL(iframe.src).origin,
+  });
+  Object.defineProperty(event, "source", { value: overrides.source ?? iframe.contentWindow });
   window.dispatchEvent(event);
 }
 

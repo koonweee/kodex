@@ -8,7 +8,6 @@ import type { KodexColorSchemeId } from "../theme";
 import { appSurfaceBackgroundColor, buildAppSurfaceResourceHtml } from "./document";
 
 const APP_SURFACE_TEXT = {
-  documentLoadError: "App surface document failed to load.",
   frame: "App surface",
   sandboxConfigError:
     "App surface sandbox proxy must be configured on a different origin. Set VITE_KODEX_APP_SURFACE_SANDBOX_URL.",
@@ -24,6 +23,7 @@ const DEFAULT_APP_IFRAME_SANDBOX = "allow-scripts allow-forms";
 type AppSurfacePaneProps = {
   colorSchemeId: KodexColorSchemeId;
   isBridgePending: boolean;
+  loadDocument: (documentUrl: string, signal?: AbortSignal) => Promise<string>;
   onBridgeRequest: (request: AppSurfaceBridgeRequest) => Promise<AppSurfaceBridgeResponse>;
   session: AppSurfaceSession;
 };
@@ -39,8 +39,10 @@ type JsonRpcMessage = {
 
 type JsonRecord = Record<string, unknown>;
 
-export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest, session }: AppSurfacePaneProps) {
+export function AppSurfacePane({ colorSchemeId, isBridgePending, loadDocument, onBridgeRequest, session }: AppSurfacePaneProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const sessionIdentityRef = useRef({ id: session.id, revision: session.revision });
+  sessionIdentityRef.current = { id: session.id, revision: session.revision };
   const postedToolNotificationsRef = useRef(false);
   const proxyReadyRef = useRef(false);
   const [documentError, setDocumentError] = useState<string | null>(null);
@@ -49,6 +51,7 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
   const statusLabel = isBridgePending ? APP_SURFACE_TEXT.submitting : null;
   const frameTitle = useMemo(() => `${APP_SURFACE_TEXT.frame}: ${session.title}`, [session.title]);
   const sandboxUrl = useMemo(resolveAppSurfaceSandboxUrl, []);
+  const sandboxOrigin = useMemo(() => sandboxUrl ? new URL(sandboxUrl).origin : null, [sandboxUrl]);
   const sandboxError = sandboxUrl ? null : APP_SURFACE_TEXT.sandboxConfigError;
 
   useEffect(() => {
@@ -62,8 +65,9 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
       return;
     }
     postedToolNotificationsRef.current = false;
-    postProxyResource(iframeRef.current?.contentWindow ?? null, session, resourceHtml, appSurfaceBackgroundColor(colorSchemeId));
-  }, [colorSchemeId, resourceHtml, session]);
+    if (!sandboxOrigin) return;
+    postProxyResource(iframeRef.current?.contentWindow ?? null, sandboxOrigin, session, resourceHtml, appSurfaceBackgroundColor(colorSchemeId));
+  }, [colorSchemeId, resourceHtml, sandboxOrigin, session]);
 
   const markProxyReady = useCallback(() => {
     proxyReadyRef.current = true;
@@ -75,8 +79,9 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
       return;
     }
     postedToolNotificationsRef.current = true;
-    postToolNotifications(iframeRef.current?.contentWindow ?? null, session);
-  }, [session]);
+    if (!sandboxOrigin) return;
+    postToolNotifications(iframeRef.current?.contentWindow ?? null, sandboxOrigin, session);
+  }, [sandboxOrigin, session]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -84,16 +89,7 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
     setDocumentError(null);
     setResourceHtml("");
 
-    void fetch(resolveAppSurfaceDocumentUrl(session.documentUrl), {
-      headers: { Accept: "text/html" },
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`${APP_SURFACE_TEXT.documentLoadError} (${response.status})`);
-        }
-        return response.text();
-      })
+    void loadDocument(session.documentUrl, controller.signal)
       .then((html) => {
         if (isMounted) {
           setResourceHtml(buildAppSurfaceResourceHtml(html, colorSchemeId, session.csp));
@@ -110,7 +106,7 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
       isMounted = false;
       controller.abort();
     };
-  }, [colorSchemeId, session.csp, session.documentUrl]);
+  }, [colorSchemeId, loadDocument, session.csp, session.documentUrl]);
 
   useEffect(() => {
     if (!proxyReadyRef.current) {
@@ -121,18 +117,26 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
 
   useEffect(() => {
     return () => {
-      postJsonRpcNotification(iframeRef.current?.contentWindow ?? null, "ui/resource-teardown", {
+      if (!sandboxOrigin) return;
+      postJsonRpcNotification(iframeRef.current?.contentWindow ?? null, sandboxOrigin, "ui/resource-teardown", {
         revision: session.revision,
         sessionId: session.id,
       });
     };
-  }, [session.id, session.revision]);
+  }, [sandboxOrigin, session.id, session.revision]);
 
   useEffect(() => {
     function handleMessage(event: MessageEvent) {
-      if (event.source !== iframeRef.current?.contentWindow) {
+      if (!sandboxOrigin || event.origin !== sandboxOrigin || event.source !== iframeRef.current?.contentWindow) {
         return;
       }
+      const requestingWindow = event.source as Window;
+      const requestingSession = { id: session.id, revision: session.revision };
+      const requestIsCurrent = () => (
+        iframeRef.current?.contentWindow === requestingWindow
+        && sessionIdentityRef.current.id === requestingSession.id
+        && sessionIdentityRef.current.revision === requestingSession.revision
+      );
       const proxyNotificationMethod = sandboxProxyNotificationMethodFromData(event.data);
       if (proxyNotificationMethod === APP_SURFACE_SANDBOX_PROXY_READY) {
         markProxyReady();
@@ -163,6 +167,7 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
         const bridgeRequest = { ...notificationRequest, bridgeToken: session.bridgeToken };
         setLocalError(null);
         void onBridgeRequest(bridgeRequest).catch((error) => {
+          if (!requestIsCurrent()) return;
           setLocalError(errorMessageFrom(error));
         });
         return;
@@ -175,21 +180,25 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
       setLocalError(null);
       void onBridgeRequest(bridgeRequest)
         .then((response) => {
-          postJsonRpcResponse(iframeRef.current?.contentWindow ?? null, bridgeRequest.id, response);
+          if (!requestIsCurrent()) return;
+          postJsonRpcResponse(requestingWindow, sandboxOrigin, bridgeRequest.id, response);
           if (bridgeRequest.method === "ui/initialize" && !response.error) {
-            window.setTimeout(postSessionToolNotifications, 0);
+            window.setTimeout(() => {
+              if (requestIsCurrent()) postSessionToolNotifications();
+            }, 0);
           }
         })
         .catch((error) => {
+          if (!requestIsCurrent()) return;
           const message = errorMessageFrom(error);
           setLocalError(message);
-          postJsonRpcError(iframeRef.current?.contentWindow ?? null, bridgeRequest.id, message);
+          postJsonRpcError(requestingWindow, sandboxOrigin, bridgeRequest.id, message);
         });
     }
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [markProxyReady, onBridgeRequest, postSessionToolNotifications, session.bridgeToken, session.id, session.revision]);
+  }, [markProxyReady, onBridgeRequest, postSessionToolNotifications, sandboxOrigin, session.bridgeToken, session.id, session.revision]);
 
   return (
     <Box className="kodex-app-surface-pane" data-provider={session.provider} data-status={session.status}>
@@ -228,42 +237,43 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
   );
 }
 
-function postToolNotifications(target: Window | null, session: AppSurfaceSession) {
+function postToolNotifications(target: Window | null, targetOrigin: string, session: AppSurfaceSession) {
   if (!target) {
     return;
   }
   const toolInput = toolInputFromSession(session);
   if (toolInput !== undefined) {
-    postJsonRpcNotification(target, "ui/notifications/tool-input", { arguments: toolInput });
+    postJsonRpcNotification(target, targetOrigin, "ui/notifications/tool-input", { arguments: toolInput });
   }
   const toolResult = toolResultFromSession(session);
   if (toolResult !== undefined) {
-    postJsonRpcNotification(target, "ui/notifications/tool-result", toolResult);
+    postJsonRpcNotification(target, targetOrigin, "ui/notifications/tool-result", toolResult);
   }
 }
 
-function postJsonRpcNotification(target: Window | null, method: string, params: unknown) {
-  postProxyHostMessage(target, { jsonrpc: "2.0", method, params: jsonRpcObject(params) });
+function postJsonRpcNotification(target: Window | null, targetOrigin: string, method: string, params: unknown) {
+  postProxyHostMessage(target, targetOrigin, { jsonrpc: "2.0", method, params: jsonRpcObject(params) });
 }
 
-function postJsonRpcResponse(target: Window | null, fallbackId: unknown, response: AppSurfaceBridgeResponse) {
+function postJsonRpcResponse(target: Window | null, targetOrigin: string, fallbackId: unknown, response: AppSurfaceBridgeResponse) {
   if (!target) {
     return;
   }
   const id = response.id ?? fallbackId ?? null;
   if (response.error) {
-    postProxyHostMessage(target, { jsonrpc: "2.0", id, error: response.error });
+    postProxyHostMessage(target, targetOrigin, { jsonrpc: "2.0", id, error: response.error });
     return;
   }
-  postProxyHostMessage(target, { jsonrpc: "2.0", id, result: jsonRpcObject(response.result) });
+  postProxyHostMessage(target, targetOrigin, { jsonrpc: "2.0", id, result: jsonRpcObject(response.result) });
 }
 
-function postJsonRpcError(target: Window | null, id: unknown, message: string) {
+function postJsonRpcError(target: Window | null, targetOrigin: string, id: unknown, message: string) {
   if (!target) {
     return;
   }
   postProxyHostMessage(
     target,
+    targetOrigin,
     {
       jsonrpc: "2.0",
       id: id ?? null,
@@ -385,13 +395,6 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
 
-function resolveAppSurfaceDocumentUrl(documentUrl: string): string {
-  if (typeof window === "undefined") {
-    return documentUrl;
-  }
-  return new URL(documentUrl, window.location.origin).toString();
-}
-
 function resolveAppSurfaceSandboxUrl(): string | null {
   const configured =
     (typeof document === "undefined"
@@ -437,7 +440,7 @@ function sameMachineFallbackHost(current: URL): string | null {
   return current.hostname ? "127.0.0.1" : null;
 }
 
-function postProxyResource(target: Window | null, session: AppSurfaceSession, html: string, backgroundColor: string) {
+function postProxyResource(target: Window | null, targetOrigin: string, session: AppSurfaceSession, html: string, backgroundColor: string) {
   if (!target) {
     return;
   }
@@ -453,13 +456,13 @@ function postProxyResource(target: Window | null, session: AppSurfaceSession, ht
         sandbox: DEFAULT_APP_IFRAME_SANDBOX,
       },
     },
-    "*",
+    targetOrigin,
   );
 }
 
-function postProxyHostMessage(target: Window | null, message: unknown) {
+function postProxyHostMessage(target: Window | null, targetOrigin: string, message: unknown) {
   if (!target) {
     return;
   }
-  target.postMessage(message, "*");
+  target.postMessage(message, targetOrigin);
 }

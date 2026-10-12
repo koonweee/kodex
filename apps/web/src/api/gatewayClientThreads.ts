@@ -101,6 +101,15 @@ export function createGatewayThreads({
     );
     return response.session ?? null;
   }
+  async function fetchAppSurfaceDocument(documentUrl: string, signal?: AbortSignal): Promise<string> {
+    const route = appSurfaceDocumentRoute(documentUrl);
+    const response = await transportFetch(requestUrl(route), {
+      headers: { Accept: "text/html" },
+      signal,
+    });
+    if (!response.ok) throw new Error(`App surface document failed to load. (${response.status})`);
+    return response.text();
+  }
   async function callAppSurfaceBridge(
     sessionId: string,
     request: AppSurfaceBridgeRequest,
@@ -212,6 +221,7 @@ export function createGatewayThreads({
     getThreadTimelinePage,
     listThreadSubagents,
     getThreadAppSurface,
+    fetchAppSurfaceDocument,
     callAppSurfaceBridge,
     archiveThread,
     renameThread,
@@ -228,4 +238,12 @@ export function createGatewayThreads({
     replaceThreadViewPresence,
     sendThreadViewPresenceSnapshotBeacon,
   };
+}
+
+function appSurfaceDocumentRoute(documentUrl: string): string {
+  const url = new URL(documentUrl, "https://kodex.invalid");
+  if (url.origin !== "https://kodex.invalid" || !/^\/v1\/app-surfaces\/[^/]+\/document$/.test(url.pathname)) {
+    throw new Error("App surface document URL is outside the executor API.");
+  }
+  return `${url.pathname}${url.search}`;
 }
