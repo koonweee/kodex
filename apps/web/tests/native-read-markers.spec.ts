@@ -68,7 +68,7 @@ for (const shape of [
           // client must not emit a read receipt or visible-presence claim until
           // the user shows the thread.
           expect(seen()).toHaveLength(1);
-          expect(fixture.requests.filter((request) => request.client === "second" && request.key === "PUT /v1/thread-view-presence").at(-1)?.body)
+          expect(fixture.requests.filter((request) => request.client === "second" && request.key === "POST /v1/thread-view-presence").at(-1)?.body)
             .toMatchObject({ visibleThreadIds: [] });
           await choose(second.getByRole("button", { name: "Native settings chat", exact: true }), shape.hasTouch);
         }

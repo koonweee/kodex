@@ -182,6 +182,7 @@ function WorkspaceSidebarWithPaneActions({
   const { openDraftThreadPane, openThreadPane, threadActions } = useWorkspace();
   const { openTerminal, terminalDirectoryDialog } = useProjectTerminal({
     projects: props.projects,
+    resolveSidebarTarget,
     selectedMainPane: props.selectedMainPane,
     selectedProjectId: props.selectedProjectId,
     onOpened: () => {

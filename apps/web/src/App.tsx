@@ -29,7 +29,7 @@ import {
   type ThreadSummary,
 } from "./api/client";
 import type { FederatedCatalog, FederatedExecutor, QualifiedCatalogRef, RegisterExecutorRequest, UpdateExecutorRequest } from "./api/federatorClient";
-import { ExecutorRuntimeBoundary, ExecutorRuntimeRegistryProvider, FederatedShellRuntimeProvider, GatewayClientProvider, useExecutorConnection, useGatewayClient } from "./api/GatewayClientContext";
+import { ExecutorRuntimeBoundary, ExecutorRuntimeRegistryProvider, FederatedShellRuntimeProvider, GatewayClientProvider, useExecutorConnection, useExecutorRuntimes, useGatewayClient } from "./api/GatewayClientContext";
 import { queryClient, type ExecutorRuntime } from "./api/queryClient";
 import { FederatedCatalogProvider, useFederatedCatalogContext } from "./federation/FederatedCatalogContext";
 import { FederatedProjectCreateFlow } from "./federation/FederatedProjectCreateFlow";
@@ -103,6 +103,7 @@ import {
   type ThreadComposerState,
   type ThreadPaneTimelineAction,
   type ThreadPaneTimelineActionHandler,
+  type VisibleThreadIdsByExecutor,
 } from "./workspace/WorkspaceProvider";
 import type { WorkspacePaneStoreAdapter } from "./workspace/paneStore";
 import type { WorkspacePane } from "./workspace/paneTypes";
@@ -134,6 +135,45 @@ function useEventCallback<TArgs extends unknown[], TResult>(
   });
 
   return useCallback((...args: TArgs) => callbackRef.current(...args), []);
+}
+
+function ThreadViewPresenceReporters({
+  enabled,
+  threadIdsByExecutor,
+}: {
+  enabled: boolean;
+  threadIdsByExecutor: VisibleThreadIdsByExecutor;
+}) {
+  const connection = useExecutorConnection();
+  const runtimes = useExecutorRuntimes();
+  return Object.entries(threadIdsByExecutor).map(([executorId, threadIds]) => {
+    if (runtimes?.has(executorId)) {
+      return (
+        <ExecutorRuntimeBoundary executorId={executorId} key={executorId}>
+          <ThreadViewPresenceReporter enabled={enabled} threadIds={threadIds} />
+        </ExecutorRuntimeBoundary>
+      );
+    }
+    return executorId === (connection?.executorId ?? "local")
+      ? <ThreadViewPresenceReporter enabled={enabled} key={executorId} threadIds={threadIds} />
+      : null;
+  });
+}
+
+function ThreadViewPresenceReporter({ enabled, threadIds }: { enabled: boolean; threadIds: string[] }) {
+  useThreadViewPresence({ enabled, threadIds });
+  return null;
+}
+
+function visibleThreadGroupsEqual(a: VisibleThreadIdsByExecutor, b: VisibleThreadIdsByExecutor): boolean {
+  const aEntries = Object.entries(a);
+  const bEntries = Object.entries(b);
+  return aEntries.length === bEntries.length && aEntries.every(([executorId, threadIds], index) => {
+    const other = bEntries[index];
+    return other?.[0] === executorId
+      && threadIds.length === other[1].length
+      && threadIds.every((threadId, threadIndex) => threadId === other[1][threadIndex]);
+  });
 }
 
 type AppProps = {
@@ -325,8 +365,7 @@ function KodexShell({
   const [projectThreadNextCursors, setProjectThreadNextCursors] = useState<Record<string, string | null>>({});
   const [chatThreadsPaginationState, setChatThreadsPaginationState] = useState<SidebarPaginationState>("idle");
   const [projectThreadPaginationStateById, setProjectThreadPaginationStateById] = useState<Record<string, SidebarPaginationState>>({});
-  const [visibleThreadIds, setVisibleThreadIds] = useState<string[]>([]);
-  const visibleThreadIdsRef = useRef<Set<string>>(new Set());
+  const [visibleThreadIdsByExecutor, setVisibleThreadIdsByExecutor] = useState<VisibleThreadIdsByExecutor>({});
 
   const {
     clearSelectionToDraft,
@@ -613,10 +652,6 @@ function KodexShell({
     patchThreadEverywhere(read.threadId, (thread) => mergeThreadReadState(thread, read));
     if (!read.readStateKnown) void refreshProjectState(queryClientForShell);
   });
-  useThreadViewPresence({
-    enabled: selectedMainPane === "thread",
-    threadIds: visibleThreadIds,
-  });
   useKodexNotifications();
   const {
     applyThreadMetadataEvent,
@@ -744,14 +779,10 @@ function KodexShell({
     }
     routeGlobalLiveEvent(event, liveRouteHandlers);
   });
-  const handleVisibleThreadIdsChange = useEventCallback((threadIds: string[]) => {
-    const nextThreadIds = Array.from(new Set(threadIds)).sort();
-    visibleThreadIdsRef.current = new Set(nextThreadIds);
-    setVisibleThreadIds((current) =>
-      current.length === nextThreadIds.length && current.every((threadId, index) => threadId === nextThreadIds[index])
-        ? current
-        : nextThreadIds,
-    );
+  const handleVisibleThreadIdsChange = useEventCallback((threadIdsByExecutor: VisibleThreadIdsByExecutor) => {
+    setVisibleThreadIdsByExecutor((current) => visibleThreadGroupsEqual(current, threadIdsByExecutor)
+      ? current
+      : threadIdsByExecutor);
   });
 
   function handleMoveProject(projectId: string, beforeProjectId: string | null) {
@@ -1152,6 +1183,10 @@ function KodexShell({
         threadProjectIdsById={threadProjectIdsById}
         threadSummariesById={threadSummariesById}
       >
+        <ThreadViewPresenceReporters
+          enabled={selectedMainPane === "thread"}
+          threadIdsByExecutor={visibleThreadIdsByExecutor}
+        />
         <KodexShellView
           automationsPaneProps={{
           automations,
@@ -1215,7 +1250,7 @@ function KodexShell({
           onCreateChat: stableHandleCreateChat, onCreateProject: () => setProjectFormOpen(true), onCreateThread: stableHandleCreateThread, onLogout: handleLogout,
           onLoadMoreChatThreads: federationMode ? undefined : handleLoadMoreChatThreads, onLoadMoreProjectThreads: federationMode ? undefined : handleLoadMoreProjectThreads,
           onPinThread: federationMode ? (threadId) => federatedSidebar.setPinned(threadId, true) : stableHandlePinThread,
-          onOpenPreferences: handleOpenPreferences, onOpenTerminal: !federationMode && gatewayTerminalAvailable ? handleShowWorkspace : undefined,
+          onOpenPreferences: handleOpenPreferences, onOpenTerminal: gatewayTerminalAvailable ? handleShowWorkspace : undefined,
           onMoveProject: federationMode ? federatedSidebar.moveProject : handleMoveProject, onSelectChatThread: stableHandleSelectChatThread,
           onSelectAutomations: stableHandleSelectAutomations, onSelectPinnedThread: stableHandleSelectPinnedThread, onSelectProjectSettings: stableHandleSelectProjectSettings, onSelectThread: stableHandleSelectThread,
           onShowThread: handleShowMobileThread, onShowDebugEventsChange: setShowDebugEvents, onShowCommandOutputsChange: setShowCommandOutputs, onSidebarCollapseClick: handleSidebarCollapseClick,

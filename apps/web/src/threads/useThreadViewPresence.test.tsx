@@ -56,6 +56,27 @@ describe("useThreadViewPresence", () => {
     await expect(lastPresenceRequest()).resolves.toMatchObject({ visibleThreadIds: ["thread-1"] });
   });
 
+  it("serializes ordinary snapshots and reserves beacon delivery for lifecycle exit", async () => {
+    const replace = vi.fn(async () => undefined);
+    const beacon = vi.fn(() => true);
+    const client = {
+      replaceThreadViewPresence: replace,
+      sendThreadViewPresenceSnapshotBeacon: beacon,
+    } as unknown as GatewayClient;
+
+    render(
+      <GatewayClientProvider client={client}>
+        <PresenceProbe threadIds={["thread-1"]} />
+      </GatewayClientProvider>,
+    );
+    await flushEffects();
+    expect(replace).toHaveBeenCalledWith(expect.objectContaining({ visibleThreadIds: ["thread-1"] }));
+    expect(beacon).not.toHaveBeenCalled();
+
+    act(() => window.dispatchEvent(new Event("pagehide")));
+    expect(beacon).toHaveBeenCalledWith(expect.objectContaining({ visibleThreadIds: [] }));
+  });
+
   it("uses a ten second heartbeat by default", async () => {
     renderHook(() => useThreadViewPresence({ enabled: true, threadIds: ["thread-1"] }));
 
@@ -63,7 +84,7 @@ describe("useThreadViewPresence", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      vi.advanceTimersByTime(DEFAULT_HEARTBEAT_MS - 1);
+      vi.advanceTimersByTime(DEFAULT_HEARTBEAT_MS - 501);
       await Promise.resolve();
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -137,7 +158,7 @@ describe("useThreadViewPresence", () => {
     });
   });
 
-  it("uses a keepalive PUT for pagehide cleanup", async () => {
+  it("uses a keepalive POST for pagehide cleanup", async () => {
     renderHook(() => useThreadViewPresence({ enabled: true, heartbeatMs: HEARTBEAT_MS, threadIds: ["thread-1"] }));
 
     await flushEffects();
@@ -149,7 +170,7 @@ describe("useThreadViewPresence", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const [input, init] = fetchMock.mock.calls[1];
     const request = input instanceof Request ? input : new Request(input as RequestInfo | URL, init as RequestInit);
-    expect(request.method).toBe("PUT");
+    expect(request.method).toBe("POST");
     expect(request.keepalive).toBe(true);
     expect(new URL(request.url, window.location.origin).pathname).toBe("/v1/thread-view-presence");
     await expect(request.clone().json()).resolves.toMatchObject({ visibleThreadIds: [] });
@@ -197,11 +218,11 @@ describe("useThreadViewPresence", () => {
   it("clears the old executor and reports through the new executor when its client changes", async () => {
     const first = {
       replaceThreadViewPresence: vi.fn(async () => undefined),
-      sendThreadViewPresenceSnapshotBeacon: vi.fn(() => true),
+      sendThreadViewPresenceSnapshotBeacon: vi.fn(() => false),
     } as unknown as GatewayClient;
     const second = {
       replaceThreadViewPresence: vi.fn(async () => undefined),
-      sendThreadViewPresenceSnapshotBeacon: vi.fn(() => true),
+      sendThreadViewPresenceSnapshotBeacon: vi.fn(() => false),
     } as unknown as GatewayClient;
     function Probe({ client }: { client: GatewayClient }) {
       return <GatewayClientProvider client={client}><Presence /></GatewayClientProvider>;
@@ -222,8 +243,14 @@ describe("useThreadViewPresence", () => {
   });
 });
 
+function PresenceProbe({ threadIds }: { threadIds: string[] }) {
+  useThreadViewPresence({ enabled: true, heartbeatMs: HEARTBEAT_MS, threadIds });
+  return null;
+}
+
 async function flushEffects() {
   await act(async () => {
+    vi.advanceTimersByTime(500);
     await Promise.resolve();
   });
 }

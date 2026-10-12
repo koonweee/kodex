@@ -53,7 +53,7 @@ test("device-code sign-in and native account changes converge across two tabs", 
         case "GET /v1/approvals": body = { runtimeId: "native-account-runtime", revision: 0, approvals: [] }; break;
         case "GET /v1/models": body = { models: [], rawPayload: {} }; break;
         case "GET /v1/composer-settings": body = {}; break;
-        case "PUT /v1/thread-view-presence": body = { ok: true }; break;
+        case "POST /v1/thread-view-presence": body = { ok: true }; break;
         case "POST /v1/account/login": loginBodies.push(request.postData()); body = login; break;
         case "POST /v1/account/logout":
           account = { ...account, account: null };

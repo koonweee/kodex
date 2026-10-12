@@ -17,12 +17,11 @@ describe("subscribeToFederatorFrontendUpdates", () => {
     const close = vi.fn();
     class FakeEventSource {
       constructor(public readonly url: string) {
-        expect(url).toBe("/v1/federation/frontend-events");
+        expect(url).toBe("/v1/federation/browser-events");
       }
 
-      addEventListener(type: string, next: () => void) {
-        expect(type).toBe("frontend.updated");
-        listener = next;
+      addEventListener(type: string, next: (event: MessageEvent<string>) => void) {
+        if (type === "frontend.updated") listener = () => next({ data: "{}" } as MessageEvent<string>);
       }
 
       close = close;

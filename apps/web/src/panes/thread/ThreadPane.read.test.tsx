@@ -46,11 +46,11 @@ it("does not acknowledge or advertise a pane hidden behind the narrow sidebar un
   const view = render(tree(false));
   await screen.findByText("Canonical pane ready");
   expect(gateway.callsFor("POST", "/v1/threads/deep-link/seen")).toHaveLength(0);
-  expect(visibleThreads).not.toHaveBeenCalledWith(["deep-link"]);
+  expect(visibleThreads).not.toHaveBeenCalledWith({ local: ["deep-link"] });
   view.rerender(tree(true));
   await waitFor(() => expect(gateway.callsFor("POST", "/v1/threads/deep-link/seen")).toHaveLength(1));
   expect(await gateway.callsFor("POST", "/v1/threads/deep-link/seen")[0].json()).toEqual({ completedTurnId: "visible-terminal", readRevision: 21 });
-  expect(visibleThreads).toHaveBeenLastCalledWith(["deep-link"]);
+  expect(visibleThreads).toHaveBeenLastCalledWith({ local: ["deep-link"] });
 });
 
 it("refills an invalidated native head and acknowledges only the visible canonical completion after a stale attach", async () => {

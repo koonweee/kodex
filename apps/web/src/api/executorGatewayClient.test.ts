@@ -110,7 +110,7 @@ describe("executor gateway client", () => {
     expect(Array.from((await requests[2].clone().formData()).entries())).toHaveLength(1);
   });
 
-  it("uses a versioned scoped keepalive PUT for page-exit presence", async () => {
+  it("uses a versioned scoped keepalive POST for page-exit presence", async () => {
     const fetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => (
       new Response(null, { status: 204 })
     ));
@@ -125,10 +125,54 @@ describe("executor gateway client", () => {
 
     const request = fetch.mock.calls[0][0] as Request;
     expect(request.url).toBe("https://kodex.example/v1/executors/executor-a/thread-view-presence");
-    expect(request.method).toBe("PUT");
+    expect(request.method).toBe("POST");
     expect(request.keepalive).toBe(true);
     expect(request.headers.get("x-kodex-api-version")).toBe("4");
     expect(request.headers.get("x-kodex-expected-instance")).toBe("instance-a");
+  });
+
+  it("falls through to the scoped keepalive POST when sendBeacon rejects the snapshot", async () => {
+    const sendBeacon = vi.fn((_url: string | URL, _data?: BodyInit | null) => false);
+    vi.stubGlobal("navigator", Object.assign(Object.create(navigator), { sendBeacon }));
+    const fetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => (
+      new Response(null, { status: 204 })
+    ));
+    vi.stubGlobal("fetch", fetch);
+    const client = createExecutorGatewayClient(
+      { executorId: "executor-a", instanceId: "instance-a" },
+      { baseUrl: "https://kodex.example" },
+    );
+
+    expect(client.sendThreadViewPresenceSnapshotBeacon({ clientId: "tab", visibleThreadIds: [] })).toBe(true);
+    expect(sendBeacon).toHaveBeenCalledOnce();
+    expect(fetch).toHaveBeenCalledOnce();
+
+    const request = fetch.mock.calls[0][0] as Request;
+    expect(request.url).toBe("https://kodex.example/v1/executors/executor-a/thread-view-presence");
+    expect(request.method).toBe("POST");
+    expect(request.keepalive).toBe(true);
+    expect(request.headers.get("x-kodex-api-version")).toBe("4");
+    expect(request.headers.get("x-kodex-expected-instance")).toBe("instance-a");
+  });
+
+  it("uses a versioned scoped POST for ordinary presence snapshots", async () => {
+    const requests: Request[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (request: Request) => {
+      requests.push(request);
+      return new Response(null, { status: 204 });
+    }));
+    const client = createExecutorGatewayClient(
+      { executorId: "executor-a", instanceId: "instance-a" },
+      { baseUrl: "https://kodex.example" },
+    );
+
+    await client.replaceThreadViewPresence({ clientId: "tab", visibleThreadIds: ["thread-a"] });
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.url).toBe("https://kodex.example/v1/executors/executor-a/thread-view-presence");
+    expect(requests[0]!.headers.get("x-kodex-api-version")).toBe("4");
+    expect(requests[0]!.headers.get("x-kodex-expected-instance")).toBe("instance-a");
+    await expect(requests[0]!.clone().json()).resolves.toEqual({ clientId: "tab", visibleThreadIds: ["thread-a"] });
   });
 
   it("contains executor incompatibility while sharing the federator epoch boundary", async () => {

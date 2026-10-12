@@ -770,7 +770,7 @@ export interface paths {
         };
         get?: never;
         put: operations["replace_thread_view_presence"];
-        post?: never;
+        post: operations["post_thread_view_presence"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4629,6 +4629,28 @@ export interface operations {
         };
     };
     replace_thread_view_presence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadViewPresenceSnapshotRequest"];
+            };
+        };
+        responses: {
+            /** @description Thread view presence snapshot replaced */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post_thread_view_presence: {
         parameters: {
             query?: never;
             header?: never;

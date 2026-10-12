@@ -1,3 +1,4 @@
+mod browser_events;
 pub mod catalog;
 pub mod config;
 mod frontend_updates;
@@ -61,6 +62,7 @@ struct HealthResponse {
 #[openapi(
     paths(
         health,
+        browser_events::browser_events,
         catalog::get_catalog,
         catalog::refresh_catalog,
         catalog::catalog_events,
@@ -84,6 +86,7 @@ struct HealthResponse {
     ),
     components(schemas(
         HealthResponse,
+        browser_events::BrowserEventPayload,
         catalog::CatalogResponse,
         catalog::CatalogExecutorSnapshot,
         catalog::QualifiedCatalogRef,
@@ -187,6 +190,7 @@ pub fn primary_router(
     let mut router = Router::new()
         .route("/healthz", get(health))
         .route("/readyz", get(health))
+        .merge(browser_events::router())
         .merge(catalog::router())
         .merge(frontend_updates::router())
         .merge(registry::router())
@@ -367,6 +371,25 @@ mod tests {
         }
     }
 
+    async fn next_named_sse_json(body: &mut Body) -> (String, serde_json::Value) {
+        loop {
+            let frame = timeout(Duration::from_secs(1), body.frame())
+                .await
+                .expect("SSE event arrives")
+                .expect("SSE remains open")
+                .expect("SSE frame is readable");
+            let Ok(data) = frame.into_data() else {
+                continue;
+            };
+            let text = String::from_utf8(data.to_vec()).unwrap();
+            let event = text.lines().find_map(|line| line.strip_prefix("event: "));
+            let data = text.lines().find_map(|line| line.strip_prefix("data: "));
+            if let (Some(event), Some(data)) = (event, data) {
+                return (event.to_string(), serde_json::from_str(data).unwrap());
+            }
+        }
+    }
+
     async fn spawn_test_executor(
         instance_id: &'static str,
         marker: &'static str,
@@ -517,6 +540,7 @@ mod tests {
         let paths = contract["paths"].as_object().unwrap();
         assert!(paths.contains_key("/v1/federation/executors"));
         assert!(paths.contains_key("/v1/federation/events"));
+        assert!(paths.contains_key("/v1/federation/browser-events"));
         assert!(paths.contains_key("/v1/federation/catalog"));
         assert!(paths.contains_key("/v1/federation/catalog/events"));
         assert!(paths.contains_key("/v1/federation/catalog/order/{kind}/move"));
@@ -531,6 +555,43 @@ mod tests {
             paths["/v1/executors/{executorId}/projects"]["get"]["parameters"][0]["name"],
             "executorId"
         );
+    }
+
+    #[tokio::test]
+    async fn browser_events_multiplex_registry_catalog_and_frontend_snapshots() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config::Config {
+            data_dir: dir.path().to_path_buf(),
+            database_path: dir.path().join("federator.db"),
+            ..config::Config::default()
+        };
+        let (_instance, state) = prepare(&config).await.unwrap();
+        state
+            .store
+            .set_frontend_revision("build-123")
+            .await
+            .unwrap();
+        let app = primary_router(state, None, config.sandbox_public_url);
+        let response = app
+            .oneshot(
+                primary_request(Request::get("/v1/federation/browser-events"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let mut body = response.into_body();
+
+        let registry = next_named_sse_json(&mut body).await;
+        assert_eq!(registry.0, "federation.executors_changed");
+        assert_eq!(registry.1["revision"], 0);
+        let catalog = next_named_sse_json(&mut body).await;
+        assert_eq!(catalog.0, "federation.catalog_changed");
+        assert_eq!(catalog.1["revision"], 0);
+        let frontend = next_named_sse_json(&mut body).await;
+        assert_eq!(frontend.0, "frontend.updated");
+        assert_eq!(frontend.1["revision"], "build-123");
     }
 
     #[tokio::test]

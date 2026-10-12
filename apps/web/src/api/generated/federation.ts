@@ -722,7 +722,7 @@ export interface paths {
         };
         get?: never;
         put: operations["replace_thread_view_presence"];
-        post?: never;
+        post: operations["post_thread_view_presence"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1260,6 +1260,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["upload_images"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/federation/browser-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["browser_events"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1840,6 +1856,7 @@ export interface components {
             /** Format: int64 */
             observedAt: number;
         };
+        BrowserEventPayload: components["schemas"]["ExecutorRegistryEvent"] | components["schemas"]["CatalogEvent"] | components["schemas"]["FrontendUpdateRequest"];
         ByteRange: {
             /** Format: int32 */
             end: number;
@@ -4977,6 +4994,30 @@ export interface operations {
             };
         };
     };
+    post_thread_view_presence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                executorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadViewPresenceSnapshotRequest"];
+            };
+        };
+        responses: {
+            /** @description Thread view presence snapshot replaced */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_threads: {
         parameters: {
             query?: {
@@ -6028,6 +6069,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImageUploadResponse"];
+                };
+            };
+        };
+    };
+    browser_events: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Multiplexed browser invalidation stream */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["BrowserEventPayload"];
                 };
             };
         };

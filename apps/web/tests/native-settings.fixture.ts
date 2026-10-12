@@ -148,7 +148,6 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
       "GET /v1/threads/settings-chat": options.payloadDelivery ? projectPayloadDelivery(detail, url) : detail,
       "GET /v1/threads/settings-chat/app-surface": { session: null },
       "GET /v1/threads/settings-chat/subagents": { subagents: [] },
-      "PUT /v1/thread-view-presence": { ok: true },
       "POST /v1/thread-view-presence": { ok: true },
     };
     if (key in fixed) return respond(route, fixed[key]);

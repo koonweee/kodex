@@ -41,16 +41,17 @@ describe("federator client", () => {
 
     class FakeEventSource {
       static instance: FakeEventSource;
-      listener?: (event: MessageEvent<string>) => void;
+      listeners = new Map<string, (event: MessageEvent<string>) => void>();
       constructor(readonly url: string) { FakeEventSource.instance = this; }
-      addEventListener(_type: string, listener: (event: MessageEvent<string>) => void) { this.listener = listener; }
+      addEventListener(type: string, listener: (event: MessageEvent<string>) => void) { this.listeners.set(type, listener); }
       close() {}
     }
     const onEvent = vi.fn();
-    createFederationCatalogSubscription({ EventSourceCtor: FakeEventSource, onEvent });
-    expect(FakeEventSource.instance.url).toBe("/v1/federation/catalog/events");
-    FakeEventSource.instance.listener?.({ data: JSON.stringify({ revision: 4, orderRevision: 3 }) } as MessageEvent<string>);
+    const unsubscribe = createFederationCatalogSubscription({ EventSourceCtor: FakeEventSource, onEvent });
+    expect(FakeEventSource.instance.url).toBe("/v1/federation/browser-events");
+    FakeEventSource.instance.listeners.get("federation.catalog_changed")?.({ data: JSON.stringify({ revision: 4, orderRevision: 3 }) } as MessageEvent<string>);
     expect(onEvent).toHaveBeenCalledWith({ revision: 4, orderRevision: 3 });
+    unsubscribe();
   });
 
   it("uses the generated federation routes for registry reads and mutations", async () => {
@@ -123,7 +124,7 @@ describe("federator client", () => {
       onEvent,
     });
 
-    expect(FakeEventSource.instance.url).toBe("/v1/federation/events");
+    expect(FakeEventSource.instance.url).toBe("/v1/federation/browser-events");
     FakeEventSource.instance.emit("federation.executors_changed", {
       executorId: "executor-a",
       generation: 2,

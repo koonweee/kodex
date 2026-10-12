@@ -1,6 +1,7 @@
 import createClient from "openapi-fetch";
 
 import { compatibleFetch } from "./compatibility";
+import { subscribeFederationEvent, type FederationEventSourceCtor } from "./federationEventSource";
 import type { components, paths } from "./generated/federation";
 import { unwrap, unwrapNoContent } from "./gatewayClientShared";
 
@@ -80,18 +81,14 @@ export function createFederationCatalogSubscription({
   baseUrl?: string;
   onEvent: (event: CatalogEvent) => void;
 }): () => void {
-  if (!EventSourceCtor) return () => undefined;
-  const route = "/v1/federation/catalog/events";
-  const source = new EventSourceCtor(baseUrl ? new URL(route, baseUrl).toString() : route);
-  source.addEventListener("federation.catalog_changed", (message) => {
+  return subscribeFederationEvent({ EventSourceCtor, baseUrl, event: "federation.catalog_changed", listener: (message) => {
     try {
       const event = JSON.parse(message.data) as Partial<CatalogEvent>;
       if (typeof event.revision === "number" && typeof event.orderRevision === "number") onEvent(event as CatalogEvent);
     } catch {
       // Reconnect/refetch supplies the authoritative snapshot.
     }
-  });
-  return () => source.close();
+  } });
 }
 
 export function isFederatedAppShell(): boolean {
@@ -101,12 +98,7 @@ export function isFederatedAppShell(): boolean {
 
 export type FederatorClient = ReturnType<typeof createFederatorClient>;
 
-type EventSourceLike = {
-  addEventListener: (type: string, listener: (event: MessageEvent<string>) => void) => void;
-  close: () => void;
-};
-
-type EventSourceCtor = new (url: string) => EventSourceLike;
+type EventSourceCtor = FederationEventSourceCtor;
 
 export function createFederationRegistrySubscription({
   EventSourceCtor = globalThis.EventSource as EventSourceCtor | undefined,
@@ -117,14 +109,10 @@ export function createFederationRegistrySubscription({
   baseUrl?: string;
   onEvent: (event: ExecutorRegistryEvent) => void;
 }): () => void {
-  if (!EventSourceCtor) return () => undefined;
-  const route = "/v1/federation/events";
-  const source = new EventSourceCtor(baseUrl ? new URL(route, baseUrl).toString() : route);
-  source.addEventListener("federation.executors_changed", (message) => {
+  return subscribeFederationEvent({ EventSourceCtor, baseUrl, event: "federation.executors_changed", listener: (message) => {
     const event = parseRegistryEvent(message.data);
     if (event) onEvent(event);
-  });
-  return () => source.close();
+  } });
 }
 
 function parseRegistryEvent(value: string): ExecutorRegistryEvent | null {

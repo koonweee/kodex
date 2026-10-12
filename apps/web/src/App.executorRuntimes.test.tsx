@@ -38,6 +38,9 @@ async function responseFor(id: string, calls: string[], input: RequestInfo | URL
   const request = input instanceof Request ? input : new Request(input);
   const url = new URL(request.url);
   calls.push(`${request.method} ${url.pathname}`);
+  if (request.method === "POST" && url.pathname === `/v1/executors/${id}/thread-view-presence`) {
+    return new Response(null, { status: 204 });
+  }
   const modelId = `model-${id}`;
   const thread = {
     id: threadId, name: `Thread ${id}`, projectId: null, cwd: `/${id}`, status: "idle",
@@ -142,13 +145,15 @@ describe("App executor runtime registry", () => {
   });
 
   it("renders colliding adjacent thread IDs through their owning production runtime", async () => {
+    const sendBeacon = vi.fn((_url: string | URL, _data?: BodyInit | null) => true);
+    vi.stubGlobal("navigator", Object.assign(Object.create(navigator), { sendBeacon }));
     const callsA: string[] = [];
     const callsB: string[] = [];
     const executorA = runtime("executor-a", callsA);
     const executorB = runtime("executor-b", callsB);
     const paneStore = createMemoryWorkspacePaneStore({
       schemaVersion: 2,
-      activePaneId: "pane-a",
+      activePaneId: "pane-b",
       dockviewLayout: null,
       panes: [
         { id: "pane-a", kind: "thread", target: { executorId: "executor-a", mode: "existing", threadId: "shared" }, title: null },
@@ -160,6 +165,8 @@ describe("App executor runtime registry", () => {
 
     expect(await screen.findByRole("heading", { name: "Thread executor-a" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Thread executor-b" })).toBeInTheDocument();
+    const terminal = await screen.findByRole("button", { name: "Terminal" });
+    expect(terminal).toBeEnabled();
     expect(await screen.findByRole("button", { name: "Model: model-executor-a, medium" })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "Model: model-executor-b, medium" })).toBeInTheDocument();
     expect(await screen.findByText("$ echo executor-a")).toBeInTheDocument();
@@ -173,10 +180,27 @@ describe("App executor runtime registry", () => {
       expect(callsB).toContain("GET /v1/threads/shared/settings");
       expect(callsA).toContain("GET /v1/approvals");
       expect(callsB).toContain("GET /v1/approvals");
+      expect(callsA).toContain("POST /v1/thread-view-presence");
+      expect(callsB).toContain("POST /v1/thread-view-presence");
       expect(callsA).toContain("GET /v1/threads/shared/subagents");
       expect(callsB).toContain("GET /v1/threads/shared/subagents");
       expect(callsB).toContain("POST /v1/approvals/shared-approval/decision");
       expect(callsA).not.toContain("POST /v1/approvals/shared-approval/decision");
+    });
+
+    act(() => window.dispatchEvent(new Event("pagehide")));
+    await waitFor(() => {
+      expect(sendBeacon.mock.calls.map(([url]) => String(url))).toEqual(expect.arrayContaining([
+        expect.stringContaining("/v1/executors/executor-a/thread-view-presence?apiVersion=4"),
+        expect.stringContaining("/v1/executors/executor-b/thread-view-presence?apiVersion=4"),
+      ]));
+    });
+
+    await userEvent.click(terminal);
+    await waitFor(() => {
+      const active = paneStore.getState().panes.find((pane) => pane.id === paneStore.getState().activePaneId);
+      expect(active?.kind).toBe("terminal");
+      expect(active?.target).toMatchObject({ executorId: "executor-b", cwd: "/executor-b" });
     });
   });
 

@@ -68,7 +68,7 @@ test("two tabs converge from native approval snapshots after responding, missed 
         case "GET /v1/threads/unread-badge": body = { count: 0, readRevision: 0 }; break;
         case "GET /v1/models": body = { models: [], rawPayload: {} }; break;
         case "GET /v1/composer-settings": body = {}; break;
-        case "PUT /v1/thread-view-presence": body = { ok: true }; break;
+        case "POST /v1/thread-view-presence": body = { ok: true }; break;
         case "GET /v1/approvals":
           expect(url.searchParams.has("status")).toBe(false);
           reads.set(client, (reads.get(client) ?? 0) + 1);

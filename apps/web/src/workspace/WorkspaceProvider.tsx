@@ -91,7 +91,7 @@ type WorkspaceProviderProps = {
   onThreadArchived?: (threadId: string) => void;
   onThreadSnapshotLoadFailed?: (threadId: string) => void;
   onThreadSnapshotLoaded?: (thread: ThreadSummary) => void;
-  onVisibleThreadIdsChange?: (threadIds: string[]) => void;
+  onVisibleThreadIdsChange?: (threadIdsByExecutor: VisibleThreadIdsByExecutor) => void;
   paneStore?: WorkspacePaneStoreAdapter;
   publishThreadPaneTimelineAction?: (action: ThreadPaneTimelineAction) => void;
   renderThreadComposer?: (pane: WorkspacePane, state: ThreadComposerState) => ReactNode;
@@ -104,6 +104,8 @@ type WorkspaceProviderProps = {
   threadSummariesById?: Record<string, ThreadSummary>;
   threadActions?: WorkspaceThreadActions;
 };
+
+export type VisibleThreadIdsByExecutor = Record<string, string[]>;
 
 type WorkspaceContextValue = {
   approvals: Approval[];
@@ -367,17 +369,14 @@ export function WorkspaceProvider({
   }, [closeThreadPanes, defaultExecutorId, onThreadArchived]);
 
   const exposedVisiblePaneIds = useMemo(() => isVisible ? visiblePaneIds : [], [isVisible, visiblePaneIds]);
-  const visibleThreadIds = useMemo(
-    () => visibleThreadIdsForPaneIds(
-      workspace.panes.filter((pane) => pane.target.executorId === defaultExecutorId),
-      exposedVisiblePaneIds,
-    ),
-    [defaultExecutorId, exposedVisiblePaneIds, workspace.panes],
+  const visibleThreadIdsByExecutor = useMemo(
+    () => visibleThreadIdsForPaneIds(workspace.panes, exposedVisiblePaneIds),
+    [exposedVisiblePaneIds, workspace.panes],
   );
 
   useEffect(() => {
-    onVisibleThreadIdsChange(visibleThreadIds);
-  }, [onVisibleThreadIdsChange, visibleThreadIds]);
+    onVisibleThreadIdsChange(visibleThreadIdsByExecutor);
+  }, [onVisibleThreadIdsChange, visibleThreadIdsByExecutor]);
 
   const { includeDebugEvents, includeCommandOutputs, getOptions: getDeliveryOptions } = useThreadDeliveryPreferences();
   const deliveryStreamsRef = useRef(new Set<ReturnType<typeof createEventStreamClient>>());
@@ -1027,19 +1026,23 @@ function duplicateWorkspacePane(pane: WorkspacePane): WorkspacePane {
   };
 }
 
-function visibleThreadIdsForPaneIds(panes: WorkspacePane[], paneIds: string[]): string[] {
+function visibleThreadIdsForPaneIds(panes: WorkspacePane[], paneIds: string[]): VisibleThreadIdsByExecutor {
   const visiblePaneIds = new Set(paneIds);
-  const threadIds = new Set<string>();
+  const threadIdsByExecutor = new Map<string, Set<string>>();
   for (const pane of panes) {
     if (!visiblePaneIds.has(pane.id)) {
       continue;
     }
-    const target = paneTargetRecord(pane);
-    if (pane.kind === "thread" && target.mode === "existing" && typeof target.threadId === "string") {
-      threadIds.add(target.threadId);
+    if (pane.kind === "thread" && pane.target.mode === "existing") {
+      const threadIds = threadIdsByExecutor.get(pane.target.executorId) ?? new Set<string>();
+      threadIds.add(pane.target.threadId);
+      threadIdsByExecutor.set(pane.target.executorId, threadIds);
     }
   }
-  return Array.from(threadIds).sort();
+  return Object.fromEntries(
+    Array.from(threadIdsByExecutor, ([executorId, threadIds]): [string, string[]] => [executorId, Array.from(threadIds).sort()])
+      .sort(([a], [b]) => a.localeCompare(b)),
+  );
 }
 
 function appSurfacePaneForThread(panes: WorkspacePane[], executorId: string, threadId: string): WorkspacePane | null {

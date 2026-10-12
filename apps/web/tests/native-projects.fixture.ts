@@ -128,7 +128,6 @@ export async function nativeProjectsFixture(context: BrowserContext) {
       "GET /v1/models": { models: [], rawPayload: {} },
       "GET /v1/composer-settings": {},
       "GET /v1/permission-profiles": { profiles: [] },
-      "PUT /v1/thread-view-presence": { ok: true },
       "POST /v1/thread-view-presence": { ok: true },
       "GET /v1/projects": { projects: state.projects },
     };

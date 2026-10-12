@@ -624,7 +624,7 @@ pub(crate) async fn registry_events(
     Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
-fn registry_event(change: ExecutorRegistryEvent) -> Event {
+pub(crate) fn registry_event(change: ExecutorRegistryEvent) -> Event {
     Event::default()
         .event("federation.executors_changed")
         .id(change.revision.to_string())

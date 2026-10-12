@@ -21,7 +21,7 @@ pub fn router() -> Router<AppState> {
         )
         .route(
             "/v1/thread-view-presence",
-            put(replace_thread_view_presence),
+            put(replace_thread_view_presence).post(post_thread_view_presence),
         )
 }
 
@@ -82,4 +82,12 @@ pub async fn replace_thread_view_presence(
         .thread_presence
         .replace_views(client_id, visible_thread_ids);
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(post, path = "/v1/thread-view-presence", request_body = ThreadViewPresenceSnapshotRequest, responses((status = 204, description = "Thread view presence snapshot replaced")))]
+pub async fn post_thread_view_presence(
+    State(state): State<AppState>,
+    body: Bytes,
+) -> ApiResult<StatusCode> {
+    replace_thread_view_presence(State(state), body).await
 }

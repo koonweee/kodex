@@ -55,7 +55,7 @@ for (const shape of [
           "GET /v1/models": { models: [], rawPayload: {} },
           "GET /v1/composer-settings": {},
           "GET /v1/permission-profiles": { profiles: [] },
-          "PUT /v1/thread-view-presence": { ok: true },
+          "POST /v1/thread-view-presence": { ok: true },
         };
         if (!(key in routes)) {
           unexpected.push(key);

@@ -3,14 +3,15 @@ import { appendFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { components } from "../src/api/generated/schema";
-import { nativeTerminalEnabled, nativeTerminalFixture } from "./native-terminal.fixture";
+import { API_VERSION } from "../src/api/compatibility";
+import { nativeFederationEnabled, nativeTerminalFixture } from "./native-terminal.fixture";
 
 // Full Chromium supports the worker BadgeService; the separate headless-shell
 // binary crashes in that browser binding before the real worker can be tested.
 test.use({ channel: "chromium", serviceWorkers: "allow", viewport: { width: 1280, height: 844 } });
 
 test.describe("real built PWA", () => {
-  test.skip(!nativeTerminalEnabled, "requires explicit gateway/native binaries and a current production web build");
+  test.skip(!nativeFederationEnabled, "requires explicit federator, gateway and pinned Codex binaries plus a current production web build");
 
   test("precaches only static assets and applies a waiting worker only after Update", async ({ context }, testInfo) => {
     test.setTimeout(90_000);
@@ -46,28 +47,38 @@ test.describe("real built PWA", () => {
           networkResponses.push({ path, fromWorker: response.fromServiceWorker(), status: response.status() });
         }
       });
-      const read = await page.evaluate(async () => {
-        const capabilities = await fetch("/v1/capabilities");
+      const read = await page.evaluate(async ({ executorId, apiVersion }) => {
+        const executorPath = (route: string) => `/v1/executors/${encodeURIComponent(executorId)}${route.slice(3)}`;
+        const capabilities = await fetch(executorPath("/v1/capabilities"));
         const schema = await fetch("/openapi.json");
         const image = await (await fetch("/icon-192.png")).blob();
         const form = new FormData();
         form.append("images", image, "pwa-cache-proof.png");
-        const upload = await fetch("/v1/uploads/images", { method: "POST", body: form });
+        const upload = await fetch(executorPath("/v1/uploads/images"), {
+          method: "POST",
+          headers: { "x-kodex-api-version": apiVersion },
+          body: form,
+        });
         if (!upload.ok) throw new Error(`Image upload failed: ${upload.status} ${await upload.text()}`);
         const body = await upload.json() as components["schemas"]["ImageUploadResponse"];
         if (body.images.length !== 1) throw new Error("Expected one disposable image upload");
         // This real local-file preview endpoint uses the gateway's retained file
         // response implementation without requiring a model turn or credentials.
-        const preview = await fetch(`/v1/skills/icon?path=${encodeURIComponent(body.images[0].path)}`);
+        const preview = await fetch(`${executorPath("/v1/skills/icon")}?path=${encodeURIComponent(body.images[0].path)}`);
         return {
           statuses: [capabilities.status, schema.status, upload.status, preview.status],
           imageSize: image.size,
           previewSize: (await preview.arrayBuffer()).byteLength,
         };
-      });
+      }, { executorId: fixture.executorId, apiVersion: API_VERSION });
       expect(read.statuses).toEqual([200, 200, 200, 200]);
       expect(read.previewSize).toBe(read.imageSize);
-      for (const path of ["/v1/capabilities", "/openapi.json", "/v1/uploads/images", "/v1/skills/icon"]) {
+      for (const path of [
+        fixture.executorPath("/v1/capabilities"),
+        "/openapi.json",
+        fixture.executorPath("/v1/uploads/images"),
+        fixture.executorPath("/v1/skills/icon"),
+      ]) {
         expect(networkResponses).toContainEqual({ path, fromWorker: false, status: 200 });
       }
       expect(await cacheEntries(page)).toEqual(initialCache);

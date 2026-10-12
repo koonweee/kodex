@@ -317,7 +317,7 @@ mod tests {
         let visible = app
             .clone()
             .oneshot(
-                Request::put("/v1/thread-view-presence")
+                Request::post("/v1/thread-view-presence")
                     .body(Body::from(
                         json!({
                             "clientId": "client-1",

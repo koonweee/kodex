@@ -3,7 +3,7 @@ import { access, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { components } from "../src/api/generated/schema";
-import { nativeTerminalEnabled, nativeTerminalFixture } from "./native-terminal.fixture";
+import { nativeFederationEnabled, nativeTerminalFixture } from "./native-terminal.fixture";
 
 const test = base.extend<{}, { suppressDeviceCodeArtifacts: void }>({
   suppressDeviceCodeArtifacts: [async ({}, use) => {
@@ -23,21 +23,21 @@ const test = base.extend<{}, { suppressDeviceCodeArtifacts: void }>({
 // through context teardown, including a timeout while the code is visible.
 test.use({ channel: "chromium", trace: "off", screenshot: "off", video: "off", viewport: { width: 1280, height: 844 } });
 test.describe.configure({ retries: 0 });
-test.skip(!nativeTerminalEnabled || process.env.KODEX_TEST_REAL_DEVICE_CODE_LOGIN !== "1",
-  "requires explicit real device-code opt-in, pinned native/gateway binaries, and a current production web build");
+test.skip(!nativeFederationEnabled || process.env.KODEX_TEST_REAL_DEVICE_CODE_LOGIN !== "1",
+  "requires explicit real device-code opt-in, federator/gateway/pinned native binaries, and a current production web build");
 
 test("shows a real native device code and cancels that attempt without authorizing sign-in", async ({ context }, testInfo) => {
   test.setTimeout(90_000);
   const fixture = await nativeTerminalFixture(context);
   let observer: Awaited<ReturnType<typeof observeAccountEvents>> | undefined;
   try {
-    const capabilities = await readJson<components["schemas"]["CapabilitiesResponse"]>(`${fixture.baseUrl}/v1/capabilities`);
+    const capabilities = await readJson<components["schemas"]["CapabilitiesResponse"]>(fixture.executorUrl("/v1/capabilities"));
     expect(capabilities.appServer.detectedVersion).toBe("0.160.0");
     const authPath = join(fixture.codexHome, "auth.json");
-    expect((await readJson<components["schemas"]["AccountResponse"]>(`${fixture.baseUrl}/v1/account`)).account === null).toBe(true);
+    expect((await readJson<components["schemas"]["AccountResponse"]>(fixture.executorUrl("/v1/account"))).account === null).toBe(true);
     expect(await exists(authPath)).toBe(false);
     const page = await fixture.page();
-    observer = await observeAccountEvents(fixture.baseUrl);
+    observer = await observeAccountEvents(fixture.executorUrl("/v1/events?includeGlobal=true"));
 
     let startRequests = 0;
     let cancelRequests = 0;
@@ -46,17 +46,18 @@ test("shows a real native device code and cancels that attempt without authorizi
     page.on("request", (request) => {
       if (request.method() !== "POST") return;
       const path = new URL(request.url()).pathname;
-      if (path === "/v1/account/login") startRequests += 1;
-      if (path.startsWith("/v1/account/login/") && path.endsWith("/cancel")) {
+      if (path === fixture.executorPath("/v1/account/login")) startRequests += 1;
+      if (path.startsWith(`${fixture.executorPath("/v1/account/login")}/`) && path.endsWith("/cancel")) {
         cancelRequests += 1;
-        exactCancellation = path === `/v1/account/login/${encodeURIComponent(loginId ?? "")}/cancel`;
+        exactCancellation = path === fixture.executorPath(`/v1/account/login/${encodeURIComponent(loginId ?? "")}/cancel`);
       }
     });
     await page.getByRole("button", { name: "Account settings", exact: true }).click({ timeout: 10_000 });
+    await page.getByRole("menuitem", { name: "Accounts", exact: true }).click({ timeout: 10_000 });
     const [started] = await Promise.all([
       page.waitForResponse((response) => response.request().method() === "POST"
-        && response.url() === `${fixture.baseUrl}/v1/account/login`, { timeout: 30_000 }),
-      page.getByRole("menuitem", { name: "Sign in with ChatGPT", exact: true }).click({ timeout: 10_000 }),
+        && response.url() === fixture.executorUrl("/v1/account/login"), { timeout: 30_000 }),
+      page.getByRole("button", { name: "Sign in with ChatGPT", exact: true }).click({ timeout: 10_000 }),
     ]);
     expect(started.status()).toBe(200);
     const login = await bounded(started.json(), 5_000) as components["schemas"]["LoginStartResponse"];
@@ -71,7 +72,7 @@ test("shows a real native device code and cancels that attempt without authorizi
 
     const [canceled] = await Promise.all([
       page.waitForResponse((response) => response.request().method() === "POST"
-        && new URL(response.url()).pathname === `/v1/account/login/${encodeURIComponent(loginId!)}/cancel`, { timeout: 10_000 }),
+        && new URL(response.url()).pathname === fixture.executorPath(`/v1/account/login/${encodeURIComponent(loginId!)}/cancel`), { timeout: 10_000 }),
       page.getByRole("button", { name: "Cancel sign-in", exact: true }).click({ timeout: 5_000 }),
     ]);
     expect(canceled.status()).toBe(200);
@@ -83,7 +84,7 @@ test("shows a real native device code and cancels that attempt without authorizi
       && completion.success === false && completion.error === "Login was not completed"), { timeout: 10_000 }).toBe(true);
     await expect(page.getByRole("dialog", { name: "Sign in with ChatGPT", exact: true })).toHaveCount(0);
     expect({ startRequests, cancelRequests, exactCancellation }).toEqual({ startRequests: 1, cancelRequests: 1, exactCancellation: true });
-    expect((await readJson<components["schemas"]["AccountResponse"]>(`${fixture.baseUrl}/v1/account`)).account === null).toBe(true);
+    expect((await readJson<components["schemas"]["AccountResponse"]>(fixture.executorUrl("/v1/account"))).account === null).toBe(true);
     expect(await exists(authPath)).toBe(false);
     expect(observer.accountUpdatedCount()).toBe(0);
     expect(observer.failed()).toBe(false);
@@ -105,10 +106,10 @@ test("shows a real native device code and cancels that attempt without authorizi
   }
 });
 
-async function observeAccountEvents(origin: string) {
+async function observeAccountEvents(url: string) {
   const controller = new AbortController();
   try {
-    const response = await bounded(fetch(`${origin}/v1/events?includeGlobal=true`, {
+    const response = await bounded(fetch(url, {
       headers: { accept: "text/event-stream" }, signal: controller.signal,
     }), 12_000);
     expect(response.status).toBe(200);

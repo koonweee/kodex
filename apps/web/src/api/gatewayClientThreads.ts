@@ -20,11 +20,13 @@ import type {
   UnreadBadgeResponse,
 } from "./client";
 import { unwrap, unwrapNoContent, type GatewayClientDependencies } from "./gatewayClientShared";
+import { API_VERSION } from "./compatibility";
 
 export function createGatewayThreads({
   api,
   compatibilityRequired,
   requestUrl,
+  resolveRoute,
   transportFetch,
 }: GatewayClientDependencies) {
   async function listThreadsPage(
@@ -192,7 +194,7 @@ export function createGatewayThreads({
     request: ThreadViewPresenceSnapshotRequest,
   ): Promise<void> {
     await unwrapNoContent(
-      api.PUT("/v1/thread-view-presence", {
+      api.POST("/v1/thread-view-presence", {
         body: request,
       }),
     );
@@ -201,10 +203,16 @@ export function createGatewayThreads({
     if (compatibilityRequired()) {
       return false;
     }
+    const body = JSON.stringify(request);
+    if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+      const url = new URL(resolveRoute("/v1/thread-view-presence"), globalThis.location?.origin ?? "http://kodex.invalid");
+      url.searchParams.set("apiVersion", API_VERSION);
+      if (navigator.sendBeacon(url, body)) return true;
+    }
     void transportFetch(requestUrl("/v1/thread-view-presence"), {
-      method: "PUT",
+      method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(request),
+      body,
       keepalive: true,
     }).catch(() => undefined);
     return true;

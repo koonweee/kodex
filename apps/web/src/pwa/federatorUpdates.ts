@@ -1,11 +1,7 @@
 import { requestPwaUpdateCheck } from "./registerServiceWorker";
+import { subscribeFederationEvent, type FederationEventSourceCtor } from "../api/federationEventSource";
 
-type EventSourceLike = {
-  addEventListener: (type: string, listener: () => void) => void;
-  close: () => void;
-};
-
-type EventSourceCtor = new (url: string) => EventSourceLike;
+type EventSourceCtor = FederationEventSourceCtor;
 
 export function subscribeToFederatorFrontendUpdates(
   EventSourceCtor = globalThis.EventSource as EventSourceCtor | undefined,
@@ -14,9 +10,7 @@ export function subscribeToFederatorFrontendUpdates(
     ?.querySelector<HTMLMetaElement>('meta[name="kodex-federator"]')
     ?.content === "true";
   if (!EventSourceCtor || !isFederated) return () => undefined;
-  const source = new EventSourceCtor("/v1/federation/frontend-events");
-  source.addEventListener("frontend.updated", () => {
+  return subscribeFederationEvent({ EventSourceCtor, event: "frontend.updated", listener: () => {
     void requestPwaUpdateCheck().catch(() => undefined);
-  });
-  return () => source.close();
+  } });
 }

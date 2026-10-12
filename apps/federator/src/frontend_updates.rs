@@ -148,7 +148,7 @@ pub(crate) async fn frontend_update_events(
     Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
-fn frontend_event(revision: &str) -> Event {
+pub(crate) fn frontend_event(revision: &str) -> Event {
     Event::default()
         .event(FRONTEND_UPDATED_EVENT)
         .id(revision)

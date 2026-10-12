@@ -70,7 +70,10 @@ pub(crate) async fn enforce(
         ));
     }
 
-    if !request.method().is_safe() && !has_current_api_version(request.headers()) {
+    if !request.method().is_safe()
+        && !has_current_api_version(request.headers())
+        && !is_current_presence_beacon(&request)
+    {
         return advertise(rejection(
             "client_update_required",
             "Update Kodex before making changes.",
@@ -79,6 +82,16 @@ pub(crate) async fn enforce(
     }
 
     advertise(next.run(request).await)
+}
+
+fn is_current_presence_beacon(request: &Request) -> bool {
+    request.method() == axum::http::Method::POST
+        && request.uri().path().starts_with("/v1/executors/")
+        && request.uri().path().ends_with("/thread-view-presence")
+        && request.uri().query().is_some_and(|query| {
+            url::form_urlencoded::parse(query.as_bytes())
+                .any(|(key, value)| key == "apiVersion" && value == FEDERATOR_API_VERSION)
+        })
 }
 
 fn host_matches(headers: &HeaderMap, authority: &str) -> bool {
@@ -251,6 +264,39 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(response.status(), expected, "{origin:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn current_presence_beacon_can_use_the_versioned_query() {
+        let router = Router::new()
+            .route(
+                "/v1/executors/{executor_id}/thread-view-presence",
+                post(|| async { StatusCode::NO_CONTENT }),
+            )
+            .layer(middleware::from_fn_with_state(
+                TrustPolicy::new("http://localhost:8787").unwrap(),
+                enforce,
+            ));
+        for (query, expected) in [
+            ("apiVersion=4", StatusCode::NO_CONTENT),
+            ("apiVersion=3", StatusCode::CONFLICT),
+            ("", StatusCode::CONFLICT),
+        ] {
+            let response = router
+                .clone()
+                .oneshot(
+                    Request::post(format!(
+                        "/v1/executors/executor/thread-view-presence?{query}"
+                    ))
+                    .header(header::HOST, "localhost:8787")
+                    .header(header::ORIGIN, "http://localhost:8787")
+                    .body(Body::empty())
+                    .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected, "{query:?}");
         }
     }
 

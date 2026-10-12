@@ -4,16 +4,17 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { API_VERSION } from "../src/api/compatibility";
 import type { components } from "../src/api/generated/schema";
-import { nativeTerminalEnabled, nativeTerminalFixture } from "./native-terminal.fixture";
+import { nativeFederationEnabled, nativeTerminalFixture } from "./native-terminal.fixture";
 
 // Manual-only: run test:push-provider:manual from a user-opened terminal.
 // Installed Chrome startup can trigger macOS App Management under a gateway parent.
 // This workflow handles a real provider endpoint and subscription keys.
 // Keep those out of traces, screenshots, videos, assertion diffs, and evidence.
 test.use({ trace: "off", screenshot: "off", video: "off" });
-test.skip(!nativeTerminalEnabled || !process.env.KODEX_TEST_CHROME_BINARY,
-  "requires explicit Chrome, gateway, and pinned native binaries plus a current production web build");
+test.skip(!nativeFederationEnabled || !process.env.KODEX_TEST_CHROME_BINARY,
+  "requires explicit Chrome, federator, gateway and pinned native binaries plus a current production web build");
 
 test("delivers a real provider Test push to the built worker in a disposable Chrome profile", async ({}, testInfo) => {
   test.setTimeout(180_000);
@@ -201,7 +202,7 @@ test("delivers a real provider Test push to the built worker in a disposable Chr
 
 async function gatewayJson<T>(origin: string, path: string, method: string, expectedStatus: number, body?: unknown): Promise<T> {
   const response = await fetch(`${origin}${path}`, {
-    method, headers: { "content-type": "application/json" },
+    method, headers: { "content-type": "application/json", "x-kodex-api-version": API_VERSION },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     signal: AbortSignal.timeout(10_000),
   });

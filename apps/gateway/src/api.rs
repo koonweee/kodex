@@ -294,6 +294,7 @@ impl AppState {
         crate::routes::notifications::complete_notification_delivery,
         crate::routes::thread_presence::update_thread_view_presence,
         crate::routes::thread_presence::replace_thread_view_presence,
+        crate::routes::thread_presence::post_thread_view_presence,
         crate::routes::skills::list_skills,
         crate::routes::skills::preview_skill_icon,
         crate::routes::mcp::list_configured_mcp_servers,

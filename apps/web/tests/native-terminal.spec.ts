@@ -1,13 +1,13 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
-import { nativeTerminalEnabled, nativeTerminalFixture } from "./native-terminal.fixture";
+import { nativeFederationEnabled, nativeTerminalFixture } from "./native-terminal.fixture";
 
 // Full Chromium supplies the production service worker's BadgeService;
 // Playwright's separate headless shell does not implement that binding.
 test.use({ channel: "chromium" });
 
 test.describe("real native gateway terminals", () => {
-  test.skip(!nativeTerminalEnabled, "requires KODEX_TEST_GATEWAY_BINARY, KODEX_TEST_CODEX_BINARY and a current production web build");
+  test.skip(!nativeFederationEnabled, "requires explicit federator, gateway and pinned Codex binaries plus a current production web build");
   test.describe.configure({ mode: "serial" });
 
   for (const shape of [
@@ -89,7 +89,7 @@ test.describe("real native gateway terminals", () => {
           await expect(terminal(first).getByText("Terminal connection closed.", { exact: true })).toBeVisible();
           await expect(second.getByRole("button", { name: "Stop terminal", exact: true })).toHaveCount(0);
           expect(fixture.terminalRequests.filter((request) => request.method === "DELETE")).toEqual([
-            { method: "DELETE", path: `/v1/terminals/${fixture.terminal.id}` },
+            { method: "DELETE", path: fixture.executorPath(`/v1/terminals/${fixture.terminal.id}`) },
           ]);
           expect(fixture.terminalRequests.filter((request) => request.method === "POST")).toEqual([]);
           await fixture.assertClean();
@@ -126,7 +126,9 @@ async function closeTerminalView(page: Page, touch: boolean) {
     if (await overlay.isVisible()) await activate(overlay, touch);
     return;
   }
-  await activate(page.getByTestId("dockview-dv-default-tab").filter({ hasText: "Native terminal proof" }).locator(".dv-default-tab-action"), touch);
+  const tab = page.getByTestId("dockview-dv-default-tab").filter({ hasText: "Native terminal proof" });
+  await tab.hover();
+  await activate(tab.locator(".dv-default-tab-action"), touch);
 }
 
 function shellQuote(value: string) {

@@ -416,7 +416,7 @@ pub(crate) async fn catalog_events(
     Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
-fn catalog_event(event: CatalogEvent) -> Event {
+pub(crate) fn catalog_event(event: CatalogEvent) -> Event {
     Event::default()
         .event("federation.catalog_changed")
         .id(event.revision.to_string())
@@ -884,7 +884,9 @@ async fn order_items(
         .collect()
 }
 
-async fn catalog_revisions(state: &FederatorState) -> Result<CatalogEvent, CatalogError> {
+pub(crate) async fn catalog_revisions(
+    state: &FederatorState,
+) -> Result<CatalogEvent, CatalogError> {
     let mut transaction = state
         .store
         .pool
