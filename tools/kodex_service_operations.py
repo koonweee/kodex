@@ -119,6 +119,7 @@ class Operations:
         try:
             if self.app.platform_name == 'linux':
                 command = [self.runtime['SYSTEMCTL'].replace('systemctl', 'systemd-run'), '--user',
+                           '--no-block',
                            f"--unit={job['label']}", '--property=Type=oneshot',
                            f"--property=WorkingDirectory={self.app.root}",
                            f"--property=StandardOutput=append:{log}",

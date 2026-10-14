@@ -188,6 +188,7 @@ class RoleLifecycleTests(unittest.TestCase):
             job = operations.submit('update', repo=self.root)
         command = launch.call_args.args[0]
         self.assertEqual(command[0], '/usr/bin/systemd-run')
+        self.assertIn('--no-block', command)
         self.assertIn(f'--unit={job["label"]}', command)
         self.assertIn('--role', command)
         self.assertIn('executor', command)
