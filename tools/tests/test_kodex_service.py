@@ -399,7 +399,10 @@ class LifecycleTests(unittest.TestCase):
         release = self.release('health')
         responses = {
             '/healthz': json.dumps({'ready': ready, 'service': service_name}).encode(),
-            '/': b'health',
+            '/': service.federator_index(
+                b'health',
+                'https://kodex-sandbox.example.ts.net/app-surface-sandbox.html',
+            ),
             '/app-surface-sandbox.html': b'sandbox',
         }
         opener = SimpleNamespace(open=lambda request, timeout: io.BytesIO(
@@ -495,6 +498,29 @@ class LifecycleTests(unittest.TestCase):
         with patch.object(self.app, 'job', return_value={'pid': 42}), \
              patch.object(service.subprocess, 'run', return_value=SimpleNamespace(stdout='42')), \
              patch.object(service.urllib.request, 'build_opener', return_value=opener):
+            self.app.health(release)
+
+    def test_health_accepts_runtime_config_injected_into_federator_index(self):
+        import io
+        from types import SimpleNamespace
+        release = self.release('health-injected')
+        meta = (b'<meta name="kodex-federator" content="true">'
+                b'<meta name="kodex-app-surface-sandbox-url" '
+                b'content="https://kodex-sandbox.example.ts.net/app-surface-sandbox.html">')
+        responses = {
+            '/healthz': json.dumps({
+                'ready': True, 'service': 'kodex-federator',
+            }).encode(),
+            '/': meta + b'health-injected',
+            '/app-surface-sandbox.html': b'sandbox',
+        }
+        opener = SimpleNamespace(open=lambda request, timeout: io.BytesIO(
+            responses[urllib.parse.urlparse(request.full_url).path]))
+        with patch.object(self.app, 'job', return_value={'pid': 42}), \
+             patch.object(service.subprocess, 'run', return_value=SimpleNamespace(stdout='42')), \
+             patch.object(service.urllib.request, 'build_opener', return_value=opener), \
+             patch.object(service.time, 'monotonic', side_effect=[0, 0, 61]), \
+             patch.object(service.time, 'sleep'):
             self.app.health(release)
 
     def official_archive(self, missing_host=False, unsafe=False):

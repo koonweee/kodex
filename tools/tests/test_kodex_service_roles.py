@@ -64,11 +64,12 @@ class RoleLifecycleTests(unittest.TestCase):
             (release / 'frontend/app-surface-sandbox.html').write_text('sandbox')
         return release
 
-    def federator_opener(self, expected_primary_host, expected_sandbox_host):
+    def federator_opener(self, expected_primary_host, expected_sandbox_host,
+                         sandbox_public_url):
         requests = []
         responses = {
             '/healthz': json.dumps({'ready': True, 'service': 'kodex-federator'}).encode(),
-            '/': b'frontend',
+            '/': service.federator_index(b'frontend', sandbox_public_url),
             '/app-surface-sandbox.html': b'sandbox',
         }
 
@@ -229,7 +230,7 @@ class RoleLifecycleTests(unittest.TestCase):
                     'public_origin': public, 'sandbox_public_url': sandbox,
                 }))
                 release = self.release(app)
-                opener, requests = self.federator_opener(primary_host, sandbox_host)
+                opener, requests = self.federator_opener(primary_host, sandbox_host, sandbox)
                 with patch.object(app, 'job', return_value={'pid': 42}), \
                      patch.object(service.urllib.request, 'build_opener', return_value=opener):
                     self.assertEqual(app.health(release), 42)
@@ -241,8 +242,11 @@ class RoleLifecycleTests(unittest.TestCase):
         app = self.app('federator', 'linux')
         release = self.release(app)
         service.link(app.root / 'current', release)
-        opener, _ = self.federator_opener('kodex.example.ts.net',
-                                          'kodex-sandbox.example.ts.net')
+        opener, _ = self.federator_opener(
+            'kodex.example.ts.net',
+            'kodex-sandbox.example.ts.net',
+            'https://kodex-sandbox.example.ts.net/app-surface-sandbox.html',
+        )
         with patch.object(app, 'job', side_effect=[None, {'pid': 42}]), \
              patch.object(service, 'check_port'), patch.object(service, 'run'), \
              patch.object(service.shutil, 'which', return_value=None), \

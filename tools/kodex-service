@@ -110,6 +110,20 @@ def frontend_revision(frontend):
     return digest.hexdigest()
 
 
+def federator_index(index, sandbox_public_url):
+    """Mirror the federator's runtime metadata injection for exact health checks."""
+    escaped = (sandbox_public_url.replace('&', '&amp;').replace('"', '&quot;')
+               .replace('<', '&lt;').replace('>', '&gt;'))
+    meta = (f'<meta name="kodex-federator" content="true">'
+            f'<meta name="kodex-app-surface-sandbox-url" content="{escaped}">').encode()
+    marker = b'<head>'
+    offset = index.find(marker)
+    if offset < 0:
+        return meta + index
+    offset += len(marker)
+    return index[:offset] + meta + index[offset:]
+
+
 def validated_http_url(value, label, expected_path):
     if not isinstance(value, str) or value != value.strip():
         raise ServiceError(f'{label} must be an exact HTTP(S) URL')
@@ -464,6 +478,8 @@ class Service:
             raise ServiceError(f'Release belongs to {manifest.get("role")}, not {self.role}')
         expected_index = ((release / 'frontend/index.html').read_bytes()
                           if self.role == 'federator' else None)
+        if expected_index is not None:
+            expected_index = federator_index(expected_index, config['sandbox_public_url'])
         expected_sandbox = ((release / 'frontend/app-surface-sandbox.html').read_bytes()
                             if self.role == 'federator' else None)
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
