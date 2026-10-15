@@ -15,7 +15,7 @@ impl Store {
         &self,
         upsert: AppSurfaceSessionUpsert,
     ) -> ApiResult<AppSurfaceSession> {
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         let now = Utc::now();
         let existing = sqlx::query(
             r#"
@@ -289,6 +289,7 @@ fn generated_resource_uri(session_id: &str, revision: i64) -> String {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+    use tempfile::tempdir;
 
     use super::*;
     use crate::store::Store;
@@ -360,5 +361,45 @@ mod tests {
             .unwrap();
         assert_eq!(latest.id, first.id);
         assert_eq!(latest.revision, 2);
+    }
+
+    #[tokio::test]
+    async fn app_surface_upsert_waits_for_a_brief_competing_writer() {
+        let dir = tempdir().unwrap();
+        let store = Store::connect(&dir.path().join("gateway.db"))
+            .await
+            .unwrap();
+        let mut blocker = store.pool().acquire().await.unwrap();
+        sqlx::query("BEGIN IMMEDIATE")
+            .execute(&mut *blocker)
+            .await
+            .unwrap();
+
+        let writer = store.clone();
+        let pending = tokio::spawn(async move {
+            writer
+                .upsert_app_surface_session(AppSurfaceSessionUpsert {
+                    thread_id: "thread-1".to_string(),
+                    provider: AppSurfaceProvider::Generated,
+                    title: "Concurrent chooser".to_string(),
+                    resource_uri: None,
+                    resource_mime_type: "text/html;profile=mcp-app".to_string(),
+                    html: "<main>Ready</main>".to_string(),
+                    fallback_content: "Ready".to_string(),
+                    display_modes: vec!["inline".to_string()],
+                    csp: AppSurfaceCsp::default(),
+                    permissions: AppSurfacePermissions::default(),
+                    grants: AppSurfaceGrants::default(),
+                    provenance: json!({"source": "test"}),
+                })
+                .await
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        sqlx::query("COMMIT").execute(&mut *blocker).await.unwrap();
+
+        let saved = pending.await.unwrap().unwrap();
+        assert_eq!(saved.thread_id, "thread-1");
+        assert_eq!(saved.title, "Concurrent chooser");
     }
 }

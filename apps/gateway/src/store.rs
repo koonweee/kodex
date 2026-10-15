@@ -1,5 +1,5 @@
 use rmcp::schemars;
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -472,7 +472,8 @@ impl Store {
             .connect_with(
                 SqliteConnectOptions::new()
                     .filename(path)
-                    .create_if_missing(true),
+                    .create_if_missing(true)
+                    .busy_timeout(Duration::from_secs(5)),
             )
             .await?;
         let store = Self { pool };
