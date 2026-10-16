@@ -3818,6 +3818,7 @@ export interface components {
             diff?: string | null;
             fileAttachments?: components["schemas"]["TimelineFileAttachment"][];
             id?: string | null;
+            images?: components["schemas"]["TimelineToolImage"][];
             kind?: string | null;
             message?: string | null;
             model?: string | null;
@@ -3891,6 +3892,9 @@ export interface components {
             rawPayload: unknown;
             source: components["schemas"]["TimelineUpdateSource"];
             status: components["schemas"]["ThreadStatus"];
+        };
+        TimelineToolImage: {
+            url: string;
         };
         TimelineTurnUpsertPayload: {
             liveState: components["schemas"]["ThreadLiveState"];

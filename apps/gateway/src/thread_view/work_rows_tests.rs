@@ -200,3 +200,86 @@ fn image_url_preservation_keeps_other_timeline_previews_bounded() {
         .unwrap()
         .ends_with("...[truncated]"));
 }
+
+#[test]
+fn tool_images_survive_preview_compaction_without_guessing_text() {
+    let data = "QUFB".repeat(5_000);
+    let image = format!("data:image/png;base64,{data}");
+    for raw in [
+        json!({"type":"mcpToolCall","result":{"content":[{"type":"image","mimeType":"image/png","data":data}]}}),
+        json!({"type":"dynamicToolCall","contentItems":[{"type":"inputImage","imageUrl":image}]}),
+    ] {
+        let payload = serde_json::to_value(compact_timeline_item_payload(&raw)).unwrap();
+        assert_eq!(payload["images"][0]["url"], image);
+    }
+    let payload = serde_json::to_value(compact_timeline_item_payload(&json!({
+        "type":"mcpToolCall", "arguments":{"type":"image","url":image},
+        "result":{"content":[{"type":"text","text":image}],"structuredContent":{"url":image}}
+    })))
+    .unwrap();
+    assert!(payload.get("images").is_none());
+}
+
+#[tokio::test]
+async fn tool_images_stay_visible_for_live_and_reconnecting_clients() {
+    let data = "QUFB".repeat(5_000);
+    let url = format!("data:image/png;base64,{data}");
+    let raw = json!({"id":"screenshot","type":"mcpToolCall","tool":"capture","status":"completed",
+        "result":{"content":[{"type":"image","mimeType":"image/png","data":data}]}});
+    let image = ThreadItemSnapshot::from_payload(&raw).unwrap();
+    let mut turn = completed_turn();
+    turn.items.insert(1, image.clone());
+    let sessions = ThreadViewStore::default();
+    for (index, item) in turn.items.iter().enumerate() {
+        record_item_upsert(
+            &sessions,
+            "thread",
+            "turn",
+            item.raw_payload.clone(),
+            item.clone(),
+            Some("completed"),
+            ready(Ok(index as i64 + 1)),
+        )
+        .await
+        .unwrap();
+    }
+    let (_, patch) = record_turn_status(&sessions, "thread", &turn, ready(Ok(20)))
+        .await
+        .unwrap();
+    let assert_images = |rows: &[ThreadTimelineRow]| {
+        let row = rows
+            .iter()
+            .find(|r| r.item.as_ref().is_some_and(|i| i.item_id == "screenshot"))
+            .expect("image must remain outside collapsed work");
+        assert_eq!(row.item.as_ref().unwrap().payload.item.images[0].url, url);
+    };
+    assert_images(patch.rows.as_ref().unwrap());
+    assert_images(
+        &build_thread_timeline(&sessions, "thread", &[turn.clone()], 20)
+            .await
+            .unwrap()
+            .rows,
+    );
+    assert_images(
+        &build_thread_timeline(&ThreadViewStore::default(), "thread", &[turn], 1)
+            .await
+            .unwrap()
+            .rows,
+    );
+}
+
+#[test]
+fn tool_images_accept_other_image_formats_but_not_non_image_payloads() {
+    for (mime, expected) in [
+        ("image/avif", true),
+        ("IMAGE/PNG", true),
+        ("text/html", false),
+        ("image/", false),
+        ("image/png;base64,evil", false),
+    ] {
+        let projected = compact_timeline_item_payload(
+            &json!({"type":"mcpToolCall", "result":{"content":[{"type":"image","mimeType":mime,"data":"AAAA"}]}}),
+        );
+        assert_eq!(!projected.images.is_empty(), expected, "{mime}");
+    }
+}

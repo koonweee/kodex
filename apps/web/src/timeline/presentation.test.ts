@@ -58,3 +58,13 @@ describe("timeline presentation", () => {
     expect(presented?.item.resultSummary).toBe("A compact preview regression");
   });
 });
+
+it("preserves canonical tool images alongside text", () => {
+  const url = "data:image/png;base64,AAAA";
+  const presented = createPresentationItem(event({item: {
+    id: "tool", type: "mcpToolCall", tool: "capture", result: "Screenshot",
+    images: [{url}],
+  }}));
+  expect(presented?.item.images).toEqual([{url}]);
+  expect(presented?.item.resultSummary).toBe("Screenshot");
+});

@@ -584,3 +584,16 @@ describe("timeline activity renderers", () => {
     expect(screen.getByText(/futureThing/i)).toBeInTheDocument();
   });
 });
+
+it("shows a tool screenshot and opens its full image", () => {
+  const onImageOpen = vi.fn();
+  const src = "data:image/png;base64,AAAA";
+  render(<MantineProvider><TimelineItemRenderer
+    item={item({kind:"mcp_tool_call", toolName:"capture", resultSummary:"Screenshot", images:[{url:src}]})}
+    imagePreviewUrlsByPath={{}} onImageOpen={onImageOpen}
+  /></MantineProvider>);
+  expect(screen.getByRole("img", {name:"Tool result image 1"})).toHaveAttribute("src", src);
+  fireEvent.click(screen.getByRole("button", {name:"Open image"}));
+  expect(onImageOpen).toHaveBeenCalledWith(expect.objectContaining({src}));
+  expect(screen.getByText("Result: Screenshot")).toBeVisible();
+});

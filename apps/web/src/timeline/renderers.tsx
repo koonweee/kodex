@@ -80,8 +80,8 @@ const rendererRegistry: Record<string, TimelineRenderer> = {
   reasoning: (item) => <ReasoningBlock item={item} />,
   command_execution: (item) => <CommandBlock item={item} />,
   file_change: (item) => <FileChangeBlock item={item} />,
-  mcp_tool_call: (item) => <ToolCallBlock item={item} />,
-  dynamic_tool_call: (item) => <ToolCallBlock item={item} />,
+  mcp_tool_call: (item, options) => <ToolCallBlock item={item} onImageOpen={options.onImageOpen} />,
+  dynamic_tool_call: (item, options) => <ToolCallBlock item={item} onImageOpen={options.onImageOpen} />,
   collab_agent_tool_call: (item, options) => (
     <CollabAgentBlock item={item} onMarkdownOpen={options.onMarkdownOpen} threadId={options.threadId} />
   ),

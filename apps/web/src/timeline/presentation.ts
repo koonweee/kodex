@@ -153,6 +153,7 @@ export function createPresentationItem(
     return {
       item: {
         ...base,
+        images: payloadImages({ content: item.images }),
         argsSummary: summarizeValue(args),
         resultSummary: summarizeValue(result),
         text: toolName || text,

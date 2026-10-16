@@ -11,6 +11,7 @@ use super::{
 };
 
 mod grouping;
+mod tool_images;
 
 pub(crate) const TIMELINE_PREVIEW_STRING_LIMIT: usize = 16_384;
 
@@ -763,10 +764,17 @@ fn row_is_prominent_turn_result(row: &ThreadTimelineWorkDetailRow) -> bool {
     row_is_final_response(row)
         || row.kind == "user_message"
         || row.kind == "image_generation"
+        || row
+            .item
+            .as_ref()
+            .is_some_and(|item| !item.payload.item.images.is_empty())
         || row.kind == "context_compaction"
 }
 
 fn is_timeline_activity_item(item: &ThreadTimelineSnapshotItem) -> bool {
+    if !item.payload.item.images.is_empty() {
+        return false;
+    }
     matches!(
         normalized_thread_item_kind(item).as_str(),
         "collab_agent_tool_call"
@@ -947,9 +955,16 @@ fn string_field(value: &Value, field: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct TimelineToolImage {
+    pub url: String,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineDisplayItemPayload {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<TimelineToolImage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1065,6 +1080,7 @@ pub(crate) fn compact_timeline_item_payload(item: &Value) -> TimelineDisplayItem
         return TimelineDisplayItemPayload::default();
     };
     TimelineDisplayItemPayload {
+        images: tool_images::images(item),
         id: display_string(object, "id"),
         client_id: object
             .get("clientId")

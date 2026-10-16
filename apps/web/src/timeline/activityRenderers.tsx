@@ -1,3 +1,5 @@
+import type { ImageLightboxImage } from "../images/types";
+import { ImageThumbnail } from "../images/ImageThumbnail";
 import { AnimatedNumericText } from "../ui/AnimatedNumericText";
 import { Badge, Box, Code, Group, Stack, Text } from "@mantine/core";
 
@@ -6,6 +8,7 @@ import { useThreadDeliveryPreferences } from "./ThreadDeliveryPreferences";
 import {
   commandStatusMeta,
   displayCommand,
+  displayableImageSrc,
   LazyMarkdownContent,
   MessageText,
   payloadValue,
@@ -69,10 +72,18 @@ export function CommandBlock({ item }: { item: TimelineItem }) {
   );
 }
 
-export function ToolCallBlock({ item }: { item: TimelineItem }) {
+export function ToolCallBlock({ item, onImageOpen }: { item: TimelineItem; onImageOpen?: (image: ImageLightboxImage) => void }) {
   return (
     <Stack gap={4}>
       <Text size="sm">{item.toolName || item.text || "Tool call"}</Text>
+      {(item.images ?? []).map((image, index) => {
+        const src = displayableImageSrc(image.url);
+        return src ? (
+          <Box key={`${index}:${src}`} className="kodex-activity-image-preview">
+            <ImageThumbnail src={src} alt={`Tool result image ${index + 1}`} onOpen={onImageOpen} />
+          </Box>
+        ) : null;
+      })}
       {item.argsSummary ? (
         <Text size="xs" c="dimmed" className="kodex-timeline-inline-row">
           Arguments: {item.argsSummary}

@@ -218,7 +218,7 @@ function renderActivityItemBody(
   if (item.kind === "reasoning_summary" || item.kind === "reasoning") return <ReasoningBlock item={item} />;
   if (item.kind === "command_execution") return <CommandBlock item={item} />;
   if (item.kind === "file_change") return <FileChangeBlock item={item} />;
-  if (item.kind === "mcp_tool_call" || item.kind === "dynamic_tool_call") return <ToolCallBlock item={item} />;
+  if (item.kind === "mcp_tool_call" || item.kind === "dynamic_tool_call") return <ToolCallBlock item={item} onImageOpen={options.onImageOpen} />;
   if (item.kind === "collab_agent_tool_call") return <CollabAgentBlock item={item} onMarkdownOpen={options.onMarkdownOpen} threadId={options.threadId} />;
   if (item.kind === "web_search_group") return <WebSearchBlock actions={item.actions ?? []} />;
   if (item.kind === "plan") return <PlanBlock item={item} />;
