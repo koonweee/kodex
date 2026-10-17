@@ -10,7 +10,7 @@ import { ExecutionPreferencesPanel } from "./ExecutionPreferencesPanel";
 const firstTarget = { filePath: "/dedicated/config.toml", version: "native-v1" };
 const secondTarget = { filePath: "/dedicated/config.toml", version: "native-v2" };
 const settings = {
-  model: "custom-native-model", effort: "high", serviceTier: "fast", permissionProfileId: ":workspace",
+  model: "custom-native-model", effort: "high", serviceTier: "priority", permissionProfileId: ":workspace",
   approvalPolicy: "on-request", approvalsReviewer: "auto_review", writeTarget: firstTarget,
 };
 const modelCatalog = {

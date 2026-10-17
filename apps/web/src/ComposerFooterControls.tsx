@@ -9,6 +9,7 @@ import { usePaneLayout } from "./shared/PaneLayout";
 import { useInputCapabilities } from "./shared/inputCapabilities";
 import { composerSettingsPresentation } from "./composer/presentationPolicy";
 import { defaultModel, modelFullLabel, reasoningEffortLabel, selectedModel as catalogSelectedModel } from "./composer/modelCatalog";
+import { FAST_SERVICE_TIER } from "./composer/settings";
 
 import type { ModelSummary } from "./api/client";
 import { AdaptiveIcon } from "./ui/AdaptiveIcon";
@@ -113,7 +114,7 @@ export function ComposerFooterControls({
   }
 
   function toggleFast(checked: boolean) {
-    updateSettings({ fast: checked, serviceTier: checked ? "fast" : null });
+    updateSettings({ fast: checked, serviceTier: checked ? FAST_SERVICE_TIER : null });
     changeMenuOpened(false);
   }
 

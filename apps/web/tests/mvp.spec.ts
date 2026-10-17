@@ -1341,12 +1341,12 @@ test("composer clears native fast service tier without replaying settings on sen
     ...thread,
     model: "gpt-5.4",
     reasoningEffort: "medium",
-    serviceTier: "fast",
-    rawPayload: { model: "gpt-5.4", reasoningEffort: "medium", serviceTier: "fast" },
+    serviceTier: "priority",
+    rawPayload: { model: "gpt-5.4", reasoningEffort: "medium", serviceTier: "priority" },
   };
   let submittedBody: Record<string, unknown> | null = null;
   const settingsUpdates: Record<string, unknown>[] = [];
-  const nativeSettings = { model: "gpt-5.4", effort: "medium", serviceTier: "fast" as string | null, activePermissionProfile: null };
+  const nativeSettings = { model: "gpt-5.4", effort: "medium", serviceTier: "priority" as string | null, activePermissionProfile: null };
 
   await page.route("**/v1/**", async (route) => {
     const request = route.request();
@@ -1431,6 +1431,7 @@ test("composer clears native fast service tier without replaying settings on sen
   await expect.poll(() => submittedBody).toEqual({
     input: [{ type: "text", text: "Use normal speed" }],
     clientUserMessageId: expect.any(String),
+    queueIfPending: true,
   });
 });
 

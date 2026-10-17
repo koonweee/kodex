@@ -25,7 +25,7 @@ for (const shape of [
         const firstReads = reads("first");
         await modelButton(first, "medium").click();
         await first.getByRole("menuitemcheckbox", { name: "Fast", exact: true }).click();
-        await expect.poll(() => fixture.pending).toEqual([{ serviceTier: "fast" }]);
+        await expect.poll(() => fixture.pending).toEqual([{ serviceTier: "priority" }]);
         await expect.poll(() => reads("first")).toBeGreaterThan(firstReads);
         await expect(modelButton(first, "medium")).toBeEnabled();
         await expect(first.getByRole("img", { name: "Fast responses enabled" })).toHaveCount(0);
@@ -46,9 +46,9 @@ for (const shape of [
           await expect(modelButton(page, "high")).toBeVisible();
           await expect(page.getByRole("img", { name: "Fast responses enabled" })).toBeVisible();
         }
-        expect(fixture.settings).toMatchObject({ effort: "high", serviceTier: "fast" });
+        expect(fixture.settings).toMatchObject({ effort: "high", serviceTier: "priority" });
         expect(fixture.requests.filter((entry) => entry.key === patchKey).map((entry) => entry.body))
-          .toEqual([{ serviceTier: "fast" }, { effort: "high" }]);
+          .toEqual([{ serviceTier: "priority" }, { effort: "high" }]);
         expect(fixture.connections).toEqual(initialConnections);
 
         // A captured old settings response cannot overwrite a later native read.
@@ -67,7 +67,7 @@ for (const shape of [
 
         // No settings event reaches the second tab. Actual EventSource reopening
         // must initiate an authoritative read without reloading the page.
-        Object.assign(fixture.settings, { effort: "high", serviceTier: "fast" });
+        Object.assign(fixture.settings, { effort: "high", serviceTier: "priority" });
         fixture.settingsChanged("first");
         await expect(modelButton(first, "high")).toBeVisible();
         await expect(modelButton(second, "medium")).toBeVisible();
@@ -81,7 +81,7 @@ for (const shape of [
 
         await send(first, "Use native settings", shape.hasTouch);
         await expect.poll(() => fixture.requests.filter((entry) => entry.key === "POST /v1/threads/settings-chat/input").map((entry) => entry.body))
-          .toEqual([{ input: [{ type: "text", text: "Use native settings" }], clientUserMessageId: expect.any(String) }]);
+          .toEqual([{ input: [{ type: "text", text: "Use native settings" }], clientUserMessageId: expect.any(String), queueIfPending: true }]);
         await expect(activePane(second).getByRole("button", { name: "Stop turn", exact: true })).toBeVisible();
         await send(second, "Use native settings when queued", shape.hasTouch, "Queue message");
         await expect.poll(() => fixture.requests.filter((entry) => entry.key === "POST /v1/threads/settings-chat/queued-inputs").map((entry) => entry.body))

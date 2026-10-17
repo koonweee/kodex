@@ -20,7 +20,7 @@ it("cancels an initial stale read on an applied marker and always reads current 
   vi.mocked(getThreadSettings).mockImplementationOnce((_id, signal) => {
     staleSignal = signal;
     return new Promise((resolve) => { release = resolve; });
-  }).mockResolvedValue({ ...initial, effort: "high", serviceTier: "fast" });
+  }).mockResolvedValue({ ...initial, effort: "high", serviceTier: "priority" });
   const hook = renderHook(() => useThreadSettings("chat"), {
     wrapper: ({ children }: PropsWithChildren) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
   });
@@ -44,7 +44,7 @@ it("replaces a pending pre-turn failure after the canonical active lifecycle arr
   vi.mocked(getThreadSettings).mockImplementationOnce((_id, signal) => {
     oldSignal = signal;
     return new Promise((_resolve, reject) => { failOld = reject; });
-  }).mockResolvedValue({ ...initial, effort: "high", serviceTier: "fast" });
+  }).mockResolvedValue({ ...initial, effort: "high", serviceTier: "priority" });
   const hook = renderHook(() => useThreadSettings("chat"), {
     wrapper: ({ children }: PropsWithChildren) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
   });

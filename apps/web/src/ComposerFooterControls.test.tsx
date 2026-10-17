@@ -138,7 +138,7 @@ describe("ComposerFooterControls", () => {
     await waitFor(() => expect(trigger).toHaveFocus());
   });
   it.each([
-    { label: "Fast", role: "menuitemcheckbox", submenu: null, expected: { fast: true, serviceTier: "fast" } },
+    { label: "Fast", role: "menuitemcheckbox", submenu: null, expected: { fast: true, serviceTier: "priority" } },
     { label: "High", role: "menuitem", submenu: "Reasoning", expected: { effort: "high" } },
     { label: "gpt-5.4", role: "menuitem", submenu: "Model", expected: { model: model.id } },
   ])("emits only the $label intent instead of a stale complete settings form", async ({ label, role, submenu, expected }) => {
@@ -242,7 +242,7 @@ describe("ComposerFooterControls", () => {
     expect(screen.getByRole("menuitem", { name: "Reasoning", hidden: true })).toHaveFocus();
     fastItem.focus();
     await userEvent.keyboard("{Enter}");
-    expect(onSettingsChange).toHaveBeenCalledWith({ fast: true, serviceTier: "fast" });
+    expect(onSettingsChange).toHaveBeenCalledWith({ fast: true, serviceTier: "priority" });
 
     rerender(
       <MantineProvider>

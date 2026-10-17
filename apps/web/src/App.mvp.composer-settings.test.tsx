@@ -138,7 +138,7 @@ describe("MVP composer settings flows", () => {
     await clickFastSwitch();
     await waitFor(() => expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")).toHaveLength(2));
     expect(await Promise.all(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings").map(requestJson)))
-      .toEqual([{ effort: "high" }, { serviceTier: "fast" }]);
+      .toEqual([{ effort: "high" }, { serviceTier: "priority" }]);
     expect(gateway.callsFor("PATCH", "/v1/composer-settings")).toHaveLength(0);
 
     await userEvent.type(screen.getByLabelText(/message composer/i), "Use the selected controls");
@@ -390,7 +390,7 @@ describe("MVP composer settings flows", () => {
       baseRoutes({
         "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
         "POST /v1/threads": { thread: { ...thread, id: "thread-2", name: "New thread", preview: null }, rawPayload: {} },
-        "GET /v1/threads/thread-2/settings": settingsFor("gpt-5.4", "high", "fast"),
+        "GET /v1/threads/thread-2/settings": settingsFor("gpt-5.4", "high", "priority"),
         "POST /v1/threads/thread-2/input": { payload: {} },
       }),
     );
@@ -426,7 +426,7 @@ describe("MVP composer settings flows", () => {
       effort: "high",
       projectId: project.id,
       model: "gpt-5.4",
-      serviceTier: "fast",
+      serviceTier: "priority",
     });
     const inputBody = await requestJson(gateway.callsFor("POST", "/v1/threads/thread-2/input")[0]);
     expect(inputBody).toEqual({
@@ -453,7 +453,7 @@ describe("MVP composer settings flows", () => {
         "GET /v1/composer-settings": (request: Request) => {
           const projectId = new URL(request.url).searchParams.get("projectId");
           return projectId === project.id
-            ? { model: "gpt-5.4", effort: "high", serviceTier: "fast", permissionProfileId: "auto-review" }
+            ? { model: "gpt-5.4", effort: "high", serviceTier: "priority", permissionProfileId: "auto-review" }
             : { model: null, effort: null, serviceTier: null, permissionProfileId: null };
         },
         "POST /v1/chats/threads": { thread: chatThread, rawPayload: {} },
@@ -528,7 +528,7 @@ describe("MVP composer settings flows", () => {
     const turnBody = await requestJson(gateway.callsFor("POST", "/v1/threads/chat-thread-1/input")[0]);
     expect(turnBody).toEqual({ clientUserMessageId: expect.any(String), queueIfPending: true, input: [{ type: "text", text: "Send before native settings load" }] });
     expect(gateway.callsFor("GET", "/v1/threads/chat-thread-1/settings")).toHaveLength(1);
-    await act(async () => nativeSettings.resolve(settingsFor("gpt-5.4", "high", "fast")));
+    await act(async () => nativeSettings.resolve(settingsFor("gpt-5.4", "high", "priority")));
     expect(await within(activeThreadPane()).findByRole("button", { name: /model: gpt-5\.4, high/i })).toBeInTheDocument();
   });
 
@@ -543,7 +543,7 @@ describe("MVP composer settings flows", () => {
           serviceTier: null,
           permissionProfileId: null,
         },
-        "GET /v1/threads/thread-1/settings": settingsFor("gpt-5.4", "high", "fast"),
+        "GET /v1/threads/thread-1/settings": settingsFor("gpt-5.4", "high", "priority"),
         "GET /v1/threads": {
           threads: [{ ...thread, status: "notLoaded" }],
           nextCursor: null,
@@ -553,7 +553,7 @@ describe("MVP composer settings flows", () => {
         "POST /v1/threads/thread-1/attach": threadDetail({
           ...thread,
           reasoningEffort: "high",
-          serviceTier: "fast",
+          serviceTier: "priority",
           activePermissionProfile: { id: "auto-review" },
         }),
       }),

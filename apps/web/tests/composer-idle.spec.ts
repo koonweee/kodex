@@ -163,7 +163,7 @@ for (const settingsError of [false, true]) {
   test(`small touch pane keeps goal and ${settingsError ? "settings error" : "Fast"} controls usable`, async ({ browser }) => {
     const context = await browser.newContext({ viewport: { width: 320, height: 844 }, hasTouch: true, baseURL: test.info().project.use.baseURL });
     const fixture = await nativeSettingsFixture(context);
-    fixture.settings.serviceTier = "fast";
+    fixture.settings.serviceTier = "priority";
     fixture.setGoal({ threadId: fixture.detail.thread.id, objective: "Finish work", status: "active", tokenBudget: null,
       tokensUsed: 0, timeUsedSeconds: 0, createdAt: 1, updatedAt: 1 });
     if (settingsError) await context.route("**/v1/threads/settings-chat/settings", route => route.fulfill({ status: 400, json: { code: "bad_request", message: "Could not load settings", retryable: false } }));

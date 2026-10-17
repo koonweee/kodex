@@ -10,6 +10,8 @@ import type { ComposerSettings, ComposerSettingsChange, ContextUsage } from "../
 import { asRecord, numberValue } from "../shared/values";
 import { selectedModel, supportsReasoningEffort } from "./modelCatalog";
 
+export const FAST_SERVICE_TIER = "priority";
+
 export type ComposerContext = {
   activeSelectedTurnId: string | null;
   draftChatThreadSelected: boolean;
@@ -43,7 +45,7 @@ export function normalizePersistedComposerSettings(
   return {
     model,
     effort,
-    fast: settings.serviceTier === "fast",
+    fast: settings.serviceTier === FAST_SERVICE_TIER,
     serviceTier: settings.serviceTier ?? undefined,
   };
 }
@@ -52,7 +54,7 @@ export function composerSettingsFromNative(settings: ThreadSettingsResponse): Co
   return {
     model: settings.model,
     effort: settings.effort ?? undefined,
-    fast: settings.serviceTier === "fast",
+    fast: settings.serviceTier === FAST_SERVICE_TIER,
     serviceTier: settings.serviceTier,
   };
 }
@@ -77,7 +79,7 @@ export function createThreadOptions(settings: ComposerSettings): CreateThreadOpt
   if (settings.serviceTier !== undefined) {
     options.serviceTier = settings.serviceTier;
   } else if (settings.fast) {
-    options.serviceTier = "fast";
+    options.serviceTier = FAST_SERVICE_TIER;
   }
   return options;
 }
@@ -87,7 +89,7 @@ export function composerThreadSettingsPatch(change: ComposerSettingsChange): Thr
   if (change.model !== undefined) patch.model = change.model;
   if (change.effort !== undefined) patch.effort = change.effort;
   if (change.serviceTier !== undefined) patch.serviceTier = change.serviceTier;
-  else if (change.fast !== undefined) patch.serviceTier = change.fast ? "fast" : null;
+  else if (change.fast !== undefined) patch.serviceTier = change.fast ? FAST_SERVICE_TIER : null;
   return patch;
 }
 

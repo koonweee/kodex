@@ -30,11 +30,11 @@ it("shares native applied settings across clients while disjoint stale picker in
 
   await userEvent.click(first.getByRole("button", { name: "Model: gpt-5.4, medium" }));
   await userEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Fast", hidden: true }));
-  await waitFor(() => expect(patches).toEqual([{ serviceTier: "fast" }]));
+  await waitFor(() => expect(patches).toEqual([{ serviceTier: "priority" }]));
   await waitFor(() => expect(screen.queryByRole("menu", { hidden: true })).not.toBeInTheDocument());
   expect(first.queryByRole("img", { name: "Fast responses enabled" })).not.toBeInTheDocument();
 
-  nativeSettings = { ...nativeSettings, serviceTier: "fast" };
+  nativeSettings = { ...nativeSettings, serviceTier: "priority" };
   act(() => streams[0].emit(settingsChanged(1)));
   expect(await first.findByRole("img", { name: "Fast responses enabled" })).toBeInTheDocument();
   expect(second.queryByRole("img", { name: "Fast responses enabled" })).not.toBeInTheDocument();
@@ -42,7 +42,7 @@ it("shares native applied settings across clients while disjoint stale picker in
   await userEvent.click(second.getByRole("button", { name: "Model: gpt-5.4, medium" }));
   await clickMenuItem(/^Reasoning$/, screen, waitFor, fireEvent);
   await clickMenuItem(/^High$/, screen, waitFor, fireEvent);
-  await waitFor(() => expect(patches).toEqual([{ serviceTier: "fast" }, { effort: "high" }]));
+  await waitFor(() => expect(patches).toEqual([{ serviceTier: "priority" }, { effort: "high" }]));
   nativeSettings = { ...nativeSettings, effort: "high" };
   act(() => { for (const stream of streams) stream.emit(settingsChanged(2)); });
   for (const client of [first, second]) {
@@ -57,7 +57,7 @@ it("recovers unavailable fresh-chat settings only after a canonical first-turn l
   let persisted = false;
   const gateway = mockGateway(baseRoutes({
     "GET /v1/threads/thread-1/settings": () => persisted
-      ? { model: highReasoningModel.id, effort: "high", serviceTier: "fast", activePermissionProfile: null }
+      ? { model: highReasoningModel.id, effort: "high", serviceTier: "priority", activePermissionProfile: null }
       : new Response(JSON.stringify({ code: "app_server_error", message: "No rollout found for fresh native chat", retryable: false }), { status: 502, headers: { "content-type": "application/json" } }),
   }));
   render(<App />);
