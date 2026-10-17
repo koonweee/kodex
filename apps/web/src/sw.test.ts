@@ -195,6 +195,77 @@ describe("service worker push handling", () => {
     expect(focus).toHaveBeenCalledOnce();
     expect(openWindow).not.toHaveBeenCalled();
   });
+
+  it("tells an existing app window which notification route was clicked", async () => {
+    const postMessage = vi.fn();
+    const focus = vi.fn().mockResolvedValue(undefined);
+    const navigate = vi.fn().mockResolvedValue(undefined);
+    const { listeners } = await installServiceWorker({
+      clients: [{ url: "https://kodex.test/threads/old-thread", focus, navigate, postMessage }],
+    });
+    const pending: Array<Promise<unknown>> = [];
+
+    listeners.get("notificationclick")?.({
+      notification: {
+        close: vi.fn(),
+        data: { kind: "unreadAgentMessage", route: "/threads/notified-thread", threadId: "notified-thread" },
+      },
+      waitUntil: (promise: Promise<unknown>) => pending.push(promise),
+    });
+    await Promise.all(pending);
+
+    expect(postMessage).toHaveBeenCalledWith({
+      route: "/threads/notified-thread",
+      type: "KODEX_NOTIFICATION_CLICK",
+    });
+  });
+
+  it("falls back to in-app routing when a mobile client rejects navigation", async () => {
+    const postMessage = vi.fn();
+    const focus = vi.fn().mockResolvedValue(undefined);
+    const navigate = vi.fn().mockRejectedValue(new Error("navigation not supported"));
+    const { listeners } = await installServiceWorker({
+      clients: [{ url: "https://kodex.test/threads/old-thread", focus, navigate, postMessage }],
+    });
+    const pending: Array<Promise<unknown>> = [];
+
+    listeners.get("notificationclick")?.({
+      notification: {
+        close: vi.fn(),
+        data: { kind: "unreadAgentMessage", route: "/threads/notified-thread", threadId: "notified-thread" },
+      },
+      waitUntil: (promise: Promise<unknown>) => pending.push(promise),
+    });
+    await Promise.all(pending);
+
+    expect(postMessage).toHaveBeenCalledWith({
+      route: "/threads/notified-thread",
+      type: "KODEX_NOTIFICATION_CLICK",
+    });
+    expect(focus).toHaveBeenCalledOnce();
+  });
+
+  it("passes the route to a mobile app window returned by openWindow", async () => {
+    const postMessage = vi.fn();
+    const openWindow = vi.fn().mockResolvedValue({ postMessage });
+    const { listeners } = await installServiceWorker({ openWindow });
+    const pending: Array<Promise<unknown>> = [];
+
+    listeners.get("notificationclick")?.({
+      notification: {
+        close: vi.fn(),
+        data: { kind: "unreadAgentMessage", route: "/threads/notified-thread", threadId: "notified-thread" },
+      },
+      waitUntil: (promise: Promise<unknown>) => pending.push(promise),
+    });
+    await Promise.all(pending);
+
+    expect(openWindow).toHaveBeenCalledWith("https://kodex.test/threads/notified-thread");
+    expect(postMessage).toHaveBeenCalledWith({
+      route: "/threads/notified-thread",
+      type: "KODEX_NOTIFICATION_CLICK",
+    });
+  });
 });
 
 async function installServiceWorker({
@@ -203,7 +274,12 @@ async function installServiceWorker({
   fetchBadge = vi.fn().mockResolvedValue(Response.json({ count: 0, readRevision: 20 })),
 }: {
   fetchBadge?: ReturnType<typeof vi.fn>;
-  clients?: Array<{ focus?: () => Promise<unknown> | unknown; navigate?: (url: string) => Promise<unknown> | unknown; url: string }>;
+  clients?: Array<{
+    focus?: () => Promise<unknown> | unknown;
+    navigate?: (url: string) => Promise<unknown> | unknown;
+    postMessage?: (message: unknown) => void;
+    url: string;
+  }>;
   openWindow?: (url?: string | URL) => Promise<unknown>;
 } = {}) {
   vi.doMock("workbox-precaching", () => ({
@@ -215,7 +291,7 @@ async function installServiceWorker({
   const listeners = new Map<string, (event: unknown) => void>();
   const showNotification = vi.fn().mockResolvedValue(undefined);
   const setAppBadge = vi.fn().mockResolvedValue(undefined);
-  const matchAll = vi.fn().mockResolvedValue(clients);
+  const matchAll = vi.fn().mockResolvedValue(clients.map((client) => ({ postMessage: vi.fn(), ...client })));
   const claim = vi.fn().mockResolvedValue(undefined);
   const skipWaiting = vi.fn();
   const fakeSelf = {

@@ -2,6 +2,7 @@ import { readNarrowWorkspace } from "../shared/layoutBreakpoints";
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 
 import type { ThreadSummary } from "../api/client";
+import { subscribeNotificationNavigation } from "../notifications/notificationNavigation";
 import type { ThreadsByProjectId } from "../threads/helpers";
 import { findKnownThreadSelection as findKnownThreadSelectionInCaches } from "../threads/selection";
 import {
@@ -12,7 +13,7 @@ import {
   replaceKodexRoute,
 } from "./browserRouting";
 import type { MobilePanel } from "./KodexShellView";
-import type { KodexMainPane, KodexRoute } from "./navigation";
+import { parseKodexLocation, type KodexMainPane, type KodexRoute } from "./navigation";
 
 type CurrentRef<T> = { current: T };
 
@@ -393,6 +394,21 @@ export function useShellSelection({
 
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
+  }, [applyBrowserRoute]);
+
+  useEffect(() => {
+    return subscribeNotificationNavigation((routePath) => {
+      const url = new URL(routePath, window.location.origin);
+      if (url.origin !== window.location.origin) {
+        return;
+      }
+      const route = parseKodexLocation(url);
+      if (pathForKodexRoute(route) !== `${url.pathname}${url.search}`) {
+        return;
+      }
+      pushKodexRoute(route);
+      applyBrowserRoute(route);
+    });
   }, [applyBrowserRoute]);
 
   useEffect(() => {

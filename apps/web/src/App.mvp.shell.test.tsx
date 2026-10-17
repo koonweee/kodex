@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NARROW_WORKSPACE_QUERY } from "./shared/layoutBreakpoints";
+import { installNotificationNavigation } from "./notifications/notificationNavigation";
 
 import {
   App,
@@ -23,6 +24,8 @@ import {
   threadDetail,
   timelineElement,
 } from "./test/mvpAppHarness";
+
+const originalServiceWorker = Object.getOwnPropertyDescriptor(navigator, "serviceWorker");
 
 function clickMenuItem(name: RegExp) {
   return clickMenuItemWithDeps(name, screen, waitFor, fireEvent);
@@ -133,6 +136,11 @@ describe("MVP shell flows", () => {
   });
 
   afterEach(() => {
+    if (originalServiceWorker) {
+      Object.defineProperty(navigator, "serviceWorker", originalServiceWorker);
+    } else {
+      Reflect.deleteProperty(navigator, "serviceWorker");
+    }
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     FakeEventSource.instances = [];
@@ -405,6 +413,31 @@ describe("MVP shell flows", () => {
 
     expect(window.location.pathname).toBe("/");
     expect(activeComposer()).toBeEnabled();
+  });
+
+  it("opens a notification route delivered before the app finishes mounting", async () => {
+    window.history.replaceState(null, "", "/threads/thread-1");
+    const serviceWorker = new EventTarget();
+    Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: serviceWorker });
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [thread, secondThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+      }),
+    );
+
+    installNotificationNavigation();
+    serviceWorker.dispatchEvent(new MessageEvent("message", {
+      data: { route: "/threads/thread-2", type: "KODEX_NOTIFICATION_CLICK" },
+    }));
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^second thread$/i })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/threads/thread-2");
   });
 
   it("keeps a locally created chat when the initial chat list resolves late", async () => {

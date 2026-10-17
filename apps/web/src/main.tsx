@@ -5,10 +5,12 @@ import { createRoot } from "react-dom/client";
 
 import { App } from "./App";
 import { GatewayInstanceBoundary } from "./api/GatewayInstanceBoundary";
+import { installNotificationNavigation } from "./notifications/notificationNavigation";
 import { queryClient } from "./api/queryClient";
 import { initializeKodexColorScheme } from "./theme";
 
 initializeKodexColorScheme();
+installNotificationNavigation();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

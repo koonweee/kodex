@@ -3,7 +3,11 @@
 import { cleanupOutdatedCaches, precacheAndRoute } from "workbox-precaching";
 
 import type { UnreadBadgeResponse } from "./api/client";
-import type { KodexNotificationPayload } from "./notifications/notificationTypes";
+import {
+  KODEX_NOTIFICATION_CLICK,
+  type KodexNotificationClickMessage,
+  type KodexNotificationPayload,
+} from "./notifications/notificationTypes";
 
 declare let self: ServiceWorkerGlobalScope & { __WB_MANIFEST: Array<unknown> };
 
@@ -72,6 +76,7 @@ function notificationRoute(data: unknown): string {
 
 async function focusOrOpenKodex(route: string) {
   const url = new URL(route, self.location.origin).href;
+  const message: KodexNotificationClickMessage = { route, type: KODEX_NOTIFICATION_CLICK };
   const windows = await self.clients.matchAll({ includeUncontrolled: true, type: "window" });
   for (const client of windows) {
     if (!("focus" in client)) {
@@ -81,12 +86,22 @@ async function focusOrOpenKodex(route: string) {
     if (new URL(windowClient.url).origin !== self.location.origin) {
       continue;
     }
+    let destinationClient: WindowClient | null | undefined = windowClient;
     if ("navigate" in windowClient) {
-      await windowClient.navigate(url);
+      try {
+        destinationClient = await windowClient.navigate(url);
+      } catch {
+        // Some installed/mobile PWA runtimes focus their standalone window but
+        // reject WindowClient.navigate(). The message below lets the live app
+        // perform the same route change without relying on a document reload.
+      }
     }
-    return windowClient.focus();
+    (destinationClient ?? windowClient).postMessage(message);
+    return (destinationClient ?? windowClient).focus();
   }
-  return self.clients.openWindow(url);
+  const openedClient = await self.clients.openWindow(url);
+  openedClient?.postMessage(message);
+  return openedClient;
 }
 
 let badgeRequest: AbortController | null = null;
