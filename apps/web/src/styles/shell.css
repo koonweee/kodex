@@ -390,7 +390,6 @@
 
 .kodex-timeline-virtual-row {
   box-sizing: border-box;
-  width: 100%;
   min-width: 0;
   overflow-anchor: none;
 }
