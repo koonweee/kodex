@@ -140,7 +140,49 @@ tailscale serve --bg --https=443 http://127.0.0.1:8787
 
 Follow Tailscale's HTTPS enablement prompt if needed. Serve prints the private `https://<mac>.<tailnet>.ts.net` address. For another app already using 443, choose a different port, for example `--https=8444`; do not overwrite an existing mapping. Existing listeners on other ports are independent.
 
-Serve persists its configuration and restores it when Tailscale starts. Kodex updates do not need a proxy restart. To remove only Kodex's mapping:
+### Generative UI and MCP app sandbox
+
+Generative UI and MCP app panes render through `/app-surface-sandbox.html` on a different browser origin. The main HTTPS listener alone is insufficient: without a sandbox URL, the pane reports that its sandbox proxy must be configured on a different origin. A separate port on the same Tailscale hostname is a different origin; a different path on the main origin is not.
+
+Inspect `tailscale serve status` and choose another unused HTTPS port, such as 8449. Keep all existing listeners. Mount only the sandbox document on that port, proxying the installed gateway so future releases serve the current document:
+
+```bash
+tailscale serve --bg --https=8449 --set-path=/app-surface-sandbox.html http://127.0.0.1:8787/app-surface-sandbox.html
+```
+
+Use the actual gateway port if it differs from 8787. This proxy approach also works with the macOS Tailscale variants that cannot serve local files. Do not mount the whole gateway or frontend at the sandbox origin; only this document is needed.
+
+In the checkout used for deployments, add or update this line in `apps/web/.env.production.local`, preserving any other settings. Replace the hostname and sandbox port with the values printed by Serve:
+
+```dotenv
+VITE_KODEX_APP_SURFACE_SANDBOX_URL=https://<mac>.<tailnet>.ts.net:8449/app-surface-sandbox.html
+```
+
+This file is ignored by Git. Vite reads the setting when building, including full service updates and frontend-only updates from this checkout. It is not a gateway runtime variable or an entry in the service config's `environment` object. When deploying from another checkout, copy the setting there too. A shell-exported value takes precedence over the file; keep it consistent or unset it before building.
+
+Commit the intended repository changes and deploy the frontend:
+
+```bash
+./tools/kodex-service update-frontend --repo "$PWD"
+```
+
+A frontend-only update is sufficient for this setting and keeps the gateway running. Accept the browser/PWA update prompt to load the new bundle. Verify that the sandbox URL returns the sandbox HTML, then reopen an existing app pane and check that content renders and its controls respond:
+
+```bash
+curl --fail --show-error 'https://<mac>.<tailnet>.ts.net:8449/app-surface-sandbox.html'
+```
+
+The response should contain the `App Surface Sandbox` document, not Kodex's main app shell. Requests to `/` or `/v1/threads` on the sandbox origin should return 404. Check from a remote trusted device too; it must be able to reach the sandbox port under your tailnet access rules.
+
+### Persistence and removal
+
+Serve persists its configuration and restores it when Tailscale starts. Kodex updates do not need a proxy restart. To remove only the sandbox mapping (using the port you chose):
+
+```bash
+tailscale serve --https=8449 --set-path=/app-surface-sandbox.html off
+```
+
+Removing it disables app panes for builds that reference that URL. To remove only Kodex's main mapping:
 
 ```bash
 tailscale serve --https=443 off

@@ -16,7 +16,7 @@ ChatGPT or Codex login routes only manage upstream account state through app-ser
 
 Use loopback for single-device access. For access from another device, bind only to a trusted VPN or tailnet address and provide HTTPS where browser features require a secure context.
 
-For macOS login hosting, installation, start/stop and staged updates, see the [macOS service guide](macos-service.md).
+For macOS login hosting, installation, start/stop and staged updates, see the [macOS service guide](macos-service.md). Generative UI and MCP app panes over HTTPS need a sandbox document on a separate browser origin; follow the [Tailscale sandbox setup](macos-service.md#generative-ui-and-mcp-app-sandbox) and build the frontend with `VITE_KODEX_APP_SURFACE_SANDBOX_URL` pointing to it.
 
 ## Gateway configuration
 

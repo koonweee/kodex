@@ -16,4 +16,5 @@ tmp/dockview-profiling/
 tmp/real-gateway-profiling/
 *.env
 *.env.local
+.env.*.local
 apps/gateway/config/production.env

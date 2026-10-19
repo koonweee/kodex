@@ -39,7 +39,7 @@ Open `http://127.0.0.1:5173`. Vite proxies `/v1` and `/openapi.json` to `http://
 
 To proxy to another local gateway, set `VITE_KODEX_PROXY_TARGET`. To call another gateway origin directly, set `VITE_KODEX_API_BASE_URL`. Service-worker registration and Web Push require the frontend and API to share an origin; they are disabled when this variable points to a different origin. Use the Vite proxy for development PWA badge and notification checks.
 
-App surfaces require a sandbox document on a different browser origin. Loopback development swaps `localhost` and `127.0.0.1` automatically. Remote browsers and HTTPS or non-loopback deployments must set `VITE_KODEX_APP_SURFACE_SANDBOX_URL` to the sandbox HTML on a distinct origin.
+App surfaces require a sandbox document on a different browser origin. Loopback development swaps `localhost` and `127.0.0.1` automatically. Remote browsers and HTTPS or non-loopback deployments must set `VITE_KODEX_APP_SURFACE_SANDBOX_URL` to the sandbox HTML on a distinct origin. This is a frontend build setting; production builds can keep it in the selected checkout's ignored `apps/web/.env.production.local`. For private HTTPS listeners, verification and deployment steps, see the [Tailscale sandbox setup](macos-service.md#generative-ui-and-mcp-app-sandbox).
 
 Sign in from **Account settings → Sign in with ChatGPT**. Kodex displays the native device code and verification link; app-server owns polling, expiry and authentication. This avoids the browser-login callback listener shared with Codex desktop. Cancellation targets the displayed native login ID, so cancelling an old attempt cannot cancel a newer attempt from another tab. Login remains global to this Kodex runtime.
 
