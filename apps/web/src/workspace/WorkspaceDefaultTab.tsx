@@ -2,6 +2,7 @@ import { Tooltip } from "@mantine/core";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { DockviewDefaultTab, type IDockviewPanelHeaderProps } from "dockview";
 import type { WorkspacePane } from "./paneTypes";
+import { isSideThreadPane } from "./paneTypes";
 import { useWorkspace } from "./WorkspaceProvider";
 import { ThreadStatusIndicator } from "../threads/ThreadStatusIndicator";
 import { useWorkspacePaneIndicatorState } from "./WorkspacePaneIndicator";
@@ -65,12 +66,16 @@ export function WorkspaceDefaultTab(props: IDockviewPanelHeaderProps<DockviewPan
   }, [title, indicatorState, syncing, measureTitle]);
 
   const unread = indicatorState === "unread";
-  const tooltipLabel = titleClipped && title
+  const sideThread = isSideThreadPane(pane);
+  const sideParentTitle = title.replace(/^>\s*/, "") || "Side chat";
+  const tooltipLabel = sideThread
+    ? `Side chat for “${sideParentTitle}”`
+    : titleClipped && title
     ? <>{title}{unread ? <><br />Unread completed agent turn</> : null}</>
     : "Unread completed agent turn";
   return (
-    <Tooltip label={tooltipLabel} disabled={!titleClipped && !unread} multiline maw="min(480px, calc(100vw - 24px))">
-      <div data-pane-id={props.api.id} ref={tabRef} onMouseEnter={measureTitle} onMouseLeave={measureTitle} className={tabClassName} data-inline-adornment={headerAdornment ? "true" : undefined} data-unread={indicatorState === "unread" ? "true" : undefined}>
+    <Tooltip label={tooltipLabel} disabled={!sideThread && !titleClipped && !unread} multiline maw="min(480px, calc(100vw - 24px))">
+      <div aria-label={sideThread ? String(tooltipLabel) : undefined} data-pane-id={props.api.id} ref={tabRef} onMouseEnter={measureTitle} onMouseLeave={measureTitle} className={tabClassName} data-inline-adornment={headerAdornment ? "true" : undefined} data-unread={indicatorState === "unread" ? "true" : undefined}>
         <DockviewDefaultTab {...props} />
         {headerAdornment ? <span className="kodex-workspace-pane-title-adornment">{headerAdornment}</span> : null}
       </div>

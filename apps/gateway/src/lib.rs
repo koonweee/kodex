@@ -20,6 +20,7 @@ pub mod queue_transfer;
 pub mod read_state;
 pub mod routes;
 pub mod schema;
+pub mod side_threads;
 pub mod skills;
 pub mod static_assets;
 pub mod store;

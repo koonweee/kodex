@@ -65,6 +65,8 @@ export type ThreadListResponse = components["schemas"]["ThreadListResponse"];
 export type SidebarThreadSummary = components["schemas"]["SidebarThreadSummary"];
 export type SidebarThreadsResponse = components["schemas"]["SidebarThreadsResponse"];
 export type ThreadViewResponse = components["schemas"]["ThreadViewResponse"];
+export type SideThreadResponse = components["schemas"]["SideThreadResponse"];
+export type SideThreadCloseResponse = components["schemas"]["SideThreadCloseResponse"];
 export type ThreadViewThreadSummary = components["schemas"]["ThreadViewThreadSummary"];
 export type ThreadSubagentSummary = components["schemas"]["ThreadSubagentSummary"];
 export type ThreadSubagentListResponse = components["schemas"]["ThreadSubagentListResponse"];
@@ -241,6 +243,20 @@ function threadDeliveryQuery(options: ThreadDeliveryOptions) {
 
 export async function attachThread(threadId: string, signal?: AbortSignal, deliveryOptions: ThreadDeliveryOptions = {}): Promise<ThreadViewResponse> {
   return unwrap(api.POST("/v1/threads/{threadId}/attach", { params: { path: { threadId }, query: threadDeliveryQuery(deliveryOptions) }, signal }));
+}
+
+export async function createOrGetSideThread(parentThreadId: string): Promise<SideThreadResponse> {
+  return unwrap(api.POST("/v1/threads/{parentThreadId}/side-thread", { params: { path: { parentThreadId } } }));
+}
+
+export async function getSideThread(parentThreadId: string, signal?: AbortSignal): Promise<SideThreadResponse> {
+  return unwrap(api.GET("/v1/threads/{parentThreadId}/side-thread", {
+    params: { path: { parentThreadId } }, cache: "no-store", signal,
+  }));
+}
+
+export async function closeSideThread(parentThreadId: string): Promise<SideThreadCloseResponse> {
+  return unwrap(api.DELETE("/v1/threads/{parentThreadId}/side-thread", { params: { path: { parentThreadId } } }));
 }
 
 export async function getThreadDetail(threadId: string, signal?: AbortSignal, deliveryOptions: ThreadDeliveryOptions = {}): Promise<ThreadViewResponse> {

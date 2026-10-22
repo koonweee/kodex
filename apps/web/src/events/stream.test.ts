@@ -411,7 +411,7 @@ describe("event stream client", () => {
     client.close();
   });
 
-  it.each(["thread.settings_updated", "thread.goal_changed", "thread.summary_changed"])("receives %s as a named SSE refill event", (kind) => {
+  it.each(["thread.settings_updated", "thread.goal_changed", "thread.summary_changed", "side_thread.closed"])("receives %s as a named SSE refill event", (kind) => {
     const received: EventEnvelope[] = [];
     const client = createEventStreamClient({ EventSourceCtor: FakeEventSource, onEvent: (event) => received.push(event) });
     client.connect();

@@ -10,7 +10,7 @@ import { singleProjectRoot } from "../projects/roots";
 import { useWorkspace, type ThreadComposerState } from "../workspace/WorkspaceProvider";
 import { paneTargetRecord, type WorkspacePane } from "../workspace/paneTypes";
 import { ComposerPanel } from "./ComposerPanel";
-import { applyDraftComposerSettingsChange, normalizePersistedComposerSettings } from "./settings";
+import { applyDraftComposerSettingsChange, FAST_SERVICE_TIER, normalizePersistedComposerSettings } from "./settings";
 import type { ComposerDraftStore } from "./useComposerDraftState";
 import { useComposerOrchestration } from "./useComposerOrchestration";
 import type { useComposerSettingsState } from "./useComposerSettingsState";
@@ -58,11 +58,12 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
   const { publishThreadPaneTimelineAction, setPaneComposerTextDraft, setPaneDraftDisposable, updatePane } = useWorkspace();
   const target = paneTargetRecord(pane);
   const existingThreadId = target.mode === "existing" && typeof target.threadId === "string" ? target.threadId : null;
+  const isSideThread = target.mode === "existing" && typeof target.sideThreadOf === "string";
   const isDraftPane = existingThreadId === null;
   const thread = paneState.thread ?? null;
   const isNativeReadOnly = thread?.canAcceptDirectInput === false;
   const inputStateReadable = paneState.isReady && !isNativeReadOnly;
-  const threadSettings = useThreadSettings(inputStateReadable ? existingThreadId : null);
+  const threadSettings = useThreadSettings(inputStateReadable && !isSideThread ? existingThreadId : null);
   const draftProjectId = target.mode === "draft" && typeof target.projectId === "string" ? target.projectId : null;
   const currentProject = draftProjectId ? projects.find((project) => project.id === draftProjectId) ?? null : null;
   const composerCwd = isDraftPane ? singleProjectRoot(currentProject) : thread?.cwd ?? null;
@@ -88,7 +89,14 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
 
   const paneComposerSettings = isDraftPane
     ? effectiveDraftSettings
-    : threadSettings.settings;
+    : isSideThread
+      ? {
+          model: thread?.model ?? undefined,
+          effort: thread?.reasoningEffort ?? undefined,
+          fast: thread?.serviceTier === FAST_SERVICE_TIER,
+          serviceTier: thread?.serviceTier ?? undefined,
+        }
+      : threadSettings.settings;
   const activeThreadId = existingThreadId;
   const composerSettingsErrorMessage = isDraftPane ? null : threadSettings.error;
   const composerDraftKey = existingThreadId
@@ -165,6 +173,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
       setDraftComposerSettings(applyDraftComposerSettingsChange(effectiveDraftSettings, change, models));
       return;
     }
+    if (isSideThread) return;
     threadSettings.update(change);
   }
 
@@ -203,7 +212,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
       onTextDraftPresenceChange={handleTextDraftPresenceChange}
       composerResetToken={0}
       composerSettings={paneComposerSettings}
-      composerSettingsDisabled={!isDraftPane && threadSettings.pending}
+      composerSettingsDisabled={!isDraftPane && (isSideThread || threadSettings.pending)}
       composerSettingsError={composerSettingsErrorMessage}
       composerCwd={composerCwd}
       composerShellRef={composerShellRef}
@@ -237,7 +246,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
       onStopTurn={orchestration.handleStopTurn}
       onSubmitTurn={orchestration.handleSubmitTurn}
       pendingAttachments={orchestration.pendingAttachments}
-      goalThreadId={inputStateReadable ? existingThreadId : null}
+      goalThreadId={inputStateReadable && !isSideThread ? existingThreadId : null}
       queueThreadId={inputStateReadable ? existingThreadId : null}
       paneActive={paneState.isActive}
       selectedThreadPresent={!isDraftPane}

@@ -155,6 +155,24 @@ describe("WorkspaceDock sync", () => {
     expect(screen.getByTestId("thread-sync-spinner")).toBeInTheDocument();
   });
 
+  it("labels a side-chat tab from its parent for assistive and hover context", async () => {
+    const workspacePane = pane(
+      "pane-side",
+      "thread",
+      { mode: "existing", threadId: "side-1", sideThreadOf: "parent-1" },
+      "> Parent chat",
+    );
+    render(
+      <WorkspaceProvider paneStore={createMemoryWorkspacePaneStore({
+        activePaneId: "pane-side", dockviewLayout: null, panes: [workspacePane], schemaVersion: 1,
+      })}>
+        <MantineProvider><PaneAdornmentHarness activePaneId="pane-side" pane={workspacePane} /></MantineProvider>
+      </WorkspaceProvider>,
+    );
+
+    expect(screen.getByLabelText("Side chat for “Parent chat”")).toBeInTheDocument();
+  });
+
   it("closes portaled pane actions when another tab becomes active", async () => {
     function Actions({ active }: { active: string }) {
       const { setPaneHeaderActions } = useWorkspace();

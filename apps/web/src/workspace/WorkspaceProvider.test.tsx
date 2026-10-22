@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { useLayoutEffect, type ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { deleteTerminalSession } from "../api/client";
+import { closeSideThread, createOrGetSideThread, deleteTerminalSession } from "../api/client";
 import type { EventEnvelope } from "../api/client";
 import { createMemoryWorkspacePaneStore } from "./paneStore";
 import type { WorkspacePane, WorkspacePaneState } from "./paneTypes";
@@ -33,6 +33,8 @@ vi.mock("../api/client", async (importActual) => {
   const actual = await importActual<typeof import("../api/client")>();
   return {
     ...actual,
+    closeSideThread: vi.fn(),
+    createOrGetSideThread: vi.fn(),
     deleteTerminalSession: vi.fn(),
   };
 });
@@ -126,6 +128,36 @@ describe("WorkspaceProvider pane commands", () => {
       expect(screen.getByTestId("pane-count")).toHaveTextContent("3");
     });
     expect(store.getState().panes.filter((pane) => pane.kind === "thread" && pane.target.mode === "existing" && pane.target.threadId === "thread-1")).toHaveLength(2);
+  });
+
+  it("opens one parent-bound side pane and cleans it up through ordinary close", async () => {
+    vi.mocked(createOrGetSideThread).mockResolvedValue({
+      parentThread: threadViewSummary("thread-1", "Parent chat", null),
+      thread: threadViewSummary("side-1", "Parent chat", "thread-1"),
+      liveState: "idle",
+      timeline: { liveState: "idle", pendingApprovalRequests: [], pendingUserInputRequests: [], rows: [], turns: [], viewRevision: 1 },
+      reused: false,
+    });
+    vi.mocked(closeSideThread).mockResolvedValue({ closed: true, sideThreadId: "side-1" });
+    const store = createMemoryWorkspacePaneStore(workspaceState([
+      threadPane("pane-thread-1", "thread-1", "Parent chat"),
+    ], "pane-thread-1"));
+    renderProvider(store);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open side chat" }));
+    await waitFor(() => expect(store.getState().panes).toHaveLength(2));
+    expect(store.getState().panes[1]).toMatchObject({
+      kind: "thread",
+      title: "> Parent chat",
+      target: { mode: "existing", threadId: "side-1", sideThreadOf: "thread-1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open side chat" }));
+    expect(createOrGetSideThread).toHaveBeenCalledTimes(1);
+    expect(store.getState().panes).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Close side chat" }));
+    await waitFor(() => expect(store.getState().panes).toHaveLength(1));
+    expect(closeSideThread).toHaveBeenCalledWith("thread-1");
   });
 
   it("focuses an existing terminal pane unless a new terminal is requested", async () => {
@@ -455,6 +487,15 @@ function CommandHarness() {
       <button type="button" onClick={() => void workspace.openThreadPane("thread-1", "Thread 1")}>
         Open thread
       </button>
+      <button type="button" onClick={() => void workspace.openSideThreadPane("thread-1")}>
+        Open side chat
+      </button>
+      <button type="button" onClick={() => {
+        const side = workspace.workspace.panes.find((pane) => pane.kind === "thread" && pane.target.mode === "existing" && pane.target.sideThreadOf);
+        if (side) workspace.closePane(side.id, null);
+      }}>
+        Close side chat
+      </button>
       <button type="button" onClick={() => void workspace.openThreadPane("thread-2", "Thread 2")}>
         Open unseen thread
       </button>
@@ -553,5 +594,14 @@ function terminalPane(id: string, terminalId: string): WorkspacePane {
     kind: "terminal",
     target: { terminalId },
     title: "Terminal",
+  };
+}
+
+function threadViewSummary(id: string, name: string, parentThreadId: string | null) {
+  return {
+    id, name, parentThreadId, canAcceptDirectInput: true, projectId: null, cwd: "/workspace",
+    status: "idle" as const, createdAt: 1, updatedAt: 2, pinned: false, preview: name,
+    latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false,
+    unreadCompletedAgentTurn: false, notificationsEnabled: true,
   };
 }

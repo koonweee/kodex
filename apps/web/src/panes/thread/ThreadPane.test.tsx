@@ -5,7 +5,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { StrictMode } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
-import type { EventEnvelope, ThreadSummary, ThreadViewResponse } from "../../api/client";
+import type { EventEnvelope, SideThreadResponse, ThreadSummary, ThreadViewResponse } from "../../api/client";
 import { mockGateway } from "../../test/gatewayMock";
 import { createMemoryWorkspacePaneStore } from "../../workspace/paneStore";
 import { WorkspaceProvider, useWorkspace, type ThreadPaneTimelineActionHandler } from "../../workspace/WorkspaceProvider";
@@ -489,6 +489,96 @@ it("fences a pre-input attach when a persisted native summary marker arrives", a
   expect(store.getState().panes[0].title).toBe("Persisted first prompt");
 });
 
+it("restores a side chat from its gateway projection with parent-derived chrome and no durable actions", async () => {
+  vi.stubGlobal("EventSource", UnopenedEventSource);
+  const side = sideThreadResponse();
+  const gateway = mockGateway({
+    "GET /v1/threads/parent/side-thread": side,
+    "GET /v1/threads/side/app-surface": { session: null },
+  });
+  const store = createMemoryWorkspacePaneStore({
+    schemaVersion: 1, activePaneId: "side-pane", dockviewLayout: null,
+    panes: [{ id: "side-pane", kind: "thread", target: { mode: "existing", threadId: "side", sideThreadOf: "parent" } }],
+  });
+  const onLoaded = vi.fn();
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const tree = (parent?: ThreadSummary) => <QueryClientProvider client={queryClient}>
+    <MantineProvider><WorkspaceProvider paneStore={store} onThreadSnapshotLoaded={onLoaded}
+      threadSummariesById={parent ? { parent } : {}}>
+      <ActiveThreadPaneWithActions />
+    </WorkspaceProvider></MantineProvider>
+  </QueryClientProvider>;
+  const view = render(tree());
+
+  expect(await screen.findByRole("heading", { name: "> Parent current title" })).toBeVisible();
+  expect(store.getState().panes[0].title).toBe("> Parent current title");
+  expect(gateway.callsFor("GET", "/v1/threads/parent/side-thread")).toHaveLength(1);
+  expect(gateway.callsFor("POST", "/v1/threads/side/attach")).toHaveLength(0);
+  expect(onLoaded).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole("button", { name: "Thread actions" }));
+  expect(await screen.findByRole("menuitem", { name: "Copy thread ID" })).toBeInTheDocument();
+  expect(screen.queryByRole("menuitem", { name: "Duplicate pane" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("menuitem", { name: "Rename thread" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("menuitem", { name: "Open side chat" })).not.toBeInTheDocument();
+
+  view.rerender(tree({ ...side.parentThread, name: "Renamed parent", preview: "Old preview", rawPayload: {} }));
+  expect(await screen.findByRole("heading", { name: "> Renamed parent" })).toBeVisible();
+  expect(store.getState().panes[0].title).toBe("> Renamed parent");
+});
+
+it("converges two restored side panes when either client receives authoritative closure", async () => {
+  vi.stubGlobal("EventSource", UnopenedEventSource);
+  mockGateway({
+    "GET /v1/threads/parent/side-thread": sideThreadResponse(),
+    "GET /v1/threads/side/app-surface": { session: null },
+  });
+  const stores = ["first", "second"].map((id) => createMemoryWorkspacePaneStore({
+    schemaVersion: 1, activePaneId: `${id}-side`, dockviewLayout: null,
+    panes: [{ id: `${id}-side`, kind: "thread" as const, target: { mode: "existing" as const, threadId: "side", sideThreadOf: "parent" } }],
+  }));
+  stores.forEach((store) => render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MantineProvider><WorkspaceProvider paneStore={store}><ActiveThreadPane /></WorkspaceProvider></MantineProvider>
+    </QueryClientProvider>,
+  ));
+  await waitFor(() => expect(screen.getAllByRole("heading", { name: "> Parent current title" })).toHaveLength(2));
+
+  const closed: EventEnvelope = {
+    id: "closed", seq: 9, kind: "side_thread.closed", threadId: "side",
+    payload: { parentThreadId: "parent", sideThreadId: "side", reason: "closed" },
+    receivedAt: "2026-10-22T00:00:00Z",
+  };
+  act(() => UnopenedEventSource.instances.forEach((stream) => stream.emit(closed)));
+  await waitFor(() => stores.forEach((store) => {
+    expect(store.getState().panes[0]).toMatchObject({ kind: "thread", target: { mode: "draft" } });
+  }));
+});
+
+it("expires a stale restored side pane without closing its parent's newer replacement", async () => {
+  vi.stubGlobal("EventSource", UnopenedEventSource);
+  const replacement = sideThreadResponse();
+  replacement.thread = { ...replacement.thread, id: "new-side" };
+  const gateway = mockGateway({
+    "GET /v1/threads/parent/side-thread": replacement,
+  });
+  const store = createMemoryWorkspacePaneStore({
+    schemaVersion: 1, activePaneId: "stale-side", dockviewLayout: null,
+    panes: [{ id: "stale-side", kind: "thread", target: { mode: "existing", threadId: "old-side", sideThreadOf: "parent" } }],
+  });
+  const onError = vi.fn();
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <MantineProvider><WorkspaceProvider paneStore={store} onSideThreadError={onError} renderThreadComposer={() => <div>Draft after expiry</div>}>
+      <ActiveThreadPane />
+    </WorkspaceProvider></MantineProvider>
+  </QueryClientProvider>);
+
+  await waitFor(() => expect(store.getState().panes[0]).toMatchObject({ kind: "thread", target: { mode: "draft" } }));
+  await waitFor(() => expect(screen.getByText("Draft after expiry")).toBeInTheDocument());
+  expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: "Side chat expired" }));
+  expect(gateway.callsFor("DELETE", "/v1/threads/parent/side-thread")).toHaveLength(0);
+});
+
 it.each([false, true])("closes an unavailable pane and keeps a usable workspace (another pane: %s)", async (hasOtherPane) => {
   vi.stubGlobal("EventSource", UnopenedEventSource);
   mockGateway({
@@ -527,6 +617,12 @@ function ActiveThreadPane() {
   return <ThreadPane isActive pane={workspace.panes[0]} />;
 }
 
+function ActiveThreadPaneWithActions() {
+  const { paneHeaderActionsById, workspace } = useWorkspace();
+  const pane = workspace.panes[0];
+  return <><ThreadPane isActive pane={pane} />{paneHeaderActionsById[pane.id]}</>;
+}
+
 function threadCatalogEvent(method: "thread/archived" | "thread/unarchived", seq: number, threadId = "shared-archive"): EventEnvelope {
   return {
     codexMethod: method,
@@ -539,5 +635,21 @@ function threadCatalogEvent(method: "thread/archived" | "thread/unarchived", seq
     seq,
     threadId: null,
     turnId: null,
+  };
+}
+
+function sideThreadResponse(): SideThreadResponse {
+  const summary = (id: string, name: string, parentThreadId: string | null) => ({
+    id, name, parentThreadId, canAcceptDirectInput: true, projectId: "project", cwd: "/workspace",
+    status: "idle" as const, createdAt: 1, updatedAt: 2, pinned: false, preview: name,
+    latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false,
+    unreadCompletedAgentTurn: false, notificationsEnabled: true,
+  });
+  return {
+    parentThread: summary("parent", "Parent current title", null),
+    thread: summary("side", "Parent stale title", "parent"),
+    liveState: "idle",
+    timeline: { liveState: "idle", pendingApprovalRequests: [], pendingUserInputRequests: [], rows: [], turns: [], viewRevision: 1 },
+    reused: true,
   };
 }

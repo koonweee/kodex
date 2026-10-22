@@ -349,6 +349,26 @@ pub async fn interrupt_current_turn(
     Path(thread_id): Path<String>,
 ) -> ApiResult<Json<ThreadInterruptCurrentResponse>> {
     let client = app_server_api::client(&state.app_server);
+    // Ephemeral side chats cannot use the native goal or history reads used to
+    // refresh an ordinary thread's active turn. Their gateway projection is
+    // authoritative for the lifetime of the app-server subscription.
+    if state.side_threads.is_side_child(&thread_id) {
+        let Some(active_turn_id) = state.thread_views.active_turn_id(&thread_id).await else {
+            return Ok(Json(ThreadInterruptCurrentResponse {
+                disposition: ThreadInterruptCurrentDisposition::Idle,
+                interrupted_turn_id: None,
+                raw_payload: None,
+            }));
+        };
+        let response = client
+            .turn_interrupt(thread_id, active_turn_id.clone())
+            .await?;
+        return Ok(Json(ThreadInterruptCurrentResponse {
+            disposition: ThreadInterruptCurrentDisposition::Interrupted,
+            interrupted_turn_id: Some(active_turn_id),
+            raw_payload: Some(response.payload),
+        }));
+    }
     // Pause first so native goal continuation cannot replace the turn selected for Stop.
     // A goal failure must still allow us to interrupt, then surface the failed pause.
     let pause_result = match pause_active_goal(&client, &thread_id).await {

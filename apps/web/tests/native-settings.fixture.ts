@@ -376,6 +376,9 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
     usageChanged(client?: string) { emit("account.rate_limits_updated", {}, client); },
     mcpOAuthCompleted(name: string, success: boolean, error: string | null, client?: string) { emit("mcp.oauth_login_completed", { name, threadId: null, success, error }, client); },
     subagentsChanged(client?: string, changedThreadId: string | null = null) { emit("thread.subagents_changed", { changedThreadId }, client); },
+    sideThreadClosed(parentThreadId: string, sideThreadId: string, client?: string) {
+      emit("side_thread.closed", { parentThreadId, sideThreadId, reason: "closed" }, client);
+    },
     refreshRequired(client?: string) { emit("thread_view.refresh_required", { threadId: detail.thread.id, reason: "snapshot_required" }, client); },
     revertTimeline(timeline: ThreadViewResponse["timeline"], client?: string) {
       const revision = Math.max(seq, detail.timeline.viewRevision ?? 0) + 1;

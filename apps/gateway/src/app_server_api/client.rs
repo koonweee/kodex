@@ -370,6 +370,11 @@ impl CodexClient {
             .await
     }
 
+    pub async fn thread_unsubscribe(&self, thread_id: String) -> ApiResult<RawAppServerResponse> {
+        self.raw_request("thread/unsubscribe", json!({ "threadId": thread_id }))
+            .await
+    }
+
     pub async fn thread_set_name(
         &self,
         thread_id: String,

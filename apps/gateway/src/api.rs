@@ -151,6 +151,7 @@ pub struct AppState {
     pub skills: crate::skills::SkillCatalogCache,
     pub notifications: crate::notifications::NotificationService,
     pub thread_presence: crate::thread_presence::ThreadPresence,
+    pub side_threads: crate::side_threads::SideThreadRegistry,
     pub thread_views: ThreadViewStore,
     pub thread_input_locks: crate::turn_lifecycle::ThreadInputLocks,
     pub(crate) self_control_spawn_locks: crate::turn_lifecycle::ThreadInputLocks,
@@ -178,6 +179,7 @@ impl AppState {
             skills: crate::skills::SkillCatalogCache::default(),
             notifications,
             thread_presence: crate::thread_presence::ThreadPresence::default(),
+            side_threads: crate::side_threads::SideThreadRegistry::default(),
             thread_views: ThreadViewStore::default(),
             thread_input_locks: crate::turn_lifecycle::ThreadInputLocks::default(),
             self_control_spawn_locks: crate::turn_lifecycle::ThreadInputLocks::default(),
@@ -241,6 +243,9 @@ impl AppState {
         crate::routes::threads::update_thread_notifications,
         crate::routes::threads::resume_thread,
         crate::routes::threads::fork_thread,
+        crate::routes::side_threads::create_or_get_side_thread,
+        crate::routes::side_threads::get_side_thread,
+        crate::routes::side_threads::close_side_thread,
         crate::routes::threads::archive_thread,
         crate::routes::threads::mark_thread_seen,
         crate::routes::threads::get_unread_badge,
@@ -403,6 +408,9 @@ impl AppState {
         ThreadItemSnapshot,
         ThreadLiveState,
         ThreadCommandResponse,
+        crate::side_threads::SideThreadResponse,
+        crate::side_threads::SideThreadCloseResponse,
+        crate::side_threads::SideThreadClosed,
         TimelineUpdateSource,
         TimelineTurnUpsertPayload,
         TimelineItemUpsertPayload,
@@ -617,6 +625,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::projects::router())
         .merge(routes::directories::router())
         .merge(routes::threads::router())
+        .merge(routes::side_threads::router())
         .merge(routes::subagents::router())
         .merge(routes::pins::router())
         .merge(routes::thread_settings::router())

@@ -3,6 +3,8 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 import { flushSync } from "react-dom";
 
 import {
+  closeSideThread,
+  createOrGetSideThread,
   type Approval,
   type CreateTerminalSession,
   type ApprovalResponse,
@@ -15,6 +17,8 @@ import type { MarkdownPreviewRequest } from "../files/types";
 import type { ImageLightboxImage } from "../images/types";
 import { recordLiveEvent } from "../events/liveDiagnostics";
 import { createEventStreamClient } from "../events/stream";
+import { threadViewSummaryToThreadSummary } from "../timeline/threadViewEvents";
+import { threadDisplayTitle } from "../threads/helpers";
 import { layoutMatchesWorkspacePanes } from "./workspaceLayoutCodec";
 import {
   createBrowserWorkspacePaneStore,
@@ -29,7 +33,7 @@ import {
   type WorkspacePanePlacementHintsById,
   type WorkspacePanePlacementIntent,
 } from "./panePlacement";
-import { paneTargetRecord, type WorkspaceModel, type WorkspacePane, type WorkspacePanePatch } from "./paneTypes";
+import { paneTargetRecord, sideThreadParentId, type WorkspaceModel, type WorkspacePane, type WorkspacePanePatch } from "./paneTypes";
 import { usePaneThreadContexts, type PaneThreadContext } from "./usePaneThreadContexts";
 import { useDraftPaneReuse } from "./useDraftPaneReuse";
 import { workspaceSubscribedThreadIds } from "./resourceSubscriptions";
@@ -83,6 +87,7 @@ type WorkspaceProviderProps = {
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   onComposerTextDraftPresenceChange?: (present: boolean) => void;
   onShowMobileSidebar?: () => void;
+  onSideThreadError?: (error: unknown) => void;
   onThreadArchived?: (threadId: string) => void;
   onThreadSnapshotLoadFailed?: (threadId: string) => void;
   onThreadSnapshotLoaded?: (thread: ThreadSummary) => void;
@@ -103,6 +108,7 @@ type WorkspaceProviderProps = {
 type WorkspaceContextValue = {
   approvals: Approval[];
   closePane: (paneId: string, dockviewLayout: unknown, options?: WorkspacePaneCloseOptions) => void;
+  discardExpiredSideThreadPane: (paneId: string) => void;
   duplicatePane: (paneId: string) => void;
   errorMessage: string | null;
   focusPane: (paneId: string | null, options?: WorkspacePaneFocusOptions) => void;
@@ -113,6 +119,7 @@ type WorkspaceContextValue = {
   onImageOpen: (image: ImageLightboxImage) => void;
   onMarkdownOpen: (request: MarkdownPreviewRequest) => void;
   onShowMobileSidebar: () => void;
+  onSideThreadExpired: () => void;
   handleThreadArchived: (threadId: string) => void;
   onThreadSnapshotLoadFailed: (threadId: string) => void;
   onThreadSnapshotLoaded: (thread: ThreadSummary) => void;
@@ -123,6 +130,7 @@ type WorkspaceContextValue = {
   openNewTerminalPane: (options?: WorkspaceTerminalOpenOptions) => Promise<void>;
   openTerminalPane: (options?: WorkspaceTerminalOpenOptions) => Promise<void>;
   openThreadPane: (threadId: string, title?: string | null, options?: WorkspacePaneOpenOptions) => Promise<void>;
+  openSideThreadPane: (parentThreadId: string, options?: WorkspacePaneOpenOptions) => Promise<void>;
   paneHeaderAdornmentsById: Record<string, ReactNode>;
   paneHeaderActionsById: Record<string, ReactNode>;
   panePlacementHintsById: WorkspacePanePlacementHintsById;
@@ -163,6 +171,7 @@ type WorkspaceThreadActions = {
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 const noopThreadSnapshot = () => undefined;
+const noopError = () => undefined;
 const noopPublishThreadPaneTimelineAction = () => undefined;
 const noopSubscribeThreadPaneTimelineAction = () => () => undefined;
 
@@ -179,6 +188,7 @@ export function WorkspaceProvider({
   onMarkdownOpen = () => undefined,
   onComposerTextDraftPresenceChange = () => undefined,
   onShowMobileSidebar = () => undefined,
+  onSideThreadError = noopError,
   onThreadArchived = noopThreadSnapshot,
   onThreadSnapshotLoadFailed = noopThreadSnapshot,
   onThreadSnapshotLoaded = noopThreadSnapshot,
@@ -195,6 +205,8 @@ export function WorkspaceProvider({
   threadSummariesById = {},
   threadActions = {},
 }: WorkspaceProviderProps) {
+  const onSideThreadErrorRef = useRef(onSideThreadError);
+  onSideThreadErrorRef.current = onSideThreadError;
   const instanceStorage = useGatewayInstanceStorage();
   const validateInstance = useGatewayInstanceValidation();
   const handleStreamConnected = useGatewayStreamConnected();
@@ -318,7 +330,9 @@ export function WorkspaceProvider({
     const activePane = workspace.activePaneId
       ? workspace.panes.find((pane) => pane.id === workspace.activePaneId) ?? null
       : null;
-    return activePane?.kind === "thread" && activePane.target.mode === "existing" ? activePane.target.threadId : null;
+    return activePane?.kind === "thread" && activePane.target.mode === "existing" && !activePane.target.sideThreadOf
+      ? activePane.target.threadId
+      : null;
   }, [workspace.activePaneId, workspace.panes]);
 
   useEffect(() => {
@@ -363,6 +377,13 @@ export function WorkspaceProvider({
   }, [onVisibleThreadIdsChange, visibleThreadIds]);
 
   const { includeDebugEvents, includeCommandOutputs, getOptions: getDeliveryOptions } = useThreadDeliveryPreferences();
+  const closeSideThreadViews = useCallback((childThreadId: string) => {
+    setWorkspace((current) => removeWorkspacePanes(current, (pane) => {
+      const target = paneTargetRecord(pane);
+      return typeof target.threadId === "string" && target.threadId === childThreadId &&
+        (pane.kind === "thread" || pane.kind === "appSurface");
+    }));
+  }, []);
   const deliveryStreamRef = useRef<ReturnType<typeof createEventStreamClient> | null>(null);
   const subscribedThreadIds = useMemo(() => workspaceSubscribedThreadIds(workspace.panes), [workspace.panes]);
   const subscribedThreadIdsKey = subscribedThreadIds.join("\n");
@@ -383,6 +404,8 @@ export function WorkspaceProvider({
       onEvent: (event) => {
         recordLiveEvent("global", event);
         liveEventCursorRef.current = Math.max(liveEventCursorRef.current ?? 0, event.seq);
+        const closedSideThreadId = sideThreadClosedId(event);
+        if (closedSideThreadId) closeSideThreadViews(closedSideThreadId);
         onLiveEventRef.current?.(event);
         for (const handler of liveEventHandlersRef.current) {
           handler(event);
@@ -393,7 +416,7 @@ export function WorkspaceProvider({
     deliveryStreamRef.current = client;
     client.connect();
     return () => { deliveryStreamRef.current = null; client.close(); };
-  }, [getDeliveryOptions, handleStreamConnected, publishThreadPaneTimelineAction, subscribedThreadIdsKey, validateInstance]);
+  }, [closeSideThreadViews, getDeliveryOptions, handleStreamConnected, publishThreadPaneTimelineAction, subscribedThreadIdsKey, validateInstance]);
 
   useEffect(() => {
     deliveryStreamRef.current?.updateDeliveryOptions({ includeDebugEvents, includeCommandOutputs });
@@ -529,12 +552,45 @@ export function WorkspaceProvider({
   }, [pulsePane]);
 
   const closePane = useCallback((paneId: string, dockviewLayout: unknown, options: WorkspacePaneCloseOptions = {}) => {
+    const closingPane = workspaceRef.current.panes.find((pane) => pane.id === paneId);
+    const sideParentId = closingPane ? sideThreadParentId(closingPane) : null;
+    const sideChildId = closingPane?.kind === "thread" && closingPane.target.mode === "existing" && sideParentId
+      ? closingPane.target.threadId
+      : null;
     setWorkspace((current) => removeWorkspacePanes(
       current,
-      (pane) => pane.id === paneId,
+      (pane) => {
+        if (!sideChildId) return pane.id === paneId;
+        const target = paneTargetRecord(pane);
+        return typeof target.threadId === "string" && target.threadId === sideChildId &&
+          (pane.kind === "thread" || pane.kind === "appSurface");
+      },
       { dockviewLayout, nextActivePaneId: options.nextActivePaneId },
     ));
+    if (sideParentId) {
+      void closeSideThread(sideParentId).catch((error: unknown) => {
+        console.error("Failed to clean up side chat", error);
+        onSideThreadErrorRef.current(error);
+      });
+    }
   }, []);
+  const onSideThreadExpired = useCallback(
+    () => onSideThreadErrorRef.current(new Error("Side chat expired")),
+    [],
+  );
+  const discardExpiredSideThreadPane = useCallback((paneId: string) => {
+    const pane = workspaceRef.current.panes.find((candidate) => candidate.id === paneId);
+    const childThreadId = pane?.kind === "thread" && pane.target.mode === "existing" && pane.target.sideThreadOf
+      ? pane.target.threadId
+      : null;
+    setWorkspace((current) => removeWorkspacePanes(current, (candidate) => {
+      if (!childThreadId) return candidate.id === paneId;
+      const target = paneTargetRecord(candidate);
+      return typeof target.threadId === "string" && target.threadId === childThreadId &&
+        (candidate.kind === "thread" || candidate.kind === "appSurface");
+    }));
+    onSideThreadExpired();
+  }, [onSideThreadExpired]);
 
   const updatePane = useCallback(async (paneId: string, request: WorkspacePanePatch) => {
     setWorkspace((current) => {
@@ -664,6 +720,30 @@ export function WorkspaceProvider({
       focusPaneOrAppend(pane, options.duplicate ? "duplicate" : "thread", options);
     },
     [focusPaneOrAppend],
+  );
+
+  const openSideThreadPane = useCallback(
+    async (parentThreadId: string, options: WorkspacePaneOpenOptions = {}) => {
+      const existing = workspaceRef.current.panes.find(
+        (pane) => sideThreadParentId(pane) === parentThreadId,
+      );
+      if (existing) {
+        focusPane(existing.id, { pulse: true });
+        return;
+      }
+      const response = await createOrGetSideThread(parentThreadId);
+      const parentTitle = threadDisplayTitle(threadViewSummaryToThreadSummary(response.parentThread));
+      const pane: WorkspacePane = {
+        id: createPaneId("thread"),
+        kind: "thread",
+        target: { mode: "existing", threadId: response.thread.id, sideThreadOf: parentThreadId },
+        title: `> ${parentTitle}`,
+      };
+      focusPaneOrAppend(pane, "thread", options, (panes) =>
+        panes.find((candidate) => sideThreadParentId(candidate) === parentThreadId) ?? null,
+      );
+    },
+    [focusPane, focusPaneOrAppend],
   );
 
   const openDraftThreadPane = useCallback(
@@ -796,6 +876,7 @@ export function WorkspaceProvider({
     () => ({
       approvals,
       closePane,
+      discardExpiredSideThreadPane,
       duplicatePane,
       errorMessage,
       focusPane,
@@ -806,6 +887,7 @@ export function WorkspaceProvider({
       onImageOpen,
       onMarkdownOpen,
       onShowMobileSidebar,
+      onSideThreadExpired,
       handleThreadArchived,
       onThreadSnapshotLoadFailed,
       onThreadSnapshotLoaded,
@@ -816,6 +898,7 @@ export function WorkspaceProvider({
       openNewTerminalPane,
       openTerminalPane,
       openThreadPane,
+      openSideThreadPane,
       paneHeaderAdornmentsById,
       paneHeaderActionsById,
       panePlacementHintsById,
@@ -853,6 +936,7 @@ export function WorkspaceProvider({
     [
       approvals,
       closePane,
+      discardExpiredSideThreadPane,
       duplicatePane,
       errorMessage,
       focusPane,
@@ -862,6 +946,7 @@ export function WorkspaceProvider({
       onImageOpen,
       onMarkdownOpen,
       onShowMobileSidebar,
+      onSideThreadExpired,
       handleThreadArchived,
       onThreadSnapshotLoadFailed,
       onThreadSnapshotLoaded,
@@ -872,6 +957,7 @@ export function WorkspaceProvider({
       openNewTerminalPane,
       openTerminalPane,
       openThreadPane,
+      openSideThreadPane,
       paneHeaderAdornmentsById,
       paneHeaderActionsById,
       panePlacementHintsById,
@@ -937,7 +1023,7 @@ function visibleThreadIdsForPaneIds(panes: WorkspacePane[], paneIds: string[]): 
       continue;
     }
     const target = paneTargetRecord(pane);
-    if (pane.kind === "thread" && target.mode === "existing" && typeof target.threadId === "string") {
+    if (pane.kind === "thread" && target.mode === "existing" && typeof target.threadId === "string" && typeof target.sideThreadOf !== "string") {
       threadIds.add(target.threadId);
     }
   }
@@ -981,6 +1067,14 @@ function appSurfacePresentationRequestFromEvent(event: EventEnvelope): {
     threadId,
     title: typeof payload.title === "string" && payload.title.trim().length > 0 ? payload.title : null,
   };
+}
+
+function sideThreadClosedId(event: EventEnvelope): string | null {
+  if (event.kind !== "side_thread.closed" || !event.payload || typeof event.payload !== "object") {
+    return null;
+  }
+  const value = (event.payload as { sideThreadId?: unknown }).sideThreadId;
+  return typeof value === "string" ? value : null;
 }
 
 function stableJsonKey(value: unknown): string {

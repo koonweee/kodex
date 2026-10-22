@@ -1,5 +1,5 @@
 import { Menu, Switch } from "@mantine/core";
-import { Archive, Copy, CopyPlus, MoreHorizontal, Pencil, Pin, PinOff } from "lucide-react";
+import { Archive, Copy, CopyPlus, MessageSquareMore, MoreHorizontal, Pencil, Pin, PinOff } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 import type { ThreadSummary } from "../../api/client";
 import { AdaptiveIconButton } from "../../ui/AdaptiveIconButton";
@@ -7,6 +7,8 @@ import { copyTextToClipboard } from "../../shared/clipboard";
 
 export function ThreadActionsMenu({
   onDuplicatePane,
+  onOpenSideThread,
+  openSideThreadPending,
   onArchiveThread,
   onPinThread,
   onRenameThread,
@@ -15,9 +17,12 @@ export function ThreadActionsMenu({
   onUnpinThread,
   thread,
   threadId, pinPending,
+  sideThread,
 }: {
   pinPending?: boolean;
   onDuplicatePane: () => void;
+  onOpenSideThread?: () => void;
+  openSideThreadPending?: boolean;
   onArchiveThread?: (threadId: string) => void;
   onPinThread?: (threadId: string) => void;
   onRenameThread: () => void;
@@ -26,6 +31,7 @@ export function ThreadActionsMenu({
   onUnpinThread?: (threadId: string) => void;
   thread: ThreadSummary | null;
   threadId: string;
+  sideThread?: boolean;
 }) {
   const notificationsEnabled = thread?.notificationsEnabled !== false;
   return (
@@ -36,10 +42,17 @@ export function ThreadActionsMenu({
         </AdaptiveIconButton>
       </Menu.Target>
       <Menu.Dropdown aria-label="Thread actions">
-        <Menu.Item leftSection={<CopyPlus size={14} />} onClick={onDuplicatePane}>
-          Duplicate pane
-        </Menu.Item>
-        {thread ? (
+        {!sideThread ? (
+          <Menu.Item leftSection={<CopyPlus size={14} />} onClick={onDuplicatePane}>
+            Duplicate pane
+          </Menu.Item>
+        ) : null}
+        {onOpenSideThread ? (
+          <Menu.Item disabled={openSideThreadPending} leftSection={<MessageSquareMore size={14} />} onClick={onOpenSideThread}>
+            Open side chat
+          </Menu.Item>
+        ) : null}
+        {thread && !sideThread ? (
           <>
             <Menu.Item
               disabled={pinPending}

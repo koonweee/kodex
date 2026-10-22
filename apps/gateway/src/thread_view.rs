@@ -45,6 +45,30 @@ pub struct ThreadViewStore {
 }
 
 impl ThreadViewStore {
+    pub async fn initialize_empty(&self, thread_id: &str, revision: i64) -> ThreadTimelineSnapshot {
+        let mut sessions = self.sessions.write().await;
+        let view = ThreadView {
+            thread_id: thread_id.to_string(),
+            revision,
+            ..ThreadView::default()
+        };
+        let snapshot = view.to_snapshot();
+        sessions.insert(thread_id.to_string(), view);
+        snapshot
+    }
+
+    pub async fn snapshot(&self, thread_id: &str) -> Option<ThreadTimelineSnapshot> {
+        self.sessions
+            .read()
+            .await
+            .get(thread_id)
+            .map(ThreadView::to_snapshot)
+    }
+
+    pub async fn remove(&self, thread_id: &str) {
+        self.sessions.write().await.remove(thread_id);
+    }
+
     // Only an unconfirmed live completion is retained. It proves that a
     // temporarily lagging native header page cannot restore an older head.
     pub async fn observe_completion(&self, thread_id: &str, turn_id: &str) {

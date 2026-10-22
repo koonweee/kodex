@@ -1512,6 +1512,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/threads/{parentThreadId}/side-thread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_side_thread"];
+        put?: never;
+        post: operations["create_or_get_side_thread"];
+        delete: operations["close_side_thread"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/threads/{threadId}": {
         parameters: {
             query?: never;
@@ -3297,6 +3313,22 @@ export interface components {
             /** Format: int32 */
             remainingSelfControlDepth: number;
             threadId: string;
+        };
+        SideThreadCloseResponse: {
+            closed: boolean;
+            sideThreadId: string | null;
+        };
+        SideThreadClosed: {
+            parentThreadId: string;
+            reason: string;
+            sideThreadId: string;
+        };
+        SideThreadResponse: {
+            liveState: components["schemas"]["ThreadLiveState"];
+            parentThread: components["schemas"]["ThreadViewThreadSummary"];
+            reused: boolean;
+            thread: components["schemas"]["ThreadViewThreadSummary"];
+            timeline: components["schemas"]["ThreadTimelineSnapshot"];
         };
         SidebarThreadListResponse: {
             backwardsCursor?: string | null;
@@ -6481,6 +6513,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UnreadBadgeResponse"];
+                };
+            };
+        };
+    };
+    get_side_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                parentThreadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SideThreadResponse"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    create_or_get_side_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                parentThreadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SideThreadResponse"];
+                };
+            };
+        };
+    };
+    close_side_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                parentThreadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SideThreadCloseResponse"];
                 };
             };
         };

@@ -64,6 +64,9 @@ pub mod projects;
 #[cfg(test)]
 mod removed_previews_tests;
 pub mod self_control;
+#[cfg(test)]
+mod side_thread_tests;
+pub mod side_threads;
 pub mod skills;
 pub mod subagents;
 pub mod terminals;

@@ -40,6 +40,8 @@ mod read_markers;
 mod revert;
 #[path = "native_app_server/settings.rs"]
 mod settings;
+#[path = "native_app_server/side_thread.rs"]
+mod side_thread;
 #[path = "native_app_server/skills.rs"]
 mod skills;
 #[path = "native_app_server/subagents.rs"]

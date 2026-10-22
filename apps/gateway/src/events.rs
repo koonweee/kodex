@@ -200,6 +200,7 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
                 tracing::warn!(%error, "failed to publish queue transfer continuity loss");
             }
             state.thread_views.clear_completion_witnesses().await;
+            crate::side_threads::expire_all(state).await?;
             crate::approvals::runtime_unavailable(state).await?;
         }
         InboundMessage::Notification { method, params } => {
@@ -224,6 +225,29 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
             state
                 .queue_steer_guards
                 .observe_notification(&method, &params);
+            let notification_thread_id = params
+                .get("threadId")
+                .or_else(|| params.get("thread").and_then(|thread| thread.get("id")))
+                .and_then(Value::as_str);
+            if method == "thread/closed"
+                && notification_thread_id
+                    .is_some_and(|thread_id| state.side_threads.is_side_child(thread_id))
+            {
+                crate::side_threads::close_from_native(
+                    state,
+                    notification_thread_id.expect("checked above"),
+                )
+                .await?;
+                return Ok(());
+            }
+            if let Some(thread_id) = notification_thread_id
+                .filter(|thread_id| state.side_threads.is_closed_child(thread_id))
+            {
+                if method == "thread/closed" {
+                    state.side_threads.forget_closed_child(thread_id);
+                }
+                return Ok(());
+            }
             if let Err(error) =
                 crate::queue_transfer::observe_notification(state, &method, &params).await
             {
@@ -250,19 +274,27 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
                 }
             }
             let metadata = EventMetadata::from_payload(&params);
+            let side_thread = metadata
+                .thread_id
+                .as_deref()
+                .is_some_and(|thread_id| state.side_threads.is_side_child(thread_id))
+                || params.pointer("/thread/ephemeral").and_then(Value::as_bool) == Some(true);
             if matches!(
                 method.as_str(),
                 "thread/started" | "thread/archived" | "thread/unarchived" | "thread/deleted"
-            ) {
+            ) && !side_thread
+            {
                 state.store.bump_thread_read_membership_revision().await?;
             }
             if method == "thread/reverted" {
                 if let Some(thread_id) = metadata.thread_id.as_deref() {
-                    let read = state
-                        .store
-                        .invalidate_thread_completion_head(thread_id)
-                        .await?;
-                    crate::routes::threads::broadcast_thread_read_update(state, read).await?;
+                    if !side_thread {
+                        let read = state
+                            .store
+                            .invalidate_thread_completion_head(thread_id)
+                            .await?;
+                        crate::routes::threads::broadcast_thread_read_update(state, read).await?;
+                    }
                     let patch = state
                         .thread_views
                         .reset_history(thread_id, async {
@@ -322,22 +354,26 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
             for normalized in normalized.events {
                 send_normalized_live_event(state, normalized).await;
             }
-            if let Some(event) =
-                crate::thread_summary::native_change_event(state, &method, &params).await?
-            {
-                let _ = state.events.send(event);
-                emitted = true;
+            if !side_thread {
+                if let Some(event) =
+                    crate::thread_summary::native_change_event(state, &method, &params).await?
+                {
+                    let _ = state.events.send(event);
+                    emitted = true;
+                }
             }
             // Canonical state is already published before optional widget work
             // enters the bounded importer. This path performs no native reads.
             if let Some(job) = pending_widget {
                 app_surfaces::enqueue_mcp_app_surface_import(state, job).await;
             }
-            if let Some(event) =
-                crate::subagents::native_change_event(state, &method, &params).await?
-            {
-                let _ = state.events.send(event);
-                emitted = true;
+            if !side_thread {
+                if let Some(event) =
+                    crate::subagents::native_change_event(state, &method, &params).await?
+                {
+                    let _ = state.events.send(event);
+                    emitted = true;
+                }
             }
             queue::observe_notification(state, &method, &params).await;
             if method == "skills/changed" {
@@ -367,6 +403,24 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
             params,
         } => {
             let metadata = EventMetadata::from_payload(&params);
+            if metadata
+                .thread_id
+                .as_deref()
+                .is_some_and(|thread_id| state.side_threads.is_closed_child(thread_id))
+            {
+                state
+                    .app_server
+                    .respond_error(
+                        &request_id,
+                        crate::app_server::JsonRpcError {
+                            code: -32600,
+                            message: "side chat is closed".into(),
+                            data: None,
+                        },
+                    )
+                    .await?;
+                return Ok(());
+            }
             if matches!(
                 method.as_str(),
                 "thread/started" | "thread/archived" | "thread/unarchived" | "thread/deleted"
@@ -932,6 +986,7 @@ async fn timeline_turn_upsert_event(
         return Ok(NormalizedTimelineEvents::default());
     };
     let mut events = Vec::new();
+    let side_thread = state.side_threads.is_side_child(&thread_id);
     let terminal = is_terminal_turn_status(&turn.status);
     let (newly_terminal, patch) =
         thread_view::record_turn_status(&state.thread_views, &thread_id, &turn, async {
@@ -946,7 +1001,7 @@ async fn timeline_turn_upsert_event(
         })
         .await?;
     events.push(thread_view_patch_payload_event(state, patch).await?);
-    if terminal {
+    if terminal && !side_thread {
         if let Some(event) =
             append_thread_read_projection_event(state, &thread_id, &turn.id).await?
         {
@@ -960,28 +1015,30 @@ async fn timeline_turn_upsert_event(
                 .seq)
         })
         .await?;
-        let planned = state
-            .store
-            .append_event(NewEvent {
-                project_id: metadata.project_id.clone(),
-                thread_id: Some(thread_id.clone()),
-                turn_id: Some(turn.id.clone()),
-                item_id: None,
-                kind: "notification.planned".to_string(),
-                codex_method: None,
-                payload: crate::notifications::notification_planning_event_payload(&thread_id),
-            })
-            .await?;
-        events.push(planned);
-        state
-            .notifications
-            .enqueue_unread_agent_message_recheck(
-                state,
-                thread_id.clone(),
-                Some(turn.id.clone()),
-                Duration::from_millis(state.config.notifications.recheck_delay_ms),
-            )
-            .await?;
+        if !side_thread {
+            let planned = state
+                .store
+                .append_event(NewEvent {
+                    project_id: metadata.project_id.clone(),
+                    thread_id: Some(thread_id.clone()),
+                    turn_id: Some(turn.id.clone()),
+                    item_id: None,
+                    kind: "notification.planned".to_string(),
+                    codex_method: None,
+                    payload: crate::notifications::notification_planning_event_payload(&thread_id),
+                })
+                .await?;
+            events.push(planned);
+            state
+                .notifications
+                .enqueue_unread_agent_message_recheck(
+                    state,
+                    thread_id.clone(),
+                    Some(turn.id.clone()),
+                    Duration::from_millis(state.config.notifications.recheck_delay_ms),
+                )
+                .await?;
+        }
     }
     Ok(NormalizedTimelineEvents { events })
 }

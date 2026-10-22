@@ -16,7 +16,7 @@ import { AlertCircle, Sparkles } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import type { EventEnvelope, ThreadRead, ThreadSummary } from "../../api/client";
-import { attachThread, GatewayRequestError, getThreadAppSurface, getThreadTimelinePage } from "../../api/client";
+import { attachThread, GatewayRequestError, getSideThread, getThreadAppSurface, getThreadTimelinePage } from "../../api/client";
 import { projectEventInvalidatesThread } from "../../projects/cache";
 import { queryKeys } from "../../api/queryKeys";
 import { recordReducerBatch } from "../../events/liveDiagnostics";
@@ -75,7 +75,7 @@ export function ThreadPane({ isActive, pane }: WorkspacePaneComponentProps) {
         isActive={paneIsActive}
       />
     ) : (
-      <ExistingThreadPane isActive={paneIsActive} pane={pane} paneTitle={pane.title ?? null} threadId={target.threadId} />
+      <ExistingThreadPane isActive={paneIsActive} pane={pane} paneTitle={pane.title ?? null} sideThreadOf={typeof target.sideThreadOf === "string" ? target.sideThreadOf : null} threadId={target.threadId} />
     );
   return <>{renderThreadPane?.(pane, fallback) ?? fallback}</>;
 }
@@ -84,11 +84,13 @@ function ExistingThreadPane({
   isActive,
   pane,
   paneTitle,
+  sideThreadOf,
   threadId,
 }: {
   isActive: boolean;
   pane: WorkspacePaneComponentProps["pane"];
   paneTitle: string | null;
+  sideThreadOf: string | null;
   threadId: string;
 }) {
   const { getOptions: getDeliveryOptions } = useThreadDeliveryPreferences();
@@ -105,6 +107,8 @@ function ExistingThreadPane({
     onThreadSnapshotLoaded,
     openAppSurfacePane,
     openThreadPane,
+    openSideThreadPane,
+    discardExpiredSideThreadPane,
     renderThreadComposer,
     renderThreadPaneAside,
     renderThreadPaneHeaderActions,
@@ -121,12 +125,15 @@ function ExistingThreadPane({
   } = useWorkspace();
   const queryClient = useQueryClient();
   const seededThread = threadSummariesById[threadId] ?? null;
+  const isSideThread = sideThreadOf !== null;
+  const seededParentThread = sideThreadOf ? threadSummariesById[sideThreadOf] ?? null : null;
   const [entry, setEntry] = useState<TimelineEntry>(idleTimelineEntry);
   const [paneErrorMessage, setPaneErrorMessage] = useState<string | null>(null);
   const [scrollParentElement, setScrollParentElement] = useState<HTMLDivElement | null>(null);
   const [timelineOverflowAbove, setTimelineOverflowAbove] = useState(false);
   const [timelineOverflowBelow, setTimelineOverflowBelow] = useState(false);
   const [thread, setThread] = useState<ThreadSummary | null>(seededThread);
+  const [sideParentThread, setSideParentThread] = useState<ThreadSummary | null>(seededParentThread);
   const [timeline, setTimeline] = useState<TimelineState>(() => createTimelineState());
   const snapshotControllerRef = useRef<AbortController | null>(null);
   const historyControllerRef = useRef<AbortController | null>(null);
@@ -141,6 +148,7 @@ function ExistingThreadPane({
   const [renameValue, setRenameValue] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
   const [renamePending, setRenamePending] = useState(false);
+  const [sideThreadPending, setSideThreadPending] = useState(false);
   const appSurfaceQuery = useQuery({
     queryKey: queryKeys.appSurface(threadId),
     queryFn: ({ signal }) => getThreadAppSurface(threadId, signal),
@@ -179,7 +187,20 @@ function ExistingThreadPane({
         : { phase: "loadingSnapshot", threadId },
     );
     try {
-      const snapshot = await attachThread(threadId, controller.signal, getDeliveryOptions());
+      const snapshot = isSideThread
+        ? await getSideThread(sideThreadOf!, controller.signal).then((response) => {
+            if (response.thread.id !== threadId) {
+              throw new GatewayRequestError("Side chat expired", 404, "side_chat_expired");
+            }
+            setSideParentThread(threadViewSummaryToThreadSummary(response.parentThread));
+            return {
+              thread: response.thread,
+              liveState: response.liveState,
+              timeline: response.timeline,
+              historyPage: null,
+            };
+          })
+        : await attachThread(threadId, controller.signal, getDeliveryOptions());
       controller.signal.throwIfAborted();
       if (requestId !== refreshRequestIdRef.current || requestThreadId !== latestThreadIdRef.current) {
         return;
@@ -190,7 +211,7 @@ function ExistingThreadPane({
       setTimeline((current) => applyTimelineSnapshot(current, snapshot));
       const mergedThread = mergePaneThreadSummary(latestPaneThreadRef.current, nextThread);
       setThread((current) => mergePaneThreadSummary(current, nextThread));
-      onThreadSnapshotLoaded(mergedThread);
+      if (!isSideThread) onThreadSnapshotLoaded(mergedThread);
       setEntry({ phase: "streamingLive", threadId });
       setPaneErrorMessage(null);
     } catch (error) {
@@ -201,9 +222,13 @@ function ExistingThreadPane({
         handleThreadArchived(threadId);
         return;
       }
+      if (isSideThread && error instanceof GatewayRequestError && error.status === 404) {
+        discardExpiredSideThreadPane(pane.id);
+        return;
+      }
       setEntry({ phase: "error", threadId });
       setPaneErrorMessage(errorMessageFrom(error));
-      onThreadSnapshotLoadFailed(threadId);
+      if (!isSideThread) onThreadSnapshotLoadFailed(threadId);
     } finally {
       if (refreshInFlightThreadIdRef.current !== requestThreadId || requestId !== refreshRequestIdRef.current) {
         return;
@@ -215,12 +240,12 @@ function ExistingThreadPane({
         void refreshSnapshot();
       }
     }
-  }, [getDeliveryOptions, handleThreadArchived, onThreadSnapshotLoadFailed, onThreadSnapshotLoaded, threadId]);
+  }, [discardExpiredSideThreadPane, getDeliveryOptions, handleThreadArchived, isSideThread, onThreadSnapshotLoadFailed, onThreadSnapshotLoaded, pane.id, sideThreadOf, threadId]);
 
   useThreadReadState({
     thread,
     turns: timeline.turns,
-    isVisible: visiblePaneIds.includes(pane.id),
+    isVisible: !isSideThread && visiblePaneIds.includes(pane.id),
     onRead: (read) => {
       void refreshUnreadBadge(queryClient);
       if (read.threadId !== latestThreadIdRef.current) return;
@@ -228,7 +253,7 @@ function ExistingThreadPane({
       if (!current) return;
       const next = mergeThreadReadState(current, read);
       setThread((current) => current ? mergeThreadReadState(current, read) : current);
-      onThreadSnapshotLoaded(next);
+      if (!isSideThread) onThreadSnapshotLoaded(next);
     },
     onRefresh: () => { void refreshSnapshot(true); },
     onError: (error) => setPaneErrorMessage(errorMessageFrom(error)),
@@ -417,7 +442,12 @@ function ExistingThreadPane({
   const isReady = entry.phase === "streamingLive" || entry.phase === "refreshingSnapshot";
   const isInitialSnapshotLoading = (entry.phase === "loadingSnapshot" || entry.phase === "refreshingSnapshot") && !thread;
   const isUnavailable = entry.phase === "error" && !thread;
-  const nativeTitle = thread ? threadDisplayTitle(thread) : null;
+  const parentTitle = sideThreadOf && threadSummariesById[sideThreadOf]
+    ? threadDisplayTitle(threadSummariesById[sideThreadOf])
+    : sideParentThread
+      ? threadDisplayTitle(sideParentThread)
+      : null;
+  const nativeTitle = isSideThread ? `> ${parentTitle ?? "Side chat"}` : thread ? threadDisplayTitle(thread) : null;
   useThreadPaneTitle(pane.id, pane.title, nativeTitle, updatePane);
   const title = isUnavailable ? "Thread not found or unavailable" : nativeTitle ?? paneTitle ?? threadId;
   const threadChromeState = thread ? { isActive, thread, threadId } : null;
@@ -463,6 +493,14 @@ function ExistingThreadPane({
                     placement: { sourcePaneId: pane.id },
                   })
                 }
+                onOpenSideThread={!isSideThread && thread ? () => {
+                  if (sideThreadPending) return;
+                  setSideThreadPending(true);
+                  void openSideThreadPane(threadId, { placement: { sourcePaneId: pane.id } })
+                    .catch((error: unknown) => setPaneErrorMessage(errorMessageFrom(error)))
+                    .finally(() => setSideThreadPending(false));
+                } : undefined}
+                openSideThreadPending={sideThreadPending}
                 onArchiveThread={threadActions.onArchiveThread}
                 onPinThread={threadActions.onPinThread}
                 onRenameThread={() => setRenameModalOpen(true)}
@@ -471,6 +509,7 @@ function ExistingThreadPane({
                 onUnpinThread={threadActions.onUnpinThread}
                 thread={thread}
                 threadId={threadId}
+                sideThread={isSideThread}
               />
             </>
           ) : null}

@@ -1069,6 +1069,7 @@ function KodexShell({
         onLiveEvent={handleWorkspaceLiveEvent}
         onMarkdownOpen={handleOpenMarkdownPreview}
         onShowMobileSidebar={handleShowMobileSidebar}
+        onSideThreadError={reportError}
         onThreadArchived={handleThreadArchived}
         onThreadSnapshotLoadFailed={handleThreadPaneSnapshotLoadFailed}
         onThreadSnapshotLoaded={handleThreadPaneSnapshotLoaded}
