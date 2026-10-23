@@ -1,6 +1,7 @@
 import { useThreadDeliveryPreferences } from "../../timeline/ThreadDeliveryPreferences";
 import { PaneLayout } from "../../shared/PaneLayout";
 import { threadIndicatorState } from "../../threads/ThreadStatusIndicator";
+import { GeneratedAppInteractionProvider } from "../../appSurfaces/GeneratedAppCard";
 import { AsyncQuestionReplyProvider } from "../../composer/AsyncQuestionReplyProvider";
 import { refreshUnreadBadge } from "../../notifications/unreadBadge";
 import { useThreadReadState } from "../../threads/useThreadReadState";
@@ -452,7 +453,7 @@ function ExistingThreadPane({
   const title = isUnavailable ? "Thread not found or unavailable" : nativeTitle ?? paneTitle ?? threadId;
   const threadChromeState = thread ? { isActive, thread, threadId } : null;
   const paneAside = threadChromeState ? renderThreadPaneAside?.(pane, threadChromeState) : null;
-  const appSurfaceSession = appSurfaceQuery.data ?? null;
+  const appSurfaceSession = appSurfaceQuery.data?.session ?? null;
   const isSnapshotSyncing = entry.phase === "loadingSnapshot" || entry.phase === "refreshingSnapshot";
   const paneHeaderAdornment = useMemo(
     () =>
@@ -642,7 +643,7 @@ function ExistingThreadPane({
                 <TimelineLoadingSkeleton />
               ) : (
                 <Suspense fallback={<TimelineLoadingSkeleton />}>
-                  <AsyncQuestionReplyProvider key={threadId} threadId={threadId} enabled={isReady && thread?.canAcceptDirectInput !== false} items={timeline.items}>
+                  <GeneratedAppInteractionProvider enabled={isReady && thread?.canAcceptDirectInput !== false}><AsyncQuestionReplyProvider key={threadId} threadId={threadId} enabled={isReady && thread?.canAcceptDirectInput !== false} items={timeline.items}>
                     <TimelineView
                       approvals={threadApprovals}
                       imagePreviewUrlsByPath={imagePreviewUrlsByPath}
@@ -658,7 +659,7 @@ function ExistingThreadPane({
                       threadId={threadId}
                       timeline={timeline}
                     />
-                  </AsyncQuestionReplyProvider>
+                  </AsyncQuestionReplyProvider></GeneratedAppInteractionProvider>
                 </Suspense>
               )}
             </div>

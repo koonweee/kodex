@@ -33,7 +33,6 @@ use crate::{
             session_dto as app_surface_session_dto, AppSurfacePresentationAction,
             AppSurfacePresentationRequestDto, AppSurfacePresentationResponse,
             AppSurfaceSessionReadResponse, AppSurfaceSessionResponse, APP_SURFACE_ARCHIVED_EVENT,
-            APP_SURFACE_UPSERTED_EVENT,
         },
         approvals::{ApprovalListQuery, ApprovalListResponse},
         automations::{
@@ -483,13 +482,10 @@ pub async fn list_self_control_queued_inputs(
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SelfControlGeneratedAppSurfaceUpsertRequest {
+    pub origin: crate::store::GeneratedAppOrigin,
     pub title: String,
     pub html: String,
     pub fallback_content: String,
-    #[serde(default)]
-    pub presentation: Option<AppSurfacePresentationAction>,
-    #[serde(default)]
-    pub display_modes: Vec<String>,
     #[serde(default)]
     pub csp: AppSurfaceCsp,
     #[serde(default)]
@@ -531,7 +527,7 @@ pub async fn get_self_control_app_surface(
 #[utoipa::path(
     post,
     path = "/v1/self-control/threads/{threadId}/app-surface",
-    summary = "Open or replace a generated app surface through self-control",
+    summary = "Create an independent inline generated app through self-control",
     description = "Agent-facing generated app-surface endpoint. The HTML is stored as an MCP App-compatible resource and rendered in the shared app-surface iframe runtime. Grants declare which bridge capabilities the generated surface may use.",
     request_body = SelfControlGeneratedAppSurfaceUpsertRequest,
     responses((status = 200, body = AppSurfaceSessionResponse))
@@ -552,47 +548,15 @@ pub async fn upsert_self_control_generated_app_surface(
     }
     let grants = validate_app_surface_grants(AppSurfaceProvider::Generated, request.grants)?;
     require_control_thread(&state, &thread_id).await?;
-    let display_modes = if request.display_modes.is_empty() {
-        vec!["inline".to_string(), "fullscreen".to_string()]
-    } else {
-        request.display_modes
-    };
-    let mut artifact_mutation = state.app_surface_imports.lock_mutation(&thread_id).await;
-    let session = state
-        .store
-        .upsert_app_surface_session(AppSurfaceSessionUpsert {
-            thread_id: thread_id.clone(),
-            provider: AppSurfaceProvider::Generated,
-            title,
-            resource_uri: None,
-            resource_mime_type: MCP_APP_MIME_TYPE.to_string(),
-            html,
-            fallback_content,
-            display_modes,
-            csp: request.csp,
-            permissions: request.permissions,
-            grants,
-            provenance: json!({
-                "source": request.source.to_value(),
-                "generated": request.provenance
-            }),
-        })
-        .await?;
-    artifact_mutation.committed();
-    drop(artifact_mutation);
-    broadcast_app_surface_event(&state, APP_SURFACE_UPSERTED_EVENT, &session).await?;
-    if let Some(action) = request.presentation {
-        broadcast_app_surface_presentation_request(
-            &state,
-            app_surface_presentation_request(
-                action,
-                &thread_id,
-                Some(&session.id),
-                Some(&session.title),
-            ),
-        )
-        .await?;
-    }
+    let display_modes = vec!["inline".to_string()];
+    let (session,patch) = state.thread_views.create_generated_app(&state.store, AppSurfaceSessionUpsert {
+        thread_id: thread_id.clone(), provider: AppSurfaceProvider::Generated, title,
+        resource_uri: None, resource_mime_type: MCP_APP_MIME_TYPE.into(), html, fallback_content,
+        display_modes, csp:request.csp,permissions:request.permissions,grants,
+        provenance:json!({"source":request.source.to_value(),"generated":request.provenance}),
+    },&request.origin).await?;
+    let event = crate::events::thread_view_patch_payload_event(&state, patch).await?;
+    let _ = state.events.send(event);
     audit_self_control(
         &state,
         None,
@@ -603,7 +567,6 @@ pub async fn upsert_self_control_generated_app_surface(
             "sessionId": session.id,
             "revision": session.revision,
             "provider": "generated",
-            "presentation": request.presentation.map(|action| action.as_str())
         }),
     )
     .await?;
@@ -632,6 +595,11 @@ pub async fn request_self_control_app_surface_presentation(
         .await?
         .filter(|session| session.status != AppSurfaceSessionStatus::Archived)
         .ok_or_else(|| ApiError::NotFound(format!("app surface for thread {thread_id}")))?;
+    if session.provider != AppSurfaceProvider::Mcp {
+        return Err(ApiError::Conflict(
+            "Generated panes have been retired; ask for a new inline card".into(),
+        ));
+    }
     let presentation = app_surface_presentation_request(
         request.action,
         &thread_id,
@@ -687,6 +655,16 @@ pub async fn archive_self_control_app_surface(
     let source = optional_source(request);
     require_control_thread(&state, &thread_id).await?;
     let mut artifact_mutation = state.app_surface_imports.lock_mutation(&thread_id).await;
+    if state
+        .store
+        .latest_app_surface_session(&thread_id)
+        .await?
+        .is_some_and(|session| session.provider != AppSurfaceProvider::Mcp)
+    {
+        return Err(ApiError::Conflict(
+            "Generated panes have been retired; ask for a new inline card".into(),
+        ));
+    }
     let session = state
         .store
         .archive_latest_app_surface_session(&thread_id)
@@ -707,6 +685,7 @@ pub async fn archive_self_control_app_surface(
     )
     .await?;
     Ok(Json(AppSurfaceSessionReadResponse {
+        retired_generated: None,
         session: session.map(app_surface_session_dto),
     }))
 }

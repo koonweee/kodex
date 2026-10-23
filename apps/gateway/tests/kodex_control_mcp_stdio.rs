@@ -63,7 +63,7 @@ async fn kodex_control_mcp_stdio_lists_tools() -> anyhow::Result<()> {
     assert_tool_requires(&tools, "update_thread_settings", &["threadId", "settings"]);
     assert_tool_requires(
         &tools,
-        "open_app_surface",
+        "create_app_surface",
         &["threadId", "title", "html", "fallbackContent"],
     );
     assert!(tools.iter().all(|tool| !tool.name.contains("generated_ui")));
@@ -224,8 +224,13 @@ async fn kodex_control_mcp_smokes_new_tools_against_fake_gateway() -> anyhow::Re
     app_surface_args.insert("fallbackContent".to_string(), json!("Thread UI fallback"));
     let mut app_surface_meta = JsonObject::new();
     app_surface_meta.insert("threadId".to_string(), json!("foreign-desktop-chat"));
+    app_surface_meta.insert("callId".into(), json!("native-origin-call"));
+    app_surface_meta.insert(
+        "x-codex-turn-metadata".into(),
+        json!({"thread_id":"thread-spawned","turn_id":"native-origin-turn"}),
+    );
     let mut app_surface_call =
-        CallToolRequestParams::new("open_app_surface").with_arguments(app_surface_args);
+        CallToolRequestParams::new("create_app_surface").with_arguments(app_surface_args);
     app_surface_call.set_meta(Meta(app_surface_meta));
     let app_surface: Value = client.call_tool(app_surface_call).await?.into_typed()?;
     assert_eq!(app_surface["session"]["threadId"], "thread-spawned");
@@ -299,7 +304,7 @@ async fn kodex_control_mcp_smokes_new_tools_against_fake_gateway() -> anyhow::Re
                 && request.path == "/v1/self-control/threads/thread-spawned/app-surface"
                 && request.body["title"] == "Thread UI"
                 && request.body["fallbackContent"] == "Thread UI fallback"
-                && request.body["presentation"] == "focus"
+                && request.body["origin"]["itemId"] == "native-origin-call"
                 && request.body.get("threadId").is_none()
         }));
         assert!(requests.iter().any(|request| {

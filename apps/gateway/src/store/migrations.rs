@@ -8,6 +8,8 @@ impl Store {
             .execute(&self.pool)
             .await?;
         self.install_queue_transfer_schema().await?;
+        sqlx::query("create table if not exists generated_app_surfaces (sequence integer primary key autoincrement, id text not null unique, thread_id text not null, turn_id text not null, item_id text not null, title text not null, fallback_content text not null, session_json text not null)").execute(&self.pool).await?;
+        sqlx::query("create index if not exists generated_app_thread on generated_app_surfaces(thread_id, sequence)").execute(&self.pool).await?;
         sqlx::query(
             r#"
             create table if not exists events (

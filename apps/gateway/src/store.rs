@@ -16,6 +16,7 @@ mod app_surfaces;
 mod approvals;
 mod automations;
 mod events;
+mod generated_apps;
 mod migrations;
 mod notifications;
 mod queue_transfers;
@@ -192,6 +193,29 @@ pub struct AppSurfaceSession {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub archived_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GeneratedAppReference {
+    pub id: String,
+    pub title: String,
+    pub fallback_content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GeneratedAppOrigin {
+    pub thread_id: String,
+    pub turn_id: String,
+    pub item_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct GeneratedAppAttachment {
+    pub card: GeneratedAppReference,
+    pub turn_id: String,
+    pub item_id: String,
 }
 
 #[derive(Debug, Clone)]

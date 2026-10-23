@@ -158,6 +158,9 @@ impl Store {
     }
 
     pub async fn get_app_surface_session(&self, session_id: &str) -> ApiResult<AppSurfaceSession> {
+        if let Some(session) = self.generated_app_session(session_id).await? {
+            return Ok(session);
+        }
         let row = app_surface_session_query()
             .push(" where s.id = ")
             .push_bind(session_id.to_string())
@@ -292,6 +295,66 @@ mod tests {
 
     use super::*;
     use crate::store::Store;
+
+    #[tokio::test]
+    async fn generated_cards_keep_independent_documents_and_bridge_grants() {
+        let store = Store::in_memory().await.unwrap();
+        let upsert = |title: &str| AppSurfaceSessionUpsert {
+            thread_id: "thread".into(),
+            provider: AppSurfaceProvider::Generated,
+            title: title.into(),
+            html: format!("<main>{title}</main>"),
+            fallback_content: title.into(),
+            resource_uri: None,
+            resource_mime_type: "text/html;profile=mcp-app".into(),
+            display_modes: vec!["inline".into()],
+            csp: Default::default(),
+            permissions: Default::default(),
+            grants: AppSurfaceGrants {
+                can_send_message: true,
+                ..Default::default()
+            },
+            provenance: json!({}),
+        };
+        let mut external = upsert("External");
+        external.provider = AppSurfaceProvider::Mcp;
+        external.resource_uri = Some("ui://external/widget".into());
+        let external = store.upsert_app_surface_session(external).await.unwrap();
+        let a = store
+            .create_generated_app(upsert("A"), "turn", "call-A")
+            .await
+            .unwrap();
+        let b = store
+            .create_generated_app(upsert("B"), "turn", "call-B")
+            .await
+            .unwrap();
+        assert_ne!(a.id, b.id);
+        assert_eq!(
+            serde_json::to_value(store.get_app_surface_session(&a.id).await.unwrap()).unwrap(),
+            serde_json::to_value(&a).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(store.get_app_surface_session(&b.id).await.unwrap()).unwrap(),
+            serde_json::to_value(&b).unwrap()
+        );
+        let cards = store.generated_apps("thread").await.unwrap();
+        assert_eq!(
+            cards
+                .iter()
+                .map(|card| card.card.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![a.id.as_str(), b.id.as_str()]
+        );
+        let latest = store
+            .latest_app_surface_session("thread")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(latest).unwrap(),
+            serde_json::to_value(external).unwrap()
+        );
+    }
 
     #[tokio::test]
     async fn app_surface_upsert_replaces_latest_thread_revision() {

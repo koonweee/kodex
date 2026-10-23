@@ -191,7 +191,7 @@ async fn cold_readonly_widget_history_returns_current_and_older_pages_without_mc
 
 #[tokio::test]
 async fn reopened_cached_surfaces_survive_current_older_and_attached_history_unchanged() {
-    for provider in [AppSurfaceProvider::Mcp, AppSurfaceProvider::Generated] {
+    for provider in [AppSurfaceProvider::Mcp] {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("gateway.db");
         let store = Store::connect(&path).await.unwrap();

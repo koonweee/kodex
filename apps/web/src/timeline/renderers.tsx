@@ -27,6 +27,7 @@ import {
   timelineItemLabels,
   unknownRenderer,
 } from "./rendererShared";
+import { GeneratedAppCard } from "../appSurfaces/GeneratedAppCard";
 import { AsyncQuestionCard } from "./AsyncQuestionCard";
 import type { TimelineItem } from "./reducer";
 
@@ -46,6 +47,7 @@ type TimelineRendererOptions = {
 type TimelineRenderer = (item: TimelineItem, options: TimelineRendererOptions) => ReactNode;
 
 const rendererRegistry: Record<string, TimelineRenderer> = {
+  generated_app: (item) => item.generatedApp ? <GeneratedAppCard card={item.generatedApp}/> : null,
   agent_message: (item, options) => (
     <AssistantMessageMarkdown
       item={item}
@@ -131,7 +133,7 @@ function TimelineItemRendererImpl({
   const render = rendererRegistry[item.kind] ?? unknownRenderer;
   const label = timelineItemLabels[item.kind] ?? "Unsupported item";
   const isMessage = isTimelineMessage(item.kind);
-  const isHeaderlessMarker = item.kind === "context_compaction";
+  const isHeaderlessMarker = item.kind === "context_compaction" || item.kind === "generated_app";
   const showStatus = !isMessage && !isHeaderlessMarker && item.status !== "completed";
   return (
     <Box className={`kodex-timeline-item kodex-timeline-item-${item.kind}`}>

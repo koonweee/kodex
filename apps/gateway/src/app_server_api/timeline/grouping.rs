@@ -27,6 +27,7 @@ pub(super) fn is_transparent_separator_fields(
         "plan" => !has_text(text) && !has_text(message) && !has_content(content),
         "hook_prompt" => true,
         "user_message"
+        | "generated_app"
         | "assistant_message"
         | "context_compaction"
         | "review_mode_started"

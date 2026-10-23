@@ -3,6 +3,7 @@ import { AlertCircle, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AppSurfaceBridgeRequest, AppSurfaceBridgeResponse, AppSurfaceSession } from "../api/client";
+import { GENERATED_APP_RESIZE_EVENT } from "../timeline/useGeneratedAppResizeAnchor";
 import { errorMessageFrom } from "../shared/values";
 import type { KodexColorSchemeId } from "../theme";
 import { appSurfaceBackgroundColor, buildAppSurfaceResourceHtml } from "./document";
@@ -22,6 +23,7 @@ const APP_SURFACE_APP_SIZE_CHANGED = "ui/notifications/size-changed";
 const DEFAULT_APP_IFRAME_SANDBOX = "allow-scripts allow-forms";
 
 type AppSurfacePaneProps = {
+  presentation?: "pane" | "inline";
   colorSchemeId: KodexColorSchemeId;
   isBridgePending: boolean;
   onBridgeRequest: (request: AppSurfaceBridgeRequest) => Promise<AppSurfaceBridgeResponse>;
@@ -39,7 +41,8 @@ type JsonRpcMessage = {
 
 type JsonRecord = Record<string, unknown>;
 
-export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest, session }: AppSurfacePaneProps) {
+export function AppSurfacePane({ presentation = "pane", colorSchemeId, isBridgePending, onBridgeRequest, session }: AppSurfacePaneProps) {
+  const [contentHeight, setContentHeight] = useState(160);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const postedToolNotificationsRef = useRef(false);
   const proxyReadyRef = useRef(false);
@@ -96,7 +99,7 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
       })
       .then((html) => {
         if (isMounted) {
-          setResourceHtml(buildAppSurfaceResourceHtml(html, colorSchemeId, session.csp));
+          setResourceHtml(buildAppSurfaceResourceHtml(html, colorSchemeId, session.csp, presentation));
         }
       })
       .catch((error) => {
@@ -110,7 +113,7 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
       isMounted = false;
       controller.abort();
     };
-  }, [colorSchemeId, session.csp, session.documentUrl]);
+  }, [colorSchemeId, session.csp, session.documentUrl, presentation]);
 
   useEffect(() => {
     if (!proxyReadyRef.current) {
@@ -153,7 +156,14 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
           return;
         }
         if (notificationMethod === APP_SURFACE_APP_SIZE_CHANGED) {
-          setLocalError(null);
+          const height = recordValue(recordValue(event.data)?.params)?.height;
+          if (presentation === "inline" && typeof height === "number" && Number.isFinite(height) && height > 0) {
+            const nextHeight = Math.ceil(height);
+            if (iframeRef.current?.style.height !== `${nextHeight}px`) {
+              iframeRef.current?.dispatchEvent(new Event(GENERATED_APP_RESIZE_EVENT, { bubbles: true }));
+              setContentHeight(nextHeight);
+            }
+          }
           return;
         }
         const notificationRequest = bridgeRequestFromMessage(event.data, session.id, session.revision);
@@ -175,6 +185,7 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
       setLocalError(null);
       void onBridgeRequest(bridgeRequest)
         .then((response) => {
+          setLocalError(response.error?.message ?? null);
           postJsonRpcResponse(iframeRef.current?.contentWindow ?? null, bridgeRequest.id, response);
           if (bridgeRequest.method === "ui/initialize" && !response.error) {
             window.setTimeout(postSessionToolNotifications, 0);
@@ -189,10 +200,10 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [markProxyReady, onBridgeRequest, postSessionToolNotifications, session.bridgeToken, session.id, session.revision]);
+  }, [presentation, markProxyReady, onBridgeRequest, postSessionToolNotifications, session.bridgeToken, session.id, session.revision]);
 
   return (
-    <Box className="kodex-app-surface-pane" data-provider={session.provider} data-status={session.status}>
+    <Box className="kodex-app-surface-pane" data-provider={session.provider} data-status={session.status} data-presentation={presentation}>
       {statusLabel ? (
         <Badge
           className="kodex-app-surface-status"
@@ -208,6 +219,7 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
           <AlertCircle aria-hidden="true" size={14} />
           <Text component="span" size="xs">
             {documentError ?? localError ?? sandboxError}
+            {documentError || sandboxError ? ` ${session.fallbackContent}` : ""}
           </Text>
         </Box>
       ) : null}
@@ -220,6 +232,7 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
             ref={iframeRef}
             sandbox="allow-scripts allow-same-origin"
             src={sandboxUrl}
+            style={presentation === "inline" ? {height: contentHeight} : undefined}
             title={frameTitle}
           />
         </Box>

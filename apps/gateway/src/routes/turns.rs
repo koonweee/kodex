@@ -237,8 +237,10 @@ async fn turn_start_resuming_missing_thread_once(
     input: Vec<UserInput>,
     options: TurnStartOptions,
     client_id: String,
+    admission_revision: Option<i64>,
 ) -> ApiResult<RawAppServerResponse> {
     let client = app_server_api::client(&state.app_server);
+    ensure_input_admission(state, thread_id, admission_revision).await?;
     match client
         .turn_start(
             thread_id.to_string(),
@@ -250,7 +252,9 @@ async fn turn_start_resuming_missing_thread_once(
     {
         Ok(response) => Ok(response),
         Err(error) if app_server_api::is_thread_not_loaded_error(&error, thread_id) => {
+            ensure_input_admission(state, thread_id, admission_revision).await?;
             resume_thread_for_turn_start(state, &client, thread_id).await?;
+            ensure_input_admission(state, thread_id, admission_revision).await?;
             client
                 .turn_start(thread_id.to_string(), input, options, Some(client_id))
                 .await
@@ -292,6 +296,16 @@ pub(super) async fn start_turn_with_resume_policy(
     request: TurnStartRequest,
     resume_missing_thread: bool,
 ) -> ApiResult<RawAppServerResponse> {
+    start_turn_with_admission(state, thread_id, request, resume_missing_thread, None).await
+}
+
+pub(super) async fn start_turn_with_admission(
+    state: &AppState,
+    thread_id: String,
+    request: TurnStartRequest,
+    resume_missing_thread: bool,
+    admission_revision: Option<i64>,
+) -> ApiResult<RawAppServerResponse> {
     request.options.validate()?;
     let client_id = request
         .client_user_message_id
@@ -307,9 +321,11 @@ pub(super) async fn start_turn_with_resume_policy(
             input.clone(),
             request.options.clone(),
             client_id.clone(),
+            admission_revision,
         )
         .await?
     } else {
+        ensure_input_admission(state, &thread_id, admission_revision).await?;
         // Ephemeral forks cannot be resumed. The route captures this policy
         // before awaits so native close cannot turn it into a durable resume.
         app_server_api::client(&state.app_server)
@@ -469,3 +485,17 @@ mod input_tests;
 #[cfg(test)]
 #[path = "turns_stop_tests.rs"]
 mod stop_tests;
+
+async fn ensure_input_admission(
+    state: &AppState,
+    thread_id: &str,
+    revision: Option<i64>,
+) -> ApiResult<()> {
+    if let Some(revision) = revision {
+        state
+            .thread_views
+            .ensure_history_current(thread_id, revision)
+            .await?;
+    }
+    Ok(())
+}

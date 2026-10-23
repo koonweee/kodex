@@ -990,6 +990,10 @@ async fn apply_thread_detail_response_state_with_merge(
         .ensure_history_current(&response.thread.id, timeline_revision)
         .await?;
     apply_thread_summary_state(state, std::slice::from_mut(&mut response.thread)).await?;
+    state
+        .thread_views
+        .load_generated_apps(&state.store, &response.thread.id, timeline_revision)
+        .await?;
     match merge_mode {
         ThreadTimelineMergeMode::ReplaceWindow => {
             thread_view::build_thread_timeline_window(

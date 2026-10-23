@@ -9,6 +9,7 @@ export const queryKeys = {
   chatThreads: ["threads", "chat"] as const,
   composerSettingsRoot: ["composer-settings"] as const,
   composerSettings: (projectId: string | null, cwd?: string | null) => ["composer-settings", projectId ?? "global", cwd ?? null] as const,
+  generatedApp: (id: string) => ["generated-app", id] as const,
   appSurfaceRoot: ["app-surfaces"] as const,
   appSurface: (threadId: string) => ["app-surfaces", threadId] as const,
   models: ["models"] as const,

@@ -21,6 +21,7 @@ async fn hosted_bridge_cannot_change_the_originating_account_and_resource_scope(
     );
     let session = hosted_surface(&state).await;
     let request = |method: &str, params: Value| AppSurfaceBridgeRequest {
+        admission_revision: None,
         id: Some(json!(1)),
         revision: session.revision,
         bridge_token: Some(session.bridge_token.clone()),
@@ -76,6 +77,7 @@ async fn verified_explicit_no_auth_account_is_not_inferred_from_missing_context(
     );
     let mut session = hosted_surface(&state).await;
     let request = |method: &str, params: Value| AppSurfaceBridgeRequest {
+        admission_revision: None,
         id: Some(json!(1)),
         revision: session.revision,
         bridge_token: Some(session.bridge_token.clone()),

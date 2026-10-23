@@ -256,6 +256,7 @@ impl AppState {
         crate::routes::turns::interrupt_current_turn,
         crate::routes::turns::interrupt_turn,
         crate::routes::app_surfaces::get_thread_app_surface,
+        crate::routes::app_surfaces::get_app_surface,
         crate::routes::app_surfaces::app_surface_document,
         crate::routes::app_surfaces::app_surface_bridge,
         crate::queue::list_queued_inputs,

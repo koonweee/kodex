@@ -1,5 +1,5 @@
 import { MantineProvider } from "@mantine/core";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
 
@@ -16,6 +16,18 @@ describe("AppSurfacePane", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
+  });
+
+  it("sizes an inline frame from its own current app notifications and permits shrinking", () => {
+    renderPane(appSurfaceSession({revision:2}),{presentation:"inline"});
+    const frame = screen.getByTitle("App surface: Mockups");
+    act(()=>postFromApp({jsonrpc:"2.0",method:"ui/notifications/size-changed",params:{height:1200},revision:2},2));
+    expect(frame).toHaveStyle({height:"1200px"});
+    act(()=>postFromApp({jsonrpc:"2.0",method:"ui/notifications/size-changed",params:{height:250},revision:2},2));
+    expect(frame).toHaveStyle({height:"250px"});
+    postFromApp({jsonrpc:"2.0",method:"ui/notifications/size-changed",params:{height:900},revision:1},1);
+    postFromApp({jsonrpc:"2.0",method:"ui/notifications/size-changed",params:{height:-1},revision:2},2);
+    expect(frame).toHaveStyle({height:"250px"});
   });
 
   it("forwards MCP-style JSON-RPC bridge requests from the iframe", async () => {
@@ -521,6 +533,9 @@ describe("AppSurfacePane", () => {
         "*",
       );
     });
+    expect(screen.getByRole("alert")).toHaveTextContent("Approval required");
+    await act(async()=>postFromApp({jsonrpc:"2.0",method:"ui/notifications/size-changed",params:{height:600}},2));
+    expect(screen.getByRole("alert")).toHaveTextContent("Approval required");
     expect(postMessage.mock.calls[0]?.[0]).not.toHaveProperty("result");
   });
 
@@ -594,6 +609,7 @@ describe("AppSurfacePane", () => {
 function renderPane(
   session: AppSurfaceSession,
   overrides: {
+    presentation?: "pane" | "inline";
     colorSchemeId?: ComponentProps<typeof AppSurfacePane>["colorSchemeId"];
     documentHtml?: string;
     onBridgeRequest?: AppSurfacePaneBridge;
@@ -614,6 +630,7 @@ function renderPane(
 function appSurfacePaneElement(
   session: AppSurfaceSession,
   overrides: {
+    presentation?: "pane" | "inline";
     colorSchemeId?: ComponentProps<typeof AppSurfacePane>["colorSchemeId"];
     onBridgeRequest?: AppSurfacePaneBridge;
   },
@@ -623,6 +640,7 @@ function appSurfacePaneElement(
     <MantineProvider>
       <AppSurfacePane
         colorSchemeId={overrides.colorSchemeId ?? "oled-black"}
+        presentation={overrides.presentation}
         isBridgePending={false}
         onBridgeRequest={overrides.onBridgeRequest ?? defaultBridge}
         session={session}

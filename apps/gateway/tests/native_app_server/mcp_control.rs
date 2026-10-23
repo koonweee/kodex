@@ -66,14 +66,16 @@ async fn real_native_builtin_control_bundle_uses_its_owned_gateway_and_explicit_
         let status=client.mcp_tool_call(McpServerToolCallRequest {server:server.name.clone(),thread_id:invoking_id.clone(),tool:"get_status".into(),arguments:Some(json!({})),meta:None}).await.context("built-in Control get_status")?;
         anyhow::ensure!(status.is_error!=Some(true),"built-in native Control status error: {status:?}");
         anyhow::ensure!(owned_reads.load(Ordering::SeqCst)>0,"Control request did not reach the owning gateway listener");
-        // Native MCP supplies the invoking chat A in metadata. The explicit
-        // owned target B must win, and omission must not default to A.
-        let opened=client.mcp_tool_call(McpServerToolCallRequest {server:server.name.clone(),thread_id:invoking_id.clone(),tool:"open_app_surface".into(),arguments:Some(json!({"threadId":thread_id,"title":"Installed native app","html":"<h1>Owned Control bundle</h1>","fallbackContent":"Owned Control bundle"})),meta:None}).await.context("built-in Control explicit app target")?;
-        anyhow::ensure!(opened.is_error!=Some(true),"built-in bundle surface call failed: {opened:?}");
-        let surface=session.state.store.latest_app_surface_session(&thread_id).await?.context("built-in native call did not create artifact in owning store")?;
-        anyhow::ensure!(surface.thread_id==thread_id && surface.title=="Installed native app");
-        anyhow::ensure!(session.state.store.latest_app_surface_session(&invoking_id).await?.is_none());
-        let rejected=client.mcp_tool_call(McpServerToolCallRequest {server:server.name.clone(),thread_id:invoking_id.clone(),tool:"open_app_surface".into(),arguments:Some(json!({"title":"No implicit target","html":"<h1>Reject</h1>","fallbackContent":"Reject"})),meta:None}).await;
+        // Inline creation cannot target another chat or invent a call origin.
+        let rejected_target=client.mcp_tool_call(McpServerToolCallRequest {server:server.name.clone(),thread_id:invoking_id.clone(),tool:"create_app_surface".into(),arguments:Some(json!({"threadId":thread_id,"title":"Foreign inline app","html":"<h1>Reject</h1>","fallbackContent":"Reject"})),meta:None}).await;
+        match rejected_target {
+            Ok(result) => anyhow::ensure!(result.is_error==Some(true),"cross-chat inline creation accepted"),
+            Err(kodex_gateway::error::ApiError::NativeRpc(error)) if error.code == -32602 => {},
+            Err(error) => return Err(anyhow::anyhow!("unexpected cross-target failure: {error}")),
+        }
+        anyhow::ensure!(session.state.store.generated_apps(&thread_id).await?.is_empty());
+        anyhow::ensure!(session.state.store.generated_apps(&invoking_id).await?.is_empty());
+        let rejected=client.mcp_tool_call(McpServerToolCallRequest {server:server.name.clone(),thread_id:invoking_id.clone(),tool:"create_app_surface".into(),arguments:Some(json!({"title":"No implicit target","html":"<h1>Reject</h1>","fallbackContent":"Reject"})),meta:None}).await;
         match rejected {
             Ok(rejected) => anyhow::ensure!(rejected.is_error==Some(true),"installed handler accepted implicit thread target"),
             Err(kodex_gateway::error::ApiError::NativeRpc(error)) if error.code == -32602 && error.message.contains("missing field `threadId`") => {},

@@ -8,11 +8,7 @@ use super::*;
 fn surface_calls() -> Vec<(&'static str, Value)> {
     vec![
         (
-            "open_app_surface",
-            json!({"title":"View","html":"<!doctype html><main>View</main>","fallbackContent":"View"}),
-        ),
-        (
-            "update_app_surface",
+            "create_app_surface",
             json!({"title":"View","html":"<!doctype html><main>View</main>","fallbackContent":"View"}),
         ),
         ("get_app_surface", json!({})),
@@ -90,7 +86,7 @@ async fn native_control_surface_calls_never_default_to_foreign_mcp_metadata() ->
         args.insert("threadId".into(), json!("kodex-owned-chat"));
         let mut call = CallToolRequestParams::new(name).with_arguments(args);
         call.set_meta(Meta(
-            json!({"threadId":"foreign-desktop-chat"})
+            json!({"threadId":"foreign-desktop-chat","callId":"call","x-codex-turn-metadata":{"thread_id":"kodex-owned-chat","turn_id":"turn"}})
                 .as_object()
                 .unwrap()
                 .clone(),
@@ -109,7 +105,7 @@ async fn native_control_surface_calls_never_default_to_foreign_mcp_metadata() ->
         "{requests_before_explicit:?}"
     );
     let requests = requests.lock().unwrap();
-    assert_eq!(requests.len(), 5);
+    assert_eq!(requests.len(), 4);
     assert!(requests
         .iter()
         .all(|path| path.starts_with("/v1/self-control/threads/kodex-owned-chat/app-surface")));

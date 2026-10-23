@@ -69,7 +69,7 @@ function ThreadAppSurfacePane({
     }) => callAppSurfaceBridge(sessionId, request),
   });
 
-  const session = sessionQuery.data ?? null;
+  const session = sessionQuery.data?.session ?? null;
   const visibleSession = useMemo(() => {
     if (!session) {
       return null;
@@ -124,13 +124,17 @@ function ThreadAppSurfacePane({
     );
   }
 
+  if (sessionQuery.data?.retiredGenerated) {
+    return <AppSurfaceEmptyState title="Generated pane retired" detail="Ask for a new inline card in the conversation."/>;
+  }
+
   if (!visibleSession) {
     return (
       <AppSurfaceEmptyState
         detail={
           targetSessionId
             ? "The selected app surface session is no longer the latest session for this thread."
-            : "No app surface session is available for this thread yet."
+            : "No external MCP app is available. Generated UIs now appear inline in the conversation."
         }
         title={emptyTitle}
       />

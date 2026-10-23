@@ -16,9 +16,7 @@ use crate::{
     app_server_api::{McpServerToolCallRequest, UserInput},
     app_surfaces::{app_surface_csp, MCP_APP_MIME_TYPE},
     error::{ApiError, ApiResult},
-    routes::turns::{
-        submit_thread_input, ThreadInputRequest, ThreadInputResponse, TurnStartRequest,
-    },
+    routes::turns::{ThreadInputResponse, TurnStartRequest},
     store::{
         AppSurfaceCsp, AppSurfaceGrants, AppSurfacePermissions, AppSurfaceProvider,
         AppSurfaceResourceGrant, AppSurfaceSession, AppSurfaceSessionStatus, AppSurfaceToolGrant,
@@ -45,6 +43,7 @@ const APP_SURFACE_SIZE_CHANGED_METHOD: &str = "ui/notifications/size-changed";
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        .route("/v1/app-surfaces/{session_id}", get(get_app_surface))
         .route(
             "/v1/threads/{thread_id}/app-surface",
             get(get_thread_app_surface),
@@ -86,6 +85,8 @@ pub struct AppSurfaceSessionDto {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSurfaceSessionReadResponse {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retired_generated: Option<bool>,
     pub session: Option<AppSurfaceSessionDto>,
 }
 
@@ -135,6 +136,9 @@ pub struct AppSurfaceDocumentQuery {
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSurfaceBridgeRequest {
+    #[serde(skip)]
+    #[schema(ignore)]
+    pub(crate) admission_revision: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -174,13 +178,91 @@ pub async fn get_thread_app_surface(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
 ) -> ApiResult<Json<AppSurfaceSessionReadResponse>> {
-    let session = state
-        .store
-        .latest_app_surface_session(&thread_id)
-        .await?
-        .filter(|session| session.status != AppSurfaceSessionStatus::Archived)
+    let latest = state.store.latest_app_surface_session(&thread_id).await?;
+    let retired_generated = latest
+        .as_ref()
+        .filter(|session| session.provider == AppSurfaceProvider::Generated)
+        .map(|_| true);
+    let session = latest
+        .filter(|session| {
+            session.provider == AppSurfaceProvider::Mcp
+                && session.status != AppSurfaceSessionStatus::Archived
+        })
         .map(session_dto);
-    Ok(Json(AppSurfaceSessionReadResponse { session }))
+    Ok(Json(AppSurfaceSessionReadResponse {
+        session,
+        retired_generated,
+    }))
+}
+
+#[utoipa::path(get,path="/v1/app-surfaces/{sessionId}",responses((status=200,body=AppSurfaceSessionResponse)))]
+pub async fn get_app_surface(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<AppSurfaceSessionResponse>> {
+    let session = state.store.get_app_surface_session(&id).await?;
+    require_current_generated_app(&state, &session).await?;
+    Ok(Json(AppSurfaceSessionResponse {
+        session: session_dto(session),
+    }))
+}
+
+async fn require_current_generated_app(
+    state: &AppState,
+    session: &AppSurfaceSession,
+) -> ApiResult<Option<i64>> {
+    if session.provider != AppSurfaceProvider::Generated {
+        return Ok(None);
+    }
+    let origin = state
+        .store
+        .generated_app_origin(&session.id)
+        .await?
+        .ok_or_else(|| {
+            ApiError::Conflict(
+                "This generated pane has been retired. Ask for a new inline card.".into(),
+            )
+        })?;
+    let captured = state
+        .thread_views
+        .history_reset_revision(&session.thread_id)
+        .await;
+    let client = crate::app_server_api::CodexClient::new(state.app_server.clone());
+    let mut cursor = None;
+    let mut seen = std::collections::HashSet::new();
+    loop {
+        let page = client
+            .thread_items_list_page(
+                session.thread_id.clone(),
+                Some(origin.turn_id.clone()),
+                cursor,
+                crate::app_server_api::SortDirection::Desc,
+                Some(100),
+            )
+            .await?;
+        state
+            .thread_views
+            .ensure_history_current(&session.thread_id, captured)
+            .await?;
+        if page
+            .data
+            .iter()
+            .any(|entry| entry.item.id == origin.item_id && entry.item.item_type == "mcpToolCall")
+        {
+            return Ok(Some(captured));
+        }
+        let Some(next) = page.next_cursor else {
+            return Err(ApiError::Conflict(
+                "This card's originating history is no longer available".into(),
+            ));
+        };
+        if !seen.insert(next.clone()) {
+            return Err(ApiError::BadGateway(
+                "Native item history repeated its cursor".into(),
+            ));
+        }
+        cursor = Some(next);
+    }
 }
 
 #[utoipa::path(
@@ -195,6 +277,7 @@ pub async fn app_surface_document(
     Query(query): Query<AppSurfaceDocumentQuery>,
 ) -> ApiResult<Response> {
     let session = state.store.get_app_surface_session(&session_id).await?;
+    require_current_generated_app(&state, &session).await?;
     if session.revision != query.revision {
         return Err(ApiError::Conflict(format!(
             "app surface revision {} is not current",
@@ -230,7 +313,7 @@ pub async fn app_surface_document(
 pub async fn app_surface_bridge(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
-    Json(request): Json<AppSurfaceBridgeRequest>,
+    Json(mut request): Json<AppSurfaceBridgeRequest>,
 ) -> ApiResult<Json<AppSurfaceBridgeResponse>> {
     let session = state.store.get_app_surface_session(&session_id).await?;
     let method = request.method.clone();
@@ -258,6 +341,7 @@ pub async fn app_surface_bridge(
         append_bridge_audit(&state, &session, &method, &params, &response).await?;
         return Ok(Json(response));
     }
+    request.admission_revision = require_current_generated_app(&state, &session).await?;
     let id = request.id.clone();
     let result = match request.method.as_str() {
         "ui/initialize" => bridge_initialize(&session, &request.params),
@@ -341,25 +425,29 @@ async fn bridge_message(
             "app surface message is too large".to_string(),
         ));
     }
-    let response = submit_thread_input(
-        State(state.clone()),
-        Path(session.thread_id.clone()),
-        Json(ThreadInputRequest {
-            queue_if_pending: false,
-            queue_if_empty: false,
-            submission: TurnStartRequest {
-                client_user_message_id: None,
-                input: vec![UserInput::Text {
-                    text: message.clone(),
-                    text_elements: Vec::new(),
-                }],
-                attachments: Vec::new(),
-                options: Default::default(),
-            },
-        }),
+    let raw = super::turns::start_turn_with_admission(
+        &state,
+        session.thread_id.clone(),
+        TurnStartRequest {
+            client_user_message_id: None,
+            input: vec![UserInput::Text {
+                text: message,
+                text_elements: Vec::new(),
+            }],
+            attachments: Vec::new(),
+            options: Default::default(),
+        },
+        !state
+            .side_threads
+            .is_side_or_closed_child(&session.thread_id),
+        request.admission_revision,
     )
-    .await?
-    .0;
+    .await?;
+    let response = ThreadInputResponse {
+        payload: raw.payload,
+        disposition: None,
+        queued_input: None,
+    };
     serde_json::to_value(AppSurfaceBridgeMessageResult { input: response }).map_err(Into::into)
 }
 
@@ -460,15 +548,16 @@ async fn bridge_resource_read(
     let resource_request = if session.provider == AppSurfaceProvider::Mcp && server == "codex_apps"
     {
         crate::app_surfaces::scope::HostedAppScope::from_provenance(&session.provenance["mcp"])?
-            .resource_request(uri, session.thread_id)
+            .resource_request(uri, session.thread_id.clone())
     } else {
         crate::app_server_api::McpResourceReadRequest {
             server,
             uri,
-            thread_id: Some(session.thread_id),
+            thread_id: Some(session.thread_id.clone()),
             ..Default::default()
         }
     };
+    ensure_bridge_admission(&state, &session.thread_id, request.admission_revision).await?;
     let response = crate::app_server_api::client(&state.app_server)
         .mcp_resource_read(resource_request)
         .await?;
@@ -505,6 +594,7 @@ async fn bridge_tool_call(
     } else {
         request.params.get("_meta").cloned()
     };
+    ensure_bridge_admission(&state, &session.thread_id, request.admission_revision).await?;
     let response = crate::app_server_api::client(&state.app_server)
         .mcp_tool_call(McpServerToolCallRequest {
             server,
@@ -545,6 +635,7 @@ async fn require_generated_tool_approval(
             payload[field] = value.clone();
         }
     }
+    ensure_bridge_admission(state, &session.thread_id, request.admission_revision).await?;
     let approval = crate::approvals::create_local(
         state,
         NewApproval {
@@ -622,6 +713,7 @@ async fn bridge_update_model_context(
             "app surface is not granted ui/update-model-context".to_string(),
         ));
     }
+    ensure_bridge_admission(&state, &session.thread_id, request.admission_revision).await?;
     let event = state
         .store
         .append_event(NewEvent {
@@ -1049,4 +1141,18 @@ impl IntoResponse for AppSurfaceBridgeResponse {
     fn into_response(self) -> Response {
         (StatusCode::OK, Json(self)).into_response()
     }
+}
+
+async fn ensure_bridge_admission(
+    state: &AppState,
+    thread_id: &str,
+    revision: Option<i64>,
+) -> ApiResult<()> {
+    if let Some(revision) = revision {
+        state
+            .thread_views
+            .ensure_history_current(thread_id, revision)
+            .await?;
+    }
+    Ok(())
 }

@@ -587,6 +587,31 @@ fn rows_for_turn_with_work_row(
     rows: Vec<ThreadTimelineWorkDetailRow>,
     mut work_row: ThreadTimelineRow,
 ) -> Vec<ThreadTimelineRow> {
+    if work_row.status == "completed" && rows.iter().any(|row| row.kind == "generated_app") {
+        let mut result = Vec::new();
+        let mut segment = Vec::<ThreadTimelineWorkDetailRow>::new();
+        let flush = |segment: &mut Vec<ThreadTimelineWorkDetailRow>,
+                     result: &mut Vec<ThreadTimelineRow>| {
+            if segment.is_empty() {
+                return;
+            }
+            let mut group = work_row.clone();
+            group.id = format!("{}-{}", work_row.id, segment[0].id);
+            group.display_order = segment[0].display_order;
+            group.collapsed_rows = std::mem::take(segment);
+            result.push(group);
+        };
+        for row in rows {
+            if row.kind == "generated_app" || row_is_prominent_turn_result(&row) {
+                flush(&mut segment, &mut result);
+                result.push(row.into());
+            } else {
+                segment.push(row);
+            }
+        }
+        flush(&mut segment, &mut result);
+        return result;
+    }
     if work_row.status == "failed" {
         // Failure is the turn's outcome, after any partial response or tool output.
         work_row.display_order = rows
@@ -805,6 +830,7 @@ pub(crate) fn normalized_thread_item_type(item_type: &str) -> String {
         "commandexecution" => "command_execution",
         "contextcompaction" => "context_compaction",
         "dynamictoolcall" => "dynamic_tool_call",
+        "generatedapp" => "generated_app",
         "enteredreviewmode" => "review_mode_started",
         "exitedreviewmode" => "review_mode_finished",
         "filechange" => "file_change",
@@ -963,6 +989,8 @@ pub struct TimelineToolImage {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineDisplayItemPayload {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generated_app: Option<crate::store::GeneratedAppReference>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub images: Vec<TimelineToolImage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1080,6 +1108,7 @@ pub(crate) fn compact_timeline_item_payload(item: &Value) -> TimelineDisplayItem
         return TimelineDisplayItemPayload::default();
     };
     TimelineDisplayItemPayload {
+        generated_app: None,
         images: tool_images::images(item),
         id: display_string(object, "id"),
         client_id: object

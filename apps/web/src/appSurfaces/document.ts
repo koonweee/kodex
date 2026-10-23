@@ -38,9 +38,10 @@ export function buildAppSurfaceResourceHtml(
   html: string,
   colorSchemeId: KodexColorSchemeId,
   csp?: AppSurfaceDocumentCsp,
+  presentation: "pane" | "inline" = "pane",
 ): string {
-  const headBootstrap = appSurfaceHeadBootstrap(csp);
-  const themeInjection = appSurfaceThemeInjection(colorSchemeId);
+  const headBootstrap = appSurfaceHeadBootstrap(csp) + (presentation === "inline" ? INLINE_FOCUS_GUARD : "");
+  const themeInjection = appSurfaceThemeInjection(colorSchemeId) + (presentation === "inline" ? inlineDocumentInjection() : "");
   const headMatch = html.match(/<head\b[^>]*>/i);
   if (headMatch?.index !== undefined) {
     const bootstrapAt = headMatch.index + headMatch[0].length;
@@ -192,3 +193,52 @@ function escapeHtmlAttribute(value: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 }
+
+function inlineDocumentInjection(): string {
+  return `<style id="kodex-inline-layout">html { min-height: 0; height: auto; overflow: hidden; } body { min-height: 0; height: auto; display: flow-root; overflow: visible; }</style>
+<script id="kodex-inline-sizing">(() => {
+  let queued = false;
+  let previous = 0;
+  const measure = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => {
+      queued = false;
+      const body = document.body;
+      if (!body) return;
+      const height = Math.max(1, Math.ceil(Math.max(body.getBoundingClientRect().height, body.scrollHeight)));
+      if (height === previous) return;
+      previous = height;
+      window.parent.postMessage({jsonrpc: '2.0',method: 'ui/notifications/size-changed',params: {height}}, '*');
+    });
+  };
+  const start = () => {
+    new ResizeObserver(measure).observe(document.body);
+    new MutationObserver(measure).observe(document.body,{subtree:true,childList:true,attributes:true,characterData:true});
+    document.addEventListener('load',measure,true);
+    window.addEventListener('resize',measure);
+    document.fonts?.ready.then(measure);
+    measure();
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded',start,{once:true}); else start();
+})();</script>`;
+}
+
+// Prevent creation/remount scripts and autofocus from taking focus out of the chat.
+// Trusted interaction still enables normal application-managed focus thereafter.
+const INLINE_FOCUS_GUARD = `<script id="kodex-inline-focus">(() => {
+  let interacted = false;
+  const activate = event => { if (event.isTrusted) interacted = true; };
+  document.addEventListener('pointerdown',activate,true);
+  document.addEventListener('click',activate,true);
+  document.addEventListener('keydown',activate,true);
+  for (const prototype of [HTMLElement.prototype, SVGElement.prototype]) {
+    const focus = prototype.focus;
+    if (typeof focus === 'function') prototype.focus = function(...args) { if (interacted) return focus.apply(this,args); };
+  }
+  const removeAutofocus = () => {
+    if (!interacted) document.querySelectorAll('[autofocus]').forEach(element => element.removeAttribute('autofocus'));
+  };
+  new MutationObserver(removeAutofocus).observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:['autofocus']});
+  removeAutofocus();
+})();</script>`;

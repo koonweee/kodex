@@ -24,6 +24,7 @@ export type NativeConfigWriteResult = components["schemas"]["NativeConfigWriteRe
 export type EventEnvelope = components["schemas"]["EventEnvelope"];
 export type AppSurfaceBridgeRequest = components["schemas"]["AppSurfaceBridgeRequest"];
 export type AppSurfaceBridgeResponse = components["schemas"]["AppSurfaceBridgeResponse"];
+export type GeneratedAppReference = components["schemas"]["GeneratedAppReference"];
 export type AppSurfaceSession = components["schemas"]["AppSurfaceSessionDto"];
 export type ConfiguredMcpServer = components["schemas"]["ConfiguredMcpServer"];
 export type ConfiguredMcpServerListResponse = components["schemas"]["ConfiguredMcpServerListResponse"];
@@ -287,11 +288,15 @@ export async function listThreadSubagents(
   );
 }
 
-export async function getThreadAppSurface(threadId: string, signal?: AbortSignal): Promise<AppSurfaceSession | null> {
+export async function getThreadAppSurface(threadId: string, signal?: AbortSignal): Promise<components["schemas"]["AppSurfaceSessionReadResponse"]> {
   const response = await unwrap(
     api.GET("/v1/threads/{threadId}/app-surface", { params: { path: { threadId } }, signal, cache: "no-store" }),
   );
-  return response.session ?? null;
+  return response;
+}
+
+export async function getAppSurface(sessionId: string, signal?: AbortSignal): Promise<AppSurfaceSession> {
+  return (await unwrap(api.GET("/v1/app-surfaces/{sessionId}", {params:{path:{sessionId}},signal,cache:"no-store"}))).session;
 }
 
 export async function callAppSurfaceBridge(

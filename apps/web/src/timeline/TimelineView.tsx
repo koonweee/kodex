@@ -17,6 +17,8 @@ import {
 } from "./derive";
 import { TimelineActivityGroupRenderer, TimelineFileChangesRenderer, TimelineItemRenderer, TimelineWorkRowRenderer } from "./renderers";
 import type { TimelineItem, TimelineRow, TimelineState } from "./reducer";
+import { captureTimelineScrollAnchor, restoreTimelineScrollAnchor, type TimelineScrollAnchor } from "./scrollAnchor";
+import { useGeneratedAppResizeAnchor } from "./useGeneratedAppResizeAnchor";
 import { useTimelineScrollParent } from "./useTimelineScrollParent";
 import { useBottomPinnedVirtuosoTimeline } from "./useBottomPinnedVirtuosoTimeline";
 import { useTimelineDisclosureState } from "./useTimelineDisclosureState";
@@ -121,6 +123,7 @@ export function TimelineView({
     handleAtBottomStateChange,
     handleTotalListHeightChanged,
     initialBottomAligned,
+    isFollowingBottom,
     scrollToBottom,
     showScrollToBottom,
     virtuosoRef,
@@ -131,6 +134,7 @@ export function TimelineView({
     scrollParentElement,
     threadId,
   });
+  useGeneratedAppResizeAnchor(scrollParentElement, isFollowingBottom);
   usePrependAnchorCorrection({
     isLoadingOlderHistory: timeline.isLoadingOlderHistory,
     scrollParentElement,
@@ -344,7 +348,7 @@ function usePrependAnchorCorrection({
   scrollParentElement: HTMLDivElement | null;
   timelineLastSeq: number;
 }) {
-  const anchorRef = useRef<{ key: string; offset: number } | null>(null);
+  const anchorRef = useRef<TimelineScrollAnchor | null>(null);
   const wasLoadingRef = useRef(false);
 
   useLayoutEffect(() => {
@@ -353,17 +357,7 @@ function usePrependAnchorCorrection({
     if (isLoadingOlderHistory) {
       wasLoadingRef.current = true;
       const captureAnchor = () => {
-        const viewport = scrollElement.getBoundingClientRect();
-        const row = [...scrollElement.querySelectorAll<HTMLElement>(".kodex-timeline-virtual-row")].find((candidate) => {
-          const bounds = candidate.getBoundingClientRect();
-          return bounds.bottom > viewport.top && bounds.top < viewport.bottom;
-        });
-        if (row?.dataset.rowKey) {
-          anchorRef.current = {
-            key: row.dataset.rowKey,
-            offset: row.getBoundingClientRect().top - viewport.top,
-          };
-        }
+        anchorRef.current = captureTimelineScrollAnchor(scrollElement);
       };
       captureAnchor();
       scrollElement.addEventListener("scroll", captureAnchor, { passive: true });
@@ -375,12 +369,7 @@ function usePrependAnchorCorrection({
     const restoreAnchor = () => {
       const anchor = anchorRef.current;
       if (!anchor) return;
-      const row = [...scrollElement.querySelectorAll<HTMLElement>(".kodex-timeline-virtual-row")]
-        .find((candidate) => candidate.dataset.rowKey === anchor.key);
-      if (!row) return;
-      const currentOffset = row.getBoundingClientRect().top - scrollElement.getBoundingClientRect().top;
-      const correction = currentOffset - anchor.offset;
-      if (Math.abs(correction) >= 0.5) scrollElement.scrollTop += correction;
+      restoreTimelineScrollAnchor(scrollElement, anchor);
     };
 
     let restoreFrame: number | null = null;

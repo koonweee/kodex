@@ -132,6 +132,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/app-surfaces/{sessionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_app_surface"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/app-surfaces/{sessionId}/bridge": {
         parameters: {
             query?: never;
@@ -1063,7 +1079,7 @@ export interface paths {
         get: operations["get_self_control_app_surface"];
         put?: never;
         /**
-         * Open or replace a generated app surface through self-control
+         * Create an independent inline generated app through self-control
          * @description Agent-facing generated app-surface endpoint. The HTML is stored as an MCP App-compatible resource and rendered in the shared app-surface iframe runtime. Grants declare which bridge capabilities the generated surface may use.
          */
         post: operations["upsert_self_control_generated_app_surface"];
@@ -2067,7 +2083,7 @@ export interface components {
             retryable: boolean;
         };
         /** @enum {string} */
-        ApiVersion: "3";
+        ApiVersion: "4";
         AppServerCapabilities: {
             detectedVersion?: string | null;
             detectedVersionMatchesSchema?: boolean | null;
@@ -2192,6 +2208,7 @@ export interface components {
             updatedAt: string;
         };
         AppSurfaceSessionReadResponse: {
+            retiredGenerated?: boolean | null;
             session?: null | components["schemas"]["AppSurfaceSessionDto"];
         };
         AppSurfaceSessionResponse: {
@@ -2588,6 +2605,16 @@ export interface components {
             terminals: components["schemas"]["TerminalCapabilities"];
             trustedNetworkOnly: boolean;
             version: string;
+        };
+        GeneratedAppOrigin: {
+            itemId: string;
+            threadId: string;
+            turnId: string;
+        };
+        GeneratedAppReference: {
+            fallbackContent: string;
+            id: string;
+            title: string;
         };
         GitInfo: {
             branch?: string | null;
@@ -3199,14 +3226,13 @@ export interface components {
         };
         SelfControlGeneratedAppSurfaceUpsertRequest: {
             csp?: components["schemas"]["AppSurfaceCsp"];
-            displayModes?: string[];
             fallbackContent: string;
             grants?: components["schemas"]["AppSurfaceGrants"];
             html: string;
             /** Format: int32 */
             maxSelfControlDepth?: number | null;
+            origin: components["schemas"]["GeneratedAppOrigin"];
             permissions?: components["schemas"]["AppSurfacePermissions"];
-            presentation?: null | components["schemas"]["AppSurfacePresentationAction"];
             provenance?: unknown;
             source?: components["schemas"]["SelfControlSource"];
             title: string;
@@ -3849,6 +3875,7 @@ export interface components {
             delivery?: string | null;
             diff?: string | null;
             fileAttachments?: components["schemas"]["TimelineFileAttachment"][];
+            generatedApp?: null | components["schemas"]["GeneratedAppReference"];
             id?: string | null;
             images?: components["schemas"]["TimelineToolImage"][];
             kind?: string | null;
@@ -4183,6 +4210,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RateLimitsResponse"];
+                };
+            };
+        };
+    };
+    get_app_surface: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppSurfaceSessionResponse"];
                 };
             };
         };

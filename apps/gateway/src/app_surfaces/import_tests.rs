@@ -212,20 +212,31 @@ async fn held_read_stays_responsive(method: &'static str) {
     worker.shutdown().await;
 }
 
-async fn generated(state: &AppState, title: &str) {
-    let _ = crate::routes::self_control::upsert_self_control_generated_app_surface(
-        State(state.clone()),
-        Path("widget-chat".into()),
-        Json(
-            serde_json::from_value(json!({
-                "title":title,"html":format!("<h1>{title}</h1>"),"fallbackContent":title,
-                "grants":{"canSendMessage":true}
-            }))
-            .unwrap(),
-        ),
-    )
-    .await
-    .unwrap();
+// External pane replacement remains scoped to the external importer.
+async fn external_surface(state: &AppState, title: &str) {
+    let mut mutation = state.app_surface_imports.lock_mutation("widget-chat").await;
+    state
+        .store
+        .upsert_app_surface_session(crate::store::AppSurfaceSessionUpsert {
+            thread_id: "widget-chat".into(),
+            provider: crate::store::AppSurfaceProvider::Mcp,
+            title: title.into(),
+            html: format!("<h1>{title}</h1>"),
+            fallback_content: title.into(),
+            resource_uri: Some("ui://docs/external".into()),
+            resource_mime_type: super::MCP_APP_MIME_TYPE.into(),
+            display_modes: vec!["inline".into()],
+            csp: Default::default(),
+            permissions: Default::default(),
+            grants: crate::store::AppSurfaceGrants {
+                can_send_message: true,
+                ..Default::default()
+            },
+            provenance: serde_json::json!({}),
+        })
+        .await
+        .unwrap();
+    mutation.committed();
 }
 
 async fn import_barrier(state: &AppState, live: &mut broadcast::Receiver<EventEnvelope>) {
@@ -316,7 +327,7 @@ async fn fifo_preserves_native_import_order_and_replayed_latest_item_does_not_ro
 }
 
 #[tokio::test]
-async fn generated_replacement_and_archive_retire_held_and_queued_widget_imports() {
+async fn external_replacement_and_archive_retire_held_and_queued_widget_imports() {
     for (archive, held) in [
         (false, "mcpServer/resource/read"),
         (true, "mcpServer/resource/read"),
@@ -329,7 +340,7 @@ async fn generated_replacement_and_archive_retire_held_and_queued_widget_imports
             Store::in_memory().await.unwrap(),
             native.clone(),
         );
-        generated(&state, "Original").await;
+        external_surface(&state, "Original").await;
         let worker = super::start_import_worker(&state).unwrap();
         let mut live = state.events.subscribe();
         events::ingest_inbound(widget("old"), &state).await.unwrap();
@@ -348,7 +359,7 @@ async fn generated_replacement_and_archive_retire_held_and_queued_widget_imports
             .await
             .unwrap();
         } else {
-            generated(&state, "Newer generated document").await;
+            external_surface(&state, "Newer external document").await;
         }
         let saved = state
             .store
@@ -401,7 +412,7 @@ async fn mutation_between_native_receipt_and_fifo_admission_retires_the_captured
     )
     .await
     .unwrap();
-    generated(&state, "Generated after native receipt").await;
+    external_surface(&state, "External replacement after native receipt").await;
     super::enqueue_mcp_app_surface_import(&state, job).await;
     import_barrier(&state, &mut live).await;
     assert_eq!(
@@ -412,7 +423,7 @@ async fn mutation_between_native_receipt_and_fifo_admission_retires_the_captured
             .unwrap()
             .unwrap()
             .title,
-        "Generated after native receipt"
+        "External replacement after native receipt"
     );
     assert!(!native
         .calls
@@ -534,7 +545,7 @@ async fn repeated_ui_messages_do_not_retire_a_widget_import_or_change_the_retain
         Store::in_memory().await.unwrap(),
         native.clone(),
     );
-    generated(&state, "Interactive form").await;
+    external_surface(&state, "Interactive form").await;
     let original = state
         .store
         .latest_app_surface_session("widget-chat")
@@ -632,7 +643,7 @@ async fn native_resource_or_catalog_failure_preserves_existing_artifact_and_does
             Store::in_memory().await.unwrap(),
             native.clone(),
         );
-        generated(&state, "Retained document").await;
+        external_surface(&state, "Retained document").await;
         let before = state
             .store
             .latest_app_surface_session("widget-chat")

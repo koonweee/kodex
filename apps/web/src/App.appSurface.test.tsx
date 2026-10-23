@@ -24,6 +24,14 @@ describe("app surface pane integration", () => {
     vi.unstubAllGlobals();
   });
 
+  it("retires a restored generated pane without mounting an executable document", async () => {
+    const gateway = mockGateway(baseRoutes({"GET /v1/threads/thread-1/app-surface":{session:null,retiredGenerated:true}}));
+    seedAppSurfaceWorkspace();render(<App/>);
+    expect(await screen.findByText("Generated pane retired")).toBeInTheDocument();
+    expect(screen.queryByTitle(/app surface:/i)).not.toBeInTheDocument();
+    expect(gateway.callsFor("GET","/v1/app-surfaces/session-1/document")).toHaveLength(0);
+  });
+
   it("opens the selected thread app surface as a narrow workspace pane", async () => {
     vi.stubGlobal("matchMedia", (query: string): MediaQueryList => ({
       matches: query === NARROW_WORKSPACE_QUERY,
@@ -306,7 +314,7 @@ function appSurfaceSession(overrides: Partial<AppSurfaceSession> = {}): AppSurfa
     id: "session-1",
     provenance: { source: "test" },
     permissions: {},
-    provider: "generated",
+    provider: "mcp",
     resourceMimeType: "text/html",
     resourceUri: "ui://kodex/generated/session-1",
     revision: 1,

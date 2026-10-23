@@ -1,30 +1,29 @@
 ---
 name: kodex-generative-ui
-description: Open or update a temporary thread-bound interactive app-surface pane when visual structure, direct manipulation, forms, comparisons, previews, branching choices, or repeated actions are clearer than chat alone; use the Kodex Control app-surface MCP tools rather than duplicating their schema.
+description: Create a self-contained interactive card inline in a Kodex conversation when visual structure, direct manipulation, forms, comparisons, previews, branching choices, or repeated actions are clearer than chat alone; use the Kodex Control app-surface MCP tools rather than duplicating their schema.
 ---
 
 # Generative UI
 
-Use this skill when a Kodex thread would be clearer with a temporary interactive HTML pane than with chat alone: mockup comparisons, structured questionnaires, visual pickers, small calculators, review dashboards, architecture maps, option boards, or task-specific controls.
+Use this skill when a Kodex thread would be clearer with an interactive HTML card inside its conversation than with chat alone: mockup comparisons, structured questionnaires, visual pickers, small calculators, review dashboards, architecture maps, option boards, or task-specific controls.
 
-Generated app surfaces should justify their presence. Use them when layout, visual grouping, direct manipulation, branching choices, comparison, preview, progressive disclosure, or repeated actions make the experience clearer or faster. Avoid opening an app surface for content that works just as well as a normal chat response.
+Generated app surfaces should justify their presence. Use them when layout, visual grouping, direct manipulation, branching choices, comparison, preview, progressive disclosure, or repeated actions make the experience clearer or faster. Avoid creating a card for content that works just as well as a normal chat response.
 
 ## Workflow
 
-- Use `open_app_surface` to create the pane.
-- Use `update_app_surface` when the user asks for a revision, follows an app-surface action, or needs the pane to reflect new data.
-- `open_app_surface` focuses the new pane by default. Pass `presentation: "open"` only when the browser should make the pane available without switching focus. For `update_app_surface`, pass `presentation: "focus"` when the revision should become active; omit `presentation` only for background/non-disruptive updates.
-- Use `show_app_surface` with `action: "open"` or `action: "focus"` to open or focus the latest existing pane without replacing its server-side content. Do not promise unsaved local UI edits remain intact: if the previous iframe was closed, hidden, unmounted, or reloaded, in-iframe state may reset unless the app explicitly saved or submitted that state.
-- Use `get_app_surface` only when you need to inspect the current pane metadata.
-- Use `archive_app_surface` when the user asks to dismiss or remove the app surface.
-- Pair every open or update with a short assistant message that says what the pane is for.
-- Pass nested metadata as JSON objects, not strings. For example, use `grants: { "canSendMessage": true }` and `csp: { "connectDomains": [], "resourceDomains": [] }`; do not pass `grants: "{\"canSendMessage\":true}"`, `permissions: "{}"`, or a CSP header string.
-- Treat the MCP tool schemas and validation errors as the source of truth for required fields and limits. Do not inspect the Kodex repository or gateway source code to learn how app surfaces work; production agents will not have that source. Do not restate or invent a parallel schema in the skill.
+- Use `create_app_surface` for every generated UI, including revisions. Each call creates a new card at its native tool-call position in the chat. Earlier cards remain unchanged and interactive.
+- Cards appear immediately outside collapsed tool details. They have no expand, collapse or separate-pane action.
+- Use `get_app_surface` with the returned session’s `id` as `sessionId` and its owning `threadId` to inspect an earlier card. Set `includeDocument: true` when its HTML is needed as the starting point for a revised new card.
+- Pair creation with a short assistant message explaining what the card is for.
+- Pass nested metadata as JSON objects, not serialized strings: `grants: { "canSendMessage": true }`, `csp: { "connectDomains": [], "resourceDomains": [] }`.
+- Treat tool schemas and validation errors as the source of truth. Do not inspect the Kodex repository or gateway source or invent a parallel schema.
+- `show_app_surface` and `archive_app_surface` manage external MCP panes only. They do not apply to generated cards.
 
 ## Thread Targeting
 
-- Every app-surface call requires an explicit `threadId` belonging to the connected Kodex gateway. Use a thread ID returned by Kodex thread tools or resources, or an explicit target the user supplied.
-- MCP `_meta.threadId` does not establish Kodex ownership. Do not assume a desktop or other native-home chat can be targeted, or import its rollout to make an app surface work. If the intended Kodex target is unclear, inspect Kodex threads or ask the user to choose one.
+- Supply an explicit Kodex-owned `threadId` matching the current originating native call. Creation in another chat is rejected; ask that chat to generate its own UI instead.
+- Native call provenance is supplied by the host and validated against the native call. Do not invent or pass origin IDs or assume `_meta.threadId` establishes ownership.
+- If the current Kodex target is unclear, use Kodex discovery tools to identify it. Do not import a desktop or other native-home conversation.
 
 ## UI Requirements
 
@@ -33,7 +32,8 @@ Generated app surfaces should justify their presence. Use them when layout, visu
 - Strongly prefer a theme-native UI unless the user explicitly asks for a distinct visual style. Use injected Kodex semantic CSS variables for the document body, surfaces, cards, text, borders, buttons, chart marks, status colors, focus rings, shadows, and radii.
 - Avoid inventing custom palettes, gradients, stock dashboard chrome, or hard-coded color schemes for ordinary generated app surfaces.
 - Use raw color literals only as fallback values inside `var(--kodex-..., fallback)` declarations, for small data-visualization distinctions that still harmonize with Kodex tokens, or when the user explicitly asks for branded/custom styling.
-- Make the UI responsive for both desktop split pane and mobile full-height bottom sheet.
+- Make content responsive to the chat column's available width. The card grows with content and uses the chat's vertical scroll. Avoid viewport-height shells, fixed document heights, nested document scroll areas, and fullscreen or pane controls.
+- Unsent inputs may reset when a card scrolls out of view, remounts, changes theme or reloads. Do not promise draft persistence. Never submit automatically on load or remount.
 - Prefer interactive controls, visual structure, branching choices, comparisons, previews, progressive disclosure, or repeated actions over static text.
 - Do not request secrets, credentials, or sensitive personal data.
 
@@ -77,16 +77,16 @@ window.parent.postMessage({
 
 Use `_meta` only for compact structured details such as `source`, `section`, `action`, `selectedId`, or `selectedLabel`. Do not auto-submit on load; send `ui/message` only from explicit UI controls.
 
-Before opening or updating an app surface, check:
+Before creating a card, check:
 
 - Is this richer or clearer than chat alone?
 - Can each interaction be local, or does it need Codex, tools, external data, persistence, workflow continuation, or an explicit user decision?
 - If it has multiple sections or choices, does each likely user intent have the right local control or conversational action?
 - Does every conversational action submit a human-readable `message`, not only metadata?
 - Is metadata compact and structured?
-- Does the UI look like a native Kodex pane rather than a standalone mini-site or generic dashboard?
+- Does the UI look like a native Kodex card rather than a standalone mini-site or generic dashboard?
 - Do the CSS rules use `var(--kodex-...)` tokens for all core chrome and only use raw colors as fallbacks or intentional small chart distinctions?
-- Is the UI responsive in split-pane and mobile sheet layouts?
+- Is the UI responsive in wide and narrow chat columns?
 
 ## Theme Tokens
 

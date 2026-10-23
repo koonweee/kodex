@@ -100,7 +100,7 @@ async fn request(state: &AppState, method: Method, path: &str, body: Value) -> (
 }
 
 fn surface_body() -> Value {
-    json!({"title":"View","html":"<!doctype html><main>View</main>","fallbackContent":"View","presentation":"focus"})
+    json!({"title":"View","html":"<!doctype html><main>View</main>","fallbackContent":"View","origin":{"threadId":"owned-chat","turnId":"turn","itemId":"call"}})
 }
 
 async fn seed_surface(state: &AppState, thread_id: &str) {
@@ -108,7 +108,7 @@ async fn seed_surface(state: &AppState, thread_id: &str) {
         .store
         .upsert_app_surface_session(AppSurfaceSessionUpsert {
             thread_id: thread_id.into(),
-            provider: AppSurfaceProvider::Generated,
+            provider: AppSurfaceProvider::Mcp,
             title: "Existing view".into(),
             resource_uri: None,
             resource_mime_type: MCP_APP_MIME_TYPE.into(),
@@ -199,8 +199,20 @@ async fn native_control_surface_stored_record_does_not_establish_native_ownershi
 #[tokio::test]
 async fn native_control_surface_owned_unloaded_target_uses_metadata_without_activation() {
     let (state, native) = state(false).await;
+    let (status, _) = request(
+        &state,
+        Method::POST,
+        "/v1/self-control/threads/owned-chat/app-surface",
+        surface_body(),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "unloaded metadata is insufficient for generated inline placement"
+    );
+    seed_surface(&state, "owned-chat").await;
     for (method, suffix, body) in [
-        (Method::POST, "", surface_body()),
         (Method::GET, "", json!({})),
         (Method::POST, "/presentation", json!({"action":"focus"})),
         (Method::DELETE, "", json!({})),

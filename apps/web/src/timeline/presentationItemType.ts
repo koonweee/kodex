@@ -15,6 +15,8 @@ export function normalizedItemType(event: EventEnvelope): string {
   const item = eventItem(event);
   const exactItemType = stringValue(item.type).toLowerCase();
   switch (exactItemType) {
+    case "generatedapp":
+      return "generated_app";
     case "agentmessage":
       return "assistant_message";
     case "collabagenttoolcall":

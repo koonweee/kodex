@@ -10,10 +10,9 @@ use std::collections::{HashMap, HashSet};
 impl ThreadView {
     pub(crate) fn rows_for_turn(&self, turn_id: &str) -> Vec<ThreadTimelineRow> {
         let mut items = self
-            .items
-            .iter()
+            .projection_items()
+            .into_iter()
             .filter(|item| item.turn_id == turn_id)
-            .cloned()
             .collect::<Vec<_>>();
         items.sort_by_key(|item| item.display_order);
         let turns = self.turns_for_patch_items(turn_id, &items);
@@ -63,10 +62,9 @@ impl ThreadView {
 
     pub(crate) fn turn_patch(&self, turn_id: &str) -> ThreadViewPatch {
         let mut items = self
-            .items
-            .iter()
+            .projection_items()
+            .into_iter()
             .filter(|item| item.turn_id == turn_id)
-            .cloned()
             .collect::<Vec<_>>();
         items.sort_by_key(|item| item.display_order);
         let turns = self.turns_for_patch_items(turn_id, &items);
@@ -86,8 +84,7 @@ impl ThreadView {
     }
 
     pub(crate) fn to_patch(&self) -> ThreadViewPatch {
-        let mut items = self.items.clone();
-        items.sort_by_key(|item| item.display_order);
+        let items = self.projection_items();
         let turns = self.turns_for_items(&items);
         let rows = thread_timeline_rows_from_items(
             self.active_turn_id.as_deref(),

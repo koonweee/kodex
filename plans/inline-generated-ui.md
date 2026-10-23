@@ -2,7 +2,7 @@
 
 ## Status
 
-Active. Scoped with the user on 2026-10-22; execution started with the M1 origin-correlation proof. Deployment is outside this plan.
+Complete. Scoped with the user on 2026-10-22; M1–M4 are implemented, verified and independently reviewed. Deployment and push are outside this plan.
 
 ## Objective
 
@@ -62,7 +62,7 @@ Artifacts are top-level rows at their origin position. Split surrounding grouped
 
 Use existing canonical projection write exclusion/revisions and refill behavior. Native RPCs stay outside the exclusion. Snapshot, live patch, older-page and read-only observer paths must agree; delayed reads cannot resurrect removed placement.
 
-On native revert, remove placements whose anchors leave canonical history and fence in-flight artifact creation/projection against that reset. Do not delete independent artifacts. Reject conversational/tool actions from orphaned or retired placements. Forks do not implicitly copy generated artifacts; only the original owning thread gets their placements and bridge authority in this version.
+On native revert, remove placements whose anchors leave canonical history and fence in-flight artifact creation/projection against that reset. Do not delete independent artifacts. Reject conversational/tool actions from orphaned or retired placements. Capture the history-reset generation before each native anchor read, fence its response, and carry that token through local validation/approval awaits to a final pre-write check. This check is action admission: reset-first rejects; an action admitted before reset may complete under native semantics. Recheck before a definite missing-thread resume/retry. Never hold projection locks over native RPCs. Forks do not implicitly copy generated artifacts; only the original owning thread gets their placements and bridge authority in this version.
 
 ### Bridge and submission
 
@@ -81,6 +81,8 @@ Inject measurement for generated documents so agents do not have to implement ho
 Remove pane-specific viewport minimums from inline document styling. Avoid height feedback loops, repeated reloads, and artificial internal scroll regions. Generated guidance must avoid fixed viewport-height shells. Invalid/non-finite measurements should be rejected without accepting arbitrary CSS or changing surrounding layout authority. No product height cap.
 
 Let Virtuoso measure the resulting row height. Preserve the reader's position when a card above the viewport changes size and preserve existing bottom-follow behavior. Do not steal focus when a card arrives. Width changes reflow within the owning pane, independently of neighboring panes.
+
+The browser regression found that Virtuoso's upward-scroll compensation alone does not preserve a stationary reader after every above-viewport iframe resize. A small per-pane correction therefore captures the visible row before such a resize and restores it through four measurement frames. It uses the existing scroll owner's authoritative bottom-follow state, including a paused reader within the near-bottom band, and cancels on user input. The capture/restore helpers are shared with older-history prepend correction. This is visual state only; it adds no durable state, iframe keep-alive, or retry/synchronization ownership.
 
 Normal virtualization is retained. Remounts may reset unsent local state; reload and theme-related remount persistence are not promised. Avoid rerendering/reloading an unchanged document on routine SSE updates.
 
@@ -150,3 +152,22 @@ Exit: acceptance below passes, docs/types are current, independent review has no
 ## Review notes
 
 Planning self-review checked the six user decisions against storage, projection, input routing, iframe lifecycle and responsive ownership. The principal implementation gate is reliable origin correlation; the principal browser risk is content measurement interacting with virtualized scrolling. Neither is treated as already solved.
+
+
+## Completion evidence
+
+- M1: the pinned official 0.160.0 runtime proves Code Mode call-ID correlation for concurrent and sequential native calls. The real built-in create proof creates two independent cards before the final answer, rejects a foreign thread, and preserves placements and the first card's bridge token across a cold restart. The built-in Control ownership and external hosted-widget proofs also pass using disposable state.
+- M2: gateway regressions cover identical canonical publication to two subscribers, immutable documents/grants, fresh message IDs for repeated actions, native reset/approval admission fencing, retired/orphan rejection, and storage preservation. Older-page refills restore the card immediately after its anchor without duplicates; another thread receives no placement. Rust DTOs generate the committed OpenAPI frontend types; the breaking create-only surface uses API epoch 4.
+- M3: bundled Chromium covers wide/narrow fine-pointer and touch layouts, independent cards, grow/shrink past 1,600px without document scrolling, composer focus on arrival, old-card actions, missed-event reconnect and reload. Separate above-viewport size notifications exercise stationary readers and paused readers within 60px of the bottom. Those tests observe a real sandbox proxy and host/virtualizer resize, rather than requiring offscreen child-document animation frames to run. Native document measurement is covered separately by the visible grow/shrink flows. Normal iframe unmount/reset remains intentional.
+- M4: runtime skill, tool descriptions, agent metadata and README use the new create-only contract. Legacy generated pane rendering/presentation/bridge access is retired without importing its history or deleting stored documents; external MCP pane behavior remains covered.
+
+Verification completed:
+
+- `cargo test -p kodex-gateway`: 758 library tests plus four ordinary integration/binary tests pass; opt-in native tests remain ignored by default.
+- `KODEX_TEST_CODEX_BINARY=/Users/jtkw/.local/share/kodex/current/native/bin/codex cargo test -p kodex-gateway --test native_app_server -- --ignored generated_ real_native_builtin_control_bundle_uses_its_owned_gateway_and_explicit_target real_native_hosted_widget_origin_account_bridge_and_cached_reopen`: four disposable native proofs pass.
+- `cd apps/web && npm test -- --maxWorkers=4`: 175 files, 1,347 tests pass; one existing test is skipped.
+- Playwright `inline-generated-ui`, `native-app-surfaces`, `thread-pane-scroll` and `workspace-thread-scroll`: 23 applicable cases pass, including the two corrected resize probes; two existing shape-specific split-pane cases skip. The resize probes were rerun after fixing fixture readiness and the assertion that had incorrectly required an offscreen iframe to stay mounted.
+- `npm run generate:api`, frontend build, frontend trim, backend trim, formatting and diff checks pass. No new theme roles or shared color mappings were added.
+- Agent-browser inspected the disposable Playwright Chromium instance through CDP, including a narrow chat beside a spacious draft pane; the screenshot and DOM inspection showed independent inline cards and no pane/expand controls, and the browser error inspection was clear.
+
+Independent GPT-5.6 Sol/high reviews covered native origin evidence, backend ownership/reset/retirement behavior, frontend lifecycle/errors/focus, and the resize correction. All required findings were fixed; no major issues remain. The running service and user-owned workspace data were not deployed, imported or reset.

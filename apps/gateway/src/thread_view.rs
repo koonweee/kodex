@@ -25,6 +25,7 @@ use crate::{
     store::Approval,
 };
 
+mod generated_apps;
 mod pending_input;
 #[cfg(test)]
 use crate::app_server_api::UserInput;
@@ -336,6 +337,7 @@ pub(crate) struct ThreadView {
     pub(crate) pending_user_input_requests: Vec<PendingTimelineRequestSummary>,
     pub(crate) turns: Vec<ThreadTimelineSnapshotTurn>,
     pub(crate) items: Vec<ThreadTimelineSnapshotItem>,
+    pub(crate) generated_apps: Vec<crate::store::GeneratedAppAttachment>,
     pub(crate) terminal_turn_ids: HashSet<String>,
     pub(crate) history_turns: Vec<ThreadTurnSnapshot>,
     pub(crate) history_page: Option<ThreadTimelineWindowPage>,
@@ -585,7 +587,7 @@ impl ThreadView {
             .filter(|turn| is_terminal_turn_status(&turn.status))
             .map(|turn| turn.id.clone())
             .collect();
-        base
+        self.to_snapshot()
     }
 
     fn upsert_item(
@@ -776,8 +778,7 @@ impl ThreadView {
     }
 
     fn to_snapshot(&self) -> ThreadTimelineSnapshot {
-        let mut items = self.items.clone();
-        items.sort_by_key(|item| item.display_order);
+        let items = self.projection_items();
         let turns = self.turns_for_items(&items);
         let rows = thread_timeline_rows_from_items(
             self.active_turn_id.as_deref(),

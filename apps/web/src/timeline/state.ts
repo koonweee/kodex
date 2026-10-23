@@ -1,5 +1,6 @@
 import type {
   EventEnvelope,
+  GeneratedAppReference,
   PendingTimelineRequestSummary,
   ThreadTimelineFileChangeEntry,
   TimelineFileAttachment,
@@ -55,6 +56,7 @@ export type TimelineItem = {
   path?: string;
   imageSrc?: string;
   messagePhase?: string;
+  generatedApp?: GeneratedAppReference;
   asyncQuestions?: { title: string; options: string[] }[];
   resultSummary?: string;
   summary?: string;

@@ -9,7 +9,7 @@ import { nativeSettingsFixture } from "./native-settings.fixture";
 export async function nativeAppSurfacesFixture(context: BrowserContext) {
   const fixture = await nativeSettingsFixture(context);
   const threadId = fixture.detail.thread.id;
-  let current: AppSurfaceSession | null = session("generated", 1);
+  let current: AppSurfaceSession | null = session("mcp", 1);
   const knownSessions = new Map([[current.id, current]]);
   const documents = new Map([[current.documentUrl, documentHtml(current)]]);
   const calls: Array<{ page: Page; key: string; body: unknown }> = [];

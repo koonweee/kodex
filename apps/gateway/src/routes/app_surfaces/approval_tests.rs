@@ -40,6 +40,7 @@ async fn generated_surface() -> (AppState, Arc<RecordingAppServer>, AppSurfaceSe
 
 fn request(session: &AppSurfaceSession, params: Value) -> AppSurfaceBridgeRequest {
     AppSurfaceBridgeRequest {
+        admission_revision: None,
         id: Some(json!(1)),
         revision: session.revision,
         bridge_token: Some(session.bridge_token.clone()),
@@ -158,4 +159,35 @@ async fn generated_approval_distinguishes_absent_and_null_call_fields() {
             assert_eq!(native.requests.lock().unwrap().len(), 1);
         }
     }
+}
+
+#[tokio::test]
+async fn generated_approved_tool_is_fenced_when_reset_wins_admission() {
+    let (state, native, session) = generated_surface().await;
+    let mut params = call_params();
+    let id = approve(&state, &session, params.clone()).await;
+    params["approvalId"] = json!(id);
+    let mut call = request(&session, params);
+    call.admission_revision = Some(0);
+    state
+        .thread_views
+        .reset_history(&session.thread_id, std::future::ready(Ok(100)))
+        .await
+        .unwrap();
+    let result = bridge_tool_call(state.clone(), session.clone(), call).await;
+    assert!(matches!(result, Err(ApiError::Conflict(_))));
+    assert!(native.requests.lock().unwrap().is_empty());
+    let mut message = request(
+        &session,
+        json!({"role":"user","content":{"type":"text","text":"obsolete"}}),
+    );
+    message.method = "ui/message".into();
+    message.admission_revision = Some(0);
+    let mut message_session = session;
+    message_session.grants.can_send_message = true;
+    assert!(matches!(
+        bridge_message(state, message_session, message).await,
+        Err(ApiError::Conflict(_))
+    ));
+    assert!(native.requests.lock().unwrap().is_empty());
 }

@@ -25,6 +25,8 @@ A Rust gateway manages Codex and local capabilities, while a responsive React PW
 
 <p align="center"><sub>Codex turns a live forecast request into an interactive weekly weather surface.</sub></p>
 
+Generated UI now appears as independent interactive cards in chat. Use `create_app_surface` for each new result or requested revision; earlier cards stay interactive. Cards grow with content and use the chat scroll, with no expand or generated-pane action. Unsent inputs may reset when a card remounts after scrolling. Use `get_app_surface` with `sessionId` and `includeDocument: true` to read an earlier card before generating a revision. External MCP Apps retain their panes; old generated panes are retired without importing them into chat history.
+
 <p align="center">
   <img src="docs/media/kodex-mobile-responsive.png" alt="Kodex mobile project navigation and thread workspace side by side" width="760" />
 </p>

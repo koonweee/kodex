@@ -1074,7 +1074,7 @@ test("restores selected thread model settings when switching threads", async ({ 
         status: 200,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          gateway: { apiVersion: "3",
+          gateway: { apiVersion: "4",
             instanceId: "mvp-test-instance",
             version: "0.1.0",
             sse: true,
@@ -1499,7 +1499,7 @@ async function responseFor(key: string, route: Route, projects = [project], thre
   if (key === "GET /v1/capabilities") {
     return {
       body: {
-        gateway: { apiVersion: "3",
+        gateway: { apiVersion: "4",
           instanceId: "mvp-test-instance",
           version: "0.1.0",
           sse: true,

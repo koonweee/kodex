@@ -202,3 +202,36 @@ async fn live_regrouping_patches_converge_with_native_refills() {
         assert_eq!(groups(&refill), expected);
     }
 }
+
+#[test]
+fn completed_generated_cards_split_work_without_hiding_prominent_results() {
+    let turn=crate::app_server_api::ThreadTurnSnapshot::from_payload(&serde_json::json!({
+        "id":"turn","status":"completed","startedAt":1000,"completedAt":2000,"items":[
+            {"id":"user","type":"userMessage","content":[{"type":"text","text":"Make a card"}]},
+            {"id":"call","type":"mcpToolCall","server":"kodex-control","tool":"create_app_surface","arguments":{},"status":"completed"},
+            {"id":"card","type":"generatedApp"},
+            {"id":"later","type":"commandExecution","command":"pwd","status":"completed"},
+            {"id":"image","type":"imageGeneration","status":"completed"},
+            {"id":"compact","type":"contextCompaction"},
+            {"id":"answer","type":"agentMessage","phase":"final_answer","text":"Done"}
+        ]})).unwrap();
+    let snapshot = crate::app_server_api::ThreadTimelineSnapshot::from_turns("thread", &[turn]);
+    assert_eq!(
+        snapshot
+            .rows
+            .iter()
+            .map(|row| row.kind.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "user_message",
+            "work",
+            "generated_app",
+            "work",
+            "image_generation",
+            "context_compaction",
+            "assistant_message"
+        ]
+    );
+    assert_eq!(snapshot.rows[1].collapsed_rows[0].items[0].item_id, "call");
+    assert_eq!(snapshot.rows[3].collapsed_rows[0].items[0].item_id, "later");
+}

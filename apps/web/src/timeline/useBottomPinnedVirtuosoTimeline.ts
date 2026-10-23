@@ -400,7 +400,10 @@ export function useBottomPinnedVirtuosoTimeline({
     syncScrollPolicyFromParent,
   ]);
 
+  const isFollowingBottom = useCallback(() => isPinnedToBottomRef.current, []);
+
   return {
+    isFollowingBottom,
     followOutput,
     handleAtBottomStateChange,
     handleTotalListHeightChanged,

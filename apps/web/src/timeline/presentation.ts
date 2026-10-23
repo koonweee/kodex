@@ -1,4 +1,4 @@
-import type { EventEnvelope, TimelineFileAttachment, TimelineSkillMention } from "../api/client";
+import type { GeneratedAppReference, EventEnvelope, TimelineFileAttachment, TimelineSkillMention } from "../api/client";
 import type { TimelineItem } from "./state";
 import {
   collabAgentArgsSummary,
@@ -40,6 +40,11 @@ export function createPresentationItem(
   const status = eventStatus(event);
   const id = presentationItemId(event, itemType);
   const base = createBaseItem(event, id, itemType || existingItem?.kind || "", status);
+
+  if (itemType === "generated_app") {
+    const card = item.generatedApp as GeneratedAppReference | undefined;
+    return {item:{...base,generatedApp:card,text:card?.fallbackContent ?? ""},hidden:!card};
+  }
 
   if (itemType === "assistant_message") {
     const questions = asyncQuestions(event.payload);

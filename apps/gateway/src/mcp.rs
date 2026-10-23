@@ -307,10 +307,6 @@ pub struct AppSurfaceToolParams {
     pub html: String,
     pub fallback_content: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub presentation: Option<AppSurfacePresentationAction>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub display_modes: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub csp: Option<AppSurfaceToolCsp>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permissions: Option<AppSurfaceToolPermissions>,
@@ -391,6 +387,10 @@ pub struct AppSurfaceToolGrants {
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSurfaceThreadToolParams {
+    #[serde(default)]
+    pub include_document: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
     #[serde(alias = "thread_id")]
     pub thread_id: String,
 }
@@ -831,44 +831,94 @@ impl KodexControlMcp {
     }
 
     #[tool(
-        description = "Open a generated app surface in the explicitly selected Kodex-owned threadId. App surfaces are host-originated MCP Apps: provide MCP App-compatible HTML as self-contained `text/html;profile=mcp-app`, meaningful fallbackContent for text-only hosts, declared CSP/permissions metadata, and declared grants for any JSON-RPC bridge access. Pass `csp`, `permissions`, and `grants` as JSON objects, never as serialized JSON strings or CSP header text. Inside the iframe use MCP Apps JSON-RPC over postMessage: `ui/message` with `{ role: \"user\", content: { type: \"text\", text } }`, `tools/call` with a granted app-local `{ name, arguments }`, and `resources/read` with `{ uri }`. If any control sends `ui/message`, declare `grants.canSendMessage: true`. Generated HTML using legacy generated UI submit events is rejected. The pane focuses by default when presentation is omitted; set presentation to \"open\" only when intentionally opening it quietly."
+        description = "Create a new independent interactive HTML card inline in the current Kodex chat. Every call creates a new card; revisions must create another card. Use self-contained MCP Apps HTML, meaningful fallbackContent, and JSON-object csp/permissions/grants. Declare grants.canSendMessage for explicit conversational actions. The explicit threadId must match the native originating call. Cards use the chat scroll, have no expand or pane action, and unsent inputs may reset when scrolled away. Do not auto-submit on load."
     )]
-    async fn open_app_surface(
+    async fn create_app_surface(
         &self,
         Parameters(params): Parameters<AppSurfaceToolParams>,
+        context: rmcp::service::RequestContext<RoleServer>,
     ) -> Result<CallToolResult, McpError> {
-        upsert_app_surface_tool(self, params, Some(AppSurfacePresentationAction::Focus)).await
+        let origin = generated_app_origin(&context.meta.0, &params.thread_id)?;
+        let mut body = json_object(params)?;
+        let thread_id = body
+            .remove("threadId")
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .unwrap();
+        body.remove("presentation");
+        body.insert(
+            "origin".into(),
+            serde_json::to_value(origin).map_err(json_encode_error)?,
+        );
+        normalize_self_control_source_shorthand(&mut body)?;
+        Ok(json_tool_result(
+            self.post_json(
+                &format!(
+                    "/v1/self-control/threads/{}/app-surface",
+                    path_segment(&thread_id)
+                ),
+                Value::Object(body),
+            )
+            .await?,
+        ))
     }
 
     #[tool(
-        description = "Replace the latest generated app-surface revision for the explicitly selected Kodex-owned threadId. Keep the new revision MCP Apps-compatible: use JSON-RPC methods such as `ui/message`, `tools/call { name, arguments }`, and `resources/read { uri }`; declare CSP/permissions metadata and any tool grants with app-local names; provide meaningful fallbackContent. Pass `csp`, `permissions`, and `grants` as JSON objects, never as serialized JSON strings or CSP header text. Optional presentation controls whether the browser should open the pane without switching focus (\"open\") or switch focus to it (\"focus\") when this revision arrives."
-    )]
-    async fn update_app_surface(
-        &self,
-        Parameters(params): Parameters<AppSurfaceToolParams>,
-    ) -> Result<CallToolResult, McpError> {
-        upsert_app_surface_tool(self, params, None).await
-    }
-
-    #[tool(
-        description = "Read the latest app-surface metadata for the explicitly selected Kodex-owned threadId"
+        description = "Read app-surface metadata. Supply sessionId and its explicit owning threadId to inspect an earlier generated card; set includeDocument to read its HTML when making a revised new card. Omit sessionId to inspect the latest external MCP pane."
     )]
     async fn get_app_surface(
         &self,
         Parameters(params): Parameters<AppSurfaceThreadToolParams>,
     ) -> Result<CallToolResult, McpError> {
         let thread_id = validate_app_surface_thread_id(params.thread_id)?;
-        Ok(json_tool_result(
-            self.get_json(&format!(
+        let path = if let Some(id) = params.session_id {
+            format!("/v1/app-surfaces/{}", path_segment(&id))
+        } else {
+            format!(
                 "/v1/self-control/threads/{}/app-surface",
                 path_segment(&thread_id)
-            ))
-            .await?,
-        ))
+            )
+        };
+        let mut value = self.get_json(&path).await?;
+        if value
+            .pointer("/session/threadId")
+            .and_then(Value::as_str)
+            .is_some_and(|id| id != thread_id)
+        {
+            return Err(McpError::invalid_params(
+                "App surface does not belong to target thread",
+                None,
+            ));
+        }
+        if params.include_document {
+            if let Some(path) = value
+                .pointer("/session/documentUrl")
+                .and_then(Value::as_str)
+            {
+                let response = self
+                    .client
+                    .get(format!("{}{}", self.gateway_url, path))
+                    .send()
+                    .await
+                    .and_then(|r| r.error_for_status())
+                    .map_err(|e| {
+                        McpError::internal_error(
+                            "App surface document read failed",
+                            Some(json!({"error":e.to_string()})),
+                        )
+                    })?;
+                value["document"] = Value::String(response.text().await.map_err(|e| {
+                    McpError::internal_error(
+                        "App surface document body failed",
+                        Some(json!({"error":e.to_string()})),
+                    )
+                })?);
+            }
+        }
+        Ok(json_tool_result(value))
     }
 
     #[tool(
-        description = "Open or focus the latest app-surface pane for the explicitly selected Kodex-owned threadId. Use action \"open\" to make the pane available without switching focus, or \"focus\" to switch the user's workspace to it. This preserves the server-side app-surface session/revision, but if the previous pane iframe was closed or unmounted, unsaved local UI state inside that iframe may reset."
+        description = "Open or focus the latest external MCP app-surface pane for the explicitly selected Kodex-owned threadId. Use action \"open\" to make the pane available without switching focus, or \"focus\" to switch the user's workspace to it. This preserves the server-side app-surface session/revision, but if the previous pane iframe was closed or unmounted, unsaved local UI state inside that iframe may reset."
     )]
     async fn show_app_surface(
         &self,
@@ -1791,16 +1841,6 @@ fn spawn_thread_body(params: SpawnThreadToolParams) -> Result<Map<String, Value>
     Ok(body)
 }
 
-async fn upsert_app_surface_tool(
-    service: &KodexControlMcp,
-    params: AppSurfaceToolParams,
-    default_presentation: Option<AppSurfacePresentationAction>,
-) -> Result<CallToolResult, McpError> {
-    Ok(json_tool_result(
-        upsert_app_surface_value(service, params, default_presentation).await?,
-    ))
-}
-
 async fn show_app_surface_tool(
     service: &KodexControlMcp,
     params: AppSurfacePresentationToolParams,
@@ -1822,29 +1862,37 @@ async fn show_app_surface_tool(
     ))
 }
 
-async fn upsert_app_surface_value(
-    service: &KodexControlMcp,
-    params: AppSurfaceToolParams,
-    default_presentation: Option<AppSurfacePresentationAction>,
-) -> Result<Value, McpError> {
-    let thread_id = validate_app_surface_thread_id(params.thread_id.clone())?;
-    let mut body = json_object(params)?;
-    body.remove("threadId");
-    if !body.contains_key("presentation") {
-        if let Some(default_presentation) = default_presentation {
-            body.insert("presentation".to_string(), json!(default_presentation));
-        }
-    }
-    normalize_self_control_source_shorthand(&mut body)?;
-    service
-        .post_json(
-            &format!(
-                "/v1/self-control/threads/{}/app-surface",
-                path_segment(&thread_id)
-            ),
-            Value::Object(body),
+fn generated_app_origin(
+    meta: &Map<String, Value>,
+    target: &str,
+) -> Result<crate::store::GeneratedAppOrigin, McpError> {
+    let native = meta.get("x-codex-turn-metadata").ok_or_else(|| {
+        McpError::invalid_params(
+            "Inline generated UI requires native tool-call provenance",
+            None,
         )
-        .await
+    })?;
+    let field = |value: Option<&Value>| {
+        value
+            .and_then(Value::as_str)
+            .filter(|s| !s.trim().is_empty())
+            .map(str::to_owned)
+    };
+    let origin = crate::store::GeneratedAppOrigin {
+        thread_id: field(native.get("thread_id"))
+            .ok_or_else(|| McpError::invalid_params("Missing native origin thread", None))?,
+        turn_id: field(native.get("turn_id"))
+            .ok_or_else(|| McpError::invalid_params("Missing native origin turn", None))?,
+        item_id: field(meta.get("callId"))
+            .ok_or_else(|| McpError::invalid_params("Missing native origin callId", None))?,
+    };
+    if origin.thread_id != target {
+        return Err(McpError::invalid_params(
+            "Inline generated UI must target its originating Kodex thread",
+            None,
+        ));
+    }
+    Ok(origin)
 }
 
 fn validate_app_surface_thread_id(thread_id: String) -> Result<String, McpError> {
@@ -2133,25 +2181,12 @@ mod tests {
 
         assert_tool_requires(
             &tools,
-            "open_app_surface",
+            "create_app_surface",
             &["threadId", "title", "html", "fallbackContent"],
-        );
-        assert_tool_description_contains(
-            &tools,
-            "open_app_surface",
-            &[
-                "MCP App-compatible HTML",
-                "JSON-RPC bridge",
-                "declared grants",
-                "permissions",
-                "fallbackContent",
-                "tools/call",
-                "ui/message",
-            ],
         );
         assert_tool_schema_contains(
             &tools,
-            "open_app_surface",
+            "create_app_surface",
             &[
                 "connectDomains",
                 "resourceDomains",
@@ -2195,10 +2230,18 @@ mod tests {
             "html".to_string(),
             json!("<!doctype html><button>Choose</button><script>window.parent.postMessage({jsonrpc:'2.0', id:1, method:'ui/message', params:{role:'user', content:{type:'text', text:'Choose'}}}, '*')</script>"),
         );
+        crate::events::ingest_inbound(crate::app_server::InboundMessage::Notification {
+            method:"item/started".into(), params:json!({"threadId":"thread-1","turnId":"turn-1","item":{"id":"call-1","type":"mcpToolCall","server":"kodex-control","tool":"create_app_surface","arguments":app_surface_args,"status":"inProgress"}})
+        },&state).await?;
         let mut app_surface_meta = JsonObject::new();
         app_surface_meta.insert("threadId".to_string(), json!("foreign-desktop-chat"));
+        app_surface_meta.insert("callId".into(), json!("call-1"));
+        app_surface_meta.insert(
+            "x-codex-turn-metadata".into(),
+            json!({"thread_id":"thread-1","turn_id":"turn-1"}),
+        );
         let mut app_surface_call =
-            CallToolRequestParams::new("open_app_surface").with_arguments(app_surface_args);
+            CallToolRequestParams::new("create_app_surface").with_arguments(app_surface_args);
         app_surface_call.set_meta(Meta(app_surface_meta));
         let opened: Value = client.call_tool(app_surface_call).await?.into_typed()?;
         assert_eq!(opened["session"]["threadId"], "thread-1");
@@ -2242,7 +2285,10 @@ mod tests {
             .call_tool(read_app_surface_call)
             .await?
             .into_typed()?;
-        assert_eq!(read["session"]["title"], "Mockups");
+        assert!(
+            read["session"].is_null(),
+            "generated cards do not occupy external panes"
+        );
 
         client.cancel().await?;
         mcp_server.abort();
