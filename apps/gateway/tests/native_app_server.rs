@@ -12,6 +12,8 @@ mod control_creation;
 mod first_turn_visibility;
 #[path = "native_app_server/fixture.rs"]
 mod fixture;
+#[path = "native_app_server/generated_origin.rs"]
+mod generated_origin;
 #[path = "native_app_server/history.rs"]
 mod history;
 #[path = "native_app_server/identity.rs"]
