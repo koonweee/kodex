@@ -1684,9 +1684,10 @@ pub struct TimelineThreadMetadataPayload {
     pub git_info: Option<GitInfoPatch>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum ThreadLiveState {
+    #[default]
     Idle,
     Streaming,
     Syncing,

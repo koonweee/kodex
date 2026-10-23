@@ -404,7 +404,7 @@ async fn list_all_threads(
     response
         .threads
         .retain(|thread| !thread_is_archived(thread));
-    apply_thread_list_response_state(&state, &mut response).await?;
+    apply_thread_list_response_state(state, &mut response).await?;
     Ok(response)
 }
 
@@ -469,7 +469,7 @@ async fn chat_thread_list_response(
     response
         .threads
         .retain(|thread| !thread_is_archived(thread));
-    apply_thread_list_response_state(&state, &mut response).await?;
+    apply_thread_list_response_state(state, &mut response).await?;
     Ok(response)
 }
 

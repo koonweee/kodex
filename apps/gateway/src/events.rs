@@ -790,14 +790,9 @@ async fn normalized_timeline_events(
     Ok(NormalizedTimelineEvents { events })
 }
 
+#[derive(Default)]
 struct NormalizedTimelineEvents {
     events: Vec<EventEnvelope>,
-}
-
-impl Default for NormalizedTimelineEvents {
-    fn default() -> Self {
-        Self { events: Vec::new() }
-    }
 }
 
 async fn timeline_item_delta_event(

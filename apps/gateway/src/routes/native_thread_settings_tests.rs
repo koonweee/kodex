@@ -74,15 +74,16 @@ async fn native_settings_write_ack_does_not_publish_unapplied_values() {
     let body: Value =
         serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap()).unwrap();
     assert_eq!(body, json!({}));
-    let calls = native.requests.lock().unwrap();
-    assert_eq!(
-        calls.as_slice(),
-        &[(
-            "thread/settings/update".into(),
-            json!({"threadId":"thread-1","serviceTier":null})
-        )]
-    );
-    drop(calls);
+    {
+        let calls = native.requests.lock().unwrap();
+        assert_eq!(
+            calls.as_slice(),
+            &[(
+                "thread/settings/update".into(),
+                json!({"threadId":"thread-1","serviceTier":null})
+            )]
+        );
+    }
     assert_eq!(state.store.latest_event_seq().await.unwrap(), 0);
 }
 

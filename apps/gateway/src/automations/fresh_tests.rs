@@ -41,18 +41,19 @@ async fn fresh_runs_create_distinct_chats_and_persist_target_before_input() {
             .next_run_at,
         automation.next_run_at
     );
-    let requests = native.requests.lock().unwrap();
-    let starts: Vec<_> = requests
-        .iter()
-        .filter(|(method, _)| method == "thread/start")
-        .collect();
-    assert_eq!(starts.len(), 2);
-    assert!(starts
-        .iter()
-        .all(|(_, payload)| payload["projectId"].is_null()
-            && payload["model"] == "chosen"
-            && payload["config"]["model_reasoning_effort"] == "high"));
-    drop(requests);
+    {
+        let requests = native.requests.lock().unwrap();
+        let starts: Vec<_> = requests
+            .iter()
+            .filter(|(method, _)| method == "thread/start")
+            .collect();
+        assert_eq!(starts.len(), 2);
+        assert!(starts
+            .iter()
+            .all(|(_, payload)| payload["projectId"].is_null()
+                && payload["model"] == "chosen"
+                && payload["config"]["model_reasoning_effort"] == "high"));
+    }
     let mut created = 0;
     while let Ok(event) = events.try_recv() {
         if event.kind == "thread.upserted" {

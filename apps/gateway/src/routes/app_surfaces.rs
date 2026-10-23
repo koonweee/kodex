@@ -280,7 +280,7 @@ pub async fn app_surface_bridge(
                 -32601,
                 format!("unsupported app surface bridge method {method}"),
             );
-            append_bridge_audit(&state, &session, &method, &params, &response).await?;
+            append_bridge_audit(&state, &session, method, &params, &response).await?;
             return Ok(Json(response));
         }
     };
@@ -369,7 +369,7 @@ fn bridge_initialize(session: &AppSurfaceSession, params: &Value) -> ApiResult<V
         .and_then(Value::as_str)
         .unwrap_or("2026-01-26");
     let available_display_modes = mcp_app_available_display_modes(&session.display_modes);
-    let host_capabilities = mcp_app_host_capabilities(&session);
+    let host_capabilities = mcp_app_host_capabilities(session);
     Ok(json!({
         "protocolVersion": protocol_version,
         "hostInfo": {

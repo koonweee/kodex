@@ -804,11 +804,13 @@ async fn unsupported_callback_returns_method_not_found_instead_of_hanging() {
     )
     .await
     .unwrap();
-    let errors = app_server.error_responses.lock().unwrap();
-    assert_eq!(errors.len(), 1);
-    assert_eq!(errors[0].0, "42");
-    assert_eq!(errors[0].1.code, -32601);
-    assert!(errors[0].1.message.contains("unknown/request"));
+    {
+        let errors = app_server.error_responses.lock().unwrap();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].0, "42");
+        assert_eq!(errors[0].1.code, -32601);
+        assert!(errors[0].1.message.contains("unknown/request"));
+    }
     assert!(state
         .store
         .list_approvals(None, None)

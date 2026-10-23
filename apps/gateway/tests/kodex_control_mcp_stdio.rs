@@ -268,52 +268,54 @@ async fn kodex_control_mcp_smokes_new_tools_against_fake_gateway() -> anyhow::Re
         .await?;
     assert_eq!(status_resource.contents.len(), 1);
 
-    let requests = state.requests.lock().unwrap();
-    assert!(requests.iter().any(|request| {
-        request.method == Method::POST
-            && request.path == "/v1/self-control/thread-spawns"
-            && request.body["projectId"] == "project-1"
-            && request.body["cwd"] == "/workspace/selected-root"
-            && request.body["model"] == "gpt-test"
-            && request.body.get("creationOptions").is_none()
-    }));
-    assert!(requests.iter().any(|request| {
-        request.method == Method::PATCH
-            && request.path == "/v1/self-control/threads/thread-spawned/name"
-            && request.body["name"] == "Review MCP"
-    }));
-    assert!(requests.iter().any(|request| {
-        request.method == Method::PATCH
-            && request.path == "/v1/self-control/threads/thread-spawned/settings"
-            && request.body["model"] == "gpt-test-2"
-            && request.body.get("settings").is_none()
-    }));
-    for pinned in [true, false] {
-        assert!(requests.iter().any(|request| request.method == Method::POST
-            && request.path == "/v1/self-control/threads/thread-spawned/pin"
-            && request.body == json!({"pinned":pinned})));
+    {
+        let requests = state.requests.lock().unwrap();
+        assert!(requests.iter().any(|request| {
+            request.method == Method::POST
+                && request.path == "/v1/self-control/thread-spawns"
+                && request.body["projectId"] == "project-1"
+                && request.body["cwd"] == "/workspace/selected-root"
+                && request.body["model"] == "gpt-test"
+                && request.body.get("creationOptions").is_none()
+        }));
+        assert!(requests.iter().any(|request| {
+            request.method == Method::PATCH
+                && request.path == "/v1/self-control/threads/thread-spawned/name"
+                && request.body["name"] == "Review MCP"
+        }));
+        assert!(requests.iter().any(|request| {
+            request.method == Method::PATCH
+                && request.path == "/v1/self-control/threads/thread-spawned/settings"
+                && request.body["model"] == "gpt-test-2"
+                && request.body.get("settings").is_none()
+        }));
+        for pinned in [true, false] {
+            assert!(requests.iter().any(|request| request.method == Method::POST
+                && request.path == "/v1/self-control/threads/thread-spawned/pin"
+                && request.body == json!({"pinned":pinned})));
+        }
+        assert!(requests.iter().any(|request| {
+            request.method == Method::POST
+                && request.path == "/v1/self-control/threads/thread-spawned/app-surface"
+                && request.body["title"] == "Thread UI"
+                && request.body["fallbackContent"] == "Thread UI fallback"
+                && request.body["presentation"] == "focus"
+                && request.body.get("threadId").is_none()
+        }));
+        assert!(requests.iter().any(|request| {
+            request.method == Method::POST
+                && request.path == "/v1/self-control/approvals/approval-1/decision"
+                && request.body["decision"]["decision"] == "decline"
+                && request.body.get("source").is_none()
+        }));
+        assert!(requests.iter().any(|request| {
+            request.method == Method::GET && request.path == "/v1/self-control/events"
+        }));
+        assert!(requests.iter().any(|request| {
+            request.method == Method::GET
+                && request.path == "/v1/self-control/threads/thread-spawned/queued-inputs"
+        }));
     }
-    assert!(requests.iter().any(|request| {
-        request.method == Method::POST
-            && request.path == "/v1/self-control/threads/thread-spawned/app-surface"
-            && request.body["title"] == "Thread UI"
-            && request.body["fallbackContent"] == "Thread UI fallback"
-            && request.body["presentation"] == "focus"
-            && request.body.get("threadId").is_none()
-    }));
-    assert!(requests.iter().any(|request| {
-        request.method == Method::POST
-            && request.path == "/v1/self-control/approvals/approval-1/decision"
-            && request.body["decision"]["decision"] == "decline"
-            && request.body.get("source").is_none()
-    }));
-    assert!(requests.iter().any(|request| {
-        request.method == Method::GET && request.path == "/v1/self-control/events"
-    }));
-    assert!(requests.iter().any(|request| {
-        request.method == Method::GET
-            && request.path == "/v1/self-control/threads/thread-spawned/queued-inputs"
-    }));
 
     client.cancel().await?;
     server.abort();

@@ -1587,7 +1587,7 @@ async fn history_window_prepends_older_rows_without_deleting_live_tail() {
     build_thread_timeline_window(
         &sessions,
         "thread-1",
-        &[recent_turn.clone()],
+        std::slice::from_ref(&recent_turn),
         Some(ThreadTimelineWindowPage {
             older_cursor: Some("older-1".to_string()),
             newer_cursor: None,
@@ -1734,7 +1734,7 @@ async fn head_refresh_preserves_expanded_window_older_cursor() {
     build_thread_timeline_window(
         &sessions,
         "thread-1",
-        &[turn_4.clone()],
+        std::slice::from_ref(&turn_4),
         Some(ThreadTimelineWindowPage {
             older_cursor: Some("overlapping-head-cursor".to_string()),
             newer_cursor: None,

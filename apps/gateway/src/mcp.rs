@@ -2326,39 +2326,41 @@ mod tests {
             json!([{"type":"text","text":"start now"}])
         );
 
-        let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests[0].0, "project/read");
-        assert_eq!(requests[0].1["projectId"], project.id);
-        assert_eq!(requests[1].0, "thread/start");
-        assert_eq!(requests[1].1["projectId"], project.id);
-        assert_eq!(
-            requests[2],
-            (
-                "thread/turns/list".into(),
+        {
+            let requests = app_server.requests.lock().unwrap();
+            assert_eq!(requests[0].0, "project/read");
+            assert_eq!(requests[0].1["projectId"], project.id);
+            assert_eq!(requests[1].0, "thread/start");
+            assert_eq!(requests[1].1["projectId"], project.id);
+            assert_eq!(
+                requests[2],
+                (
+                    "thread/turns/list".into(),
+                    json!({
+                        "threadId":"thread-1","cursor":null,"sortDirection":"desc","itemsView":"notLoaded","limit":8
+                    })
+                )
+            );
+            assert_eq!(requests[3].0, "thread/read");
+            assert_eq!(requests[4].0, "thread/read");
+            assert_eq!(requests[3].1["includeTurns"], false);
+            assert_eq!(requests[4].1["includeTurns"], false);
+            let adds = requests
+                .iter()
+                .filter(|(method, _)| method == "thread/queue/add")
+                .collect::<Vec<_>>();
+            assert_eq!(adds.len(), 1);
+            assert_eq!(
+                adds[0].1,
                 json!({
-                    "threadId":"thread-1","cursor":null,"sortDirection":"desc","itemsView":"notLoaded","limit":8
+                    "threadId":"thread-1","input":[{"type":"text","text":"start now"}],
+                    "clientUserMessageId":queued["queuedInput"]["clientUserMessageId"],
                 })
-            )
-        );
-        assert_eq!(requests[3].0, "thread/read");
-        assert_eq!(requests[4].0, "thread/read");
-        assert_eq!(requests[3].1["includeTurns"], false);
-        assert_eq!(requests[4].1["includeTurns"], false);
-        let adds = requests
-            .iter()
-            .filter(|(method, _)| method == "thread/queue/add")
-            .collect::<Vec<_>>();
-        assert_eq!(adds.len(), 1);
-        assert_eq!(
-            adds[0].1,
-            json!({
-                "threadId":"thread-1","input":[{"type":"text","text":"start now"}],
-                "clientUserMessageId":queued["queuedInput"]["clientUserMessageId"],
-            })
-        );
-        assert!(requests.iter().all(|(method, _)| method != "turn/start"
-            && method != "turn/steer"
-            && method != "thread/resume"));
+            );
+            assert!(requests.iter().all(|(method, _)| method != "turn/start"
+                && method != "turn/steer"
+                && method != "thread/resume"));
+        }
 
         client.cancel().await?;
         mcp_server.abort();

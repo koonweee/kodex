@@ -388,12 +388,13 @@ async fn native_config_conflicts_do_not_reload_publish_or_retry() {
         assert_eq!(body["code"], expected_code);
         assert_eq!(body["retryable"], false);
     }
-    let requests = native.requests.lock().unwrap();
-    assert_eq!(requests.len(), 2);
-    assert!(requests
-        .iter()
-        .all(|request| request.0 == "config/batchWrite"));
-    drop(requests);
+    {
+        let requests = native.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert!(requests
+            .iter()
+            .all(|request| request.0 == "config/batchWrite"));
+    }
     assert!(state
         .store
         .replay_events(None, None, None)

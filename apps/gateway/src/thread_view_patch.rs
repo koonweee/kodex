@@ -55,6 +55,9 @@ pub struct ThreadViewPatch {
 }
 
 impl ThreadViewPatch {
+    // These constructors intentionally enumerate the complete canonical patch
+    // shape so call sites cannot accidentally retain fields from an older view.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn full_snapshot(
         view_revision: i64,
         thread_id: String,
@@ -83,6 +86,7 @@ impl ThreadViewPatch {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn turn(
         view_revision: i64,
         thread_id: String,
@@ -112,6 +116,7 @@ impl ThreadViewPatch {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn row_delta(
         view_revision: i64,
         thread_id: String,

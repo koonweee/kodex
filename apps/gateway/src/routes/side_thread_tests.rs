@@ -367,23 +367,24 @@ async fn concurrent_create_reuses_one_ephemeral_fork_and_starts_with_empty_proje
     assert_eq!(first.1["timeline"]["turns"], json!([]));
     assert_ne!(first.1["reused"], second.1["reused"]);
 
-    let calls = native.requests.lock().unwrap();
-    assert_eq!(
-        calls
+    {
+        let calls = native.requests.lock().unwrap();
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|(method, _)| method == "thread/fork")
+                .count(),
+            1
+        );
+        let fork = calls
             .iter()
-            .filter(|(method, _)| method == "thread/fork")
-            .count(),
-        1
-    );
-    let fork = calls
-        .iter()
-        .find(|(method, _)| method == "thread/fork")
-        .unwrap();
-    assert_eq!(
-        fork.1,
-        json!({"threadId":"parent", "ephemeral":true, "excludeTurns":true})
-    );
-    drop(calls);
+            .find(|(method, _)| method == "thread/fork")
+            .unwrap();
+        assert_eq!(
+            fork.1,
+            json!({"threadId":"parent", "ephemeral":true, "excludeTurns":true})
+        );
+    }
     assert!(state
         .store
         .replay_events(None, None, None)
@@ -506,13 +507,12 @@ async fn side_completion_stays_canonical_without_read_or_push_projection() {
         event.kind != "thread.read_updated" && event.kind != "notification.planned"
     }));
     assert!(
-        state
+        !state
             .store
             .get_thread_read("side")
             .await
             .unwrap()
             .read_state_known
-            == false
     );
 }
 

@@ -115,7 +115,7 @@ async fn live_native_failure_survives_stale_reads_and_fresh_history_reload() {
         .await
         .unwrap();
     assert_failure(&stale, "failed");
-    let fresh = build_thread_timeline(&sessions, "thread", &[failed.clone()], 3)
+    let fresh = build_thread_timeline(&sessions, "thread", std::slice::from_ref(&failed), 3)
         .await
         .unwrap();
     assert_failure(&fresh, "failed");

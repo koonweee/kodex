@@ -71,7 +71,7 @@ async fn async_question_and_final_answer_stay_visible_for_live_and_reconnecting_
     assert_visible_answers(patch.rows.as_ref().unwrap());
 
     // Client B missed live events and refills from the native history snapshot.
-    let snapshot = build_thread_timeline(&sessions, "thread", &[completed.clone()], 10)
+    let snapshot = build_thread_timeline(&sessions, "thread", std::slice::from_ref(&completed), 10)
         .await
         .unwrap();
     assert_visible_answers(&snapshot.rows);
@@ -157,7 +157,7 @@ async fn user_image_urls_survive_materialization_live_patches_and_history_refill
     // Client A receives the canonical live patch.
     assert_image(patch.rows.as_ref().unwrap());
     // Client B misses the patch and converges from the native snapshot.
-    let snapshot = build_thread_timeline(&sessions, "thread", &[turn.clone()], 3)
+    let snapshot = build_thread_timeline(&sessions, "thread", std::slice::from_ref(&turn), 3)
         .await
         .unwrap();
     assert_image(&snapshot.rows);

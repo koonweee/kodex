@@ -193,7 +193,7 @@ fn diagnostic_only_row_delta_keeps_identity_removals_and_turn_base() {
         source.live_state,
         source.pending_approval_requests.clone(),
         source.pending_user_input_requests.clone(),
-        vec![hidden.into()],
+        vec![hidden],
         vec!["removed-row".into()],
         vec!["turn".into()],
         source.turns.clone(),

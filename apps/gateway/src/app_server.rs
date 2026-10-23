@@ -58,6 +58,9 @@ impl JsonRpcError {
     }
 }
 
+// async-trait marks generated futures as must-use even though futures already
+// carry that contract; newer Clippy versions flag the duplicate annotation.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait AppServer: Send + Sync {
     fn is_ready(&self) -> bool;

@@ -422,6 +422,10 @@ impl NativeSession {
         status: &str,
         request_id: Option<&str>,
     ) -> anyhow::Result<Value> {
+        let request_id = request_id
+            .map(serde_json::from_str::<Value>)
+            .transpose()
+            .context("captured native request id is not JSON")?;
         timeout(Duration::from_secs(20), async {
             let mut turn = None;
             let mut resolved = request_id.is_none();
@@ -435,7 +439,9 @@ impl NativeSession {
                 }
                 if method == "serverRequest/resolved"
                     && params["threadId"] == thread_id
-                    && request_id.is_some_and(|id| params["requestId"].to_string() == id)
+                    && request_id
+                        .as_ref()
+                        .is_some_and(|id| params.get("requestId") == Some(id))
                 {
                     resolved = true;
                 }

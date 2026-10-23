@@ -192,7 +192,7 @@ pub fn validate_app_surface_grants(
             grant
                 .name
                 .as_deref()
-                .map_or(true, |name| name.trim().is_empty())
+                .is_none_or(|name| name.trim().is_empty())
         })
     {
         return Err(ApiError::BadRequest(

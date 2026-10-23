@@ -403,8 +403,7 @@ async fn prohibited_native_context_cannot_delete_a_queued_row() {
         *native.capability.lock().unwrap() = capability;
         let error = promote(&state, THREAD, ROW)
             .await
-            .err()
-            .expect("promotion must reject");
+            .expect_err("promotion must reject");
         assert!(matches!(
             error,
             ApiError::Conflict(_) | ApiError::BadRequest(_)

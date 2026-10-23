@@ -597,23 +597,25 @@ mod tests {
         .unwrap();
 
         process_due_deliveries(state.clone()).await.unwrap();
-        let payloads = sender.payloads.lock().unwrap();
-        assert_eq!(payloads.len(), 1);
-        assert_eq!(payloads[0].kind, NotificationKind::UnreadAgentMessage);
-        assert_eq!(payloads[0].thread_id.as_deref(), Some("thread-1"));
-        assert_eq!(
-            payloads[0].title,
-            "Octopus Heart Facts With An Overly Long Thread T..."
-        );
-        assert_eq!(
-            payloads[0].body.as_deref(),
-            Some("Yes, octopuses actually have three hearts. They use two for their gills.")
-        );
-        assert_eq!(payloads[0].route, "/threads/thread-1");
-        assert_eq!(payloads[0].badge_count, Some(0));
-        assert!(payloads[0]
-            .read_revision
-            .is_some_and(|revision| revision > 0));
+        {
+            let payloads = sender.payloads.lock().unwrap();
+            assert_eq!(payloads.len(), 1);
+            assert_eq!(payloads[0].kind, NotificationKind::UnreadAgentMessage);
+            assert_eq!(payloads[0].thread_id.as_deref(), Some("thread-1"));
+            assert_eq!(
+                payloads[0].title,
+                "Octopus Heart Facts With An Overly Long Thread T..."
+            );
+            assert_eq!(
+                payloads[0].body.as_deref(),
+                Some("Yes, octopuses actually have three hearts. They use two for their gills.")
+            );
+            assert_eq!(payloads[0].route, "/threads/thread-1");
+            assert_eq!(payloads[0].badge_count, Some(0));
+            assert!(payloads[0]
+                .read_revision
+                .is_some_and(|revision| revision > 0));
+        }
         assert_eq!(
             app_server
                 .requests

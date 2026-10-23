@@ -152,16 +152,17 @@ async fn notification_preview_reads_only_delivery_turn_and_prefers_its_final_ans
 
     process_due_deliveries(state.clone()).await.unwrap();
 
-    let payloads = sender.payloads.lock().unwrap();
-    assert_eq!(payloads.len(), 1);
-    assert_eq!(
-        payloads[0].body.as_deref(),
-        Some("Target answer. For this delivery.")
-    );
-    assert_eq!(payloads[0].title, "Delivery chat");
-    assert_eq!(payloads[0].thread_id.as_deref(), Some(THREAD_ID));
-    assert_eq!(payloads[0].route, format!("/threads/{THREAD_ID}"));
-    drop(payloads);
+    {
+        let payloads = sender.payloads.lock().unwrap();
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(
+            payloads[0].body.as_deref(),
+            Some("Target answer. For this delivery.")
+        );
+        assert_eq!(payloads[0].title, "Delivery chat");
+        assert_eq!(payloads[0].thread_id.as_deref(), Some(THREAD_ID));
+        assert_eq!(payloads[0].route, format!("/threads/{THREAD_ID}"));
+    }
     assert_eq!(
         state
             .store
@@ -237,13 +238,14 @@ async fn notification_empty_or_truncated_item_page_uses_generic_body_without_fol
         let (state, server, sender, delivery_id) =
             preview_fixture(Some(DELIVERY_TURN_ID), page, None).await;
         process_due_deliveries(state.clone()).await.unwrap();
-        let payloads = sender.payloads.lock().unwrap();
-        assert_eq!(payloads.len(), 1);
-        assert_eq!(
-            payloads[0].body.as_deref(),
-            Some(UNREAD_AGENT_MESSAGE_FALLBACK_BODY)
-        );
-        drop(payloads);
+        {
+            let payloads = sender.payloads.lock().unwrap();
+            assert_eq!(payloads.len(), 1);
+            assert_eq!(
+                payloads[0].body.as_deref(),
+                Some(UNREAD_AGENT_MESSAGE_FALLBACK_BODY)
+            );
+        }
         assert_eq!(
             state
                 .store

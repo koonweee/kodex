@@ -520,16 +520,15 @@ impl ThreadView {
             {
                 continue;
             }
-            if !current_is_authoritative(&item.turn_id) {
-                if gateway_stream_assistant_text_key(&item)
+            if !current_is_authoritative(&item.turn_id)
+                && (gateway_stream_assistant_text_key(&item)
                     .is_some_and(|key| base_assistant_text_keys.contains(&key))
                     || existing_activity_content_key(&item)
                         .is_some_and(|key| base_activity_content_keys.contains(&key))
                     || (terminal_turn_item && !is_preservable_terminal_activity(&item))
-                    || is_prunable_empty_reasoning(&item)
-                {
-                    continue;
-                }
+                    || is_prunable_empty_reasoning(&item))
+            {
+                continue;
             }
             let mut item = item;
             if !terminal_turn_item {
@@ -1463,17 +1462,11 @@ fn is_prunable_missing_context_compaction(
     turns
         .iter()
         .find(|turn| turn.id == item.turn_id)
-        .map_or(true, |turn| is_terminal_turn_status(&turn.status))
+        .is_none_or(|turn| is_terminal_turn_status(&turn.status))
 }
 
 fn is_context_compaction_type(item_type: &str) -> bool {
     item_type.to_ascii_lowercase().replace(['_', '-'], "") == "contextcompaction"
-}
-
-impl Default for ThreadLiveState {
-    fn default() -> Self {
-        Self::Idle
-    }
 }
 
 #[cfg(test)]

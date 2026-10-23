@@ -70,29 +70,30 @@ async fn stop_pauses_active_goal_before_resolving_and_interrupting_current_turn(
     let (status, body) = stop(state.clone()).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["interruptedTurnId"], "fresh-turn");
-    let requests = native.requests.lock().unwrap();
-    assert_eq!(
-        requests
-            .iter()
-            .map(|(method, _)| method.as_str())
-            .collect::<Vec<_>>(),
-        [
-            "thread/goal/get",
-            "thread/goal/set",
-            "thread/read",
-            "thread/turns/list",
-            "turn/interrupt"
-        ]
-    );
-    assert_eq!(
-        requests[1].1,
-        json!({"threadId":"thread-1", "status":"paused"})
-    );
-    assert_eq!(
-        requests[4].1,
-        json!({"threadId":"thread-1", "turnId":"fresh-turn"})
-    );
-    drop(requests);
+    {
+        let requests = native.requests.lock().unwrap();
+        assert_eq!(
+            requests
+                .iter()
+                .map(|(method, _)| method.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "thread/goal/get",
+                "thread/goal/set",
+                "thread/read",
+                "thread/turns/list",
+                "turn/interrupt"
+            ]
+        );
+        assert_eq!(
+            requests[1].1,
+            json!({"threadId":"thread-1", "status":"paused"})
+        );
+        assert_eq!(
+            requests[4].1,
+            json!({"threadId":"thread-1", "turnId":"fresh-turn"})
+        );
+    }
     assert_eq!(
         state.store.latest_event_seq().await.unwrap(),
         0,

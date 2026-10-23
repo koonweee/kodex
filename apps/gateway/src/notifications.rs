@@ -69,6 +69,9 @@ const DELIVERY_MAX_ATTEMPTS: i64 = 3;
 const DELIVERY_PROCESSING_STALE_AFTER: ChronoDuration = ChronoDuration::minutes(5);
 const DELIVERY_WORKER_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
+// async-trait marks generated futures as must-use even though futures already
+// carry that contract; newer Clippy versions flag the duplicate annotation.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait PushSender: Send + Sync {
     async fn send(
