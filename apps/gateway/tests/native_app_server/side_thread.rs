@@ -6,6 +6,114 @@ use super::fixture::{api, Fixture, ModelResponse, NativeSession};
 
 #[tokio::test]
 #[ignore = "requires explicit pinned real Codex executable and loopback access"]
+async fn real_ephemeral_side_thread_applies_model_updates() -> anyhow::Result<()> {
+    let mut fixture = Fixture::new().await?;
+    let mut session = NativeSession::start(&fixture).await?;
+    let result = timeout(Duration::from_secs(45), async {
+        let project = api(
+            &session.app,
+            "POST",
+            "/v1/projects",
+            Some(json!({
+                "roots":[{"path":fixture.workspace}],
+                "name":"Side thread model fixture",
+                "idempotencyKey":"real-side-thread-model-fixture"
+            })),
+        )
+        .await?;
+        let parent = api(
+            &session.app,
+            "POST",
+            "/v1/threads",
+            Some(json!({"projectId":project["id"]})),
+        )
+        .await?;
+        let parent_id = parent["thread"]["id"]
+            .as_str()
+            .context("missing model fixture parent id")?;
+        fixture.enqueue([ModelResponse::message("parent materialized")]);
+        api(
+            &session.app,
+            "POST",
+            &format!("/v1/threads/{parent_id}/turns"),
+            Some(json!({"input":[{"type":"text","text":"Materialize parent"}]})),
+        )
+        .await?;
+        fixture.next_model_request().await?;
+        session.completed_turn(parent_id, "completed").await?;
+
+        let side = api(
+            &session.app,
+            "POST",
+            &format!("/v1/threads/{parent_id}/side-thread"),
+            None,
+        )
+        .await?;
+        let side_id = side["thread"]["id"]
+            .as_str()
+            .context("missing model fixture side id")?;
+        let inherited_model = side["thread"]["model"]
+            .as_str()
+            .context("missing inherited side model")?;
+        let catalog = api(&session.app, "GET", "/v1/models", None).await?;
+        let selected_model = catalog["models"]
+            .as_array()
+            .context("model catalog missing models")?
+            .iter()
+            .filter_map(|model| model["model"].as_str())
+            .find(|model| *model != inherited_model)
+            .context("model catalog needs a model distinct from the inherited side model")?
+            .to_owned();
+
+        api(
+            &session.app,
+            "PATCH",
+            &format!("/v1/threads/{side_id}/settings"),
+            Some(json!({"model":selected_model})),
+        )
+        .await?;
+        let applied = session
+            .notification("thread/settings/updated", "threadId", side_id)
+            .await?;
+        anyhow::ensure!(applied["threadSettings"]["model"] == selected_model);
+        let projected = api(
+            &session.app,
+            "GET",
+            &format!("/v1/threads/{side_id}/settings"),
+            None,
+        )
+        .await?;
+        anyhow::ensure!(projected["model"] == selected_model);
+
+        fixture.enqueue([ModelResponse::message("side model applied")]);
+        api(
+            &session.app,
+            "POST",
+            &format!("/v1/threads/{side_id}/input"),
+            Some(json!({
+                "clientUserMessageId":"side-model-proof",
+                "input":[{"type":"text","text":"Use the selected side model"}]
+            })),
+        )
+        .await?;
+        let model_request = fixture.next_model_request().await?;
+        anyhow::ensure!(
+            model_request["model"] == selected_model,
+            "side request used {}, expected {}",
+            model_request["model"],
+            selected_model
+        );
+        session.completed_turn(side_id, "completed").await?;
+        Ok::<_, anyhow::Error>(())
+    })
+    .await;
+    session.shutdown().await?;
+    result??;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires explicit pinned real Codex executable and loopback access"]
 async fn real_ephemeral_side_thread_runs_projects_and_unsubscribes() -> anyhow::Result<()> {
     let mut fixture = Fixture::new().await?;
     let mut session = NativeSession::start(&fixture).await?;

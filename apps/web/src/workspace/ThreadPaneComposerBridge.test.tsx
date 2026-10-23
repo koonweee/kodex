@@ -33,7 +33,7 @@ function clickMenuItem(name: RegExp) {
   return clickMenuItemWithDeps(name, screen, waitFor, fireEvent);
 }
 
-function pane(threadId: string, title: string, paneId = `pane-${threadId}`): WorkspacePane {
+function pane(threadId: string, title: string, paneId = `pane-${threadId}`): Extract<WorkspacePane, { kind: "thread" }> {
   return {
     id: paneId,
     kind: "thread",
@@ -123,8 +123,15 @@ function renderBridgePair({
 }
 
 describe("ThreadPaneComposerBridge", () => {
-  it("keeps ephemeral side chats out of queue workflows and submits directly", async () => {
-    const gateway = mockGateway(baseRoutes());
+  it("keeps ephemeral side chats out of queue workflows while allowing native settings", async () => {
+    let settings: ThreadSettingsResponse = { model: multiEffortModel.id, effort: "medium", serviceTier: null, activePermissionProfile: null };
+    const gateway = mockGateway(baseRoutes({
+      "GET /v1/threads/thread-1/settings": () => ({ ...settings }),
+      "PATCH /v1/threads/thread-1/settings": async (request: Request) => {
+        settings = { ...settings, ...await requestJson(request) };
+        return {};
+      },
+    }));
     renderBridgePair({
       firstPane: {
         id: "pane-thread-1",
@@ -132,8 +139,15 @@ describe("ThreadPaneComposerBridge", () => {
         target: { mode: "existing", threadId: "thread-1", sideThreadOf: "parent-thread" },
         title: "> Parent title",
       },
+      models: [multiEffortModel],
     });
     const first = within(screen.getByRole("region", { name: /first thread pane/i }));
+
+    await userEvent.click(await first.findByRole("button", { name: "Model: gpt-5.4, medium" }));
+    await clickMenuItem(/^Reasoning$/i);
+    await clickMenuItem(/^high$/i);
+    await first.findByRole("button", { name: "Model: gpt-5.4, high" });
+    await expect(requestJson(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")[0])).resolves.toEqual({ effort: "high" });
 
     await userEvent.type(first.getByLabelText(/message composer/i), "Send directly");
     await userEvent.click(first.getByRole("button", { name: "Send message" }));
@@ -146,7 +160,7 @@ describe("ThreadPaneComposerBridge", () => {
     await userEvent.click(first.getByRole("button", { name: "Open attachment menu" }));
     expect(screen.queryByRole("menuitem", { name: "Queue message" })).not.toBeInTheDocument();
     expect(gateway.callsFor("GET", "/v1/threads/thread-1/queued-inputs")).toHaveLength(0);
-    expect(gateway.callsFor("GET", "/v1/threads/thread-1/settings")).toHaveLength(0);
+    expect(gateway.callsFor("GET", "/v1/threads/thread-1/settings").length).toBeGreaterThan(0);
   });
 
   it("keeps a native read-only child out of input/settings workflows without treating unknown capability as read-only", async () => {
@@ -269,7 +283,7 @@ describe("ThreadPaneComposerBridge", () => {
     }
   });
 
-  it("makes duplicated panes share native settings while retaining their own unsent text", async () => {
+  it("makes duplicated side panes share native settings while retaining their own unsent text", async () => {
     let settings: ThreadSettingsResponse = { model: multiEffortModel.id, effort: "high", serviceTier: null, activePermissionProfile: null };
     const gateway = mockGateway(baseRoutes({
       "GET /v1/threads/thread-1/settings": () => ({ ...settings }),
@@ -279,9 +293,15 @@ describe("ThreadPaneComposerBridge", () => {
       },
     }));
     renderBridgePair({
-      firstPane: pane("thread-1", "Implement frontend", "pane-thread-1-a"),
+      firstPane: {
+        ...pane("thread-1", "> Parent title", "pane-thread-1-a"),
+        target: { mode: "existing", threadId: "thread-1", sideThreadOf: "parent-thread" },
+      },
       models: [multiEffortModel],
-      secondPane: pane("thread-1", "Duplicate thread", "pane-thread-1-b"),
+      secondPane: {
+        ...pane("thread-1", "> Parent title", "pane-thread-1-b"),
+        target: { mode: "existing", threadId: "thread-1", sideThreadOf: "parent-thread" },
+      },
       secondThreadSummary: thread as ThreadComposerState["thread"],
     });
     const firstPane = within(screen.getByRole("region", { name: /first thread pane/i }));

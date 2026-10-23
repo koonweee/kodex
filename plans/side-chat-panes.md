@@ -37,6 +37,7 @@ The checked-in contract and isolated `codex-cli 0.160.0` probes establish the fo
 - `thread/resume` rejects the ephemeral child with `no rollout found` even while the child remains loaded.
 - `thread/turns/list` rejects ephemeral children.
 - `thread/read` with `includeTurns: true` rejects ephemeral children.
+- `thread/settings/update` accepts sparse model/effort/service-tier changes for a loaded ephemeral child, emits the applied `thread/settings/updated` snapshot, and the next turn uses those native settings.
 - `thread/unsubscribe` is connection-scoped. Kodex has one gateway-to-app-server connection, so native unsubscribe is globally destructive for every browser client using that gateway.
 - Successful unsubscribe removes the subscription immediately but app-server keeps an idle thread loaded for a 30-minute unload grace period. The pinned protocol has no immediate `thread/unload` RPC; Kodex clears its own relationship/projection immediately and accepts native delayed reclamation.
 
@@ -131,6 +132,7 @@ Keep native RPCs outside broad projection write exclusion, while preserving the 
 ### Live execution and projection
 
 - Route side composer input directly to the native loaded child without a native resume or queue-admission read. Ephemeral threads do not expose native queues; normal and alternate Send both use native atomic start-or-steer, and explicit Queue is unavailable.
+- Serve side settings reads from the registered fork metadata, forward sparse writes through native `thread/settings/update`, and apply native settings notifications back to that transient projection before publishing the normal refill marker. Never resume the ephemeral child to read settings.
 - Reuse normal canonical turn/item ingestion, approvals and `thread_view.patch` / `thread_view.item_delta` delivery.
 - Audit queue, start-or-steer, settings, attachment, Stop and approval paths against ephemeral native support. Prefer native semantics and remove or disable only unsupported durable controls; do not create a parallel queue or settings store.
 - Keep the side timeline scoped to side-authored turns. Parent history remains model context, not visible projection rows.
@@ -174,7 +176,7 @@ Native `thread/closed` for a registered child must also clear the registry and b
 - Keep SSE subscription by child thread id so existing live routing reaches the pane.
 - Hide nested-side, duplicate, pin, archive, rename, notification and goal controls for side panes. Retain only actions that are meaningful for a live ephemeral child, such as copying its thread id.
 - Do not call `useThreadReadState`, mark-seen routes, badge refresh or notification-setting mutations for side panes.
-- Keep inherited model/effort/service-tier/permission presentation and sparse live updates only where the pinned native contract supports them.
+- Show inherited model/effort/service-tier/permission settings and allow sparse model-picker changes through the pinned native settings contract; applied notifications keep duplicate panes and tabs converged.
 - If a generated app surface is opened from a side chat, ensure global side close removes any pane that still requires that child thread. Independent terminals and files remain open.
 
 ### Close and convergence
@@ -345,11 +347,11 @@ Exit:
 
 ## Completion Evidence
 
-- Ten focused gateway lifecycle tests pass, including concurrent singleton creation, exact ephemeral fork parameters, current parent-summary refresh without side history hydration, nested rejection, queue bypass, no-resume close-race handling, Stop routing, read/push exclusion, active close and disconnect/native-close convergence.
-- The isolated pinned `codex-cli 0.160.0` proof passes against disposable state. It materializes a parent rollout, verifies the side model request inherits parent request/response context while the visible side snapshot begins empty, verifies stale `queueIfPending` clients are routed directly through native start-or-steer, exercises active-turn steering and close/recreate behavior, leaves a replacement child live through process shutdown and proves it cannot be recovered after app-server restart, and observes the native 30-minute loaded-session grace contract after unsubscribe.
+- Twelve focused gateway lifecycle tests pass, including concurrent singleton creation, exact ephemeral fork parameters, current parent-summary refresh without side history hydration, nested rejection, queue bypass, replay-safe native settings projection, late-notification and no-resume close-race handling, Stop routing, read/push exclusion, active close and disconnect/native-close convergence.
+- The isolated pinned `codex-cli 0.160.0` proofs pass against disposable state. They materialize a parent rollout, verify the side model request inherits parent request/response context while the visible side snapshot begins empty, apply a different model through native settings and observe it on the next provider request, verify stale `queueIfPending` clients are routed directly through native start-or-steer, exercise active-turn steering and close/recreate behavior, leave a replacement child live through process shutdown and prove it cannot be recovered after app-server restart, and observe the native 30-minute loaded-session grace contract after unsubscribe.
 - Focused frontend tests pass (93 tests across thread pane, workspace, Dockview and SSE coverage), including restored/mismatched panes, parent-title updates, accessible tooltip, menu eligibility and cross-client closure.
 - The complete frontend suite passes: 174 files, 1,344 tests passed and one skipped. The production build and generated OpenAPI TypeScript contract pass.
-- Focused Chromium coverage passes three flows: desktop two-tab singleton/reload/global close, narrow fine-pointer open/close and narrow touch open/close. No fixture console or unexpected-request errors remain.
+- Focused Chromium coverage passes three flows: desktop two-tab singleton/settings convergence/reload/global close, narrow fine-pointer open/close and narrow touch open/close. No fixture console or unexpected-request errors remain.
 - `cargo test`, `cargo fmt --check`, `./tools/trim-backend.sh` and `./tools/trim-frontend.sh` pass. The full Rust gate also corrected a stale test-only assertion that still required the intentionally optional standalone `spawn_thread.projectId` field.
 - Three independent review loops found and corrected the restart proof plus two related no-resume gaps: side-child missing-thread errors could enter the ordinary resume path, and a close event could erase the registry tombstone between route classification and submission. The route now carries a no-resume policy captured before any await, with a regression that removes the tombstone after capture; the final review found no major issues.
 

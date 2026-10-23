@@ -333,7 +333,8 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
                 let _ = state.events.send(event);
                 emitted = true;
             }
-            if let Some(event) = normalized_thread_settings_event(state, &method, &metadata).await?
+            if let Some(event) =
+                normalized_thread_settings_event(state, &method, &params, &metadata).await?
             {
                 let _ = state.events.send(event);
                 emitted = true;
@@ -1265,6 +1266,7 @@ async fn normalized_thread_goal_event(
 async fn normalized_thread_settings_event(
     state: &AppState,
     method: &str,
+    params: &Value,
     metadata: &EventMetadata,
 ) -> ApiResult<Option<EventEnvelope>> {
     if !method.eq_ignore_ascii_case("thread/settings/updated") {
@@ -1273,7 +1275,37 @@ async fn normalized_thread_settings_event(
     let Some(thread_id) = metadata.thread_id.clone() else {
         return Ok(None);
     };
-    state
+    // Share the parent operation gate with close. The transient projection must
+    // change before its refill marker becomes replayable, and a late applied
+    // notification must not resurrect a child removed while waiting here.
+    let side_parent_id = state.side_threads.parent_for_child(&thread_id);
+    let _side_operation = if let Some(parent_thread_id) = side_parent_id.as_deref() {
+        Some(state.side_threads.lock(parent_thread_id).await)
+    } else {
+        None
+    };
+    if side_parent_id.is_some() {
+        if !state.side_threads.is_side_child(&thread_id) {
+            return Ok(None);
+        }
+        let settings = serde_json::from_value::<
+            crate::routes::thread_settings::ThreadSettingsResponse,
+        >(params.get("threadSettings").cloned().ok_or_else(|| {
+            ApiError::BadGateway("native settings event missing settings".into())
+        })?)?;
+        if !state.side_threads.update_child_settings(
+            &thread_id,
+            settings.model,
+            settings.effort,
+            settings.service_tier,
+            settings.active_permission_profile,
+        ) {
+            return Ok(None);
+        }
+    } else if state.side_threads.is_closed_child(&thread_id) {
+        return Ok(None);
+    }
+    let event = state
         .store
         .append_event(NewEvent {
             project_id: None,
@@ -1283,11 +1315,11 @@ async fn normalized_thread_settings_event(
             kind: crate::routes::thread_settings::THREAD_SETTINGS_UPDATED_EVENT.to_string(),
             codex_method: Some(method.to_string()),
             payload: serde_json::to_value(crate::routes::thread_settings::ThreadSettingsUpdated {
-                thread_id,
+                thread_id: thread_id.clone(),
             })?,
         })
-        .await
-        .map(Some)
+        .await?;
+    Ok(Some(event))
 }
 
 async fn timeline_thread_status_event(

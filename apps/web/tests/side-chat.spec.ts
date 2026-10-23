@@ -43,7 +43,8 @@ const sideResponse = {
 type Fixture = Awaited<ReturnType<typeof nativeSettingsFixture>>;
 
 async function installSideRoutes(context: BrowserContext, fixture: Fixture) {
-  const counts = { create: 0, close: 0 };
+  const counts = { create: 0, close: 0, settingsUpdates: 0 };
+  const settings = { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null };
   await context.route("**/v1/threads/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -70,6 +71,16 @@ async function installSideRoutes(context: BrowserContext, fixture: Fixture) {
     if (key === `GET /v1/threads/${sideId}/subagents`) {
       return route.fulfill({ json: { subagents: [] } });
     }
+    if (key === `GET /v1/threads/${sideId}/settings`) {
+      return route.fulfill({ json: settings });
+    }
+    if (key === `PATCH /v1/threads/${sideId}/settings`) {
+      counts.settingsUpdates += 1;
+      Object.assign(settings, request.postDataJSON());
+      await route.fulfill({ status: 202, json: {} });
+      fixture.sideSettingsChanged(sideId);
+      return;
+    }
     return route.fallback();
   });
   return counts;
@@ -89,6 +100,17 @@ test("two tabs share, label, restore, and globally close one side chat", async (
       await expect(page.getByLabel("Side chat for “Native settings chat”")).toBeVisible();
     }
     expect(counts.create).toBe(2);
+
+    for (const page of [first, second]) {
+      await expect(activePane(page).getByRole("button", { name: "Model: gpt-5.4, medium", exact: true })).toBeEnabled();
+    }
+    await activePane(first).getByRole("button", { name: "Model: gpt-5.4, medium", exact: true }).click();
+    await first.getByRole("menuitem", { name: "Reasoning", exact: true }).click();
+    await first.getByRole("menuitem", { name: "High", exact: true }).click();
+    for (const page of [first, second]) {
+      await expect(activePane(page).getByRole("button", { name: "Model: gpt-5.4, high", exact: true })).toBeVisible();
+    }
+    expect(counts.settingsUpdates).toBe(1);
 
     await first.reload();
     await expect(first.getByRole("heading", { name: "> Native settings chat" })).toBeVisible();
@@ -136,4 +158,8 @@ for (const shape of [
       expect(fixture.unexpected).toEqual([]);
     });
   });
+}
+
+function activePane(page: import("@playwright/test").Page) {
+  return page.locator('.kodex-thread-pane[data-workspace-pane-active="true"]');
 }

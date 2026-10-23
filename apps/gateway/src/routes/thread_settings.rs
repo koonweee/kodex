@@ -4,7 +4,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use utoipa::ToSchema;
 
@@ -23,7 +23,7 @@ pub fn router() -> Router<AppState> {
     )
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadSettingsResponse {
     pub model: String,
@@ -47,6 +47,19 @@ pub async fn get_thread_settings(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
 ) -> ApiResult<Json<ThreadSettingsResponse>> {
+    if let Some(entry) = state.side_threads.get_by_child(&thread_id) {
+        return Ok(Json(ThreadSettingsResponse {
+            model: entry.thread.model.ok_or_else(|| {
+                ApiError::BadGateway("native side-chat metadata missing model".into())
+            })?,
+            effort: entry.thread.reasoning_effort,
+            service_tier: entry.thread.service_tier,
+            active_permission_profile: entry.thread.active_permission_profile,
+        }));
+    }
+    if state.side_threads.is_closed_child(&thread_id) {
+        return Err(ApiError::NotFound("side chat expired".into()));
+    }
     // Resume without overrides reads the full native effective session settings.
     // thread/read only exposes model and effort; it cannot answer this query.
     let response = app_server_api::client(&state.app_server)
@@ -69,6 +82,9 @@ pub async fn update_thread_settings(
     Json(request): Json<ThreadSettingsUpdateRequest>,
 ) -> ApiResult<(StatusCode, Json<ThreadSettingsUpdateResponse>)> {
     request.validate()?;
+    if state.side_threads.is_closed_child(&thread_id) {
+        return Err(ApiError::NotFound("side chat expired".into()));
+    }
     app_server_api::client(&state.app_server)
         .thread_update_settings(thread_id, request)
         .await?;

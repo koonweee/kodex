@@ -127,6 +127,112 @@ async fn side_input_bypasses_unsupported_queue_admission_from_stale_clients() {
 }
 
 #[tokio::test]
+async fn side_settings_read_from_registry_and_converge_from_native_updates() {
+    let (state, native) = state().await;
+    seed_create(&native);
+    let (status, body) = request(&state, "POST", "/v1/threads/parent/side-thread").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    native.requests.lock().unwrap().clear();
+
+    let (status, initial) = request(&state, "GET", "/v1/threads/side/settings").await;
+    assert_eq!(status, StatusCode::OK, "{initial}");
+    assert_eq!(initial["model"], "gpt-5.4");
+    assert!(native.requests.lock().unwrap().is_empty());
+
+    let (status, body) = request_with_body(
+        &state,
+        "PATCH",
+        "/v1/threads/side/settings",
+        Some(json!({"model":"gpt-6.1","effort":"high"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+    assert_eq!(
+        native.requests.lock().unwrap().as_slice(),
+        &[(
+            "thread/settings/update".into(),
+            json!({"threadId":"side", "model":"gpt-6.1", "effort":"high"})
+        )]
+    );
+
+    let mut receiver = state.events.subscribe();
+    ingest_inbound(
+        InboundMessage::Notification {
+            method: "thread/settings/updated".into(),
+            params: json!({
+                "threadId":"side",
+                "threadSettings":{
+                    "model":"gpt-6.1",
+                    "effort":"high",
+                    "serviceTier":"priority",
+                    "activePermissionProfile":null
+                }
+            }),
+        },
+        &state,
+    )
+    .await
+    .unwrap();
+    let changed = receiver.recv().await.unwrap();
+    assert_eq!(changed.kind, "thread.settings_updated");
+    assert_eq!(changed.thread_id.as_deref(), Some("side"));
+    let replay = state
+        .store
+        .replay_events(None, None, Some("side".into()))
+        .await
+        .unwrap();
+    assert_eq!(replay.len(), 1);
+    assert_eq!(replay[0].kind, "thread.settings_updated");
+    native.requests.lock().unwrap().clear();
+
+    let (status, applied) = request(&state, "GET", "/v1/threads/side/settings").await;
+    assert_eq!(status, StatusCode::OK, "{applied}");
+    assert_eq!(applied["model"], "gpt-6.1");
+    assert_eq!(applied["effort"], "high");
+    assert_eq!(applied["serviceTier"], "priority");
+    assert!(native.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn late_side_settings_notification_after_close_is_not_replayed_or_restored() {
+    let (state, native) = state().await;
+    seed_create(&native);
+    let (status, body) = request(&state, "POST", "/v1/threads/parent/side-thread").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = request(&state, "DELETE", "/v1/threads/parent/side-thread").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let cursor = state.store.latest_event_seq().await.unwrap();
+
+    ingest_inbound(
+        InboundMessage::Notification {
+            method: "thread/settings/updated".into(),
+            params: json!({
+                "threadId":"side",
+                "threadSettings":{
+                    "model":"late-model",
+                    "effort":"high",
+                    "serviceTier":null,
+                    "activePermissionProfile":null
+                }
+            }),
+        },
+        &state,
+    )
+    .await
+    .unwrap();
+
+    assert!(state
+        .store
+        .replay_events(Some(cursor), None, Some("side".into()))
+        .await
+        .unwrap()
+        .is_empty());
+    assert!(state.side_threads.get_by_child("side").is_none());
+    let (status, body) = request(&state, "GET", "/v1/threads/side/settings").await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+}
+
+#[tokio::test]
 async fn missing_side_child_never_resumes_while_registered_or_closing() {
     let (state, native) = state().await;
     seed_create(&native);

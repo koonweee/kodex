@@ -10,7 +10,8 @@ use utoipa::ToSchema;
 use crate::{
     api::AppState,
     app_server_api::{
-        ThreadLiveState, ThreadSummary, ThreadTimelineSnapshot, ThreadViewThreadSummary,
+        ActivePermissionProfile, ThreadLiveState, ThreadSummary, ThreadTimelineSnapshot,
+        ThreadViewThreadSummary,
     },
     error::{ApiError, ApiResult},
     store::NewEvent,
@@ -70,6 +71,34 @@ impl SideThreadRegistry {
             .parent_by_child
             .get(child_thread_id)
             .cloned()
+    }
+
+    pub fn get_by_child(&self, child_thread_id: &str) -> Option<SideThreadEntry> {
+        let state = self.state.lock().unwrap();
+        let parent_thread_id = state.parent_by_child.get(child_thread_id)?;
+        state.by_parent.get(parent_thread_id).cloned()
+    }
+
+    pub fn update_child_settings(
+        &self,
+        child_thread_id: &str,
+        model: String,
+        reasoning_effort: Option<String>,
+        service_tier: Option<String>,
+        active_permission_profile: Option<ActivePermissionProfile>,
+    ) -> bool {
+        let mut state = self.state.lock().unwrap();
+        let Some(parent_thread_id) = state.parent_by_child.get(child_thread_id).cloned() else {
+            return false;
+        };
+        let Some(entry) = state.by_parent.get_mut(&parent_thread_id) else {
+            return false;
+        };
+        entry.thread.model = Some(model);
+        entry.thread.reasoning_effort = reasoning_effort;
+        entry.thread.service_tier = service_tier;
+        entry.thread.active_permission_profile = active_permission_profile;
+        true
     }
 
     pub fn is_side_child(&self, thread_id: &str) -> bool {

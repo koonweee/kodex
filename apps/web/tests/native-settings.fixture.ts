@@ -67,9 +67,9 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Expected a local SSE address");
 
-  function emit(kind: string, payload: unknown, client?: string, eventSeq = seq + 1) {
+  function emit(kind: string, payload: unknown, client?: string, eventSeq = seq + 1, threadId?: string | null) {
     seq = Math.max(seq, eventSeq);
-    const event: EventEnvelope = { id: `${eventSeq}-${kind}`, seq: eventSeq, kind, threadId: ["frontend.updated", "config.changed", "account.rate_limits_updated", "mcp.oauth_login_completed", "mcp.server_status_updated", "thread.subagents_changed", "automation.run_updated"].includes(kind) ? null : detail.thread.id, payload, receivedAt: "2026-10-04T00:00:00Z" };
+    const event: EventEnvelope = { id: `${eventSeq}-${kind}`, seq: eventSeq, kind, threadId: threadId === undefined ? (["frontend.updated", "config.changed", "account.rate_limits_updated", "mcp.oauth_login_completed", "mcp.server_status_updated", "thread.subagents_changed", "automation.run_updated"].includes(kind) ? null : detail.thread.id) : threadId, payload, receivedAt: "2026-10-04T00:00:00Z" };
     for (const [stream, id] of streams) {
       if (!client || client === id) {
         const delivery = options.payloadDelivery && kind === "thread_view.patch"
@@ -378,6 +378,9 @@ export async function nativeSettingsFixture(context: BrowserContext, options: { 
     subagentsChanged(client?: string, changedThreadId: string | null = null) { emit("thread.subagents_changed", { changedThreadId }, client); },
     sideThreadClosed(parentThreadId: string, sideThreadId: string, client?: string) {
       emit("side_thread.closed", { parentThreadId, sideThreadId, reason: "closed" }, client);
+    },
+    sideSettingsChanged(sideThreadId: string, client?: string) {
+      emit("thread.settings_updated", { threadId: sideThreadId }, client, seq + 1, sideThreadId);
     },
     refreshRequired(client?: string) { emit("thread_view.refresh_required", { threadId: detail.thread.id, reason: "snapshot_required" }, client); },
     revertTimeline(timeline: ThreadViewResponse["timeline"], client?: string) {
