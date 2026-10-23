@@ -61,6 +61,19 @@ class LifecycleTests(unittest.TestCase):
         stop.assert_not_called()
         self.assertEqual((self.app.root / 'current').resolve(), old)
 
+    def test_invalid_code_signing_identity_is_rejected(self):
+        config = json.loads(self.app.config_path.read_text())
+        config['code_signing_identity'] = 'not-a-certificate-fingerprint'
+        self.app.config_path.write_text(json.dumps(config))
+        with self.assertRaisesRegex(service.ServiceError, 'code_signing_identity'):
+            self.app.config()
+
+    def test_configure_code_signing_identity_persists_normalized_fingerprint(self):
+        self.app.configure_code_signing_identity('a' * 40)
+        config = json.loads(self.app.config_path.read_text())
+        self.assertEqual(config['code_signing_identity'], 'A' * 40)
+        self.assertEqual(self.app.config_path.stat().st_mode & 0o777, 0o600)
+
     def test_update_stages_before_stop_and_preserves_previous(self):
         old, new = self.release('old'), self.release('new')
         service.link(self.app.root / 'current', old)
@@ -182,6 +195,69 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual((release / 'codex').read_text(), 'native executable')
         for name in service.CONTROLLER_FILES:
             self.assertEqual((release / name).read_text(), 'controller')
+
+    def test_build_signs_copied_gateway_with_stable_identifier(self):
+        identity = 'A' * 40
+        self.app.configure_code_signing_identity(identity)
+        repo = self.root / 'repo'
+        for folder in ('tools', 'apps/gateway/src', 'apps/web/dist', 'target/release'):
+            (repo / folder).mkdir(parents=True)
+        (repo / 'apps/gateway/src/schema.rs').write_text('APP_SERVER_SCHEMA_VERSION: &str = "0.160.0"')
+        for name in service.CONTROLLER_FILES:
+            (repo / 'tools' / name).write_text('controller')
+        (repo / 'target/release/kodex-gateway').write_text('executable')
+        (repo / 'apps/web/dist/index.html').write_text('frontend')
+
+        def acquire(_version, stage):
+            (stage / 'codex').write_text('native executable')
+            return {'asset': 'official-package', 'sha256': 'verified'}
+
+        def command(args, **_kwargs):
+            if args[:3] == [service.CODESIGN, '--display', '--requirements']:
+                requirement = ('designated => identifier "dev.kodex.gateway" and anchor apple generic '
+                               'and certificate leaf[subject.CN] = "Kodex"')
+                return subprocess.CompletedProcess(args, 0, '', requirement)
+            return subprocess.CompletedProcess(args, 0, '', '')
+
+        with patch.object(service, 'acquire_native', side_effect=acquire), \
+             patch.object(service, 'run', side_effect=command) as commands:
+            release = self.app.build(repo)
+
+        gateway = release / 'kodex-gateway'
+        calls = [call.args[0] for call in commands.call_args_list]
+        signing = next(args for args in calls if args[:3] == [service.CODESIGN, '--force', '--sign'])
+        staged_gateway = signing[-1]
+        self.assertEqual(signing[:-1], [service.CODESIGN, '--force', '--sign', identity, '--identifier',
+                                       service.LABEL, '--timestamp=none'])
+        self.assertEqual(staged_gateway.name, gateway.name)
+        self.assertIn([service.CODESIGN, '--verify', '--strict', '--verbose=2', staged_gateway], calls)
+        self.assertIn([service.CODESIGN, '--display', '--requirements', '-', staged_gateway], calls)
+
+    def test_signing_failure_never_publishes_release_or_stops_service(self):
+        self.app.configure_code_signing_identity('A' * 40)
+        old = self.release('old')
+        service.link(self.app.root / 'current', old)
+        with patch.object(self.app, 'build', side_effect=service.ServiceError('signing failed')), \
+             patch.object(self.app, 'stop') as stop:
+            with self.assertRaisesRegex(service.ServiceError, 'signing failed'):
+                self.app.update(self.root)
+        stop.assert_not_called()
+        self.assertEqual((self.app.root / 'current').resolve(), old)
+
+    def test_gateway_signing_rejects_version_specific_designated_requirement(self):
+        self.app.configure_code_signing_identity('A' * 40)
+        gateway = self.root / 'kodex-gateway'
+        gateway.write_text('executable')
+
+        def command(args, **_kwargs):
+            if args[:3] == [service.CODESIGN, '--display', '--requirements']:
+                requirement = 'designated => cdhash H"0123456789"'
+                return subprocess.CompletedProcess(args, 0, '', requirement)
+            return subprocess.CompletedProcess(args, 0, '', '')
+
+        with patch.object(service, 'run', side_effect=command):
+            with self.assertRaisesRegex(service.ServiceError, 'stable designated requirement'):
+                self.app.sign_gateway(gateway)
 
     def frontend_fixture(self):
         old, previous = self.release('old'), self.release('previous')

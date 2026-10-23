@@ -358,6 +358,20 @@ class CommandTests(unittest.TestCase):
         self.app.update.assert_not_called()
         self.operations.execute.assert_not_called()
 
+    def test_update_persists_explicit_code_signing_identity_before_submission(self):
+        identity = 'A' * 40
+        self.command('update', '--repo', str(self.root), '--signing-identity', identity)
+        self.operations.assert_idle.assert_called_once_with()
+        self.app.configure_code_signing_identity.assert_called_once_with(identity)
+        self.operations.submit.assert_called_once()
+
+    def test_queued_operation_rejects_signing_identity_change_before_config_write(self):
+        self.operations.assert_idle.side_effect = service.ServiceError('operation in progress')
+        with self.assertRaisesRegex(service.ServiceError, 'operation in progress'):
+            self.command('update', '--repo', str(self.root), '--signing-identity', 'A' * 40)
+        self.app.configure_code_signing_identity.assert_not_called()
+        self.operations.submit.assert_not_called()
+
     def test_rollback_wait_is_also_only_an_observer(self):
         self.command('rollback', '--data-compatible', '--wait')
         self.operations.submit.assert_called_once()

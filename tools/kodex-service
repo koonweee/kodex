@@ -22,10 +22,17 @@ import uuid
 
 LABEL = 'dev.kodex.gateway'
 LAUNCHCTL = '/bin/launchctl'
+CODESIGN = '/usr/bin/codesign'
 
 
 class ServiceError(Exception):
     pass
+
+
+def normalize_code_signing_identity(identity):
+    if not isinstance(identity, str) or not re.fullmatch(r'[0-9A-Fa-f]{40}', identity):
+        raise ServiceError('code_signing_identity must be a 40-character certificate SHA-1 fingerprint')
+    return identity.upper()
 
 
 def run(args, **kwargs):
@@ -185,7 +192,37 @@ class Service:
             raise ServiceError('port must be an integer between 1024 and 65535')
         if not Path(config['data_dir']).is_absolute():
             raise ServiceError('data_dir must be an absolute path')
+        if 'code_signing_identity' in config:
+            normalize_code_signing_identity(config['code_signing_identity'])
         return config
+
+    def configure_code_signing_identity(self, identity):
+        config = self.config()
+        config['code_signing_identity'] = normalize_code_signing_identity(identity)
+        temporary = self.config_path.with_suffix('.new')
+        temporary.write_text(json.dumps(config, indent=2) + '\n')
+        temporary.chmod(0o600)
+        temporary.replace(self.config_path)
+
+    def sign_gateway(self, gateway):
+        identity = self.config().get('code_signing_identity')
+        if identity is None:
+            return
+        try:
+            run([CODESIGN, '--force', '--sign', identity, '--identifier', LABEL,
+                 '--timestamp=none', gateway], capture_output=True, text=True)
+            run([CODESIGN, '--verify', '--strict', '--verbose=2', gateway],
+                capture_output=True, text=True)
+            displayed = run([CODESIGN, '--display', '--requirements', '-', gateway],
+                            capture_output=True, text=True)
+        except (OSError, subprocess.CalledProcessError) as error:
+            detail = getattr(error, 'stderr', None) or getattr(error, 'stdout', None) or str(error)
+            raise ServiceError(f'Could not sign staged kodex-gateway: {str(detail).strip()}') from error
+        requirement = '\n'.join(filter(None, (displayed.stdout, displayed.stderr)))
+        if (f'identifier "{LABEL}"' not in requirement
+                or not re.search(r'\b(anchor|certificate)\b', requirement)
+                or re.search(r'\bcdhash\b', requirement)):
+            raise ServiceError('Signed kodex-gateway does not have a stable designated requirement')
 
     def environment(self, release):
         config = self.config()
@@ -352,7 +389,9 @@ class Service:
             run(['npm', 'ci'], cwd=repo / 'apps/web')
             build_env = dict(os.environ, VITE_KODEX_API_BASE_URL='')
             run(['npm', 'run', 'build'], cwd=repo / 'apps/web', env=build_env)
-            shutil.copy2(repo / 'target/release/kodex-gateway', stage / 'kodex-gateway')
+            gateway = stage / 'kodex-gateway'
+            shutil.copy2(repo / 'target/release/kodex-gateway', gateway)
+            self.sign_gateway(gateway)
             shutil.copytree(repo / 'apps/web/dist', stage / 'frontend')
             (stage / 'manifest.json').write_text(json.dumps({'schema_version': version, 'native': native}))
             destination = releases / (time.strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:8])

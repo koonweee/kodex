@@ -18,6 +18,8 @@ def main(runtime, argv=None):
         sub.add_argument('--repo', type=Path)
         if command != 'update-frontend':
             sub.add_argument('--wait', action='store_true', help='follow logs until the independent job completes')
+            sub.add_argument('--signing-identity', metavar='SHA1',
+                             help='persist a certificate fingerprint for installed gateway signing')
     for command in ('start', 'stop', 'status', 'logs', '_run'):
         commands.add_parser(command)
     commands.add_parser('restart').add_argument('--wait', action='store_true')
@@ -69,15 +71,22 @@ def main(runtime, argv=None):
             if app.job() is not None or app.login_plist.exists():
                 raise error('A Kodex launchd installation already exists; use its management command')
             runtime['check_port'](args.port)
-            app.config_path.write_text(json.dumps({
+            config = {
                 'port': args.port, 'data_dir': str(args.data_dir.expanduser().resolve()),
                 'path': os.environ.get('PATH', '/usr/bin:/bin'), 'environment': {},
                 'repo': str((args.repo or Path(runtime['__file__']).resolve().parent.parent).resolve()),
-            }, indent=2) + '\n')
+            }
+            if args.signing_identity:
+                config['code_signing_identity'] = runtime['normalize_code_signing_identity'](
+                    args.signing_identity)
+            app.config_path.write_text(json.dumps(config, indent=2) + '\n')
             app.config_path.chmod(0o600)
             app.config()
             runtime['link'](app.root / 'kodex-service', app.root / 'controller/kodex-service')
             app.write_plist()
+        if args.command == 'update' and args.signing_identity:
+            operations.assert_idle()
+            app.configure_code_signing_identity(args.signing_identity)
         if args.command in ('install', 'update', 'restart', 'rollback'):
             action = 'update' if args.command == 'install' else args.command
             repo = (args.repo or Path(app.config()['repo'])) if action == 'update' else None

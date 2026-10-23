@@ -17,6 +17,15 @@ From the repository:
 
 If the first build fails, configuration is retained: fix the failure and run `~/.local/share/kodex/kodex-service update` once a release exists, or `./tools/kodex-service update --repo "$PWD"` before the first release exists. Do not rerun install or delete state to recover.
 
+To give successive locally built gateways one stable macOS code identity, create or select a Code Signing certificate in the login keychain and record its SHA-1 fingerprint during installation:
+
+```bash
+security find-identity -v -p codesigning
+./tools/kodex-service install --repo "$PWD" --signing-identity <SHA-1> --wait
+```
+
+The certificate must include its private key and permit non-interactive use by `/usr/bin/codesign`; confirm any first-use Keychain prompt with **Always Allow**. The controller signs only the staged `kodex-gateway`, assigns the identifier `dev.kodex.gateway`, verifies the signature and rejects version-specific designated requirements before stopping the running service. The fingerprint is not a secret. A self-signed Code Signing identity is sufficient for one Mac; use Developer ID signing and notarization for distribution to other Macs.
+
 The default listener is `127.0.0.1:8787`. Choose another unprivileged port with `install --port 8788`. Both explicit starts and launchd starts check that the port is available. A conflict refuses startup and reports an inspection command; it never kills the listener. The gateway's own bind remains the final authority if another process takes the port after the check. Stop an older Kodex deployment deliberately before replacing it. The service never stops tmux jobs or unrelated listeners.
 
 State defaults to `~/.kodex/native-v1`. Use `install --data-dir /absolute/fresh/path` to choose another fresh instance. Existing old stores are not imported, modified or removed; the gateway enforces its native instance rules. Sign in through Kodex's Account dialog after the initial start. The earlier disposable validation login does not sign in this installation.
@@ -83,6 +92,12 @@ When a full deployment changes the service controller itself, invoke the new che
 ./tools/kodex-service update --repo "$PWD"
 ```
 
+An existing installation can enable stable signing on its next full update. The selection is persisted, so later updates do not need the flag:
+
+```bash
+./tools/kodex-service update --repo "$PWD" --signing-identity <SHA-1>
+```
+
 The installed command executes the last installed management controller, so it cannot apply a new acquisition/build implementation until that controller is installed. A controller-only upgrade may stage the three tool files under `controllers/<snapshot>` and switch the controller/entry symlinks under the service lock without changing the gateway release or restarting it. Full updates refresh the separate `controller` pointer; gateway rollback leaves it intact, retaining independent jobs and their observer commands even when the prior gateway release has an older synchronous controller. This checkout command also upgrades an existing installation from desktop extraction to official downloads.
 
 Full `update`, `restart`, `rollback`, and the initial installation always execute in an independent per-user launchd job. The command prints an operation ID, durable log path and initial `queued` state, then returns. Returning means launchd accepted the job; completion still requires a `succeeded` result. There is no foreground execution mode. This lets a deployment finish even when stopping Kodex terminates the agent or shell that requested it.
@@ -127,7 +142,7 @@ kodex-service rollback --data-compatible
 
 This swaps current/previous and starts the previous release. It never restores databases, credentials, history or project files. Incompatible storage changes require a separately planned fresh instance or other explicit policy; this tool adds no migration mechanism. Older release directories are retained, not automatically deleted. Remove only inactive releases you no longer need, after checking `current`, `previous`, `controller` and any installed native plugin references.
 
-Edit `~/.local/share/kodex/config.json` for subsequent starts/updates. It records the source checkout, data directory, port and explicit tool PATH. Shell profiles are not sourced by launchd. New installations omit `codex_binary`. Earlier values are ignored by the updated controller; retain the key while old controller releases remain rollback targets, since those older controllers still validate it. Native version selection now comes from the checkout schema and verified upstream package digests. The optional `environment` object accepts only the three `KODEX_VAPID_*` values, `KODEX_NOTIFICATIONS_RECHECK_DELAY_MS` and `RUST_LOG`. Configuration errors must be fixed before startup. Desktop `CODEX_HOME`, ambient API credentials and old production environment files are not inherited. Do not put secrets in the plist or commit the private configuration.
+Edit `~/.local/share/kodex/config.json` for subsequent starts/updates. It records the source checkout, data directory, port, explicit tool PATH and optional `code_signing_identity` certificate fingerprint. Shell profiles are not sourced by launchd. New installations omit `codex_binary`. Earlier values are ignored by the updated controller; retain the key while old controller releases remain rollback targets, since those older controllers still validate it. Native version selection now comes from the checkout schema and verified upstream package digests. The optional `environment` object accepts only the three `KODEX_VAPID_*` values, `KODEX_NOTIFICATIONS_RECHECK_DELAY_MS` and `RUST_LOG`. Configuration errors must be fixed before startup. Desktop `CODEX_HOME`, ambient API credentials and old production environment files are not inherited. Do not put secrets in the plist or commit the private configuration.
 
 ## Private HTTPS with Tailscale
 
