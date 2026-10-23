@@ -46,12 +46,22 @@ fn thread(id: &str, name: &str, ephemeral: bool, forked_from_id: Option<&str>) -
 }
 
 async fn request(state: &AppState, method: &str, path: &str) -> (StatusCode, Value) {
+    request_with_body(state, method, path, None).await
+}
+
+async fn request_with_body(
+    state: &AppState,
+    method: &str,
+    path: &str,
+    body: Option<Value>,
+) -> (StatusCode, Value) {
     let response = build_router(state.clone())
         .oneshot(
             Request::builder()
                 .method(method)
                 .uri(path)
-                .body(Body::empty())
+                .header("content-type", "application/json")
+                .body(body.map_or_else(Body::empty, |value| Body::from(value.to_string())))
                 .unwrap(),
         )
         .await
@@ -64,6 +74,148 @@ async fn request(state: &AppState, method: &str, path: &str) -> (StatusCode, Val
         serde_json::from_slice(&bytes).unwrap()
     };
     (status, body)
+}
+
+#[tokio::test]
+async fn side_input_bypasses_unsupported_queue_admission_from_stale_clients() {
+    let (state, native) = state().await;
+    seed_create(&native);
+    let (status, body) = request(&state, "POST", "/v1/threads/parent/side-thread").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    native.requests.lock().unwrap().clear();
+
+    let (status, body) = request(&state, "GET", "/v1/threads/side/queued-inputs").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["queuedInputs"], json!([]));
+    assert!(native.requests.lock().unwrap().is_empty());
+
+    let (status, body) = request_with_body(
+        &state,
+        "POST",
+        "/v1/threads/side/queued-inputs",
+        Some(json!({
+            "input":[{"type":"text","text":"Do not queue this"}],
+            "clientUserMessageId":"stale-explicit-queue"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body["message"]
+        .as_str()
+        .is_some_and(|message| message.contains("Side chats do not support queued submissions")));
+    assert!(native.requests.lock().unwrap().is_empty());
+
+    let (status, body) = request_with_body(
+        &state,
+        "POST",
+        "/v1/threads/side/input",
+        Some(json!({
+            "input":[{"type":"text","text":"Send from an old open tab"}],
+            "clientUserMessageId":"stale-side-client",
+            "queueIfPending":true
+        })),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["disposition"], "submitted");
+    let calls = native.requests.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].0, "turn/start");
+    assert_eq!(calls[0].1["threadId"], "side");
+    assert_eq!(calls[0].1["clientUserMessageId"], "stale-side-client");
+}
+
+#[tokio::test]
+async fn missing_side_child_never_resumes_while_registered_or_closing() {
+    let (state, native) = state().await;
+    seed_create(&native);
+    let (status, body) = request(&state, "POST", "/v1/threads/parent/side-thread").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    for closing in [false, true] {
+        if closing {
+            let (status, body) = request(&state, "DELETE", "/v1/threads/parent/side-thread").await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+        }
+        native.requests.lock().unwrap().clear();
+        native
+            .queued_errors
+            .lock()
+            .unwrap()
+            .push(crate::error::ApiError::NativeRpc(
+                crate::app_server::JsonRpcError {
+                    code: -32600,
+                    message: "thread not found: side".into(),
+                    data: None,
+                },
+            ));
+
+        let (status, body) = request_with_body(
+            &state,
+            "POST",
+            "/v1/threads/side/input",
+            Some(json!({
+                "input":[{"type":"text","text":"Do not resume this side chat"}],
+                "clientUserMessageId": if closing { "closing-side" } else { "active-side" },
+                "queueIfEmpty":true
+            })),
+        )
+        .await;
+
+        assert!(!status.is_success(), "{body}");
+        assert_eq!(
+            native.requests.lock().unwrap().as_slice(),
+            &[(
+                "turn/start".into(),
+                json!({
+                    "threadId":"side",
+                    "input":[{"type":"text","text":"Do not resume this side chat"}],
+                    "clientUserMessageId": if closing { "closing-side" } else { "active-side" }
+                })
+            )]
+        );
+    }
+
+    let resume_missing_thread = !state.side_threads.is_side_or_closed_child("side");
+    assert!(!resume_missing_thread);
+    state.side_threads.forget_closed_child("side");
+    native.requests.lock().unwrap().clear();
+    native
+        .queued_errors
+        .lock()
+        .unwrap()
+        .push(crate::error::ApiError::NativeRpc(
+            crate::app_server::JsonRpcError {
+                code: -32600,
+                message: "thread not found: side".into(),
+                data: None,
+            },
+        ));
+    let result = super::turns::start_turn_with_resume_policy(
+        &state,
+        "side".into(),
+        serde_json::from_value(json!({
+            "input":[{"type":"text","text":"Keep the captured side policy"}],
+            "clientUserMessageId":"captured-side-policy"
+        }))
+        .unwrap(),
+        resume_missing_thread,
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert_eq!(
+        native.requests.lock().unwrap().as_slice(),
+        &[(
+            "turn/start".into(),
+            json!({
+                "threadId":"side",
+                "input":[{"type":"text","text":"Keep the captured side policy"}],
+                "clientUserMessageId":"captured-side-policy"
+            })
+        )]
+    );
 }
 
 fn seed_create(native: &RecordingAppServer) {

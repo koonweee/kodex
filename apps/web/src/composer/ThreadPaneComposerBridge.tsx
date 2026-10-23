@@ -163,6 +163,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
     },
     onThreadTurnStartFailed,
     onThreadTurnStarted,
+    queueSupported: !isSideThread,
     selectedProjectId: isDraftPane ? draftProjectId : null,
     selectedThreadId: activeThreadId,
   });
@@ -247,7 +248,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
       onSubmitTurn={orchestration.handleSubmitTurn}
       pendingAttachments={orchestration.pendingAttachments}
       goalThreadId={inputStateReadable && !isSideThread ? existingThreadId : null}
-      queueThreadId={inputStateReadable ? existingThreadId : null}
+      queueThreadId={inputStateReadable && !isSideThread ? existingThreadId : null}
       paneActive={paneState.isActive}
       selectedThreadPresent={!isDraftPane}
     />

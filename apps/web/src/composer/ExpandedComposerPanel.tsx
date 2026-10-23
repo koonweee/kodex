@@ -28,6 +28,7 @@ type ExpandedComposerPanelProps = ComposerPanelProps & {
   goalControls?: GoalControls;
   queuePanel?: ReactNode;
   queueOnSubmit?: boolean;
+  queueSupported?: boolean;
   canSubmitComposer: boolean;
   draftState: ComposerDraftState;
   filteredSkills: SkillMetadata[];

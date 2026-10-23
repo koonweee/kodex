@@ -65,6 +65,7 @@ type UseComposerOrchestrationParams = {
   onThreadMaterialized: (threadId: string) => void;
   onThreadTurnStartFailed: (threadId: string) => void;
   onThreadTurnStarted: (threadId: string) => void;
+  queueSupported?: boolean;
   selectedProjectId: string | null;
   selectedThreadId: string | null;
 };
@@ -87,6 +88,7 @@ export function useComposerOrchestration({
   onThreadMaterialized,
   onThreadTurnStartFailed,
   onThreadTurnStarted,
+  queueSupported = true,
   selectedProjectId,
   selectedThreadId,
 }: UseComposerOrchestrationParams) {
@@ -190,7 +192,7 @@ export function useComposerOrchestration({
       if (selectedThreadId) {
         draftControls.clearText();
         const payload = await buildTurnPayload(selectedThreadId, text, attachments, skillInputs, skillTextElements);
-        if (intent === "queue") {
+        if (intent === "queue" && queueSupported) {
           try {
             await createQueuedInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId);
           } finally {
@@ -210,7 +212,10 @@ export function useComposerOrchestration({
             threadId: selectedThreadId,
           });
         }
-        const result = await submitThreadInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId, intent === "alternate" ? "ifEmpty" : "ifPending");
+        const queuePolicy = queueSupported
+          ? intent === "alternate" ? "ifEmpty" : "ifPending"
+          : undefined;
+        const result = await submitThreadInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId, queuePolicy);
         if (result.disposition === "queued") {
           if (optimisticClientRequestId) onOptimisticUserMessageRemoved?.(optimisticClientRequestId);
           void refreshQueuedInputs(queryClient, selectedThreadId);

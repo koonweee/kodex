@@ -147,6 +147,13 @@ pub async fn list_queued_inputs(
             "Queue page limit must be between 1 and 100".into(),
         ));
     }
+    if state.side_threads.is_side_or_closed_child(&thread_id) {
+        return Ok(Json(QueuedInputListResponse {
+            queued_inputs: Vec::new(),
+            transfers: Vec::new(),
+            next_cursor: None,
+        }));
+    }
     let page = app_server_api::client(&state.app_server)
         .queue_list(thread_id.clone(), query.cursor, Some(limit))
         .await?;
@@ -175,6 +182,11 @@ pub async fn create_queued_input(
     Path(thread_id): Path<String>,
     Json(request): Json<QueuedInputCreateRequest>,
 ) -> ApiResult<Json<QueuedInputResponse>> {
+    if state.side_threads.is_side_or_closed_child(&thread_id) {
+        return Err(ApiError::BadRequest(
+            "Side chats do not support queued submissions".into(),
+        ));
+    }
     let input = prepare_input(&thread_id, request.input, request.attachments)?;
     let row = queue_transfer::enqueue(
         &state,

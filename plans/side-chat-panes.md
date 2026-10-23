@@ -130,7 +130,7 @@ Keep native RPCs outside broad projection write exclusion, while preserving the 
 
 ### Live execution and projection
 
-- Route side composer input to the native loaded child without a native resume step.
+- Route side composer input directly to the native loaded child without a native resume or queue-admission read. Ephemeral threads do not expose native queues; normal and alternate Send both use native atomic start-or-steer, and explicit Queue is unavailable.
 - Reuse normal canonical turn/item ingestion, approvals and `thread_view.patch` / `thread_view.item_delta` delivery.
 - Audit queue, start-or-steer, settings, attachment, Stop and approval paths against ephemeral native support. Prefer native semantics and remove or disable only unsupported durable controls; do not create a parallel queue or settings store.
 - Keep the side timeline scoped to side-authored turns. Parent history remains model context, not visible projection rows.
@@ -345,13 +345,13 @@ Exit:
 
 ## Completion Evidence
 
-- Eight focused gateway lifecycle tests pass, including concurrent singleton creation, exact ephemeral fork parameters, current parent-summary refresh without side history hydration, nested rejection, Stop routing, read/push exclusion, active close and disconnect/native-close convergence.
-- The isolated pinned `codex-cli 0.160.0` proof passes against disposable state. It materializes a parent rollout, verifies the side model request inherits parent request/response context while the visible side snapshot begins empty, submits through `queueIfPending`, closes through unsubscribe and observes the native 30-minute loaded-session grace contract.
+- Ten focused gateway lifecycle tests pass, including concurrent singleton creation, exact ephemeral fork parameters, current parent-summary refresh without side history hydration, nested rejection, queue bypass, no-resume close-race handling, Stop routing, read/push exclusion, active close and disconnect/native-close convergence.
+- The isolated pinned `codex-cli 0.160.0` proof passes against disposable state. It materializes a parent rollout, verifies the side model request inherits parent request/response context while the visible side snapshot begins empty, verifies stale `queueIfPending` clients are routed directly through native start-or-steer, exercises active-turn steering and close/recreate behavior, leaves a replacement child live through process shutdown and proves it cannot be recovered after app-server restart, and observes the native 30-minute loaded-session grace contract after unsubscribe.
 - Focused frontend tests pass (93 tests across thread pane, workspace, Dockview and SSE coverage), including restored/mismatched panes, parent-title updates, accessible tooltip, menu eligibility and cross-client closure.
-- The complete frontend suite passes: 174 files, 1,343 tests passed and one skipped. The production build and generated OpenAPI TypeScript contract pass.
+- The complete frontend suite passes: 174 files, 1,344 tests passed and one skipped. The production build and generated OpenAPI TypeScript contract pass.
 - Focused Chromium coverage passes three flows: desktop two-tab singleton/reload/global close, narrow fine-pointer open/close and narrow touch open/close. No fixture console or unexpected-request errors remain.
 - `cargo test`, `cargo fmt --check`, `./tools/trim-backend.sh` and `./tools/trim-frontend.sh` pass. The full Rust gate also corrected a stale test-only assertion that still required the intentionally optional standalone `spawn_thread.projectId` field.
-- A final self-review checked gateway ownership, native 0.160 schema behavior, canonical projection-only rendering, no durable sidebar/read/push/goal effects, late-event/import fencing, current parent-derived titles, stale replacement safety and same-user two-tab convergence. A review subagent was not permitted for this task, so the repository's documented fallback review was used.
+- Three independent review loops found and corrected the restart proof plus two related no-resume gaps: side-child missing-thread errors could enter the ordinary resume path, and a close event could erase the registry tombstone between route classification and submission. The route now carries a no-resume policy captured before any await, with a regression that removes the tombstone after capture; the final review found no major issues.
 
 ## References
 

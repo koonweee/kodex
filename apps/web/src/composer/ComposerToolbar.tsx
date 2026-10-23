@@ -36,6 +36,7 @@ type ComposerToolbarProps = {
   onStopTurn: () => void;
   selectedThreadPresent: boolean;
   queueOnSubmit?: boolean;
+  queueSupported?: boolean;
   settings: ComposerSettings | null;
   settingsDisabled?: boolean;
   settingsError?: string | null;
@@ -58,6 +59,7 @@ export const ComposerToolbar = memo(function ComposerToolbar({
   onStopTurn,
   selectedThreadPresent,
   queueOnSubmit = false,
+  queueSupported = true,
   settings,
   settingsDisabled,
   settingsError,
@@ -82,15 +84,15 @@ export const ComposerToolbar = memo(function ComposerToolbar({
     setAttachmentMenuOpen(opened);
   }
   const queueHold = useQueueHold({
-    enabled: selectedThreadPresent && canSubmitComposer && !disabled && !isSubmitting && !shouldShowStopAction,
+    enabled: queueSupported && selectedThreadPresent && canSubmitComposer && !disabled && !isSubmitting && !shouldShowStopAction,
     onQueue: () => {
       const form = document.getElementById(formId) as HTMLFormElement | null;
       const submitter = form?.querySelector<HTMLButtonElement>('button[hidden][data-submit-intent="queue"]');
       if (submitter && !submitter.disabled) form?.requestSubmit(submitter);
     },
   });
-  const previewQueueAction = alternateSubmitPreview !== queueOnSubmit;
-  const previewSendNowAction = alternateSubmitPreview && queueOnSubmit;
+  const previewQueueAction = queueSupported && alternateSubmitPreview !== queueOnSubmit;
+  const previewSendNowAction = queueSupported && alternateSubmitPreview && queueOnSubmit;
   const actionLabel = isSubmitting
     ? COMPOSER_TOOLBAR_TEXT.sending
     : shouldShowStopAction
@@ -129,7 +131,7 @@ export const ComposerToolbar = memo(function ComposerToolbar({
               </Menu.Item>
             ) : null}
             {goalControls?.error ? <Menu.Item onClick={goalControls.onReload}>Reload goal</Menu.Item> : null}
-            {selectedThreadPresent ? (
+            {selectedThreadPresent && queueSupported ? (
               <Menu.Item
                 disabled={!canSubmitComposer}
                 leftSection={<ListPlus size={14} />}
@@ -181,7 +183,7 @@ export const ComposerToolbar = memo(function ComposerToolbar({
           data-action-state="idle"
           disabled={!canSubmitComposer}
           label={actionLabel}
-          tooltip={selectedThreadPresent ? `${actionLabel} · Hold to queue` : actionLabel}
+          tooltip={selectedThreadPresent && queueSupported ? `${actionLabel} · Hold to queue` : actionLabel}
           type="submit"
           data-submit-intent={alternateSubmitPreview ? "alternate" : undefined}
           {...queueHold.handlers}

@@ -32,6 +32,7 @@ type InlineComposerPanelProps = ComposerPanelProps & {
   goalControls?: GoalControls;
   queuePanel?: ReactNode;
   queueOnSubmit?: boolean;
+  queueSupported?: boolean;
   canSubmitComposer: boolean;
   density?: "regular" | "compact";
   expanded?: { header: ReactNode };
@@ -100,6 +101,7 @@ export function InlineComposerPanel({
   pendingAttachments,
   queuePanel,
   queueOnSubmit,
+  queueSupported = false,
   selectedThreadPresent,
   selectSkill,
   selectSlashCommand,
@@ -126,7 +128,7 @@ export function InlineComposerPanel({
     onFocusSessionChange?.(focusSessionActive);
   }, [focusSessionActive, onFocusSessionChange]);
   useEffect(() => {
-    if (!focusSessionActive || !selectedThreadPresent) {
+    if (!focusSessionActive || !selectedThreadPresent || !queueSupported) {
       setAlternateSubmitPreview(false);
       return;
     }
@@ -151,7 +153,7 @@ export function InlineComposerPanel({
       window.removeEventListener("blur", clearPreview);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [focusSessionActive, selectedThreadPresent]);
+  }, [focusSessionActive, queueSupported, selectedThreadPresent]);
   useEffect(() => {
     if (composerFocused || toolbarMenuOpen) return;
     // Let focus and menu state settle before ending the editing session.
@@ -252,7 +254,7 @@ export function InlineComposerPanel({
           <Box className="kodex-composer-shadow" aria-hidden="true" />
           <Box className="kodex-composer-surface" aria-hidden="true" />
         </> : null}
-        {selectedThreadPresent ? <button type="submit" hidden data-submit-intent="queue" disabled={!canSubmitComposer} /> : null}
+        {selectedThreadPresent && queueSupported ? <button type="submit" hidden data-submit-intent="queue" disabled={!canSubmitComposer} /> : null}
         <button type="submit" hidden data-submit-intent="alternate" disabled={!canSubmitComposer} />
         {skillPopupOpen || slashPopupOpen ? (
           renderSkillSuggestions ? renderSkillSuggestions() : skillPopupOpen ? (
@@ -327,7 +329,8 @@ export function InlineComposerPanel({
           <ComposerToolbar
             onMenuOpenChange={setToolbarMenuOpen}
             queueOnSubmit={queueOnSubmit}
-            alternateSubmitPreview={selectedThreadPresent && alternateSubmitPreview}
+            queueSupported={queueSupported}
+            alternateSubmitPreview={selectedThreadPresent && queueSupported && alternateSubmitPreview}
             goalControls={toolbarGoalControls}
             formId={formId}
             attachmentInputRef={attachmentInputRef}

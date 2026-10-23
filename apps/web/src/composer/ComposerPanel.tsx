@@ -372,6 +372,7 @@ export function ComposerPanel({
     goalControls,
     queuePanel,
     queueOnSubmit: Boolean(nativeQueue.query.data?.queuedInputs.length),
+    queueSupported: Boolean(queueThreadId),
     activeSelectedTurnId,
     attachmentInputRef,
     canCompose,

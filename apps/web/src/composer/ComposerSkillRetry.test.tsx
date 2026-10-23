@@ -49,6 +49,7 @@ function renderComposer(activeTurnId: string | null) {
       composerResetToken={0}
       composerSettings={settings}
       composerSettingsError={null}
+      queueThreadId="thread-1"
       isDraftThreadSelected={false}
       isDraftComposerTransitioning={false}
       isComposerDragActive={orchestration.isComposerDragActive}

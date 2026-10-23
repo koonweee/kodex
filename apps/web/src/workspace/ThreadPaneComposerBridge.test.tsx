@@ -123,6 +123,32 @@ function renderBridgePair({
 }
 
 describe("ThreadPaneComposerBridge", () => {
+  it("keeps ephemeral side chats out of queue workflows and submits directly", async () => {
+    const gateway = mockGateway(baseRoutes());
+    renderBridgePair({
+      firstPane: {
+        id: "pane-thread-1",
+        kind: "thread",
+        target: { mode: "existing", threadId: "thread-1", sideThreadOf: "parent-thread" },
+        title: "> Parent title",
+      },
+    });
+    const first = within(screen.getByRole("region", { name: /first thread pane/i }));
+
+    await userEvent.type(first.getByLabelText(/message composer/i), "Send directly");
+    await userEvent.click(first.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1));
+    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toEqual({
+      clientUserMessageId: expect.any(String),
+      input: [{ text: "Send directly", type: "text" }],
+    });
+    await userEvent.click(first.getByRole("button", { name: "Open attachment menu" }));
+    expect(screen.queryByRole("menuitem", { name: "Queue message" })).not.toBeInTheDocument();
+    expect(gateway.callsFor("GET", "/v1/threads/thread-1/queued-inputs")).toHaveLength(0);
+    expect(gateway.callsFor("GET", "/v1/threads/thread-1/settings")).toHaveLength(0);
+  });
+
   it("keeps a native read-only child out of input/settings workflows without treating unknown capability as read-only", async () => {
     const gateway = mockGateway(baseRoutes());
     renderBridgePair({

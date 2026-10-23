@@ -119,6 +119,10 @@ pub async fn submit_thread_input(
     Path(thread_id): Path<String>,
     Json(request): Json<ThreadInputRequest>,
 ) -> ApiResult<Json<ThreadInputResponse>> {
+    // Capture this before validation or native/store awaits. Native close can
+    // retire the registry tombstone concurrently, but an ephemeral ID must
+    // never acquire the ordinary durable-thread resume policy mid-request.
+    let resume_missing_thread = !state.side_threads.is_side_or_closed_child(&thread_id);
     let ThreadInputRequest {
         submission: request,
         queue_if_pending,
@@ -131,12 +135,22 @@ pub async fn submit_thread_input(
     }
     request.options.validate()?;
     if !queue_if_pending && !queue_if_empty {
-        let response = start_turn(State(state), Path(thread_id), Json(request))
-            .await?
-            .0;
+        let response =
+            start_turn_with_resume_policy(&state, thread_id, request, resume_missing_thread)
+                .await?;
         return Ok(Json(ThreadInputResponse {
             payload: response.payload,
             disposition: None,
+            queued_input: None,
+        }));
+    }
+    if !resume_missing_thread {
+        let response =
+            start_turn_with_resume_policy(&state, thread_id, request, resume_missing_thread)
+                .await?;
+        return Ok(Json(ThreadInputResponse {
+            payload: response.payload,
+            disposition: Some(ThreadInputDisposition::Submitted),
             queued_input: None,
         }));
     }
@@ -179,9 +193,8 @@ pub async fn submit_thread_input(
     }
     // Native turn/start still atomically chooses start or steering. Nothing
     // retries an uncertain queue admission or falls back after a queue-read error.
-    let response = start_turn(State(state), Path(thread_id), Json(request))
-        .await?
-        .0;
+    let response =
+        start_turn_with_resume_policy(&state, thread_id, request, resume_missing_thread).await?;
     Ok(Json(ThreadInputResponse {
         payload: response.payload,
         disposition: Some(ThreadInputDisposition::Submitted),
@@ -267,6 +280,18 @@ pub async fn start_turn(
     Path(thread_id): Path<String>,
     Json(request): Json<TurnStartRequest>,
 ) -> ApiResult<Json<RawAppServerResponse>> {
+    let resume_missing_thread = !state.side_threads.is_side_or_closed_child(&thread_id);
+    Ok(Json(
+        start_turn_with_resume_policy(&state, thread_id, request, resume_missing_thread).await?,
+    ))
+}
+
+pub(super) async fn start_turn_with_resume_policy(
+    state: &AppState,
+    thread_id: String,
+    request: TurnStartRequest,
+    resume_missing_thread: bool,
+) -> ApiResult<RawAppServerResponse> {
     request.options.validate()?;
     let client_id = request
         .client_user_message_id
@@ -275,17 +300,30 @@ pub async fn start_turn(
         app_server_api::validate_file_attachments_for_thread(&thread_id, request.attachments)?;
     let input = app_server_api::append_file_attachment_envelope(request.input, &attachments);
     let submission_revision = state.store.latest_event_seq().await?;
-    let response = turn_start_resuming_missing_thread_once(
-        &state,
-        &thread_id,
-        input.clone(),
-        request.options.clone(),
-        client_id.clone(),
-    )
-    .await?;
+    let response = if resume_missing_thread {
+        turn_start_resuming_missing_thread_once(
+            state,
+            &thread_id,
+            input.clone(),
+            request.options.clone(),
+            client_id.clone(),
+        )
+        .await?
+    } else {
+        // Ephemeral forks cannot be resumed. The route captures this policy
+        // before awaits so native close cannot turn it into a durable resume.
+        app_server_api::client(&state.app_server)
+            .turn_start(
+                thread_id.clone(),
+                input.clone(),
+                request.options.clone(),
+                Some(client_id.clone()),
+            )
+            .await?
+    };
     if let Some(turn_id) = turn_lifecycle::pending_projection_turn_id(&response.payload) {
         turn_lifecycle::record_pending_user_projection(
-            &state,
+            state,
             &thread_id,
             &turn_id,
             &client_id,
@@ -295,7 +333,7 @@ pub async fn start_turn(
         )
         .await?;
     }
-    Ok(Json(response))
+    Ok(response)
 }
 
 #[utoipa::path(post, path = "/v1/threads/{threadId}/turns/{turnId}/steer", request_body = TurnSteerRequest, responses((status = 200, body = RawAppServerResponse)))]

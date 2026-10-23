@@ -27,7 +27,7 @@ function composer(props: Partial<ComponentProps<typeof ComposerPanel>> = {}) {
   const node = (overrides: Partial<ComponentProps<typeof ComposerPanel>>) => <QueryClientProvider client={client}><MantineProvider><ComposerPanel
     activeSelectedTurnId={null} attachmentInputRef={{ current: null }} canCompose composerResetToken={0}
     composerSettings={{ model: "gpt-5.4", fast: false }} composerSettingsError={null}
-    goalThreadId="thread-1" isDraftThreadSelected={false} isDraftComposerTransitioning={false}
+    goalThreadId="thread-1" queueThreadId="thread-1" isDraftThreadSelected={false} isDraftComposerTransitioning={false}
     isComposerDragActive={false} isComposerSubmitting={false} isSelectedTimelineReady models={[]}
     onAttachmentInputChange={vi.fn()} onComposerDragLeave={vi.fn()} onComposerDragOver={vi.fn()} onComposerDrop={vi.fn()}
     onComposerKeyDown={vi.fn()} onComposerPaste={vi.fn()} onComposerSettingsChange={vi.fn()} onImageOpen={vi.fn()}

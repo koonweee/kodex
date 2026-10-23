@@ -80,6 +80,11 @@ impl SideThreadRegistry {
             .contains_key(thread_id)
     }
 
+    pub fn is_side_or_closed_child(&self, thread_id: &str) -> bool {
+        let state = self.state.lock().unwrap();
+        state.parent_by_child.contains_key(thread_id) || state.closed_children.contains(thread_id)
+    }
+
     pub fn is_closed_child(&self, thread_id: &str) -> bool {
         self.state
             .lock()
