@@ -133,6 +133,7 @@ function ExistingThreadPane({
   const [scrollParentElement, setScrollParentElement] = useState<HTMLDivElement | null>(null);
   const [timelineOverflowAbove, setTimelineOverflowAbove] = useState(false);
   const [timelineOverflowBelow, setTimelineOverflowBelow] = useState(false);
+  const [fullscreenComposerActive, setFullscreenComposerActive] = useState(false);
   const [thread, setThread] = useState<ThreadSummary | null>(seededThread);
   const [sideParentThread, setSideParentThread] = useState<ThreadSummary | null>(seededParentThread);
   const [timeline, setTimeline] = useState<TimelineState>(() => createTimelineState());
@@ -285,6 +286,7 @@ function ExistingThreadPane({
     setThread(seededThread);
     setTimelineOverflowAbove(false);
     setTimelineOverflowBelow(false);
+    setFullscreenComposerActive(false);
     setPaneErrorMessage(null);
     void refreshSnapshot();
   }, [cancelQueuedTimelineEvents, refreshSnapshot, threadId]);
@@ -647,6 +649,7 @@ function ExistingThreadPane({
                     <TimelineView
                       approvals={threadApprovals}
                       imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+                      layoutTransitionActive={fullscreenComposerActive}
                       onApprovalDecision={onApprovalDecision}
                       onImageOpen={onImageOpen}
                       onLoadOlderHistory={loadOlderHistory}
@@ -671,6 +674,7 @@ function ExistingThreadPane({
         activeTurnId: timeline.activeTurnId,
         isActive,
         isReady,
+        onFullscreenComposerChange: setFullscreenComposerActive,
         selectedThreadPresent: true,
         thread,
       })}

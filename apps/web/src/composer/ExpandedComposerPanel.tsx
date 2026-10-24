@@ -71,6 +71,7 @@ export function ExpandedComposerPanel({
   onComposerPaste,
   onComposerSettingsChange,
   onImageOpen,
+  onFullscreenComposerChange,
   onRemovePendingAttachment,
   onStopTurn,
   onSubmitTurn,
@@ -88,11 +89,23 @@ export function ExpandedComposerPanel({
 }: ExpandedComposerPanelProps) {
   const { compact } = usePaneLayout();
   const { preferences: interfacePreferences } = useInterfacePreferences();
-  const [expansionRequested, setIsExpanded] = useState(false);
+  const [expansionRequested, setExpansionRequested] = useState(false);
+  const expansionRequestedRef = useRef(false);
+  const onFullscreenComposerChangeRef = useRef(onFullscreenComposerChange);
+  onFullscreenComposerChangeRef.current = onFullscreenComposerChange;
   const handledAnnotationTouchOpenRevision = useRef(0);
   const [focusSessionActive, setFocusSessionActive] = useState(false);
   const [composerShellNode, setLocalComposerShellNode] = useState<HTMLDivElement | null>(null);
   const isExpanded = expansionRequested;
+  const setIsExpanded = useCallback((expanded: boolean) => {
+    if (expansionRequestedRef.current === expanded) return;
+    expansionRequestedRef.current = expanded;
+    onFullscreenComposerChangeRef.current?.(expanded);
+    setExpansionRequested(expanded);
+  }, []);
+  useLayoutEffect(() => () => {
+    if (expansionRequestedRef.current) onFullscreenComposerChangeRef.current?.(false);
+  }, []);
   useLayoutEffect(() => {
     if (!annotationTouchOpenRevision || handledAnnotationTouchOpenRevision.current === annotationTouchOpenRevision) return;
     handledAnnotationTouchOpenRevision.current = annotationTouchOpenRevision;

@@ -359,7 +359,9 @@ describe("Mobile composer panel", () => {
 
   it("closes expanded composer after submit and preserves the shared submit controls", async () => {
     const submittedDrafts: string[] = [];
+    const onFullscreenComposerChange = vi.fn();
     renderComposerPanel({
+      onFullscreenComposerChange,
       onSubmitTurn: (event, draftText, controls) => {
         event.preventDefault();
         submittedDrafts.push(draftText);
@@ -369,10 +371,13 @@ describe("Mobile composer panel", () => {
 
     await openByTouch(screen.getByLabelText(/message composer/i));
     expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
+    expect(onFullscreenComposerChange).toHaveBeenLastCalledWith(true);
     await userEvent.type(screen.getByLabelText(/message composer/i), "Send from expanded");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
     await waitFor(() => expect(submittedDrafts).toEqual(["Send from expanded"]));
+    expect(onFullscreenComposerChange).toHaveBeenLastCalledWith(false);
+    expect(onFullscreenComposerChange).toHaveBeenCalledTimes(2);
     expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "compact");
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
   });

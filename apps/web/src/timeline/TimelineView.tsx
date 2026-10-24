@@ -51,6 +51,7 @@ const TIMELINE_VIRTUOSO_COMPONENTS = {
 export function TimelineView({
   approvals,
   imagePreviewUrlsByPath,
+  layoutTransitionActive = false,
   onApprovalDecision,
   onImageOpen,
   onLoadOlderHistory,
@@ -65,6 +66,7 @@ export function TimelineView({
 }: {
   approvals: Approval[];
   imagePreviewUrlsByPath: Record<string, string>;
+  layoutTransitionActive?: boolean;
   onApprovalDecision: (approval: Approval, decision: ApprovalResponse) => void;
   onImageOpen: (image: ImageLightboxImage) => void;
   onLoadOlderHistory?: () => void;
@@ -128,6 +130,7 @@ export function TimelineView({
     showScrollToBottom,
     virtuosoRef,
   } = useBottomPinnedVirtuosoTimeline({
+    layoutTransitionActive,
     onReady,
     onOverflowAboveChange,
     rowCount,

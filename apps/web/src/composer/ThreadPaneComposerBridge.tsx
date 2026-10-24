@@ -235,6 +235,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
       onComposerPaste={orchestration.handleComposerPaste}
       onComposerSettingsChange={handleComposerSettingsChange}
       onImageOpen={onImageOpen}
+      onFullscreenComposerChange={paneState.onFullscreenComposerChange}
       onRemovePendingAttachment={orchestration.removePendingAttachment}
       onStopTurn={orchestration.handleStopTurn}
       onSubmitTurn={orchestration.handleSubmitTurn}

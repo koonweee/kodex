@@ -81,6 +81,7 @@ export type ComposerPanelProps = {
   onComposerPaste: (event: ReactClipboardEvent<HTMLTextAreaElement>) => void;
   onComposerSettingsChange: (settings: ComposerSettingsChange) => void;
   onImageOpen: (image: ImageLightboxImage) => void;
+  onFullscreenComposerChange?: (expanded: boolean) => void;
   onRemovePendingAttachment: (id: string) => void;
   onStopTurn: () => void;
   onSubmitTurn: (
@@ -130,6 +131,7 @@ export function ComposerPanel({
   onComposerPaste,
   onComposerSettingsChange,
   onImageOpen,
+  onFullscreenComposerChange,
   onRemovePendingAttachment,
   onStopTurn,
   onSubmitTurn,
@@ -408,6 +410,7 @@ export function ComposerPanel({
     onComposerPaste,
     onComposerSettingsChange,
     onImageOpen,
+    onFullscreenComposerChange,
     onRemovePendingAttachment,
     onStopTurn,
     onSubmitTurn: (...args: Parameters<ComposerPanelProps["onSubmitTurn"]>) => {

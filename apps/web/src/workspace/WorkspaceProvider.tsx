@@ -58,6 +58,7 @@ export type ThreadComposerState = {
   isActive: boolean;
   isReady: boolean;
   materializeThreadPane?: (threadId: string, title?: string | null) => void;
+  onFullscreenComposerChange?: (expanded: boolean) => void;
   publishThreadPaneTimelineAction: (action: ThreadPaneTimelineAction) => void;
   selectedThreadPresent: boolean;
   thread?: ThreadSummary | null;

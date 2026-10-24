@@ -318,6 +318,40 @@ test.describe("bottom follow geometry", () => {
   });
 });
 
+test.describe("mobile fullscreen composer bottom follow", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  test("stays pinned through repeated fullscreen sends", async ({ context }) => {
+    const fixture = await scrollingFixture(context, 40);
+    try {
+      const page = await fixture.page("fullscreen-send", "/threads/settings-chat");
+      const pane = page.locator(".kodex-thread-pane-existing");
+      const scroll = pane.locator(".kodex-timeline-scroll");
+      const composer = pane.getByLabel("Message composer", { exact: true });
+      await expect(pane.locator('[data-initial-bottom-aligned="true"]')).toBeVisible();
+      await expect.poll(async () => (await metrics(scroll)).bottom).toBeLessThan(3);
+
+      for (let iteration = 0; iteration < 12; iteration += 1) {
+        await composer.tap();
+        await expect(pane.getByRole("dialog", { name: "Compose", exact: true })).toBeVisible();
+        await composer.fill(`Fullscreen pinned send ${iteration}`);
+        await pane.getByRole("button", { name: "Send message", exact: true }).tap();
+        await expect(pane.getByRole("dialog", { name: "Compose", exact: true })).toHaveCount(0);
+        await expect.poll(async () => (await metrics(scroll)).bottom).toBeLessThan(3);
+        await expect(pane.getByRole("button", { name: "Scroll to bottom", exact: true })).toBeHidden();
+      }
+
+      expect(fixture.requests.filter((request) =>
+        request.key === "POST /v1/threads/settings-chat/input"
+      )).toHaveLength(12);
+    } finally {
+      await fixture.close();
+    }
+    expect(fixture.errors).toEqual([]);
+    expect(fixture.unexpected).toEqual([]);
+  });
+});
+
 async function scrollingFixture(context: Parameters<typeof nativeSettingsFixture>[0], rowCount = 80) {
   const fixture = await nativeSettingsFixture(context);
   fixture.detail.timeline = { ...fixture.detail.timeline,
