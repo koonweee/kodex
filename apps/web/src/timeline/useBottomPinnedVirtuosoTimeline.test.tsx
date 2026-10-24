@@ -111,6 +111,31 @@ describe("useBottomPinnedVirtuosoTimeline fullscreen recovery", () => {
     scrollParent.remove();
   });
 
+  it("suppresses a stale geometry observer callback after fullscreen activates", () => {
+    const geometry = { clientHeight: 400, scrollHeight: 1_000 };
+    const scrollParent = createScrollParent(geometry, 600);
+    const hook = renderHook(
+      ({ layoutTransitionActive }) => useBottomPinnedVirtuosoTimeline({
+        layoutTransitionActive,
+        onReady: vi.fn(),
+        rowCount: 20,
+        scrollParentElement: scrollParent,
+        threadId: "thread-1",
+      }),
+      { initialProps: { layoutTransitionActive: false } },
+    );
+    flushFrames(frames);
+    const staleGeometryCallback = hook.result.current.handleTotalListHeightChanged;
+
+    hook.rerender({ layoutTransitionActive: true });
+    act(() => staleGeometryCallback(geometry.scrollHeight));
+
+    expect(frames.size).toBe(0);
+    expect(distanceFromBottom(scrollParent)).toBe(0);
+    hook.unmount();
+    scrollParent.remove();
+  });
+
   it("recovers when the timeline mounts underneath an already-expanded composer", () => {
     const geometry = { clientHeight: 800, scrollHeight: 800 };
     const scrollParent = createScrollParent(geometry, 0);
