@@ -160,3 +160,17 @@ test("missing viewer assets surface a bounded error and Reconnect loads a fresh 
     await expect.poll(() => remote.connections.length).toBe(1);
   } finally { await app.close(); }
 });
+
+test("iframe paste errors retain their useful message in the host pane", async ({ context }) => {
+  const app = await nativeProjectsFixture(context, { desktopEnabled: true });
+  const remote = new DesktopRfbFixture(); await remote.install(context);
+  try {
+    const page = await app.page("clipboard-error", "/threads/history");
+    await openDesktop(page);
+    await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: { readText: async () => "café — 你好 👋" } }));
+    await page.getByRole("button", { name: "Paste into Mac" }).click();
+    await expect(page.getByText("This Mac connection does not support Unicode clipboard text.", { exact: true })).toBeVisible();
+    expect(remote.connections[0].clipboard).toEqual([]);
+    expect(remote.connections[0].keys).toEqual([]);
+  } finally { await app.close(); }
+});

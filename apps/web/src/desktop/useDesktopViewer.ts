@@ -75,7 +75,12 @@ export function useDesktopViewer(enabled: boolean, visible: boolean) {
       try {
         await owner.pasteFromClipboard(navigator.clipboard?.readText ? () => navigator.clipboard.readText() : undefined);
       } catch (failure) {
-        if (connection.current === owner && pasteAttempt.current === attempt) setError(failure instanceof Error ? failure.message : "Clipboard paste failed.");
+        if (connection.current === owner && pasteAttempt.current === attempt) {
+          // The trusted same-origin viewer creates Errors in another realm.
+          const message = failure && typeof failure === "object" && "message" in failure && typeof failure.message === "string"
+            ? failure.message : "Clipboard paste failed.";
+          setError(message);
+        }
       } finally { if (connection.current === owner && pasteAttempt.current === attempt) setPasting(false); }
     },
   }), [frameKey, state, error, pasting, trackpad, awaitReady]);

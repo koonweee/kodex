@@ -2,7 +2,7 @@
 
 ## Status
 
-Deployed on 2026-10-25; native authentication verified, browser/input and Unicode acceptance pending. Scope agreed with the user on 2026-10-24. Implementation, generated contracts, packaging, automated acceptance and independent review are complete. The built pinned viewer passes through the Rust authentication adapter, and browser proofs cover all agreed input-capability layouts, gestures, docking, lifecycle and keyboard viewport behavior. The user completed private Mac setup on 2026-10-25, and passive native authentication/shared-session proofs now pass. Native browser rendering/input and Unicode paste acceptance remain pending. Physical iPhone Safari/PWA checks remain a documented manual follow-up. The earlier private-setup blocker is resolved; no overall completion is claimed. Deployment and push are outside this plan.
+Deployed on 2026-10-25; native desktop visible, explicit Unicode paste failure under repair. Scope agreed with the user on 2026-10-24. Implementation, generated contracts, packaging, automated acceptance and independent review are complete. The built pinned viewer passes through the Rust authentication adapter, and browser proofs cover all agreed input-capability layouts, gestures, docking, lifecycle and keyboard viewport behavior. The user completed private Mac setup on 2026-10-25, and passive native authentication/shared-session proofs now pass. Native browser rendering/input and Unicode paste acceptance remain pending. Physical iPhone Safari/PWA checks remain a documented manual follow-up. The earlier private-setup blocker is resolved; no overall completion is claimed. Deployment and push are outside this plan.
 
 ## Objective
 
@@ -76,7 +76,7 @@ Verify macOS clipboard negotiation and Unicode behavior against real Screen Shar
 - [x] Begin the authentication adapter with failing tests for successful handshake and classified failure. Cover partial/coalesced reads, Apple's version negotiation, unsupported security, wrong password, timeout and disconnect using a bounded fake upstream.
 - [x] Implement gateway-side dedicated-password authentication and post-auth byte relay without leaking the password to the viewer.
 - [x] Prove the browser-side security transcript with the real pinned noVNC client through the M2 WebSocket integration.
-- [ ] Run a real Screen Sharing authentication/session proof on the gateway Mac using privately configured credentials. Verify existing desktop access, two independent shared connections, unchanged display resolution and native behavior on disconnect.
+- [x] Run a real Screen Sharing authentication/session proof on the gateway Mac using privately configured credentials. Verify existing desktop access, two independent shared connections, unchanged display resolution and native behavior on disconnect.
 - [ ] Probe macOS text clipboard/paste, including multiline Unicode and emoji, to choose the smallest correct implementation before finalizing that integration.
 
 Exit: authentication/relay tests pass and real-Mac behavior is evidenced, or the exact missing local setup is recorded as pending. Missing credentials/Screen Sharing setup must not trigger privileged system changes or solicit a password in chat. Continue independent mock-backed implementation while local proof is pending; do not claim overall completion without real-Mac proof or an explicit user-approved scope change.
@@ -229,3 +229,10 @@ After guided private setup and passive native authentication passed, the user ex
 ### Deployment verified (2026-10-25)
 
 The authorized full update completed successfully. Independent launchd operation `aac097c7c6b444f6b65c3405961668f7` reports `succeeded`, with installed release `20261025-085533-b6396514`. A fresh public capability read confirms the gateway is reachable, native app-server is ready, the detected schema matches, and `gateway.desktop.enabled` is true. The gateway/controller/frontend update and restart are verified; push and network/system-setting changes were not performed. Guided browser acceptance is now asking the user to refresh Kodex and open Desktop. Native rendering/control and multiline Unicode/emoji paste remain unverified until that workflow is completed.
+
+
+### Native viewer and clipboard failure (2026-10-25)
+
+The user confirmed the deployed Desktop shows the real Mac desktop. Actual configured native authentication, two shared sessions, unchanged 9946×2880 native dimensions and clean session disconnects have now been observed. The explicit multiline Unicode/emoji paste check failed with **Clipboard paste failed.** A first-failing integrated browser regression reproduced an iframe-realm Error being hidden by the parent's `instanceof Error` check. The parent now structurally reads the trusted same-origin error message within the existing owner/attempt fence; the regression, frontend build/typecheck and trim pass. Independent review is clear.
+
+A passive real pinned-client capability probe through the production gateway confirmed that this Mac advertises no extended clipboard formats/actions and reports Unicode clipboard support false. A raw shared-session ASCII ClientCutText/read-back probe did not produce a match within its bounded observation, so it was explicitly classified inconclusive and did not test UTF-8. The next diagnostic uses the fully initialized pinned viewer to distinguish native transport behavior before choosing the smallest correct paste path. No clipboard content, private password or screenshot was printed; only fixed test clipboard payloads and boolean outcomes were used. This error-message fix does not claim to solve native Unicode paste; that remains required work under the bounded fallback provision above.
