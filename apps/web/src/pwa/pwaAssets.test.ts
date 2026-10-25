@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 describe("PWA assets", () => {
   it("includes a 512px PNG icon for installable manifests", () => {
-    const icon = readFileSync(join(process.cwd(), "public/icon-512.png"));
+    const icon = readFileSync(join(process.cwd(), "public/kodex-pwa-512-b19511bf.png"));
 
     expect(icon.subarray(1, 4).toString("ascii")).toBe("PNG");
     expect(icon.readUInt32BE(16)).toBe(512);

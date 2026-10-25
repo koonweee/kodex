@@ -27,25 +27,25 @@ export default defineConfig({
         theme_color: "#0f1115",
         icons: [
           {
-            src: "/icon-192.png",
+            src: "/kodex-pwa-192-f5a3d629.png",
             sizes: "192x192",
             type: "image/png",
-            purpose: "any maskable",
+            purpose: "any",
           },
           {
-            src: "/icon-256.png",
+            src: "/kodex-pwa-256-cf7e1ed8.png",
             sizes: "256x256",
             type: "image/png",
-            purpose: "any maskable",
+            purpose: "any",
           },
           {
-            src: "/icon-512.png",
+            src: "/kodex-pwa-512-b19511bf.png",
             sizes: "512x512",
             type: "image/png",
-            purpose: "any maskable",
+            purpose: "any",
           },
           {
-            src: "/apple-touch-icon.png",
+            src: "/kodex-apple-touch-180-17006550.png",
             sizes: "180x180",
             type: "image/png",
             purpose: "any",

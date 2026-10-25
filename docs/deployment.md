@@ -62,6 +62,8 @@ MCP environment and HTTP header values are stored in local Codex configuration r
 
 The web app is installable as a progressive web app. Its service worker precaches built static assets only; API traffic, SSE, OpenAPI, uploads, and file previews remain network-owned.
 
+PWA manifest icons and the Apple touch icon use transparent PNGs at content-hashed URLs. Browser favicon links keep the original textured background assets. Transparent install icons declare `purpose: any`; they are not maskable artwork. Refresh Safari before adding a new Home Screen app so it reads the current Apple touch icon URL; the OS controls icon compositing and existing installed-icon caching.
+
 Long-running tabs receive frontend deployment markers through the existing global SSE stream and ask their service worker to check for the new static bundle without a polling timer. They may then show a compact, theme-matched notice when that bundle is waiting. Preferences → Interface includes an Auto-update toggle, off by default and stored on this device/browser origin. The notice stays a single row. Enabling it leaves the current notice manual; future ready bundles show “Updating in 3s”, then 2s and 1s before activating and reloading. Dismissing cancels that notice; disabling the toggle cancels automatic updates. Background tabs restart the full countdown when visible. Failed updates offer an explicit retry. Reloading discards unsent drafts and other transient browser state. Without opt-in, applying Update remains manual. App badge updates use gateway-owned unread completed-turn state and silently no-op when the browser lacks the Badging API.
 
 ## Terminal lifetime
