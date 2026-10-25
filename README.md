@@ -133,6 +133,8 @@ Read state uses native completion IDs and an explicit acknowledgment of the comp
 
 Terminals belong to the gateway, independently of app-server. Closing a pane detaches its view; ordinary Open terminal reuses a running shell, while New terminal creates another. Stop terminal explicitly ends that shell for all attached views. Reconnect and browser reload preserve its gateway buffer and process; gateway exit ends it. Detached shells expire after five minutes. Shell launches default to the dedicated Kodex home, with the host permissions of the gateway. On Unix, new terminals use a nonblank `SHELL`, otherwise the account’s configured shell (with `/bin/sh` as the final fallback). Browser terminals support clickable HTTP(S) links and bundle Nerd Font symbols, so prompt icons do not require a font installed on each viewing device.
 
+Optional local Screen Sharing authentication reads the gateway-only `KODEX_VNC_PASSWORD`; see [private service configuration](docs/macos-service.md). The [Desktop pane plan](plans/desktop-vnc-pane.md) records the integration scope and validation status.
+
 For prerequisites, tests, schema generation, and production-style static serving, see [Development](docs/development.md). For network binding, configuration and notifications, see [Deployment](docs/deployment.md).
 
 The real push-provider browser proof is manual-only; run it from your own terminal using the [development guide](docs/development.md). Routine browser validation uses bundled Chromium to avoid installed-Chrome App Management alerts attributed to the gateway on macOS.

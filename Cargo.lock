@@ -368,6 +368,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdd35008169921d80bc60d3d0ab416eecb028c4cd653352907921d95084790be"
 dependencies = [
  "hybrid-array",
+ "zeroize",
 ]
 
 [[package]]
@@ -461,8 +462,10 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e34d8227fe1ba289043aeb13792056ff80fd6de1a9f49137a5f499de8e8c78ea"
 dependencies = [
+ "block-buffer 0.12.0",
  "crypto-common 0.2.1",
  "inout 0.2.2",
+ "zeroize",
 ]
 
 [[package]]
@@ -791,6 +794,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "des"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "916a94e407b54f9034d71dd748234cd1e516ced6284009906ae246f177eafe5a"
+dependencies = [
+ "cipher 0.5.1",
 ]
 
 [[package]]
@@ -1435,6 +1447,7 @@ checksum = "9155a582abd142abc056962c29e3ce5ff2ad5469f4246b537ed42c5deba857da"
 dependencies = [
  "ctutils",
  "typenum",
+ "zeroize",
 ]
 
 [[package]]
@@ -1824,6 +1837,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "crc32fast",
+ "des",
  "futures-core",
  "http-body-util",
  "jsonschema",
@@ -1846,6 +1860,7 @@ dependencies = [
  "utoipa-swagger-ui",
  "uuid",
  "web-push",
+ "zeroize",
 ]
 
 [[package]]

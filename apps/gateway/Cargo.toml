@@ -12,6 +12,7 @@ axum = { version = "0.8", features = ["macros", "multipart", "ws"] }
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 crc32fast = "1"
+des = { version = "0.9", features = ["zeroize"] }
 futures-core = "0.3"
 jsonschema = { version = "0.18", default-features = false }
 portable-pty = "0.9"
@@ -32,6 +33,7 @@ utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 web-push = "0.11.0"
+zeroize = "1"
 
 [dev-dependencies]
 http-body-util = "0.1"

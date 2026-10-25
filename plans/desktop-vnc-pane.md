@@ -2,7 +2,7 @@
 
 ## Status
 
-Active. Scope agreed with the user on 2026-10-24. The durable plan is recorded and the execution goal is active. Initial read-only discovery is recorded below; implementation and authenticated compatibility proofs have not started. Execute M1–M5 below, recording evidence as each exit is met. Deployment and push are outside this plan.
+Active. Scope agreed with the user on 2026-10-24. The durable plan is recorded and the execution goal is active. The authentication/relay foundation and private service configuration are implemented and independently reviewed. Route/viewer/pane integration and authenticated Mac proofs remain pending; evidence is recorded below. Execute M1–M5 below, recording evidence as each exit is met. Deployment and push are outside this plan.
 
 ## Objective
 
@@ -72,9 +72,10 @@ Verify macOS clipboard negotiation and Unicode behavior against real Screen Shar
 
 ### M1 — Authentication and macOS compatibility proof
 
-- [ ] Inspect current gateway config/service/WebSocket seams and Pal source/provenance; record a narrow dependency and protocol decision.
-- [ ] Begin the authentication adapter with failing tests for successful handshake and classified failure. Cover partial/coalesced reads, Apple's version negotiation, unsupported security, wrong password, timeout and disconnect using a bounded fake upstream.
-- [ ] Implement gateway-side dedicated-password authentication and post-auth byte relay without leaking the password to the viewer. Prove the browser-side security transcript with the real pinned noVNC client.
+- [x] Inspect current gateway config/service/WebSocket seams and Pal source/provenance; record a narrow dependency and protocol decision.
+- [x] Begin the authentication adapter with failing tests for successful handshake and classified failure. Cover partial/coalesced reads, Apple's version negotiation, unsupported security, wrong password, timeout and disconnect using a bounded fake upstream.
+- [x] Implement gateway-side dedicated-password authentication and post-auth byte relay without leaking the password to the viewer.
+- [ ] Prove the browser-side security transcript with the real pinned noVNC client through the M2 WebSocket integration.
 - [ ] Run a real Screen Sharing authentication/session proof on the gateway Mac using privately configured credentials. Verify existing desktop access, two independent shared connections, unchanged display resolution and native behavior on disconnect.
 - [ ] Probe macOS text clipboard/paste, including multiline Unicode and emoji, to choose the smallest correct implementation before finalizing that integration.
 
@@ -83,7 +84,7 @@ Exit: authentication/relay tests pass and real-Mac behavior is evidenced, or the
 ### M2 — Gateway feature, service configuration and viewer bundle
 
 - [ ] Add the fixed-target WebSocket route, origin checks, configured status and bounded lifecycle/error handling.
-- [ ] Support private service configuration; keep secret handling redacted and scoped to the gateway. Cover service allowlist, packaging and relevant environment inheritance behavior.
+- [x] Support private service configuration; keep secret handling redacted and scoped to the gateway. Cover service allowlist, packaging and relevant environment inheritance behavior.
 - [ ] Vendor/bundle the pinned viewer and Pal patch with licenses/provenance and a reproducible preparation/build path. Bring over relevant gesture regression tests.
 - [ ] Generate OpenAPI/frontend types and wire the capability read without exposing credentials.
 
@@ -136,3 +137,13 @@ No multiple target hosts, saved-host UI, global control lease/takeover, view-onl
 2026-10-24: Product decisions and Pal provenance inspected and recorded. The execution goal is active and uses this file as the durable scope/progress record. Initial read-only discovery confirms Screen Sharing is listening on `127.0.0.1:5900` and advertises `RFB 003.889`. Neither the current gateway process environment nor the installed service configuration contains `KODEX_VNC_PASSWORD`; only presence booleans were printed. A second read-only negotiation using RFB 3.8 reports security types `[30, 33, 36, 35]`; dedicated VNC-password authentication (type 2) is not currently offered. The selected feature therefore also needs macOS's VNC-password access option enabled during one-time user setup. Both probes disconnected before selecting authentication. No VNC login, screen capture, system setting change or service restart was performed. Authenticated Mac/clipboard proofs remain pending that setup and private gateway credential configuration. Implementation tests and device proofs have not run.
 
 Plan review: a bounded independent read-only review confirmed the handshake-only proxy is feasible and identified explicit splice-boundary, secret serialization/inheritance and vendor-provenance requirements; these are incorporated above. Review also requires strict legacy-password validation and removal of stock noVNC controls outside the agreed surface, including copy-back and competing connection controls; both are now explicit above. Final independent review reports no unresolved major findings; the plan is ready to drive execution.
+
+### Authentication/configuration foundation (2026-10-24)
+
+- The success-path regression first failed before implementation; the new explicit service-setting test and isolated Codex-child secret-inheritance test also failed before their fixes. The Rust adapter now completes upstream type-2 authentication using RustCrypto `des` 0.9.0 with zeroized key storage, synthesizes the downstream RFB3.8/None exchange, canonicalizes nonzero shared flags to 1, and splices at ClientInit. Zero security offers remain transient; nonempty offers without type 2 are configuration failures. Fixed-size reads, one handshake deadline, transport backpressure and owned-stream cancellation/EOF handling are covered.
+- Tests exercise deterministic DES challenge bytes verified independently with OpenSSL, Apple version negotiation, staged fragmentation, coalesced downstream input/upstream result+init, native failures without private reason forwarding, exclusive-viewer rejection, timeout and task-abort cleanup.
+- `KODEX_VNC_PASSWORD` is loaded through redacted, non-serializable config and discarded after validated key derivation. Empty is unconfigured; unsupported/overlong nonempty values retain a controlled configuration error without retaining their text. A real isolated-process config test covers environment loading. Both actual Codex and terminal child-environment proofs now assert the VNC setting is absent.
+- The service controller accepts the explicit private setting, rejects group/world-accessible secret-bearing config and NUL-containing environment values, excludes configured/ambient credentials from login and operation-worker plists, and creates private config-rewrite files before writing. Existing signing-identity updates preserve their atomic replacement and private final mode.
+- Validation: `cargo test -p kodex-gateway --lib` passes 772 tests (four intentionally ignored child fixtures are invoked by parent tests); all 70 service tests pass; `cargo fmt`, `git diff --check` and `./tools/trim-backend.sh` pass. Independent protocol and config/service review findings were fixed, regression-tested and re-reviewed with clear dispositions. No public HTTP DTO changed in this foundation, so OpenAPI/frontend generation is deferred to route/capability integration.
+- Official noVNC `v1.6.0` resolves to source commit `a8dfd6a3ea3c74244f5ebdaa5a7f1023007a7820` (annotated tag object `95aaf779f7e16c5c427c68ac56976c6ae1c080f5`); bundle preparation/checksums remain M2 work.
+- The user requested that all human intervention be deferred until the end. Continue route/viewer/pane/mock-backed work autonomously; leave the known macOS VNC-password/private credential setup and real-Mac proofs pending. No system setup, installed service mutation, deployment or push was performed.

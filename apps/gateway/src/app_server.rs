@@ -424,6 +424,7 @@ fn codex_command(config: &CodexConfig) -> Command {
             command.env_remove(key);
         }
     }
+    command.env_remove("KODEX_VNC_PASSWORD");
     command.env_remove("OPENAI_API_KEY");
     command.env_remove("OPENAI_BASE_URL");
     for key in control_binding::CONTROL_ENV {
@@ -923,6 +924,7 @@ while true; do :; done
                 "--ignored",
             ])
             .env("KODEX_ENVIRONMENT_FIXTURE_HOME", dir.path())
+            .env("KODEX_VNC_PASSWORD", "fixture1")
             .env("CODEX_HOME", "/fixture/desktop")
             .env("CODEX_SQLITE_HOME", "/fixture/desktop/sqlite")
             .env("CODEX_ACCESS_TOKEN", "synthetic-access-token")
@@ -968,6 +970,7 @@ while true; do :; done
             "KODEX_GATEWAY_URL",
             "KODEX_GATEWAY_BINARY",
             "KODEX_ALLOW_REMOTE_SELF_CONTROL",
+            "KODEX_VNC_PASSWORD",
         ] {
             assert!(
                 !environment

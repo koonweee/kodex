@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Config {
+    #[serde(skip)]
+    pub desktop: crate::desktop::DesktopConfig,
     pub instance: InstanceConfig,
     pub server: ServerConfig,
     pub codex: CodexConfig,
@@ -69,6 +71,7 @@ impl Default for Config {
     fn default() -> Self {
         let data_dir = default_data_dir();
         Self {
+            desktop: crate::desktop::DesktopConfig::default(),
             instance: InstanceConfig {
                 data_dir: data_dir.clone(),
                 id: uuid::Uuid::new_v4().to_string(),
@@ -111,6 +114,16 @@ impl Default for Config {
 impl Config {
     pub fn from_env() -> Self {
         let mut config = Self::default();
+        if let Some(value) = env::var_os("KODEX_VNC_PASSWORD") {
+            config.desktop = match value.into_string() {
+                Ok(value) => {
+                    let value = zeroize::Zeroizing::new(value);
+                    crate::desktop::DesktopConfig::with_password(&value)
+                }
+                // Non-Unicode environment input is configured but invalid.
+                Err(_) => crate::desktop::DesktopConfig::with_password("\0"),
+            };
+        }
 
         if let Ok(bind) = env::var("KODEX_BIND") {
             config.server.bind = bind

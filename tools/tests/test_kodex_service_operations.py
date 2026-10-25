@@ -54,6 +54,10 @@ class OperationTests(unittest.TestCase):
         return release
 
     def test_submit_records_job_before_bootstrap_and_uses_one_shot_worker(self):
+        config = json.loads(self.app.config_path.read_text())
+        config['environment'] = {'KODEX_VNC_PASSWORD': 'fixture1'}
+        self.app.config_path.write_text(json.dumps(config))
+        self.app.config_path.chmod(0o600)
         observed = []
 
         def bootstrap(args, **kwargs):
@@ -62,7 +66,10 @@ class OperationTests(unittest.TestCase):
             self.assertEqual(job['state'], 'queued')
             self.assertEqual(job['repo'], str(self.repo))
             self.assertEqual(job['action'], 'update')
-            plist = plistlib.loads(Path(args[-1]).read_bytes())
+            raw_plist = Path(args[-1]).read_bytes()
+            for forbidden in [b'KODEX_VNC_PASSWORD', b'fixture1', b'ambient1']:
+                self.assertNotIn(forbidden, raw_plist)
+            plist = plistlib.loads(raw_plist)
             self.assertTrue(plist['RunAtLoad'])
             self.assertFalse(plist['KeepAlive'])
             self.assertNotIn('StartInterval', plist)
@@ -77,7 +84,8 @@ class OperationTests(unittest.TestCase):
             self.assertNotEqual(worker, SOURCE)
             observed.append(job['id'])
 
-        with patch.object(service, 'run', side_effect=bootstrap), \
+        with patch.dict('os.environ', {'KODEX_VNC_PASSWORD': 'ambient1'}), \
+             patch.object(service, 'run', side_effect=bootstrap), \
              patch.object(self.app, 'update') as update:
             job = self.operations.submit('update', repo=self.repo)
         self.assertEqual(observed, [job['id']])

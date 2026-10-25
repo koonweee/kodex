@@ -589,6 +589,7 @@ fn configure_terminal_environment(builder: &mut CommandBuilder, codex_home: &Pat
             builder.env_remove(key);
         }
     }
+    builder.env_remove("KODEX_VNC_PASSWORD");
     builder.env_remove("OPENAI_API_KEY");
     builder.env_remove("OPENAI_BASE_URL");
     // These are host-shell defaults. Startup files and explicit user commands can override them.
@@ -727,6 +728,7 @@ mod tests {
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
             .env("KODEX_TERMINAL_FIXTURE_ROOT", root.path())
+            .env("KODEX_VNC_PASSWORD", "fixture1")
             .env("KODEX_TERMINAL_ORDINARY_VALUE", "preserved")
             .env("CODEX_HOME", "/fixture/desktop")
             .env("CODEX_SQLITE_HOME", "/fixture/desktop/sqlite")
@@ -818,7 +820,9 @@ read exit_line
                 vec![format!("CODEX_HOME={}", expected_home.display())]
             );
             assert!(!environment.lines().any(|line| {
-                line.starts_with("OPENAI_API_KEY=") || line.starts_with("OPENAI_BASE_URL=")
+                line.starts_with("OPENAI_API_KEY=")
+                    || line.starts_with("OPENAI_BASE_URL=")
+                    || line.starts_with("KODEX_VNC_PASSWORD=")
             }));
             assert!(environment
                 .lines()

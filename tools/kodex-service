@@ -188,6 +188,10 @@ class Service:
         if not self.config_path.exists():
             raise ServiceError('Not installed. Run install --repo /absolute/path/to/kodex')
         config = json.loads(self.config_path.read_text())
+        optional = config.get('environment', {})
+        if isinstance(optional, dict) and optional.get('KODEX_VNC_PASSWORD'):
+            if self.config_path.stat().st_mode & 0o077:
+                raise ServiceError('Service config with KODEX_VNC_PASSWORD requires mode 0600')
         if not isinstance(config['port'], int) or not 1024 <= config['port'] <= 65535:
             raise ServiceError('port must be an integer between 1024 and 65535')
         if not Path(config['data_dir']).is_absolute():
@@ -199,10 +203,16 @@ class Service:
     def configure_code_signing_identity(self, identity):
         config = self.config()
         config['code_signing_identity'] = normalize_code_signing_identity(identity)
-        temporary = self.config_path.with_suffix('.new')
-        temporary.write_text(json.dumps(config, indent=2) + '\n')
-        temporary.chmod(0o600)
-        temporary.replace(self.config_path)
+        descriptor, name = tempfile.mkstemp(prefix='.config-', dir=self.root)
+        temporary = Path(name)
+        try:
+            # mkstemp creates mode 0600 before any secret-bearing write.
+            with os.fdopen(descriptor, 'w') as output:
+                json.dump(config, output, indent=2)
+                output.write('\n')
+            temporary.replace(self.config_path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def sign_gateway(self, gateway):
         identity = self.config().get('code_signing_identity')
@@ -237,8 +247,10 @@ class Service:
         # Explicit, narrowly scoped optional settings; never import an old production env file.
         optional = config.get('environment', {})
         allowed = {'KODEX_VAPID_PUBLIC_KEY', 'KODEX_VAPID_PRIVATE_KEY', 'KODEX_VAPID_SUBJECT',
-                   'KODEX_NOTIFICATIONS_RECHECK_DELAY_MS', 'RUST_LOG'}
-        if set(optional) - allowed or any(not isinstance(value, str) for value in optional.values()):
+                   'KODEX_NOTIFICATIONS_RECHECK_DELAY_MS', 'KODEX_VNC_PASSWORD', 'RUST_LOG'}
+        if (not isinstance(optional, dict) or set(optional) - allowed
+                or any(not isinstance(value, str) or '\0' in value
+                       for value in optional.values())):
             raise ServiceError('Unsupported environment setting in service config')
         env.update(optional)
         return env

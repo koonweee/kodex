@@ -5,6 +5,7 @@ from pathlib import Path
 import json
 import hashlib
 import io
+import os
 import tarfile
 import socket
 import sys
@@ -72,6 +73,42 @@ class LifecycleTests(unittest.TestCase):
         self.app.configure_code_signing_identity('a' * 40)
         config = json.loads(self.app.config_path.read_text())
         self.assertEqual(config['code_signing_identity'], 'A' * 40)
+        self.assertEqual(self.app.config_path.stat().st_mode & 0o777, 0o600)
+
+    def test_signing_update_keeps_desktop_secret_private_during_the_write(self):
+        config = json.loads(self.app.config_path.read_text())
+        config['environment'] = {'KODEX_VNC_PASSWORD': 'fixture1'}
+        self.app.config_path.write_text(json.dumps(config))
+        self.app.config_path.chmod(0o600)
+        # A stale permissive temp path must not receive the credential either.
+        stale = self.app.config_path.with_suffix('.new')
+        stale.write_text('old staging file')
+        stale.chmod(0o644)
+        original_write = Path.write_text
+        original_fdopen = os.fdopen
+        observed = []
+
+        def check_path_write(path, data, *args, **kwargs):
+            if 'fixture1' in data:
+                self.assertTrue(path.exists(), 'secret written before private file creation')
+                mode = path.stat().st_mode & 0o777
+                self.assertEqual(mode, 0o600, 'secret written before private file permissions')
+                observed.append(mode)
+            return original_write(path, data, *args, **kwargs)
+
+        def check_descriptor(descriptor, *args, **kwargs):
+            mode = os.fstat(descriptor).st_mode & 0o777
+            self.assertEqual(mode, 0o600, 'secret write descriptor must already be private')
+            observed.append(mode)
+            return original_fdopen(descriptor, *args, **kwargs)
+
+        with patch.object(Path, 'write_text', new=check_path_write), \
+             patch.object(service.os, 'fdopen', side_effect=check_descriptor):
+            self.app.configure_code_signing_identity('a' * 40)
+        self.assertEqual(observed, [0o600])
+        saved = json.loads(self.app.config_path.read_text())
+        self.assertEqual(saved['environment']['KODEX_VNC_PASSWORD'], 'fixture1')
+        self.assertEqual(saved['code_signing_identity'], 'A' * 40)
         self.assertEqual(self.app.config_path.stat().st_mode & 0o777, 0o600)
 
     def test_update_stages_before_stop_and_preserves_previous(self):
@@ -150,6 +187,38 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(env['KODEX_DATA_DIR'], str(self.root / 'data'))
         self.assertEqual(env['KODEX_CODEX_BINARY'], str(release / 'codex'))
         self.assertEqual(env['KODEX_FRONTEND_DIST'], str(release / 'frontend'))
+
+    def test_desktop_password_is_explicit_private_config_and_never_in_plist(self):
+        release = self.release('desktop')
+        config = json.loads(self.app.config_path.read_text())
+        config['environment'] = {'KODEX_VNC_PASSWORD': 'fixture1'}
+        self.app.config_path.write_text(json.dumps(config))
+        self.app.config_path.chmod(0o600)
+        with patch.dict('os.environ', {'KODEX_VNC_PASSWORD': 'ambient1'}):
+            environment = self.app.environment(release)
+        self.assertEqual(environment['KODEX_VNC_PASSWORD'], 'fixture1')
+        self.app.write_plist()
+        self.assertNotIn(b'fixture1', self.app.plist.read_bytes())
+        self.assertNotIn(b'KODEX_VNC_PASSWORD', self.app.plist.read_bytes())
+        self.app.config_path.chmod(0o644)
+        with self.assertRaisesRegex(service.ServiceError, '0600') as raised:
+            self.app.environment(release)
+        self.assertNotIn('fixture1', str(raised.exception))
+
+    def test_invalid_desktop_environment_does_not_echo_values(self):
+        for invalid in ['fixture1', {'KODEX_VNC_PASSWORD': 123}, ['fixture1'],
+                        {'KODEX_VNC_PASSWORD': 'fixture1\0'}]:
+            config = json.loads(self.app.config_path.read_text())
+            config['environment'] = invalid
+            self.app.config_path.write_text(json.dumps(config))
+            self.app.config_path.chmod(0o600)
+            with self.assertRaisesRegex(service.ServiceError, 'Unsupported environment') as raised:
+                self.app.environment(self.root)
+            self.assertNotIn('fixture1', str(raised.exception))
+
+    def test_desktop_password_is_not_inherited_from_controller_environment(self):
+        with patch.dict('os.environ', {'KODEX_VNC_PASSWORD': 'ambient1'}):
+            self.assertNotIn('KODEX_VNC_PASSWORD', self.app.environment(self.root))
 
     def test_rollback_requires_explicit_data_compatibility_acknowledgment(self):
         with self.assertRaisesRegex(service.ServiceError, 'data-compatible'):

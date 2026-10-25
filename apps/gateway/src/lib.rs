@@ -6,6 +6,7 @@ pub mod app_surfaces;
 pub mod approvals;
 pub mod automations;
 pub mod config;
+pub mod desktop;
 pub mod error;
 pub mod events;
 mod events_replay;
