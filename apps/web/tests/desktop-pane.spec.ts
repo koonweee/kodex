@@ -150,3 +150,25 @@ test("temporary failure retries, permanent failure stops, and Reconnect starts a
     await expect(page.getByText("The Mac rejected the gateway’s VNC password.")).toHaveCount(0);
   } finally { await app.close(); }
 });
+
+
+test("missing viewer assets surface a bounded error and Reconnect loads a fresh frame", async ({ context }) => {
+  const app = await nativeProjectsFixture(context, { desktopEnabled: true });
+  const remote = new DesktopRfbFixture(); await remote.install(context);
+  try {
+    const page = await app.page("missing-viewer", "/threads/history");
+    let missing = true;
+    await page.route("**/assets/desktop-viewer/*/index.html", (route) => {
+      if (missing) return route.fulfill({ status: 404, contentType: "text/html", headers: { "Cache-Control": "no-store" }, body: "" });
+      return route.continue();
+    });
+    await (await sidebar(page)).getByRole("button", { name: "Desktop", exact: true }).click();
+    await expect(page.getByText("The Desktop viewer could not load. Reconnect to try again.")).toBeVisible({ timeout: 10000 });
+    expect(remote.connections).toHaveLength(0);
+    await expect(page.locator('iframe[title="Mac desktop viewer"]')).toHaveCount(1);
+    missing = false;
+    await page.getByRole("button", { name: "Reconnect desktop", exact: true }).click();
+    await expect(page.frameLocator('iframe[title="Mac desktop viewer"]').locator("#screen canvas")).toBeVisible();
+    await expect.poll(() => remote.connections.length).toBe(1);
+  } finally { await app.close(); }
+});
