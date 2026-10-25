@@ -7,6 +7,7 @@ import { queryKeys } from "../../api/queryKeys";
 import type { DesktopFailure } from "../../desktop/bridge";
 import { useDesktopViewer } from "../../desktop/useDesktopViewer";
 import { useInputCapabilities } from "../../shared/inputCapabilities";
+import { useKeyboardViewport } from "../../shared/useKeyboardViewport";
 import { PaneLayout } from "../../shared/PaneLayout";
 import { AdaptiveIconButton } from "../../ui/AdaptiveIconButton";
 import { useWorkspace } from "../../workspace/WorkspaceProvider";
@@ -30,6 +31,7 @@ export function DesktopPane({ pane }: WorkspacePaneComponentProps) {
   const visible = visiblePaneIds.includes(pane.id);
   const { hasTouchInput } = useInputCapabilities();
   const viewer = useDesktopViewer(enabled, visible);
+  const keyboardViewport = useKeyboardViewport(visible && viewer.state.keyboardOpen, viewer.frame.current?.parentElement);
   const [touchSettingsOpen, setTouchSettingsOpen] = useState(false);
   useEffect(() => { if (!visible) setTouchSettingsOpen(false); }, [visible]);
   const keyboardIntent = useRef<boolean | undefined>(undefined);
@@ -59,7 +61,8 @@ export function DesktopPane({ pane }: WorkspacePaneComponentProps) {
 
   const message = !enabled ? "Desktop is unavailable until a VNC password is configured on the Mac gateway."
     : viewer.error ?? (viewer.state.failure ? messages[viewer.state.failure] : null);
-  return <PaneLayout className="kodex-desktop-pane" aria-label="Mac desktop">
+  return <PaneLayout className="kodex-desktop-pane" aria-label="Mac desktop"
+    style={{ paddingBottom: viewer.state.keyboardOpen ? keyboardViewport.inlineKeyboardInset : 0 }}>
     {message ? <Alert color={enabled ? "red" : "blue"} title={enabled ? "Desktop connection" : "Desktop unavailable"}>{message}
       {enabled && viewer.state.retryable ? <Text size="sm">Retrying automatically…</Text> : null}
     </Alert> : enabled && !connected ? <Text className="kodex-desktop-status" role="status" size="sm">Connecting to the Mac…</Text> : null}

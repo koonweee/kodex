@@ -41,7 +41,7 @@ Paths above are relative to `apps/web` unless prefixed with `plans/`.
 | Available pane height | Shared pane height constraint (`short` / `regular`) | Existing queue default and bounded accessory/scroll regions; not input modality |
 | Input capabilities | Existing shared capability module | Touch targets, hover alternatives, capability-dependent controls |
 | Actual input event | Owning interaction handler, using `PointerEvent.pointerType` | Touch initiation, drag/hold behavior, fullscreen composer activation |
-| Visual viewport/safe area | Existing keyboard/viewport helper and CSS environment values | Geometry of eligible expanded editing UI; never proof of touch or a hardware keyboard |
+| Visual viewport/safe area | `shared/useKeyboardViewport.ts`, its composer ownership wrapper and CSS environment values | Geometry of eligible expanded editing UI and the open Desktop keyboard; never proof of touch or a hardware keyboard |
 
 A treatment has one owning rule. Combinations are explicit domain policies, not a global device label. Examples: `compactPane`, `shortPane`, `canHover`, and `shouldExpandComposerOnTouch` describe the decision; `isMobile` and `isDesktop` do not.
 

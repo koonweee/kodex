@@ -82,7 +82,7 @@ npm run build
 npm run trim
 ```
 
-The Desktop viewer is bundled offline from pinned noVNC/Pal sources. `npm run test:desktop-vendor` checks source preparation and runs the applied upstream RFB/gesture regressions in Playwright’s bundled Chromium. The focused iframe/pane suites are `npx playwright test tests/desktop-viewer.spec.ts tests/desktop-pane.spec.ts --workers=1`. See [viewer provenance and maintenance](../apps/web/vendor/novnc/README.md) and the [Desktop plan](../plans/desktop-vnc-pane.md) for native and physical-device acceptance status.
+The Desktop viewer is bundled offline from pinned noVNC/Pal sources. `npm run test:desktop-vendor` checks source preparation and runs the applied upstream RFB/gesture regressions in Playwright’s bundled Chromium. The focused iframe/pane suites are `npx playwright test tests/desktop-*.spec.ts --workers=1`. See [viewer provenance and maintenance](../apps/web/vendor/novnc/README.md) and the [Desktop plan](../plans/desktop-vnc-pane.md) for native and physical-device acceptance status.
 
 After `cd apps/web && npm run build`, run the combined built-iframe/Rust adapter proof from the repository root: `cargo test -p kodex-gateway pinned_browser_crosses_gateway_authentication_boundary -- --ignored --nocapture`. It launches bundled Chromium and a disposable native-auth peer on loopback, verifies the gateway-only password boundary and shared framebuffer/input/paste path, and never connects to the Mac's Screen Sharing port. Real macOS authentication and clipboard acceptance remain separate proofs.
 

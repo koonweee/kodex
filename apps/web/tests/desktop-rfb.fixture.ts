@@ -6,7 +6,7 @@ import { constants, inflateSync } from "node:zlib";
 // real WebSocket tests. This exercises the exact pinned browser RFB client.
 export class DesktopRfbFixture {
   sockets: { close(options: { code: number; reason: string }): void }[] = [];
-  connections: { shared?: number; keys: { down: boolean; keysym: number }[]; pointers: number[]; clipboard: string[]; messages: number[]; closed: boolean }[] = [];
+  connections: { shared?: number; keys: { down: boolean; keysym: number }[]; pointers: number[]; pointerPositions: { mask: number; x: number; y: number }[]; clipboard: string[]; messages: number[]; closed: boolean }[] = [];
   errors: string[] = [];
   private paused: { pause(): void; resume(): void }[] = [];
   pause(index = 0) { this.paused[index].pause(); }
@@ -41,7 +41,7 @@ export class DesktopRfbFixture {
         const request = Buffer.from([3, 0, 0, 0, 255, 255, 255, 252, 2, 0, 0, 1]);
         socket.send(request);
       });
-      const connection = { shared: undefined as number | undefined, keys: [] as { down: boolean; keysym: number }[], pointers: [] as number[], clipboard: [] as string[], messages: [] as number[], closed: false };
+      const connection = { shared: undefined as number | undefined, keys: [] as { down: boolean; keysym: number }[], pointers: [] as number[], pointerPositions: [] as { mask: number; x: number; y: number }[], clipboard: [] as string[], messages: [] as number[], closed: false };
       this.connections.push(connection);
       let pending = Buffer.alloc(0);
       let stage = 0;
@@ -83,7 +83,10 @@ export class DesktopRfbFixture {
             pending = pending.subarray(length);
             connection.messages.push(type);
             if (type === 4) connection.keys.push({ down: message[1] === 1, keysym: message.readUInt32BE(4) });
-            if (type === 5) connection.pointers.push(message[1]);
+            if (type === 5) {
+              connection.pointers.push(message[1]);
+              connection.pointerPositions.push({ mask: message[1], x: message.readUInt16BE(2), y: message.readUInt16BE(4) });
+            }
             if (type === 6) {
               if (message.readInt32BE(4) >= 0) connection.clipboard.push(message.subarray(8).toString("latin1"));
               else if (message.readUInt32BE(8) === 0x10000001) {
