@@ -32,7 +32,7 @@ vi.mock("../pwa/registerServiceWorker", () => ({
 
 function capabilities(instanceId: string): Capabilities {
   return {
-    gateway: { apiVersion: "4", instanceId, version: "test", sse: true, approvals: true, terminals: { enabled: true }, gatewayAuth: false, trustedNetworkOnly: true },
+    gateway: { apiVersion: "4", instanceId, version: "test", sse: true, approvals: true, terminals: { enabled: true }, desktop: { enabled: false }, gatewayAuth: false, trustedNetworkOnly: true },
     appServer: { ready: true, experimentalApi: true, schemaVersion: "0.160.0", detectedVersion: "0.160.0", detectedVersionMatchesSchema: true },
   };
 }

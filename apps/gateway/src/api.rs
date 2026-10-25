@@ -61,7 +61,8 @@ use crate::{
             AutomationUpdateRequest,
         },
         capabilities::{
-            AppServerCapabilities, CapabilitiesResponse, GatewayCapabilities, TerminalCapabilities,
+            AppServerCapabilities, CapabilitiesResponse, DesktopCapabilities, GatewayCapabilities,
+            TerminalCapabilities,
         },
         composer_settings::ComposerSettingsQuery,
         directories::{DirectoryEntry, DirectoryListQuery, DirectoryListResponse},
@@ -207,6 +208,7 @@ impl AppState {
         crate::routes::health::readyz,
         crate::routes::capabilities::capabilities,
         crate::routes::frontend_updates::publish_frontend_update,
+        crate::routes::desktop::connect,
         crate::routes::terminals::list_terminals,
         crate::routes::terminals::create_terminal,
         crate::routes::terminals::delete_terminal,
@@ -362,6 +364,8 @@ impl AppState {
         CapabilitiesResponse,
         GatewayCapabilities,
         TerminalCapabilities,
+        DesktopCapabilities,
+        crate::desktop::DesktopFailure,
         AppServerCapabilities,
         CreateTerminalSession,
         TerminalDeleteResponse,
@@ -620,6 +624,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::health::router())
         .merge(routes::capabilities::router())
         .merge(routes::terminals::router())
+        .merge(routes::desktop::router())
         .merge(routes::composer_settings::router())
         .merge(routes::events::router())
         .merge(routes::frontend_updates::router())

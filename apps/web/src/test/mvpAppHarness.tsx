@@ -67,6 +67,7 @@ const capabilities = {
     sse: true,
     approvals: true,
     terminals: { enabled: true },
+    desktop: { enabled: false },
     gatewayAuth: false,
     trustedNetworkOnly: true,
   },

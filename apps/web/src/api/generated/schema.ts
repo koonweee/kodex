@@ -372,6 +372,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/desktop/ws": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["connect"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/directories": {
         parameters: {
             query?: never;
@@ -2553,6 +2569,11 @@ export interface components {
             subscribed: boolean;
             subscription?: null | components["schemas"]["PushSubscriptionResponse"];
         };
+        DesktopCapabilities: {
+            enabled: boolean;
+        };
+        /** @enum {string} */
+        DesktopFailure: "unsupportedPlatform" | "configuration" | "authentication" | "passwordAccessDisabled" | "protocol" | "connection" | "timeout";
         DirectoryEntry: {
             name: string;
             path: string;
@@ -2599,6 +2620,7 @@ export interface components {
         GatewayCapabilities: {
             apiVersion: components["schemas"]["ApiVersion"];
             approvals: boolean;
+            desktop: components["schemas"]["DesktopCapabilities"];
             gatewayAuth: boolean;
             instanceId: string;
             sse: boolean;
@@ -4659,6 +4681,31 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["EventListResponse"];
                 };
+            };
+        };
+    };
+    connect: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authenticated local desktop RFB stream. Close 4400 is permanent; 4500 is retryable. Close reason is a JSON DesktopFailure enum value. */
+            101: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or mismatched WebSocket Origin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

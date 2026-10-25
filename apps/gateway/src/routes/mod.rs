@@ -15,6 +15,9 @@ mod control_reads_tests;
 pub mod control_wait;
 #[cfg(test)]
 mod control_wait_tests;
+pub mod desktop;
+#[cfg(test)]
+mod desktop_tests;
 pub mod directories;
 pub mod events;
 pub(crate) mod file_content;

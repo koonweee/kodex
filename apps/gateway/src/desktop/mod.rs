@@ -5,12 +5,26 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use zeroize::Zeroizing;
 
 mod config;
+pub(crate) mod socket;
 pub use config::DesktopConfig;
 
 const VERSION: &[u8; 12] = b"RFB 003.008\n";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    thiserror::Error,
+    serde::Serialize,
+    serde::Deserialize,
+    utoipa::ToSchema,
+)]
+#[serde(rename_all = "camelCase")]
 pub enum DesktopFailure {
+    #[error("Desktop is supported only on macOS.")]
+    UnsupportedPlatform,
     #[error("Configure a Screen Sharing VNC password containing 1–8 printable ASCII characters.")]
     Configuration,
     #[error("Screen Sharing rejected the configured VNC password.")]

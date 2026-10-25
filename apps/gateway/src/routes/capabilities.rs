@@ -25,6 +25,7 @@ pub struct GatewayCapabilities {
     pub sse: bool,
     pub approvals: bool,
     pub terminals: TerminalCapabilities,
+    pub desktop: DesktopCapabilities,
     pub gateway_auth: bool,
     pub trusted_network_only: bool,
 }
@@ -32,6 +33,12 @@ pub struct GatewayCapabilities {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TerminalCapabilities {
+    pub enabled: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopCapabilities {
     pub enabled: bool,
 }
 
@@ -60,6 +67,9 @@ pub async fn capabilities(State(state): State<AppState>) -> Json<CapabilitiesRes
             sse: true,
             approvals: true,
             terminals: TerminalCapabilities { enabled: true },
+            desktop: DesktopCapabilities {
+                enabled: cfg!(target_os = "macos") && state.config.desktop.configured(),
+            },
             gateway_auth: false,
             trusted_network_only: state.config.server.trusted_network_only,
         },

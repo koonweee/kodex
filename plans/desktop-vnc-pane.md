@@ -2,7 +2,7 @@
 
 ## Status
 
-Active. Scope agreed with the user on 2026-10-24. The durable plan is recorded and the execution goal is active. The authentication/relay foundation and private service configuration are implemented and independently reviewed. Route/viewer/pane integration and authenticated Mac proofs remain pending; evidence is recorded below. Execute M1–M5 below, recording evidence as each exit is met. Deployment and push are outside this plan.
+Active. Scope agreed with the user on 2026-10-24. The durable plan is recorded and the execution goal is active. The authentication/relay foundation and private service configuration are implemented and independently reviewed. The fixed-target WebSocket endpoint and generated capability/error contract are also implemented. Viewer/pane integration and authenticated Mac proofs remain pending; evidence is recorded below. Execute M1–M5 below, recording evidence as each exit is met. Deployment and push are outside this plan.
 
 ## Objective
 
@@ -83,10 +83,10 @@ Exit: authentication/relay tests pass and real-Mac behavior is evidenced, or the
 
 ### M2 — Gateway feature, service configuration and viewer bundle
 
-- [ ] Add the fixed-target WebSocket route, origin checks, configured status and bounded lifecycle/error handling.
+- [x] Add the fixed-target WebSocket route, origin checks, configured status and bounded lifecycle/error handling.
 - [x] Support private service configuration; keep secret handling redacted and scoped to the gateway. Cover service allowlist, packaging and relevant environment inheritance behavior.
 - [ ] Vendor/bundle the pinned viewer and Pal patch with licenses/provenance and a reproducible preparation/build path. Bring over relevant gesture regression tests.
-- [ ] Generate OpenAPI/frontend types and wire the capability read without exposing credentials.
+- [x] Generate OpenAPI/frontend types and wire the capability read without exposing credentials.
 
 Exit: backend/service tests pass; the bundled viewer loads through Kodex and authenticates through the gateway without any browser password. Independent clients own separate sockets; failed authentication/configuration does not enter a retry loop or stop Kodex startup.
 
@@ -147,3 +147,12 @@ Plan review: a bounded independent read-only review confirmed the handshake-only
 - Validation: `cargo test -p kodex-gateway --lib` passes 772 tests (four intentionally ignored child fixtures are invoked by parent tests); all 70 service tests pass; `cargo fmt`, `git diff --check` and `./tools/trim-backend.sh` pass. Independent protocol and config/service review findings were fixed, regression-tested and re-reviewed with clear dispositions. No public HTTP DTO changed in this foundation, so OpenAPI/frontend generation is deferred to route/capability integration.
 - Official noVNC `v1.6.0` resolves to source commit `a8dfd6a3ea3c74244f5ebdaa5a7f1023007a7820` (annotated tag object `95aaf779f7e16c5c427c68ac56976c6ae1c080f5`); bundle preparation/checksums remain M2 work.
 - The user requested that all human intervention be deferred until the end. Continue route/viewer/pane/mock-backed work autonomously; leave the known macOS VNC-password/private credential setup and real-Mac proofs pending. No system setup, installed service mutation, deployment or push was performed.
+
+### WebSocket transport and public capability (2026-10-24)
+
+- The capability regression first failed because `gateway.desktop.enabled` was absent. It now reports only the macOS/configured boolean through the existing generated capability response; absent/empty disables it, and invalid nonempty configuration remains visible for a controlled connection error. The generated `DesktopFailure` unit enum is the public close-reason type.
+- `GET /v1/desktop/ws` requires exactly one valid HTTP(S) Origin matching the retained browser-facing Host, including normalized ports, and rejects missing/null/duplicate origins, alternate hosts, userinfo and path-bearing origins. Reverse-proxy retained Host is exercised without trusting forwarded-header overrides. The production connector accepts no target input and connects only to `127.0.0.1:5900`; unsupported platforms and unconfigured/invalid settings fail before native connection.
+- The framing success regression first failed before its implementation. The bridge now owns bounded binary-message, write-queue, duplex and copy buffers; separate inbound/outbound pumps prevent bidirectional pressure deadlocks, and canceling the connection drops every pump/connector/stream. Upstream auth remains gateway-only. Close 4400 carries permanent configuration/auth/protocol failures; 4500 carries transient connection/timeouts, with only the serialized generated enum as its reason.
+- A new final-frame-before-close regression exposed buffered output loss on native EOF. The corrected path drains the final queued bytes with a bounded deadline before its close frame. Real local WebSocket tests also cover 150KB output, simultaneous 100KB input/150KB output with a blocked native reader, coalesced client handshake/data, wrong-password non-admission, text rejection, close during stalled authentication and two independent connections where closing one leaves the other usable.
+- `npm run generate:api` regenerated the committed TypeScript contract; five capability fixtures were updated. Full `cargo test -p kodex-gateway --quiet` passes 780 library tests plus four integration tests, with four isolated-child fixtures and 34 existing opt-in native proofs intentionally ignored by the default runner. The 36 frontend gateway-boundary tests, frontend build/typecheck and frontend/backend trim checks pass. Independent endpoint/framing review and a follow-up review of the demonstrated EOF fix report no remaining actionable findings. The existing Vite large-chunk advisory remains nonfatal and unrelated.
+- This proves the gateway transport with bounded fake RFB upstreams and actual local WebSockets; the bundled pinned noVNC client, browser pane/touch workflows and real Mac login/paste are still pending. No installed service or network configuration changed.
