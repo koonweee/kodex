@@ -10,6 +10,7 @@ pub(crate) mod socket;
 pub use config::DesktopConfig;
 
 const VERSION: &[u8; 12] = b"RFB 003.008\n";
+const APPLE_VERSION: &[u8; 12] = b"RFB 003.889\n";
 
 #[derive(
     Debug,
@@ -89,14 +90,18 @@ where
     U: AsyncRead + AsyncWrite + Unpin,
 {
     tokio::time::timeout(deadline, async {
-        authenticate(&mut upstream, password).await?;
-        accept_viewer(&mut browser).await?;
+        let version = authenticate(&mut upstream, password).await?;
+        accept_viewer(&mut browser, version).await?;
         // Enforce shared access before forwarding ClientInit. An exclusive
         // request must never reach the Mac and disconnect another browser.
         if browser.read_u8().await? == 0 {
             return Err(DesktopFailure::Protocol);
         }
-        upstream.write_all(&[1]).await?;
+        // Shared + Apple's enhanced desktop metadata, without the optional
+        // account/session picker. Monitor IDs come from native DisplayInfo2.
+        upstream
+            .write_all(&[if version == APPLE_VERSION { 0x81 } else { 1 }])
+            .await?;
         upstream.flush().await?;
         Ok::<_, DesktopFailure>(())
     })
@@ -114,16 +119,24 @@ where
     Ok(())
 }
 
-async fn authenticate<U>(upstream: &mut U, password: &DesktopPassword) -> Result<(), DesktopFailure>
+async fn authenticate<U>(
+    upstream: &mut U,
+    password: &DesktopPassword,
+) -> Result<&'static [u8; 12], DesktopFailure>
 where
     U: AsyncRead + AsyncWrite + Unpin,
 {
     let mut banner = [0; 12];
     upstream.read_exact(&mut banner).await?;
-    if &banner != VERSION && &banner != b"RFB 003.889\n" {
+    if &banner != VERSION && &banner != APPLE_VERSION {
         return Err(DesktopFailure::Protocol);
     }
-    upstream.write_all(VERSION).await?;
+    let version = if &banner == APPLE_VERSION {
+        APPLE_VERSION
+    } else {
+        VERSION
+    };
+    upstream.write_all(version).await?;
     upstream.flush().await?;
     let count = upstream.read_u8().await? as usize;
     if count == 0 {
@@ -145,18 +158,18 @@ where
     if upstream.read_u32().await? != 0 {
         return Err(DesktopFailure::Authentication);
     }
-    Ok(())
+    Ok(version)
 }
 
-async fn accept_viewer<B>(browser: &mut B) -> Result<(), DesktopFailure>
+async fn accept_viewer<B>(browser: &mut B, version: &[u8; 12]) -> Result<(), DesktopFailure>
 where
     B: AsyncRead + AsyncWrite + Unpin,
 {
-    browser.write_all(VERSION).await?;
+    browser.write_all(version).await?;
     browser.flush().await?;
     let mut banner = [0; 12];
     browser.read_exact(&mut banner).await?;
-    if &banner != VERSION {
+    if &banner != version {
         return Err(DesktopFailure::Protocol);
     }
     browser.write_all(&[1, 1]).await?; // Count=1, security=None inside trusted WSS.

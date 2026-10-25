@@ -16,6 +16,7 @@ export function createDesktopConnection(bridge: DesktopBridge, changed: (state: 
   }
   const unsubscribe = bridge.subscribe((next) => {
     if (disposed) return;
+    if ((!state.displayLoading && next.displayLoading) || state.selectedDisplay !== next.selectedDisplay) epoch++;
     state = next;
     changed(next);
     if (next.status === "connected") { attempts = 0; clearRetry(); }
@@ -33,10 +34,11 @@ export function createDesktopConnection(bridge: DesktopBridge, changed: (state: 
       if (active && !next) epoch++;
       active = next; bridge.setActive(next);
     },
+    setDisplay(id: number) { if (!disposed) { epoch++; bridge.setDisplay(id); } },
     setTrackpad(enabled: boolean) { if (!disposed) bridge.setTrackpad(enabled); },
     setKeyboard(open: boolean) { if (!disposed) bridge.setKeyboard(open); },
     async pasteFromClipboard(read?: () => Promise<string>) {
-      if (disposed || !active || state.status !== "connected") throw new Error("Desktop is disconnected or closed.");
+      if (disposed || !active || state.status !== "connected" || state.displayLoading || state.displayError) throw new Error("Desktop is disconnected or closed.");
       if (!read) throw new Error("Clipboard reading is unavailable in this browser.");
       const attempt = epoch;
       let text: string;

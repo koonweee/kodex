@@ -17,6 +17,19 @@ build runs inside another Git worktree; preparation tests cover that context.
 The browser uses the patched RFB core, with Kodex's small iframe wrapper in
 `src/desktop/viewer`; upstream's application controls are not exposed.
 `keyboard.ts` adapts noVNC's `app/ui.js` virtual keyboard implementation.
+`apple-desktop.patch` preserves Apple's 3.889 physical-desktop protocol, reads
+bounded DisplayInfo2 monitor metadata and uses native SetDisplay to change the
+server framebuffer. Monitor IDs are opaque server IDs, independent of
+CoreGraphics physical IDs. The gateway owns password authentication and forces
+shared/enhanced initialization without the optional account/session picker.
+The viewer requests only the selected framebuffer after acknowledgment and
+keeps input gated through its first completed pixel update. Pal's touch patches
+remain unchanged; no capture helper or physical display resize is introduced.
+Protocol research was checked against the MPL-2.0 noVNC-ARD implementation at
+https://github.com/peetinc/noVNC-ARD/tree/d699293635083c9e0c30c8f9480993865653772a
+and native macOS 27.0.1 probes. The small Kodex patch implements only the
+physical-monitor path with existing framebuffer codecs; it does not bundle
+noVNC-ARD's account authentication, encryption, media, clipboard or UI layer.
 Explicit Paste uses a bounded same-origin gateway write to the Mac pasteboard,
 then sends Command-V after success. It does not depend on VNC clipboard
 negotiation or synchronize clipboard changes automatically. Hiding, closing or

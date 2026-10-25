@@ -6,6 +6,11 @@ declare module "@desktop-vendor/core/rfb.js" {
     resizeSession: boolean;
     trackpadMode: boolean;
     focusOnClick: boolean;
+    readonly appleDesktop: boolean;
+    readonly desktopReady: boolean;
+    readonly desktopInfo: { width: number; height: number; selectedDisplay: number | null;
+      displays: { id: number; main: boolean; x: number; y: number; width: number; height: number }[] } | null;
+    selectDesktopDisplay(id: number): void;
     disconnect(): void;
     blur(): void;
     sendKey(keysym: number, code?: string | null, down?: boolean): void;

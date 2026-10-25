@@ -12,7 +12,7 @@ use tokio::{
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 
 const LIMIT: Duration = Duration::from_secs(3);
-const VERSION: &[u8] = b"RFB 003.008\n";
+const VERSION: &[u8] = b"RFB 003.889\n";
 
 struct Server {
     url: String,
@@ -132,7 +132,7 @@ async fn binary_websocket_frames_relay_in_both_directions_without_password() {
         let mut mac = server.connections.recv().await.unwrap();
         mac_auth(&mut mac, true).await;
         viewer.init(b"keys").await;
-        assert_eq!(mac.read_u8().await.unwrap(), 1);
+        assert_eq!(mac.read_u8().await.unwrap(), 0x81);
         let mut keys = [0; 4];
         mac.read_exact(&mut keys).await.unwrap();
         assert_eq!(&keys, b"keys");
@@ -187,12 +187,12 @@ async fn native_eof_is_retryable_and_one_viewer_close_does_not_end_another() {
         let mut mac1 = server.connections.recv().await.unwrap();
         mac_auth(&mut mac1, true).await;
         first.init(&[]).await;
-        assert_eq!(mac1.read_u8().await.unwrap(), 1);
+        assert_eq!(mac1.read_u8().await.unwrap(), 0x81);
         let mut second = Viewer::connect(&server.url).await;
         let mut mac2 = server.connections.recv().await.unwrap();
         mac_auth(&mut mac2, true).await;
         second.init(&[]).await;
-        assert_eq!(mac2.read_u8().await.unwrap(), 1);
+        assert_eq!(mac2.read_u8().await.unwrap(), 0x81);
         first.socket.close(None).await.unwrap();
         assert_eq!(mac1.read(&mut [0]).await.unwrap(), 0);
         second.send(b"still-alive").await;
@@ -235,7 +235,7 @@ async fn simultaneous_large_input_and_screen_updates_make_progress_under_backpre
         mac_auth(&mut mac, true).await;
         let input = vec![42; 100_000];
         viewer.init(&input).await;
-        assert_eq!(mac.read_u8().await.unwrap(), 1);
+        assert_eq!(mac.read_u8().await.unwrap(), 0x81);
         let pixels = vec![91; 150_000];
         let expected = pixels.clone();
         let peer = tokio::spawn(async move {
@@ -276,7 +276,11 @@ async fn pinned_browser_crosses_gateway_authentication_boundary() {
         let child = browser.spawn().unwrap();
         let mut mac = server.connections.recv().await.unwrap();
         mac_auth(&mut mac, true).await;
-        assert_eq!(mac.read_u8().await.unwrap(), 1, "shared native ClientInit");
+        assert_eq!(
+            mac.read_u8().await.unwrap(),
+            0x81,
+            "shared native ClientInit"
+        );
         let mut init = vec![0, 0, 0, 0];
         init[..2].copy_from_slice(&320_u16.to_be_bytes());
         init[2..].copy_from_slice(&200_u16.to_be_bytes());
@@ -317,6 +321,33 @@ async fn pinned_browser_crosses_gateway_authentication_boundary() {
                         painted = true;
                     }
                 }
+                9 => {
+                    let mut rest = [0; 15];
+                    mac.read_exact(&mut rest).await.unwrap();
+                }
+                10 => {
+                    let mut rest = [0; 3];
+                    mac.read_exact(&mut rest).await.unwrap();
+                    assert_eq!(rest, [0, 0, 1]);
+                }
+                13 => {
+                    let mut rest = [0; 7];
+                    mac.read_exact(&mut rest).await.unwrap();
+                    let selected = if rest[0] == 1 {
+                        u32::MAX
+                    } else {
+                        u32::from_be_bytes(rest[3..7].try_into().unwrap())
+                    };
+                    assert!(selected == u32::MAX || selected == 92);
+                    painted = false;
+                    mac.write_all(&native_display_info(selected)).await.unwrap();
+                }
+                33 => {
+                    mac.read_u8().await.unwrap();
+                    let length = mac.read_u16().await.unwrap();
+                    let mut body = vec![0; usize::from(length)];
+                    mac.read_exact(&mut body).await.unwrap();
+                }
                 4 => {
                     let down = mac.read_u8().await.unwrap() == 1;
                     mac.read_u16().await.unwrap();
@@ -352,4 +383,31 @@ async fn pinned_browser_crosses_gateway_authentication_boundary() {
     })
     .await
     .expect("bounded combined browser/gateway proof");
+}
+
+fn native_display_info(selected: u32) -> Vec<u8> {
+    let mut body = vec![0; 76];
+    for (offset, value) in [
+        (0, 5u16),
+        (2, 320),
+        (4, 200),
+        (6, 320),
+        (8, 200),
+        (18, 1),
+        (44, 200),
+        (46, 320),
+        (52, 200),
+        (54, 320),
+    ] {
+        body[offset..offset + 2].copy_from_slice(&value.to_be_bytes());
+    }
+    body[10..14].copy_from_slice(&selected.to_be_bytes());
+    body[36..40].copy_from_slice(&92u32.to_be_bytes());
+    body[56..60].copy_from_slice(&1u32.to_be_bytes());
+    let mut frame = vec![0; 18];
+    frame[2..4].copy_from_slice(&1u16.to_be_bytes());
+    frame[12..16].copy_from_slice(&1105i32.to_be_bytes());
+    frame[16..18].copy_from_slice(&76u16.to_be_bytes());
+    frame.extend(body);
+    frame
 }

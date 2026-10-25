@@ -12,6 +12,7 @@ import { PaneLayout } from "../../shared/PaneLayout";
 import { AdaptiveIconButton } from "../../ui/AdaptiveIconButton";
 import { useWorkspace } from "../../workspace/WorkspaceProvider";
 import type { WorkspacePaneComponentProps } from "../../workspace/paneTypes";
+import { DesktopDisplayMenu } from "./DesktopDisplayMenu";
 import "./desktop.css";
 
 const messages: Record<DesktopFailure, string> = {
@@ -32,11 +33,15 @@ export function DesktopPane({ pane }: WorkspacePaneComponentProps) {
   const { hasTouchInput } = useInputCapabilities();
   const viewer = useDesktopViewer(enabled, visible);
   const keyboardViewport = useKeyboardViewport(visible && viewer.state.keyboardOpen, viewer.frame.current?.parentElement);
+  const [displayMenuOpen, setDisplayMenuOpen] = useState(false);
   const [touchSettingsOpen, setTouchSettingsOpen] = useState(false);
-  useEffect(() => { if (!visible) setTouchSettingsOpen(false); }, [visible]);
+  useEffect(() => { if (!visible) { setTouchSettingsOpen(false); setDisplayMenuOpen(false); } }, [visible]);
   const keyboardIntent = useRef<boolean | undefined>(undefined);
-  const connected = viewer.state.status === "connected";
+  const connected = viewer.state.status === "connected" && !viewer.state.displayLoading && !viewer.state.displayError;
+  useEffect(() => { if (!connected || (viewer.state.displays?.length ?? 0) <= 1) setDisplayMenuOpen(false); }, [connected, viewer.state.displays?.length]);
   const actions = useMemo(() => <Group gap={2} wrap="nowrap">
+    {(viewer.state.displays?.length ?? 0) > 1 ? <DesktopDisplayMenu displays={viewer.state.displays ?? []}
+      selected={viewer.state.selectedDisplay} disabled={!connected} opened={displayMenuOpen} onChange={setDisplayMenuOpen} onSelect={viewer.setDisplay} /> : null}
     {hasTouchInput ? <AdaptiveIconButton
       label={viewer.state.keyboardOpen ? "Hide remote keyboard" : "Show remote keyboard"}
       aria-pressed={viewer.state.keyboardOpen}
@@ -56,11 +61,11 @@ export function DesktopPane({ pane }: WorkspacePaneComponentProps) {
         <Checkbox label="Trackpad mode (touch)" checked={viewer.trackpad} onChange={(event) => { viewer.setTrackpad(event.currentTarget.checked); setTouchSettingsOpen(false); }} />
       </Popover.Dropdown>
     </Popover>
-  </Group>, [enabled, connected, hasTouchInput, viewer, touchSettingsOpen]);
+  </Group>, [enabled, connected, hasTouchInput, viewer, touchSettingsOpen, displayMenuOpen]);
   useEffect(() => { setPaneHeaderActions(pane.id, actions); return () => setPaneHeaderActions(pane.id, null); }, [actions, pane.id, setPaneHeaderActions]);
 
   const message = !enabled ? "Desktop is unavailable until a VNC password is configured on the Mac gateway."
-    : viewer.error ?? (viewer.state.failure ? messages[viewer.state.failure] : null);
+    : viewer.error ?? viewer.state.displayError ?? (viewer.state.failure ? messages[viewer.state.failure] : null);
   return <PaneLayout className="kodex-desktop-pane" aria-label="Mac desktop"
     style={{ paddingBottom: viewer.state.keyboardOpen ? keyboardViewport.inlineKeyboardInset : 0 }}>
     {message ? <Alert color={enabled ? "red" : "blue"} title={enabled ? "Desktop connection" : "Desktop unavailable"}>{message}

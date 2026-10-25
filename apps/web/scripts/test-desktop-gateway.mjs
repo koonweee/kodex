@@ -16,6 +16,7 @@ const entry = `/assets/desktop-viewer/${revisions[0]}/index.html`;
 const clipboardWrites = [];
 const server = createServer(async (request, response) => {
   const pathname = new URL(request.url, "http://localhost").pathname;
+
   if (request.method === "POST" && pathname === "/v1/desktop/clipboard") {
     let body = "";
     for await (const chunk of request) body += chunk;
@@ -71,7 +72,7 @@ try {
     window.kodexDesktop.setActive(true);
     window.kodexDesktop.connect();
   });
-  await page.waitForFunction(() => window.viewerState.status === "connected");
+  await page.waitForFunction(() => window.viewerState.status === "connected" && !window.viewerState.displayLoading);
   await page.waitForFunction(() => {
     const canvas = document.querySelector("#screen canvas");
     const pixel = canvas?.getContext("2d").getImageData(0, 0, 1, 1).data;
@@ -81,7 +82,7 @@ try {
   await page.keyboard.press("Escape");
   await page.evaluate(() => window.kodexDesktop.paste("combined proof 你好 👋\nline 2"));
   const wire = await page.evaluate(() => window.wire);
-  const version = Array.from(Buffer.from("RFB 003.008\n"));
+  const version = Array.from(Buffer.from("RFB 003.889\n"));
   assert.deepEqual(wire.targets, ["/v1/desktop/ws"]);
   // The browser sees None, never the native type-2 offer/challenge/response.
   assert.deepEqual(wire.inbound.slice(0, 18), [...version, 1, 1, 0, 0, 0, 0]);

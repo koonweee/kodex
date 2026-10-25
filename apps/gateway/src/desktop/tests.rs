@@ -34,7 +34,14 @@ async fn mac_auth_with_trailing(
     } else {
         stream.write_all(VERSION).await.unwrap();
     }
-    assert_eq!(bytes(stream, 12).await, VERSION);
+    assert_eq!(
+        bytes(stream, 12).await,
+        if fragmented {
+            b"RFB 003.889\n"
+        } else {
+            VERSION
+        }
+    );
     // Server preference includes account auth first; gateway must choose password auth.
     for byte in [3, 30, 2, 1] {
         stream.write_all(&[byte]).await.unwrap();
@@ -69,9 +76,17 @@ async fn mac_auth_with_trailing(
 }
 
 async fn browser_auth(stream: &mut DuplexStream, shared: u8, extra: &[u8]) {
-    assert_eq!(bytes(stream, 12).await, VERSION);
+    browser_auth_version(stream, VERSION, shared, extra).await;
+}
+async fn browser_auth_version(
+    stream: &mut DuplexStream,
+    version: &[u8; 12],
+    shared: u8,
+    extra: &[u8],
+) {
+    assert_eq!(bytes(stream, 12).await, version);
     // Pipeline frames to exercise preserving bytes past each handshake boundary.
-    let mut request = VERSION.to_vec();
+    let mut request = version.to_vec();
     request.extend([1, shared]);
     request.extend(extra);
     stream.write_all(&request).await.unwrap();
@@ -107,7 +122,7 @@ async fn fragmented_mac_auth_and_coalesced_browser_init_relay_bytes_and_close_bo
         });
         let server = tokio::spawn(async move {
             mac_auth(&mut mac, true, true).await;
-            assert_eq!(bytes(&mut mac, 1).await, [1]);
+            assert_eq!(bytes(&mut mac, 1).await, [0x81]);
             mac.write_all(b"server-init-and-pixels").await.unwrap();
             assert_eq!(bytes(&mut mac, 10).await, b"key-events");
             mac.write_all(b"ack").await.unwrap();
@@ -117,7 +132,7 @@ async fn fragmented_mac_auth_and_coalesced_browser_init_relay_bytes_and_close_bo
                 "upstream leaked after viewer close"
             );
         });
-        browser_auth(&mut browser, 1, b"key-events").await;
+        browser_auth_version(&mut browser, b"RFB 003.889\n", 1, b"key-events").await;
         assert_eq!(bytes(&mut browser, 25).await, b"server-init-and-pixelsack");
         drop(browser);
         assert_eq!(task.await.unwrap(), Ok(()));
@@ -159,7 +174,7 @@ async fn disabled_password_access_does_not_fall_back_to_none_or_account_login() 
         .await
     });
     mac.write_all(b"RFB 003.889\n").await.unwrap();
-    assert_eq!(bytes(&mut mac, 12).await, VERSION);
+    assert_eq!(bytes(&mut mac, 12).await, b"RFB 003.889\n");
     mac.write_all(&[3, 30, 33, 1]).await.unwrap();
     assert_eq!(
         task.await.unwrap(),

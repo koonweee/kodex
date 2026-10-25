@@ -17,7 +17,7 @@
     "trim:types": "tsc -p tsconfig.trim.json",
     "trim:deps": "knip --config knip.json --production --include files,dependencies,unlisted,binaries,duplicates",
     "generate:api": "node scripts/generate-api.mjs",
-    "test:desktop-vendor": "node --test scripts/prepare-desktop-viewer.test.mjs && node scripts/test-desktop-vendor.mjs"
+    "test:desktop-vendor": "node --test scripts/prepare-desktop-viewer.test.mjs scripts/desktop-apple.test.mjs && node scripts/test-desktop-vendor.mjs"
   },
   "dependencies": {
     "@mantine/core": "^8.3.8",

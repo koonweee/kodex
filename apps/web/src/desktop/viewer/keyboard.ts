@@ -26,9 +26,11 @@ export function virtualKeyboard(input: HTMLTextAreaElement, getRfb: () => RFB | 
     if (rfb) rfb.focusOnClick = false;
     changed(true);
   }
+  function releaseKeys() { keyboard.ungrab(); if (!disposed) keyboard.grab(); }
   function onBlur() {
+    releaseKeys();
     const rfb = getRfb();
-    if (rfb) rfb.focusOnClick = true;
+    if (rfb) rfb.focusOnClick = active;
     changed(false);
   }
   function onInput(event: Event) {
@@ -60,6 +62,7 @@ export function virtualKeyboard(input: HTMLTextAreaElement, getRfb: () => RFB | 
   document.documentElement.addEventListener("mousedown", keepKeyboard, true);
   return {
     setActive(value: boolean) {
+      if (!value) releaseKeys();
       active = value;
       if (!value) { clearTimeout(focusTimer); input.blur(); }
     },
@@ -67,13 +70,13 @@ export function virtualKeyboard(input: HTMLTextAreaElement, getRfb: () => RFB | 
       if (open && active) {
         input.focus({ preventScroll: true });
         input.setSelectionRange(input.value.length, input.value.length);
-      } else { input.blur(); }
+      } else { releaseKeys(); input.blur(); }
     },
     dispose() {
       disposed = true;
-      active = false;
       clearTimeout(focusTimer);
       keyboard.ungrab();
+      active = false;
       input.removeEventListener("focus", onFocus);
       input.removeEventListener("blur", onBlur);
       input.removeEventListener("input", onInput);

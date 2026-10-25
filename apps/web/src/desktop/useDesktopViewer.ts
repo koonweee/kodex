@@ -66,6 +66,7 @@ export function useDesktopViewer(enabled: boolean, visible: boolean) {
       if (connection.current) connection.current.reconnect();
       else { setLoadedBridge(null); setFrameKey((current) => current + 1); }
     },
+    setDisplay(id: number) { pasteAttempt.current++; setPasting(false); connection.current?.setDisplay(id); },
     setKeyboard(open: boolean) { connection.current?.setKeyboard(open); },
     async paste() {
       const owner = connection.current;

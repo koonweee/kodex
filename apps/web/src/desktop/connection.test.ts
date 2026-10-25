@@ -7,7 +7,7 @@ function viewer() {
   const bridge: DesktopBridge = {
     subscribe: vi.fn((next) => { listener = next; return vi.fn(); }),
     connect: vi.fn(() => listener({ status: "connecting", keyboardOpen: false })),
-    disconnect: vi.fn(), setActive: vi.fn(), setTrackpad: vi.fn(), setKeyboard: vi.fn(), paste: vi.fn(async () => {}),
+    disconnect: vi.fn(), setDisplay: vi.fn(), setActive: vi.fn(), setTrackpad: vi.fn(), setKeyboard: vi.fn(), paste: vi.fn(async () => {}),
   };
   return { bridge, emit: (state: ViewerState) => listener(state) };
 }
@@ -69,6 +69,17 @@ describe("Desktop connection owner", () => {
       expect(bridge.paste).not.toHaveBeenCalled();
       connection.dispose();
     }
+  });
+  it("cancels a delayed clipboard read when display geometry refreshes or falls back", async () => {
+    const { bridge, emit } = viewer(); const connection = createDesktopConnection(bridge, vi.fn());
+    emit({ ...connected, selectedDisplay: 20 });
+    let resolve!: (text: string) => void;
+    const pending = connection.pasteFromClipboard(() => new Promise<string>((next) => { resolve = next; }));
+    emit({ ...connected, displayLoading: true, selectedDisplay: 20 });
+    emit({ ...connected, displayLoading: false, selectedDisplay: 30 });
+    resolve("old display text");
+    await expect(pending).rejects.toThrow(/changed|closed/);
+    expect(bridge.paste).not.toHaveBeenCalled(); connection.dispose();
   });
   it("reports unavailable, denied and empty clipboards without sending text", async () => {
     const { bridge, emit } = viewer(); const connection = createDesktopConnection(bridge, vi.fn()); emit(connected);

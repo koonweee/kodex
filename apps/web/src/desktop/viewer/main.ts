@@ -1,6 +1,7 @@
 import { writeDesktopClipboard } from "../../api/desktop";
 import RFB from "@desktop-vendor/core/rfb.js";
 import { DESKTOP_VIEWER_READY, type DesktopBridge, type DesktopFailure, type ViewerState } from "../bridge";
+import { createMonitorSelection } from "./monitors";
 import { virtualKeyboard } from "./keyboard";
 import "./viewer.css";
 
@@ -15,12 +16,16 @@ let generation = 0;
 let state: ViewerState = { status: "disconnected", keyboardOpen: false };
 const listeners = new Set<(state: ViewerState) => void>();
 const failures: DesktopFailure[] = ["unsupportedPlatform", "configuration", "authentication", "passwordAccessDisabled", "protocol", "connection", "timeout"];
-function update(next: ViewerState) { state = next; for (const listener of listeners) listener(state); }
+function update(next: ViewerState) { state = { ...next, ...monitors.state() }; for (const listener of listeners) listener(state); }
 const keyboard = virtualKeyboard(input, () => rfb, (keyboardOpen) => update({ ...state, keyboardOpen }));
 let cancelPaste: ((reason?: string) => void) | undefined;
+const monitors = createMonitorSelection(() => rfb, () => update({ ...state }), () => { cancelPaste?.("Desktop display changed; paste was canceled."); keyboard.setOpen(false); }, (failure, retryable) => {
+  bridge.disconnect(); update({ status: "disconnected", keyboardOpen: false, failure, retryable });
+});
 
 function disconnect() {
   generation++;
+  monitors.cancel();
   cancelPaste?.();
   keyboard.setOpen(false);
   const previous = socket;
@@ -40,6 +45,7 @@ const bridge: DesktopBridge = {
   connect() {
     disconnect();
     const attempt = generation;
+    monitors.begin();
     update({ status: "connecting", keyboardOpen: false });
     const start = () => {
       if (attempt !== generation) return;
@@ -53,7 +59,7 @@ const bridge: DesktopBridge = {
       ws.addEventListener("close", (event) => {
         if (attempt !== generation || protocolFailure) return;
         gatewayClose = true;
-        cancelPaste?.();
+        monitors.cancel(); cancelPaste?.();
         let failure: DesktopFailure = "connection";
         if (event.code === 4400 || event.code === 4500) {
           try {
@@ -66,18 +72,27 @@ const bridge: DesktopBridge = {
         update({ status: "disconnected", keyboardOpen: false, failure, retryable: event.code !== 4400 });
       });
       const viewer = rfb = new RFB(screen, ws, { shared: true });
-      viewer.viewOnly = false;
+      viewer.viewOnly = true;
       viewer.scaleViewport = true;
       viewer.resizeSession = false;
       viewer.trackpadMode = trackpad;
       viewer.focusOnClick = active;
+      viewer.addEventListener("desktopdisplaychanging", () => {
+        if (attempt === generation) { cancelPaste?.("Desktop display changed; paste was canceled."); keyboard.setOpen(false); }
+      });
+      viewer.addEventListener("desktopdisplayready", () => {
+        if (attempt === generation && state.status === "connected") monitors.ready(viewer);
+      });
+      viewer.addEventListener("desktopdisplayinfo", () => {
+        if (attempt === generation && state.status === "connected") monitors.receive(viewer);
+      });
       viewer.addEventListener("connect", () => {
-        if (attempt === generation) update({ status: "connected", keyboardOpen: false });
+        if (attempt === generation) { update({ status: "connected", keyboardOpen: false }); monitors.connected(viewer); }
       });
       viewer.addEventListener("disconnect", () => {
         if (attempt === generation && !gatewayClose) {
           protocolFailure = true;
-          cancelPaste?.();
+          monitors.cancel(); cancelPaste?.();
           keyboard.setOpen(false);
           update({ status: "disconnected", keyboardOpen: false, failure: "protocol", retryable: false });
         }
@@ -104,10 +119,11 @@ const bridge: DesktopBridge = {
     if (rfb) { rfb.focusOnClick = value; if (!value) rfb.blur(); }
   },
   setTrackpad(value) { trackpad = value; if (rfb) rfb.trackpadMode = value; },
-  setKeyboard(open) { keyboard.setOpen(open && state.status === "connected"); },
+  setDisplay(id) { monitors.select(id); },
+  setKeyboard(open) { keyboard.setOpen(open && state.status === "connected" && !state.displayLoading); },
   async paste(text) {
     const viewer = rfb;
-    if (!viewer || !active || state.status !== "connected") throw new Error("Desktop is disconnected.");
+    if (!viewer || !active || state.status !== "connected" || state.displayLoading || state.displayError) throw new Error("Desktop is disconnected.");
     if (!text) throw new Error("The clipboard is empty.");
     if (new TextEncoder().encode(text).byteLength > 65536) throw new Error("Clipboard text exceeds 64 KiB.");
     if (cancelPaste) throw new Error("A paste is already in progress.");
