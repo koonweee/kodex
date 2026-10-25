@@ -5,16 +5,19 @@ import { openDesktop } from "./desktop-pane.fixture";
 
 test.use({ viewport: { width: 1024, height: 768 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
 
-async function cursorError(frame: FrameLocator, remote: DesktopRfbFixture) {
+async function cursorErrorRatio(frame: FrameLocator, remote: DesktopRfbFixture) {
   const pointer = remote.connections[0].pointerPositions.at(-1)!;
   const canvas = frame.locator("#screen canvas");
   const image = (await canvas.boundingBox())!;
   const cursor = (await frame.locator("body > canvas").boundingBox())!;
-  const size = await canvas.evaluate((node: HTMLCanvasElement) => ({ width: node.width, height: node.height }));
+  const size = await canvas.evaluate((node: HTMLCanvasElement) => ({ width: node.width, height: node.height, dpr: devicePixelRatio }));
+  // RFB coordinates are integer framebuffer pixels. Allow that quantization
+  // plus one physical display pixel when checking a magnified cursor.
+  const tolerance = Math.max(image.width / size.width, image.height / size.height) + 1 / size.dpr;
   return Math.max(
     Math.abs(cursor.x + remote.cursor!.hotx - (image.x + pointer.x * image.width / size.width)),
     Math.abs(cursor.y + remote.cursor!.hoty - (image.y + pointer.y * image.height / size.height)),
-  );
+  ) / tolerance;
 }
 
 async function tap(page: Page, frame: FrameLocator) {
@@ -44,7 +47,7 @@ test("the touch cursor hotspot matches the transmitted click through cursor chan
     await expect(frame.locator("body > canvas")).toHaveJSProperty("width", 32);
     await tap(page, frame);
     await expect.poll(() => remote.connections[0].pointerPositions.some((p) => p.mask === 1)).toBe(true);
-    await expect.poll(() => cursorError(frame, remote)).toBeLessThan(1);
+    await expect.poll(() => cursorErrorRatio(frame, remote)).toBeLessThan(1);
     const box = (await frame.locator("#screen canvas").boundingBox())!;
     const session = await context.newCDPSession(page);
     const pair = [{ x: box.x + box.width / 2 - 20, y: box.y + box.height / 2, id: 1 },
@@ -54,16 +57,16 @@ test("the touch cursor hotspot matches the transmitted click through cursor chan
     await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
     await expect.poll(async () => (await frame.locator("#screen canvas").boundingBox())!.width).toBeGreaterThan(box.width * 1.5);
     await tap(page, frame);
-    await expect.poll(() => cursorError(frame, remote)).toBeLessThan(1);
+    await expect.poll(() => cursorErrorRatio(frame, remote)).toBeLessThan(1);
     await session.detach();
     remote.setCursor({ width: 24, height: 32, hotx: 4, hoty: 6 });
     await expect(frame.locator("body > canvas")).toHaveJSProperty("width", 24);
-    await expect.poll(() => cursorError(frame, remote)).toBeLessThan(1);
+    await expect.poll(() => cursorErrorRatio(frame, remote)).toBeLessThan(1);
     await selector.click();
     await page.getByRole("menuitem", { name: "Display 2 (454 × 298)", exact: true }).click();
     await expect(selector).toBeEnabled();
     await tap(page, frame);
-    await expect.poll(() => cursorError(frame, remote)).toBeLessThan(1);
+    await expect.poll(() => cursorErrorRatio(frame, remote)).toBeLessThan(1);
     expect(remote.errors).toEqual([]);expect(app.errors).toEqual([]);
   } finally { await app.close(); }
 });

@@ -30,8 +30,15 @@ remain unchanged; no capture helper or physical display resize is introduced.
 Protocol research was checked against the MPL-2.0 noVNC-ARD implementation at
 https://github.com/peetinc/noVNC-ARD/tree/d699293635083c9e0c30c8f9480993865653772a
 and native macOS 27.0.1 probes. The small Kodex patch implements only the
-physical-monitor path with existing framebuffer codecs; it does not bundle
+physical-monitor path with Apple RGB555 reduced-color encoding and standard
+framebuffer fallbacks; it does not bundle
 noVNC-ARD's account authentication, encryption, media, clipboard or UI layer.
+Apple encoding 1002 uses a small RGB555 decoder adapted from the same pinned
+MPL-2.0 source (`ard/decoders/zlib-thousands.js`). Reduced color precision is the
+selected responsiveness default; resolution stays native. Conversion uses strips
+to avoid full-frame RGB555/RGBA temporary buffers. Idle Tickle (4) renews automatic
+updates; Wake (6) requests a fresh picture on the selected display. Cursor-visible
+(12) does not restart streaming.
 Explicit Paste uses a bounded same-origin gateway write to the Mac pasteboard,
 then sends Command-V after success. It does not depend on VNC clipboard
 negotiation or synchronize clipboard changes automatically. Hiding, closing or

@@ -39,3 +39,56 @@ test("ViewerInfo declares its exact bounded body and supported native metadata c
   assert.equal(bytes.length,66);assert.equal(bytes[0],33);assert.equal(view.getUint16(2),62);
   assert.equal(view.getUint16(4),1);assert.equal(view.getUint32(6),2);assert.equal(bytes[44],0x40);
 });
+
+class CodecSocket {
+  pending = new Uint8Array();
+  append(bytes) { this.pending = Uint8Array.from([...this.pending, ...bytes]); }
+  rQwait(_name, count) { return this.pending.length < count; }
+  rQshift32() { const value = new DataView(this.pending.buffer, this.pending.byteOffset, 4).getUint32(0);this.pending=this.pending.subarray(4);return value; }
+  rQshiftBytes(count) { const bytes=this.pending.subarray(0,count);this.pending=this.pending.subarray(count);return bytes; }
+}
+async function codecFixture() {
+  const {default:Decoder}=await import(pathToFileURL(join(sourceRoot,"core/decoders/apple-thousands.js")));
+  const {default:Deflator}=await import(pathToFileURL(join(sourceRoot,"core/deflator.js")));
+  const deflator=new Deflator();
+  return {decoder:new Decoder(),socket:new CodecSocket(),packet(words) {
+    const plain=Buffer.alloc(words.length*2);words.forEach((value,i)=>plain.writeUInt16BE(value,i*2));
+    const bytes=Buffer.from(deflator.deflate(plain));const header=Buffer.alloc(4);header.writeUInt32BE(bytes.length);
+    return Buffer.concat([header,bytes]);
+  }};
+}
+test("native reduced-color pixels remain sharp across fragmented records and one continuous zlib stream",async()=>{
+  const {decoder,socket,packet}=await codecFixture();const blits=[];
+  const display={blitImage:(x,y,width,height,pixels)=>blits.push({x,y,width,height,pixels:Array.from(pixels)})};
+  const first=packet([0x7c00,0x03e0,0x001f]);
+  socket.append(first.subarray(0,3));assert.equal(decoder.decodeRect(7,9,3,1,socket,display,24),false);
+  socket.append(first.subarray(3,first.length-2));assert.equal(decoder.decodeRect(7,9,3,1,socket,display,24),false);
+  assert.equal(blits.length,0);
+  socket.append(first.subarray(first.length-2));assert.equal(decoder.decodeRect(7,9,3,1,socket,display,24),true);
+  assert.deepEqual(blits[0],{x:7,y:9,width:3,height:1,pixels:[255,0,0,255,0,255,0,255,0,0,255,255]});
+  socket.append(packet([0x7fff,0x0000,0x4210]));assert.equal(decoder.decodeRect(0,0,3,1,socket,display,24),true);
+  assert.deepEqual(blits[1].pixels,[255,255,255,255,0,0,0,255,132,132,132,255]);
+});
+test("native reduced-color decoder rejects incomplete pixel data before painting",async()=>{
+  const {decoder,socket,packet}=await codecFixture();let painted=false;
+  socket.append(packet([0x7c00]));
+  assert.throws(()=>decoder.decodeRect(0,0,2,1,socket,{blitImage:()=>{painted=true;}},24),/incomplete|inflate/i);
+  assert.equal(painted,false);
+});
+test("native reduced-color conversion paints every row when a rectangle spans multiple strips",async()=>{
+  const {decoder,socket,packet}=await codecFixture();const width=3,height=131;
+  const words=Array.from({length:width*height},(_,i)=>[0x7c00,0x03e0,0x001f][Math.floor(i/width)%3]);
+  const pixels=new Uint8Array(width*height*4);const seen=new Set();
+  const display={blitImage:(x,y,w,h,strip)=>{
+    assert.equal(x,5);assert.equal(w,width);
+    assert.ok(h<=64);assert.ok(strip.byteLength<=width*64*4);
+    for(let row=0;row<h;row++){
+      const target=y-7+row;assert.equal(seen.has(target),false);seen.add(target);
+      pixels.set(strip.subarray(row*w*4,(row+1)*w*4),target*width*4);
+    }
+  }};
+  socket.append(packet(words));assert.equal(decoder.decodeRect(5,7,width,height,socket,display,24),true);
+  assert.equal(seen.size,height);
+  const colors=[[255,0,0,255],[0,255,0,255],[0,0,255,255]];
+  for(let row=0;row<height;row++)assert.deepEqual(Array.from(pixels.subarray(row*12,row*12+12)),Array(3).fill(colors[row%3]).flat());
+});

@@ -9,6 +9,11 @@ export class DesktopRfbFixture {
   errors: string[] = [];
   framebuffer = { width: 320, height: 200 };
   nativeDesktop = false;
+  frameBlue = 0xcc;
+  private stateSenders: ((statuses: number[], fragmented: boolean) => void)[] = [];
+  sendNativeStates(statuses: number[], fragmented = false) {
+    for (const send of this.stateSenders) send(statuses, fragmented);
+  }
   cursor: { width: number; height: number; hotx: number; hoty: number } | undefined;
   private cursorSenders: (() => void)[] = [];
   setCursor(cursor: NonNullable<DesktopRfbFixture["cursor"]>) {
@@ -27,6 +32,7 @@ export class DesktopRfbFixture {
   private displayReplies: (() => void)[] = [];
   releaseDisplayInfo() { for (const reply of this.displayReplies.splice(0)) reply(); }
   updateRequests: { incremental: boolean; x: number; y: number; width: number; height: number }[] = [];
+  automaticRequests: { enabled: boolean; x: number; y: number; width: number; height: number }[] = [];
   continuousRequests: { enabled: boolean; x: number; y: number; width: number; height: number }[] = [];
   continuousUpdates = false;
   displayFailure = false;
@@ -75,6 +81,12 @@ export class DesktopRfbFixture {
     page.on("close", () => { for (const socket of server.clients) socket.terminate(); server.close(); });
     server.on("connection", (socket, request) => {
       this.paused.push(socket);
+      this.stateSenders.push((statuses, fragmented) => {
+        if (socket.readyState !== 1) return;
+        const bytes=Buffer.concat(statuses.map((status)=>{const body=Buffer.from([20,0,0,4,0,0,0,0]);body.writeUInt16BE(status,6);return body;}));
+        if (fragmented) for (const chunk of [bytes.subarray(0,1),bytes.subarray(1,3),bytes.subarray(3)]) socket.send(chunk);
+        else socket.send(bytes);
+      });
       const sendCursor = () => {
         if (!this.cursor || socket.readyState !== 1) return;
         const {width,height,hotx,hoty}=this.cursor;
@@ -171,6 +183,7 @@ export class DesktopRfbFixture {
             }
             if (type === 6) this.errors.push("Paste must use the native clipboard endpoint");
             if (type === 3) this.updateRequests.push({ incremental: message[1] === 1, x: message.readUInt16BE(2), y: message.readUInt16BE(4), width: message.readUInt16BE(6), height: message.readUInt16BE(8) });
+            if (type === 9) this.automaticRequests.push({ enabled: message.readUInt16BE(2) !== 0, x: message.readUInt16BE(8), y: message.readUInt16BE(10), width: message.readUInt16BE(12), height: message.readUInt16BE(14) });
             if (type === 150) this.continuousRequests.push({ enabled: message[1] === 1, x: message.readUInt16BE(2), y: message.readUInt16BE(4), width: message.readUInt16BE(6), height: message.readUInt16BE(8) });
             if (type === 3 && (!painted || message[1] === 0)) {
               const first = !painted;
@@ -179,7 +192,7 @@ export class DesktopRfbFixture {
               const frame = Buffer.alloc(16 + size.width * size.height * 4);
               frame.writeUInt16BE(1, 2); frame.writeUInt16BE(size.width, 8); frame.writeUInt16BE(size.height, 10);
               for (let offset = 16; offset < frame.length; offset += 4) {
-                frame[offset] = this.nativeDesktop ? 30*(1+this.nativeDisplays.findIndex(d=>d.id===selected)) : 0x11; frame[offset + 1] = 0x22; frame[offset + 2] = 0xcc;
+                frame[offset] = this.nativeDesktop ? 30*(1+this.nativeDisplays.findIndex(d=>d.id===selected)) : 0x11; frame[offset + 1] = 0x22; frame[offset + 2] = this.frameBlue;
               }
               const reply=()=>{if(socket.readyState===1){socket.send(frame);sendCursor();}};
               if(this.holdFramebuffer)this.frameReplies.push(reply);else reply();
