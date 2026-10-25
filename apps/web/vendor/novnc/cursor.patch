@@ -1,0 +1,24 @@
+--- a/core/util/cursor.js
++++ b/core/util/cursor.js
+@@ -121,15 +121,17 @@
+         if (!useFallback) {
+             return;
+         }
++        // Programmatic moves name the click hotspot, just like mouse events.
++        // The fallback canvas itself is positioned by its top-left corner.
+         // clientX/clientY are relative the _visual viewport_,
+         // but our position is relative the _layout viewport_,
+         // so try to compensate when we can
+         if (window.visualViewport) {
+-            this._position.x = clientX + window.visualViewport.offsetLeft;
+-            this._position.y = clientY + window.visualViewport.offsetTop;
++            this._position.x = clientX + window.visualViewport.offsetLeft - this._hotSpot.x;
++            this._position.y = clientY + window.visualViewport.offsetTop - this._hotSpot.y;
+         } else {
+-            this._position.x = clientX;
+-            this._position.y = clientY;
++            this._position.x = clientX - this._hotSpot.x;
++            this._position.y = clientY - this._hotSpot.y;
+         }
+         this._updatePosition();
+         let target = document.elementFromPoint(clientX, clientY);

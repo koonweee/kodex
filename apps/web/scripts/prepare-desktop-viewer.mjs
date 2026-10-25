@@ -40,7 +40,7 @@ export function prepareDesktopViewer(root = defaultRoot) {
     delete patchEnv.GIT_DIR;
     delete patchEnv.GIT_WORK_TREE;
     const patchOptions = { cwd: stage, env: patchEnv, stdio: "pipe" };
-    for (const patch of ["trackpad.patch", "trackpad.tests.patch", "apple-desktop.patch"]) {
+    for (const patch of ["trackpad.patch", "trackpad.tests.patch", "apple-desktop.patch", "cursor.patch"]) {
       execFileSync("git", ["apply", "--check", join(vendor, patch)], patchOptions);
       execFileSync("git", ["apply", join(vendor, patch)], patchOptions);
     }
@@ -72,7 +72,7 @@ export function prepareDesktopViewer(root = defaultRoot) {
   // Ship corresponding source and notices with the normal frontend packaging.
   const sources = join(root, "public", relative, "sources");
   mkdirSync(sources, { recursive: true });
-  for (const file of ["source.tar.gz", "trackpad.patch", "trackpad.tests.patch", "apple-desktop.patch", "pins.json", "README.md"]) {
+  for (const file of ["source.tar.gz", "trackpad.patch", "trackpad.tests.patch", "apple-desktop.patch", "cursor.patch", "pins.json", "README.md"]) {
     cpSync(join(vendor, file), join(sources, file));
   }
   cpSync(join(sourceRoot, "docs"), join(sources, "licenses"), { recursive: true, filter: (path) => !path.endsWith(".md") || path.includes("LICENSE") });

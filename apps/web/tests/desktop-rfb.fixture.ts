@@ -9,6 +9,12 @@ export class DesktopRfbFixture {
   errors: string[] = [];
   framebuffer = { width: 320, height: 200 };
   nativeDesktop = false;
+  cursor: { width: number; height: number; hotx: number; hoty: number } | undefined;
+  private cursorSenders: (() => void)[] = [];
+  setCursor(cursor: NonNullable<DesktopRfbFixture["cursor"]>) {
+    this.cursor = cursor;
+    for (const send of this.cursorSenders) send();
+  }
   nativeDisplays = [{ id: 92, main: true, x: 0, y: 0, width: 320, height: 200, fbX: 0, fbY: 0 }];
   displaySelections: number[] = [];
   holdDisplayInfo = false;
@@ -69,6 +75,15 @@ export class DesktopRfbFixture {
     page.on("close", () => { for (const socket of server.clients) socket.terminate(); server.close(); });
     server.on("connection", (socket, request) => {
       this.paused.push(socket);
+      const sendCursor = () => {
+        if (!this.cursor || socket.readyState !== 1) return;
+        const {width,height,hotx,hoty}=this.cursor;
+        const update=Buffer.alloc(16+width*height*4+Math.ceil(width/8)*height,255);
+        update.fill(0,0,16);update.writeUInt16BE(1,2);
+        update.writeUInt16BE(hotx,4);update.writeUInt16BE(hoty,6);update.writeUInt16BE(width,8);update.writeUInt16BE(height,10);update.writeInt32BE(-239,12);
+        socket.send(update);
+      };
+      this.cursorSenders.push(sendCursor);
       let selected: number | null = null;
       const dimensions = () => { const d=this.nativeDisplays.find((d)=>d.id===selected); return d ?? this.framebuffer; };
       const nativeInfo = () => {
@@ -166,7 +181,7 @@ export class DesktopRfbFixture {
               for (let offset = 16; offset < frame.length; offset += 4) {
                 frame[offset] = this.nativeDesktop ? 30*(1+this.nativeDisplays.findIndex(d=>d.id===selected)) : 0x11; frame[offset + 1] = 0x22; frame[offset + 2] = 0xcc;
               }
-              const reply=()=>{if(socket.readyState===1)socket.send(frame);};
+              const reply=()=>{if(socket.readyState===1){socket.send(frame);sendCursor();}};
               if(this.holdFramebuffer)this.frameReplies.push(reply);else reply();
               if (first && this.continuousUpdates) socket.send(Buffer.from([150]));
             }

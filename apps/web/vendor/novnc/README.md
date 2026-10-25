@@ -17,6 +17,8 @@ build runs inside another Git worktree; preparation tests cover that context.
 The browser uses the patched RFB core, with Kodex's small iframe wrapper in
 `src/desktop/viewer`; upstream's application controls are not exposed.
 `keyboard.ts` adapts noVNC's `app/ui.js` virtual keyboard implementation.
+`cursor.patch` aligns programmatically moved touch cursors by their server-defined
+click hotspot, including cursor-shape changes and visual-viewport offsets.
 `apple-desktop.patch` preserves Apple's 3.889 physical-desktop protocol, reads
 bounded DisplayInfo2 monitor metadata and uses native SetDisplay to change the
 server framebuffer. Monitor IDs are opaque server IDs, independent of
