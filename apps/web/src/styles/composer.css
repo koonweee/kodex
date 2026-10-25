@@ -504,7 +504,7 @@
   width: 100%;
   height: 100%;
   border-radius: var(--kodex-radius-round);
-  color: var(--kodex-text-secondary);
+  color: var(--kodex-text-accent);
 }
 
 .kodex-composer-control .mantine-Button-label {
