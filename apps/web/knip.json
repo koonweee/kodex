@@ -2,6 +2,7 @@
   "$schema": "./node_modules/knip/schema.json",
   "entry": [
     "src/main.tsx!",
+    "src/desktop/viewer/main.ts!",
     "src/sw.ts!",
     "src/**/*.{test,spec}.{ts,tsx}",
     "tests/**/*.ts",

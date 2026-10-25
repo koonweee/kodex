@@ -341,7 +341,20 @@ class LifecycleTests(unittest.TestCase):
         (repo / 'apps/web/src/api/compatibility.ts').write_text('const API_VERSION = "1" satisfies unknown;')
         (repo / 'apps/web/dist/index.html').write_text('new frontend')
         (repo / 'apps/web/dist/assets/new-abcdefgh.js').write_text('new chunk')
+        for directory, revision in ((old / 'frontend', 'old-viewer'), (repo / 'apps/web/dist', 'new-viewer')):
+            viewer = directory / 'assets/desktop-viewer' / revision
+            (viewer / 'sources').mkdir(parents=True)
+            (viewer / 'index.html').write_text(f'iframe {revision}')
+            (viewer / 'sources/source.tar.gz').write_bytes(f'source {revision}'.encode())
+            (viewer / 'sources/integration.patch').write_text(f'patch {revision}')
         return old, previous, repo
+
+    def assert_desktop_viewers_retained(self, frontend):
+        for revision in ('old-viewer', 'new-viewer'):
+            viewer = frontend / 'assets/desktop-viewer' / revision
+            self.assertEqual((viewer / 'index.html').read_text(), f'iframe {revision}')
+            self.assertEqual((viewer / 'sources/source.tar.gz').read_bytes(), f'source {revision}'.encode())
+            self.assertEqual((viewer / 'sources/integration.patch').read_text(), f'patch {revision}')
 
     def fake_swap(self, left, right):
         temporary = left.with_name('.test-swap')
@@ -366,6 +379,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual((old / 'frontend/index.html').read_text(), 'new frontend')
         self.assertEqual((old / 'frontend/assets/old-abcdefgh.js').read_text(), 'old chunk')
         self.assertEqual((old / 'frontend/assets/new-abcdefgh.js').read_text(), 'new chunk')
+        self.assert_desktop_viewers_retained(old / 'frontend')
         self.assertEqual((self.app.root / 'current').resolve(), old)
         self.assertEqual((self.app.root / 'previous').resolve(), previous)
         self.assertEqual((old / 'kodex-gateway').read_text(), 'gateway')
@@ -390,6 +404,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(swap.call_count, 2)
         self.assertEqual((old / 'frontend/index.html').read_text(), 'old')
         self.assertEqual((old / 'frontend/assets/new-abcdefgh.js').read_text(), 'new chunk')
+        self.assert_desktop_viewers_retained(old / 'frontend')
         self.assertEqual((self.app.root / 'current').resolve(), old)
         self.assertEqual((self.app.root / 'previous').resolve(), previous)
         stop.assert_not_called()

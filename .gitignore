@@ -18,3 +18,8 @@ tmp/real-gateway-profiling/
 *.env.local
 .env.*.local
 apps/gateway/config/production.env
+
+# Reproducible noVNC preparation; source and patches are vendored.
+/apps/web/.desktop-viewer-source/
+/apps/web/assets/desktop-viewer/
+/apps/web/public/assets/desktop-viewer/

@@ -1,0 +1,12 @@
+{
+  "version": "1.6.0",
+  "sourceCommit": "a8dfd6a3ea3c74244f5ebdaa5a7f1023007a7820",
+  "trackpadRevision": "f634c6b37e944d82fc377259e1b5e22672a65877",
+  "sha256": {
+    "source.tar.gz": "ebb8eabcd3670ce1a02e4025f03976826c289121cf631183647bd8325b003403",
+    "trackpad.patch": "7d256e61f1fbed59773ad9526051c3b602158903a4981ca5b43f4df634d06c46",
+    "trackpad.tests.patch": "6aba3a9a235a8c55fc80205fbc74c05772ef2ee57d7a52bfcb07d7df56e28bf4",
+    "integration.patch": "93d8d94c92c0265c4f9cab77316cfedfe9c7797bc95ff72d65b634a6df484af5",
+    "integration.tests.patch": "60598e3585625390575ea3fd6244633e3b1ab7b277937e6e218ed1a742d53e5d"
+  }
+}

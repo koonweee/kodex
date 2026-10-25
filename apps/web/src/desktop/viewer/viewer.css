@@ -1,0 +1,4 @@
+/* Framebuffer and keyboard mechanics are isolated from Kodex's theme. */
+html, body, #screen { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+body { background: black; overscroll-behavior: none; }
+#keyboard { position: fixed; left: -10000px; top: 0; width: 1px; height: 1px; opacity: 0; font-size: 16px; }

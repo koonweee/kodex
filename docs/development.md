@@ -77,9 +77,12 @@ Frontend:
 cd apps/web
 npm test
 npm run test:e2e
+npm run test:desktop-vendor
 npm run build
 npm run trim
 ```
+
+The Desktop viewer is bundled offline from pinned noVNC/Pal sources. `npm run test:desktop-vendor` checks source preparation and runs the applied upstream RFB/gesture regressions in Playwright’s bundled Chromium. The focused iframe suite is `npx playwright test tests/desktop-viewer.spec.ts --workers=1`. See [viewer provenance and maintenance](../apps/web/vendor/novnc/README.md) and the [Desktop plan](../plans/desktop-vnc-pane.md) for native and physical-device acceptance status.
 
 Most Playwright flows use gateway projection fixtures and start Vite on `127.0.0.1:5174`. The native terminal and built-PWA flows instead start the actual gateway and pinned Codex in disposable instances, serving a copied production bundle. They never use existing credentials or production storage.
 

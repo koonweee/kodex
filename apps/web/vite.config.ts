@@ -1,3 +1,5 @@
+import path from "node:path";
+import { prepareDesktopViewer } from "./scripts/prepare-desktop-viewer.mjs";
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
@@ -6,7 +8,12 @@ import { buildKodexColorSchemeBootstrapScript, buildKodexColorSchemeCss } from "
 
 const gatewayProxyTarget = process.env.VITE_KODEX_PROXY_TARGET ?? "http://127.0.0.1:8787";
 
+const desktopViewer = prepareDesktopViewer();
+
 export default defineConfig({
+  define: { __DESKTOP_VIEWER_URL__: JSON.stringify(desktopViewer.url) },
+  resolve: { alias: { "@desktop-vendor": desktopViewer.sourceRoot } },
+  build: { rollupOptions: { input: { main: path.resolve("index.html"), desktop: desktopViewer.indexPath } } },
   plugins: [
     react(),
     VitePWA({
@@ -54,11 +61,13 @@ export default defineConfig({
       },
       injectManifest: {
         globPatterns: ["**/*.{js,css,html,ico,png,webmanifest}"],
+        globIgnores: ["**/sources/**"],
       },
     }),
     {
       name: "kodex-theme-bootstrap",
-      transformIndexHtml(html) {
+      transformIndexHtml(html, context) {
+        if (context.path.startsWith("/assets/desktop-viewer/")) return html;
         return {
           html,
           tags: [

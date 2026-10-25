@@ -16,7 +16,8 @@
     "trim:responsive": "node --test scripts/check-responsive-architecture.test.mjs && node scripts/check-responsive-architecture.mjs",
     "trim:types": "tsc -p tsconfig.trim.json",
     "trim:deps": "knip --config knip.json --production --include files,dependencies,unlisted,binaries,duplicates",
-    "generate:api": "node scripts/generate-api.mjs"
+    "generate:api": "node scripts/generate-api.mjs",
+    "test:desktop-vendor": "node --test scripts/prepare-desktop-viewer.test.mjs && node scripts/test-desktop-vendor.mjs"
   },
   "dependencies": {
     "@mantine/core": "^8.3.8",
@@ -47,9 +48,13 @@
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.0",
+    "chai": "6.2.2",
     "jsdom": "^27.2.0",
     "knip": "^6.16.0",
+    "mocha": "11.7.6",
     "openapi-typescript": "^7.10.1",
+    "sinon": "22.0.0",
+    "sinon-chai": "4.0.1",
     "typescript": "^5.9.3",
     "vite": "^7.2.4",
     "vite-plugin-pwa": "^1.3.0",
