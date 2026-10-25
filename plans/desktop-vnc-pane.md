@@ -2,7 +2,7 @@
 
 ## Status
 
-Deployed on 2026-10-25; native desktop visible, explicit Unicode paste failure under repair. Scope agreed with the user on 2026-10-24. Implementation, generated contracts, packaging, automated acceptance and independent review are complete. The built pinned viewer passes through the Rust authentication adapter, and browser proofs cover all agreed input-capability layouts, gestures, docking, lifecycle and keyboard viewport behavior. The user completed private Mac setup on 2026-10-25, and passive native authentication/shared-session proofs now pass. Native browser rendering/input and Unicode paste acceptance remain pending. Physical iPhone Safari/PWA checks remain a documented manual follow-up. The earlier private-setup blocker is resolved; no overall completion is claimed. Deployment and push are outside this plan.
+Complete and deployed on 2026-10-25. M1–M5 implementation, generated contracts, packaging, automated acceptance and independent review pass. The user completed private Mac setup and confirmed real desktop rendering and the repaired Paste button. Real native authentication, two shared sessions, unchanged display dimensions, clean disconnects and exact installed-service multiline Unicode/emoji clipboard read-back pass. Browser proofs cover all agreed input-capability layouts, gestures, docking, lifecycle and keyboard viewport behavior. Physical iPhone Safari/PWA checks remain an explicitly documented manual follow-up; they are not inferred from emulation. The user separately authorized the completed deployment/restart. No push was performed.
 
 ## Objective
 
@@ -77,7 +77,7 @@ Verify macOS clipboard negotiation and Unicode behavior against real Screen Shar
 - [x] Implement gateway-side dedicated-password authentication and post-auth byte relay without leaking the password to the viewer.
 - [x] Prove the browser-side security transcript with the real pinned noVNC client through the M2 WebSocket integration.
 - [x] Run a real Screen Sharing authentication/session proof on the gateway Mac using privately configured credentials. Verify existing desktop access, two independent shared connections, unchanged display resolution and native behavior on disconnect.
-- [ ] Probe macOS text clipboard/paste, including multiline Unicode and emoji, to choose the smallest correct implementation before finalizing that integration.
+- [x] Probe macOS text clipboard/paste, including multiline Unicode and emoji, to choose the smallest correct implementation before finalizing that integration.
 
 Exit: authentication/relay tests pass and real-Mac behavior is evidenced, or the exact missing local setup is recorded as pending. Missing credentials/Screen Sharing setup must not trigger privileged system changes or solicit a password in chat. Continue independent mock-backed implementation while local proof is pending; do not claim overall completion without real-Mac proof or an explicit user-approved scope change.
 
@@ -96,7 +96,7 @@ Exit: backend/service tests pass; the bundled viewer loads through Kodex and aut
 - [x] Add Desktop beneath Terminal, singleton pane registration/codec restoration and focus-existing behavior; disable duplication.
 - [x] Embed the patched viewer, maintain its connection through hiding and resizing, and implement exactly one reconnect owner with classified errors and capped backoff.
 - [x] Add keyboard, paste, reconnect and touch settings. Remove stock fullscreen, view-only, remote-host, remote-resolution, clipboard/copy-back, connect/disconnect, power and unrelated settings controls from the exposed viewer; retain only the agreed actions and one reconnect owner. Underlying remote clipboard protocol handling may remain for compatibility without exposing copy-back UI or automatic client clipboard writes.
-- [ ] Implement focused input handling, hidden-viewer focus protection, Escape routing, software keyboard toggling and verified macOS paste behavior.
+- [x] Implement focused input handling, hidden-viewer focus protection, Escape routing, software keyboard toggling and verified macOS paste behavior.
 
 Exit: focused component/domain tests pass; closing releases sockets/timers, reopening creates a fresh connection, and other panes retain their drafts/focus. No Desktop singleton or input ownership decision depends on another tab's React state.
 
@@ -107,7 +107,7 @@ Exit: focused component/domain tests pass; closing releases sockets/timers, reop
 - [x] Verify two same-user browser clients connect independently; closing or retrying one does not terminate the other. Neither viewer may request exclusive native desktop access.
 - [x] Exercise desktop fine pointer, narrow fine pointer, narrow touch, wide touch with a compact pane, and hybrid input. Verify relative movement without clicks, taps, right-click, scroll, selection drag, pinch/pan, short-swipe regression and settings toggle.
 - [x] Verify keyboard show/hide focus races, Escape delivery, click-out focus, no hidden focus stealing, visual-viewport changes, adjacent panes and console cleanliness. Ensure agreed controls remain reachable without hover.
-- [ ] Verify explicit paste success and permission/empty/disconnected failure behavior; complete the real-Mac authentication and Unicode paste proofs if previously pending.
+- [x] Verify explicit paste success and permission/empty/disconnected failure behavior; complete the real-Mac authentication and Unicode paste proofs if previously pending.
 - [x] Record actual iPhone Safari/PWA keyboard, gesture and paste evidence separately from emulation. If a physical device is unavailable, document those checks as pending manual follow-up and describe the limits of automated evidence; do not invent a separate approval requirement.
 
 Exit: automated and live browser/native proofs meet the agreed scope, with no unresolved demonstrated correctness failures. Physical-device checks are accurately recorded as passed or pending manual follow-up, never inferred from mobile emulation. Remaining limitations and native/browser constraints are documented.
@@ -118,13 +118,13 @@ Exit: automated and live browser/native proofs meet the agreed scope, with no un
 - [x] Run `cargo fmt`, relevant backend tests and `./tools/trim-backend.sh`; frontend domain/browser tests, `npm run generate:api`, `npm run build` and `./tools/trim-frontend.sh`; service changes require `python3 -m unittest discover -s tools/tests -p 'test_kodex_service*.py'`. Run broader suites where integration risk or failures justify them. Shared theme changes require the repository's additional rendered contrast gates.
 - [x] Update README/setup/deployment documentation and this plan/index with final behavior, private credential configuration, Screen Sharing setup, vendor maintenance instructions and validation evidence. Update AGENTS.md only if contributor workflow changes.
 - [x] Review generated-contract changes and unused-code/dependency findings. Document unrelated pre-existing failures without absorbing unrelated cleanup.
-- [x] Commit coherent tested changes, preserving unrelated workspace content. No push, service update/restart or deployment is authorized by this plan.
+- [x] Commit coherent tested changes, preserving unrelated workspace content. The plan itself does not authorize push or deployment; the user separately authorized the full deployment/restart during guided setup, which has now completed. No push was performed.
 
-Exit: all applicable exit criteria pass, generated artifacts and docs agree with the implementation, independent review has no unresolved major findings, and the execution goal can honestly be marked complete. Deployment remains a separate explicit request.
+Exit: all applicable exit criteria pass, generated artifacts and docs agree with the implementation, independent review has no unresolved major findings, and the execution goal can honestly be marked complete. Deployment requires separate explicit authorization, which the user supplied during guided setup.
 
 ## Scope boundaries
 
-No multiple target hosts, saved-host UI, global control lease/takeover, view-only mode, fullscreen, remote display resizing, automatic clipboard sync/copy-back, screen recording, audio, file transfer, new agent-facing desktop tools, generic VNC server, Keychain integration or macOS account-password authentication. Do not automatically enable macOS Screen Sharing, alter firewall/Tailscale routes, restart the installed service, disturb Pal's running desktop, or change the Mac's applications/files to set up the feature. Use disposable fixtures for proofs and clean up task-owned artifacts.
+No multiple target hosts, saved-host UI, global control lease/takeover, view-only mode, fullscreen, remote display resizing, automatic clipboard sync/copy-back, screen recording, audio, file transfer, new agent-facing desktop tools, generic VNC server, Keychain integration or macOS account-password authentication. Do not automatically enable macOS Screen Sharing, alter firewall/Tailscale routes, disturb Pal's running desktop, or change the Mac's applications/files to set up the feature. Installed-service deployment/restart requires separate user authorization; it was explicitly supplied during guided setup. Use disposable fixtures for proofs and clean up task-owned artifacts.
 
 ## References
 
@@ -211,7 +211,7 @@ The built iframe was rebuilt and passed the combined Rust/auth proof again with 
 2. Resume native acceptance once that setup is available: verify actual Mac login, two independent shared viewers, unchanged display resolution, close/reconnect behavior, keyboard/Escape and explicit multiline Unicode/emoji paste. The mock-backed implementation rejects unsupported Unicode instead of corrupting it; actual macOS clipboard negotiation must determine whether a narrowly scoped native fallback is necessary. No fallback is guessed or claimed here.
 3. Check actual iPhone Safari/PWA keyboard open/dismiss, rotation/viewport fit, trackpad/direct-touch gestures and clipboard permission/paste. No physical device is available to this agent; Chromium emulation does not establish those results.
 
-All independent implementation/automated work is committed after review. The known private-setup condition remains the only blocker to required native proof; physical-device follow-up is separately recorded. No installed service update/restart, deployment, push, privileged Screen Sharing change, real Mac login, screen capture or native clipboard mutation was performed. Deployment remains a separate explicit request. Three consecutive final goal turns have now confirmed the same external setup blocker. The last two read-only revalidations again found no configured password in the current environment or private service configuration, and the listener offered security types [30, 33, 36, 35], without type 2. Probes disconnected before authentication. The execution goal is blocked until private setup is available; native acceptance remains incomplete. No independent implementation or automated acceptance work remains. Resume the goal after setup to finish the native proof; physical-device follow-up remains as recorded above.
+All independent implementation/automated work is committed after review. The known private-setup condition remains the only blocker to required native proof; physical-device follow-up is separately recorded. No installed service update/restart, deployment, push, privileged Screen Sharing change, real Mac login, screen capture or native clipboard mutation was performed. Deployment requires separate explicit authorization, which the user supplied during guided setup. Three consecutive final goal turns have now confirmed the same external setup blocker. The last two read-only revalidations again found no configured password in the current environment or private service configuration, and the listener offered security types [30, 33, 36, 35], without type 2. Probes disconnected before authentication. The execution goal is blocked until private setup is available; native acceptance remains incomplete. No independent implementation or automated acceptance work remains. Resume the goal after setup to finish the native proof; physical-device follow-up remains as recorded above.
 
 
 ### Guided private setup and native authentication (2026-10-25)
@@ -255,3 +255,8 @@ Final predeployment repair checks pass: all 31 Desktop Chromium cases, nine focu
 ### Clipboard repair deployment and native service proof (2026-10-25)
 
 The reviewed repair was committed as `3a69b91f`. Authorized full update operation `83203975a48f458093e4f7c1dbe56eed` succeeded and selected release `20261025-093133-9bf1d61e`; service status confirms the new running gateway at `http://127.0.0.1:8787`. The generated clipboard endpoint is present and Desktop remains enabled. A single request through that installed service returned 204 and exactly round-tripped a nonce-bearing multiline Unicode/emoji payload via bounded local pasteboard read-back. Only status/boolean metadata was printed; no keyboard or screen input was sent. This verifies the cleared-environment native writer reaches the logged-in Mac pasteboard under launchd. The user has been asked to refresh Kodex and retry the actual Paste button in empty TextEdit; that final shortcut/application check remains pending, along with the separately documented physical-device follow-up.
+
+
+### User acceptance and completion (2026-10-25)
+
+After the verified clipboard repair deployment, the user refreshed Kodex and confirmed the actual Paste-button workflow works. This completes the remaining native paste acceptance and M1/M3/M4 checkboxes. Together with the previously recorded native authentication/shared-session/display/disconnect proofs, automated behavior and contract gates, and clear independent reviews, all applicable M1–M5 exit conditions are met. Physical iPhone Safari/PWA keyboard/gesture/paste checks remain the expressly allowed manual follow-up; no physical-device result is claimed. Deployment/restart was separately authorized and succeeded; no push or network changes were performed. The implementation execution goal is complete.
