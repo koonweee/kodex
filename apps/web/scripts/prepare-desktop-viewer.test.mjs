@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cpSync, mkdtempSync, readFileSync, readdirSync, statSync, utimesSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -69,4 +70,13 @@ test("repeat preparation does not reload a mounted development iframe", () => fi
   const previous = statSync(prepared.indexPath).mtimeMs;
   prepareDesktopViewer(root);
   assert.equal(statSync(prepared.indexPath).mtimeMs, previous);
+}));
+
+
+test("applies Pal patches inside a parent Git worktree", () => fixture((root) => {
+  execFileSync("git", ["init", "--quiet", root]);
+  const prepared = prepareDesktopViewer(root);
+  const rfb = readFileSync(join(prepared.sourceRoot, "core/rfb.js"), "utf8");
+  assert.match(rfb, /get trackpadMode/);
+  assert.match(readFileSync(join(prepared.sourceRoot, "tests/test.rfb.js"), "utf8"), /short swipe/i);
 }));

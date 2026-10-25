@@ -12,6 +12,8 @@ regression fix. Review both provenance and source before updating these pins.
 
 The offline Vite preparation step verifies all pinned checksums, extracts into
 an ignored content-addressed directory, and requires every patch to apply.
+Patch subprocesses treat extraction as an independent tree, including when the
+build runs inside another Git worktree; preparation tests cover that context.
 The browser uses the patched RFB core, with Kodex's small iframe wrapper in
 `src/desktop/viewer`; upstream's application controls are not exposed.
 `keyboard.ts` adapts noVNC's `app/ui.js` virtual keyboard implementation.

@@ -32,9 +32,16 @@ export function prepareDesktopViewer(root = defaultRoot) {
   const stage = mkdtempSync(`${sourceRoot}-`);
   try {
     execFileSync("tar", ["-xzf", join(vendor, "source.tar.gz"), "--strip-components=1", "-C", stage]);
+    // Git-format patches otherwise inherit the enclosing Kodex worktree and
+    // silently skip paths outside its current prefix. Treat extraction as an
+    // independent filesystem tree, as in the offline preparation fixtures.
+    const patchEnv = { ...process.env, GIT_CEILING_DIRECTORIES: dirname(stage) };
+    delete patchEnv.GIT_DIR;
+    delete patchEnv.GIT_WORK_TREE;
+    const patchOptions = { cwd: stage, env: patchEnv, stdio: "pipe" };
     for (const patch of ["trackpad.patch", "trackpad.tests.patch", "integration.patch", "integration.tests.patch"]) {
-      execFileSync("git", ["apply", "--check", join(vendor, patch)], { cwd: stage, stdio: "pipe" });
-      execFileSync("git", ["apply", join(vendor, patch)], { cwd: stage, stdio: "pipe" });
+      execFileSync("git", ["apply", "--check", join(vendor, patch)], patchOptions);
+      execFileSync("git", ["apply", join(vendor, patch)], patchOptions);
     }
     // The vendored browser tests use modern Chai's ESM entry.
     const assertions = join(stage, "tests/assertions.js");

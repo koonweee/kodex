@@ -2,7 +2,7 @@
 
 ## Status
 
-Active. Scope agreed with the user on 2026-10-24. The durable plan is recorded and the execution goal is active. The authentication/relay foundation, private service configuration, fixed-target WebSocket endpoint and generated capability/error contract are implemented and independently reviewed. The pinned local iframe viewer and singleton pane are implemented with domain/Chromium checks. The combined pinned-client/gateway proof, remaining touch/viewport acceptance and authenticated Mac proofs remain pending; evidence is recorded below. Execute M1–M5 below, recording evidence as each exit is met. Deployment and push are outside this plan.
+Active. Scope agreed with the user on 2026-10-24. The durable plan is recorded and the execution goal is active. The authentication/relay foundation, private service configuration, fixed-target WebSocket endpoint and generated capability/error contract are implemented and independently reviewed. The pinned local iframe viewer and singleton pane are implemented with domain/Chromium checks. The combined pinned-client/gateway proof passes; remaining touch/viewport acceptance and authenticated Mac proofs remain pending; evidence is recorded below. Execute M1–M5 below, recording evidence as each exit is met. Deployment and push are outside this plan.
 
 ## Objective
 
@@ -75,7 +75,7 @@ Verify macOS clipboard negotiation and Unicode behavior against real Screen Shar
 - [x] Inspect current gateway config/service/WebSocket seams and Pal source/provenance; record a narrow dependency and protocol decision.
 - [x] Begin the authentication adapter with failing tests for successful handshake and classified failure. Cover partial/coalesced reads, Apple's version negotiation, unsupported security, wrong password, timeout and disconnect using a bounded fake upstream.
 - [x] Implement gateway-side dedicated-password authentication and post-auth byte relay without leaking the password to the viewer.
-- [ ] Prove the browser-side security transcript with the real pinned noVNC client through the M2 WebSocket integration.
+- [x] Prove the browser-side security transcript with the real pinned noVNC client through the M2 WebSocket integration.
 - [ ] Run a real Screen Sharing authentication/session proof on the gateway Mac using privately configured credentials. Verify existing desktop access, two independent shared connections, unchanged display resolution and native behavior on disconnect.
 - [ ] Probe macOS text clipboard/paste, including multiline Unicode and emoji, to choose the smallest correct implementation before finalizing that integration.
 
@@ -188,3 +188,10 @@ A first-failing gateway regression demonstrated that a missing iframe entry fell
 ### Combined built-viewer/authentication proof (2026-10-24)
 
 The opt-in Rust test now launches the actual built pinned iframe in bundled Chromium against the production WebSocket/authentication adapter and a disposable duplex native peer. The peer advertises Apple's banner and type 2 and verifies the independently known password response. The browser sees only RFB 3.8/None and shared ClientInit. The test verifies requested-format framebuffer pixels, Escape, ASCII clipboard bytes before Command-V, and native EOF on close. It passed in 1.08 seconds; independent review is clear. This bypasses the public Origin/fixed connector route (tested separately), does not touch port 5900 and does not establish native Mac or Unicode acceptance. The reproducible command and frontend-build prerequisite are recorded in development docs. Native and physical-device proofs remain pending.
+
+
+### Pal patch application inside a checkout (2026-10-24)
+
+Real Chromium touch events exposed a preparation defect: Git-format Pal patches were silently skipped when the extraction directory inherited Kodex's enclosing Git worktree. The existing temporary fixtures ran outside a repository and missed that context; the earlier 330-case vendor evidence covered baseline/Kodex regressions but **did not establish Pal patch application**. A new first-failing fixture initializes a parent Git repository and verifies both Pal core and short-swipe regression additions. Patch subprocesses now isolate repository discovery with an extraction-parent Git ceiling and clear inherited Git-dir/work-tree overrides. All six preparation tests pass, and the actual applied upstream suite now passes **344 cases**, including the 14 previously skipped Pal cases (two existing upstream cases pending). Runtime-source/pin bytes remain unchanged, and tooling changes receive a new immutable revision.
+
+The built iframe was rebuilt and passed the combined Rust/auth proof again with the correctly applied Pal source. All existing 21 pane/viewer Chromium cases pass; the new real-touch flow now passes relative motion, no-click short swipe, tap/right-click, fit scrolling, local pinch/zoom/pan without remote resize, direct-touch selection, tap-and-drag and unchanged physical mouse coordinates. Frontend build/typecheck and trim pass. The packaging delta received a clear independent read-only review. Additional layout/viewport acceptance continues separately; native and physical-device proofs remain pending.
