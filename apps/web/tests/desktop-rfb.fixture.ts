@@ -140,7 +140,6 @@ export class DesktopRfbFixture {
       let pending = Buffer.alloc(0);
       let stage = 0;
       let painted = false;
-      let nativeInfoSent = false;
       socket.on("close", () => { connection.closed = true; });
       socket.on("message", (data, binary) => {
         if (!binary) { this.errors.push("Unexpected text frame"); return; }
@@ -178,7 +177,7 @@ export class DesktopRfbFixture {
             const message = pending.subarray(0, length);
             pending = pending.subarray(length);
             connection.messages.push(type);
-            if (this.nativeDesktop && type===2 && !nativeInfoSent) { nativeInfoSent=true;sendNativeInfo(); }
+            if (this.nativeDesktop && type===2) sendNativeInfo();
             if (this.nativeDesktop && type===13) {
               selected=message[1]?null:message.readUInt32BE(4);
               if(selected!==null&&!this.nativeDisplays.some(d=>d.id===selected))this.errors.push("Unknown native display ID");

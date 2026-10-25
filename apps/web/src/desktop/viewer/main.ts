@@ -78,7 +78,7 @@ const bridge: DesktopBridge = {
       viewer.trackpadMode = trackpad;
       viewer.focusOnClick = active;
       viewer.addEventListener("desktopdisplaychanging", () => {
-        if (attempt === generation) { cancelPaste?.("Desktop display changed; paste was canceled."); keyboard.setOpen(false); }
+        if (attempt === generation) monitors.refresh();
       });
       viewer.addEventListener("desktopdisplayready", () => {
         if (attempt === generation && state.status === "connected") monitors.ready(viewer);

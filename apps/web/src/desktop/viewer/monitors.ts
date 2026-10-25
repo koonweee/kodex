@@ -20,12 +20,18 @@ export function createMonitorSelection(viewer: () => RFB | null, changed: () => 
     changed(); failed(failure, retryable);
   }
   function deadline() { clearDeadline(); timer = setTimeout(() => fail("timeout", true), 5000); }
+  function refresh() {
+    cancelPaste(); displayLoading = true; displayError = undefined;
+    if (timer === undefined) deadline();
+    changed();
+  }
   function request(target: RFB, id: number) {
     if (pending === id) return;
     pending = id; target.selectDesktopDisplay(id); deadline();
   }
   return {
     state: () => ({ displays, selectedDisplay, displayLoading, displayError }),
+    refresh,
     begin() { clearDeadline(); displays = []; keys.clear(); selectedDisplay = pending = undefined; displayLoading = true; displayError = undefined; },
     cancel() { clearDeadline(); pending = undefined; displayLoading = false; },
     connected(target: RFB) {
@@ -35,7 +41,7 @@ export function createMonitorSelection(viewer: () => RFB | null, changed: () => 
     receive(target: RFB) {
       const info = target.desktopInfo;
       if (!info) return;
-      cancelPaste(); displayLoading = true; if (timer === undefined) deadline(); changed();
+      refresh();
       if (info.displays.length) {
         const ordered = [...info.displays].sort((a, b) => Number(b.main) - Number(a.main) || a.x - b.x || a.y - b.y || a.id - b.id);
         if (ordered.filter((display) => display.main).length !== 1) { fail("protocol", false); return; }

@@ -53,7 +53,13 @@ selected framebuffer, with bounds clamping. Gestures and the fallback cursor sta
 in image coordinates. During incomplete login/resize metadata, new button-downs
 are gated and releases reuse the last valid native point. Conversion uses strips
 to avoid full-frame RGB555/RGBA temporary buffers. Idle Tickle (4) renews automatic
-updates; Wake (6) requests a fresh picture on the selected display. Cursor-visible
+updates; Wake (6) gates input until a fresh picture completes on the selected
+display. One existing five-second monitor deadline disconnects a stalled refresh
+into normal retry; duplicate Wake messages do not extend it or flood requests,
+and successful pixels cancel it. An unconfirmed DesktopSize transition uses the
+same bounded refresh, releasing held input before changing geometry. A repeated
+SetEncodings safely requests current native monitor metadata without selecting
+the combined desktop; pixels resume only after selection and scale match. Cursor-visible
 (12) does not restart streaming.
 Explicit Paste uses a bounded same-origin gateway write to the Mac pasteboard,
 then sends Command-V after success. It does not depend on VNC clipboard

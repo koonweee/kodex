@@ -147,15 +147,16 @@ test("a held pointer releases with its last valid mapping during an incomplete l
     const box=(await canvas.boundingBox())!;await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();
     await expect.poll(()=>fixture.connections[0].pointerPositions.at(-1)?.mask).toBe(1);
     const held=fixture.connections[0].pointerPositions.at(-1)!;
-    fixture.resizeFramebuffer(1600,900);await expect(canvas).toHaveJSProperty("width",1600);
+    fixture.holdDisplayInfo=true;fixture.resizeFramebuffer(1600,900);await expect(canvas).toHaveJSProperty("width",1600);
     await page.mouse.up();
     await expect.poll(()=>fixture.connections[0].pointerPositions.at(-1)).toEqual({...held,mask:0});
     const start=fixture.connections[0].pointerPositions.length;
     await page.mouse.down();await page.mouse.up();
-    await expect.poll(()=>fixture.connections[0].pointerPositions.length).toBeGreaterThan(start);
-    expect(fixture.connections[0].pointerPositions.slice(start).every(p=>p.mask===0)).toBe(true);
-    fixture.resize(6400,2160);await expect(canvas).toHaveJSProperty("width",1920);
+    await expect(page.getByRole("button",{name:"Paste into Mac",exact:true})).toBeDisabled();
+    expect(fixture.connections[0].pointerPositions).toHaveLength(start);
+    fixture.holdDisplayInfo=false;fixture.releaseDisplayInfo();fixture.resize(6400,2160);await expect(canvas).toHaveJSProperty("width",1920);
     await expect(page.getByRole("button",{name:/^Desktop display:/})).toBeEnabled();
+    expect(fixture.connections[0].pointerPositions.slice(start).every(p=>p.mask===0)).toBe(true);
     await canvas.click();await expect.poll(()=>fixture.connections[0].pointerPositions.slice(start).some(p=>p.mask===1)).toBe(true);
     expect(fixture.errors).toEqual([]);expect(app.errors).toEqual([]);
   } finally {await app.close();}

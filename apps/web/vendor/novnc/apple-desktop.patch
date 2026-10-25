@@ -6,7 +6,7 @@
  /*
   * noVNC: HTML5 VNC client
   * Copyright (C) 2020 The noVNC authors
-@@ -357,16 +359,116 @@
+@@ -357,16 +359,131 @@
  
      get viewOnly() { return this._viewOnly; }
      set viewOnly(viewOnly) {
@@ -54,6 +54,21 @@
 +            width <= 1920 && height <= 1080 &&
 +            Math.abs(width - Math.round(this._appleTargetSize.width * this._appleRequestedScale)) <= 1 &&
 +            Math.abs(height - Math.round(this._appleTargetSize.height * this._appleRequestedScale)) <= 1;
++    }
++
++    _beginAppleRefresh() {
++        if (this._appleRequestedDisplay === undefined || this._appleWakeRefreshPending) return false;
++        this._appleWakeRefreshPending = true;
++        this.viewOnly = true;
++        this._appleReadyEpoch = undefined;
++        this._appleFramePixelEpoch = undefined;
++        this.dispatchEvent(new CustomEvent('desktopdisplaychanging'));
++        return true;
++    }
++    _refreshAppleFramebuffer() {
++        if (!this._beginAppleRefresh()) return;
++        if (this._appleFramebufferMatchesScale()) this._requestAppleFramebuffer();
++        else this._sendEncodings(); // Re-query native metadata, never switch to All.
 +    }
 +
 +    _requestAppleFramebuffer() {
@@ -119,13 +134,13 @@
 +        if (body.length >= 4 && this._appleRequestedDisplay !== undefined && this._appleDisplayInfo?.selectedDisplay === this._appleRequestedDisplay) {
 +            const status = body[2] * 256 + body[3];
 +            if (status === 4) this._armAppleUpdates(); // Idle Tickle renews server push.
-+            else if (status === 6) this._requestAppleFramebuffer(); // Wake needs a fresh picture.
++            else if (status === 6) this._refreshAppleFramebuffer(); // Wake needs a fresh picture.
 +        }
 +        return true;
      }
  
      get capabilities() { return this._capabilities; }
-@@ -1564,14 +1666,27 @@
+@@ -1564,14 +1681,27 @@
              throw new Error("Illegal mouse button mask (mask: " + mask + ")");
          }
 
@@ -157,7 +172,7 @@
          }
      }
 
-@@ -2140,8 +2255,11 @@
+@@ -2140,8 +2270,11 @@
              case "003.007":
                  this._rfbVersion = 3.7;
                  break;
@@ -170,7 +185,7 @@
              case "004.000":  // Intel AMT KVM
              case "004.001":  // RealVNC 4.6
              case "005.000":  // RealVNC 5.3
-@@ -2167,7 +2285,7 @@
+@@ -2167,7 +2300,7 @@
  
          const cversion = "00" + parseInt(this._rfbVersion, 10) +
                         ".00" + ((this._rfbVersion * 10) % 10);
@@ -179,7 +194,7 @@
          this._sock.flush();
          Log.Debug('Sent ProtocolVersion: ' + cversion);
  
-@@ -2793,6 +2911,10 @@
+@@ -2793,6 +2926,10 @@
          const nameLength = this._sock.rQshift32();
          if (this._sock.rQwait('server init name', nameLength, 24)) { return false; }
          let name = this._sock.rQshiftStr(nameLength);
@@ -190,7 +205,7 @@
          name = decodeUTF8(name, true);
  
          if (this._rfbTightVNC) {
-@@ -2845,15 +2967,28 @@
+@@ -2845,15 +2982,28 @@
              this._fbDepth = 8;
          }
  
@@ -220,7 +235,7 @@
          const encs = [];
  
          // In preference order
-@@ -3193,10 +3328,15 @@
+@@ -3193,10 +3343,15 @@
          }
  
          let first, ret;
@@ -237,7 +252,7 @@
                      RFB.messages.fbUpdateRequest(this._sock, true, 0, 0,
                                                   this._fbWidth, this._fbHeight);
                  }
-@@ -3247,6 +3387,7 @@
+@@ -3247,6 +3402,7 @@
              if (this._sock.rQwait("FBU header", 3, 1)) { return false; }
              this._sock.rQskipBytes(1);  // Padding
              this._FBU.rects = this._sock.rQshift16();
@@ -245,7 +260,7 @@
  
              // Make sure the previous frame is fully rendered first
              // to avoid building up an excessive queue
-@@ -3287,11 +3428,30 @@
+@@ -3287,11 +3443,38 @@
          }
  
          this._display.flip();
@@ -254,6 +269,7 @@
 +            const ready = () => {
 +                if (this._rfbConnectionState !== 'connected' || epoch !== this._appleDisplayEpoch || id !== this._appleRequestedDisplay) return;
 +                this._appleReadyEpoch = epoch; this._appleReadyDisplay = id;
++                this._appleWakeRefreshPending = false;
 +                this.dispatchEvent(new CustomEvent('desktopdisplayready'));
 +            };
 +            if (this._display.pending()) {
@@ -270,13 +286,20 @@
  
      _handleRect() {
 +        if (this._appleDesktop) {
++            if (this._FBU.encoding === encodings.pseudoEncodingDesktopSize && this._appleRequestedDisplay !== undefined &&
++                !this._appleFramebufferMatchesScale(this._FBU.width, this._FBU.height)) {
++                const refresh = this._beginAppleRefresh();
++                this._resize(this._FBU.width, this._FBU.height);
++                if (refresh) this._sendEncodings();
++                return true;
++            }
 +            if (this._FBU.encoding === 1105) return this._handleAppleDisplayInfo();
 +            if (this._FBU.encoding === 1101) return this._handleAppleLegacyDisplays();
 +        }
          switch (this._FBU.encoding) {
              case encodings.pseudoEncodingLastRect:
                  this._FBU.rects = 1; // Will be decreased when we return
-@@ -3610,10 +3770,12 @@
+@@ -3610,10 +3793,12 @@
          }
  
          try {
