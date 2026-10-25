@@ -2,7 +2,7 @@
 
 ## Status
 
-Setup resumed with the user; native authentication verified, deployment authorized on 2026-10-25. Scope agreed with the user on 2026-10-24. Implementation, generated contracts, packaging, automated acceptance and independent review are complete. The built pinned viewer passes through the Rust authentication adapter, and browser proofs cover all agreed input-capability layouts, gestures, docking, lifecycle and keyboard viewport behavior. The user completed private Mac setup on 2026-10-25, and passive native authentication/shared-session proofs now pass. Native browser rendering/input and Unicode paste acceptance remain pending. Physical iPhone Safari/PWA checks remain a documented manual follow-up. The earlier private-setup blocker is resolved; no overall completion is claimed. Deployment and push are outside this plan.
+Deployed on 2026-10-25; native authentication verified, browser/input and Unicode acceptance pending. Scope agreed with the user on 2026-10-24. Implementation, generated contracts, packaging, automated acceptance and independent review are complete. The built pinned viewer passes through the Rust authentication adapter, and browser proofs cover all agreed input-capability layouts, gestures, docking, lifecycle and keyboard viewport behavior. The user completed private Mac setup on 2026-10-25, and passive native authentication/shared-session proofs now pass. Native browser rendering/input and Unicode paste acceptance remain pending. Physical iPhone Safari/PWA checks remain a documented manual follow-up. The earlier private-setup blocker is resolved; no overall completion is claimed. Deployment and push are outside this plan.
 
 ## Objective
 
@@ -224,3 +224,8 @@ This verifies the actual configured password and two passive shared native sessi
 ### Deployment authorization (2026-10-25)
 
 After guided private setup and passive native authentication passed, the user explicitly selected **Deploy and restart now**. This authorizes a full service update/restart for the committed tested checkout, superseding the earlier no-deployment boundary for this setup step. Invoke the checkout controller (`./tools/kodex-service update --repo /Users/jtkw/Projects/kodex`) because service-controller changes are included. Observe the specific independent launchd operation to `succeeded`, then verify native readiness and the Desktop capability. Browser rendering/control and native Unicode paste acceptance remain pending. Push and network/system-setting changes remain outside scope.
+
+
+### Deployment verified (2026-10-25)
+
+The authorized full update completed successfully. Independent launchd operation `aac097c7c6b444f6b65c3405961668f7` reports `succeeded`, with installed release `20261025-085533-b6396514`. A fresh public capability read confirms the gateway is reachable, native app-server is ready, the detected schema matches, and `gateway.desktop.enabled` is true. The gateway/controller/frontend update and restart are verified; push and network/system-setting changes were not performed. Guided browser acceptance is now asking the user to refresh Kodex and open Desktop. Native rendering/control and multiline Unicode/emoji paste remain unverified until that workflow is completed.
