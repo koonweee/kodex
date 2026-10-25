@@ -372,6 +372,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/desktop/clipboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["write_clipboard"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/desktop/ws": {
         parameters: {
             query?: never;
@@ -2572,6 +2588,10 @@ export interface components {
         DesktopCapabilities: {
             enabled: boolean;
         };
+        /** @description Explicit text for the gateway Mac's global clipboard. At most 64 KiB UTF-8. */
+        DesktopClipboardRequest: {
+            text: string;
+        };
         /** @enum {string} */
         DesktopFailure: "unsupportedPlatform" | "configuration" | "authentication" | "passwordAccessDisabled" | "protocol" | "connection" | "timeout";
         DirectoryEntry: {
@@ -4680,6 +4700,60 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EventListResponse"];
+                };
+            };
+        };
+    };
+    write_clipboard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DesktopClipboardRequest"];
+            };
+        };
+        responses: {
+            /** @description Text written to the Mac clipboard; no key was sent */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Empty or oversized UTF-8 text */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Origin mismatch, unsupported platform or Desktop not configured */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Encoded request body too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bounded native clipboard write failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
                 };
             };
         };

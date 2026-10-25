@@ -1,14 +1,20 @@
-use crate::api::AppState;
+use crate::{
+    api::AppState,
+    error::{ApiError, ApiErrorBody},
+};
 use axum::{
-    extract::{ws::WebSocketUpgrade, State},
+    extract::{ws::WebSocketUpgrade, DefaultBodyLimit, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::get,
-    Router,
+    routing::{get, post},
+    Json, Router,
 };
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/v1/desktop/ws", get(connect))
+    Router::new().route("/v1/desktop/ws", get(connect)).route(
+        "/v1/desktop/clipboard",
+        post(write_clipboard).layer(DefaultBodyLimit::max(512 * 1024)),
+    )
 }
 
 // Vite and Tailscale Serve retain the browser-facing Host. TLS may terminate
@@ -70,4 +76,54 @@ pub async fn connect(
         .max_write_buffer_size(128 * 1024)
         .on_upgrade(move |socket| crate::desktop::socket::serve(socket, config))
         .into_response())
+}
+
+/// Explicit text for the gateway Mac's global clipboard. At most 64 KiB UTF-8.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DesktopClipboardRequest {
+    pub text: String,
+}
+
+#[utoipa::path(post, path="/v1/desktop/clipboard", request_body=DesktopClipboardRequest, responses(
+    (status=204, description="Text written to the Mac clipboard; no key was sent"),
+    (status=400, description="Empty or oversized UTF-8 text", body=ApiErrorBody),
+    (status=403, description="Origin mismatch, unsupported platform or Desktop not configured"),
+    (status=413, description="Encoded request body too large"),
+    (status=502, description="Bounded native clipboard write failed", body=ApiErrorBody)
+))]
+pub async fn write_clipboard(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<DesktopClipboardRequest>,
+) -> Response {
+    let text = zeroize::Zeroizing::new(request.text);
+    clipboard_response(
+        &headers,
+        &state.config.desktop,
+        cfg!(target_os = "macos"),
+        text,
+        crate::desktop::clipboard::write,
+    )
+    .await
+}
+
+pub(super) async fn clipboard_response<F, Fut>(
+    headers: &HeaderMap,
+    config: &crate::desktop::DesktopConfig,
+    supported: bool,
+    text: zeroize::Zeroizing<String>,
+    write: F,
+) -> Response
+where
+    F: FnOnce(zeroize::Zeroizing<String>) -> Fut,
+    Fut: std::future::Future<Output = Result<(), ApiError>>,
+{
+    if !allowed_origin(headers) || !supported || config.password().is_err() {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    match write(text).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => error.into_response(),
+    }
 }

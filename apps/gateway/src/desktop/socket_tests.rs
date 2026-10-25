@@ -286,7 +286,6 @@ async fn pinned_browser_crosses_gateway_authentication_boundary() {
         mac.write_all(&init).await.unwrap();
         let mut painted = false;
         let mut keys = Vec::new();
-        let mut pasted = false;
         loop {
             let mut kind = [0];
             if mac.read(&mut kind).await.unwrap() == 0 {
@@ -322,24 +321,11 @@ async fn pinned_browser_crosses_gateway_authentication_boundary() {
                     let down = mac.read_u8().await.unwrap() == 1;
                     mac.read_u16().await.unwrap();
                     let key = mac.read_u32().await.unwrap();
-                    if key == 0xffeb || key == 0x76 {
-                        assert!(pasted, "Command-V must follow clipboard bytes");
-                    }
                     keys.push((down, key));
                 }
                 5 => {
                     let mut pointer = [0; 5];
                     mac.read_exact(&mut pointer).await.unwrap();
-                }
-                6 => {
-                    let mut padding = [0; 3];
-                    mac.read_exact(&mut padding).await.unwrap();
-                    let length = mac.read_u32().await.unwrap();
-                    assert!(length < 1024);
-                    let mut text = vec![0; length as usize];
-                    mac.read_exact(&mut text).await.unwrap();
-                    assert_eq!(text, b"combined proof");
-                    pasted = true;
                 }
                 other => panic!("unexpected client message {other}"),
             }
@@ -350,7 +336,7 @@ async fn pinned_browser_crosses_gateway_authentication_boundary() {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        assert!(painted && pasted);
+        assert!(painted);
         assert_eq!(
             keys,
             [

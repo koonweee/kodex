@@ -119,3 +119,159 @@ async fn websocket_origin_is_required_and_compared_to_the_served_host() {
     ));
     server.abort();
 }
+
+#[tokio::test]
+async fn clipboard_rejects_encoded_body_overflow() {
+    let request = Request::post("/v1/desktop/clipboard")
+        .header("host", "localhost")
+        .header("origin", "http://localhost")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::json!({"text": "x".repeat(512 * 1024)}).to_string(),
+        ))
+        .unwrap();
+    assert_eq!(
+        build_router(state("").await)
+            .oneshot(request)
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::PAYLOAD_TOO_LARGE
+    );
+}
+
+#[tokio::test]
+async fn clipboard_access_gates_precede_write_and_completion_precedes_204() {
+    use super::desktop::clipboard_response;
+    use axum::http::HeaderMap;
+    let mut headers = HeaderMap::new();
+    headers.insert("host", "mac.example.ts.net".parse().unwrap());
+    headers.insert("origin", "https://mac.example.ts.net".parse().unwrap());
+    for (supported, password) in [(false, "fixture1"), (true, ""), (true, "too-long-password")] {
+        let response = clipboard_response(
+            &headers,
+            &DesktopConfig::with_password(password),
+            supported,
+            zeroize::Zeroizing::new("fixture".into()),
+            |_| async { panic!("must not invoke clipboard writer") },
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+    let response = clipboard_response(
+        &headers,
+        &DesktopConfig::with_password("fixture1"),
+        true,
+        zeroize::Zeroizing::new("Unicode 👋\n你好".into()),
+        |text| async move {
+            assert_eq!(text.as_str(), "Unicode 👋\n你好");
+            tokio::task::yield_now().await;
+            Ok(())
+        },
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    let response = clipboard_response(
+        &headers,
+        &DesktopConfig::with_password("fixture1"),
+        true,
+        zeroize::Zeroizing::new("fixture".into()),
+        |_| async {
+            Err(crate::error::ApiError::BadGateway(
+                "The Mac clipboard could not be written.".into(),
+            ))
+        },
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+}
+
+#[tokio::test]
+async fn clipboard_origin_and_host_reject_all_untrusted_forms_before_write() {
+    use super::desktop::clipboard_response;
+    use axum::http::HeaderMap;
+    let config = DesktopConfig::with_password("fixture1");
+    for (origin, host, duplicate) in [
+        ("https://mac.example.ts.net", "mac.example.ts.net", "origin"),
+        ("https://mac.example.ts.net", "mac.example.ts.net", "host"),
+        ("https://mac.example.ts.net?query", "mac.example.ts.net", ""),
+        (
+            "https://mac.example.ts.net#fragment",
+            "mac.example.ts.net",
+            "",
+        ),
+        (
+            "https://user:pass@mac.example.ts.net",
+            "mac.example.ts.net",
+            "",
+        ),
+        ("https://mac.example.ts.net", "mac.example.ts.net/extra", ""),
+        ("file://mac.example.ts.net", "mac.example.ts.net", ""),
+        ("null", "mac.example.ts.net", ""),
+        ("https://mac.example.ts.net:9", "mac.example.ts.net", ""),
+        ("https://mac.example.ts.net/path", "mac.example.ts.net", ""),
+        ("https://elsewhere.invalid", "mac.example.ts.net", ""),
+    ] {
+        let mut headers = HeaderMap::new();
+        headers.insert("origin", origin.parse().unwrap());
+        headers.insert("host", host.parse().unwrap());
+        if !duplicate.is_empty() {
+            headers.append(duplicate, headers[duplicate].clone());
+        }
+        let response = clipboard_response(
+            &headers,
+            &config,
+            true,
+            zeroize::Zeroizing::new("fixture".into()),
+            |_| async { panic!("untrusted request reached writer") },
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+}
+
+#[tokio::test]
+async fn clipboard_encoded_limit_allows_worst_case_json_expansion() {
+    // Config disabled so this real route can prove decoding without touching OS clipboard.
+    let request = Request::post("/v1/desktop/clipboard")
+        .header("host", "localhost")
+        .header("origin", "http://localhost")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::json!({"text": "\0".repeat(65536)}).to_string(),
+        ))
+        .unwrap();
+    assert_eq!(
+        build_router(state("").await)
+            .oneshot(request)
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+}
+
+#[tokio::test]
+async fn clipboard_decoded_bounds_reject_before_native_process() {
+    for text in [String::new(), "👋".repeat(16385)] {
+        let response = build_router(state("fixture1").await)
+            .oneshot(
+                Request::post("/v1/desktop/clipboard")
+                    .header("host", "localhost")
+                    .header("origin", "http://localhost")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::json!({"text":text}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            if cfg!(target_os = "macos") {
+                StatusCode::BAD_REQUEST
+            } else {
+                StatusCode::FORBIDDEN
+            }
+        );
+    }
+}

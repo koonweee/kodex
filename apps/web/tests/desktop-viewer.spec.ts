@@ -73,24 +73,23 @@ test("hidden viewer connects without focus, stays connected, and closes independ
   await expect.poll(() => b.connections[0].keys).toContainEqual({ keysym: 97, down: true });
 });
 
-test("explicit paste writes before Command-V, rejects lossy Unicode and empty text, and never copies back", async ({ page }) => {
+test("explicit Unicode paste writes before Command-V, rejects empty and oversized text, and never copies back", async ({ page }) => {
   const fixture = new DesktopRfbFixture(); await fixture.install(page);
   const frame = await open(page); await connect(frame);
-  await frame.evaluate(() => window.kodexDesktop!.paste("café\nline 2"));
-  await expect.poll(() => fixture.connections[0].clipboard).toEqual(["café\nline 2"]);
+  await frame.evaluate(() => window.kodexDesktop!.paste("café — 你好 👋\nline 2"));
+  await expect.poll(() => fixture.clipboardWrites).toEqual(["café — 你好 👋\nline 2"]);
   await expect.poll(() => fixture.connections[0].keys).toEqual([
     { down: true, keysym: 0xffeb }, { down: true, keysym: 118 },
     { down: false, keysym: 118 }, { down: false, keysym: 0xffeb },
   ]);
-  const messages = fixture.connections[0].messages;
-  expect(messages.indexOf(6)).toBeLessThan(messages.indexOf(4));
-  for (const text of ["Unicode 👋", ""]) {
+  expect(fixture.connections[0].messages).not.toContain(6);
+  for (const text of ["👋".repeat(16385), ""]) {
     const error = await frame.evaluate(async (text) => {
       try { await window.kodexDesktop!.paste(text); return ""; } catch (error) { return (error as Error).message; }
     }, text);
-    expect(error).toMatch(text ? /Unicode/ : /empty/);
+    expect(error).toMatch(text ? /64 KiB/ : /empty/);
   }
-  expect(fixture.connections[0].clipboard).toHaveLength(1);
+  expect(fixture.clipboardWrites).toHaveLength(1);
   expect(fixture.connections[0].keys).toHaveLength(4);
 });
 
@@ -119,10 +118,10 @@ test("keyboard forwards text and releases focus when hidden", async ({ page }) =
 });
 
 
-test("extended Unicode paste waits for Provide before sending Command-V", async ({ page }) => {
-  const fixture = new DesktopRfbFixture(true); await fixture.install(page);
+test("Unicode paste waits for the native HTTP acknowledgement before sending Command-V", async ({ page }) => {
+  const fixture = new DesktopRfbFixture(); fixture.holdClipboard = true; await fixture.install(page);
   const frame = await open(page); await connect(frame);
-  // Start without awaiting; the fake Mac deliberately withholds its Request.
+  // The clipboard endpoint deliberately withholds acknowledgement.
   await frame.evaluate(() => {
     (window as Window & { pasteResult?: string }).pasteResult = undefined;
     void window.kodexDesktop!.paste("Unicode 👋\nline 2").then(
@@ -130,27 +129,43 @@ test("extended Unicode paste waits for Provide before sending Command-V", async 
       (error: Error) => { (window as Window & { pasteResult?: string }).pasteResult = error.message; },
     );
   });
-  await expect.poll(() => fixture.connections[0].messages.filter((type) => type === 6).length).toBe(2);
+  await expect.poll(() => fixture.clipboardWrites.length).toBe(1);
   expect(fixture.connections[0].keys).toEqual([]);
-  fixture.requestClipboard();
-  await expect.poll(() => fixture.connections[0].clipboard).toEqual(["Unicode 👋\r\nline 2"]);
+  const busy = await frame.evaluate(async () => {
+    try { await window.kodexDesktop!.paste("second paste"); return ""; } catch (error) { return (error as Error).message; }
+  });
+  expect(busy).toMatch(/already in progress/);
+  expect(fixture.clipboardWrites).toHaveLength(1);
+  await fixture.releaseClipboard();
+  await expect.poll(() => fixture.clipboardWrites).toEqual(["Unicode 👋\nline 2"]);
   await expect.poll(() => fixture.connections[0].keys.length).toBe(4);
   expect(await frame.evaluate(() => (window as Window & { pasteResult?: string }).pasteResult)).toBe("ok");
 });
 
-test("disconnect during an extended clipboard wait never sends the paste shortcut", async ({ page }) => {
-  const fixture = new DesktopRfbFixture(true); await fixture.install(page);
-  const frame = await open(page); await connect(frame);
-  await frame.evaluate(() => {
-    void window.kodexDesktop!.paste("Unicode 👋").catch((error: Error) => {
-      (window as Window & { pasteError?: string }).pasteError = error.message;
+for (const action of ["disconnect", "reconnect", "pagehide"] as const) {
+  test(`${action} during a native clipboard write never sends the paste shortcut`, async ({ page }) => {
+    const fixture = new DesktopRfbFixture(); fixture.holdClipboard = true; await fixture.install(page);
+    const frame = await open(page); await connect(frame);
+    await frame.evaluate(() => {
+      void window.kodexDesktop!.paste("Unicode 👋").catch((error: Error) => {
+        (window as Window & { pasteError?: string }).pasteError = error.message;
+      });
     });
+    await expect.poll(() => fixture.clipboardWrites.length).toBe(1);
+    await frame.evaluate((action) => {
+      if (action === "pagehide") window.dispatchEvent(new PageTransitionEvent("pagehide"));
+      else if (action === "reconnect") window.kodexDesktop!.connect();
+      else window.kodexDesktop!.disconnect();
+    }, action);
+    await expect.poll(() => frame.evaluate(() => (window as Window & { pasteError?: string }).pasteError)).toMatch(/disconnected/);
+    if (action === "reconnect") {
+      await expect.poll(() => fixture.connections.length).toBe(2);
+      await expect.poll(async () => (await status(frame)).status).toBe("connected");
+    }
+    await fixture.releaseClipboard();
+    expect(fixture.connections.every((connection) => connection.keys.length === 0)).toBe(true);
   });
-  await expect.poll(() => fixture.connections[0].messages.filter((type) => type === 6).length).toBe(2);
-  await frame.evaluate(() => window.kodexDesktop!.disconnect());
-  await expect.poll(() => frame.evaluate(() => (window as Window & { pasteError?: string }).pasteError)).toMatch(/disconnected/);
-  expect(fixture.connections[0].keys).toEqual([]);
-});
+}
 
 
 test("virtual keyboard fallback handles composition, emoji replacement and deletion as code points", async ({ page }) => {
@@ -221,19 +236,57 @@ test("rapid Reconnect waits for the closing socket, and cancellation cannot revi
 });
 
 
-test("hiding during clipboard negotiation cancels the text and shortcut without closing", async ({ page }) => {
-  const fixture = new DesktopRfbFixture(true); await fixture.install(page);
+test("hiding during a native clipboard write cancels the shortcut without closing", async ({ page }) => {
+  const fixture = new DesktopRfbFixture(); fixture.holdClipboard = true; await fixture.install(page);
   const frame = await open(page); await connect(frame);
   await frame.evaluate(() => {
     void window.kodexDesktop!.paste("Unicode 👋").catch((error: Error) => {
       (window as Window & { pasteError?: string }).pasteError = error.message;
     });
   });
-  await expect.poll(() => fixture.connections[0].messages.filter((type) => type === 6).length).toBe(2);
+  await expect.poll(() => fixture.clipboardWrites.length).toBe(1);
   await frame.evaluate(() => window.kodexDesktop!.setActive(false));
-  fixture.requestClipboard();
+  await fixture.releaseClipboard();
   await expect.poll(() => frame.evaluate(() => (window as Window & { pasteError?: string }).pasteError)).toMatch(/hidden|cancel/i);
   expect(fixture.connections[0].keys).toEqual([]);
-  expect(fixture.connections[0].clipboard).toEqual([]);
+  expect(fixture.clipboardWrites).toEqual(["Unicode 👋"]);
   expect(fixture.connections[0].closed).toBe(false);
+});
+
+
+
+test("two tabs independently await writes to the shared native clipboard without a control lease", async ({ context }) => {
+  const fixture = new DesktopRfbFixture(); fixture.holdClipboard = true; await fixture.install(context);
+  const first = await context.newPage(); const second = await context.newPage();
+  const one = await open(first); await connect(one);
+  const two = await open(second); await connect(two);
+  await one.evaluate(() => { void window.kodexDesktop!.paste("first tab"); });
+  await expect.poll(() => fixture.clipboardWrites.length).toBe(1);
+  await two.evaluate(() => { void window.kodexDesktop!.paste("second tab 👋"); });
+  await expect.poll(() => fixture.clipboardWrites).toEqual(["first tab", "second tab 👋"]);
+  expect(fixture.connections.map((connection) => connection.keys.length)).toEqual([0, 0]);
+  await fixture.releaseClipboard();
+  await expect.poll(() => fixture.connections.map((connection) => connection.keys.length)).toEqual([4, 4]);
+  // Both use the same Mac clipboard; the later write can replace the first
+  // before either shortcut. No per-client clipboard reservation is promised.
+});
+
+
+test("native clipboard timeout releases Paste without sending Command-V", async ({ page }) => {
+  const fixture = new DesktopRfbFixture(); fixture.holdClipboard = true; await fixture.install(page);
+  const frame = await open(page); await connect(frame);
+  await page.clock.install();
+  await frame.evaluate(() => {
+    void window.kodexDesktop!.paste("first request").catch((error: Error) => {
+      (window as Window & { pasteError?: string }).pasteError = error.message;
+    });
+  });
+  await expect.poll(() => fixture.clipboardWrites.length).toBe(1);
+  await page.clock.fastForward(5100);
+  await expect.poll(() => frame.evaluate(() => (window as Window & { pasteError?: string }).pasteError)).toMatch(/timed out/);
+  await fixture.releaseClipboard();
+  expect(fixture.connections[0].keys).toEqual([]);
+  fixture.holdClipboard = false;
+  await frame.evaluate(() => window.kodexDesktop!.paste("next request"));
+  await expect.poll(() => fixture.connections[0].keys.length).toBe(4);
 });

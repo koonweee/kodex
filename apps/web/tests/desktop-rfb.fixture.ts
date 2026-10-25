@@ -1,22 +1,34 @@
 import type { BrowserContext, Page } from "@playwright/test";
 import { WebSocketServer } from "ws";
-import { constants, inflateSync } from "node:zlib";
 
 // Downstream-only fixture: the gateway's dedicated-password adapter has separate
 // real WebSocket tests. This exercises the exact pinned browser RFB client.
 export class DesktopRfbFixture {
   sockets: { close(options: { code: number; reason: string }): void }[] = [];
-  connections: { shared?: number; keys: { down: boolean; keysym: number }[]; pointers: number[]; pointerPositions: { mask: number; x: number; y: number }[]; clipboard: string[]; messages: number[]; closed: boolean }[] = [];
+  connections: { shared?: number; keys: { down: boolean; keysym: number }[]; pointers: number[]; pointerPositions: { mask: number; x: number; y: number }[]; messages: number[]; closed: boolean }[] = [];
   errors: string[] = [];
   private paused: { pause(): void; resume(): void }[] = [];
   pause(index = 0) { this.paused[index].pause(); }
   resume(index = 0) { this.paused[index].resume(); }
-  constructor(private extendedClipboard = false) {}
-  requestClipboard(index = 0) {
-    this.requesters[index]();
+  clipboardWrites: string[] = [];
+  holdClipboard = false;
+  clipboardFailure = false;
+  private clipboardReplies: (() => Promise<void>)[] = [];
+  async releaseClipboard() {
+    for (const reply of this.clipboardReplies.splice(0)) await reply();
   }
-  private requesters: (() => void)[] = [];
   async install(page: Page | BrowserContext) {
+    await page.route("**/v1/desktop/clipboard", async (route) => {
+      this.clipboardWrites.push((route.request().postDataJSON() as { text: string }).text);
+      const reply = async () => {
+        try {
+          if (this.clipboardFailure) await route.fulfill({ status: 502, json: { code: "bad_gateway", message: "The Mac clipboard could not be written.", retryable: false } });
+          else await route.fulfill({ status: 204 });
+        } catch { /* A canceled request or closed page has no response recipient. */ }
+      };
+      if (this.holdClipboard) this.clipboardReplies.push(reply);
+      else await reply();
+    });
     const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
     await new Promise<void>((resolve) => server.on("listening", resolve));
     const address = server.address();
@@ -37,11 +49,7 @@ export class DesktopRfbFixture {
       this.paused.push(socket);
       if (request.url !== "/v1/desktop/ws") this.errors.push("Unexpected target");
       this.sockets.push({ close: ({ code, reason }) => socket.close(code, reason) });
-      this.requesters.push(() => {
-        const request = Buffer.from([3, 0, 0, 0, 255, 255, 255, 252, 2, 0, 0, 1]);
-        socket.send(request);
-      });
-      const connection = { shared: undefined as number | undefined, keys: [] as { down: boolean; keysym: number }[], pointers: [] as number[], pointerPositions: [] as { mask: number; x: number; y: number }[], clipboard: [] as string[], messages: [] as number[], closed: false };
+      const connection = { shared: undefined as number | undefined, keys: [] as { down: boolean; keysym: number }[], pointers: [] as number[], pointerPositions: [] as { mask: number; x: number; y: number }[], messages: [] as number[], closed: false };
       this.connections.push(connection);
       let pending = Buffer.alloc(0);
       let stage = 0;
@@ -71,7 +79,6 @@ export class DesktopRfbFixture {
             Buffer.from([32, 24, 0, 1, 0, 255, 0, 255, 0, 255, 16, 8, 0, 0, 0, 0]).copy(init, 4);
             init.writeUInt32BE(4, 20); init.write("Mock", 24);
             socket.send(init);
-            if (this.extendedClipboard) socket.send(Buffer.from([3, 0, 0, 0, 255, 255, 255, 248, 31, 0, 0, 1, 0, 0, 0, 0]));
           } else {
             const type = pending[0];
             let length = ({ 0: 20, 3: 10, 4: 8, 5: 6, 150: 10 } as Record<number, number>)[type];
@@ -87,13 +94,7 @@ export class DesktopRfbFixture {
               connection.pointers.push(message[1]);
               connection.pointerPositions.push({ mask: message[1], x: message.readUInt16BE(2), y: message.readUInt16BE(4) });
             }
-            if (type === 6) {
-              if (message.readInt32BE(4) >= 0) connection.clipboard.push(message.subarray(8).toString("latin1"));
-              else if (message.readUInt32BE(8) === 0x10000001) {
-                const inflated = inflateSync(message.subarray(12), { finishFlush: constants.Z_SYNC_FLUSH });
-                connection.clipboard.push(inflated.subarray(4, 4 + inflated.readUInt32BE(0) - 1).toString("utf8"));
-              }
-            }
+            if (type === 6) this.errors.push("Paste must use the native clipboard endpoint");
             if (type === 3 && !painted) {
               painted = true;
               const frame = Buffer.alloc(16 + 320 * 200 * 4);

@@ -17,11 +17,10 @@ build runs inside another Git worktree; preparation tests cover that context.
 The browser uses the patched RFB core, with Kodex's small iframe wrapper in
 `src/desktop/viewer`; upstream's application controls are not exposed.
 `keyboard.ts` adapts noVNC's `app/ui.js` virtual keyboard implementation.
-`integration.patch` adds a Unicode capability getter, rejects lossy legacy
-clipboard writes, and emits `clipboardwritten` after standard/extended bytes
-are queued so Command-V cannot overtake the extended request/provide exchange.
-Its cancellation method withdraws an outstanding clipboard offer when hidden,
-without changing the Mac clipboard or closing the socket.
+Explicit Paste uses a bounded same-origin gateway write to the Mac pasteboard,
+then sends Command-V after success. It does not depend on VNC clipboard
+negotiation or synchronize clipboard changes automatically. Hiding, closing or
+reconnecting cancels pending shortcuts; an accepted clipboard write cannot be undone.
 The patched vendor source and test patch are separate from Kodex's application
 code. No build or deployment depends on the adjacent Pal checkout.
 

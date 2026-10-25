@@ -4,6 +4,7 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use zeroize::Zeroizing;
 
+pub(crate) mod clipboard;
 mod config;
 pub(crate) mod socket;
 pub use config::DesktopConfig;

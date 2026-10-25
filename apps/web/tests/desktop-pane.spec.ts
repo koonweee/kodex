@@ -34,7 +34,7 @@ for (const shape of [
         }
         await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: { readText: async () => "explicit paste" } }));
         await page.getByRole("button", { name: "Paste into Mac" }).click();
-        await expect.poll(() => remote.connections[0].clipboard).toEqual(["explicit paste"]);
+        await expect.poll(() => remote.clipboardWrites).toEqual(["explicit paste"]);
         await page.screenshot({ path: test.info().outputPath("desktop-pane.png") });
         // Narrow workspace maximizes one tab without remounting its neighbors.
         await page.setViewportSize({ width: 390, height: 844 });
@@ -165,12 +165,13 @@ test("iframe paste errors retain their useful message in the host pane", async (
   const app = await nativeProjectsFixture(context, { desktopEnabled: true });
   const remote = new DesktopRfbFixture(); await remote.install(context);
   try {
+    remote.clipboardFailure = true;
     const page = await app.page("clipboard-error", "/threads/history");
     await openDesktop(page);
     await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: { readText: async () => "café — 你好 👋" } }));
     await page.getByRole("button", { name: "Paste into Mac" }).click();
-    await expect(page.getByText("This Mac connection does not support Unicode clipboard text.", { exact: true })).toBeVisible();
-    expect(remote.connections[0].clipboard).toEqual([]);
+    await expect(page.getByText("The Mac clipboard could not be written.", { exact: true })).toBeVisible();
+    expect(remote.clipboardWrites).toEqual(["café — 你好 👋"]);
     expect(remote.connections[0].keys).toEqual([]);
   } finally { await app.close(); }
 });

@@ -1,3 +1,4 @@
+import { writeDesktopClipboard } from "../../api/desktop";
 import RFB from "@desktop-vendor/core/rfb.js";
 import { DESKTOP_VIEWER_READY, type DesktopBridge, type DesktopFailure, type ViewerState } from "../bridge";
 import { virtualKeyboard } from "./keyboard";
@@ -97,7 +98,6 @@ const bridge: DesktopBridge = {
     active = value;
     if (!value) {
       cancelPaste?.("Desktop is hidden; paste was canceled.");
-      rfb?.cancelClipboardPaste();
     }
     document.documentElement.inert = !value;
     keyboard.setActive(value);
@@ -111,25 +111,29 @@ const bridge: DesktopBridge = {
     if (!text) throw new Error("The clipboard is empty.");
     if (new TextEncoder().encode(text).byteLength > 65536) throw new Error("Clipboard text exceeds 64 KiB.");
     if (cancelPaste) throw new Error("A paste is already in progress.");
-    if (!viewer.clipboardSupportsUnicode && /[^\u0000-\u00ff]/u.test(text)) {
-      throw new Error("This Mac connection does not support Unicode clipboard text.");
+    const attempt = generation;
+    const controller = new AbortController();
+    let cancellation: string | undefined;
+    const cancel = (reason = "Desktop disconnected before paste.") => {
+      cancellation = reason;
+      controller.abort();
+    };
+    cancelPaste = cancel;
+    const timeout = setTimeout(() => cancel("The Mac clipboard write timed out."), 5000);
+    try {
+      await writeDesktopClipboard(text, controller.signal);
+    } catch (error) {
+      if (cancellation) throw new Error(cancellation);
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+      if (cancelPaste === cancel) cancelPaste = undefined;
     }
-    await new Promise<void>((resolve, reject) => {
-      const finish = (error?: Error) => {
-        clearTimeout(timeout);
-        viewer.removeEventListener("clipboardwritten", written);
-        cancelPaste = undefined;
-        if (error) reject(error); else resolve();
-      };
-      const written = () => finish();
-      const timeout = setTimeout(() => finish(new Error("The Mac did not accept clipboard text.")), 3000);
-      cancelPaste = (reason = "Desktop disconnected before paste.") => finish(new Error(reason));
-      viewer.addEventListener("clipboardwritten", written);
-      try { viewer.clipboardPasteFrom(text); } catch { finish(new Error("Clipboard text could not be sent.")); }
-    });
-    if (viewer !== rfb || !active || state.status !== "connected") throw new Error("Desktop disconnected before paste.");
-    // macOS Command-V. Clipboard bytes are queued before the shortcut, including
-    // the extended clipboard request/provide round trip. Always release Meta.
+    if (controller.signal.aborted || attempt !== generation || viewer !== rfb || !active || state.status !== "connected") {
+      throw new Error(cancellation ?? "Desktop disconnected before paste.");
+    }
+    // The native clipboard write completed. It is global OS state: simultaneous
+    // explicit pastes from other clients may overwrite it before this shortcut.
     viewer.sendKey(0xffeb, "MetaLeft", true);
     try { viewer.sendKey(0x76, "KeyV"); }
     finally { viewer.sendKey(0xffeb, "MetaLeft", false); }

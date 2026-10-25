@@ -6,12 +6,9 @@ declare module "@desktop-vendor/core/rfb.js" {
     resizeSession: boolean;
     trackpadMode: boolean;
     focusOnClick: boolean;
-    readonly clipboardSupportsUnicode: boolean;
     disconnect(): void;
     blur(): void;
     sendKey(keysym: number, code?: string | null, down?: boolean): void;
-    clipboardPasteFrom(text: string): void;
-    cancelClipboardPaste(): void;
   }
 }
 declare module "@desktop-vendor/core/input/keyboard.js" {

@@ -13,7 +13,7 @@ function fixture(run) {
   try {
     cpSync(join(web, "vendor"), join(root, "vendor"), { recursive: true });
     cpSync(join(web, "src/desktop"), join(root, "src/desktop"), { recursive: true });
-    for (const file of ["vite.config.ts", "package-lock.json", "scripts/prepare-desktop-viewer.mjs"]) {
+    for (const file of ["src/api/desktop.ts", "src/api/compatibility.ts", "vite.config.ts", "package-lock.json", "scripts/prepare-desktop-viewer.mjs"]) {
       cpSync(join(web, file), join(root, file));
     }
     return run(root);
@@ -54,7 +54,7 @@ test("rejects edited prepared source instead of silently building unpinned code"
 
 test("metadata-only and corresponding-source edits receive new immutable URLs", () => fixture((root) => {
   let previous = prepareDesktopViewer(root).url;
-  for (const file of ["vendor/novnc/README.md", "src/desktop/viewer/vendor.d.ts", "vendor/novnc/pins.json"]) {
+  for (const file of ["vendor/novnc/README.md", "src/desktop/viewer/vendor.d.ts", "src/api/desktop.ts", "src/api/compatibility.ts", "vendor/novnc/pins.json"]) {
     const path = join(root, file);
     writeFileSync(path, readFileSync(path, "utf8") + "\n");
     const next = prepareDesktopViewer(root).url;

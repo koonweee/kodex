@@ -19,6 +19,7 @@ export function prepareDesktopViewer(root = defaultRoot) {
   }
   hash.update(readFileSync(join(root, "src/desktop/bridge.ts")));
   hash.update(treeDigest(join(root, "src/desktop/viewer")));
+  for (const file of ["desktop.ts", "compatibility.ts"]) hash.update(readFileSync(join(root, "src/api", file)));
   // Every source/notice byte shipped under the immutable revision must affect
   // its URL, including metadata-only edits and declaration files.
   for (const file of ["pins.json", "README.md"]) hash.update(readFileSync(join(vendor, file)));
@@ -39,7 +40,7 @@ export function prepareDesktopViewer(root = defaultRoot) {
     delete patchEnv.GIT_DIR;
     delete patchEnv.GIT_WORK_TREE;
     const patchOptions = { cwd: stage, env: patchEnv, stdio: "pipe" };
-    for (const patch of ["trackpad.patch", "trackpad.tests.patch", "integration.patch", "integration.tests.patch"]) {
+    for (const patch of ["trackpad.patch", "trackpad.tests.patch"]) {
       execFileSync("git", ["apply", "--check", join(vendor, patch)], patchOptions);
       execFileSync("git", ["apply", join(vendor, patch)], patchOptions);
     }
@@ -71,13 +72,14 @@ export function prepareDesktopViewer(root = defaultRoot) {
   // Ship corresponding source and notices with the normal frontend packaging.
   const sources = join(root, "public", relative, "sources");
   mkdirSync(sources, { recursive: true });
-  for (const file of ["source.tar.gz", "trackpad.patch", "trackpad.tests.patch", "integration.patch", "integration.tests.patch", "pins.json", "README.md"]) {
+  for (const file of ["source.tar.gz", "trackpad.patch", "trackpad.tests.patch", "pins.json", "README.md"]) {
     cpSync(join(vendor, file), join(sources, file));
   }
   cpSync(join(sourceRoot, "docs"), join(sources, "licenses"), { recursive: true, filter: (path) => !path.endsWith(".md") || path.includes("LICENSE") });
   cpSync(join(sourceRoot, "AUTHORS"), join(sources, "AUTHORS"));
   cpSync(join(root, "src/desktop/viewer"), join(sources, "kodex-viewer"), { recursive: true });
   cpSync(join(root, "src/desktop/bridge.ts"), join(sources, "bridge.ts"));
+  for (const file of ["desktop.ts", "compatibility.ts"]) cpSync(join(root, "src/api", file), join(sources, file));
   return { sourceRoot, indexPath, url: `/${relative}/index.html` };
 }
 
