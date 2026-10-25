@@ -47,7 +47,11 @@ actual Mac 1002 path supplies this. A server that only tiles the initial full
 picture will time out instead of enabling input on an incomplete picture.
 DisplayInfo2 logical bounds and pixel density preserve physical monitor identity
 while framebuffer bounds change/round. Scaling is per connection; each monitor
-selection/reconnect negotiates its own limit. Conversion uses strips
+selection/reconnect negotiates its own limit. Pointer messages map from local
+image coordinates through the inverse acknowledged server scale into the original
+selected framebuffer, with bounds clamping. Gestures and the fallback cursor stay
+in image coordinates. During incomplete login/resize metadata, new button-downs
+are gated and releases reuse the last valid native point. Conversion uses strips
 to avoid full-frame RGB555/RGBA temporary buffers. Idle Tickle (4) renews automatic
 updates; Wake (6) requests a fresh picture on the selected display. Cursor-visible
 (12) does not restart streaming.

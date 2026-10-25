@@ -9,6 +9,7 @@ export class DesktopRfbFixture {
   errors: string[] = [];
   framebuffer = { width: 320, height: 200 };
   nativeDesktop = false;
+  nativeDensity = 1;
   frameBlue = 0xcc;
   private stateSenders: ((statuses: number[], fragmented: boolean) => void)[] = [];
   sendNativeStates(statuses: number[], fragmented = false) {
@@ -42,11 +43,12 @@ export class DesktopRfbFixture {
   continuousRequests: { enabled: boolean; x: number; y: number; width: number; height: number }[] = [];
   continuousUpdates = false;
   displayFailure = false;
-  private geometrySenders: ((width: number, height: number) => void)[] = [];
+  private geometrySenders: ((width: number, height: number, metadata?: boolean) => void)[] = [];
   resize(width: number, height: number) {
     this.framebuffer = { width, height };
     for (const send of this.geometrySenders) send(width, height);
   }
+  resizeFramebuffer(width: number, height: number) { for (const send of this.geometrySenders) send(width,height,false); }
   private paused: { pause(): void; resume(): void }[] = [];
   pause(index = 0) { this.paused[index].pause(); }
   resume(index = 0) { this.paused[index].resume(); }
@@ -114,8 +116,8 @@ export class DesktopRfbFixture {
         body.writeUInt16BE(this.displayFailure ? 99 : 5,0); body.writeUInt16BE(width,2); body.writeUInt16BE(height,4);
         body.writeUInt16BE(width,6);body.writeUInt16BE(height,8);body.writeUInt32BE(selected ?? 0xffffffff,10);body.writeUInt32BE(12,14);body.writeUInt16BE(records.length,18);
         for (const [i,d] of records.entries()) {
-          const p=20+i*56;body.writeDoubleBE(1,p);body.writeDoubleBE(scale,p+8);body.writeUInt32BE(d.id,p+16);
-          for (const [n,value] of [d.y,d.x,d.y+d.height,d.x+d.width,...[d.fbY,d.fbX,d.fbY+d.height,d.fbX+d.width].map(v=>Math.round(v*scale))].entries()) body.writeInt16BE(value,p+20+n*2);
+          const p=20+i*56;body.writeDoubleBE(this.nativeDensity,p);body.writeDoubleBE(scale,p+8);body.writeUInt32BE(d.id,p+16);
+          for (const [n,value] of [d.y,d.x,d.y+d.height/this.nativeDensity,d.x+d.width/this.nativeDensity,...[d.fbY,d.fbX,d.fbY+d.height,d.fbX+d.width].map(v=>Math.round(v*scale))].entries()) body.writeInt16BE(value,p+20+n*2);
           body.writeUInt32BE(d.main?1:0,p+36);Buffer.from([32,24,0,1,0,255,0,255,0,255,16,8,0,0,0,0]).copy(body,p+40);
         }
         let frame: Buffer;
@@ -125,8 +127,8 @@ export class DesktopRfbFixture {
         else socket.send(frame);
       };
       const sendNativeInfo = () => this.holdDisplayInfo ? this.displayReplies.push(nativeInfo) : nativeInfo();
-      this.geometrySenders.push((width, height) => {
-        if (this.nativeDesktop) { sendNativeInfo(); return; }
+      this.geometrySenders.push((width, height, metadata=true) => {
+        if (this.nativeDesktop && metadata) { sendNativeInfo(); return; }
         const update = Buffer.alloc(16); update.writeUInt16BE(1, 2);
         update.writeUInt16BE(width, 8); update.writeUInt16BE(height, 10); update.writeInt32BE(-223, 12);
         socket.send(update);

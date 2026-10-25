@@ -125,7 +125,39 @@
      }
  
      get capabilities() { return this._capabilities; }
-@@ -2140,8 +2242,11 @@
+@@ -1564,14 +1666,27 @@
+             throw new Error("Illegal mouse button mask (mask: " + mask + ")");
+         }
+
++        let remoteX = this._display.absX(x), remoteY = this._display.absY(y);
++        if (this._appleDesktop) {
++            if (!this._appleFramebufferMatchesScale()) {
++                if (mask !== 0 || !this._appleLastPointer) return;
++                // A resize can precede native metadata during login. Release
++                // any held button at the last valid point without new movement.
++                remoteX = this._appleLastPointer.x; remoteY = this._appleLastPointer.y;
++            } else {
++                // Apple scales the picture, but input still addresses the original
++                // selected framebuffer. Keep local gestures/cursor in image space.
++                remoteX = Math.max(0, Math.min(this._appleTargetSize.width - 1, Math.round(remoteX / this._appleScale)));
++                remoteY = Math.max(0, Math.min(this._appleTargetSize.height - 1, Math.round(remoteY / this._appleScale)));
++                this._appleLastPointer = { x: remoteX, y: remoteY };
++            }
++        }
+         let extendedMouseButtons = mask & 0x7f80;
+
+         if (this._extendedPointerEventSupported && extendedMouseButtons) {
+-            RFB.messages.extendedPointerEvent(this._sock, this._display.absX(x),
+-                                              this._display.absY(y), mask);
++            RFB.messages.extendedPointerEvent(this._sock, remoteX, remoteY, mask);
+         } else {
+-            RFB.messages.pointerEvent(this._sock, this._display.absX(x),
+-                                      this._display.absY(y), mask);
++            RFB.messages.pointerEvent(this._sock, remoteX, remoteY, mask);
+         }
+     }
+
+@@ -2140,8 +2255,11 @@
              case "003.007":
                  this._rfbVersion = 3.7;
                  break;
@@ -138,7 +170,7 @@
              case "004.000":  // Intel AMT KVM
              case "004.001":  // RealVNC 4.6
              case "005.000":  // RealVNC 5.3
-@@ -2167,7 +2272,7 @@
+@@ -2167,7 +2285,7 @@
  
          const cversion = "00" + parseInt(this._rfbVersion, 10) +
                         ".00" + ((this._rfbVersion * 10) % 10);
@@ -147,7 +179,7 @@
          this._sock.flush();
          Log.Debug('Sent ProtocolVersion: ' + cversion);
  
-@@ -2793,6 +2898,10 @@
+@@ -2793,6 +2911,10 @@
          const nameLength = this._sock.rQshift32();
          if (this._sock.rQwait('server init name', nameLength, 24)) { return false; }
          let name = this._sock.rQshiftStr(nameLength);
@@ -158,7 +190,7 @@
          name = decodeUTF8(name, true);
  
          if (this._rfbTightVNC) {
-@@ -2845,15 +2954,28 @@
+@@ -2845,15 +2967,28 @@
              this._fbDepth = 8;
          }
  
@@ -188,7 +220,7 @@
          const encs = [];
  
          // In preference order
-@@ -3193,10 +3315,15 @@
+@@ -3193,10 +3328,15 @@
          }
  
          let first, ret;
@@ -205,7 +237,7 @@
                      RFB.messages.fbUpdateRequest(this._sock, true, 0, 0,
                                                   this._fbWidth, this._fbHeight);
                  }
-@@ -3247,6 +3374,7 @@
+@@ -3247,6 +3387,7 @@
              if (this._sock.rQwait("FBU header", 3, 1)) { return false; }
              this._sock.rQskipBytes(1);  // Padding
              this._FBU.rects = this._sock.rQshift16();
@@ -213,7 +245,7 @@
  
              // Make sure the previous frame is fully rendered first
              // to avoid building up an excessive queue
-@@ -3287,11 +3415,30 @@
+@@ -3287,11 +3428,30 @@
          }
  
          this._display.flip();
@@ -244,7 +276,7 @@
          switch (this._FBU.encoding) {
              case encodings.pseudoEncodingLastRect:
                  this._FBU.rects = 1; // Will be decreased when we return
-@@ -3610,10 +3757,12 @@
+@@ -3610,10 +3770,12 @@
          }
  
          try {
