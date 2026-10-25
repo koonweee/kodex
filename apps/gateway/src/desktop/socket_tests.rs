@@ -256,3 +256,114 @@ async fn simultaneous_large_input_and_screen_updates_make_progress_under_backpre
     .await
     .unwrap();
 }
+
+/// Cross-stack proof using the built pinned iframe, a real browser/WebSocket,
+/// this production adapter and a disposable native-auth peer. No port-5900 I/O.
+#[tokio::test]
+#[ignore = "requires apps/web npm install/build and Playwright bundled Chromium"]
+async fn pinned_browser_crosses_gateway_authentication_boundary() {
+    timeout(Duration::from_secs(45), async {
+        let mut server = server().await;
+        let web = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../web");
+        let mut browser = tokio::process::Command::new("node");
+        browser
+            .current_dir(web)
+            .arg("scripts/test-desktop-gateway.mjs")
+            .arg(&server.url)
+            .kill_on_drop(true)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let child = browser.spawn().unwrap();
+        let mut mac = server.connections.recv().await.unwrap();
+        mac_auth(&mut mac, true).await;
+        assert_eq!(mac.read_u8().await.unwrap(), 1, "shared native ClientInit");
+        let mut init = vec![0, 0, 0, 0];
+        init[..2].copy_from_slice(&320_u16.to_be_bytes());
+        init[2..].copy_from_slice(&200_u16.to_be_bytes());
+        init.extend([32, 24, 0, 1, 0, 255, 0, 255, 0, 255, 16, 8, 0, 0, 0, 0]);
+        init.extend(4_u32.to_be_bytes());
+        init.extend(b"Mock");
+        mac.write_all(&init).await.unwrap();
+        let mut painted = false;
+        let mut keys = Vec::new();
+        let mut pasted = false;
+        loop {
+            let mut kind = [0];
+            if mac.read(&mut kind).await.unwrap() == 0 {
+                break;
+            }
+            match kind[0] {
+                0 => {
+                    let mut rest = [0; 19];
+                    mac.read_exact(&mut rest).await.unwrap();
+                }
+                2 => {
+                    mac.read_u8().await.unwrap();
+                    let count = mac.read_u16().await.unwrap();
+                    let mut encodings = vec![0; usize::from(count) * 4];
+                    mac.read_exact(&mut encodings).await.unwrap();
+                }
+                3 => {
+                    let mut request = [0; 9];
+                    mac.read_exact(&mut request).await.unwrap();
+                    if !painted {
+                        let mut frame = vec![0; 16 + 320 * 200 * 4];
+                        frame[2..4].copy_from_slice(&1_u16.to_be_bytes());
+                        frame[8..10].copy_from_slice(&320_u16.to_be_bytes());
+                        frame[10..12].copy_from_slice(&200_u16.to_be_bytes());
+                        for pixel in frame[16..].chunks_exact_mut(4) {
+                            pixel.copy_from_slice(&[0x11, 0x22, 0xcc, 0]);
+                        }
+                        mac.write_all(&frame).await.unwrap();
+                        painted = true;
+                    }
+                }
+                4 => {
+                    let down = mac.read_u8().await.unwrap() == 1;
+                    mac.read_u16().await.unwrap();
+                    let key = mac.read_u32().await.unwrap();
+                    if key == 0xffeb || key == 0x76 {
+                        assert!(pasted, "Command-V must follow clipboard bytes");
+                    }
+                    keys.push((down, key));
+                }
+                5 => {
+                    let mut pointer = [0; 5];
+                    mac.read_exact(&mut pointer).await.unwrap();
+                }
+                6 => {
+                    let mut padding = [0; 3];
+                    mac.read_exact(&mut padding).await.unwrap();
+                    let length = mac.read_u32().await.unwrap();
+                    assert!(length < 1024);
+                    let mut text = vec![0; length as usize];
+                    mac.read_exact(&mut text).await.unwrap();
+                    assert_eq!(text, b"combined proof");
+                    pasted = true;
+                }
+                other => panic!("unexpected client message {other}"),
+            }
+        }
+        let output = child.wait_with_output().await.unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(painted && pasted);
+        assert_eq!(
+            keys,
+            [
+                (true, 0xff1b),
+                (false, 0xff1b),
+                (true, 0xffeb),
+                (true, 0x76),
+                (false, 0x76),
+                (false, 0xffeb)
+            ]
+        );
+        println!("{}", String::from_utf8_lossy(&output.stdout));
+    })
+    .await
+    .expect("bounded combined browser/gateway proof");
+}
