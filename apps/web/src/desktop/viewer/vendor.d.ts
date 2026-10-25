@@ -11,6 +11,7 @@ declare module "@desktop-vendor/core/rfb.js" {
     blur(): void;
     sendKey(keysym: number, code?: string | null, down?: boolean): void;
     clipboardPasteFrom(text: string): void;
+    cancelClipboardPaste(): void;
   }
 }
 declare module "@desktop-vendor/core/input/keyboard.js" {

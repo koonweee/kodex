@@ -8,7 +8,7 @@ import type { Capabilities, CreateProjectRequest, EventEnvelope, Project, Thread
 export const executionCwd = "/execution/original-chat";
 export const preservedHistory = "History remains intact after changing project membership.";
 
-export async function nativeProjectsFixture(context: BrowserContext) {
+export async function nativeProjectsFixture(context: BrowserContext, options: { desktopEnabled?: boolean } = {}) {
   const project = (id: string, name: string, position: number): Project => ({
     id, name, position, roots: [{ path: `/projects/${id}` }], metadata: { owner: "another-native-client" },
     createdAt: 1791072000, updatedAt: 1791072000, recencyAt: null,
@@ -33,7 +33,7 @@ export async function nativeProjectsFixture(context: BrowserContext) {
   let failFirstCreate = false;
   let seq = 0;
   const capabilities: Capabilities = {
-    gateway: { apiVersion: "4", instanceId: "native-project-fixture", version: "test", sse: true, approvals: true, terminals: { enabled: true }, desktop: { enabled: false }, gatewayAuth: false, trustedNetworkOnly: true },
+    gateway: { apiVersion: "4", instanceId: "native-project-fixture", version: "test", sse: true, approvals: true, terminals: { enabled: true }, desktop: { enabled: options.desktopEnabled ?? false }, gatewayAuth: false, trustedNetworkOnly: true },
     appServer: { ready: true, experimentalApi: true, schemaVersion: "0.160.0", detectedVersion: "0.160.0", detectedVersionMatchesSchema: true },
   };
   // Keep native notifications independent of refills caused by reconnects.

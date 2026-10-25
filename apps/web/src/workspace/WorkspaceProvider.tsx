@@ -6,7 +6,6 @@ import {
   closeSideThread,
   createOrGetSideThread,
   type Approval,
-  type CreateTerminalSession,
   type ApprovalResponse,
   type EventEnvelope,
   type ThreadSummary,
@@ -35,6 +34,7 @@ import {
 } from "./panePlacement";
 import { paneTargetRecord, sideThreadParentId, type WorkspaceModel, type WorkspacePane, type WorkspacePanePatch } from "./paneTypes";
 import { usePaneThreadContexts, type PaneThreadContext } from "./usePaneThreadContexts";
+import { useToolPaneActions, type WorkspaceTerminalOpenOptions } from "./useToolPaneActions";
 import { useDraftPaneReuse } from "./useDraftPaneReuse";
 import { workspaceSubscribedThreadIds } from "./resourceSubscriptions";
 import { removeWorkspacePanes } from "./paneRemoval";
@@ -73,7 +73,6 @@ type ThreadPaneChromeState = {
 export type WorkspacePaneTabStatus = "connected" | "connecting" | "error" | "closed";
 type WorkspacePaneCloseOptions = { nextActivePaneId?: string | null };
 type WorkspacePaneFocusOptions = { pulse?: boolean };
-type WorkspaceTerminalOpenOptions = WorkspacePaneOpenOptions & Pick<CreateTerminalSession, "command" | "cwd" | "projectId">;
 
 type WorkspaceProviderProps = {
   approvals?: Approval[];
@@ -129,6 +128,7 @@ type WorkspaceContextValue = {
   openDraftThreadPane: (projectId?: string | null, options?: WorkspacePaneOpenOptions) => Promise<void>;
   openAppSurfacePane: (threadId: string, title?: string | null, options?: WorkspacePaneOpenOptions) => Promise<void>;
   openNewTerminalPane: (options?: WorkspaceTerminalOpenOptions) => Promise<void>;
+  openDesktopPane: () => Promise<void>;
   openTerminalPane: (options?: WorkspaceTerminalOpenOptions) => Promise<void>;
   openThreadPane: (threadId: string, title?: string | null, options?: WorkspacePaneOpenOptions) => Promise<void>;
   openSideThreadPane: (parentThreadId: string, options?: WorkspacePaneOpenOptions) => Promise<void>;
@@ -691,7 +691,7 @@ export function WorkspaceProvider({
 
   const duplicatePane = useCallback((paneId: string) => {
     const sourcePane = workspaceRef.current.panes.find((candidate) => candidate.id === paneId);
-    if (!sourcePane) {
+    if (!sourcePane || sourcePane.kind === "desktop") {
       return;
     }
     const duplicatedPane = duplicateWorkspacePane(sourcePane);
@@ -805,43 +805,7 @@ export function WorkspaceProvider({
     [appendPane, focusPane],
   );
 
-  const openTerminalPane = useCallback(
-    async (options: WorkspaceTerminalOpenOptions = {}) => {
-      const pane: WorkspacePane = {
-        id: createPaneId("terminal"),
-        kind: "terminal",
-        target: {
-          command: options.command ?? null,
-          cwd: options.cwd ?? null,
-          ...(options.projectId ? { projectId: options.projectId } : {}),
-          reuseRunning: !options.command && !options.cwd && !options.projectId,
-        },
-        title: "Terminal",
-      };
-      focusPaneOrAppend(pane, "terminal", options, terminalPaneForRequest(options));
-    },
-    [focusPaneOrAppend],
-  );
-
-  const openNewTerminalPane = useCallback(
-    async (options: WorkspaceTerminalOpenOptions = {}) => {
-      appendPane(
-        {
-          id: createPaneId("terminal"),
-          kind: "terminal",
-          target: {
-            command: options.command ?? null,
-            cwd: options.cwd ?? null,
-            ...(options.projectId ? { projectId: options.projectId } : {}),
-          },
-          title: "Terminal",
-        },
-        "terminal",
-        { ...options, duplicate: true },
-      );
-    },
-    [appendPane],
-  );
+  const { openDesktopPane, openTerminalPane, openNewTerminalPane } = useToolPaneActions(appendPane, focusPaneOrAppend);
 
   useEffect(() => {
     appSurfacePresentationHandlerRef.current = (event: EventEnvelope) => {
@@ -896,6 +860,7 @@ export function WorkspaceProvider({
       visiblePaneIds: exposedVisiblePaneIds,
       openDraftThreadPane,
       openAppSurfacePane,
+      openDesktopPane,
       openNewTerminalPane,
       openTerminalPane,
       openThreadPane,
@@ -955,6 +920,7 @@ export function WorkspaceProvider({
       exposedVisiblePaneIds,
       openDraftThreadPane,
       openAppSurfacePane,
+      openDesktopPane,
       openNewTerminalPane,
       openTerminalPane,
       openThreadPane,
@@ -1087,25 +1053,6 @@ function findPaneByIdentity(panes: WorkspacePane[], pane: WorkspacePane): Worksp
   return panes.find((candidate) => stableJsonKey(paneIdentity(candidate)) === targetKey) ?? null;
 }
 
-function terminalPaneForRequest(options: WorkspaceTerminalOpenOptions): (panes: WorkspacePane[]) => WorkspacePane | null {
-  const command = options.command ?? null;
-  const cwd = options.cwd ?? null;
-  const projectId = options.projectId ?? null;
-  return (panes) => {
-    const terminalPanes = [...panes].reverse().filter((pane) => pane.kind === "terminal");
-    if (!command && !cwd && !projectId) {
-      return terminalPanes[0] ?? null;
-    }
-    return terminalPanes.find((pane) => {
-      const target = paneTargetRecord(pane);
-      return (
-        (projectId ? target.projectId === projectId : !target.projectId) &&
-        (!command || target.command === command) &&
-        (!cwd || target.cwd === cwd)
-      );
-    }) ?? null;
-  };
-}
 
 function paneIdentity(pane: WorkspacePane): unknown {
   if (pane.kind === "thread" && pane.target.mode === "draft") {

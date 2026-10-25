@@ -58,7 +58,9 @@ export function prepareDesktopViewer(root = defaultRoot) {
   }
   const indexPath = join(root, relative, "index.html");
   mkdirSync(dirname(indexPath), { recursive: true });
-  writeFileSync(indexPath, readFileSync(join(root, "src/desktop/viewer/index.html")));
+  const html = readFileSync(join(root, "src/desktop/viewer/index.html"));
+  // Vite watches this entry: identical writes would reload a live iframe.
+  if (!existsSync(indexPath) || !readFileSync(indexPath).equals(html)) writeFileSync(indexPath, html);
   // Ship corresponding source and notices with the normal frontend packaging.
   const sources = join(root, "public", relative, "sources");
   mkdirSync(sources, { recursive: true });

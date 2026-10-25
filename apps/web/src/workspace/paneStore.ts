@@ -78,7 +78,10 @@ export function normalizeWorkspacePaneState(value: unknown): WorkspacePaneState 
   if (!isRecord(value) || value.schemaVersion !== WORKSPACE_PANE_STATE_VERSION || !Array.isArray(value.panes)) {
     return null;
   }
-  const panes = value.panes.filter(isWorkspacePane);
+  const valid = value.panes.filter(isWorkspacePane);
+  const desktop = valid.find((pane) => pane.kind === "desktop" && pane.id === value.activePaneId)
+    ?? valid.find((pane) => pane.kind === "desktop");
+  const panes = valid.filter((pane) => pane.kind !== "desktop" || pane === desktop);
   if (panes.length === 0) {
     return null;
   }
@@ -87,7 +90,7 @@ export function normalizeWorkspacePaneState(value: unknown): WorkspacePaneState 
     : panes[0]?.id ?? null;
   return {
     activePaneId,
-    dockviewLayout: value.dockviewLayout ?? null,
+    dockviewLayout: panes.length === valid.length ? value.dockviewLayout ?? null : null,
     panes,
     schemaVersion: WORKSPACE_PANE_STATE_VERSION,
   };
@@ -120,6 +123,7 @@ function isWorkspacePane(value: unknown): value is WorkspacePane {
   if (value.kind === "appSurface") {
     return isAppSurfacePaneTarget(value.target);
   }
+  if (value.kind === "desktop") return isRecord(value.target) && Object.keys(value.target).length === 0;
   if (value.kind === "terminal") {
     return isTerminalPaneTarget(value.target);
   }

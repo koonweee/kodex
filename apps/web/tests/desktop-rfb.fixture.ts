@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { BrowserContext, Page } from "@playwright/test";
 import { WebSocketServer } from "ws";
 import { constants, inflateSync } from "node:zlib";
 
@@ -8,12 +8,15 @@ export class DesktopRfbFixture {
   sockets: { close(options: { code: number; reason: string }): void }[] = [];
   connections: { shared?: number; keys: { down: boolean; keysym: number }[]; pointers: number[]; clipboard: string[]; messages: number[]; closed: boolean }[] = [];
   errors: string[] = [];
+  private paused: { pause(): void; resume(): void }[] = [];
+  pause(index = 0) { this.paused[index].pause(); }
+  resume(index = 0) { this.paused[index].resume(); }
   constructor(private extendedClipboard = false) {}
   requestClipboard(index = 0) {
     this.requesters[index]();
   }
   private requesters: (() => void)[] = [];
-  async install(page: Page) {
+  async install(page: Page | BrowserContext) {
     const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
     await new Promise<void>((resolve) => server.on("listening", resolve));
     const address = server.address();
@@ -31,6 +34,7 @@ export class DesktopRfbFixture {
     }, address.port);
     page.on("close", () => { for (const socket of server.clients) socket.terminate(); server.close(); });
     server.on("connection", (socket, request) => {
+      this.paused.push(socket);
       if (request.url !== "/v1/desktop/ws") this.errors.push("Unexpected target");
       this.sockets.push({ close: ({ code, reason }) => socket.close(code, reason) });
       this.requesters.push(() => {

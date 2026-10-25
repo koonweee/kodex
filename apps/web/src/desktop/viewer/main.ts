@@ -1,5 +1,5 @@
 import RFB from "@desktop-vendor/core/rfb.js";
-import type { DesktopBridge, DesktopFailure, ViewerState } from "../bridge";
+import { DESKTOP_VIEWER_READY, type DesktopBridge, type DesktopFailure, type ViewerState } from "../bridge";
 import { virtualKeyboard } from "./keyboard";
 import "./viewer.css";
 
@@ -7,6 +7,7 @@ const screen = document.getElementById("screen")!;
 const input = document.getElementById("keyboard") as HTMLTextAreaElement;
 let rfb: RFB | null = null;
 let socket: WebSocket | null = null;
+let closing: WebSocket | null = null;
 let active = false;
 let trackpad = true;
 let generation = 0;
@@ -15,14 +16,19 @@ const listeners = new Set<(state: ViewerState) => void>();
 const failures: DesktopFailure[] = ["unsupportedPlatform", "configuration", "authentication", "passwordAccessDisabled", "protocol", "connection", "timeout"];
 function update(next: ViewerState) { state = next; for (const listener of listeners) listener(state); }
 const keyboard = virtualKeyboard(input, () => rfb, (keyboardOpen) => update({ ...state, keyboardOpen }));
-let cancelPaste: (() => void) | undefined;
+let cancelPaste: ((reason?: string) => void) | undefined;
 
 function disconnect() {
   generation++;
   cancelPaste?.();
   keyboard.setOpen(false);
+  const previous = socket;
+  if (previous && previous.readyState !== WebSocket.CLOSED) {
+    closing = previous;
+    previous.addEventListener("close", () => { if (closing === previous) closing = null; }, { once: true });
+  }
   rfb?.disconnect();
-  socket?.close();
+  previous?.close();
   rfb = null;
   socket = null;
   screen.replaceChildren();
@@ -34,54 +40,65 @@ const bridge: DesktopBridge = {
     disconnect();
     const attempt = generation;
     update({ status: "connecting", keyboardOpen: false });
-    const url = new URL("/v1/desktop/ws", location.href);
-    url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = socket = new WebSocket(url);
-    // Register before noVNC so the typed gateway failure wins over its generic
-    // disconnect event. Native prose and browser credentials never cross here.
-    let gatewayClose = false;
-    let protocolFailure = false;
-    ws.addEventListener("close", (event) => {
-      if (attempt !== generation || protocolFailure) return;
-      gatewayClose = true;
-      cancelPaste?.();
-      let failure: DesktopFailure = "connection";
-      if (event.code === 4400 || event.code === 4500) {
-        try {
-          const reason: unknown = JSON.parse(event.reason);
-          if (failures.includes(reason as DesktopFailure)) failure = reason as DesktopFailure;
-        } catch { /* A malformed close is a protocol failure. */ }
-        if (failure === "connection" && event.code === 4400) failure = "protocol";
-      }
-      keyboard.setOpen(false);
-      update({ status: "disconnected", keyboardOpen: false, failure, retryable: event.code !== 4400 });
-    });
-    const viewer = rfb = new RFB(screen, ws, { shared: true });
-    viewer.viewOnly = false;
-    viewer.scaleViewport = true;
-    viewer.resizeSession = false;
-    viewer.trackpadMode = trackpad;
-    viewer.focusOnClick = active;
-    viewer.addEventListener("connect", () => {
-      if (attempt === generation) update({ status: "connected", keyboardOpen: false });
-    });
-    viewer.addEventListener("disconnect", () => {
-      if (attempt === generation && !gatewayClose) {
-        protocolFailure = true;
-        cancelPaste?.();
-        keyboard.setOpen(false);
-        update({ status: "disconnected", keyboardOpen: false, failure: "protocol", retryable: false });
-      }
-    });
-    viewer.addEventListener("credentialsrequired", () => {
+    const start = () => {
       if (attempt !== generation) return;
-      bridge.disconnect();
-      update({ status: "disconnected", keyboardOpen: false, failure: "protocol", retryable: false });
-    });
-    bridge.setActive(active);
+      const url = new URL("/v1/desktop/ws", location.href);
+      url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
+      const ws = socket = new WebSocket(url);
+      // Register before noVNC so the typed gateway failure wins over its generic
+      // disconnect event. Native prose and browser credentials never cross here.
+      let gatewayClose = false;
+      let protocolFailure = false;
+      ws.addEventListener("close", (event) => {
+        if (attempt !== generation || protocolFailure) return;
+        gatewayClose = true;
+        cancelPaste?.();
+        let failure: DesktopFailure = "connection";
+        if (event.code === 4400 || event.code === 4500) {
+          try {
+            const reason: unknown = JSON.parse(event.reason);
+            if (failures.includes(reason as DesktopFailure)) failure = reason as DesktopFailure;
+          } catch { /* A malformed close is a protocol failure. */ }
+          if (failure === "connection" && event.code === 4400) failure = "protocol";
+        }
+        keyboard.setOpen(false);
+        update({ status: "disconnected", keyboardOpen: false, failure, retryable: event.code !== 4400 });
+      });
+      const viewer = rfb = new RFB(screen, ws, { shared: true });
+      viewer.viewOnly = false;
+      viewer.scaleViewport = true;
+      viewer.resizeSession = false;
+      viewer.trackpadMode = trackpad;
+      viewer.focusOnClick = active;
+      viewer.addEventListener("connect", () => {
+        if (attempt === generation) update({ status: "connected", keyboardOpen: false });
+      });
+      viewer.addEventListener("disconnect", () => {
+        if (attempt === generation && !gatewayClose) {
+          protocolFailure = true;
+          cancelPaste?.();
+          keyboard.setOpen(false);
+          update({ status: "disconnected", keyboardOpen: false, failure: "protocol", retryable: false });
+        }
+      });
+      viewer.addEventListener("credentialsrequired", () => {
+        if (attempt !== generation) return;
+        bridge.disconnect();
+        update({ status: "disconnected", keyboardOpen: false, failure: "protocol", retryable: false });
+      });
+      bridge.setActive(active);
+    };
+    // Manual reconnects must wait for the prior transport's close handshake.
+    // Repeated requests share that wait; only the latest generation may start.
+    if (closing && closing.readyState !== WebSocket.CLOSED) closing.addEventListener("close", start, { once: true });
+    else start();
   },
   setActive(value) {
     active = value;
+    if (!value) {
+      cancelPaste?.("Desktop is hidden; paste was canceled.");
+      rfb?.cancelClipboardPaste();
+    }
     document.documentElement.inert = !value;
     keyboard.setActive(value);
     if (rfb) { rfb.focusOnClick = value; if (!value) rfb.blur(); }
@@ -90,7 +107,7 @@ const bridge: DesktopBridge = {
   setKeyboard(open) { keyboard.setOpen(open && state.status === "connected"); },
   async paste(text) {
     const viewer = rfb;
-    if (!viewer || state.status !== "connected") throw new Error("Desktop is disconnected.");
+    if (!viewer || !active || state.status !== "connected") throw new Error("Desktop is disconnected.");
     if (!text) throw new Error("The clipboard is empty.");
     if (new TextEncoder().encode(text).byteLength > 65536) throw new Error("Clipboard text exceeds 64 KiB.");
     if (cancelPaste) throw new Error("A paste is already in progress.");
@@ -106,11 +123,11 @@ const bridge: DesktopBridge = {
       };
       const written = () => finish();
       const timeout = setTimeout(() => finish(new Error("The Mac did not accept clipboard text.")), 3000);
-      cancelPaste = () => finish(new Error("Desktop disconnected before paste."));
+      cancelPaste = (reason = "Desktop disconnected before paste.") => finish(new Error(reason));
       viewer.addEventListener("clipboardwritten", written);
       try { viewer.clipboardPasteFrom(text); } catch { finish(new Error("Clipboard text could not be sent.")); }
     });
-    if (viewer !== rfb || state.status !== "connected") throw new Error("Desktop disconnected before paste.");
+    if (viewer !== rfb || !active || state.status !== "connected") throw new Error("Desktop disconnected before paste.");
     // macOS Command-V. Clipboard bytes are queued before the shortcut, including
     // the extended clipboard request/provide round trip. Always release Meta.
     viewer.sendKey(0xffeb, "MetaLeft", true);
@@ -119,6 +136,7 @@ const bridge: DesktopBridge = {
   },
 };
 window.kodexDesktop = bridge;
+window.parent.postMessage(DESKTOP_VIEWER_READY, location.origin);
 // Pal's vendor gesture suppression: prevent iOS native zoom, retain local RFB zoom.
 for (const event of ["gesturestart", "gesturechange"]) {
   document.addEventListener(event, (e) => { if ("scale" in e) e.preventDefault(); }, { passive: false });

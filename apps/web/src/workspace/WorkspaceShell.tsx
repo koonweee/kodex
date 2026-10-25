@@ -10,7 +10,7 @@ import { focusWorkspaceDockPanel } from "./focusWorkspaceDockPanel";
 import { WorkspaceDock } from "./WorkspaceDock";
 import { useWorkspace } from "./WorkspaceProvider";
 
-export function WorkspaceShell({ singlePane = false }: { singlePane?: boolean }) {
+export function WorkspaceShell({ singlePane = false, hidden = false }: { singlePane?: boolean; hidden?: boolean }) {
   const dockApi = useRef<DockviewApi | null>(null);
   const {
     clearPanePlacementHints,
@@ -43,7 +43,7 @@ export function WorkspaceShell({ singlePane = false }: { singlePane?: boolean })
   }
 
   return (
-    <Stack className="kodex-workspace-shell" data-single-pane={singlePane ? "true" : undefined} gap={0}>
+    <Stack style={hidden ? { display: "none" } : undefined} className="kodex-workspace-shell" data-single-pane={singlePane ? "true" : undefined} gap={0}>
       {singlePane ? <WorkspaceSinglePaneHeader onClosePane={(paneId, nextActivePaneId) => {
         const api = dockApi.current;
         const panel = api?.getPanel(paneId);

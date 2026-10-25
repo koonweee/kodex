@@ -1128,6 +1128,7 @@ function KodexShell({
           onLoadMoreChatThreads: handleLoadMoreChatThreads, onLoadMoreProjectThreads: handleLoadMoreProjectThreads,
           onPinThread: stableHandlePinThread,
           onOpenPreferences: handleOpenPreferences, onOpenTerminal: gatewayTerminalAvailable ? handleShowWorkspace : undefined,
+          onOpenDesktop: capabilitiesQuery.data?.gateway.desktop?.enabled ? handleShowWorkspace : undefined,
           onMoveProject: handleMoveProject, onSelectChatThread: stableHandleSelectChatThread,
           onSelectAutomations: stableHandleSelectAutomations, onSelectPinnedThread: stableHandleSelectPinnedThread, onSelectProjectSettings: stableHandleSelectProjectSettings, onSelectThread: stableHandleSelectThread, onUnpinThread: stableHandleUnpinThread,
           onShowThread: handleShowMobileThread, onShowDebugEventsChange: setShowDebugEvents, onShowCommandOutputsChange: setShowCommandOutputs, onSidebarCollapseClick: handleSidebarCollapseClick,

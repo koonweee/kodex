@@ -70,6 +70,8 @@ export function KodexShellView({
   workspaceSidebarProps,
   workspaceSelectedThreadPaneId,
 }: KodexShellViewProps) {
+  const { workspace } = useWorkspace();
+  const retainWorkspace = workspace.panes.some((pane) => pane.kind === "desktop");
   const mainLabel = mainPane === "automations" ? "Automations" : mainPane === "project" ? "Project" : "Thread workspace";
   const isNarrowThreadWorkspace = useNarrowWorkspace();
   const useTouchCollapsedSidebarWidth = useInputCapabilities().hasTouchInput;
@@ -117,9 +119,10 @@ export function KodexShellView({
             <Suspense fallback={null}>
               <ProjectPane {...projectPaneProps} />
             </Suspense>
-          ) : (
-            <WorkspaceShell singlePane={useSingleThreadWorkspace} />
-          )}
+          ) : null}
+          {mainPane === "thread" || retainWorkspace ? (
+            <WorkspaceShell singlePane={useSingleThreadWorkspace} hidden={mainPane !== "thread"} />
+          ) : null}
         </Stack>
       </AppShell.Main>
       {preferencesProps.opened ? (
@@ -142,7 +145,7 @@ function WorkspaceSidebarWithPaneActions({
   workspaceSelectedThreadPaneId,
   ...props
 }: WorkspaceSidebarWithPaneActionsProps) {
-  const { openDraftThreadPane, openThreadPane, threadActions } = useWorkspace();
+  const { openDraftThreadPane, openDesktopPane, openThreadPane, threadActions } = useWorkspace();
   const { openTerminal, terminalDirectoryDialog } = useProjectTerminal({
     projects: props.projects,
     selectedMainPane: props.selectedMainPane,
@@ -199,6 +202,11 @@ function WorkspaceSidebarWithPaneActions({
       {...props}
       onArchiveThread={threadActions.onArchiveThread ?? props.onArchiveThread}
       onOpenTerminal={props.onOpenTerminal ? openTerminal : undefined}
+      onOpenDesktop={props.onOpenDesktop ? () => {
+        void openDesktopPane();
+        props.onOpenDesktop?.();
+        if (useSingleThreadMode || readNarrowWorkspace()) props.onShowThread?.();
+      } : undefined}
       onCreateChat={() => {
         props.onCreateChat();
         void openDraftThreadPane(null).catch((error: unknown) => {

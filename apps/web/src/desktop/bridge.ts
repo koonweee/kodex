@@ -1,5 +1,7 @@
 import type { components } from "../api/generated/schema";
 
+export const DESKTOP_VIEWER_READY = "kodex.desktop.ready";
+
 export type DesktopFailure = components["schemas"]["DesktopFailure"];
 export type ViewerState = {
   status: "connecting" | "connected" | "disconnected";

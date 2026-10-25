@@ -1,9 +1,14 @@
 --- a/core/rfb.js
 +++ b/core/rfb.js
-@@ -501,11 +501,21 @@
+@@ -501,11 +501,26 @@
          this._canvas.blur();
      }
  
++    // Kodex: withdraw an outstanding client clipboard offer without a write.
++    cancelClipboardPaste() {
++        this._clipboardText = null;
++    }
++
 +    // Kodex: explicit paste must not silently replace Unicode with '?'.
 +    get clipboardSupportsUnicode() {
 +        return !!(this._clipboardServerCapabilitiesFormats[extendedClipboardFormatText] &&
@@ -24,7 +29,7 @@
  
              this._clipboardText = text;
              RFB.messages.extendedClipboardNotify(this._sock, [extendedClipboardFormatText]);
-@@ -534,6 +544,7 @@
+@@ -534,6 +549,7 @@
              }
  
              RFB.messages.clientCutText(this._sock, data);
@@ -32,7 +37,7 @@
          }
      }
  
-@@ -2403,6 +2414,7 @@
+@@ -2403,6 +2419,7 @@
  
                      if (formats & extendedClipboardFormatText) {
                          RFB.messages.extendedClipboardProvide(this._sock, [extendedClipboardFormatText], [this._clipboardText]);

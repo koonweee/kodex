@@ -36,8 +36,8 @@ test("pinned client uses shared None authentication, renders pixels, and keeps E
   const frame = await open(page);
   await connect(frame);
   await expect.poll(() => fixture.connections[0].shared).toBe(1);
-  await expect.poll(() => frame.locator("canvas").evaluate((canvas) => Array.from(canvas.getContext("2d")!.getImageData(0, 0, 1, 1).data))).toEqual([17, 34, 204, 255]);
-  await frame.locator("canvas").click();
+  await expect.poll(() => frame.locator("#screen canvas").evaluate((canvas) => Array.from(canvas.getContext("2d")!.getImageData(0, 0, 1, 1).data))).toEqual([17, 34, 204, 255]);
+  await frame.locator("#screen canvas").click();
   await page.keyboard.press("Escape");
   await expect.poll(() => fixture.connections[0].keys).toContainEqual({ down: true, keysym: 0xff1b });
   const count = fixture.connections[0].keys.length;
@@ -68,7 +68,7 @@ test("hidden viewer connects without focus, stays connected, and closes independ
   await expect.poll(() => a.connections[0].closed).toBe(true);
   expect((await status(two)).status).toBe("connected");
   expect(b.connections[0].closed).toBe(false);
-  await two.locator("canvas").click();
+  await two.locator("#screen canvas").click();
   await second.keyboard.press("a");
   await expect.poll(() => b.connections[0].keys).toContainEqual({ keysym: 97, down: true });
 });
@@ -198,4 +198,42 @@ test("history restoration preserves a permanent authentication failure", async (
     window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
   });
   expect(await status(frame)).toMatchObject({ status: "disconnected", failure: "authentication", retryable: false });
+});
+
+
+test("rapid Reconnect waits for the closing socket, and cancellation cannot revive it", async ({ page }) => {
+  const fixture = new DesktopRfbFixture(); await fixture.install(page);
+  const frame = await open(page); await connect(frame);
+  fixture.pause();
+  await frame.evaluate(() => { window.kodexDesktop!.connect(); window.kodexDesktop!.connect(); });
+  await page.waitForTimeout(100); // Deliberately withhold the close handshake.
+  expect(fixture.connections).toHaveLength(1);
+  fixture.resume();
+  await expect.poll(() => fixture.connections.length).toBe(2);
+  await expect.poll(async () => (await status(frame)).status).toBe("connected");
+  expect(fixture.connections[0].closed).toBe(true);
+  fixture.pause(1);
+  await frame.evaluate(() => { window.kodexDesktop!.connect(); window.kodexDesktop!.disconnect(); });
+  fixture.resume(1);
+  await expect.poll(() => fixture.connections[1].closed).toBe(true);
+  await page.waitForTimeout(100);
+  expect(fixture.connections).toHaveLength(2);
+});
+
+
+test("hiding during clipboard negotiation cancels the text and shortcut without closing", async ({ page }) => {
+  const fixture = new DesktopRfbFixture(true); await fixture.install(page);
+  const frame = await open(page); await connect(frame);
+  await frame.evaluate(() => {
+    void window.kodexDesktop!.paste("Unicode 👋").catch((error: Error) => {
+      (window as Window & { pasteError?: string }).pasteError = error.message;
+    });
+  });
+  await expect.poll(() => fixture.connections[0].messages.filter((type) => type === 6).length).toBe(2);
+  await frame.evaluate(() => window.kodexDesktop!.setActive(false));
+  fixture.requestClipboard();
+  await expect.poll(() => frame.evaluate(() => (window as Window & { pasteError?: string }).pasteError)).toMatch(/hidden|cancel/i);
+  expect(fixture.connections[0].keys).toEqual([]);
+  expect(fixture.connections[0].clipboard).toEqual([]);
+  expect(fixture.connections[0].closed).toBe(false);
 });

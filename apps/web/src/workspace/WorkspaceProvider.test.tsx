@@ -45,6 +45,19 @@ describe("WorkspaceProvider pane commands", () => {
     vi.clearAllMocks();
   });
 
+  it("opens one Desktop, focuses it on repeat, and ignores duplication", async () => {
+    const store = createMemoryWorkspacePaneStore(workspaceState([draftThreadPane("draft")]));
+    renderProvider(store);
+    const open = screen.getByRole("button", { name: "Open desktop" });
+    fireEvent.click(open); fireEvent.click(open);
+    await waitFor(() => expect(store.getState().panes.filter((pane) => pane.kind === "desktop")).toHaveLength(1));
+    const desktop = store.getState().panes.find((pane) => pane.kind === "desktop")!;
+    expect(store.getState().activePaneId).toBe(desktop.id);
+    fireEvent.click(screen.getByRole("button", { name: "Duplicate desktop" }));
+    expect(store.getState().panes).toHaveLength(2);
+    expect(store.getState().panes[0]?.id).toBe("draft");
+  });
+
   it("reuses the draft pane across projects without changing other panes", async () => {
     const store = createMemoryWorkspacePaneStore(workspaceState([
       draftThreadPane("pane-draft"),
@@ -502,6 +515,8 @@ function CommandHarness() {
       <button type="button" onClick={() => void workspace.openThreadPane("thread-1", "Thread 1", { duplicate: true })}>
         Duplicate thread
       </button>
+      <button onClick={() => void workspace.openDesktopPane()}>Open desktop</button>
+      <button onClick={() => { const desktop = workspace.workspace.panes.find((pane) => pane.kind === "desktop"); if (desktop) workspace.duplicatePane(desktop.id); }}>Duplicate desktop</button>
       <button type="button" onClick={() => void workspace.openTerminalPane()}>
         Open terminal
       </button>

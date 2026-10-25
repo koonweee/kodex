@@ -1,5 +1,5 @@
 import { Box, Menu } from "@mantine/core";
-import { MessageSquare, PanelLeftOpen, Search, SquareTerminal } from "lucide-react";
+import { MessageSquare, PanelLeftOpen, Search, SquareTerminal, Monitor } from "lucide-react";
 import type { PointerEventHandler } from "react";
 
 import type { Project, ThreadSummary } from "../api/client";
@@ -19,6 +19,7 @@ export function CollapsedSidebarRail({
   onExpandPointerEnter,
   onExpandPointerLeave,
   onOpenTerminal,
+  onOpenDesktop,
   onRecentThreadSelect,
   onSearch,
   recentThreads,
@@ -27,6 +28,7 @@ export function CollapsedSidebarRail({
   onExpandPointerEnter?: PointerEventHandler<HTMLButtonElement>;
   onExpandPointerLeave?: PointerEventHandler<HTMLButtonElement>;
   onOpenTerminal?: () => void;
+  onOpenDesktop?: () => void;
   onRecentThreadSelect: (thread: RecentSidebarThread) => void;
   onSearch: () => void;
   recentThreads: RecentSidebarThread[];
@@ -57,6 +59,7 @@ export function CollapsedSidebarRail({
             <SquareTerminal />
           </SidebarIconButton>
         ) : null}
+        {onOpenDesktop ? <SidebarIconButton className="kodex-sidebar-collapsed-button" label="Open desktop" onClick={onOpenDesktop}><Monitor /></SidebarIconButton> : null}
         <Menu position="right-start" withinPortal>
           <Menu.Target>
             <SidebarIconButton

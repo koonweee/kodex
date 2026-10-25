@@ -356,7 +356,7 @@ export function syncWorkspaceIntoDockview(
       api.fromJSON(workspace.dockviewLayout as unknown as Parameters<DockviewApi["fromJSON"]>[0], { reuseExistingPanels: false });
       // Attached thread viewports preserve virtualized scroll state across tab switches.
       for (const pane of workspace.panes) {
-        api.getPanel(pane.id)?.api.setRenderer(pane.kind === "thread" ? "always" : "onlyWhenVisible");
+        api.getPanel(pane.id)?.api.setRenderer(pane.kind === "thread" || pane.kind === "desktop" ? "always" : "onlyWhenVisible");
         api.getPanel(pane.id)?.update({
           params: { pane, activePaneId: workspace.activePaneId ?? null },
         });
@@ -436,7 +436,7 @@ function reconcileWorkspacePanelsInPlace(
     api.addPanel<DockviewPaneParams>({
       id: pane.id,
       component: "workspacePane",
-      renderer: pane.kind === "thread" ? "always" : "onlyWhenVisible",
+      renderer: pane.kind === "thread" || pane.kind === "desktop" ? "always" : "onlyWhenVisible",
       title: paneTitle(pane),
       params: { pane, activePaneId: workspace.activePaneId ?? null },
       ...panelPlacementOptions(api, pane, firstPane, panePlacementHintsById, consumedPlacementHintIds, kodexDockviewTheme.gap),
@@ -461,7 +461,7 @@ function addWorkspacePanels(
     api.addPanel<DockviewPaneParams>({
       id: pane.id,
       component: "workspacePane",
-      renderer: pane.kind === "thread" ? "always" : "onlyWhenVisible",
+      renderer: pane.kind === "thread" || pane.kind === "desktop" ? "always" : "onlyWhenVisible",
       title: paneTitle(pane),
       params: { pane, activePaneId: workspace.activePaneId ?? null },
       ...(index > 0

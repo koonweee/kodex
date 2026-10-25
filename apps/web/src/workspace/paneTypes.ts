@@ -1,4 +1,4 @@
-export type WorkspacePaneType = "thread" | "appSurface" | "terminal";
+export type WorkspacePaneType = "thread" | "appSurface" | "terminal" | "desktop";
 
 export type ThreadPaneTarget =
   | { mode: "existing"; threadId: string; sideThreadOf?: string }
@@ -17,6 +17,7 @@ export type TerminalPaneTarget = {
 };
 
 export type WorkspacePane =
+  | { id: string; kind: "desktop"; target: Record<string, never>; title?: string | null }
   | {
       id: string;
       kind: "thread";
@@ -73,7 +74,7 @@ export function paneTitle(pane: WorkspacePane): string {
   if (pane.kind === "appSurface") {
     return "App Surface";
   }
-  return "Terminal";
+  return pane.kind === "desktop" ? "Desktop" : "Terminal";
 }
 
 export function sideThreadParentId(pane: WorkspacePane): string | null {

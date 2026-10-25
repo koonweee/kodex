@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, readdirSync, statSync, utimesSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -60,4 +60,13 @@ test("metadata-only and corresponding-source edits receive new immutable URLs", 
     assert.notEqual(next, previous, file);
     previous = next;
   }
+}));
+
+
+test("repeat preparation does not reload a mounted development iframe", () => fixture((root) => {
+  const prepared = prepareDesktopViewer(root);
+  utimesSync(prepared.indexPath, 100, 100);
+  const previous = statSync(prepared.indexPath).mtimeMs;
+  prepareDesktopViewer(root);
+  assert.equal(statSync(prepared.indexPath).mtimeMs, previous);
 }));

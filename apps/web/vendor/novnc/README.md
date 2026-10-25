@@ -18,6 +18,8 @@ The browser uses the patched RFB core, with Kodex's small iframe wrapper in
 `integration.patch` adds a Unicode capability getter, rejects lossy legacy
 clipboard writes, and emits `clipboardwritten` after standard/extended bytes
 are queued so Command-V cannot overtake the extended request/provide exchange.
+Its cancellation method withdraws an outstanding clipboard offer when hidden,
+without changing the Mac clipboard or closing the socket.
 The patched vendor source and test patch are separate from Kodex's application
 code. No build or deployment depends on the adjacent Pal checkout.
 

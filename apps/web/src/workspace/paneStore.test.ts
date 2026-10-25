@@ -71,3 +71,28 @@ describe("paneStore", () => {
     expect(serializeWorkspacePaneState(state)).toEqual(state);
   });
 });
+
+it("restores one Desktop, prefers the active duplicate, and discards its stale layout", () => {
+  const state = normalizeWorkspacePaneState({
+    schemaVersion: 1, activePaneId: "desktop-2", dockviewLayout: { stale: true },
+    panes: [
+      { id: "draft", kind: "thread", target: { mode: "draft" } },
+      { id: "desktop-1", kind: "desktop", target: {} },
+      { id: "desktop-2", kind: "desktop", target: {} },
+    ],
+  });
+  expect(state?.panes.map((pane) => pane.id)).toEqual(["draft", "desktop-2"]);
+  expect(state?.activePaneId).toBe("desktop-2");
+  expect(state?.dockviewLayout).toBeNull();
+});
+
+it("does not accept saved Desktop host or credential settings", () => {
+  const state = normalizeWorkspacePaneState({
+    schemaVersion: 1, activePaneId: "desktop", panes: [
+      { id: "draft", kind: "thread", target: { mode: "draft" } },
+      { id: "desktop", kind: "desktop", target: { host: "other-host", password: "private" } },
+    ],
+  });
+  expect(state?.panes).toHaveLength(1);
+  expect(state?.panes[0]?.id).toBe("draft");
+});

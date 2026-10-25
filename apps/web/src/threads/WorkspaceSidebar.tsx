@@ -21,6 +21,7 @@ import {
   Settings,
   SquarePen,
   SquareTerminal,
+  Monitor,
 } from "lucide-react";
 import {
   memo,
@@ -111,6 +112,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onLoadMoreProjectThreads,
   onOpenPreferences,
   onOpenTerminal,
+  onOpenDesktop,
   onPinThread,
   onMoveProject,
   onSelectAutomations,
@@ -160,6 +162,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onLoadMoreProjectThreads?: (projectId: string) => void;
   onOpenPreferences: (section?: import("../PreferencesModal").PreferenceSection) => void;
   onOpenTerminal?: () => void;
+  onOpenDesktop?: () => void;
   onPinThread: (threadId: string) => void;
   onMoveProject: (projectId: string, beforeProjectId: string | null) => void;
   onSelectAutomations: () => void;
@@ -436,6 +439,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
           onExpandPointerEnter={handlers.onPointerEnter}
           onExpandPointerLeave={handlers.onPointerLeave}
           onOpenTerminal={onOpenTerminal}
+          onOpenDesktop={onOpenDesktop}
           onRecentThreadSelect={handleRecentThreadSelect}
           onSearch={handleCollapsedSearchClick}
           recentThreads={recentThreads}
@@ -472,6 +476,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                 query={searchQuery}
               />
               {onOpenTerminal ? <SidebarTextActionRow icon={<SquareTerminal />} label="Terminal" onClick={onOpenTerminal} /> : null}
+              {onOpenDesktop ? <SidebarTextActionRow icon={<Monitor />} label="Desktop" onClick={onOpenDesktop} /> : null}
             </Box>
             <Box className="kodex-sidebar-scope-switch">
               <button
