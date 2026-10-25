@@ -29,13 +29,25 @@ keeps input gated through its first completed pixel update. Pal's touch patches
 remain unchanged; no capture helper or physical display resize is introduced.
 Protocol research was checked against the MPL-2.0 noVNC-ARD implementation at
 https://github.com/peetinc/noVNC-ARD/tree/d699293635083c9e0c30c8f9480993865653772a
-and native macOS 27.0.1 probes. The small Kodex patch implements only the
+and native macOS 27.0.1 probes. Server-side scaling framing was cross-checked with
+https://github.com/renegadelink/iShareScreen/blob/main/docs/apple_vnc_rfc.md#810-scalefactor-0x08
+and proved with the existing dedicated-password physical-desktop connection;
+this remains a reverse-engineered protocol, not a public Apple SDK. The small Kodex patch implements only the
 physical-monitor path with Apple RGB555 reduced-color encoding and standard
 framebuffer fallbacks; it does not bundle
 noVNC-ARD's account authentication, encryption, media, clipboard or UI layer.
 Apple encoding 1002 uses a small RGB555 decoder adapted from the same pinned
 MPL-2.0 source (`ard/decoders/zlib-thousands.js`). Reduced color precision is the
-selected responsiveness default; resolution stays native. Conversion uses strips
+selected responsiveness default. Native ScaleFactor (opcode 8, big-endian float64)
+limits the selected framebuffer to 1920×1080 without upscaling or changing physical
+display modes. Full-frame and automatic requests wait for scale acknowledgment and dimensions
+within the cap/matching physical size × scale (one-pixel rounding allowance).
+Initial input readiness requires one complete selected-frame rectangle; the
+actual Mac 1002 path supplies this. A server that only tiles the initial full
+picture will time out instead of enabling input on an incomplete picture.
+DisplayInfo2 logical bounds and pixel density preserve physical monitor identity
+while framebuffer bounds change/round. Scaling is per connection; each monitor
+selection/reconnect negotiates its own limit. Conversion uses strips
 to avoid full-frame RGB555/RGBA temporary buffers. Idle Tickle (4) renews automatic
 updates; Wake (6) requests a fresh picture on the selected display. Cursor-visible
 (12) does not restart streaming.

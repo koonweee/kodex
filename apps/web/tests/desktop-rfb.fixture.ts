@@ -22,6 +22,12 @@ export class DesktopRfbFixture {
   }
   nativeDisplays = [{ id: 92, main: true, x: 0, y: 0, width: 320, height: 200, fbX: 0, fbY: 0 }];
   displaySelections: number[] = [];
+  scaleRequests: { scale: number; selected: number | null }[] = [];
+  ignoreScaling = false;
+  echoScaleWithoutResize = false;
+  holdBootstrap = false;
+  private bootstrapReplies: (() => void)[] = [];
+  releaseBootstrap() { for (const reply of this.bootstrapReplies.splice(0)) reply(); }
   holdDisplayInfo = false;
   holdFramebuffer = false;
   fragmentDisplayInfo = false;
@@ -97,7 +103,8 @@ export class DesktopRfbFixture {
       };
       this.cursorSenders.push(sendCursor);
       let selected: number | null = null;
-      const dimensions = () => { const d=this.nativeDisplays.find((d)=>d.id===selected); return d ?? this.framebuffer; };
+      let scale = 1;
+      const dimensions = () => { const d=this.nativeDisplays.find((d)=>d.id===selected); const size=d ?? this.framebuffer; return {width:Math.round(size.width*(this.echoScaleWithoutResize?1:scale)),height:Math.round(size.height*(this.echoScaleWithoutResize?1:scale))}; };
       const nativeInfo = () => {
         if (socket.readyState !== 1) return;
         if (!this.nativeDisplays.some((d)=>d.id===selected)) selected=null;
@@ -107,8 +114,8 @@ export class DesktopRfbFixture {
         body.writeUInt16BE(this.displayFailure ? 99 : 5,0); body.writeUInt16BE(width,2); body.writeUInt16BE(height,4);
         body.writeUInt16BE(width,6);body.writeUInt16BE(height,8);body.writeUInt32BE(selected ?? 0xffffffff,10);body.writeUInt32BE(12,14);body.writeUInt16BE(records.length,18);
         for (const [i,d] of records.entries()) {
-          const p=20+i*56;body.writeDoubleBE(1,p);body.writeDoubleBE(1,p+8);body.writeUInt32BE(d.id,p+16);
-          for (const [n,value] of [d.y,d.x,d.y+d.height,d.x+d.width,d.fbY,d.fbX,d.fbY+d.height,d.fbX+d.width].entries()) body.writeInt16BE(value,p+20+n*2);
+          const p=20+i*56;body.writeDoubleBE(1,p);body.writeDoubleBE(scale,p+8);body.writeUInt32BE(d.id,p+16);
+          for (const [n,value] of [d.y,d.x,d.y+d.height,d.x+d.width,...[d.fbY,d.fbX,d.fbY+d.height,d.fbX+d.width].map(v=>Math.round(v*scale))].entries()) body.writeInt16BE(value,p+20+n*2);
           body.writeUInt32BE(d.main?1:0,p+36);Buffer.from([32,24,0,1,0,255,0,255,0,255,16,8,0,0,0,0]).copy(body,p+40);
         }
         let frame: Buffer;
@@ -160,7 +167,7 @@ export class DesktopRfbFixture {
             socket.send(init);
           } else {
             const type = pending[0];
-            let length = ({ 0: 20, 3: 10, 4: 8, 5: 6, 9: 16, 10: 4, 13: 8, 150: 10 } as Record<number, number>)[type];
+            let length = ({ 0: 20, 3: 10, 4: 8, 5: 6, 8: 10, 9: 16, 10: 4, 13: 8, 150: 10 } as Record<number, number>)[type];
             if (type === 2) { if (pending.length < 4) return; length = 4 + pending.readUInt16BE(2) * 4; }
             if (type === 33) { if(pending.length<4)return;length=4+pending.readUInt16BE(2); }
             if (type === 6) { if (pending.length < 8) return; length = 8 + Math.abs(pending.readInt32BE(4)); }
@@ -176,6 +183,11 @@ export class DesktopRfbFixture {
               if(selected!==null)this.displaySelections.push(selected);
               painted=false;sendNativeInfo();
             }
+            if (type === 8) {
+              const requested=message.readDoubleBE(2);
+              this.scaleRequests.push({scale:requested,selected});
+              if (!this.ignoreScaling) {scale=requested;painted=false;sendNativeInfo();}
+            }
             if (type === 4) connection.keys.push({ down: message[1] === 1, keysym: message.readUInt32BE(4) });
             if (type === 5) {
               connection.pointers.push(message[1]);
@@ -188,14 +200,15 @@ export class DesktopRfbFixture {
             if (type === 3 && (!painted || message[1] === 0)) {
               const first = !painted;
               painted = true;
-              const size=this.nativeDesktop?dimensions():this.framebuffer;
+              const available=this.nativeDesktop?dimensions():this.framebuffer;
+              const size={width:Math.min(available.width,message.readUInt16BE(6)),height:Math.min(available.height,message.readUInt16BE(8))};
               const frame = Buffer.alloc(16 + size.width * size.height * 4);
               frame.writeUInt16BE(1, 2); frame.writeUInt16BE(size.width, 8); frame.writeUInt16BE(size.height, 10);
               for (let offset = 16; offset < frame.length; offset += 4) {
                 frame[offset] = this.nativeDesktop ? 30*(1+this.nativeDisplays.findIndex(d=>d.id===selected)) : 0x11; frame[offset + 1] = 0x22; frame[offset + 2] = this.frameBlue;
               }
               const reply=()=>{if(socket.readyState===1){socket.send(frame);sendCursor();}};
-              if(this.holdFramebuffer)this.frameReplies.push(reply);else reply();
+              if(this.holdBootstrap&&message.readUInt16BE(6)<=64&&message.readUInt16BE(8)<=64)this.bootstrapReplies.push(reply);else if(this.holdFramebuffer)this.frameReplies.push(reply);else reply();
               if (first && this.continuousUpdates) socket.send(Buffer.from([150]));
             }
           }

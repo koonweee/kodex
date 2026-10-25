@@ -6,7 +6,7 @@
  /*
   * noVNC: HTML5 VNC client
   * Copyright (C) 2020 The noVNC authors
-@@ -357,16 +359,94 @@
+@@ -357,16 +359,116 @@
  
      get viewOnly() { return this._viewOnly; }
      set viewOnly(viewOnly) {
@@ -27,25 +27,42 @@
 +    }
 +
 +    get appleDesktop() { return !!this._appleDesktop; }
-+    get desktopReady() { return this._appleReadyEpoch === this._appleDisplayEpoch && this._appleReadyDisplay === this._appleRequestedDisplay && this._appleRequestedDisplay !== undefined; }
++    get desktopReady() { return this._appleReadyEpoch === this._appleDisplayEpoch && this._appleReadyDisplay === this._appleRequestedDisplay && this._appleRequestedDisplay !== undefined && this._appleFramebufferMatchesScale(); }
 +    get desktopInfo() { return this._appleDisplayInfo || null; }
 +    selectDesktopDisplay(id) {
 +        if (!this._appleDisplayInfo?.displays.some(d => d.id === id)) throw new Error('Unknown Mac display');
 +        if (this._appleRequestedDisplay !== id) this._appleReadyEpoch = undefined;
 +        this._appleRequestedDisplay = id;
++        const display = this._appleDisplayInfo.displays.find(d => d.id === id);
++        this._appleTargetSize = { width: display.width, height: display.height };
++        this._appleRequestedScale = Math.min(1, 1920 / display.width, 1080 / display.height);
 +        if (this._appleDisplayInfo.selectedDisplay !== id) {
 +            this._sock.sQpushBytes(new Uint8Array([13, 0, 0, 0, id >>> 24, id >>> 16, id >>> 8, id]));
 +            this._sock.flush();
 +        }
++        if (this._appleScale !== this._appleRequestedScale && this._applePendingScale !== this._appleRequestedScale) {
++            this._applePendingScale = this._appleRequestedScale;
++            const message = new Uint8Array(10);
++            message[0] = 8; // Apple server-side scaling; does not change physical display modes.
++            new DataView(message.buffer).setFloat64(2, this._appleRequestedScale);
++            this._sock.sQpushBytes(message); this._sock.flush();
++        }
++    }
++
++    _appleFramebufferMatchesScale(width = this._fbWidth, height = this._fbHeight) {
++        return this._appleTargetSize && this._appleRequestedScale !== undefined && this._appleScale === this._appleRequestedScale &&
++            width <= 1920 && height <= 1080 &&
++            Math.abs(width - Math.round(this._appleTargetSize.width * this._appleRequestedScale)) <= 1 &&
++            Math.abs(height - Math.round(this._appleTargetSize.height * this._appleRequestedScale)) <= 1;
 +    }
 +
 +    _requestAppleFramebuffer() {
-+        if (this._rfbConnectionState !== 'connected' || !this._fbWidth || !this._fbHeight) return;
++        if (this._rfbConnectionState !== 'connected' || !this._fbWidth || !this._fbHeight || !this._appleFramebufferMatchesScale()) return;
 +        RFB.messages.fbUpdateRequest(this._sock, false, 0, 0, this._fbWidth, this._fbHeight);
 +        this._armAppleUpdates();
 +    }
 +    _armAppleUpdates() {
-+        if (!this._fbWidth || !this._fbHeight) return;
++        if (!this._fbWidth || !this._fbHeight || !this._appleFramebufferMatchesScale()) return;
 +        this._sock.sQpushBytes(new Uint8Array([9, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
 +            this._fbWidth >>> 8, this._fbWidth, this._fbHeight >>> 8, this._fbHeight]));
 +        this._sock.flush();
@@ -68,13 +85,18 @@
 +        this._appleFramePixelEpoch = undefined;
 +        this._appleReadyEpoch = undefined;
 +        this._appleDisplayInfo = info;
++        if (info.scale !== undefined) this._appleScale = info.scale;
++        if (this._appleScale === this._applePendingScale) this._applePendingScale = undefined;
 +        this._resize(info.width, info.height);
 +        if (!before || before.selectedDisplay !== info.selectedDisplay || before.width !== info.width || before.height !== info.height) {
 +            this._trackpadPos = null; this._trackpadBase = null; this._trackpadDragButton = 0;
 +            this._trackpadEdgePanStop(); this._trackpadResetZoom();
 +        }
 +        this.dispatchEvent(new CustomEvent('desktopdisplayinfo', { detail: info }));
-+        if (info.selectedDisplay === this._appleRequestedDisplay) this._requestAppleFramebuffer();
++        if (info.selectedDisplay === this._appleRequestedDisplay) {
++            if (this._appleRequestedScale !== undefined && this._appleScale === this._appleRequestedScale && !this._appleFramebufferMatchesScale()) return this._fail('Unsupported scaled Mac framebuffer');
++            this._requestAppleFramebuffer();
++        }
 +        return true;
 +    }
 +    _handleAppleLegacyDisplays() {
@@ -103,7 +125,7 @@
      }
  
      get capabilities() { return this._capabilities; }
-@@ -2140,8 +2220,11 @@
+@@ -2140,8 +2242,11 @@
              case "003.007":
                  this._rfbVersion = 3.7;
                  break;
@@ -116,7 +138,7 @@
              case "004.000":  // Intel AMT KVM
              case "004.001":  // RealVNC 4.6
              case "005.000":  // RealVNC 5.3
-@@ -2167,7 +2250,7 @@
+@@ -2167,7 +2272,7 @@
  
          const cversion = "00" + parseInt(this._rfbVersion, 10) +
                         ".00" + ((this._rfbVersion * 10) % 10);
@@ -125,7 +147,7 @@
          this._sock.flush();
          Log.Debug('Sent ProtocolVersion: ' + cversion);
  
-@@ -2793,6 +2876,10 @@
+@@ -2793,6 +2898,10 @@
          const nameLength = this._sock.rQshift32();
          if (this._sock.rQwait('server init name', nameLength, 24)) { return false; }
          let name = this._sock.rQshiftStr(nameLength);
@@ -136,7 +158,7 @@
          name = decodeUTF8(name, true);
  
          if (this._rfbTightVNC) {
-@@ -2845,15 +2932,28 @@
+@@ -2845,15 +2954,28 @@
              this._fbDepth = 8;
          }
  
@@ -166,7 +188,7 @@
          const encs = [];
  
          // In preference order
-@@ -3193,10 +3293,15 @@
+@@ -3193,10 +3315,15 @@
          }
  
          let first, ret;
@@ -183,7 +205,7 @@
                      RFB.messages.fbUpdateRequest(this._sock, true, 0, 0,
                                                   this._fbWidth, this._fbHeight);
                  }
-@@ -3247,6 +3352,7 @@
+@@ -3247,6 +3374,7 @@
              if (this._sock.rQwait("FBU header", 3, 1)) { return false; }
              this._sock.rQskipBytes(1);  // Padding
              this._FBU.rects = this._sock.rQshift16();
@@ -191,7 +213,7 @@
  
              // Make sure the previous frame is fully rendered first
              // to avoid building up an excessive queue
-@@ -3287,11 +3393,30 @@
+@@ -3287,11 +3415,30 @@
          }
  
          this._display.flip();
@@ -222,7 +244,7 @@
          switch (this._FBU.encoding) {
              case encodings.pseudoEncodingLastRect:
                  this._FBU.rects = 1; // Will be decreased when we return
-@@ -3610,10 +3735,12 @@
+@@ -3610,10 +3757,12 @@
          }
  
          try {
@@ -231,14 +253,14 @@
                                        this._FBU.width, this._FBU.height,
                                        this._sock, this._display,
                                        this._fbDepth);
-+            if (done && this._appleDesktop && this._FBU.encoding !== 1 && this._FBU.width && this._FBU.height && this._appleDisplayInfo?.selectedDisplay === this._appleRequestedDisplay) this._appleFramePixelEpoch = this._appleDisplayEpoch;
++            if (done && this._appleDesktop && this._appleFramebufferMatchesScale() && this._FBU.x === 0 && this._FBU.y === 0 && this._FBU.width === this._fbWidth && this._FBU.height === this._fbHeight && this._FBU.encoding !== 1 && this._FBU.width && this._FBU.height && this._appleDisplayInfo?.selectedDisplay === this._appleRequestedDisplay) this._appleFramePixelEpoch = this._appleDisplayEpoch;
 +            return done;
          } catch (err) {
              this._fail("Error decoding rect: " + err);
              return false;
 --- /dev/null
 +++ b/core/apple-desktop.js
-@@ -0,0 +1,27 @@
+@@ -0,0 +1,36 @@
 +/* Kodex native Apple physical-desktop monitor metadata. MPL-2.0. */
 +export function parseAppleDisplayInfo(bytes) {
 +    if (bytes.length < 20 || bytes.length > 4096) return null;
@@ -248,16 +270,25 @@
 +    const width = data.getUint16(6), height = data.getUint16(8);
 +    if (!width || !height) return null;
 +    const displays = [];
++    let scale;
 +    for (let i = 0; i < count; i++) {
 +        const p = 20 + i * 56;
 +        const id = data.getUint32(p + 16), x = data.getInt16(p + 22), y = data.getInt16(p + 20);
 +        const w = data.getInt16(p + 34) - data.getInt16(p + 30);
 +        const h = data.getInt16(p + 32) - data.getInt16(p + 28);
 +        if (id === 0xffffffff || displays.some(d => d.id === id) || w <= 0 || h <= 0) return null;
-+        displays.push({ id, main: !!(data.getUint32(p + 36) & 1), x, y, width: w, height: h });
++        const density = data.getFloat64(p), currentScale = data.getFloat64(p + 8);
++        const logicalWidth = data.getInt16(p + 26) - x;
++        const logicalHeight = data.getInt16(p + 24) - y;
++        if (!Number.isFinite(density) || density <= 0 || !Number.isFinite(currentScale) || currentScale <= 0 || currentScale > 1 || logicalWidth <= 0 || logicalHeight <= 0) return null;
++        if (scale !== undefined && scale !== currentScale) return null;
++        scale = currentScale;
++        // Logical bounds and pixel density stay fixed when the session scales.
++        // Scaled framebuffer bounds can round, so dividing them loses identity.
++        displays.push({ id, main: !!(data.getUint32(p + 36) & 1), x, y, width: Math.round(logicalWidth * density), height: Math.round(logicalHeight * density) });
 +    }
 +    const selected = data.getUint32(10);
-+    return { width, height, selectedDisplay: selected === 0xffffffff ? null : selected, displays };
++    return { width, height, selectedDisplay: selected === 0xffffffff ? null : selected, displays, scale };
 +}
 +export function appleViewerInfo() {
 +    const bytes = new Uint8Array(66), data = new DataView(bytes.buffer);
