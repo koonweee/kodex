@@ -41,6 +41,7 @@ class LifecycleTests(unittest.TestCase):
         (path / 'frontend').mkdir()
         (path / 'frontend/index.html').write_text(name)
         (path / 'kodex-gateway').write_text('gateway')
+        (path / 'kodex-gateway').chmod(0o755)
         (path / 'codex').write_text('native')
         (path / 'manifest.json').write_text(json.dumps({'schema_version': '0.160.0'}))
         return path
@@ -370,7 +371,7 @@ class LifecycleTests(unittest.TestCase):
         with patch.object(self.app, 'health', return_value=42) as health, \
              patch.object(self.app, 'job', return_value={'pid': 42}), \
              patch.object(self.app, 'notify_frontend_updated') as notify, \
-             patch.object(service, 'swap_directories', side_effect=self.fake_swap), \
+             patch.object(service, 'swap_paths', side_effect=self.fake_swap), \
              patch.object(service, 'run') as commands, \
              patch.object(service, 'acquire_native') as native, \
              patch.object(self.app, 'stop') as stop, patch.object(self.app, 'start') as start, \
@@ -399,7 +400,7 @@ class LifecycleTests(unittest.TestCase):
         old, previous, repo = self.frontend_fixture()
         with patch.object(self.app, 'health', side_effect=[42, 42, service.ServiceError('unhealthy'), 42]), \
              patch.object(self.app, 'job', return_value={'pid': 42}), \
-             patch.object(service, 'swap_directories', side_effect=self.fake_swap) as swap, \
+             patch.object(service, 'swap_paths', side_effect=self.fake_swap) as swap, \
              patch.object(service, 'run'), \
              patch.object(self.app, 'stop') as stop, patch.object(self.app, 'start') as start:
             with self.assertRaisesRegex(service.ServiceError, 'rolled back'):
@@ -419,7 +420,7 @@ class LifecycleTests(unittest.TestCase):
         with patch.object(self.app, 'health', return_value=42), \
              patch.object(self.app, 'job', return_value={'pid': 42}), \
              patch.object(self.app, 'notify_frontend_updated', side_effect=OSError('offline')), \
-             patch.object(service, 'swap_directories', side_effect=self.fake_swap) as swap, \
+             patch.object(service, 'swap_paths', side_effect=self.fake_swap) as swap, \
              patch.object(service, 'run'), patch.object(service.sys, 'stderr', errors):
             self.app.update_frontend(repo)
         self.assertEqual(swap.call_count, 1)
@@ -455,7 +456,7 @@ class LifecycleTests(unittest.TestCase):
         with patch.object(self.app, 'health', return_value=42), \
              patch.object(self.app, 'job', return_value={'pid': 42}), \
              patch.object(service, 'run', side_effect=service.ServiceError('build failed')), \
-             patch.object(service, 'swap_directories') as swap:
+             patch.object(service, 'swap_paths') as swap:
             with self.assertRaisesRegex(service.ServiceError, 'build failed'):
                 self.app.update_frontend(repo)
         self.assertEqual((old / 'frontend/index.html').read_text(), 'old')
@@ -491,7 +492,7 @@ class LifecycleTests(unittest.TestCase):
         (repo / 'apps/web/dist/assets/old-abcdefgh.js').write_text('different content')
         with patch.object(self.app, 'health', return_value=42), \
              patch.object(self.app, 'job', return_value={'pid': 42}), \
-             patch.object(service, 'run'), patch.object(service, 'swap_directories') as swap:
+             patch.object(service, 'run'), patch.object(service, 'swap_paths') as swap:
             with self.assertRaisesRegex(service.ServiceError, 'collision'):
                 self.app.update_frontend(repo)
         self.assertEqual((old / 'frontend/assets/old-abcdefgh.js').read_text(), 'old chunk')
@@ -589,17 +590,17 @@ class LifecycleTests(unittest.TestCase):
         right.mkdir()
         (left / 'index.html').write_text('old')
         (right / 'index.html').write_text('new')
-        service.swap_directories(left, right)
+        service.swap_paths(left, right)
         self.assertEqual((left / 'index.html').read_text(), 'new')
         self.assertEqual((right / 'index.html').read_text(), 'old')
-        service.swap_directories(left, right)
+        service.swap_paths(left, right)
         self.assertEqual((left / 'index.html').read_text(), 'old')
 
     def test_frontend_interrupt_after_swap_restores_frontend(self):
         old, _, repo = self.frontend_fixture()
         with patch.object(self.app, 'health', side_effect=[42, 42, KeyboardInterrupt(), 42]), \
              patch.object(self.app, 'job', return_value={'pid': 42}), \
-             patch.object(service, 'swap_directories', side_effect=self.fake_swap) as swap, \
+             patch.object(service, 'swap_paths', side_effect=self.fake_swap) as swap, \
              patch.object(service, 'run'), patch.object(self.app, 'stop') as stop:
             with self.assertRaises(KeyboardInterrupt):
                 self.app.update_frontend(repo)
@@ -616,7 +617,7 @@ class LifecycleTests(unittest.TestCase):
             self.actions.append('swapped')
         with patch.object(self.app, 'health', side_effect=[42, 42, service.ServiceError('unhealthy')]), \
              patch.object(self.app, 'job', return_value={'pid': 42}), \
-             patch.object(service, 'swap_directories', side_effect=swap), patch.object(service, 'run'):
+             patch.object(service, 'swap_paths', side_effect=swap), patch.object(service, 'run'):
             with self.assertRaisesRegex(service.ServiceError, 'rollback failed'):
                 self.app.update_frontend(repo)
         backups = list(old.glob('.frontend-*/frontend/index.html'))

@@ -26,6 +26,10 @@ security find-identity -v -p codesigning
 
 The certificate must include its private key and permit non-interactive use by `/usr/bin/codesign`; confirm any first-use Keychain prompt with **Always Allow**. The controller signs only the staged `kodex-gateway`, assigns the identifier `dev.kodex.gateway`, verifies the signature and rejects version-specific designated requirements before stopping the running service. The fingerprint is not a secret. A self-signed Code Signing identity is sufficient for one Mac; use Developer ID signing and notarization for distribution to other Macs.
 
+The running gateway is a real regular file at `~/.local/share/kodex/bin/kodex-gateway`, copied from the selected release. Both a stable signing identity and a fixed real executable path matter for macOS privacy permissions: a symlink into `releases/<version>` still resolves to a different permission identity on each update. Keep `bin` and its executable as real filesystem entries; the controller rejects symlinks there. No `.app` bundle or paid Apple developer account is required for this local signing setup. Signing does not grant permissions automatically.
+
+The first full update from a versioned executable path may require granting the gateway's needed permissions again. In System Settings → Privacy & Security, grant the new fixed executable only the permissions needed for your workflow. After confirming that workflow works, remove obsolete `kodex-gateway` entries for previous release paths manually. The controller does not reset or edit the macOS privacy database. Development binaries and separate installations have separate executable paths and do not share this grant.
+
 The default listener is `127.0.0.1:8787`. Choose another unprivileged port with `install --port 8788`. Both explicit starts and launchd starts check that the port is available. A conflict refuses startup and reports an inspection command; it never kills the listener. The gateway's own bind remains the final authority if another process takes the port after the check. Stop an older Kodex deployment deliberately before replacing it. The service never stops tmux jobs or unrelated listeners.
 
 State defaults to `~/.kodex/native-v1`. Use `install --data-dir /absolute/fresh/path` to choose another fresh instance. Existing old stores are not imported, modified or removed; the gateway enforces its native instance rules. Sign in through Kodex's Account dialog after the initial start. The earlier disposable validation login does not sign in this installation.
@@ -38,10 +42,11 @@ The installation layout is:
   controller -> releases/<release>  # or controllers/<snapshot> for a controller-only upgrade
   controllers/<snapshot>/       # optional management-only snapshots
   config.json                   # private settings, mode 0600
+  bin/kodex-gateway             # real installed executable; stable path across releases
   releases/<release>/           # gateway (with Control skills), frontend, Codex, controller
   current -> releases/<release>
   previous -> releases/<release>
-  dev.kodex.gateway.plist        # launchd definition
+  dev.kodex.gateway.plist        # invokes kodex-service through retained controller
   logs/gateway.log
   logs/gateway-error.log
   operations/<id>/              # copied worker, job.json, job.log, one-shot plist
@@ -67,7 +72,7 @@ kodex-service autostart on
 kodex-service autostart off
 ```
 
-- `start` loads the job and verifies the owned listener, native readiness/version, instance identity and served frontend. A loaded healthy job is left running.
+- `start` prepares the fixed executable from the selected release, loads the job and verifies the owned listener, native readiness/version, instance identity and served frontend. A loaded healthy job is left running and its executable is not replaced.
 - `stop` unloads the job and waits for its process to exit. It will not immediately restart. It does not change the next-login setting.
 - `restart` submits an independent one-shot job to stop and start the installed release; it does not build. Add `--wait` to follow its logs.
 - `status` reports launchd registration/PID, installed release, URL and autostart configuration. It is not a full health test; use `start` for that.
@@ -98,7 +103,9 @@ An existing installation can enable stable signing on its next full update. The 
 ./tools/kodex-service update --repo "$PWD" --signing-identity <SHA-1>
 ```
 
-The installed command executes the last installed management controller, so it cannot apply a new acquisition/build implementation until that controller is installed. A controller-only upgrade may stage the three tool files under `controllers/<snapshot>` and switch the controller/entry symlinks under the service lock without changing the gateway release or restarting it. Full updates refresh the separate `controller` pointer; gateway rollback leaves it intact, retaining independent jobs and their observer commands even when the prior gateway release has an older synchronous controller. This checkout command also upgrades an existing installation from desktop extraction to official downloads.
+The fixed-executable launcher is also a controller change: use the checkout's `./tools/kodex-service update --repo "$PWD"` for its first deployment. Restarting an older installed controller or deploying only the frontend does not install this behavior. Keep the same signing certificate across updates and signed rollback releases. The controller verifies signature validity and a stable designated requirement; it does not compare the signer or designated requirement with earlier releases. A valid archived release signed by another certificate can therefore start but may require new permission grants. With signing configured, an unsigned, ad-hoc or invalid rollback executable is rejected before the running service is stopped.
+
+The installed command executes the last installed management controller, so it cannot apply a new acquisition/build implementation until that controller is installed. A controller-only upgrade may stage the three tool files under `controllers/<snapshot>` and switch the controller/entry symlinks under the service lock without changing the gateway release or restarting it. Full updates refresh the separate `controller` pointer; gateway rollback leaves it intact. The gateway launchd definition invokes `kodex-service` through that pointer too, preserving the fixed-path launcher as well as independent jobs and their observer commands when the prior gateway release has an older controller. This checkout command also upgrades an existing installation from desktop extraction to official downloads.
 
 Full `update`, `restart`, `rollback`, and the initial installation always execute in an independent per-user launchd job. The command prints an operation ID, durable log path and initial `queued` state, then returns. Returning means launchd accepted the job; completion still requires a `succeeded` result. There is no foreground execution mode. This lets a deployment finish even when stopping Kodex terminates the agent or shell that requested it.
 
@@ -116,7 +123,9 @@ Operations progress through `queued`, `running`, and `succeeded` or `failed`. Th
 
 The default checkout was recorded at install time. Production frontend builds explicitly use same-origin API routing, overriding development API-base settings. The update command builds the current working tree, including uncommitted changes; it does not pull Git or run the full test suite. Avoid editing or concurrently building that checkout during the update.
 
-Update downloads and verifies the official native package pinned for the checkout's schema, builds Rust with `--release --locked`, runs `npm ci` and the frontend build, and stages the complete release while the current service keeps running. Only after staging succeeds does it stop the owned job, switch the release pointers, start, and verify readiness. Updates also start a previously stopped installation. Login autostart is unchanged. A build failure leaves the running release untouched.
+Update downloads and verifies the official native package pinned for the checkout's schema, builds Rust with `--release --locked`, runs `npm ci` and the frontend build, and stages the complete release while the current service keeps running. It also stages and verifies a copy of the gateway beside `bin/kodex-gateway`. Only after staging succeeds does it stop the owned job, switch the release pointers, atomically replace the fixed executable, start, and verify readiness. The running executable is never overwritten in place, and the archived release binaries remain unchanged. Updates also start a previously stopped installation. Login autostart is unchanged. A build failure leaves the running release untouched.
+
+Before executing the gateway on explicit, login or crash startup, the launcher compares the installed executable's SHA256 with `current/kodex-gateway`. A missing or mismatched copy is staged and atomically replaced from that selected release; an unchanged copy is retained. Configured signed copies are verified without signing them again. This keeps gateway code paired with the selected frontend/native runtime after an interrupted switch; it does not retry a failed update operation or roll back persistent state. Inspect the operation result before deciding whether to start or roll back a failed deployment.
 
 ### Frontend-only updates
 
@@ -140,7 +149,7 @@ If startup/health fails, the new service is stopped and the failed release remai
 kodex-service rollback --data-compatible
 ```
 
-This swaps current/previous and starts the previous release. It never restores databases, credentials, history or project files. Incompatible storage changes require a separately planned fresh instance or other explicit policy; this tool adds no migration mechanism. Older release directories are retained, not automatically deleted. Remove only inactive releases you no longer need, after checking `current`, `previous`, `controller` and any installed native plugin references.
+This stages and verifies the previous gateway before stopping, atomically exchanges the current/previous symlinks, replaces `bin/kodex-gateway` atomically and starts the previous release through the retained controller. It never restores databases, credentials, history or project files. Incompatible storage changes require a separately planned fresh instance or other explicit policy; this tool adds no migration mechanism. Older release directories are retained, not automatically deleted. Remove only inactive releases you no longer need, after checking `current`, `previous`, `controller` and any installed native plugin references.
 
 Edit `~/.local/share/kodex/config.json` for subsequent starts/updates. It records the source checkout, data directory, port, explicit tool PATH and optional `code_signing_identity` certificate fingerprint. Shell profiles are not sourced by launchd. New installations omit `codex_binary`. Earlier values are ignored by the updated controller; retain the key while old controller releases remain rollback targets, since those older controllers still validate it. Native version selection now comes from the checkout schema and verified upstream package digests. The optional `environment` object accepts only the three `KODEX_VAPID_*` values, `KODEX_NOTIFICATIONS_RECHECK_DELAY_MS`, `KODEX_VNC_PASSWORD` and `RUST_LOG`. Configuration errors must be fixed before startup. Desktop `CODEX_HOME`, ambient API credentials and old production environment files are not inherited. Do not put secrets in the plist or commit the private configuration.
 
@@ -157,6 +166,12 @@ KODEX_DESKTOP_HELPER_BINARY="$PWD/target/debug/kodex-gateway" \
 ```
 
 The opt-in proof reads the existing private service VNC credential, creates/removes only the accepted secondary display and verifies native pixels, sharing, reconnect, helper/parent-loss cleanup and unchanged physical configuration. `KODEX_DESKTOP_NATIVE_CONFIG` can select another private service config path for that proof only. It sends no host keyboard, pointer or clipboard input. Its browser uses bundled Chromium. The private declarations are derived from [DeskPad](https://github.com/Stengo/DeskPad), with the notice checked in beside the native source.
+
+## Permission continuity validation
+
+A disposable launchd experiment on macOS 27.0.1 (2026-10-25) used two distinct native builds with the same certificate-based designated requirement. After one user-granted App Management permission, access survived atomic replacement and rollback at the same real path. The identical signed binary launched through a symlink to a different real path was denied; macOS TCC logs attributed it to that resolved target. The probe opened and closed a protected app file for write access without writing bytes, and its hash remained unchanged. Temporary launchd jobs were unloaded; test permission entries are removed manually in System Settings.
+
+This establishes the fixed-path permission mechanism, not completed production gateway acceptance. After deploying the launcher, verify the needed real workflow, perform another full update, and confirm no new grant is needed; separately check login/crash restart. Installed-Chrome push-provider validation remains manual-only from a user-opened terminal, as described in [development guidance](development.md). The probe did not establish logout/reboot persistence or eliminate the need for macOS permission grants.
 
 ## Private HTTPS with Tailscale
 

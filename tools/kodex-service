@@ -39,6 +39,14 @@ def run(args, **kwargs):
     return subprocess.run([str(arg) for arg in args], check=True, **kwargs)
 
 
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with path.open('rb') as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b''):
+            digest.update(chunk)
+    return digest.digest()
+
+
 def link(path, target):
     temporary = path.with_name(path.name + '.new')
     temporary.unlink(missing_ok=True)
@@ -46,10 +54,10 @@ def link(path, target):
     temporary.replace(path)
 
 
-def swap_directories(left, right):
-    """Exchange real directories without a missing-path window (same filesystem)."""
+def swap_paths(left, right):
+    """Atomically exchange filesystem entries, including symlinks themselves."""
     if sys.platform != 'darwin':
-        raise ServiceError('Atomic frontend replacement requires macOS renamex_np')
+        raise ServiceError('Atomic replacement requires macOS renamex_np')
     libc = ctypes.CDLL('/usr/lib/libSystem.B.dylib', use_errno=True)
     rename = libc.renamex_np
     rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
@@ -183,6 +191,7 @@ class Service:
         self.login_plist = (agents or Path.home() / 'Library/LaunchAgents') / self.plist.name
         self.domain = f'gui/{os.getuid()}'
         self.target = f'{self.domain}/{LABEL}'
+        self.gateway = self.root / 'bin/kodex-gateway'
 
     def config(self):
         if not self.config_path.exists():
@@ -221,18 +230,61 @@ class Service:
         try:
             run([CODESIGN, '--force', '--sign', identity, '--identifier', LABEL,
                  '--timestamp=none', gateway], capture_output=True, text=True)
+        except (OSError, subprocess.CalledProcessError) as error:
+            detail = getattr(error, 'stderr', None) or getattr(error, 'stdout', None) or str(error)
+            raise ServiceError(f'Could not sign staged kodex-gateway: {str(detail).strip()}') from error
+        self.verify_gateway(gateway)
+
+    def verify_gateway(self, gateway):
+        if self.config().get('code_signing_identity') is None:
+            return
+        try:
             run([CODESIGN, '--verify', '--strict', '--verbose=2', gateway],
                 capture_output=True, text=True)
             displayed = run([CODESIGN, '--display', '--requirements', '-', gateway],
                             capture_output=True, text=True)
         except (OSError, subprocess.CalledProcessError) as error:
             detail = getattr(error, 'stderr', None) or getattr(error, 'stdout', None) or str(error)
-            raise ServiceError(f'Could not sign staged kodex-gateway: {str(detail).strip()}') from error
+            raise ServiceError(f'Could not verify kodex-gateway: {str(detail).strip()}') from error
         requirement = '\n'.join(filter(None, (displayed.stdout, displayed.stderr)))
         if (f'identifier "{LABEL}"' not in requirement
                 or not re.search(r'\b(anchor|certificate)\b', requirement)
                 or re.search(r'\bcdhash\b', requirement)):
             raise ServiceError('Signed kodex-gateway does not have a stable designated requirement')
+
+    def check_gateway_location(self):
+        directory = self.gateway.parent
+        if directory.is_symlink() or (directory.exists() and not directory.is_dir()):
+            raise ServiceError('Gateway bin directory must be a real directory')
+        if self.gateway.is_symlink() or (self.gateway.exists() and not self.gateway.is_file()):
+            raise ServiceError('Installed kodex-gateway must be a real regular file')
+
+    @contextlib.contextmanager
+    def staged_gateway(self, release):
+        self.check_gateway_location()
+        self.gateway.parent.mkdir(mode=0o700, exist_ok=True)
+        descriptor, name = tempfile.mkstemp(prefix='.gateway-', dir=self.gateway.parent)
+        os.close(descriptor)
+        staged = Path(name)
+        try:
+            shutil.copy2(release / 'kodex-gateway', staged)
+            if not os.access(staged, os.X_OK):
+                raise ServiceError('Release kodex-gateway is not executable')
+            self.verify_gateway(staged)
+            yield staged
+        finally:
+            staged.unlink(missing_ok=True)
+
+    def prepare_gateway(self, release):
+        self.check_gateway_location()
+        source = release / 'kodex-gateway'
+        if (self.gateway.exists() and os.access(self.gateway, os.X_OK)
+                and file_sha256(self.gateway) == file_sha256(source)):
+            self.verify_gateway(self.gateway)
+            return
+        # The selected release also governs login/crash starts after an interrupted switch.
+        with self.staged_gateway(release) as staged:
+            staged.replace(self.gateway)
 
     def environment(self, release):
         config = self.config()
@@ -279,7 +331,7 @@ class Service:
         logs.mkdir(exist_ok=True)
         payload = {
             'Label': LABEL,
-            'ProgramArguments': [sys.executable, str(self.root / 'current/kodex-service'),
+            'ProgramArguments': [sys.executable, str(self.root / 'kodex-service'),
                                  '--root', str(self.root), '_run'],
             'WorkingDirectory': str(self.root),
             'RunAtLoad': True,
@@ -301,6 +353,7 @@ class Service:
             job = None
         if job is None:
             check_port(self.config()['port'])
+            self.prepare_gateway(release)
             self.write_plist()
             run([LAUNCHCTL, 'bootstrap', self.domain, self.plist])
         try:
@@ -450,12 +503,12 @@ class Service:
             if (self.root / 'current').resolve(strict=True) != release:
                 raise ServiceError('Current release changed during frontend build; service unchanged')
             retain_frontend_assets(frontend, staged_frontend)
-            swap_directories(frontend, staged_frontend)
+            swap_paths(frontend, staged_frontend)
             try:
                 self.health(release, expected_pid=pid, api_version=version[1])
             except BaseException as error:
                 try:
-                    swap_directories(frontend, staged_frontend)
+                    swap_paths(frontend, staged_frontend)
                 except BaseException as rollback_error:
                     keep_backup = True
                     raise ServiceError(f'Frontend rollback failed; original frontend retained at {staged_frontend}; '
@@ -480,30 +533,33 @@ class Service:
 
     def update(self, repo):
         release = self.build(repo)  # Build failures cannot stop or replace the live release.
-        self.stop()
-        current = self.root / 'current'
-        if current.exists():
-            link(self.root / 'previous', current.resolve())
-        link(current, release)
-        # Keep the management controller independent of gateway rollback.
-        link(self.root / 'controller', release)
-        link(self.root / 'kodex-service', self.root / 'controller/kodex-service')
-        try:
-            self.start()
-        except Exception:
+        with self.staged_gateway(release) as staged:
             self.stop()
-            raise
+            current = self.root / 'current'
+            if current.exists():
+                link(self.root / 'previous', current.resolve())
+            link(current, release)
+            staged.replace(self.gateway)
+            # Keep the management controller independent of gateway rollback.
+            link(self.root / 'controller', release)
+            link(self.root / 'kodex-service', self.root / 'controller/kodex-service')
+            try:
+                self.start()
+            except Exception:
+                self.stop()
+                raise
 
     def rollback(self, compatible):
         if not compatible:
             raise ServiceError('Rollback requires --data-compatible after reviewing storage compatibility; '
                                'persistent state is never rolled back')
         previous = (self.root / 'previous').resolve(strict=True)
-        current = (self.root / 'current').resolve(strict=True)
-        self.stop()
-        link(self.root / 'current', previous)
-        link(self.root / 'previous', current)
-        self.start()
+        (self.root / 'current').resolve(strict=True)  # Validate both entries before stopping.
+        with self.staged_gateway(previous) as staged:
+            self.stop()
+            swap_paths(self.root / 'current', self.root / 'previous')
+            staged.replace(self.gateway)
+            self.start()
 
     def execute(self):
         release = (self.root / 'current').resolve(strict=True)
@@ -513,7 +569,8 @@ class Service:
             # Applies on login/crash restart too. Successful exit avoids a port-conflict restart loop.
             print(error, file=sys.stderr)
             return
-        os.execve(release / 'kodex-gateway', [str(release / 'kodex-gateway')], self.environment(release))
+        self.prepare_gateway(release)
+        os.execve(self.gateway, [str(self.gateway)], self.environment(release))
 
 
 @contextlib.contextmanager

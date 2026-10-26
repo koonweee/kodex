@@ -166,6 +166,8 @@ The real push-provider browser proof is manual-only; run it from your own termin
 
 For persistent hosting on your Mac, use the [login service and update commands](docs/macos-service.md). The service runs a compiled release independently of your development checkout and works with private Tailscale HTTPS. It downloads the complete official Codex runtime pinned to the checked-in app-server schema and verifies its checksum; it does not extract binaries from the desktop app. Generative UI over Tailscale HTTPS also needs the [separate sandbox origin and frontend build setting](docs/macos-service.md#generative-ui-and-mcp-app-sandbox).
 
+The macOS service launches a real executable at `~/.local/share/kodex/bin/kodex-gateway`, replacing it atomically across updates and rollback while retaining release archives. Keep a consistent optional signing certificate for macOS permission continuity; moving from an older versioned path may require a fresh permission grant. See the [signing and permission guidance](docs/macos-service.md#install).
+
 For compatible UI changes, `./tools/kodex-service update-frontend --repo "$PWD"` builds and deploys only frontend assets while keeping the gateway, active chats, and terminals running. Use the full `update` command for backend changes. Full updates, restarts and rollbacks run as independent one-shot launchd jobs; inspect `operation-status` for completion, or use `--wait` to follow logs without owning the worker lifetime.
 
 ## Project status
