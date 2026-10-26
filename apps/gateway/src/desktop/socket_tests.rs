@@ -52,15 +52,14 @@ async fn server() -> Server {
                 ws.on_upgrade(move |socket| async move {
                     let (gateway, mac) = duplex(4096);
                     sender.send(mac).unwrap();
+                    let mut display_lease = None;
                     run(socket, DesktopConfig::with_password("passwd"), async {
                         acquired.fetch_add(1, Ordering::SeqCst);
-                        let lease = TestLease(acquired);
-                        Ok((gateway, async move {
-                            let _lease = lease;
-                            std::future::pending::<DesktopFailure>().await
-                        }))
+                        display_lease = Some(TestLease(acquired));
+                        Ok((gateway, std::future::pending::<DesktopFailure>()))
                     })
                     .await;
+                    drop(display_lease);
                 })
             }
         }),

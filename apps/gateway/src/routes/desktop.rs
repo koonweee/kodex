@@ -141,9 +141,9 @@ pub struct DesktopDisplayTargetResponse {
 /// Read current helper geometry without creating a display. Native VNC IDs are
 /// deliberately absent: the viewer resolves these logical bounds in its inventory.
 #[utoipa::path(get, path="/v1/desktop/display", responses(
-    (status=200, description="Current connection-owned virtual display, or null while inactive", body=DesktopDisplayTargetResponse),
+    (status=200, description="Current connection-owned virtual display, or null while inactive or using the native login display", body=DesktopDisplayTargetResponse),
     (status=403, description="Desktop unsupported or not configured"),
-    (status=502, description="Owned virtual display unavailable", body=ApiErrorBody)
+    (status=502, description="Display handover in progress or owned virtual display unavailable", body=ApiErrorBody)
 ))]
 pub async fn display_target(State(state): State<AppState>) -> Response {
     if !cfg!(target_os = "macos") || state.config.desktop.password().is_err() {

@@ -4956,7 +4956,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Current connection-owned virtual display, or null while inactive */
+            /** @description Current connection-owned virtual display, or null while inactive or using the native login display */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4972,7 +4972,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Owned virtual display unavailable */
+            /** @description Display handover in progress or owned virtual display unavailable */
             502: {
                 headers: {
                     [name: string]: unknown;

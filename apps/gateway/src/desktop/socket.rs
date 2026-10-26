@@ -13,6 +13,7 @@ pub(crate) async fn serve(
     config: DesktopConfig,
     displays: super::virtual_display::VirtualDisplayManager,
 ) {
+    let mut display_lease = None;
     run(socket, config, async {
         if !cfg!(target_os = "macos") {
             return Err(DesktopFailure::UnsupportedPlatform);
@@ -25,9 +26,13 @@ pub(crate) async fn serve(
         .await
         .map_err(|_| DesktopFailure::Timeout)??;
         let lease = displays.acquire().await?;
-        Ok((upstream, lease.watch()))
+        let lifetime = lease.watch();
+        display_lease = Some(lease);
+        Ok((upstream, lifetime))
     })
     .await;
+    // Promotion waits until all relay futures, upstream sockets and close sends finish.
+    drop(display_lease);
 }
 
 async fn run<U, F, G>(socket: WebSocket, config: DesktopConfig, connect: F)

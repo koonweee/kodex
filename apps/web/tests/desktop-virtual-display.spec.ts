@@ -100,3 +100,40 @@ test("a virtual target absent from native inventory times out without selecting 
     expect(fixture.displaySelections).toEqual([93]);expect(fixture.errors).toEqual([]);
   } finally {await app.close();}
 });
+
+test("two viewers automatically hand over between native login and virtual main with fresh input geometry",async({context})=>{
+  const app=await nativeProjectsFixture(context,{desktopEnabled:true});const fixture=remote();fixture.preferredDisplay=null;await fixture.install(context);
+  try {
+    const first=await app.page("login-handover-first","/threads/history");const frame=await openDesktop(first);
+    const second=await app.page("login-handover-second","/threads/history");const other=await openDesktop(second);
+    const pages=[first,second],frames=[frame,other];
+    for(const page of pages)await expect(page.getByRole("button",{name:/^Desktop display: Main display/})).toBeEnabled();
+    for(const virtual of [true,false]) {
+      const old=fixture.connections.slice();
+      fixture.holdDisplayTarget=true;
+      fixture.preferredDisplay=virtual?{x:0,y:0,width:1200,height:900}:null;
+      for(const display of fixture.nativeDisplays){display.main=display.id===(virtual?93:92);display.x=display.id===92?(virtual?-320:0):display.id===93?(virtual?0:320):(virtual?1200:1520);}
+      for(const socket of fixture.sockets)socket.close({code:4500,reason:'"connection"'});
+      await expect.poll(()=>fixture.connections.length).toBe(old.length+2);
+      await expect.poll(()=>fixture.displayTargetRequests.length).toBe(old.length+2);
+      for(const [index,page] of pages.entries()){
+        await expect(page.getByRole("button",{name:"Paste into Mac"})).toBeDisabled();
+        await frames[index].locator("#screen canvas").click({position:{x:8,y:8}});
+      }
+      for(const connection of fixture.connections.slice(old.length))expect(connection.pointerPositions).toEqual([]);
+      for(const connection of old)expect(connection.closed).toBe(true);
+      fixture.holdDisplayTarget=false;await fixture.releaseDisplayTarget();
+      for(const [index,page] of pages.entries()){
+        await expect(page.getByRole("button",{name:virtual?/^Desktop display: Kodex display/:/^Desktop display: Main display/})).toBeEnabled();
+        await expect(frames[index].locator("#screen canvas")).toHaveJSProperty("width",virtual?1200:320);
+        const canvas=frames[index].locator("#screen canvas"),box=(await canvas.boundingBox())!;
+        await page.mouse.click(box.x+box.width/2,box.y+box.height/2);
+      }
+      for(const connection of fixture.connections.slice(old.length)){
+        const down=connection.pointerPositions.find(position=>position.mask===1);
+        expect(down).toBeDefined();expect(down!.x).toBeCloseTo(virtual?600:160,-1);expect(down!.y).toBeCloseTo(virtual?450:100,-1);
+      }
+    }
+    expect(fixture.errors).toEqual([]);expect(app.errors).toEqual([]);
+  } finally {await app.close();}
+});

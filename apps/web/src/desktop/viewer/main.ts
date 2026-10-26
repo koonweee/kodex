@@ -90,7 +90,9 @@ const bridge: DesktopBridge = {
         if (attempt === generation) { update({ status: "connected", keyboardOpen: false }); monitors.connected(viewer); }
       });
       viewer.addEventListener("disconnect", () => {
-        if (attempt === generation && !gatewayClose) {
+        if (attempt !== generation) return;
+        if (rfb === viewer) rfb = null;
+        if (!gatewayClose) {
           protocolFailure = true;
           monitors.cancel(); cancelPaste?.();
           keyboard.setOpen(false);
