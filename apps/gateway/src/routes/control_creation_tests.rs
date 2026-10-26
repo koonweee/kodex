@@ -400,3 +400,32 @@ async fn fresh_project_automation_uses_native_root_and_rejects_an_override() {
         1
     );
 }
+
+#[tokio::test]
+async fn malformed_control_content_is_rejected_before_activation_or_spawn_admission() {
+    for path in [
+        "/v1/self-control/threads/chat/input",
+        "/v1/self-control/thread-spawns",
+    ] {
+        for input in [
+            json!(["private-message"]),
+            json!([{"type":"text"}]),
+            json!([{"type":"unknown","text":"private-message"}]),
+        ] {
+            let home = tempfile::tempdir().unwrap();
+            let (state, native) = state(home.path()).await;
+            let before = state.store.latest_event_seq().await.unwrap();
+            let mut request = json!({"input":input});
+            if path.ends_with("thread-spawns") {
+                request["idempotencyKey"] = json!("invalid");
+            }
+            let (status, body) = post(&state, path, request).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+            assert_eq!(body["retryable"], false);
+            assert!(body["message"].as_str().unwrap().contains("input[0]"));
+            assert!(!body.to_string().contains("private-message"));
+            assert!(native.requests.lock().unwrap().is_empty());
+            assert_eq!(state.store.latest_event_seq().await.unwrap(), before);
+        }
+    }
+}

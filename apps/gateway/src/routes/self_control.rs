@@ -10,6 +10,7 @@ use axum::{
     routing::{get, patch, post},
     Json, Router,
 };
+use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use utoipa::ToSchema;
@@ -18,7 +19,7 @@ use crate::{
     api::AppState,
     app_server_api::{
         self, RawAppServerResponse, ThreadCommandResponse, ThreadListResponse,
-        ThreadSettingsUpdateRequest, ThreadSubagentListResponse, ThreadViewResponse, UserInput,
+        ThreadSettingsUpdateRequest, ThreadSubagentListResponse, ThreadViewResponse,
     },
     app_surfaces::{
         validate_app_surface_grants, validate_app_surface_title,
@@ -244,7 +245,7 @@ pub fn router() -> Router<AppState> {
 /// Self-control endpoints are the agent-facing product boundary for Kodex-managed mutations.
 /// MCP tools should use these routes instead of raw thread or automation CRUD routes so
 /// gateway-owned policy, reconciliation, provenance, and audit behavior stay centralized.
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, rmcp::schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SelfControlSource {
     /// Self-control provenance marker. The only accepted value is `kodex_control`.
@@ -308,13 +309,15 @@ fn default_self_control_source_type() -> SelfControlSourceType {
 }
 
 /// Allowed provenance source type for self-control requests.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, rmcp::schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SelfControlSourceType {
     KodexControl,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema, rmcp::schemars::JsonSchema,
+)]
 #[serde(rename_all = "camelCase")]
 pub enum SelfControlRequestedBy {
     User,
@@ -798,6 +801,7 @@ pub async fn create_self_control_thread(
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SelfControlThreadInputRequest {
+    #[schema(schema_with = app_server_api::native_input::openapi_schema)]
     pub input: Vec<Value>,
     #[serde(default)]
     pub source: SelfControlSource,
@@ -835,6 +839,7 @@ pub async fn send_self_control_thread_input(
     Json(request): Json<SelfControlThreadInputRequest>,
 ) -> ApiResult<Json<SelfControlThreadInputResponse>> {
     enforce_self_control_depth(request.max_self_control_depth)?;
+    app_server_api::native_input::validate(&request.input)?;
     let _guard = state.thread_input_locks.lock(&thread_id).await;
     let client = app_server_api::client(&state.app_server);
     client.activate_input_target(&thread_id).await?;
@@ -1207,7 +1212,8 @@ pub struct SelfControlThreadSpawnRequest {
     pub project_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
-    pub input: Vec<UserInput>,
+    #[schema(schema_with = app_server_api::native_input::openapi_schema)]
+    pub input: Vec<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1264,6 +1270,7 @@ pub async fn spawn_self_control_thread(
     State(state): State<AppState>,
     Json(request): Json<SelfControlThreadSpawnRequest>,
 ) -> ApiResult<Json<SelfControlThreadSpawnResponse>> {
+    app_server_api::native_input::validate(&request.input)?;
     let remaining_depth = consume_self_control_depth(request.max_self_control_depth)?;
     let idempotency_key = request
         .idempotency_key
@@ -1342,11 +1349,7 @@ pub async fn spawn_self_control_thread(
         State(state.clone()),
         Path(thread_id.clone()),
         Json(SelfControlThreadInputRequest {
-            input: request
-                .input
-                .into_iter()
-                .map(serde_json::to_value)
-                .collect::<Result<Vec<_>, _>>()?,
+            input: request.input,
             source: request.source.clone(),
             max_self_control_depth: None,
         }),

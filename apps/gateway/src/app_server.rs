@@ -389,6 +389,7 @@ fn api_error_classification(error: &ApiError) -> &'static str {
         ApiError::NativeRpc(error) if error.config_write_error_code().is_some() => {
             "config_write_error"
         }
+        ApiError::QueueAdmissionUncertain => "queue_admission_uncertain",
         ApiError::NativeRpc(_) | ApiError::BadGateway(_) => "bad_gateway",
         ApiError::Store(_) => "store_error",
         ApiError::Io(_) => "io_error",

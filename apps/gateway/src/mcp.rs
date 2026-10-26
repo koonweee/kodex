@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use tokio::time::{sleep, Duration, Instant};
 
+#[cfg(test)]
+mod input_tests;
 mod pins;
 mod subagents;
 #[cfg(test)]
@@ -41,6 +43,13 @@ pub struct ThreadNotificationsToolParams {
     pub source: Option<Value>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RequestPolicy {
+    General,
+    Input,
+    Spawn,
+}
+
 #[derive(Clone)]
 pub struct KodexControlMcp {
     gateway_url: String,
@@ -64,21 +73,43 @@ impl KodexControlMcp {
     }
 
     async fn get_json(&self, path: &str) -> Result<Value, McpError> {
-        self.request_json(reqwest::Method::GET, path, None).await
+        self.request_json(reqwest::Method::GET, path, None, RequestPolicy::General)
+            .await
     }
 
     async fn post_json(&self, path: &str, body: Value) -> Result<Value, McpError> {
-        self.request_json(reqwest::Method::POST, path, Some(body))
+        self.request_json(
+            reqwest::Method::POST,
+            path,
+            Some(body),
+            RequestPolicy::General,
+        )
+        .await
+    }
+
+    async fn post_input_json(
+        &self,
+        path: &str,
+        body: Value,
+        policy: RequestPolicy,
+    ) -> Result<Value, McpError> {
+        self.request_json(reqwest::Method::POST, path, Some(body), policy)
             .await
     }
 
     async fn patch_json(&self, path: &str, body: Value) -> Result<Value, McpError> {
-        self.request_json(reqwest::Method::PATCH, path, Some(body))
-            .await
+        self.request_json(
+            reqwest::Method::PATCH,
+            path,
+            Some(body),
+            RequestPolicy::General,
+        )
+        .await
     }
 
     async fn delete_json(&self, path: &str, body: Option<Value>) -> Result<Value, McpError> {
-        self.request_json(reqwest::Method::DELETE, path, body).await
+        self.request_json(reqwest::Method::DELETE, path, body, RequestPolicy::General)
+            .await
     }
 
     async fn request_json(
@@ -86,13 +117,18 @@ impl KodexControlMcp {
         method: reqwest::Method,
         path: &str,
         body: Option<Value>,
+        policy: RequestPolicy,
     ) -> Result<Value, McpError> {
+        let input_write = policy != RequestPolicy::General;
         let url = format!("{}{}", self.gateway_url, path);
         let mut request = self.client.request(method, url);
         if let Some(body) = body {
             request = request.json(&body);
         }
         let response = request.send().await.map_err(|error| {
+            if input_write {
+                return uncertain_input_error();
+            }
             McpError::internal_error(
                 "gateway request failed",
                 Some(json!({ "error": error.to_string() })),
@@ -100,12 +136,33 @@ impl KodexControlMcp {
         })?;
         let status = response.status();
         let body = response.text().await.map_err(|error| {
+            if input_write {
+                return uncertain_input_error();
+            }
             McpError::internal_error(
                 "failed to read gateway response body",
                 Some(json!({ "error": error.to_string() })),
             )
         })?;
         if !status.is_success() {
+            if input_write {
+                // A spawn may already have created a thread before input is rejected.
+                if status.as_u16() == 422
+                    || (status.as_u16() == 400 && policy == RequestPolicy::Input)
+                {
+                    let body: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
+                    let message = body.get("message").and_then(Value::as_str).unwrap_or(
+                        "Gateway rejected the input arguments. Check the advertised input and source schemas before submitting again."
+                    );
+                    return Err(McpError::invalid_params(
+                        message.to_owned(),
+                        Some(json!({
+                            "status":status.as_u16(), "code":body.get("code"), "delivery":"rejected", "retryable":false
+                        })),
+                    ));
+                }
+                return Err(uncertain_input_error());
+            }
             let body = serde_json::from_str::<Value>(&body).unwrap_or(Value::String(body));
             return Err(McpError::internal_error(
                 "gateway returned an error",
@@ -113,9 +170,15 @@ impl KodexControlMcp {
             ));
         }
         if status == reqwest::StatusCode::NO_CONTENT {
+            if input_write {
+                return Err(uncertain_input_error());
+            }
             return Ok(Value::Null);
         }
         let value = serde_json::from_str::<Value>(&body).map_err(|error| {
+            if input_write {
+                return uncertain_input_error();
+            }
             McpError::internal_error(
                 "gateway returned invalid JSON",
                 Some(json!({
@@ -209,8 +272,12 @@ pub struct CreateThreadToolParams {
 pub struct SendThreadInputToolParams {
     #[serde(alias = "thread_id")]
     pub thread_id: String,
+    /// Native content objects; text example: [{"type":"text","text":"your message"}].
+    #[schemars(schema_with = "crate::app_server_api::native_input::mcp_schema")]
     pub input: Vec<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Optional provenance object, e.g. {"requestedBy":"user","reason":"handoff"}. Omit if unnecessary.
+    #[schemars(with = "Option<crate::routes::self_control::SelfControlSource>")]
     pub source: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_self_control_depth: Option<u8>,
@@ -478,6 +545,8 @@ pub struct SpawnThreadToolParams {
     /// For projects, must match the sole root. For standalone chats, omit to create a dated chat directory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
+    /// Native content objects; text example: [{"type":"text","text":"your message"}].
+    #[schemars(schema_with = "crate::app_server_api::native_input::mcp_schema")]
     pub input: Vec<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
@@ -490,6 +559,8 @@ pub struct SpawnThreadToolParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub idempotency_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Optional provenance object, e.g. {"requestedBy":"user","reason":"handoff"}. Omit if unnecessary.
+    #[schemars(with = "Option<crate::routes::self_control::SelfControlSource>")]
     pub source: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_self_control_depth: Option<u8>,
@@ -815,16 +886,18 @@ impl KodexControlMcp {
         &self,
         Parameters(params): Parameters<SendThreadInputToolParams>,
     ) -> Result<CallToolResult, McpError> {
+        validate_control_input(&params.input, params.source.as_ref())?;
         let thread_id = params.thread_id.clone();
         let mut body = json_object(params)?;
         body.remove("threadId");
         Ok(json_tool_result(
-            self.post_json(
+            self.post_input_json(
                 &format!(
                     "/v1/self-control/threads/{}/input",
                     path_segment(&thread_id)
                 ),
                 Value::Object(body),
+                RequestPolicy::Input,
             )
             .await?,
         ))
@@ -956,10 +1029,12 @@ impl KodexControlMcp {
         &self,
         Parameters(params): Parameters<SpawnThreadToolParams>,
     ) -> Result<CallToolResult, McpError> {
+        validate_control_input(&params.input, params.source.as_ref())?;
         Ok(json_tool_result(
-            self.post_json(
+            self.post_input_json(
                 "/v1/self-control/thread-spawns",
                 Value::Object(spawn_thread_body(params)?),
+                RequestPolicy::Spawn,
             )
             .await?,
         ))
@@ -1930,6 +2005,33 @@ fn normalize_self_control_source_shorthand(body: &mut Map<String, Value>) -> Res
             Some(json!({ "field": "source" })),
         )),
     }
+}
+
+fn uncertain_input_error() -> McpError {
+    McpError::internal_error(
+        "Input delivery was not confirmed. Inspect the target queue and history (and native threads for spawn_thread) before explicitly submitting again. Do not automatically retry or use a new spawn key.",
+        Some(json!({"code":"input_delivery_uncertain","delivery":"uncertain","retryable":false})),
+    )
+}
+
+fn validate_control_input(input: &[Value], source: Option<&Value>) -> Result<(), McpError> {
+    crate::app_server_api::native_input::validate(input).map_err(|error| {
+        McpError::invalid_params(
+            error.body().message,
+            Some(json!({"field":"input","delivery":"not_attempted","retryable":false})),
+        )
+    })?;
+    if let Some(source) = source.filter(|source| !source.is_null()) {
+        if serde_json::from_value::<crate::routes::self_control::SelfControlSource>(source.clone())
+            .is_err()
+        {
+            return Err(McpError::invalid_params(
+                "source must be a provenance object, for example {\"requestedBy\":\"user\",\"reason\":\"handoff\"}, or omitted. No input was submitted; correct the arguments before submitting again.",
+                Some(json!({"field":"source","delivery":"not_attempted","retryable":false})),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn json_encode_error(error: serde_json::Error) -> McpError {

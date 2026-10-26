@@ -31,6 +31,8 @@ pub enum ApiError {
     Retryable(String),
     #[error("{}", native_rpc_public_error(.0))]
     NativeRpc(JsonRpcError),
+    #[error("Native queue admission was not confirmed. Delivery may have occurred; inspect the queue and history before explicitly submitting again. Do not automatically retry.")]
+    QueueAdmissionUncertain,
     #[error("bad gateway: {0}")]
     BadGateway(String),
     #[error(transparent)]
@@ -103,7 +105,7 @@ impl ApiError {
             Self::NativeConfigWrite(_) => StatusCode::BAD_REQUEST,
             Self::AppServerUnavailable => StatusCode::SERVICE_UNAVAILABLE,
             Self::Retryable(_) => StatusCode::TOO_MANY_REQUESTS,
-            Self::BadGateway(_) => StatusCode::BAD_GATEWAY,
+            Self::BadGateway(_) | Self::QueueAdmissionUncertain => StatusCode::BAD_GATEWAY,
             Self::Store(_) | Self::Io(_) | Self::Other(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -164,6 +166,12 @@ impl ApiError {
                 code: "app_server_retryable".to_string(),
                 message: message.clone(),
                 retryable: true,
+                data: None,
+            },
+            Self::QueueAdmissionUncertain => ApiErrorBody {
+                code: "native_queue_admission_uncertain".into(),
+                message: self.to_string(),
+                retryable: false,
                 data: None,
             },
             Self::BadGateway(message) => ApiErrorBody {

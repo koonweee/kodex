@@ -15,6 +15,8 @@ use crate::{
 
 pub const TRANSFER_CHANGED_EVENT: &str = "turn_queue.transfer_changed";
 
+#[cfg(test)]
+mod input_tests;
 mod projection;
 mod promotion;
 
@@ -90,9 +92,13 @@ pub(crate) async fn enqueue_locked(
     let row = match client.queue_add(thread_id.into(), input, client_id).await {
         Ok(row) => row,
         Err(error @ ApiError::BadRequest(_)) => return Err(error),
-        Err(_) => return Err(ApiError::BadGateway(
-            "Native queue admission was not confirmed. Delivery may have occurred; inspect the queue before explicitly submitting again. No automatic retry was made.".into()
-        )),
+        Err(ApiError::NativeRpc(error)) if matches!(error.code, -32600 | -32601 | -32602) => {
+            return Err(ApiError::BadRequest(format!(
+                "Native queue request rejected ({}). Check the target thread, queue capacity, input schema and pinned runtime compatibility before submitting again. No input was submitted.",
+                error.code
+            )));
+        }
+        Err(_) => return Err(ApiError::QueueAdmissionUncertain),
     };
     Ok(row)
 }

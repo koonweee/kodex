@@ -3333,7 +3333,75 @@ export interface components {
         /** @enum {string} */
         SelfControlThreadInputAction: "queued";
         SelfControlThreadInputRequest: {
-            input: unknown[];
+            input: ({
+                text: string;
+                /** @description UI-defined spans within `text` used to render or persist special elements. */
+                text_elements?: {
+                    /** @description Byte range in the parent `text` buffer that this element occupies. */
+                    byteRange: {
+                        /** Format: uint */
+                        end: number;
+                        /** Format: uint */
+                        start: number;
+                    };
+                    /** @description Optional human-readable placeholder for the element, displayed in the UI. */
+                    placeholder?: string | null;
+                }[];
+                /**
+                 * TextUserInputType
+                 * @enum {string}
+                 */
+                type: "text";
+            } | ({
+                detail?: ("auto" | "low" | "high" | "original") | null;
+                /**
+                 * ImageUserInputType
+                 * @enum {string}
+                 */
+                type: "image";
+            } & ({
+                url: string;
+            } | {
+                fileId: string;
+            })) | {
+                detail?: ("auto" | "low" | "high" | "original") | null;
+                path: string;
+                /**
+                 * LocalImageUserInputType
+                 * @enum {string}
+                 */
+                type: "localImage";
+            } | {
+                /**
+                 * AudioUserInputType
+                 * @enum {string}
+                 */
+                type: "audio";
+                url: string;
+            } | {
+                path: string;
+                /**
+                 * LocalAudioUserInputType
+                 * @enum {string}
+                 */
+                type: "localAudio";
+            } | {
+                name: string;
+                path: string;
+                /**
+                 * SkillUserInputType
+                 * @enum {string}
+                 */
+                type: "skill";
+            } | {
+                name: string;
+                path: string;
+                /**
+                 * MentionUserInputType
+                 * @enum {string}
+                 */
+                type: "mention";
+            })[];
             /** Format: int32 */
             maxSelfControlDepth?: number | null;
             source?: components["schemas"]["SelfControlSource"];
@@ -3360,7 +3428,75 @@ export interface components {
             effort?: string | null;
             goal?: string | null;
             idempotencyKey?: string | null;
-            input: components["schemas"]["UserInput"][];
+            input: ({
+                text: string;
+                /** @description UI-defined spans within `text` used to render or persist special elements. */
+                text_elements?: {
+                    /** @description Byte range in the parent `text` buffer that this element occupies. */
+                    byteRange: {
+                        /** Format: uint */
+                        end: number;
+                        /** Format: uint */
+                        start: number;
+                    };
+                    /** @description Optional human-readable placeholder for the element, displayed in the UI. */
+                    placeholder?: string | null;
+                }[];
+                /**
+                 * TextUserInputType
+                 * @enum {string}
+                 */
+                type: "text";
+            } | ({
+                detail?: ("auto" | "low" | "high" | "original") | null;
+                /**
+                 * ImageUserInputType
+                 * @enum {string}
+                 */
+                type: "image";
+            } & ({
+                url: string;
+            } | {
+                fileId: string;
+            })) | {
+                detail?: ("auto" | "low" | "high" | "original") | null;
+                path: string;
+                /**
+                 * LocalImageUserInputType
+                 * @enum {string}
+                 */
+                type: "localImage";
+            } | {
+                /**
+                 * AudioUserInputType
+                 * @enum {string}
+                 */
+                type: "audio";
+                url: string;
+            } | {
+                path: string;
+                /**
+                 * LocalAudioUserInputType
+                 * @enum {string}
+                 */
+                type: "localAudio";
+            } | {
+                name: string;
+                path: string;
+                /**
+                 * SkillUserInputType
+                 * @enum {string}
+                 */
+                type: "skill";
+            } | {
+                name: string;
+                path: string;
+                /**
+                 * MentionUserInputType
+                 * @enum {string}
+                 */
+                type: "mention";
+            })[];
             /** Format: int32 */
             maxSelfControlDepth?: number | null;
             model?: string | null;

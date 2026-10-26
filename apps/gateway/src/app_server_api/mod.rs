@@ -14,6 +14,7 @@ mod mcp_apps;
 #[cfg(test)]
 mod mcp_apps_tests;
 mod mcp_config;
+pub(crate) mod native_input;
 mod pins;
 mod projects;
 mod queue;

@@ -83,6 +83,7 @@ impl CodexClient {
         input: Vec<Value>,
         client_id: String,
     ) -> ApiResult<NativeQueuedSubmission> {
+        super::native_input::validate(&input)?;
         let response: SubmissionResponse = self
             .queue_response(
                 "thread/queue/add",
@@ -113,6 +114,7 @@ impl CodexClient {
         queue_id: String,
         input: Vec<Value>,
     ) -> ApiResult<NativeQueuedSubmission> {
+        super::native_input::validate(&input)?;
         let response: SubmissionResponse = self
             .queue_response(
                 "thread/queue/update",
