@@ -8,23 +8,33 @@ use tokio::{
     net::TcpStream,
 };
 
-pub(crate) async fn serve(socket: WebSocket, config: DesktopConfig) {
+pub(crate) async fn serve(
+    socket: WebSocket,
+    config: DesktopConfig,
+    displays: super::virtual_display::VirtualDisplayManager,
+) {
     run(socket, config, async {
         if !cfg!(target_os = "macos") {
             return Err(DesktopFailure::UnsupportedPlatform);
         }
         // This destination is deliberately not configurable through any request.
-        TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, 5900))
-            .await
-            .map_err(Into::into)
+        let upstream = tokio::time::timeout(
+            Duration::from_secs(3),
+            TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, 5900)),
+        )
+        .await
+        .map_err(|_| DesktopFailure::Timeout)??;
+        let lease = displays.acquire().await?;
+        Ok((upstream, lease.watch()))
     })
     .await;
 }
 
-async fn run<U, F>(socket: WebSocket, config: DesktopConfig, connect: F)
+async fn run<U, F, G>(socket: WebSocket, config: DesktopConfig, connect: F)
 where
     U: AsyncRead + AsyncWrite + Unpin,
-    F: Future<Output = Result<U, DesktopFailure>>,
+    F: Future<Output = Result<(U, G), DesktopFailure>>,
+    G: Future<Output = DesktopFailure>,
 {
     let (mut sink, mut source) = socket.split();
     let failure = {
@@ -55,10 +65,12 @@ where
         };
         let attempt = async {
             let password = config.password()?;
-            let upstream = tokio::time::timeout(Duration::from_secs(3), connect)
-                .await
-                .map_err(|_| DesktopFailure::Timeout)??;
-            super::relay(relay_stream, upstream, password, Duration::from_secs(10)).await
+            // TCP and helper acquisition enforce their own independent bounds.
+            let (upstream, display_lifetime) = connect.await?;
+            tokio::select! {
+                result=super::relay(relay_stream, upstream, password, Duration::from_secs(10))=>result,
+                failure=display_lifetime=>Err(failure),
+            }
         };
         // Separate reader/writer futures avoid head-of-line deadlocks under
         // bidirectional pressure. No detached pumps outlive this connection.

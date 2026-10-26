@@ -388,6 +388,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/desktop/display": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read current helper geometry without creating a display. Native VNC IDs are
+         *     deliberately absent: the viewer resolves these logical bounds in its inventory.
+         */
+        get: operations["display_target"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/desktop/ws": {
         parameters: {
             query?: never;
@@ -2592,8 +2612,11 @@ export interface components {
         DesktopClipboardRequest: {
             text: string;
         };
+        DesktopDisplayTargetResponse: {
+            preferredDisplay?: null | components["schemas"]["DisplayTarget"];
+        };
         /** @enum {string} */
-        DesktopFailure: "unsupportedPlatform" | "configuration" | "authentication" | "passwordAccessDisabled" | "protocol" | "connection" | "timeout";
+        DesktopFailure: "unsupportedPlatform" | "configuration" | "authentication" | "passwordAccessDisabled" | "protocol" | "connection" | "virtualDisplay" | "timeout";
         DirectoryEntry: {
             name: string;
             path: string;
@@ -2607,6 +2630,16 @@ export interface components {
             homePath: string;
             parentPath?: string | null;
             path: string;
+        };
+        DisplayTarget: {
+            /** Format: int32 */
+            height: number;
+            /** Format: int32 */
+            width: number;
+            /** Format: int32 */
+            x: number;
+            /** Format: int32 */
+            y: number;
         };
         EventEnvelope: {
             codexMethod?: string | null;
@@ -4884,6 +4917,42 @@ export interface operations {
                 content?: never;
             };
             /** @description Bounded native clipboard write failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    display_target: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current connection-owned virtual display, or null while inactive */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DesktopDisplayTargetResponse"];
+                };
+            };
+            /** @description Desktop unsupported or not configured */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Owned virtual display unavailable */
             502: {
                 headers: {
                     [name: string]: unknown;

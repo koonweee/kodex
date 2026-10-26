@@ -404,6 +404,8 @@ class Service:
             gateway = stage / 'kodex-gateway'
             shutil.copy2(repo / 'target/release/kodex-gateway', gateway)
             self.sign_gateway(gateway)
+            (stage / 'licenses').mkdir()
+            shutil.copy2(repo / 'apps/gateway/src/desktop/native/LICENSE.DeskPad', stage / 'licenses/LICENSE.DeskPad')
             shutil.copytree(repo / 'apps/web/dist', stage / 'frontend')
             (stage / 'manifest.json').write_text(json.dumps({'schema_version': version, 'native': native}))
             destination = releases / (time.strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:8])

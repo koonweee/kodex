@@ -146,6 +146,18 @@ Edit `~/.local/share/kodex/config.json` for subsequent starts/updates. It record
 
 `KODEX_VNC_PASSWORD` is an optional gateway-only credential for local Screen Sharing authentication. Set the matching dedicated password in macOS Screen Sharing's **VNC viewers may control screen with password** option. Use 1–8 printable ASCII characters; empty disables configuration, and unsupported/overlong values report a Desktop configuration error without truncation. Store the service value in the private config's `environment` object and keep that file private with `chmod 600 ~/.local/share/kodex/config.json`. The controller rejects a nonempty configured password in a group/world-accessible file and rejects NUL-containing environment values before process startup. Signing-identity updates write private temporary config files before atomic replacement. The password is absent from launchd plists, serialized gateway configuration, Codex children and integrated terminals. This adds no gateway authentication; retain trusted local/VPN-only access. The [Desktop pane plan](../plans/desktop-vnc-pane.md) tracks the browser integration and native validation.
 
+Desktop's connection-owned 1200×900 virtual display is implemented by a private helper entry in the signed gateway binary; no additional executable or configuration value is installed. One helper is shared across active Desktop sockets and survives a five-second reconnect grace. EOF/signals/parent loss release its display. Physical displays stay enabled with their existing configuration. CGVirtualDisplay is a private macOS API and may require adaptation on a future OS; helper creation failures surface in Desktop. The full release includes the DeskPad MIT notice at `licenses/LICENSE.DeskPad`. Changes to this helper require a full service update. Native lifecycle validation can run against a disposable gateway route and in-memory store, without restarting the installed service:
+
+```bash
+cargo build -p kodex-gateway --bin kodex-gateway
+cd apps/web && npm run build
+cd ../..
+KODEX_DESKTOP_HELPER_BINARY="$PWD/target/debug/kodex-gateway" \
+  cargo test -p kodex-gateway routes::desktop_tests::native_virtual_display_lifecycle --lib -- --ignored --nocapture
+```
+
+The opt-in proof reads the existing private service VNC credential, creates/removes only the accepted secondary display and verifies native pixels, sharing, reconnect, helper/parent-loss cleanup and unchanged physical configuration. `KODEX_DESKTOP_NATIVE_CONFIG` can select another private service config path for that proof only. It sends no host keyboard, pointer or clipboard input. Its browser uses bundled Chromium. The private declarations are derived from [DeskPad](https://github.com/Stengo/DeskPad), with the notice checked in beside the native source.
+
 ## Private HTTPS with Tailscale
 
 Keep Kodex bound to loopback. Enable Tailscale's launch-at-login setting, then configure an unused HTTPS listener:

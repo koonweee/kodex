@@ -158,6 +158,7 @@ pub struct AppState {
     pub(crate) self_control_spawn_locks: crate::turn_lifecycle::ThreadInputLocks,
     pub queue_steer_guards: crate::queue_steer_guard::QueueSteerGuards,
     pub terminals: crate::terminal::TerminalManager,
+    pub(crate) desktop_displays: crate::desktop::virtual_display::VirtualDisplayManager,
 }
 
 impl AppState {
@@ -186,6 +187,7 @@ impl AppState {
             self_control_spawn_locks: crate::turn_lifecycle::ThreadInputLocks::default(),
             queue_steer_guards: crate::queue_steer_guard::QueueSteerGuards::default(),
             terminals,
+            desktop_displays: crate::desktop::virtual_display::VirtualDisplayManager::default(),
         }
     }
 
@@ -210,6 +212,7 @@ impl AppState {
         crate::routes::frontend_updates::publish_frontend_update,
         crate::routes::desktop::connect,
         crate::routes::desktop::write_clipboard,
+        crate::routes::desktop::display_target,
         crate::routes::terminals::list_terminals,
         crate::routes::terminals::create_terminal,
         crate::routes::terminals::delete_terminal,
@@ -368,6 +371,8 @@ impl AppState {
         DesktopCapabilities,
         crate::desktop::DesktopFailure,
         crate::routes::desktop::DesktopClipboardRequest,
+        crate::routes::desktop::DesktopDisplayTargetResponse,
+        crate::desktop::virtual_display::DisplayTarget,
         AppServerCapabilities,
         CreateTerminalSession,
         TerminalDeleteResponse,

@@ -1,7 +1,13 @@
 use super::*;
 use axum::{extract::ws::WebSocketUpgrade, routing::get, Router};
 use futures_util::{SinkExt, StreamExt};
-use std::collections::VecDeque;
+use std::{
+    collections::VecDeque,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+};
 use tokio::{
     io::{duplex, AsyncReadExt, AsyncWriteExt, DuplexStream},
     net::{TcpListener, TcpStream},
@@ -14,7 +20,15 @@ use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, Web
 const LIMIT: Duration = Duration::from_secs(3);
 const VERSION: &[u8] = b"RFB 003.889\n";
 
+struct TestLease(Arc<AtomicUsize>);
+impl Drop for TestLease {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 struct Server {
+    leases: Arc<AtomicUsize>,
     url: String,
     connections: mpsc::UnboundedReceiver<DuplexStream>,
     task: JoinHandle<()>,
@@ -27,16 +41,24 @@ impl Drop for Server {
 
 async fn server() -> Server {
     let (sender, connections) = mpsc::unbounded_channel();
+    let leases = Arc::new(AtomicUsize::new(0));
+    let acquired = leases.clone();
     let app = Router::new().route(
         "/",
         get(move |ws: WebSocketUpgrade| {
             let sender = sender.clone();
+            let acquired = acquired.clone();
             async move {
                 ws.on_upgrade(move |socket| async move {
                     let (gateway, mac) = duplex(4096);
                     sender.send(mac).unwrap();
                     run(socket, DesktopConfig::with_password("passwd"), async {
-                        Ok(gateway)
+                        acquired.fetch_add(1, Ordering::SeqCst);
+                        let lease = TestLease(acquired);
+                        Ok((gateway, async move {
+                            let _lease = lease;
+                            std::future::pending::<DesktopFailure>().await
+                        }))
                     })
                     .await;
                 })
@@ -49,6 +71,7 @@ async fn server() -> Server {
         axum::serve(listener, app).await.unwrap();
     });
     Server {
+        leases,
         url,
         connections,
         task,
@@ -402,6 +425,8 @@ fn native_display_info(selected: u32) -> Vec<u8> {
         body[offset..offset + 2].copy_from_slice(&value.to_be_bytes());
     }
     body[10..14].copy_from_slice(&selected.to_be_bytes());
+    body[20..28].copy_from_slice(&1f64.to_be_bytes());
+    body[28..36].copy_from_slice(&1f64.to_be_bytes());
     body[36..40].copy_from_slice(&92u32.to_be_bytes());
     body[56..60].copy_from_slice(&1u32.to_be_bytes());
     let mut frame = vec![0; 18];
@@ -410,4 +435,45 @@ fn native_display_info(selected: u32) -> Vec<u8> {
     frame[16..18].copy_from_slice(&76u16.to_be_bytes());
     frame.extend(body);
     frame
+}
+
+#[tokio::test]
+async fn display_lease_lives_through_relay_and_releases_on_auth_cancel_failure_and_native_eof() {
+    timeout(LIMIT, async {
+        let mut server = server().await;
+        // Browser disappears while native authentication is still pending.
+        let mut viewer = Viewer::connect(&server.url).await;
+        let mac = server.connections.recv().await.unwrap();
+        while server.leases.load(Ordering::SeqCst) != 1 {
+            tokio::task::yield_now().await;
+        }
+        viewer.socket.close(None).await.unwrap();
+        while server.leases.load(Ordering::SeqCst) != 0 {
+            tokio::task::yield_now().await;
+        }
+        drop(mac);
+        // Rejected native password releases the same ownership boundary.
+        let mut viewer = Viewer::connect(&server.url).await;
+        let mut mac = server.connections.recv().await.unwrap();
+        mac_auth(&mut mac, false).await;
+        viewer.failure(4400, "\"authentication\"").await;
+        assert_eq!(server.leases.load(Ordering::SeqCst), 0);
+        // Successful ClientInit and traffic must keep the display alive until EOF.
+        let mut viewer = Viewer::connect(&server.url).await;
+        let mut mac = server.connections.recv().await.unwrap();
+        mac_auth(&mut mac, true).await;
+        viewer.init(b"input").await;
+        assert_eq!(mac.read_u8().await.unwrap(), 0x81);
+        let mut input = [0; 5];
+        mac.read_exact(&mut input).await.unwrap();
+        assert_eq!(&input, b"input");
+        mac.write_all(b"pixels").await.unwrap();
+        assert_eq!(viewer.read(6).await, b"pixels");
+        assert_eq!(server.leases.load(Ordering::SeqCst), 1);
+        drop(mac);
+        viewer.failure(4500, "\"connection\"").await;
+        assert_eq!(server.leases.load(Ordering::SeqCst), 0);
+    })
+    .await
+    .unwrap();
 }

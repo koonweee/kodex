@@ -275,3 +275,97 @@ async fn clipboard_decoded_bounds_reject_before_native_process() {
         );
     }
 }
+
+#[tokio::test]
+async fn display_target_is_a_read_only_generated_contract_and_does_not_create_a_helper() {
+    let app = build_router(state("fixture1").await);
+    let response = app
+        .oneshot(
+            Request::get("/v1/desktop/display")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        response.status(),
+        if cfg!(target_os = "macos") {
+            StatusCode::OK
+        } else {
+            StatusCode::FORBIDDEN
+        }
+    );
+    if cfg!(target_os = "macos") {
+        assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+        let body = to_bytes(response.into_body(), 4096).await.unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+            serde_json::json!({"preferredDisplay":null})
+        );
+    }
+}
+
+/// Bounded opt-in physical-host proof. Uses only the existing private VNC
+/// password; the test server/store are disposable and no Codex runtime starts.
+#[cfg(target_os = "macos")]
+#[tokio::test]
+#[ignore = "requires built gateway/frontend, bundled Chromium and configured local Screen Sharing"]
+async fn native_virtual_display_lifecycle() {
+    let helper = std::env::var_os("KODEX_DESKTOP_HELPER_BINARY")
+        .expect("Set KODEX_DESKTOP_HELPER_BINARY to the tested gateway executable");
+    let config_path = std::env::var_os("KODEX_DESKTOP_NATIVE_CONFIG")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::path::PathBuf::from(std::env::var_os("HOME").unwrap())
+                .join(".local/share/kodex/config.json")
+        });
+    #[derive(serde::Deserialize)]
+    struct NativeConfig {
+        environment: NativeEnvironment,
+    }
+    #[derive(serde::Deserialize)]
+    struct NativeEnvironment {
+        #[serde(rename = "KODEX_VNC_PASSWORD")]
+        password: String,
+    }
+    let bytes = zeroize::Zeroizing::new(std::fs::read(config_path).unwrap());
+    let config: NativeConfig = serde_json::from_slice(&bytes).unwrap();
+    let password = zeroize::Zeroizing::new(config.environment.password);
+    drop(bytes);
+    let mut state = state(&password).await;
+    state.desktop_displays = crate::desktop::virtual_display::VirtualDisplayManager::with_command(
+        helper.clone().into(),
+        vec!["--desktop-virtual-display-helper".into()],
+        std::time::Duration::from_secs(5),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let app = crate::routes::desktop::router().with_state(state);
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let web = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../web");
+    let mut browser = tokio::process::Command::new("node");
+    browser
+        .current_dir(web)
+        .arg("scripts/test-desktop-virtual-native.mjs")
+        .arg(format!("http://{address}"))
+        .arg(helper)
+        .arg(std::process::id().to_string())
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .kill_on_drop(true)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(90),
+        browser.spawn().unwrap().wait_with_output(),
+    )
+    .await;
+    server.abort();
+    let output = result.expect("native lifecycle proof exceeded90s").unwrap();
+    assert!(
+        output.status.success(),
+        "native proof failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    println!("{}", String::from_utf8_lossy(&output.stdout));
+}

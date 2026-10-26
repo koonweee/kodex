@@ -7,7 +7,9 @@ use zeroize::Zeroizing;
 pub(crate) mod clipboard;
 mod config;
 pub(crate) mod socket;
+pub(crate) mod virtual_display;
 pub use config::DesktopConfig;
+pub use virtual_display::run_helper as run_virtual_display_helper;
 
 const VERSION: &[u8; 12] = b"RFB 003.008\n";
 const APPLE_VERSION: &[u8; 12] = b"RFB 003.889\n";
@@ -37,6 +39,8 @@ pub enum DesktopFailure {
     Protocol,
     #[error("The desktop connection was interrupted or is unavailable.")]
     Connection,
+    #[error("The Mac could not create the Desktop virtual display.")]
+    VirtualDisplay,
     #[error("The desktop connection timed out.")]
     Timeout,
 }

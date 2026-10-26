@@ -1,4 +1,4 @@
-import { writeDesktopClipboard } from "../../api/desktop";
+import { readDesktopDisplayTarget, writeDesktopClipboard } from "../../api/desktop";
 import RFB from "@desktop-vendor/core/rfb.js";
 import { DESKTOP_VIEWER_READY, type DesktopBridge, type DesktopFailure, type ViewerState } from "../bridge";
 import { createMonitorSelection } from "./monitors";
@@ -15,13 +15,13 @@ let trackpad = true;
 let generation = 0;
 let state: ViewerState = { status: "disconnected", keyboardOpen: false };
 const listeners = new Set<(state: ViewerState) => void>();
-const failures: DesktopFailure[] = ["unsupportedPlatform", "configuration", "authentication", "passwordAccessDisabled", "protocol", "connection", "timeout"];
+const failures: DesktopFailure[] = ["unsupportedPlatform", "configuration", "authentication", "passwordAccessDisabled", "protocol", "connection", "timeout", "virtualDisplay"];
 function update(next: ViewerState) { state = { ...next, ...monitors.state() }; for (const listener of listeners) listener(state); }
 const keyboard = virtualKeyboard(input, () => rfb, (keyboardOpen) => update({ ...state, keyboardOpen }));
 let cancelPaste: ((reason?: string) => void) | undefined;
 const monitors = createMonitorSelection(() => rfb, () => update({ ...state }), () => { cancelPaste?.("Desktop display changed; paste was canceled."); keyboard.setOpen(false); }, (failure, retryable) => {
   bridge.disconnect(); update({ status: "disconnected", keyboardOpen: false, failure, retryable });
-});
+}, readDesktopDisplayTarget);
 
 function disconnect() {
   generation++;

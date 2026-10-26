@@ -40,3 +40,6 @@ zeroize = "1"
 tokio-tungstenite = "0.29"
 http-body-util = "0.1"
 tempfile = "3"
+
+[build-dependencies]
+cc = "1"

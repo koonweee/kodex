@@ -242,12 +242,13 @@ class LifecycleTests(unittest.TestCase):
 
     def test_build_packages_release_and_forces_same_origin(self):
         repo = self.root / 'repo'
-        for folder in ('tools', 'apps/gateway/src', 'apps/web/dist', 'target/release',
+        for folder in ('tools', 'apps/gateway/src', 'apps/gateway/src/desktop/native', 'apps/web/dist', 'target/release',
                        'runtime/kodex/skills'):
             (repo / folder).mkdir(parents=True)
         (repo / 'apps/gateway/src/schema.rs').write_text('APP_SERVER_SCHEMA_VERSION: &str = "0.160.0"')
         for name in service.CONTROLLER_FILES:
             (repo / 'tools' / name).write_text('controller')
+        (repo / 'apps/gateway/src/desktop/native/LICENSE.DeskPad').write_text('DeskPad MIT notice')
         (repo / 'target/release/kodex-gateway').write_text('executable')
         (repo / 'apps/web/dist/index.html').write_text('frontend')
         def acquire(version, stage):
@@ -262,6 +263,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(build.kwargs['env']['VITE_KODEX_API_BASE_URL'], '')
         self.assertEqual((release / 'frontend/index.html').read_text(), 'frontend')
         self.assertEqual((release / 'codex').read_text(), 'native executable')
+        self.assertEqual((release / 'licenses/LICENSE.DeskPad').read_text(), 'DeskPad MIT notice')
         for name in service.CONTROLLER_FILES:
             self.assertEqual((release / name).read_text(), 'controller')
 
@@ -269,11 +271,12 @@ class LifecycleTests(unittest.TestCase):
         identity = 'A' * 40
         self.app.configure_code_signing_identity(identity)
         repo = self.root / 'repo'
-        for folder in ('tools', 'apps/gateway/src', 'apps/web/dist', 'target/release'):
+        for folder in ('tools', 'apps/gateway/src', 'apps/gateway/src/desktop/native', 'apps/web/dist', 'target/release'):
             (repo / folder).mkdir(parents=True)
         (repo / 'apps/gateway/src/schema.rs').write_text('APP_SERVER_SCHEMA_VERSION: &str = "0.160.0"')
         for name in service.CONTROLLER_FILES:
             (repo / 'tools' / name).write_text('controller')
+        (repo / 'apps/gateway/src/desktop/native/LICENSE.DeskPad').write_text('DeskPad MIT notice')
         (repo / 'target/release/kodex-gateway').write_text('executable')
         (repo / 'apps/web/dist/index.html').write_text('frontend')
 

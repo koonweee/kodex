@@ -17,6 +17,10 @@ const clipboardWrites = [];
 const server = createServer(async (request, response) => {
   const pathname = new URL(request.url, "http://localhost").pathname;
 
+  if (request.method === "GET" && pathname === "/v1/desktop/display") {
+    response.setHeader("Content-Type", "application/json");
+    response.end(JSON.stringify({preferredDisplay:null})); return;
+  }
   if (request.method === "POST" && pathname === "/v1/desktop/clipboard") {
     let body = "";
     for await (const chunk of request) body += chunk;

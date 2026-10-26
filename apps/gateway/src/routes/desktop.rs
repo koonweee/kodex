@@ -11,10 +11,13 @@ use axum::{
 };
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/v1/desktop/ws", get(connect)).route(
-        "/v1/desktop/clipboard",
-        post(write_clipboard).layer(DefaultBodyLimit::max(512 * 1024)),
-    )
+    Router::new()
+        .route("/v1/desktop/display", get(display_target))
+        .route("/v1/desktop/ws", get(connect))
+        .route(
+            "/v1/desktop/clipboard",
+            post(write_clipboard).layer(DefaultBodyLimit::max(512 * 1024)),
+        )
 }
 
 // Vite and Tailscale Serve retain the browser-facing Host. TLS may terminate
@@ -69,12 +72,13 @@ pub async fn connect(
         return Err(StatusCode::FORBIDDEN);
     }
     let config = state.config.desktop.clone();
+    let displays = state.desktop_displays.clone();
     Ok(ws
         .max_message_size(1024 * 1024)
         .max_frame_size(1024 * 1024)
         .write_buffer_size(32 * 1024)
         .max_write_buffer_size(128 * 1024)
-        .on_upgrade(move |socket| crate::desktop::socket::serve(socket, config))
+        .on_upgrade(move |socket| crate::desktop::socket::serve(socket, config, displays))
         .into_response())
 }
 
@@ -125,5 +129,35 @@ where
     match write(text).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => error.into_response(),
+    }
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopDisplayTargetResponse {
+    pub preferred_display: Option<crate::desktop::virtual_display::DisplayTarget>,
+}
+
+/// Read current helper geometry without creating a display. Native VNC IDs are
+/// deliberately absent: the viewer resolves these logical bounds in its inventory.
+#[utoipa::path(get, path="/v1/desktop/display", responses(
+    (status=200, description="Current connection-owned virtual display, or null while inactive", body=DesktopDisplayTargetResponse),
+    (status=403, description="Desktop unsupported or not configured"),
+    (status=502, description="Owned virtual display unavailable", body=ApiErrorBody)
+))]
+pub async fn display_target(State(state): State<AppState>) -> Response {
+    if !cfg!(target_os = "macos") || state.config.desktop.password().is_err() {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    match state.desktop_displays.target().await {
+        Ok(preferred_display) => (
+            [(axum::http::header::CACHE_CONTROL, "no-store")],
+            Json(DesktopDisplayTargetResponse { preferred_display }),
+        )
+            .into_response(),
+        Err(_) => ApiError::BadGateway(
+            "The Mac virtual display is unavailable. Reconnect to try again.".into(),
+        )
+        .into_response(),
     }
 }

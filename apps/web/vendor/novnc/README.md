@@ -24,6 +24,11 @@ bounded DisplayInfo2 monitor metadata and uses native SetDisplay to change the
 server framebuffer. Monitor IDs are opaque server IDs, independent of
 CoreGraphics physical IDs. The gateway owns password authentication and forces
 shared/enhanced initialization without the optional account/session picker.
+The gateway shares a fixed 1200×900 secondary virtual display across Desktop
+connections. The wrapper resolves its current logical bounds from the generated
+display-target endpoint once per connection, then selects its opaque native ID.
+Later native selection remains synchronous inside metadata handling; explicit
+per-viewer monitor choices survive reconnect. Physical displays remain enabled.
 The viewer requests only the selected framebuffer after acknowledgment and
 keeps input gated through its first completed pixel update. Pal's touch patches
 remain unchanged; no capture helper or physical display resize is introduced.

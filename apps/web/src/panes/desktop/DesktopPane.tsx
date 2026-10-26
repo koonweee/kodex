@@ -23,6 +23,7 @@ const messages: Record<DesktopFailure, string> = {
   protocol: "The Desktop viewer could not negotiate Screen Sharing.",
   connection: "Could not reach Screen Sharing on the gateway Mac.",
   timeout: "Screen Sharing did not respond in time.",
+  virtualDisplay: "The Mac could not create the Kodex display. Reconnect to try again.",
 };
 
 export function DesktopPane({ pane }: WorkspacePaneComponentProps) {

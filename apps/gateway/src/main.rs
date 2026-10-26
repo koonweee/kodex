@@ -14,8 +14,15 @@ use kodex_gateway::{
 use tokio::sync::mpsc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+fn main() -> anyhow::Result<()> {
+    if std::env::args().skip(1).collect::<Vec<_>>() == ["--desktop-virtual-display-helper"] {
+        std::process::exit(kodex_gateway::desktop::run_virtual_display_helper());
+    }
+    run_main()
+}
+
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn run_main() -> anyhow::Result<()> {
     if std::env::args().skip(1).collect::<Vec<_>>() == ["mcp", "kodex-control"] {
         tracing_subscriber::fmt()
             .with_env_filter(

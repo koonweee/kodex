@@ -10,6 +10,12 @@ export class DesktopRfbFixture {
   framebuffer = { width: 320, height: 200 };
   nativeDesktop = false;
   nativeDensity = 1;
+  preferredDisplay: { x: number; y: number; width: number; height: number } | null = null;
+  displayTargetRequests: (DesktopRfbFixture["preferredDisplay"])[] = [];
+  holdDisplayTarget = false;
+  displayTargetFailure = false;
+  private targetReplies: (() => Promise<void>)[] = [];
+  async releaseDisplayTarget() { for (const reply of this.targetReplies.splice(0)) await reply(); }
   frameBlue = 0xcc;
   private stateSenders: ((statuses: number[], fragmented: boolean) => void)[] = [];
   sendNativeStates(statuses: number[], fragmented = false) {
@@ -60,6 +66,17 @@ export class DesktopRfbFixture {
     for (const reply of this.clipboardReplies.splice(0)) await reply();
   }
   async install(page: Page | BrowserContext) {
+    await page.route("**/v1/desktop/display", async route => {
+      const preferredDisplay=this.preferredDisplay;
+      this.displayTargetRequests.push(preferredDisplay);
+      const reply = async () => {
+        try {
+          if (this.displayTargetFailure) await route.fulfill({status:502,json:{code:"bad_gateway",message:"The Mac virtual display is unavailable.",retryable:true}});
+          else await route.fulfill({json:{preferredDisplay}});
+        } catch { /* A closed/reconnected viewer no longer owns this read. */ }
+      };
+      if (this.holdDisplayTarget) this.targetReplies.push(reply); else await reply();
+    });
     await page.route("**/v1/desktop/clipboard", async (route) => {
       this.clipboardWrites.push((route.request().postDataJSON() as { text: string }).text);
       const reply = async () => {
