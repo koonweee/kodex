@@ -91,7 +91,6 @@ export function KodexShellView({
       data-sidebar-collapsed={sidebarCollapsed ? "true" : undefined}
       data-sidebar-resizing={isSidebarResizing ? "true" : undefined}
     >
-      <div className="kodex-pwa-safe-area" aria-hidden="true" />
       <WorkspaceSidebarWithPaneActions
         {...workspaceSidebarProps}
         sidebarCollapsed={sidebarCollapsed}
@@ -105,7 +104,7 @@ export function KodexShellView({
         data-single-pane-workspace={rendersSinglePaneWorkspace ? "true" : undefined}
       >
         <Stack
-          h="calc(100dvh - var(--app-shell-padding))"
+          h="calc(100dvh - var(--app-shell-padding) - var(--kodex-pwa-header-height, 0px))"
           gap="md"
           className="kodex-main-stack"
           data-draft-thread={isDraftThreadSelected ? "true" : undefined}

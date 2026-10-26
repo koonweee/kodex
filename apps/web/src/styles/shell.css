@@ -1,4 +1,4 @@
-.kodex-shell {
+:root {
   --kodex-workspace-header-bg: color-mix(in srgb, var(--kodex-bg-panel) 86%, var(--kodex-bg-shell));
 }
 
@@ -13,7 +13,7 @@
 }
 
 .kodex-main {
-  padding-top: calc(var(--app-shell-padding) / 2);
+  padding-top: calc(var(--app-shell-padding) / 2 + var(--kodex-pwa-header-height, 0px));
   padding-right: calc(var(--app-shell-padding) / 2);
   padding-bottom: calc(var(--app-shell-padding) / 2);
   padding-left: var(--app-shell-navbar-offset);
