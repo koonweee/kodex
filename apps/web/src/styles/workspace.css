@@ -490,6 +490,7 @@
 
 .kodex-thread-pane {
   --kodex-thread-column-max: 900px;
+  --kodex-thread-inline-space: 12px;
 
   background: var(--kodex-pane-bg);
   display: grid;
@@ -551,7 +552,7 @@
 .kodex-thread-pane-scroll {
   min-height: 0;
   overflow: auto;
-  padding: var(--kodex-pane-edge-space) var(--kodex-pane-edge-space) 8px;
+  padding: var(--kodex-pane-edge-space) var(--kodex-thread-inline-space) 8px;
 }
 
 .kodex-thread-pane-existing > .kodex-thread-content {
@@ -561,7 +562,7 @@
 }
 
 .kodex-thread-pane-existing > .kodex-composer-shell {
-  --kodex-thread-column-inline-gutter: var(--kodex-pane-edge-space);
+  --kodex-thread-column-inline-gutter: var(--kodex-thread-inline-space);
 
   align-self: end;
   grid-row: 3;
