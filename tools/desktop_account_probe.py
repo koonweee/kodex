@@ -57,13 +57,21 @@ def read_exact(peer, length, deadline):
     while len(result) < length:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise ProbeError("Native authentication timed out.")
+            raise ProbeError("Native protocol timed out.")
         peer.settimeout(remaining)
         block = peer.recv(length - len(result))
         if not block:
-            raise ProbeError("Screen Sharing closed the authentication connection.")
+            raise ProbeError("Screen Sharing closed the protocol connection.")
         result.extend(block)
     return result
+
+
+def send_bounded(peer, data, deadline):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise ProbeError('Native protocol timed out.')
+    peer.settimeout(remaining)
+    peer.sendall(data)
 
 
 def account_signin(peer, username, password):
@@ -75,11 +83,11 @@ def account_signin(peer, username, password):
     version = read_exact(peer, 12, deadline)
     if version != b'RFB 003.889\n':
         raise ProbeError("Unsupported Screen Sharing protocol.")
-    peer.sendall(version)
+    send_bounded(peer, version, deadline)
     count = read_exact(peer, 1, deadline)[0]
     if not count or 30 not in read_exact(peer, count, deadline):
         raise ProbeError("Screen Sharing did not offer Apple account authentication; no fallback was attempted.")
-    peer.sendall(b'\x1e')
+    send_bounded(peer, b'\x1e', deadline)
     generator, size = struct.unpack('>HH', read_exact(peer, 4, deadline))
     if not 16 <= size <= 512:
         raise ProbeError("Unsupported native authentication key size.")
@@ -99,13 +107,132 @@ def account_signin(peer, username, password):
     encrypted = None
     try:
         encrypted = aes_ecb(credentials, key)
-        peer.sendall(encrypted + public)
+        send_bounded(peer, encrypted + public, deadline)
     finally:
         for buffer in (credentials, key, shared, encrypted):
             if buffer is not None:
                 buffer[:] = b'\0' * len(buffer)
     if struct.unpack('>I', read_exact(peer, 4, deadline))[0] != 0:
         raise ProbeError("The Mac rejected account sign-in. No retry was attempted.")
+
+
+def session_body(peer, minimum, deadline):
+    size, = struct.unpack('>H', read_exact(peer, 2, deadline))
+    if not minimum <= size <= 4096:
+        raise ProbeError('Invalid native session packet size.')
+    body = read_exact(peer, size, deadline)
+    if body[:2] != b'\0\1':
+        raise ProbeError('Unsupported native session version.')
+    return body
+
+
+def select_console(peer, username):
+    """Request only this operator's existing console; never a new/virtual login.
+
+    Framing reference: peetinc/noVNC-ARD ard/ard-patch.js,
+    d699293635083c9e0c30c8f9480993865653772a (MPL-2.0).
+    This is reverse-engineered behavior, not a public Apple API.
+    """
+    if not 1 <= len(username) <= 63 or 0 in username:
+        raise ProbeError('Invalid console username.')
+    deadline = time.monotonic() + 10
+    send_bounded(peer, b'\xc1', deadline)  # Shared + session select + enhanced.
+    header = read_exact(peer, 24, deadline)
+    width, height = struct.unpack_from('>HH', header)
+    size, = struct.unpack_from('>I', header, 20)
+    if not 22 <= size <= 65536:
+        raise ProbeError('Missing or oversized extended ServerInit.')
+    name = read_exact(peer, size, deadline)
+    if name[0] != 0 or not (struct.unpack_from('>I', name, 2)[0] & 4):
+        raise ProbeError('The server did not offer explicit console selection.')
+    info = session_body(peer, 11, deadline)
+    allowed, = struct.unpack_from('>I', info, 2)
+    console = info[10:]
+    if 0 not in console or console.split(b'\0', 1)[0] != username or not (allowed & 2):
+        raise ProbeError('Own existing console was not offered; no session command was sent.')
+    command = struct.pack('>HHIBB', 72, 1, 0, 1, 0) + username + bytes(64 - len(username))
+    send_bounded(peer, command, deadline)  # ConnectToConsole=1, never RequestConsole/Virtual.
+    for _ in range(32):
+        result = session_body(peer, 6, deadline)
+        status, = struct.unpack_from('>I', result, 2)
+        if status in (0, 4):
+            return width, height
+        if status not in (2, 3):
+            raise ProbeError('Existing-console selection was not granted.')
+    raise ProbeError('Existing-console selection remained pending; no retry was attempted.')
+
+
+def check_pixels(peer, width, height):
+    """Read/discard one bounded raw pixel sample; this does not prove unlock.
+
+    No host input, clipboard, session encryption or physical display changes.
+    Unsupported protocol data is inconclusive instead of guessed or logged.
+    """
+    deadline = time.monotonic() + 10
+    bitmap = bytearray(32)
+    for index, value in ((0, 0xb0), (2, 0x0c), (3, 3), (4, 0x90), (10, 0x40)):
+        bitmap[index] = value
+    viewer = struct.pack('>BBHHI6I', 33, 0, 62, 1, 2, 6, 1, 0, 15, 0, 0) + bitmap
+    encodings = [0, 1101, -223, -224]  # Raw, DisplayInfo, DesktopSize, LastRect.
+    formats = struct.pack('>BBH', 2, 0, len(encodings))
+    formats += b''.join(struct.pack('>i', encoding) for encoding in encodings)
+    pixel_format = bytes(4) + struct.pack('>BBBBHHHBBB3x', 32, 24, 0, 1, 255, 255, 255, 16, 8, 0)
+    send_bounded(peer, viewer + b'\x0a\0\0\1' + b'\x0d\1' + bytes(6)
+                 + formats + pixel_format + formats, deadline)
+    requested = False
+    rectangles = 0
+    for _ in range(128):
+        if not requested and width > 0 and height > 0:
+            send_bounded(peer, struct.pack('>BBHHHH', 3, 0, 0, 0, min(width, 64), min(height, 64)), deadline)
+            requested = True
+        kind = read_exact(peer, 1, deadline)[0]
+        if kind in (2, 4, 7):  # Bell, Apple Ack/NOP; no payload.
+            continue
+        if kind == 20:  # StateChange: pad, u16 size, opaque payload.
+            header = read_exact(peer, 3, deadline)
+            size, = struct.unpack_from('>H', header, 1)
+            if not 4 <= size <= 4096:
+                raise ProbeError('Invalid native state-change size.')
+            read_exact(peer, size, deadline)
+            continue
+        if kind == 81:  # Unsolicited DisplayInfo2: u16 size, bounded body.
+            size, = struct.unpack('>H', read_exact(peer, 2, deadline))
+            if not 20 <= size <= 4096:
+                raise ProbeError('Invalid native display metadata size.')
+            body = read_exact(peer, size, deadline)
+            width, height = struct.unpack_from('>HH', body, 6)
+            continue
+        if kind != 0:
+            raise ProbeError('Unsupported native message; pixel delivery is inconclusive.')
+        header = read_exact(peer, 3, deadline)
+        count, = struct.unpack_from('>H', header, 1)
+        # LastRect permits count=65535; bound actual rectangles, not the sentinel.
+        for _ in range(count):
+            rectangles += 1
+            if rectangles > 1024:
+                raise ProbeError('Native rectangle limit exceeded.')
+            x, y, w, h, encoding = struct.unpack('>HHHHi', read_exact(peer, 12, deadline))
+            if encoding == -224:
+                break
+            if encoding == -223:
+                width, height = w, h
+            elif encoding == 1101:
+                width, height, displays, _flags = struct.unpack('>HHHH', read_exact(peer, 8, deadline))
+                if displays > 32:
+                    raise ProbeError('Native display count limit exceeded.')
+                read_exact(peer, displays * 28, deadline)
+            elif encoding == 0:
+                size = w * h * 4
+                if not requested or not 0 < size <= 8 * 1024 * 1024:
+                    raise ProbeError('Invalid or oversized native pixel sample.')
+                while size:
+                    block = read_exact(peer, min(size, 4096), deadline)
+                    size -= len(block)
+                    block[:] = bytes(len(block))
+                return
+            else:
+                raise ProbeError('Unsupported native encoding; pixel delivery is inconclusive.')
+    raise ProbeError('No pixel sample arrived within the native message limit.')
 
 
 def lock_state(users, owner):
@@ -180,14 +307,16 @@ def main():
         print('Native Screen Sharing account-auth experiment (one local attempt).')
         print('Using the current Terminal user. Close Kodex Desktop panes before continuing.')
         print('Enter your Mac account password only here; it is not saved or sent to Kodex.')
-        print('This probe sends no keys, clicks, clipboard, framebuffer or display-configuration requests.')
+        print('This selects your existing console and checks a small pixel sample, without saving it.')
+        print('It sends no keys, clicks or clipboard and does not change physical display configuration.')
         with warnings.catch_warnings():
             warnings.simplefilter('error', getpass.GetPassWarning)
             password = bytearray(getpass.getpass('Mac login password: ').encode('utf-8'))
         if not 1 <= len(username) <= 63 or not 1 <= len(password) <= 63 or 0 in username or 0 in password:
             raise ProbeError('Username/password must be 1–63 UTF-8 bytes without NUL.')
         print('Lock the Mac now with Control-Command-Q. Waiting up to 60 seconds.')
-        print('Unlock locally afterward if the experiment does not unlock it.')
+        print('If it stays locked, wait at least 60 seconds before unlocking locally.')
+        print('Unlocking locally while this probe runs invalidates its unlock result.')
         deadline = time.monotonic() + 60
         while True:
             locked = screen_locked()
@@ -205,14 +334,16 @@ def main():
                 account_signin(peer, username, password)
             finally:
                 password[:] = b'\0' * len(password)
-            print('Apple account authentication accepted. Checking whether the existing console unlocks…')
-            # Existing physical console, shared/enhanced; no virtual-session picker.
-            # Delayed/missing ServerInit must not erase evidence of accepted authentication.
+            print('APPLE ACCOUNT AUTHENTICATION ACCEPTED')
             try:
-                peer.settimeout(3)
-                peer.sendall(b'\x81')
-            except OSError:
-                print('Console initialization could not be sent; authentication was already accepted.')
+                width, height = select_console(peer, username)
+                print('EXISTING OWN CONSOLE GRANTED')
+                check_pixels(peer, width, height)
+                print('PIXEL SAMPLE RECEIVED AND DISCARDED — this alone does not prove unlock.')
+            except Exception as error:
+                print(str(error) if isinstance(error, ProbeError)
+                      else 'Console setup or pixel check did not complete; authentication was accepted.')
+            print('Checking whether the existing console unlocks…')
             deadline = time.monotonic() + 10
             while screen_locked() is not False and time.monotonic() < deadline:
                 time.sleep(0.25)
