@@ -546,3 +546,10 @@ Current unlocked probes succeed: the raw gateway WebSocket reaches native Server
 The user now reports repeated locked-Mac attempts consistently show the password box, though the different background remains; the previous missing-prompt failure is currently hard to reproduce. Do not mark the intermittent timeout/prompt issue fixed or infer a wrong session from wallpaper alone. Password acceptance and automatic transition to the1200×900 Kodex display are the next user-owned acceptance check.
 
 The passive trace captured a different event at22:35:30: the console changed from locked to unlocked before ServerInit, after only18 downstream handshake bytes, followed by retryable4500/connection and a transitioning target502. It recorded zero host input, zero paints and no display metadata; no lock-screen frame was saved. This is not a reproduction of the earlier five-second display-readiness timeout and cannot explain the wallpaper difference. Evidence: `/tmp/kodex-locked-stream-trace.json`.
+
+
+#### User acceptance: locked login and virtual-display handover
+
+The user confirms repeated locked-Mac attempts show the password field and explicitly reports that entering the Mac password logs in and automatically switches to the1200×900 Kodex display. Fresh locked login and the resulting virtual-main handover are therefore accepted for those successful attempts. The different remote lock-screen background remains visible, but its cause is unconfirmed; do not infer a wrong user/session or claim a wallpaper fix.
+
+Keep the overall Desktop plan active: the earlier intermittent missing-prompt/five-second-readiness failure remains unexplained and has not been reproduced by the last successful attempts. Retained-display relock/reconnect acceptance is also not established by this result. No additional implementation/deployment occurred during this acceptance follow-up. Preserve the deployed generation/drain lifecycle; avoid another speculative refresh, input or authentication change without matching failing evidence.
