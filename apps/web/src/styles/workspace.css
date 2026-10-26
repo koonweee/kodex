@@ -362,14 +362,15 @@
 .kodex-workspace-pane-manager .kodex-mantine-drawer-inner,
 .kodex-workspace-pane-manager .mantine-Drawer-inner {
   align-items: flex-start;
-  padding: 0 12px;
+  /* Portalled drawers sit outside the shell's standalone top offset. */
+  padding: var(--kodex-pwa-header-height, 0px) 12px 0;
 }
 
 .kodex-workspace-pane-manager .kodex-mantine-drawer-content,
 .kodex-workspace-pane-manager .mantine-Drawer-content {
   width: min(480px, calc(100vw - 24px));
   height: auto;
-  max-height: min(80dvh, 100dvh);
+  max-height: min(80dvh, calc(100dvh - var(--kodex-pwa-header-height, 0px)));
   border-radius: var(--kodex-radius-menu);
   margin-inline: auto;
   background: color-mix(in srgb, var(--kodex-bg-panel) 92%, var(--kodex-bg-shell));

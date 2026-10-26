@@ -102,6 +102,22 @@ for (const shape of [
         const header = page.locator(".kodex-workspace-single-pane-header");
         if (shape.width <= 768) {
           await expect(surface).toHaveCSS("background-color", await header.evaluate(el => getComputedStyle(el).backgroundColor));
+          await page.getByRole("button", { name: "Switch workspace pane", exact: true }).tap();
+          const manager = page.getByRole("dialog", { name: "Active panes", exact: true });
+          await expect(manager).toBeVisible();
+          expect((await manager.boundingBox())!.y).toBeGreaterThanOrEqual(bounds.height);
+          for (const button of await manager.getByRole("button").all()) {
+            const box = (await button.boundingBox())!;
+            expect(box.y).toBeGreaterThanOrEqual(bounds.height);
+            expect(await button.evaluate(el => {
+              const rect = el.getBoundingClientRect();
+              return el.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+            })).toBe(true);
+          }
+          await expectTopEdgeAboveContent(page);
+          await page.screenshot({ path: test.info().outputPath("standalone-pane-manager.png") });
+          await manager.getByRole("button", { name: "Native settings chat", exact: true }).tap();
+          await expect(manager).not.toBeVisible();
           const navigation = page.getByRole("button", { name: "Show sidebar", exact: true });
           expect((await navigation.boundingBox())!.y).toBeGreaterThanOrEqual(bounds.height);
           await navigation.tap();
@@ -166,3 +182,47 @@ for (const shape of [
     });
   });
 }
+
+test.describe("standalone pane-manager overflow", () => {
+  test.use({ viewport: { width: 430, height: 240 }, hasTouch: true, isMobile: true });
+  test("long pane lists scroll and select within the available viewport", async ({ context }) => {
+    const fixture = await nativeSettingsFixture(context);
+    try {
+      await context.route("**/src/styles/pwa.css*", route => route.fulfill({
+        contentType: "text/css", body: standaloneCss(59),
+      }));
+      await context.addInitScript(() => {
+        if (!["http:", "https:"].includes(location.protocol)) return;
+        localStorage.setItem("kodex.instance.native-settings-fixture:kodex.workspace.panes.v1", JSON.stringify({
+          schemaVersion: 1, activePaneId: "draft-17", dockviewLayout: null,
+          panes: Array.from({ length: 18 }, (_, index) => ({
+            id: `draft-${index}`, kind: "thread", title: `Draft ${index}`, target: { mode: "draft" },
+          })),
+        }));
+      });
+      const page = await fixture.page("long-pane-list", "/");
+      const switcher = page.getByRole("button", { name: "Switch workspace pane", exact: true });
+      await switcher.tap();
+      const manager = page.getByRole("dialog", { name: "Active panes", exact: true });
+      await expect(manager).toBeVisible();
+      const surface = (await page.locator(".kodex-pwa-safe-area").boundingBox())!;
+      const bounds = (await manager.boundingBox())!;
+      expect(bounds.y).toBeGreaterThanOrEqual(surface.height);
+      expect(bounds.y + bounds.height).toBeLessThanOrEqual(240);
+      const rows = manager.locator(".kodex-workspace-pane-manager-row");
+      await expect(rows).toHaveCount(18);
+      expect((await rows.first().boundingBox())!.y).toBeGreaterThanOrEqual(surface.height);
+      const lastPane = rows.last().getByRole("button").first();
+      await lastPane.scrollIntoViewIfNeeded();
+      const lastBounds = (await lastPane.boundingBox())!;
+      expect(lastBounds.y).toBeGreaterThanOrEqual(surface.height);
+      expect(lastBounds.y + lastBounds.height).toBeLessThanOrEqual(240);
+      await expectTopEdgeAboveContent(page);
+      await lastPane.tap();
+      await expect(manager).not.toBeVisible();
+      await switcher.tap();
+      await expect(lastPane).toHaveAttribute("aria-current", "page");
+    } finally { await fixture.close(); }
+    expect(fixture.errors).toEqual([]);
+  });
+});
