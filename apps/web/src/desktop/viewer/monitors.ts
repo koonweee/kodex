@@ -50,7 +50,7 @@ export function createMonitorSelection(viewer: () => RFB | null, changed: () => 
       const virtual = preferred ? ordered.filter(display => display.x === preferred.x && display.y === preferred.y && display.width === preferred.width && display.height === preferred.height) : [];
       keys = new Map(ordered.map(display => [display.id, display.main ? "main" : JSON.stringify([display.x, display.y, display.width, display.height])]));
       displays = ordered.map((display, index) => ({id: display.id, isMain: display.main,
-        name: `${display.main ? "Main display" : virtual.length === 1 && virtual[0].id === display.id ? "Kodex display" : `Display ${index + 1}`} (${display.width} × ${display.height})`}));
+        name: `${virtual.length === 1 && virtual[0].id === display.id ? "Kodex display" : display.main ? "Main display" : `Display ${index + 1}`} (${display.width} × ${display.height})`}));
       if (selectedDisplay === undefined || !keys.has(selectedDisplay) || keys.get(selectedDisplay) !== wanted) {
         const matches = ordered.filter(display => keys.get(display.id) === wanted);
         const fallback = preferred ? (virtual.length === 1 ? virtual[0] : undefined) : ordered.find(display => display.main);

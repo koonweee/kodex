@@ -3,7 +3,7 @@ import { nativeProjectsFixture } from "./native-projects.fixture";
 import { DesktopRfbFixture } from "./desktop-rfb.fixture";
 import { openDesktop, sidebar } from "./desktop-pane.fixture";
 
-function remote() {
+function remote(virtualMain = false) {
   const fixture=new DesktopRfbFixture();fixture.nativeDesktop=true;
   fixture.framebuffer={width:2720,height:900};
   fixture.nativeDisplays=[
@@ -11,18 +11,20 @@ function remote() {
     {id:93,main:false,x:320,y:0,width:1200,height:900,fbX:320,fbY:0},
     {id:94,main:false,x:1520,y:0,width:1200,height:900,fbX:1520,fbY:0},
   ];
-  fixture.preferredDisplay={x:320,y:0,width:1200,height:900};return fixture;
+  if (virtualMain) for (const display of fixture.nativeDisplays) {display.main=display.id===93;display.x-=320;}
+  fixture.preferredDisplay={x:virtualMain?0:320,y:0,width:1200,height:900};return fixture;
 }
 
-test("new viewers select the gateway's virtual display by authoritative geometry, and retain individual choices on reconnect",async({context})=>{
-  const app=await nativeProjectsFixture(context,{desktopEnabled:true});const fixture=remote();await fixture.install(context);
+for (const virtualMain of [false,true]) test(`new viewers select the virtual display and retain individual choices on reconnect (macOS main: ${virtualMain})`,async({context})=>{
+  const app=await nativeProjectsFixture(context,{desktopEnabled:true});const fixture=remote(virtualMain);await fixture.install(context);
   try {
     const first=await app.page("virtual-first","/threads/history");const frame=await openDesktop(first);
     const selector=first.getByRole("button",{name:/^Desktop display:/});
     await expect(selector).toHaveAccessibleName("Desktop display: Kodex display (1200 × 900)");await expect(selector).toBeEnabled();
     await expect(frame.locator("#screen canvas")).toHaveJSProperty("width",1200);
     expect(fixture.displaySelections).toEqual([93]);
-    await selector.click();await first.getByRole("menuitem",{name:"Main display (320 × 200)",exact:true}).click();
+    const physicalName=virtualMain?"Display 2 (320 × 200)":"Main display (320 × 200)";
+    await selector.click();await first.getByRole("menuitem",{name:physicalName,exact:true}).click();
     await expect(selector).toBeEnabled();await expect(frame.locator("#screen canvas")).toHaveJSProperty("width",320);
     const second=await app.page("virtual-second","/threads/history");const other=await openDesktop(second);
     await expect(second.getByRole("button",{name:/^Desktop display:/})).toHaveAccessibleName("Desktop display: Kodex display (1200 × 900)");
@@ -30,7 +32,7 @@ test("new viewers select the gateway's virtual display by authoritative geometry
     await expect(frame.locator("#screen canvas")).toHaveJSProperty("width",320);
     await first.getByRole("button",{name:"Reconnect desktop"}).click();
     await expect.poll(()=>fixture.connections.length).toBe(3);
-    await expect(selector).toHaveAccessibleName("Desktop display: Main display (320 × 200)");await expect(selector).toBeEnabled();
+    await expect(selector).toHaveAccessibleName(`Desktop display: ${physicalName}`);await expect(selector).toBeEnabled();
     expect(fixture.errors).toEqual([]);expect(app.errors).toEqual([]);
   } finally {await app.close();}
 });

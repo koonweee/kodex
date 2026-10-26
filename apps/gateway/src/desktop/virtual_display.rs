@@ -1,4 +1,4 @@
-//! One fixed secondary display shared by live Desktop sockets, never browser state.
+//! One fixed temporary main display shared by live Desktop sockets, never browser state.
 use super::DesktopFailure;
 use std::{
     ffi::OsString,
