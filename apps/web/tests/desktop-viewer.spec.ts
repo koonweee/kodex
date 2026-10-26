@@ -290,3 +290,17 @@ test("native clipboard timeout releases Paste without sending Command-V", async 
   await frame.evaluate(() => window.kodexDesktop!.paste("next request"));
   await expect.poll(() => fixture.connections[0].keys.length).toBe(4);
 });
+
+
+test("native desktop negotiates full color and preserves channel precision", async ({ page }) => {
+  const fixture = new DesktopRfbFixture(); fixture.nativeDesktop = true; fixture.frameBlue = 61;
+  await fixture.install(page);
+  const frame = await open(page); await connect(frame);
+  await expect.poll(() => frame.locator("#screen canvas").evaluate((canvas) => Array.from(canvas.getContext("2d")!.getImageData(0, 0, 1, 1).data))).toEqual([30, 34, 61, 255]);
+  expect(fixture.connections[0].encodings.length).toBeGreaterThan(0);
+  for (const encodings of fixture.connections[0].encodings) {
+    expect(encodings).not.toContain(1002); // RGB555 would discard low channel bits.
+    expect(encodings).toContain(16); // Lossless full-color ZRLE remains supported.
+  }
+  expect(fixture.errors).toEqual([]);
+});

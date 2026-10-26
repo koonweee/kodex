@@ -5,7 +5,7 @@ import { WebSocketServer } from "ws";
 // real WebSocket tests. This exercises the exact pinned browser RFB client.
 export class DesktopRfbFixture {
   sockets: { close(options: { code: number; reason: string }): void }[] = [];
-  connections: { shared?: number; keys: { down: boolean; keysym: number }[]; pointers: number[]; pointerPositions: { mask: number; x: number; y: number }[]; messages: number[]; closed: boolean }[] = [];
+  connections: { shared?: number; keys: { down: boolean; keysym: number }[]; pointers: number[]; pointerPositions: { mask: number; x: number; y: number }[]; messages: number[]; encodings: number[][]; closed: boolean }[] = [];
   errors: string[] = [];
   framebuffer = { width: 320, height: 200 };
   nativeDesktop = false;
@@ -135,7 +135,7 @@ export class DesktopRfbFixture {
       });
       if (request.url !== "/v1/desktop/ws") this.errors.push("Unexpected target");
       this.sockets.push({ close: ({ code, reason }) => socket.close(code, reason) });
-      const connection = { shared: undefined as number | undefined, keys: [] as { down: boolean; keysym: number }[], pointers: [] as number[], pointerPositions: [] as { mask: number; x: number; y: number }[], messages: [] as number[], closed: false };
+      const connection = { shared: undefined as number | undefined, keys: [] as { down: boolean; keysym: number }[], pointers: [] as number[], pointerPositions: [] as { mask: number; x: number; y: number }[], messages: [] as number[], encodings: [] as number[][], closed: false };
       this.connections.push(connection);
       let pending = Buffer.alloc(0);
       let stage = 0;
@@ -177,6 +177,7 @@ export class DesktopRfbFixture {
             const message = pending.subarray(0, length);
             pending = pending.subarray(length);
             connection.messages.push(type);
+            if (type===2) connection.encodings.push(Array.from({length:message.readUInt16BE(2)},(_,i)=>message.readInt32BE(4+i*4)));
             if (this.nativeDesktop && type===2) sendNativeInfo();
             if (this.nativeDesktop && type===13) {
               selected=message[1]?null:message.readUInt32BE(4);

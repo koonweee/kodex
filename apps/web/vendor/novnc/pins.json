@@ -6,7 +6,7 @@
     "source.tar.gz": "ebb8eabcd3670ce1a02e4025f03976826c289121cf631183647bd8325b003403",
     "trackpad.patch": "7d256e61f1fbed59773ad9526051c3b602158903a4981ca5b43f4df634d06c46",
     "trackpad.tests.patch": "6aba3a9a235a8c55fc80205fbc74c05772ef2ee57d7a52bfcb07d7df56e28bf4",
-    "apple-desktop.patch": "70859dbe1a3cc1202b82f6ad66b38bc27c4f2001738f6b028c1cc0b619de1923",
+    "apple-desktop.patch": "b98f5ca9dd432085de77ecdca852f200d698b9fefe229366b259de5583bd804a",
     "cursor.patch": "59b1762fd66d2405efba10735eedfc1d1234ef62d991d7b131bf4e06fa73eede"
   }
 }

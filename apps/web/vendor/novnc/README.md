@@ -33,17 +33,16 @@ and native macOS 27.0.1 probes. Server-side scaling framing was cross-checked wi
 https://github.com/renegadelink/iShareScreen/blob/main/docs/apple_vnc_rfc.md#810-scalefactor-0x08
 and proved with the existing dedicated-password physical-desktop connection;
 this remains a reverse-engineered protocol, not a public Apple SDK. The small Kodex patch implements only the
-physical-monitor path with Apple RGB555 reduced-color encoding and standard
-framebuffer fallbacks; it does not bundle
+physical-monitor path with standard lossless full-color framebuffer encodings
+(ZRLE preferred, with Zlib/raw fallbacks); it does not bundle
 noVNC-ARD's account authentication, encryption, media, clipboard or UI layer.
-Apple encoding 1002 uses a small RGB555 decoder adapted from the same pinned
-MPL-2.0 source (`ard/decoders/zlib-thousands.js`). Reduced color precision is the
-selected responsiveness default. Native ScaleFactor (opcode 8, big-endian float64)
+Reduced-color RGB555 encoding 1002 and its custom decoder are removed. Native
+ScaleFactor (opcode 8, big-endian float64)
 limits the selected framebuffer to 1920×1080 without upscaling or changing physical
 display modes. Full-frame and automatic requests wait for scale acknowledgment and dimensions
 within the cap/matching physical size × scale (one-pixel rounding allowance).
 Initial input readiness requires one complete selected-frame rectangle; the
-actual Mac 1002 path supplies this. A server that only tiles the initial full
+actual Mac full-color path is validated before deployment. A server that only tiles the initial full
 picture will time out instead of enabling input on an incomplete picture.
 DisplayInfo2 logical bounds and pixel density preserve physical monitor identity
 while framebuffer bounds change/round. Scaling is per connection; each monitor
@@ -51,8 +50,7 @@ selection/reconnect negotiates its own limit. Pointer messages map from local
 image coordinates through the inverse acknowledged server scale into the original
 selected framebuffer, with bounds clamping. Gestures and the fallback cursor stay
 in image coordinates. During incomplete login/resize metadata, new button-downs
-are gated and releases reuse the last valid native point. Conversion uses strips
-to avoid full-frame RGB555/RGBA temporary buffers. Idle Tickle (4) renews automatic
+are gated and releases reuse the last valid native point. Idle Tickle (4) renews automatic
 updates; Wake (6) gates input until a fresh picture completes on the selected
 display. One existing five-second monitor deadline disconnects a stalled refresh
 into normal retry; duplicate Wake messages do not extend it or flood requests,

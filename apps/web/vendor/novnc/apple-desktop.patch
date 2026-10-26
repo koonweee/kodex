@@ -1,12 +1,11 @@
 --- a/core/rfb.js
 +++ b/core/rfb.js
-@@ -1,3 +1,5 @@
-+import AppleThousandsDecoder from './decoders/apple-thousands.js';
+@@ -1,3 +1,4 @@
 +import { parseAppleDisplayInfo, appleViewerInfo } from './apple-desktop.js';
  /*
   * noVNC: HTML5 VNC client
   * Copyright (C) 2020 The noVNC authors
-@@ -357,16 +359,131 @@
+@@ -357,16 +358,131 @@
  
      get viewOnly() { return this._viewOnly; }
      set viewOnly(viewOnly) {
@@ -140,7 +139,7 @@
      }
  
      get capabilities() { return this._capabilities; }
-@@ -1564,14 +1681,27 @@
+@@ -1564,14 +1680,27 @@
              throw new Error("Illegal mouse button mask (mask: " + mask + ")");
          }
 
@@ -172,7 +171,7 @@
          }
      }
 
-@@ -2140,8 +2270,11 @@
+@@ -2140,8 +2269,11 @@
              case "003.007":
                  this._rfbVersion = 3.7;
                  break;
@@ -185,7 +184,7 @@
              case "004.000":  // Intel AMT KVM
              case "004.001":  // RealVNC 4.6
              case "005.000":  // RealVNC 5.3
-@@ -2167,7 +2300,7 @@
+@@ -2167,7 +2299,7 @@
  
          const cversion = "00" + parseInt(this._rfbVersion, 10) +
                         ".00" + ((this._rfbVersion * 10) % 10);
@@ -194,7 +193,7 @@
          this._sock.flush();
          Log.Debug('Sent ProtocolVersion: ' + cversion);
  
-@@ -2793,6 +2926,10 @@
+@@ -2793,6 +2925,10 @@
          const nameLength = this._sock.rQshift32();
          if (this._sock.rQwait('server init name', nameLength, 24)) { return false; }
          let name = this._sock.rQshiftStr(nameLength);
@@ -205,7 +204,7 @@
          name = decodeUTF8(name, true);
  
          if (this._rfbTightVNC) {
-@@ -2845,15 +2982,28 @@
+@@ -2845,15 +2981,27 @@
              this._fbDepth = 8;
          }
  
@@ -228,14 +227,13 @@
  
      _sendEncodings() {
 +        if (this._appleDesktop) {
-+            this._decoders[1002] ??= new AppleThousandsDecoder();
-+            RFB.messages.clientEncodings(this._sock, [1002, 16, 6, 0, 1, 5, 2, 1101, 1105, -223, -224, -239]);
++            RFB.messages.clientEncodings(this._sock, [16, 6, 0, 1, 5, 2, 1101, 1105, -223, -224, -239]);
 +            return;
 +        }
          const encs = [];
  
          // In preference order
-@@ -3193,10 +3343,15 @@
+@@ -3193,10 +3341,15 @@
          }
  
          let first, ret;
@@ -252,7 +250,7 @@
                      RFB.messages.fbUpdateRequest(this._sock, true, 0, 0,
                                                   this._fbWidth, this._fbHeight);
                  }
-@@ -3247,6 +3402,7 @@
+@@ -3247,6 +3400,7 @@
              if (this._sock.rQwait("FBU header", 3, 1)) { return false; }
              this._sock.rQskipBytes(1);  // Padding
              this._FBU.rects = this._sock.rQshift16();
@@ -260,7 +258,7 @@
  
              // Make sure the previous frame is fully rendered first
              // to avoid building up an excessive queue
-@@ -3287,11 +3443,38 @@
+@@ -3287,11 +3441,38 @@
          }
  
          this._display.flip();
@@ -299,7 +297,7 @@
          switch (this._FBU.encoding) {
              case encodings.pseudoEncodingLastRect:
                  this._FBU.rects = 1; // Will be decreased when we return
-@@ -3610,10 +3793,12 @@
+@@ -3610,10 +3791,12 @@
          }
  
          try {
@@ -351,53 +349,4 @@
 +    [2, 6, 1, 0, 15, 0, 0].forEach((n, i) => data.setUint32(6 + i * 4, n));
 +    bytes[34] = 0xb0; bytes[36] = 0x0c; bytes[37] = 3; bytes[38] = 0x90; bytes[44] = 0x40;
 +    return bytes;
-+}
---- /dev/null
-+++ b/core/decoders/apple-thousands.js
-@@ -0,0 +1,46 @@
-+/*
-+ * noVNC-ARD: ARD ArdThousands (encoding 1002) decoder.
-+ * 16-bit RGB555, zlib compressed. MPL-2.0.
-+ * Adapted for Kodex from noVNC-ARD d699293635083c9e0c30c8f9480993865653772a.
-+ * Convert in strips to avoid full-frame temporary RGB555/RGBA allocations.
-+ */
-+import Inflator from "../inflator.js";
-+
-+export default class AppleThousandsDecoder {
-+    constructor() {
-+        this._zlib = new Inflator();
-+        this._length = 0;
-+        this._pixels = new Uint8Array();
-+    }
-+
-+    decodeRect(x, y, width, height, sock, display, depth) {
-+        if (width === 0 || height === 0) return true;
-+        if (this._length === 0) {
-+            if (sock.rQwait("Apple reduced-color length", 4)) return false;
-+            this._length = sock.rQshift32();
-+        }
-+        if (sock.rQwait("Apple reduced-color data", this._length)) return false;
-+        const data = sock.rQshiftBytes(this._length, false);
-+        this._length = 0;
-+        this._zlib.setInput(data);
-+        const rows = Math.min(64, height);
-+        if (this._pixels.length < width * rows * 4) this._pixels = new Uint8Array(width * rows * 4);
-+        try {
-+            for (let row = 0; row < height; row += rows) {
-+                const stripHeight = Math.min(rows, height - row);
-+                const count = width * stripHeight;
-+                const rgb555 = this._zlib.inflate(count * 2);
-+                for (let i = 0, p = 0; i < count; i++) {
-+                    const word = (rgb555[i * 2] << 8) | rgb555[i * 2 + 1];
-+                    const r = (word >> 10) & 31, g = (word >> 5) & 31, b = word & 31;
-+                    this._pixels[p++] = (r << 3) | (r >> 2);
-+                    this._pixels[p++] = (g << 3) | (g >> 2);
-+                    this._pixels[p++] = (b << 3) | (b >> 2);
-+                    this._pixels[p++] = 255;
-+                }
-+                display.blitImage(x, y + row, width, stripHeight, this._pixels, 0);
-+            }
-+        } finally { this._zlib.setInput(null); }
-+        return true;
-+    }
 +}
