@@ -10,7 +10,7 @@ use crate::{
     api::AppState,
     app_server_api::{
         self, RawAppServerResponse, SortDirection, ThreadStatus, ThreadTurnItemsView,
-        TurnStartOptions,
+        TurnStartOptions, UserInput,
     },
     error::{ApiError, ApiResult},
 };
@@ -64,7 +64,10 @@ pub async fn resume_interrupted_turn(
             thread_id,
             TurnStartRequest {
                 client_user_message_id: None,
-                input: vec![],
+                input: vec![UserInput::Text {
+                    text: "Continue the interrupted task".into(),
+                    text_elements: vec![],
+                }],
                 attachments: vec![],
                 options: TurnStartOptions::default(),
             },

@@ -96,9 +96,11 @@ async fn resume(state: AppState) -> (StatusCode, Value) {
     (status, body)
 }
 #[tokio::test]
-async fn resumes_interrupted_turn_with_empty_native_input_and_no_pending_user_message() {
+async fn resumes_interrupted_turn_with_explicit_continuation_and_shared_pending_message() {
     let native = Arc::new(NativeResume::new("stopped", "interrupted"));
     let state = state(native.clone()).await;
+    let mut first_tab = state.events.subscribe();
+    let mut second_tab = state.events.subscribe();
     let (status, _) = resume(state.clone()).await;
     assert_eq!(status, StatusCode::OK);
     let requests = native.requests.lock().unwrap();
@@ -109,10 +111,39 @@ async fn resumes_interrupted_turn_with_empty_native_input_and_no_pending_user_me
     assert_eq!(requests[1].1["limit"], 1);
     assert_eq!(requests[1].1["sortDirection"], "desc");
     assert_eq!(requests[1].1["itemsView"], "notLoaded");
-    assert_eq!(requests[2].1["input"], json!([]));
+    assert_eq!(
+        requests[2].1["input"],
+        json!([{"type":"text", "text":"Continue the interrupted task"}])
+    );
     assert!(requests[2].1.get("model").is_none());
+    let client_id = requests[2].1["clientUserMessageId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(!client_id.is_empty());
     drop(requests);
-    assert_eq!(state.store.latest_event_seq().await.unwrap(), 0);
+    let first = first_tab.try_recv().unwrap();
+    let second = second_tab.try_recv().unwrap();
+    assert_eq!(first.kind, "thread_view.patch");
+    assert_eq!(first.payload, second.payload);
+    let snapshot = state.thread_views.snapshot("chat").await.unwrap();
+    let messages = snapshot
+        .rows
+        .iter()
+        .filter_map(|row| row.item.as_ref())
+        .collect::<Vec<_>>();
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].turn_id, "continuation");
+    let message = serde_json::to_value(messages[0]).unwrap();
+    assert_eq!(message["payload"]["clientId"], client_id);
+    assert_eq!(
+        message["payload"]["item"]["content"][0]["text"],
+        "Continue the interrupted task"
+    );
+    assert_eq!(
+        first.payload["rows"],
+        serde_json::to_value(snapshot.rows).unwrap()
+    );
 }
 #[tokio::test]
 async fn stale_or_non_interrupted_resume_never_submits_input() {
@@ -236,7 +267,10 @@ async fn resume_serializes_head_validation_with_plain_input_and_app_messages() {
             .filter(|(m, _)| m == "turn/start")
             .collect::<Vec<_>>();
         assert_eq!(starts.len(), 2);
-        assert_eq!(starts[0].1["input"], json!([]));
+        assert_eq!(
+            starts[0].1["input"][0]["text"],
+            "Continue the interrupted task"
+        );
         assert_eq!(starts[1].1["input"][0]["text"], "Other client");
     }
 }

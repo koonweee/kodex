@@ -24,7 +24,7 @@ function composer(overrides: Partial<ComposerPanelProps> = {}) {
   return {onResumeTurn,onSubmitTurn};
 }
 describe("composer Resume", () => {
-  it("replaces empty Send with Resume and invokes continuation without submitting text", async () => {
+  it("replaces empty Send with Resume and invokes continuation without submitting the composer draft", async () => {
     const actions=composer();
     expect(screen.queryByRole("button",{name:"Send message"})).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button",{name:"Resume turn"}));

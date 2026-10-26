@@ -7,7 +7,7 @@ const composer = (page: Page) => pane(page).getByRole("textbox", { name: "Messag
 for (const touch of [false, true]) {
   test.describe(touch ? "touch Resume" : "desktop Resume", () => {
     test.use({ viewport: touch ? { width: 390, height: 780 } : { width: 1280, height: 800 }, hasTouch: touch, isMobile: touch });
-    test("resumes without a user message, switches to Send while typing, and converges in two tabs", async ({ context }, testInfo) => {
+    test("resumes without typing a draft, switches to Send while typing, and converges in two tabs", async ({ context }, testInfo) => {
       const fixture = await nativeSettingsFixture(context);
       fixture.detail.timeline.turns = [{ id: "stopped", status: "interrupted" }];
       const resumeBodies: unknown[] = [];
