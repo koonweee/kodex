@@ -1,3 +1,4 @@
+import { useResumeInterruptedTurn } from "./useResumeInterruptedTurn";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Button } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
@@ -161,6 +162,14 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
     selectedThreadId: activeThreadId,
   });
 
+  const resumeTurn = useResumeInterruptedTurn({
+    threadId: inputStateReadable ? existingThreadId : null,
+    expectedTurnId: paneState.resumableTurnId ?? null,
+    onError,
+    onThreadTurnStarted,
+    onRefresh: (threadId) => publishThreadPaneTimelineAction({ kind: "refresh_snapshot", threadId }),
+  });
+
   function handleComposerSettingsChange(change: ComposerSettingsChange) {
     if (!existingThreadId) {
       setDraftComposerEdited(true);
@@ -223,7 +232,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
       isDraftThreadSelected={isDraftPane}
       isDraftComposerTransitioning={isDraftComposerTransitioning}
       isComposerDragActive={orchestration.isComposerDragActive}
-      isComposerSubmitting={orchestration.isComposerSubmitting}
+      isComposerSubmitting={orchestration.isComposerSubmitting || resumeTurn.pending}
       isSelectedTimelineReady={paneState.isReady}
       skillsInvalidationGeneration={skillsInvalidationGeneration}
       models={models}
@@ -238,6 +247,8 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
       onFullscreenComposerChange={paneState.onFullscreenComposerChange}
       onRemovePendingAttachment={orchestration.removePendingAttachment}
       onStopTurn={orchestration.handleStopTurn}
+      resumableTurnId={paneState.resumableTurnId}
+      onResumeTurn={resumeTurn.resume}
       onSubmitTurn={orchestration.handleSubmitTurn}
       pendingAttachments={orchestration.pendingAttachments}
       goalThreadId={inputStateReadable && !isSideThread ? existingThreadId : null}

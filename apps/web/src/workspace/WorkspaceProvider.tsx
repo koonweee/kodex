@@ -55,6 +55,7 @@ export type ThreadPaneTimelineActionHandler = (action: ThreadPaneTimelineAction)
 
 export type ThreadComposerState = {
   activeTurnId: string | null;
+  resumableTurnId?: string | null;
   isActive: boolean;
   isReady: boolean;
   materializeThreadPane?: (threadId: string, title?: string | null) => void;

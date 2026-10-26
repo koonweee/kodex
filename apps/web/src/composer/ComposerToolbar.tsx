@@ -1,5 +1,5 @@
 import { Group, Loader, Menu } from "@mantine/core";
-import { ArrowUp, ListPlus, Paperclip, Plus, Square, Target } from "lucide-react";
+import { ArrowUp, ListPlus, Paperclip, Plus, Play, Square, Target } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 
@@ -20,6 +20,7 @@ const COMPOSER_TOOLBAR_TEXT = {
   addToQueue: "Add to queue",
   sending: "Sending message",
   stop: "Stop turn",
+  resume: "Resume turn",
 };
 
 type ComposerToolbarProps = {
@@ -34,6 +35,8 @@ type ComposerToolbarProps = {
   onSettingsChange: (settings: ComposerSettingsChange) => void;
   onMenuOpenChange?: (opened: boolean) => void;
   onStopTurn: () => void;
+  onResumeTurn?: () => void;
+  shouldShowResumeAction?: boolean;
   selectedThreadPresent: boolean;
   queueOnSubmit?: boolean;
   queueSupported?: boolean;
@@ -57,6 +60,8 @@ export const ComposerToolbar = memo(function ComposerToolbar({
   onSettingsChange,
   onMenuOpenChange,
   onStopTurn,
+  onResumeTurn,
+  shouldShowResumeAction = false,
   selectedThreadPresent,
   queueOnSubmit = false,
   queueSupported = true,
@@ -176,6 +181,17 @@ export const ComposerToolbar = memo(function ComposerToolbar({
           variant="filled"
         >
           <Square fill="currentColor" strokeWidth={0} />
+        </AdaptiveIconButton>
+      ) : shouldShowResumeAction ? (
+        <AdaptiveIconButton
+          className="kodex-composer-action"
+          data-action-state="active"
+          disabled={disabled || !selectedThreadPresent || !onResumeTurn}
+          label={COMPOSER_TOOLBAR_TEXT.resume}
+          onClick={onResumeTurn}
+          variant="filled"
+        >
+          <Play fill="currentColor" strokeWidth={0} />
         </AdaptiveIconButton>
       ) : (
         <AdaptiveIconButton

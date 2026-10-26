@@ -473,6 +473,12 @@ export async function submitThreadInput(
   );
 }
 
+export async function resumeInterruptedTurn(threadId: string, expectedTurnId: string): Promise<components["schemas"]["RawAppServerResponse"]> {
+  return unwrap(api.POST("/v1/threads/{threadId}/resume-turn", {
+    params: { path: { threadId } }, body: { expectedTurnId },
+  }));
+}
+
 export async function compactThread(threadId: string): Promise<ThreadCompactResponse> {
   return unwrap(
     api.POST("/v1/threads/{threadId}/compact", {

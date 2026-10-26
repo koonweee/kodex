@@ -1,3 +1,4 @@
+import { resumableTurnId } from "../../composer/resumeTurn";
 import { useThreadDeliveryPreferences } from "../../timeline/ThreadDeliveryPreferences";
 import { PaneLayout } from "../../shared/PaneLayout";
 import { threadIndicatorState } from "../../threads/ThreadStatusIndicator";
@@ -672,6 +673,7 @@ function ExistingThreadPane({
       )}
       {!isUnavailable && renderThreadComposer?.(pane, {
         activeTurnId: timeline.activeTurnId,
+        resumableTurnId: resumableTurnId(timeline),
         isActive,
         isReady,
         onFullscreenComposerChange: setFullscreenComposerActive,

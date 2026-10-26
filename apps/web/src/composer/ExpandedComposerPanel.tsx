@@ -42,6 +42,7 @@ type ExpandedComposerPanelProps = ComposerPanelProps & {
   selectSlashCommand: (commandIndex?: number) => void;
   setComposerShellNode: (node: HTMLDivElement | null) => void;
   shouldShowStopAction: boolean;
+  shouldShowResumeAction: boolean;
   skillCatalog: SkillCatalogState;
   skillPopupOpen: boolean;
   slashPopupOpen: boolean;
@@ -74,6 +75,7 @@ export function ExpandedComposerPanel({
   onFullscreenComposerChange,
   onRemovePendingAttachment,
   onStopTurn,
+  onResumeTurn,
   onSubmitTurn,
   pendingAttachments,
   selectedThreadPresent,
@@ -81,6 +83,7 @@ export function ExpandedComposerPanel({
   selectSlashCommand,
   setComposerShellNode,
   shouldShowStopAction,
+  shouldShowResumeAction,
   skillCatalog,
   skillPopupOpen,
   slashPopupOpen,
@@ -205,6 +208,8 @@ export function ExpandedComposerPanel({
         onImageOpen={onImageOpen}
         onRemovePendingAttachment={onRemovePendingAttachment}
         onStopTurn={onStopTurn}
+        onResumeTurn={onResumeTurn}
+        shouldShowResumeAction={shouldShowResumeAction}
         onSubmitTurn={(...args) => {
           onSubmitTurn(...args);
           if (canSubmitComposer) {

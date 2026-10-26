@@ -1,3 +1,5 @@
+use super::turns_start::start_turn_locked;
+pub(super) use super::turns_start::{start_turn_with_admission, start_turn_with_resume_policy};
 use axum::{
     extract::{Path, State},
     routing::post,
@@ -19,6 +21,10 @@ use crate::{
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/v1/threads/{thread_id}/input", post(submit_thread_input))
+        .route(
+            "/v1/threads/{thread_id}/resume-turn",
+            post(super::turns_resume::resume_interrupted_turn),
+        )
         .route(
             "/v1/threads/{thread_id}/interrupt-current",
             post(interrupt_current_turn),
@@ -194,7 +200,7 @@ pub async fn submit_thread_input(
     // Native turn/start still atomically chooses start or steering. Nothing
     // retries an uncertain queue admission or falls back after a queue-read error.
     let response =
-        start_turn_with_resume_policy(&state, thread_id, request, resume_missing_thread).await?;
+        start_turn_locked(&state, thread_id, request, resume_missing_thread, None).await?;
     Ok(Json(ThreadInputResponse {
         payload: response.payload,
         disposition: Some(ThreadInputDisposition::Submitted),
@@ -231,53 +237,6 @@ pub async fn compact_thread(
     }))
 }
 
-async fn turn_start_resuming_missing_thread_once(
-    state: &AppState,
-    thread_id: &str,
-    input: Vec<UserInput>,
-    options: TurnStartOptions,
-    client_id: String,
-    admission_revision: Option<i64>,
-) -> ApiResult<RawAppServerResponse> {
-    let client = app_server_api::client(&state.app_server);
-    ensure_input_admission(state, thread_id, admission_revision).await?;
-    match client
-        .turn_start(
-            thread_id.to_string(),
-            input.clone(),
-            options.clone(),
-            Some(client_id.clone()),
-        )
-        .await
-    {
-        Ok(response) => Ok(response),
-        Err(error) if app_server_api::is_thread_not_loaded_error(&error, thread_id) => {
-            ensure_input_admission(state, thread_id, admission_revision).await?;
-            resume_thread_for_turn_start(state, &client, thread_id).await?;
-            ensure_input_admission(state, thread_id, admission_revision).await?;
-            client
-                .turn_start(thread_id.to_string(), input, options, Some(client_id))
-                .await
-        }
-        Err(error) => Err(error),
-    }
-}
-
-async fn resume_thread_for_turn_start(
-    state: &AppState,
-    client: &CodexClient,
-    thread_id: &str,
-) -> ApiResult<()> {
-    tracing::info!(
-        thread_id,
-        "turn/start reported missing thread; resuming thread before retry"
-    );
-    let mut response = client
-        .thread_resume(thread_id.to_string(), serde_json::json!({}))
-        .await?;
-    super::threads::apply_thread_command_response_state(state, &mut response).await
-}
-
 #[utoipa::path(post, path = "/v1/threads/{threadId}/turns", request_body = TurnStartRequest, responses((status = 200, body = RawAppServerResponse)))]
 pub async fn start_turn(
     State(state): State<AppState>,
@@ -288,68 +247,6 @@ pub async fn start_turn(
     Ok(Json(
         start_turn_with_resume_policy(&state, thread_id, request, resume_missing_thread).await?,
     ))
-}
-
-pub(super) async fn start_turn_with_resume_policy(
-    state: &AppState,
-    thread_id: String,
-    request: TurnStartRequest,
-    resume_missing_thread: bool,
-) -> ApiResult<RawAppServerResponse> {
-    start_turn_with_admission(state, thread_id, request, resume_missing_thread, None).await
-}
-
-pub(super) async fn start_turn_with_admission(
-    state: &AppState,
-    thread_id: String,
-    request: TurnStartRequest,
-    resume_missing_thread: bool,
-    admission_revision: Option<i64>,
-) -> ApiResult<RawAppServerResponse> {
-    request.options.validate()?;
-    let client_id = request
-        .client_user_message_id
-        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let attachments =
-        app_server_api::validate_file_attachments_for_thread(&thread_id, request.attachments)?;
-    let input = app_server_api::append_file_attachment_envelope(request.input, &attachments);
-    let submission_revision = state.store.latest_event_seq().await?;
-    let response = if resume_missing_thread {
-        turn_start_resuming_missing_thread_once(
-            state,
-            &thread_id,
-            input.clone(),
-            request.options.clone(),
-            client_id.clone(),
-            admission_revision,
-        )
-        .await?
-    } else {
-        ensure_input_admission(state, &thread_id, admission_revision).await?;
-        // Ephemeral forks cannot be resumed. The route captures this policy
-        // before awaits so native close cannot turn it into a durable resume.
-        app_server_api::client(&state.app_server)
-            .turn_start(
-                thread_id.clone(),
-                input.clone(),
-                request.options.clone(),
-                Some(client_id.clone()),
-            )
-            .await?
-    };
-    if let Some(turn_id) = turn_lifecycle::pending_projection_turn_id(&response.payload) {
-        turn_lifecycle::record_pending_user_projection(
-            state,
-            &thread_id,
-            &turn_id,
-            &client_id,
-            &input,
-            &attachments,
-            submission_revision,
-        )
-        .await?;
-    }
-    Ok(response)
 }
 
 #[utoipa::path(post, path = "/v1/threads/{threadId}/turns/{turnId}/steer", request_body = TurnSteerRequest, responses((status = 200, body = RawAppServerResponse)))]
@@ -485,17 +382,3 @@ mod input_tests;
 #[cfg(test)]
 #[path = "turns_stop_tests.rs"]
 mod stop_tests;
-
-async fn ensure_input_admission(
-    state: &AppState,
-    thread_id: &str,
-    revision: Option<i64>,
-) -> ApiResult<()> {
-    if let Some(revision) = revision {
-        state
-            .thread_views
-            .ensure_history_current(thread_id, revision)
-            .await?;
-    }
-    Ok(())
-}

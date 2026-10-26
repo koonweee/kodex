@@ -120,6 +120,7 @@ use crate::{
             ThreadInputRequest, ThreadInputResponse, ThreadInterruptCurrentDisposition,
             ThreadInterruptCurrentResponse, TurnStartRequest, TurnSteerRequest,
         },
+        turns_resume::ResumeInterruptedTurnRequest,
         uploads::{
             FileUploadRequest, FileUploadResponse, ImageUpload, ImageUploadRequest,
             ImageUploadResponse,
@@ -257,6 +258,7 @@ impl AppState {
         crate::routes::threads::get_unread_badge,
         crate::routes::turns::start_turn,
         crate::routes::turns::submit_thread_input,
+        crate::routes::turns_resume::resume_interrupted_turn,
         crate::routes::turns::steer_turn,
         crate::routes::turns::compact_thread,
         crate::routes::turns::interrupt_current_turn,
@@ -492,6 +494,7 @@ impl AppState {
         ThreadCompactResponse,
         ThreadCompactDisposition,
         ThreadInputRequest,
+        ResumeInterruptedTurnRequest,
         ThreadInputResponse,
         ThreadInputDisposition,
         ThreadInterruptCurrentResponse,

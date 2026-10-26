@@ -78,6 +78,10 @@ pub mod thread_presence;
 pub mod thread_settings;
 pub mod threads;
 pub mod turns;
+pub mod turns_resume;
+#[cfg(test)]
+mod turns_resume_tests;
+mod turns_start;
 pub mod uploads;
 #[cfg(test)]
 mod tests {

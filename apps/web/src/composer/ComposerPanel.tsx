@@ -84,6 +84,8 @@ export type ComposerPanelProps = {
   onFullscreenComposerChange?: (expanded: boolean) => void;
   onRemovePendingAttachment: (id: string) => void;
   onStopTurn: () => void;
+  resumableTurnId?: string | null;
+  onResumeTurn?: () => void;
   onSubmitTurn: (
     event: FormEvent,
     draftText: string,
@@ -134,6 +136,8 @@ export function ComposerPanel({
   onFullscreenComposerChange,
   onRemovePendingAttachment,
   onStopTurn,
+  onResumeTurn,
+  resumableTurnId,
   onSubmitTurn,
   pendingAttachments,
   selectedThreadPresent,
@@ -193,6 +197,8 @@ export function ComposerPanel({
   const isComposerControlsDisabled = !paneActive || isComposerDisabled || isEntryPending;
   const canSubmitComposer =
     !isComposerControlsDisabled && (Boolean(draftState.composerText.trim()) || draftState.annotations.length > 0 || pendingAttachments.length > 0);
+  const shouldShowResumeAction = selectedThreadPresent && Boolean(resumableTurnId) && activeSelectedTurnId === null &&
+    draftState.composerText.length === 0 && draftState.annotations.length === 0 && pendingAttachments.length === 0;
   const shouldShowStopAction = activeSelectedTurnId !== null && !canSubmitComposer && !isComposerSubmitting;
   const skillPopupOpen = !isComposerControlsDisabled && draftState.skillToken !== null;
   const slashPopupOpen = !isComposerControlsDisabled && draftState.slashToken !== null;
@@ -413,6 +419,9 @@ export function ComposerPanel({
     onFullscreenComposerChange,
     onRemovePendingAttachment,
     onStopTurn,
+    onResumeTurn,
+    resumableTurnId,
+    shouldShowResumeAction,
     onSubmitTurn: (...args: Parameters<ComposerPanelProps["onSubmitTurn"]>) => {
       if (!goalCommand.handleSubmit(args[0], args[2])) onSubmitTurn(...args);
     },

@@ -52,6 +52,7 @@ type InlineComposerPanelProps = ComposerPanelProps & {
   selectSlashCommand: (commandIndex?: number) => void;
   setComposerShellNode: (node: HTMLDivElement | null) => void;
   shouldShowStopAction: boolean;
+  shouldShowResumeAction: boolean;
   skillCatalog: SkillCatalogState;
   skillPopupOpen: boolean;
   slashPopupOpen: boolean;
@@ -97,6 +98,7 @@ export function InlineComposerPanel({
   onImageOpen,
   onRemovePendingAttachment,
   onStopTurn,
+  onResumeTurn,
   onSubmitTurn,
   pendingAttachments,
   queuePanel,
@@ -107,6 +109,7 @@ export function InlineComposerPanel({
   selectSlashCommand,
   setComposerShellNode,
   shouldShowStopAction,
+  shouldShowResumeAction,
   skillCatalog,
   skillPopupOpen,
   slashPopupOpen,
@@ -340,6 +343,8 @@ export function InlineComposerPanel({
             models={models}
             onSettingsChange={onComposerSettingsChange}
             onStopTurn={onStopTurn}
+            onResumeTurn={onResumeTurn}
+            shouldShowResumeAction={shouldShowResumeAction}
             selectedThreadPresent={selectedThreadPresent}
             settings={composerSettings}
             settingsDisabled={composerSettingsDisabled}

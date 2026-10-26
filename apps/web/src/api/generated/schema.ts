@@ -1941,6 +1941,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/threads/{threadId}/resume-turn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resume_interrupted_turn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/threads/{threadId}/seen": {
         parameters: {
             query?: never;
@@ -3221,6 +3237,10 @@ export interface components {
         };
         RenameThreadResponse: {
             thread: components["schemas"]["ThreadSummary"];
+        };
+        ResumeInterruptedTurnRequest: {
+            /** @description The interrupted native turn displayed by the client. A changed head requires a refill. */
+            expectedTurnId: string;
         };
         SelfControlAppSurfacePresentationRequest: {
             action: components["schemas"]["AppSurfacePresentationAction"];
@@ -7635,6 +7655,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadCommandResponse"];
+                };
+            };
+        };
+    };
+    resume_interrupted_turn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResumeInterruptedTurnRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RawAppServerResponse"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
                 };
             };
         };
