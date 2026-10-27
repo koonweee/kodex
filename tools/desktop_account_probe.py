@@ -19,6 +19,7 @@ import struct
 import sys
 import time
 import warnings
+import zlib
 
 
 class ProbeError(Exception):
@@ -126,8 +127,8 @@ def session_body(peer, minimum, deadline):
     return body
 
 
-def select_console(peer, username):
-    """Request only this operator's existing console; never a new/virtual login.
+def initialize_console(peer, username):
+    """Initialize shared access; select the own console only when a picker is offered.
 
     Framing reference: peetinc/noVNC-ARD ard/ard-patch.js,
     d699293635083c9e0c30c8f9480993865653772a (MPL-2.0).
@@ -140,11 +141,18 @@ def select_console(peer, username):
     header = read_exact(peer, 24, deadline)
     width, height = struct.unpack_from('>HH', header)
     size, = struct.unpack_from('>I', header, 20)
-    if not 22 <= size <= 65536:
-        raise ProbeError('Missing or oversized extended ServerInit.')
+    if size > 65536:
+        raise ProbeError('Oversized ServerInit.')
     name = read_exact(peer, size, deadline)
-    if name[0] != 0 or not (struct.unpack_from('>I', name, 2)[0] & 4):
-        raise ProbeError('The server did not offer explicit console selection.')
+    flags = 0
+    if name and name[0] == 0:
+        if len(name) < 22:
+            raise ProbeError('Truncated extended ServerInit.')
+        flags, = struct.unpack_from('>I', name, 2)
+    if not (flags & 4):
+        # Apple's picker is optional. Do not wait for SessionInfo or invent a command.
+        # Normal shared setup follows; this does not identify/prove an unlocked console.
+        return width, height, False
     info = session_body(peer, 11, deadline)
     allowed, = struct.unpack_from('>I', info, 2)
     console = info[10:]
@@ -156,14 +164,46 @@ def select_console(peer, username):
         result = session_body(peer, 6, deadline)
         status, = struct.unpack_from('>I', result, 2)
         if status in (0, 4):
-            return width, height
+            return width, height, True
         if status not in (2, 3):
             raise ProbeError('Existing-console selection was not granted.')
     raise ProbeError('Existing-console selection remained pending; no retry was attempted.')
 
 
+def display_size(peer, deadline, desired=None):
+    size, = struct.unpack('>H', read_exact(peer, 2, deadline))
+    if not 20 <= size <= 4096:
+        raise ProbeError('Invalid native display metadata size.')
+    body = read_exact(peer, size, deadline)
+    version, = struct.unpack_from('>H', body)
+    count, = struct.unpack_from('>H', body, 18)
+    if version != 5 or count > 32 or size != 20 + count * 56:
+        raise ProbeError('Unsupported native display metadata.')
+    main = []
+    ids = set()
+    for index in range(count):
+        offset = 20 + index * 56
+        display, = struct.unpack_from('>I', body, offset + 16)
+        flags, = struct.unpack_from('>I', body, offset + 36)
+        if display == 0xffffffff or display in ids:
+            raise ProbeError('Invalid native display identity.')
+        ids.add(display)
+        if flags & 1:
+            main.append(display)
+    if len(main) != 1:
+        raise ProbeError('No unambiguous native main monitor was offered.')
+    selected, = struct.unpack_from('>I', body, 10)
+    if selected != main[0]:
+        # Changes only this connection's streamed monitor, never macOS display modes.
+        if desired != main[0]:
+            send_bounded(peer, struct.pack('>BBBBI', 13, 0, 0, 0, main[0]), deadline)
+        return 0, 0, main[0], False
+    width, height = struct.unpack_from('>HH', body, 6)
+    return width, height, main[0], True
+
+
 def check_pixels(peer, width, height):
-    """Read/discard one bounded raw pixel sample; this does not prove unlock.
+    """Read/discard one bounded pixel sample; this does not prove unlock.
 
     No host input, clipboard, session encryption or physical display changes.
     Unsupported protocol data is inconclusive instead of guessed or logged.
@@ -173,17 +213,23 @@ def check_pixels(peer, width, height):
     for index, value in ((0, 0xb0), (2, 0x0c), (3, 3), (4, 0x90), (10, 0x40)):
         bitmap[index] = value
     viewer = struct.pack('>BBHHI6I', 33, 0, 62, 1, 2, 6, 1, 0, 15, 0, 0) + bitmap
-    encodings = [0, 1101, -223, -224]  # Raw, DisplayInfo, DesktopSize, LastRect.
+    encodings = [6, 0, 1105, -223, -224]  # Zlib, Raw, native metadata, size, LastRect.
     formats = struct.pack('>BBH', 2, 0, len(encodings))
     formats += b''.join(struct.pack('>i', encoding) for encoding in encodings)
     pixel_format = bytes(4) + struct.pack('>BBBBHHHBBB3x', 32, 24, 0, 1, 255, 255, 255, 16, 8, 0)
     send_bounded(peer, viewer + b'\x0a\0\0\1' + b'\x0d\1' + bytes(6)
                  + formats + pixel_format + formats, deadline)
     requested = False
+    desired = None
+    selection_ready = True  # Initial ServerInit may already deliver a standard framebuffer.
+    inflater = zlib.decompressobj()
     rectangles = 0
     for _ in range(128):
-        if not requested and width > 0 and height > 0:
-            send_bounded(peer, struct.pack('>BBHHHH', 3, 0, 0, 0, min(width, 64), min(height, 64)), deadline)
+        if not requested and selection_ready and width > 0 and height > 0:
+            w, h = min(width, 64), min(height, 64)
+            request = struct.pack('>BBHHHH', 3, 0, 0, 0, w, h)
+            subscription = struct.pack('>BBHIHHHH', 9, 0, 1, 0, 0, 0, w, h)
+            send_bounded(peer, request + subscription, deadline)
             requested = True
         kind = read_exact(peer, 1, deadline)[0]
         if kind in (2, 4, 7):  # Bell, Apple Ack/NOP; no payload.
@@ -195,15 +241,14 @@ def check_pixels(peer, width, height):
                 raise ProbeError('Invalid native state-change size.')
             read_exact(peer, size, deadline)
             continue
-        if kind == 81:  # Unsolicited DisplayInfo2: u16 size, bounded body.
-            size, = struct.unpack('>H', read_exact(peer, 2, deadline))
-            if not 20 <= size <= 4096:
-                raise ProbeError('Invalid native display metadata size.')
-            body = read_exact(peer, size, deadline)
-            width, height = struct.unpack_from('>HH', body, 6)
+        if kind == 81:  # Standalone DisplayInfo2.
+            before = (width, height)
+            width, height, desired, selection_ready = display_size(peer, deadline, desired)
+            if not selection_ready or before != (width, height):
+                requested = False
             continue
         if kind != 0:
-            raise ProbeError('Unsupported native message; pixel delivery is inconclusive.')
+            raise ProbeError(f'Unsupported native message type {kind}; pixel delivery is inconclusive.')
         header = read_exact(peer, 3, deadline)
         count, = struct.unpack_from('>H', header, 1)
         # LastRect permits count=65535; bound actual rectangles, not the sentinel.
@@ -215,23 +260,36 @@ def check_pixels(peer, width, height):
             if encoding == -224:
                 break
             if encoding == -223:
-                width, height = w, h
-            elif encoding == 1101:
-                width, height, displays, _flags = struct.unpack('>HHHH', read_exact(peer, 8, deadline))
-                if displays > 32:
-                    raise ProbeError('Native display count limit exceeded.')
-                read_exact(peer, displays * 28, deadline)
-            elif encoding == 0:
+                if selection_ready:
+                    requested = requested and (width, height) == (w, h)
+                    width, height = w, h
+            elif encoding == 1105:
+                before = (width, height)
+                width, height, desired, selection_ready = display_size(peer, deadline, desired)
+                if not selection_ready or before != (width, height):
+                    requested = False
+            elif encoding in (0, 6):
                 size = w * h * 4
-                if not requested or not 0 < size <= 8 * 1024 * 1024:
+                if not 0 < size <= 8 * 1024 * 1024:
                     raise ProbeError('Invalid or oversized native pixel sample.')
-                while size:
-                    block = read_exact(peer, min(size, 4096), deadline)
-                    size -= len(block)
-                    block[:] = bytes(len(block))
-                return
+                if encoding == 6:
+                    length, = struct.unpack('>I', read_exact(peer, 4, deadline))
+                    if not 0 < length <= 8 * 1024 * 1024:
+                        raise ProbeError('Invalid compressed pixel sample size.')
+                    compressed = read_exact(peer, length, deadline)
+                    decoded = inflater.decompress(compressed, size + 1)
+                    if len(decoded) != size:
+                        raise ProbeError('Incomplete or oversized decoded pixel sample.')
+                    del decoded
+                else:
+                    while size:
+                        block = read_exact(peer, min(size, 4096), deadline)
+                        size -= len(block)
+                        block[:] = bytes(len(block))
+                if selection_ready and width > 0 and height > 0:
+                    return
             else:
-                raise ProbeError('Unsupported native encoding; pixel delivery is inconclusive.')
+                raise ProbeError(f'Unsupported native encoding {encoding}; pixel delivery is inconclusive.')
     raise ProbeError('No pixel sample arrived within the native message limit.')
 
 
@@ -336,8 +394,9 @@ def main():
                 password[:] = b'\0' * len(password)
             print('APPLE ACCOUNT AUTHENTICATION ACCEPTED')
             try:
-                width, height = select_console(peer, username)
-                print('EXISTING OWN CONSOLE GRANTED')
+                width, height, selected = initialize_console(peer, username)
+                print('EXISTING OWN CONSOLE GRANTED' if selected
+                      else 'NO SESSION PICKER — continuing normal shared viewer setup.')
                 check_pixels(peer, width, height)
                 print('PIXEL SAMPLE RECEIVED AND DISCARDED — this alone does not prove unlock.')
             except Exception as error:
