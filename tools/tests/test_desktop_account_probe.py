@@ -410,6 +410,28 @@ class LockPolicyTests(unittest.TestCase):
                 self.assertNotIn('fixture-password', output.getvalue())
                 self.assertEqual(pixels.call_count, int(phase == 'check_pixels'))
 
+    def test_post_auth_timeout_reports_phase_without_native_exception_text(self):
+        for phase in ['initialize_console', 'check_pixels']:
+            with self.subTest(phase=phase), \
+                 patch.object(probe.sys.stdin, 'isatty', return_value=True), \
+                 patch.object(probe.sys.stderr, 'isatty', return_value=True), \
+                 patch.object(probe.resource, 'setrlimit'), \
+                 patch.object(probe.getpass, 'getpass', return_value='fixture-password'), \
+                 patch.object(probe, 'screen_locked', side_effect=[True, True, False, False]), \
+                 patch.object(probe.socket, 'create_connection'), \
+                 patch.object(probe, 'account_signin'), \
+                 patch.object(probe, 'initialize_console', return_value=(800, 600, False)) as initialize, \
+                 patch.object(probe, 'check_pixels') as pixels, \
+                 patch('sys.stdout', new_callable=io.StringIO) as output:
+                (initialize if phase == 'initialize_console' else pixels).side_effect = probe.socket.timeout('fixture-password native reason')
+                self.assertEqual(probe.main(), 0)
+                self.assertIn('Timed out during ' + ('console initialization' if phase == 'initialize_console'
+                                                   else 'viewer setup/pixel delivery'), output.getvalue())
+                self.assertIn('APPLE ACCOUNT AUTHENTICATION ACCEPTED', output.getvalue())
+                self.assertIn('EXISTING CONSOLE UNLOCKED', output.getvalue())
+                self.assertNotIn('fixture-password', output.getvalue())
+                self.assertNotIn('native reason', output.getvalue())
+
     def test_no_picker_main_completes_viewer_but_keeps_unlock_independent(self):
         raw = b'\0\0\0\1' + struct.pack('>HHHHi', 0, 0, 1, 1, 0) + bytes(4)
         for unlocked in [True, False]:

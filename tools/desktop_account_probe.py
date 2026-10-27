@@ -393,15 +393,22 @@ def main():
             finally:
                 password[:] = b'\0' * len(password)
             print('APPLE ACCOUNT AUTHENTICATION ACCEPTED')
+            phase = 'console initialization'
             try:
                 width, height, selected = initialize_console(peer, username)
                 print('EXISTING OWN CONSOLE GRANTED' if selected
                       else 'NO SESSION PICKER — continuing normal shared viewer setup.')
+                phase = 'viewer setup/pixel delivery'
                 check_pixels(peer, width, height)
                 print('PIXEL SAMPLE RECEIVED AND DISCARDED — this alone does not prove unlock.')
             except Exception as error:
-                print(str(error) if isinstance(error, ProbeError)
-                      else 'Console setup or pixel check did not complete; authentication was accepted.')
+                if isinstance(error, (TimeoutError, socket.timeout)):
+                    detail = f'Timed out during {phase}'
+                elif isinstance(error, ProbeError):
+                    detail = f'{phase}: {error}'
+                else:
+                    detail = f'{phase} did not complete'
+                print(f'{detail}; authentication was accepted.')
             print('Checking whether the existing console unlocks…')
             deadline = time.monotonic() + 10
             while screen_locked() is not False and time.monotonic() < deadline:
