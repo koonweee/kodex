@@ -369,3 +369,36 @@ async fn native_virtual_display_lifecycle() {
     );
     println!("{}", String::from_utf8_lossy(&output.stdout));
 }
+
+#[tokio::test]
+async fn session_status_is_config_gated_no_store_and_exposes_only_console_state() {
+    for password in ["", "fixture1"] {
+        let app = build_router(state(password).await);
+        let response = app
+            .oneshot(
+                Request::get("/v1/desktop/session")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let enabled = cfg!(target_os = "macos") && !password.is_empty();
+        assert_eq!(
+            response.status(),
+            if enabled {
+                StatusCode::OK
+            } else {
+                StatusCode::FORBIDDEN
+            }
+        );
+        if enabled {
+            assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+            let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(body.as_object().unwrap().len(), 1);
+            assert!(
+                ["locked", "unlocked", "unknown"].contains(&body["consoleState"].as_str().unwrap())
+            );
+        }
+    }
+}

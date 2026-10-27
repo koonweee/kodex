@@ -6,6 +6,7 @@ export const queryKeys = {
   automations: ["automations"] as const,
   automationTombstones: ["automations", "tombstones"] as const,
   capabilities: ["capabilities"] as const,
+  desktopSession: ["desktop-session"] as const,
   chatThreads: ["threads", "chat"] as const,
   composerSettingsRoot: ["composer-settings"] as const,
   composerSettings: (projectId: string | null, cwd?: string | null) => ["composer-settings", projectId ?? "global", cwd ?? null] as const,

@@ -6,6 +6,7 @@ use zeroize::Zeroizing;
 
 pub(crate) mod clipboard;
 mod config;
+pub(crate) mod session;
 pub(crate) mod socket;
 pub(crate) mod virtual_display;
 pub use config::DesktopConfig;

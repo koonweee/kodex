@@ -1,8 +1,9 @@
-import { readDesktopDisplayTarget, writeDesktopClipboard } from "../../api/desktop";
+import { readDesktopDisplayTarget, readDesktopSession, writeDesktopClipboard } from "../../api/desktop";
 import RFB from "@desktop-vendor/core/rfb.js";
 import { DESKTOP_VIEWER_READY, type DesktopBridge, type DesktopFailure, type ViewerState } from "../bridge";
 import { createMonitorSelection } from "./monitors";
 import { virtualKeyboard } from "./keyboard";
+import { createPasswordEntry } from "./password";
 import "./viewer.css";
 
 const screen = document.getElementById("screen")!;
@@ -13,18 +14,27 @@ let closing: WebSocket | null = null;
 let active = false;
 let trackpad = true;
 let generation = 0;
+let inputRevision = 0;
 let state: ViewerState = { status: "disconnected", keyboardOpen: false };
 const listeners = new Set<(state: ViewerState) => void>();
 const failures: DesktopFailure[] = ["unsupportedPlatform", "configuration", "authentication", "passwordAccessDisabled", "protocol", "connection", "timeout", "virtualDisplay"];
-function update(next: ViewerState) { state = { ...next, ...monitors.state() }; for (const listener of listeners) listener(state); }
-const keyboard = virtualKeyboard(input, () => rfb, (keyboardOpen) => update({ ...state, keyboardOpen }));
+function update(next: ViewerState) { state = { ...next, inputRevision, ...monitors.state() }; for (const listener of listeners) listener(state); }
+const keyboard = virtualKeyboard(input, () => rfb, (keyboardOpen) => update({ ...state, keyboardOpen }), previewInput);
 let cancelPaste: ((reason?: string) => void) | undefined;
-const monitors = createMonitorSelection(() => rfb, () => update({ ...state }), () => { cancelPaste?.("Desktop display changed; paste was canceled."); keyboard.setOpen(false); }, (failure, retryable) => {
+const monitors = createMonitorSelection(() => rfb, () => update({ ...state }), () => { inputRevision++; passwordEntry.cancel(); cancelPaste?.("Desktop display changed; paste was canceled."); keyboard.setOpen(false); }, (failure, retryable) => {
   bridge.disconnect(); update({ status: "disconnected", keyboardOpen: false, failure, retryable });
 }, readDesktopDisplayTarget);
 
+const passwordEntry = createPasswordEntry(() => ({target:rfb, active:active && document.visibilityState==="visible", secure:window.isSecureContext,
+  ready:state.status==="connected" && !state.displayLoading && !state.displayError && !cancelPaste && socket?.readyState===WebSocket.OPEN,
+  revision:inputRevision}),readDesktopSession);
+function previewInput() { inputRevision++; passwordEntry.cancel(); update({...state}); }
+screen.addEventListener("pointerdown",previewInput,true);
+screen.addEventListener("keydown",previewInput,true);
+document.addEventListener("visibilitychange",()=>{inputRevision++;passwordEntry.cancel();update({...state});});
+
 function disconnect() {
-  generation++;
+  generation++; inputRevision++; passwordEntry.cancel();
   monitors.cancel();
   cancelPaste?.();
   keyboard.setOpen(false);
@@ -114,6 +124,7 @@ const bridge: DesktopBridge = {
   setActive(value) {
     active = value;
     if (!value) {
+      inputRevision++; passwordEntry.cancel();
       cancelPaste?.("Desktop is hidden; paste was canceled.");
     }
     document.documentElement.inert = !value;
@@ -123,12 +134,15 @@ const bridge: DesktopBridge = {
   setTrackpad(value) { trackpad = value; if (rfb) rfb.trackpadMode = value; },
   setDisplay(id) { monitors.select(id); },
   setKeyboard(open) { keyboard.setOpen(open && state.status === "connected" && !state.displayLoading); },
+  unlock(password) { return passwordEntry.send(password); },
+  cancelUnlock() { passwordEntry.cancel(); },
   async paste(text) {
     const viewer = rfb;
     if (!viewer || !active || state.status !== "connected" || state.displayLoading || state.displayError) throw new Error("Desktop is disconnected.");
     if (!text) throw new Error("The clipboard is empty.");
     if (new TextEncoder().encode(text).byteLength > 65536) throw new Error("Clipboard text exceeds 64 KiB.");
     if (cancelPaste) throw new Error("A paste is already in progress.");
+    previewInput();
     const attempt = generation;
     const controller = new AbortController();
     let cancellation: string | undefined;
@@ -152,6 +166,7 @@ const bridge: DesktopBridge = {
     }
     // The native clipboard write completed. It is global OS state: simultaneous
     // explicit pastes from other clients may overwrite it before this shortcut.
+    previewInput();
     viewer.sendKey(0xffeb, "MetaLeft", true);
     try { viewer.sendKey(0x76, "KeyV"); }
     finally { viewer.sendKey(0xffeb, "MetaLeft", false); }

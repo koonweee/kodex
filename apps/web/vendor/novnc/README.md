@@ -68,6 +68,7 @@ Explicit Paste uses a bounded same-origin gateway write to the Mac pasteboard,
 then sends Command-V after success. It does not depend on VNC clipboard
 negotiation or synchronize clipboard changes automatically. Hiding, closing or
 reconnecting cancels pending shortcuts; an accepted clipboard write cannot be undone.
+The optional preview-assisted Mac unlock form uses Kodex wrapper code, not an upstream authentication change. It requires a fresh native locked-state read, a ready active viewer and human confirmation of an empty selected password field. A one-shot Unicode key sequence and Return use the existing secure RFB channel; no clipboard or saved credential. Any ordinary preview, virtual-keyboard or paste input invalidates the unsent confirmation. Reconnect/display/visibility changes cancel pending preflight; passwords are never replayed. Native state, rather than key delivery, confirms unlock. This does not provide semantic textbox focus detection.
 The patched vendor source and test patch are separate from Kodex's application
 code. No build or deployment depends on the adjacent Pal checkout.
 

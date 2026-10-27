@@ -20,3 +20,11 @@ export async function readDesktopDisplayTarget(signal: AbortSignal): Promise<com
   if (error || !data) throw new Error("The Mac virtual display is unavailable.");
   return data.preferredDisplay ?? null;
 }
+
+
+export async function readDesktopSession(signal: AbortSignal): Promise<components["schemas"]["DesktopConsoleState"]> {
+  const api = createClient<paths>({ baseUrl: location.origin, fetch: compatibleFetch });
+  const { data, error } = await api.GET("/v1/desktop/session", {signal, cache:"no-store"});
+  if(error || !data) throw new Error("The Mac lock state could not be verified.");
+  return data.consoleState;
+}

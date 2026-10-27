@@ -1,3 +1,8 @@
 .kodex-desktop-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; overflow: hidden; gap: 0.5rem; background: var(--kodex-bg-panel); color: var(--kodex-text-primary); }
 .kodex-desktop-frame { flex: 1; min-width: 0; min-height: 0; width: 100%; border: 0; }
 .kodex-desktop-status { padding: 0.5rem; }
+
+.kodex-desktop-unlock { flex: 0 1 auto; min-height: 0; max-height: 50%; overflow: auto; padding: 0.75rem; }
+.kodex-desktop-unlock form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.5rem; align-items: end; }
+.kodex-desktop-unlock-help { grid-column: 1 / -1; }
+[data-pane-width="compact"] .kodex-desktop-unlock form { grid-template-columns: minmax(0, 1fr); }

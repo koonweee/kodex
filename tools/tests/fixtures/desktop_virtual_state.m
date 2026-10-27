@@ -47,11 +47,16 @@ static CGError forbiddenInventory(uint32_t maximum, CGDirectDisplayID *ids, uint
 
 static void policy(void) {
     NSDictionary *own = @{ @"kCGSSessionUserIDKey": @501, @"kCGSSessionOnConsoleKey": @YES };
+    assert(kodex_session_lock_state((__bridge CFTypeRef)@[own],501)==0);
     assert(kodex_session_allows_virtual_display((__bridge CFTypeRef)@[own],501));
     for (id value in @[@YES,@NO,@"invalid",@1,@0]) {
         NSMutableDictionary *entry=[own mutableCopy];entry[@"CGSSessionScreenIsLocked"]=value;
+        assert(kodex_session_lock_state((__bridge CFTypeRef)@[entry],501)==(value == (__bridge id)kCFBooleanTrue ? 1 : value == (__bridge id)kCFBooleanFalse ? 0 : -1));
         assert(kodex_session_allows_virtual_display((__bridge CFTypeRef)@[entry],501)==(value == (__bridge id)kCFBooleanFalse));
     }
+    assert(kodex_session_lock_state((__bridge CFTypeRef)@[own,own],501)==-1);
+    assert(kodex_session_lock_state((__bridge CFTypeRef)@[own],502)==-1);
+    assert(kodex_session_lock_state(NULL,501)==-1);
     assert(!kodex_session_allows_virtual_display((__bridge CFTypeRef)@[own,own],501));
     assert(!kodex_session_allows_virtual_display((__bridge CFTypeRef)@[own],502));
     assert(!kodex_session_allows_virtual_display((__bridge CFTypeRef)@[@"invalid"],501));

@@ -10,6 +10,7 @@ export type ViewerState = {
   failure?: DesktopFailure;
   retryable?: boolean;
   keyboardOpen: boolean;
+  inputRevision?: number;
   displays?: DesktopDisplay[];
   selectedDisplay?: number;
   displayLoading?: boolean;
@@ -17,7 +18,8 @@ export type ViewerState = {
 };
 
 // Only the current same-origin iframe exposes this object. No evaluation, host,
-// credentials, general messaging, or arbitrary socket arguments cross this seam.
+// saved credentials, general messaging, or arbitrary socket arguments cross this seam.
+// Explicit Mac-password entry is volatile and uses this current viewer only.
 export interface DesktopBridge {
   subscribe(listener: (state: ViewerState) => void): () => void;
   connect(): void;
@@ -27,6 +29,8 @@ export interface DesktopBridge {
   setKeyboard(open: boolean): void;
   setDisplay(id: number): void;
   paste(text: string): Promise<void>;
+  unlock(password: string): Promise<void>;
+  cancelUnlock(): void;
 }
 
 declare global {

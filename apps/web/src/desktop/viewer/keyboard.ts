@@ -7,15 +7,21 @@ import Keyboard from "@desktop-vendor/core/input/keyboard.js";
 import keysyms from "@desktop-vendor/core/input/keysymdef.js";
 import type RFB from "@desktop-vendor/core/rfb.js";
 
-export function virtualKeyboard(input: HTMLTextAreaElement, getRfb: () => RFB | null, changed: (open: boolean) => void) {
+export function virtualKeyboard(input: HTMLTextAreaElement, getRfb: () => RFB | null, changed: (open: boolean) => void, remoteInput: () => void = () => {}) {
   let active = false;
   let disposed = false;
   let focusTimer: ReturnType<typeof setTimeout> | undefined;
   let last = "";
   function reset() { input.value = last = "_".repeat(99); }
+  function sendKey(keysym: number, code?: string, down?: boolean) {
+    const rfb = getRfb();
+    if (!rfb) return;
+    remoteInput();
+    rfb.sendKey(keysym, code, down);
+  }
   const keyboard = new Keyboard(input);
   keyboard.onkeyevent = (keysym, code, down) => {
-    if (active) getRfb()?.sendKey(keysym, code, down);
+    if (active) sendKey(keysym, code, down);
   };
   keyboard.grab();
   reset();
@@ -41,10 +47,10 @@ export function virtualKeyboard(input: HTMLTextAreaElement, getRfb: () => RFB | 
     const newPoints = Array.from(next);
     let start = 0;
     while (start < Math.min(oldPoints.length, newPoints.length) && oldPoints[start] === newPoints[start]) start++;
-    for (let i = start; i < oldPoints.length; i++) getRfb()?.sendKey(0xff08, "Backspace");
+    for (let i = start; i < oldPoints.length; i++) sendKey(0xff08, "Backspace");
     // Compare Unicode code points too: replacing/deleting an emoji requires one
     // Backspace, even when its UTF-16 representation has two code units.
-    for (const point of newPoints.slice(start)) getRfb()?.sendKey(keysyms.lookup(point.codePointAt(0)!));
+    for (const point of newPoints.slice(start)) sendKey(keysyms.lookup(point.codePointAt(0)!));
     if (length > 198 || length < 1) {
       reset();
       if (length < 1) {

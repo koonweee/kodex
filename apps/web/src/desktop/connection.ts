@@ -37,6 +37,8 @@ export function createDesktopConnection(bridge: DesktopBridge, changed: (state: 
     setDisplay(id: number) { if (!disposed) { epoch++; bridge.setDisplay(id); } },
     setTrackpad(enabled: boolean) { if (!disposed) bridge.setTrackpad(enabled); },
     setKeyboard(open: boolean) { if (!disposed) bridge.setKeyboard(open); },
+    unlock(password:string) { return bridge.unlock(password); },
+    cancelUnlock() { bridge.cancelUnlock(); },
     async pasteFromClipboard(read?: () => Promise<string>) {
       if (disposed || !active || state.status !== "connected" || state.displayLoading || state.displayError) throw new Error("Desktop is disconnected or closed.");
       if (!read) throw new Error("Clipboard reading is unavailable in this browser.");

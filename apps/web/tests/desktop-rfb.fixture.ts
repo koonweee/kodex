@@ -58,6 +58,12 @@ export class DesktopRfbFixture {
   private paused: { pause(): void; resume(): void }[] = [];
   pause(index = 0) { this.paused[index].pause(); }
   resume(index = 0) { this.paused[index].resume(); }
+  consoleState = "unlocked";
+  sessionReads = 0;
+  holdSession = false;
+  unlockOnReturn = false;
+  private sessionReplies: (() => Promise<void>)[] = [];
+  async releaseSession() { for (const reply of this.sessionReplies.splice(0)) await reply(); }
   clipboardWrites: string[] = [];
   holdClipboard = false;
   clipboardFailure = false;
@@ -66,6 +72,13 @@ export class DesktopRfbFixture {
     for (const reply of this.clipboardReplies.splice(0)) await reply();
   }
   async install(page: Page | BrowserContext) {
+    await page.route("**/v1/desktop/session", async route => {
+      this.sessionReads++;
+      const reply = async () => {
+        try { await route.fulfill({json:{consoleState:this.consoleState}}); } catch { /* Canceled/closed reader. */ }
+      };
+      if (this.holdSession) this.sessionReplies.push(reply); else await reply();
+    });
     await page.route("**/v1/desktop/display", async route => {
       const preferredDisplay=this.preferredDisplay;
       this.displayTargetRequests.push(preferredDisplay);
@@ -207,7 +220,10 @@ export class DesktopRfbFixture {
               this.scaleRequests.push({scale:requested,selected});
               if (!this.ignoreScaling) {scale=requested;painted=false;sendNativeInfo();}
             }
-            if (type === 4) connection.keys.push({ down: message[1] === 1, keysym: message.readUInt32BE(4) });
+            if (type === 4) {
+              connection.keys.push({ down: message[1] === 1, keysym: message.readUInt32BE(4) });
+              if (this.unlockOnReturn && message[1] === 1 && message.readUInt32BE(4) === 0xff0d) this.consoleState = "unlocked";
+            }
             if (type === 5) {
               connection.pointers.push(message[1]);
               connection.pointerPositions.push({ mask: message[1], x: message.readUInt16BE(2), y: message.readUInt16BE(4) });

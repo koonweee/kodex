@@ -50,7 +50,7 @@ export function useDesktopViewer(enabled: boolean, visible: boolean) {
     connection.current = owner;
     return () => { pasteAttempt.current++; connection.current = null; owner.dispose(); };
   }, [enabled, loadedBridge]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!visible) { pasteAttempt.current++; setPasting(false); }
     connection.current?.setActive(visible);
   }, [visible, loadedBridge]);
@@ -68,6 +68,12 @@ export function useDesktopViewer(enabled: boolean, visible: boolean) {
     },
     setDisplay(id: number) { pasteAttempt.current++; setPasting(false); connection.current?.setDisplay(id); },
     setKeyboard(open: boolean) { connection.current?.setKeyboard(open); },
+    unlock(password:string) {
+      const owner=connection.current;
+      if(!owner) return Promise.reject(new Error("Wait for a live Desktop preview."));
+      return owner.unlock(password);
+    },
+    cancelUnlock() {connection.current?.cancelUnlock();},
     async paste() {
       const owner = connection.current;
       if (!owner || pasting) return;

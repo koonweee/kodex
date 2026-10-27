@@ -7,7 +7,7 @@ function viewer() {
   const bridge: DesktopBridge = {
     subscribe: vi.fn((next) => { listener = next; return vi.fn(); }),
     connect: vi.fn(() => listener({ status: "connecting", keyboardOpen: false })),
-    disconnect: vi.fn(), setDisplay: vi.fn(), setActive: vi.fn(), setTrackpad: vi.fn(), setKeyboard: vi.fn(), paste: vi.fn(async () => {}),
+    disconnect: vi.fn(), setDisplay: vi.fn(), setActive: vi.fn(), setTrackpad: vi.fn(), setKeyboard: vi.fn(), paste: vi.fn(async () => {}), unlock:vi.fn(async()=>{}), cancelUnlock:vi.fn(),
   };
   return { bridge, emit: (state: ViewerState) => listener(state) };
 }

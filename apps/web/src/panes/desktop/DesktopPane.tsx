@@ -13,6 +13,7 @@ import { AdaptiveIconButton } from "../../ui/AdaptiveIconButton";
 import { useWorkspace } from "../../workspace/WorkspaceProvider";
 import type { WorkspacePaneComponentProps } from "../../workspace/paneTypes";
 import { DesktopDisplayMenu } from "./DesktopDisplayMenu";
+import { DesktopUnlock } from "./DesktopUnlock";
 import "./desktop.css";
 
 const messages: Record<DesktopFailure, string> = {
@@ -33,7 +34,8 @@ export function DesktopPane({ pane }: WorkspacePaneComponentProps) {
   const visible = visiblePaneIds.includes(pane.id);
   const { hasTouchInput } = useInputCapabilities();
   const viewer = useDesktopViewer(enabled, visible);
-  const keyboardViewport = useKeyboardViewport(visible && viewer.state.keyboardOpen, viewer.frame.current?.parentElement);
+  const [unlockFocused,setUnlockFocused]=useState(false);
+  const keyboardViewport = useKeyboardViewport(visible && (viewer.state.keyboardOpen || unlockFocused), viewer.frame.current?.parentElement);
   const [displayMenuOpen, setDisplayMenuOpen] = useState(false);
   const [touchSettingsOpen, setTouchSettingsOpen] = useState(false);
   useEffect(() => { if (!visible) { setTouchSettingsOpen(false); setDisplayMenuOpen(false); } }, [visible]);
@@ -68,10 +70,12 @@ export function DesktopPane({ pane }: WorkspacePaneComponentProps) {
   const message = !enabled ? "Desktop is unavailable until a VNC password is configured on the Mac gateway."
     : viewer.error ?? viewer.state.displayError ?? (viewer.state.failure ? messages[viewer.state.failure] : null);
   return <PaneLayout className="kodex-desktop-pane" aria-label="Mac desktop"
-    style={{ paddingBottom: viewer.state.keyboardOpen ? keyboardViewport.inlineKeyboardInset : 0 }}>
+    style={{ paddingBottom: viewer.state.keyboardOpen || unlockFocused ? keyboardViewport.inlineKeyboardInset : 0 }}>
     {message ? <Alert color={enabled ? "red" : "blue"} title={enabled ? "Desktop connection" : "Desktop unavailable"}>{message}
       {enabled && viewer.state.retryable ? <Text size="sm">Retrying automatically…</Text> : null}
     </Alert> : enabled && !connected ? <Text className="kodex-desktop-status" role="status" size="sm">Connecting to the Mac…</Text> : null}
+    {enabled && visible ? <DesktopUnlock ready={connected && !viewer.pasting} revision={viewer.state.inputRevision ?? 0} send={viewer.unlock} cancel={viewer.cancelUnlock}
+      onFocusChange={focused=>{setUnlockFocused(focused);if(focused)viewer.setKeyboard(false);}} /> : null}
     {enabled ? <iframe ref={viewer.frame} key={viewer.frameKey} title="Mac desktop viewer" className="kodex-desktop-frame"
       src={__DESKTOP_VIEWER_URL__} onLoad={viewer.onLoad} inert={!visible} onFocus={() => focusPane(pane.id)} /> : null}
   </PaneLayout>;

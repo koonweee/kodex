@@ -408,6 +408,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/desktop/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["session_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/desktop/ws": {
         parameters: {
             query?: never;
@@ -2628,11 +2644,16 @@ export interface components {
         DesktopClipboardRequest: {
             text: string;
         };
+        /** @enum {string} */
+        DesktopConsoleState: "locked" | "unlocked" | "unknown";
         DesktopDisplayTargetResponse: {
             preferredDisplay?: null | components["schemas"]["DisplayTarget"];
         };
         /** @enum {string} */
         DesktopFailure: "unsupportedPlatform" | "configuration" | "authentication" | "passwordAccessDisabled" | "protocol" | "connection" | "virtualDisplay" | "timeout";
+        DesktopSessionResponse: {
+            consoleState: components["schemas"]["DesktopConsoleState"];
+        };
         DirectoryEntry: {
             name: string;
             path: string;
@@ -4980,6 +5001,33 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ApiErrorBody"];
                 };
+            };
+        };
+    };
+    session_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current effective user's native console lock state; unknown never authorizes password input. No display creation or unlock is performed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DesktopSessionResponse"];
+                };
+            };
+            /** @description Desktop unsupported or not configured */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

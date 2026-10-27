@@ -13,6 +13,7 @@ use axum::{
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/v1/desktop/display", get(display_target))
+        .route("/v1/desktop/session", get(session_status))
         .route("/v1/desktop/ws", get(connect))
         .route(
             "/v1/desktop/clipboard",
@@ -160,4 +161,29 @@ pub async fn display_target(State(state): State<AppState>) -> Response {
         )
         .into_response(),
     }
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopSessionResponse {
+    pub console_state: crate::desktop::session::DesktopConsoleState,
+}
+
+#[utoipa::path(get, path="/v1/desktop/session", responses(
+    (status=200, description="Current effective user's native console lock state; unknown never authorizes password input. No display creation or unlock is performed.", body=DesktopSessionResponse),
+    (status=403, description="Desktop unsupported or not configured")
+))]
+pub async fn session_status(State(state): State<AppState>) -> Response {
+    use crate::desktop::session::{read_console_state, DesktopConsoleState};
+    if !cfg!(target_os = "macos") || state.config.desktop.password().is_err() {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let console_state = tokio::task::spawn_blocking(read_console_state)
+        .await
+        .unwrap_or(DesktopConsoleState::Unknown);
+    (
+        [(axum::http::header::CACHE_CONTROL, "no-store")],
+        Json(DesktopSessionResponse { console_state }),
+    )
+        .into_response()
 }
