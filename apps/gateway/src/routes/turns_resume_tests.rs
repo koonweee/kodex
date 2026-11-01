@@ -103,25 +103,26 @@ async fn resumes_interrupted_turn_with_explicit_continuation_and_shared_pending_
     let mut second_tab = state.events.subscribe();
     let (status, _) = resume(state.clone()).await;
     assert_eq!(status, StatusCode::OK);
-    let requests = native.requests.lock().unwrap();
-    assert_eq!(
-        requests.iter().map(|(m, _)| m.as_str()).collect::<Vec<_>>(),
-        ["thread/read", "thread/turns/list", "turn/start"]
-    );
-    assert_eq!(requests[1].1["limit"], 1);
-    assert_eq!(requests[1].1["sortDirection"], "desc");
-    assert_eq!(requests[1].1["itemsView"], "notLoaded");
-    assert_eq!(
-        requests[2].1["input"],
-        json!([{"type":"text", "text":"Continue the interrupted task"}])
-    );
-    assert!(requests[2].1.get("model").is_none());
-    let client_id = requests[2].1["clientUserMessageId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let client_id = {
+        let requests = native.requests.lock().unwrap();
+        assert_eq!(
+            requests.iter().map(|(m, _)| m.as_str()).collect::<Vec<_>>(),
+            ["thread/read", "thread/turns/list", "turn/start"]
+        );
+        assert_eq!(requests[1].1["limit"], 1);
+        assert_eq!(requests[1].1["sortDirection"], "desc");
+        assert_eq!(requests[1].1["itemsView"], "notLoaded");
+        assert_eq!(
+            requests[2].1["input"],
+            json!([{"type":"text", "text":"Continue the interrupted task"}])
+        );
+        assert!(requests[2].1.get("model").is_none());
+        requests[2].1["clientUserMessageId"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
     assert!(!client_id.is_empty());
-    drop(requests);
     let first = first_tab.try_recv().unwrap();
     let second = second_tab.try_recv().unwrap();
     assert_eq!(first.kind, "thread_view.patch");

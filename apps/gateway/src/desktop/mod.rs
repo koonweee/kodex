@@ -67,7 +67,7 @@ impl DesktopPassword {
 
     fn response(&self, mut challenge: [u8; 16]) -> [u8; 16] {
         let cipher = des::Des::new_from_slice(self.0.as_ref()).expect("eight-byte VNC key");
-        for chunk in challenge.chunks_exact_mut(8) {
+        for chunk in challenge.as_chunks_mut::<8>().0 {
             let mut block = des::cipher::Block::<des::Des>::default();
             block.copy_from_slice(chunk);
             cipher.encrypt_block(&mut block);

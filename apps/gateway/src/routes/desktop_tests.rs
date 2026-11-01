@@ -13,8 +13,10 @@ use std::sync::Arc;
 use tower::ServiceExt;
 
 async fn state(password: &str) -> AppState {
-    let mut config = Config::default();
-    config.desktop = DesktopConfig::with_password(password);
+    let config = Config {
+        desktop: DesktopConfig::with_password(password),
+        ..Default::default()
+    };
     AppState::new(
         config,
         Store::in_memory().await.unwrap(),

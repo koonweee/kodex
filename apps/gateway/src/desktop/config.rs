@@ -53,8 +53,10 @@ mod tests {
 
     #[test]
     fn configuration_round_trips_never_include_a_desktop_secret() {
-        let mut config = crate::config::Config::default();
-        config.desktop = DesktopConfig::with_password("fixture1");
+        let config = crate::config::Config {
+            desktop: DesktopConfig::with_password("fixture1"),
+            ..Default::default()
+        };
         assert!(config.desktop.configured());
         assert!(config.desktop.password().is_ok());
         assert!(!format!("{config:?}").contains("fixture1"));

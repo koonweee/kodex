@@ -69,7 +69,7 @@ async fn rejected_queue_requests_are_distinct_from_unconfirmed_writes() {
             !body.retryable,
             "an input write must never invite automatic retry: {body:?}"
         );
-        if matches!(code, Some(-32600 | -32601 | -32602)) {
+        if matches!(code, Some(-32602..=-32600)) {
             assert_eq!(body.code, "bad_request");
             assert!(
                 body.message.contains("rejected") && !body.message.contains("may have occurred")

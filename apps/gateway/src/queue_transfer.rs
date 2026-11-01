@@ -92,7 +92,7 @@ pub(crate) async fn enqueue_locked(
     let row = match client.queue_add(thread_id.into(), input, client_id).await {
         Ok(row) => row,
         Err(error @ ApiError::BadRequest(_)) => return Err(error),
-        Err(ApiError::NativeRpc(error)) if matches!(error.code, -32600 | -32601 | -32602) => {
+        Err(ApiError::NativeRpc(error)) if matches!(error.code, -32602..=-32600) => {
             return Err(ApiError::BadRequest(format!(
                 "Native queue request rejected ({}). Check the target thread, queue capacity, input schema and pinned runtime compatibility before submitting again. No input was submitted.",
                 error.code

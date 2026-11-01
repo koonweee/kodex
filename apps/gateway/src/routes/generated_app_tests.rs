@@ -166,17 +166,18 @@ async fn generated_cards_publish_to_two_clients_keep_old_grants_and_reject_orpha
         assert_eq!(status, StatusCode::OK);
         assert!(result["error"].is_null(), "{result}");
     }
-    let calls = inner.requests.lock().unwrap();
-    let inputs = calls
-        .iter()
-        .filter(|(m, _)| m == "turn/start")
-        .collect::<Vec<_>>();
-    assert_eq!(inputs.len(), 2);
-    assert_ne!(
-        inputs[0].1["clientUserMessageId"],
-        inputs[1].1["clientUserMessageId"]
-    );
-    drop(calls);
+    {
+        let calls = inner.requests.lock().unwrap();
+        let inputs = calls
+            .iter()
+            .filter(|(m, _)| m == "turn/start")
+            .collect::<Vec<_>>();
+        assert_eq!(inputs.len(), 2);
+        assert_ne!(
+            inputs[0].1["clientUserMessageId"],
+            inputs[1].1["clientUserMessageId"]
+        );
+    }
     native.retained.store(false, Ordering::SeqCst);
     assert_eq!(
         bridge(

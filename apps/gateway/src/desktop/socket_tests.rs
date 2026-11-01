@@ -336,7 +336,7 @@ async fn pinned_browser_crosses_gateway_authentication_boundary() {
                         frame[2..4].copy_from_slice(&1_u16.to_be_bytes());
                         frame[8..10].copy_from_slice(&320_u16.to_be_bytes());
                         frame[10..12].copy_from_slice(&200_u16.to_be_bytes());
-                        for pixel in frame[16..].chunks_exact_mut(4) {
+                        for pixel in frame[16..].as_chunks_mut::<4>().0 {
                             pixel.copy_from_slice(&[0x11, 0x22, 0xcc, 0]);
                         }
                         mac.write_all(&frame).await.unwrap();
