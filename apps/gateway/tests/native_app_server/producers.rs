@@ -17,6 +17,7 @@ async fn real_native_control_and_automation_admit_fresh_shells_without_resume_fa
         let control = chat(&session, &project).await?;
         fixture.enqueue([ModelResponse::Hold]);
         let admission = api(&session.app, "POST", &format!("/v1/self-control/threads/{control}/input"), Some(json!({
+            "delivery":"queue",
             "input":[{"type":"text","text":"Control first native input","text_elements":[]}],
             "source":{"sourceThreadId":control, "sourceToolCallId":"control-native-proof"},
         }))).await?;
@@ -28,7 +29,7 @@ async fn real_native_control_and_automation_admit_fresh_shells_without_resume_fa
 
         // Explicit Control input preserves native pause. It does not turn an
         // interrupted target into a hidden inference scheduler.
-        let paused = api(&session.app, "POST", &format!("/v1/self-control/threads/{control}/input"), Some(json!({"input":[{"type":"text","text":"Control paused next turn","text_elements":[]}]}))).await?;
+        let paused = api(&session.app, "POST", &format!("/v1/self-control/threads/{control}/input"), Some(json!({"delivery":"queue","input":[{"type":"text","text":"Control paused next turn","text_elements":[]}]}))).await?;
         fixture.assert_no_model_request(Duration::from_millis(150)).await?;
         let paused_id = paused["queuedInput"]["id"].as_str().context("native Control row ID")?.to_owned();
         let queue = api(&session.app, "GET", &format!("/v1/threads/{control}/queued-inputs"), None).await?;

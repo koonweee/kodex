@@ -39,7 +39,11 @@ async fn kodex_control_mcp_stdio_lists_tools() -> anyhow::Result<()> {
     assert!(tools
         .iter()
         .all(|tool| tool.name != "apply_project_preview_config"));
-    assert_tool_requires(&tools, "send_thread_input", &["threadId", "input"]);
+    assert_tool_requires(
+        &tools,
+        "send_thread_input",
+        &["threadId", "delivery", "input"],
+    );
     assert_tool_requires(&tools, "spawn_thread", &["input"]);
     for name in ["create_thread", "spawn_thread"] {
         let tool = tools.iter().find(|tool| tool.name == name).unwrap();

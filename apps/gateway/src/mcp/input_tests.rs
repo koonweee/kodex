@@ -12,6 +12,9 @@ fn control_input_schemas_describe_native_content_and_provenance() {
         let validator = JSONSchema::compile(&Value::Object((*schema).clone())).unwrap();
         let mut good = json!({"threadId":"chat","input":[{"type":"text","text":"hello"}],
             "source":{"requestedBy":"user","sourceThreadId":"side","reason":"handoff"}});
+        if schema["properties"].get("delivery").is_some() {
+            good["delivery"] = json!("queue");
+        }
         // Spawn accepts additional creation fields; send requires the explicit target.
         assert!(validator.is_valid(&good));
         good["input"] = json!(["hello"]);
@@ -23,6 +26,25 @@ fn control_input_schemas_describe_native_content_and_provenance() {
         good["source"] = json!("handoff");
         assert!(!validator.is_valid(&good), "provenance must be an object");
     }
+
+    let schema = rmcp::handler::server::tool::schema_for_type::<SendThreadInputToolParams>();
+    let validator = JSONSchema::compile(&Value::Object((*schema).clone())).unwrap();
+    for delivery in ["now", "queue"] {
+        assert!(validator.is_valid(&json!({
+            "threadId":"chat",
+            "delivery":delivery,
+            "input":[{"type":"text","text":"hello"}],
+        })));
+    }
+    assert!(!validator.is_valid(&json!({
+        "threadId":"chat",
+        "input":[{"type":"text","text":"hello"}],
+    })));
+    assert!(!validator.is_valid(&json!({
+        "threadId":"chat",
+        "delivery":"later",
+        "input":[{"type":"text","text":"hello"}],
+    })));
 }
 
 #[tokio::test]
@@ -48,14 +70,14 @@ async fn malformed_control_input_can_be_corrected_without_a_gateway_write() -> a
     });
     let client = ().serve(client_transport).await?;
     for name in ["send_thread_input", "spawn_thread"] {
+        let mut arguments = json!({"threadId":"chat","input":["private-message"]});
+        if name == "send_thread_input" {
+            arguments["delivery"] = json!("now");
+        }
         let error = client
             .call_tool(
-                CallToolRequestParams::new(name).with_arguments(
-                    json!({"threadId":"chat","input":["private-message"]})
-                        .as_object()
-                        .unwrap()
-                        .clone(),
-                ),
+                CallToolRequestParams::new(name)
+                    .with_arguments(arguments.as_object().unwrap().clone()),
             )
             .await
             .unwrap_err()
@@ -67,9 +89,18 @@ async fn malformed_control_input_can_be_corrected_without_a_gateway_write() -> a
         assert!(!error.contains("private-message"));
     }
     for name in ["send_thread_input", "spawn_thread"] {
-        let error = client.call_tool(CallToolRequestParams::new(name).with_arguments(
-            json!({"threadId":"chat","input":[{"type":"text","text":"hello"}],"source":"private-reason"}).as_object().unwrap().clone()
-        )).await.unwrap_err().to_string();
+        let mut arguments = json!({"threadId":"chat","input":[{"type":"text","text":"hello"}],"source":"private-reason"});
+        if name == "send_thread_input" {
+            arguments["delivery"] = json!("now");
+        }
+        let error = client
+            .call_tool(
+                CallToolRequestParams::new(name)
+                    .with_arguments(arguments.as_object().unwrap().clone()),
+            )
+            .await
+            .unwrap_err()
+            .to_string();
         assert!(
             error.contains("source")
                 && error.contains("provenance object")
@@ -82,7 +113,7 @@ async fn malformed_control_input_can_be_corrected_without_a_gateway_write() -> a
     let result = client
         .call_tool(
             CallToolRequestParams::new("send_thread_input").with_arguments(
-                json!({"threadId":"chat","input":[{"type":"text","text":"corrected"}],
+                json!({"threadId":"chat","delivery":"now","input":[{"type":"text","text":"corrected"}],
             "source":{"requestedBy":"user","sourceThreadId":"side","reason":"handoff"}})
                 .as_object()
                 .unwrap()
@@ -217,7 +248,7 @@ fn openapi_and_mcp_input_contracts_preserve_native_text_and_media_acceptance() {
         let request = json!({"threadId":"chat","clientUserMessageId":"attempt","input":input});
         let expected = native.is_valid(&request);
         assert_eq!(openapi.is_valid(&input), expected, "OpenAPI: {input}");
-        let request = json!({"threadId":"chat","input":input});
+        let request = json!({"threadId":"chat","delivery":"now","input":input});
         assert_eq!(mcp.is_valid(&request), expected, "MCP: {input}");
     }
 }

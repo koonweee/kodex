@@ -272,6 +272,8 @@ pub struct CreateThreadToolParams {
 pub struct SendThreadInputToolParams {
     #[serde(alias = "thread_id")]
     pub thread_id: String,
+    /// Deliver now through native atomic start-or-steer, or queue for later.
+    pub delivery: crate::routes::self_control::SelfControlThreadInputDelivery,
     /// Native content objects; text example: [{"type":"text","text":"your message"}].
     #[schemars(schema_with = "crate::app_server_api::native_input::mcp_schema")]
     pub input: Vec<Value>,
@@ -881,7 +883,9 @@ impl KodexControlMcp {
         ))
     }
 
-    #[tool(description = "Send input to a Kodex thread through self-control queue routing")]
+    #[tool(
+        description = "Send input to a Kodex thread with explicit delivery intent. Use delivery='now' for coordination, corrections, blockers, ownership updates, or other input that should join an active turn; native atomically steers an active regular turn or starts one when idle. Use delivery='queue' only for independent future work that should wait. Never automatically retry an uncertain write."
+    )]
     async fn send_thread_input(
         &self,
         Parameters(params): Parameters<SendThreadInputToolParams>,
@@ -2271,7 +2275,11 @@ mod tests {
                 .and_then(Value::as_array)
                 .is_some_and(|fields| fields.iter().any(|field| field == "projectId")));
         }
-        assert_tool_requires(&tools, "send_thread_input", &["threadId", "input"]);
+        assert_tool_requires(
+            &tools,
+            "send_thread_input",
+            &["threadId", "delivery", "input"],
+        );
         let input_schema = &tools
             .iter()
             .find(|tool| tool.name == "send_thread_input")
@@ -2459,6 +2467,7 @@ mod tests {
 
         let mut input_args = JsonObject::new();
         input_args.insert("threadId".to_string(), json!("thread-1"));
+        input_args.insert("delivery".to_string(), json!("queue"));
         input_args.insert(
             "input".to_string(),
             json!([{"type": "text", "text": "start now"}]),

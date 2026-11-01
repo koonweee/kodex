@@ -20,6 +20,7 @@ use crate::{
     app_server_api::{
         self, RawAppServerResponse, ThreadCommandResponse, ThreadListResponse,
         ThreadSettingsUpdateRequest, ThreadSubagentListResponse, ThreadViewResponse,
+        TurnStartOptions,
     },
     app_surfaces::{
         validate_app_surface_grants, validate_app_surface_title,
@@ -59,6 +60,7 @@ use crate::{
         AppSurfaceSessionStatus, AppSurfaceSessionUpsert, Approval, AutomationRun,
         AutomationStatus, AutomationUpdate, NewAutomation, NewEvent,
     },
+    turn_lifecycle,
 };
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -801,12 +803,22 @@ pub async fn create_self_control_thread(
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SelfControlThreadInputRequest {
+    pub delivery: SelfControlThreadInputDelivery,
     #[schema(schema_with = app_server_api::native_input::openapi_schema)]
     pub input: Vec<Value>,
     #[serde(default)]
     pub source: SelfControlSource,
     #[serde(default)]
     pub max_self_control_depth: Option<u8>,
+}
+
+#[derive(
+    Debug, Clone, Copy, Deserialize, Serialize, ToSchema, schemars::JsonSchema, PartialEq, Eq,
+)]
+#[serde(rename_all = "camelCase")]
+pub enum SelfControlThreadInputDelivery {
+    Now,
+    Queue,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -822,6 +834,7 @@ pub struct SelfControlThreadInputResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum SelfControlThreadInputAction {
+    Submitted,
     Queued,
 }
 
@@ -829,7 +842,7 @@ pub enum SelfControlThreadInputAction {
     post,
     path = "/v1/self-control/threads/{threadId}/input",
     summary = "Send input to a Kodex thread through self-control",
-    description = "Activate the target and submit one native queued message. Native ordering and pause behavior apply; this never steers the user’s active turn and never retries an uncertain admission.",
+    description = "Activate the target and honor the explicit delivery intent. `now` uses native atomic start-or-steer, joining an active regular turn or starting one when idle. `queue` submits one native queued message with native ordering and pause behavior. Neither path retries an uncertain admission.",
     request_body = SelfControlThreadInputRequest,
     responses((status = 200, body = SelfControlThreadInputResponse))
 )]
@@ -849,27 +862,71 @@ pub async fn send_self_control_thread_input(
         None,
         Some(&thread_id),
         "self_control.thread_input_admitting",
-        json!({"source":request.source.to_value(), "clientUserMessageId":client_id}),
+        json!({"source":request.source.to_value(), "delivery":request.delivery, "clientUserMessageId":client_id}),
     )
     .await?;
-    let row =
-        crate::queue_transfer::enqueue_locked(&state, &thread_id, request.input, client_id).await?;
-    queue::broadcast_changed_best_effort(&state, &thread_id).await;
-    let queued_input = queue::project_row(
-        &thread_id,
-        row,
-        crate::queue_transfer::can_steer(&state, &thread_id).await,
-    );
-    // An accepted native write must not become a retryable error solely because
-    // its audit/refill publication fails.
-    if let Err(error) = audit_self_control(&state, None, Some(&thread_id), "self_control.thread_input", json!({"source":request.source.to_value(), "action":"queued", "queuedInputId":queued_input.id})).await {
-        tracing::warn!(%error, "failed to audit accepted Control input");
+    match request.delivery {
+        SelfControlThreadInputDelivery::Now => {
+            let submission_revision = state.store.latest_event_seq().await?;
+            let response = client
+                .turn_start(
+                    thread_id.clone(),
+                    request.input.clone(),
+                    TurnStartOptions::default(),
+                    Some(client_id.clone()),
+                )
+                .await?;
+            if let Some(turn_id) = turn_lifecycle::pending_projection_turn_id(&response.payload) {
+                if let Err(error) = turn_lifecycle::record_pending_user_projection(
+                    &state,
+                    &thread_id,
+                    &turn_id,
+                    &client_id,
+                    &request.input,
+                    &[],
+                    submission_revision,
+                )
+                .await
+                {
+                    // Native already confirmed this write. Projection failure must
+                    // not misreport it as uncertain or invite another submission;
+                    // canonical reads can still converge from native state.
+                    tracing::warn!(%error, "failed to project accepted Control input");
+                }
+            }
+            // An accepted native write must not become a retryable error solely because
+            // its audit publication fails.
+            if let Err(error) = audit_self_control(&state, None, Some(&thread_id), "self_control.thread_input", json!({"source":request.source.to_value(), "action":"submitted", "clientUserMessageId":client_id})).await {
+                tracing::warn!(%error, "failed to audit accepted Control input");
+            }
+            Ok(Json(SelfControlThreadInputResponse {
+                action: SelfControlThreadInputAction::Submitted,
+                turn: Some(response),
+                queued_input: None,
+            }))
+        }
+        SelfControlThreadInputDelivery::Queue => {
+            let row =
+                crate::queue_transfer::enqueue_locked(&state, &thread_id, request.input, client_id)
+                    .await?;
+            queue::broadcast_changed_best_effort(&state, &thread_id).await;
+            let queued_input = queue::project_row(
+                &thread_id,
+                row,
+                crate::queue_transfer::can_steer(&state, &thread_id).await,
+            );
+            // An accepted native write must not become a retryable error solely because
+            // its audit/refill publication fails.
+            if let Err(error) = audit_self_control(&state, None, Some(&thread_id), "self_control.thread_input", json!({"source":request.source.to_value(), "action":"queued", "queuedInputId":queued_input.id})).await {
+                tracing::warn!(%error, "failed to audit accepted Control input");
+            }
+            Ok(Json(SelfControlThreadInputResponse {
+                action: SelfControlThreadInputAction::Queued,
+                turn: None,
+                queued_input: Some(queued_input),
+            }))
+        }
     }
-    Ok(Json(SelfControlThreadInputResponse {
-        action: SelfControlThreadInputAction::Queued,
-        turn: None,
-        queued_input: Some(queued_input),
-    }))
 }
 
 #[derive(Debug, Default, Clone, Deserialize, ToSchema)]
@@ -1349,6 +1406,7 @@ pub async fn spawn_self_control_thread(
         State(state.clone()),
         Path(thread_id.clone()),
         Json(SelfControlThreadInputRequest {
+            delivery: SelfControlThreadInputDelivery::Queue,
             input: request.input,
             source: request.source.clone(),
             max_self_control_depth: None,

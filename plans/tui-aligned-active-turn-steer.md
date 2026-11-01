@@ -60,10 +60,11 @@ Explicit queued-row actions stay separate:
 - `POST /v1/threads/{threadId}/queued-inputs` remains an explicit durable queue API.
 - Queue drainer and automation behavior remain queue-first.
 
-Self-control policy:
+Self-control policy (subsequently revised by explicit product decision):
 
-- Keep `apps/gateway/src/routes/self_control.rs::send_self_control_thread_input` queue-first for active threads unless a later product decision explicitly asks agent-originated self-control input to steer live user turns.
-- Update its route description and tests so it is not described as composer-equivalent after `/input` becomes steer-first.
+- Require `send_thread_input` callers to choose `delivery: "now" | "queue"` explicitly.
+- Route `now` through native atomic `turn/start`, which steers an active regular turn or starts one when idle; do not infer routing from browser or gateway hints and do not fall back to queue after an error.
+- Keep `queue` on native durable queue admission, including `spawn_thread` and automation producer behavior.
 
 ## Milestones
 
@@ -295,4 +296,4 @@ Additional validation notes:
 - Direct active steer cannot carry per-turn options. The plan intentionally treats submitted options as relevant only to `turn/start` and queued future starts; implementers must not persist active-steer options as future thread settings.
 - Direct steer pending-user projection should not become durable transcript truth. It should disappear or reconcile when app-server emits the real committed user message through canonical `thread_view.patch`.
 - If a `turn/start` is in progress and a second user submits before a concrete turn id exists, queueing behind the pending start remains safer than attempting `turn/steer` with synthetic state.
-- Self-control remains queue-first by policy. If product intent changes to let agent-originated self-control steer active user turns, that should be a separate explicit decision because it changes safety and interruption semantics.
+- Self-control delivery is explicit: `now` uses native atomic start-or-steer and `queue` retains durable deferred work. Callers, rather than cached active-turn state, choose the intent.

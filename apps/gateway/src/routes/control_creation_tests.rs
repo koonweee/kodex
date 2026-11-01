@@ -418,6 +418,8 @@ async fn malformed_control_content_is_rejected_before_activation_or_spawn_admiss
             let mut request = json!({"input":input});
             if path.ends_with("thread-spawns") {
                 request["idempotencyKey"] = json!("invalid");
+            } else {
+                request["delivery"] = json!("queue");
             }
             let (status, body) = post(&state, path, request).await;
             assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");

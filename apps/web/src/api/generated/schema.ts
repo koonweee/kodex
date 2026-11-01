@@ -1254,7 +1254,7 @@ export interface paths {
         put?: never;
         /**
          * Send input to a Kodex thread through self-control
-         * @description Activate the target and submit one native queued message. Native ordering and pause behavior apply; this never steers the user’s active turn and never retries an uncertain admission.
+         * @description Activate the target and honor the explicit delivery intent. `now` uses native atomic start-or-steer, joining an active regular turn or starting one when idle. `queue` submits one native queued message with native ordering and pause behavior. Neither path retries an uncertain admission.
          */
         post: operations["send_self_control_thread_input"];
         delete?: never;
@@ -3405,8 +3405,11 @@ export interface components {
             version: string;
         };
         /** @enum {string} */
-        SelfControlThreadInputAction: "queued";
+        SelfControlThreadInputAction: "submitted" | "queued";
+        /** @enum {string} */
+        SelfControlThreadInputDelivery: "now" | "queue";
         SelfControlThreadInputRequest: {
+            delivery: components["schemas"]["SelfControlThreadInputDelivery"];
             input: ({
                 text: string;
                 /** @description UI-defined spans within `text` used to render or persist special elements. */

@@ -423,10 +423,10 @@ impl CodexClient {
         PermissionProfileListPage::from_payload(payload)
     }
 
-    pub async fn turn_start(
+    pub async fn turn_start<T: serde::Serialize>(
         &self,
         thread_id: String,
-        input: Vec<UserInput>,
+        input: Vec<T>,
         options: TurnStartOptions,
         client_id: Option<String>,
     ) -> ApiResult<RawAppServerResponse> {

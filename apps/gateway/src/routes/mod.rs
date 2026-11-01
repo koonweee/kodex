@@ -1787,7 +1787,7 @@ mod tests {
             }
             let response = app.clone().oneshot(Request::post("/v1/self-control/threads/thread-1/input")
                 .header("content-type", "application/json").body(Body::from(json!({
-                    "input":[{"type":"text","text":text}],"source":{"sourceToolCallId":source},
+                    "delivery":"queue","input":[{"type":"text","text":text}],"source":{"sourceToolCallId":source},
                 }).to_string())).unwrap()).await.unwrap();
             assert_eq!(response.status(), StatusCode::OK);
             let body = response_json(response).await;
@@ -1848,6 +1848,198 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn self_control_now_input_uses_native_atomic_start_or_steer() {
+        let (state, app_server) = test_state().await;
+        mark_thread_session_active(&state, "thread-1", "user-active-turn").await;
+        let mut observing_tab = state.events.subscribe();
+        let mut active = thread_summary("thread-1");
+        active["status"] = json!({"type":"active","activeFlags":[]});
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({"thread":active}),
+            json!({"turn":{"id":"user-active-turn"}}),
+        ]);
+        let input = json!([
+            {"type":"text","text":"coordinate now"},
+            {"type":"image","fileId":"native-file","detail":"original"},
+            {"type":"localAudio","path":"/tmp/control-audio.wav"}
+        ]);
+
+        let response = build_router(state.clone())
+            .oneshot(
+                Request::post("/v1/self-control/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "delivery":"now",
+                            "input":input,
+                            "source":{"sourceToolCallId":"tool-now"},
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["action"], "submitted");
+        assert_eq!(body["turn"]["payload"]["turn"]["id"], "user-active-turn");
+        assert!(body.get("queuedInput").is_none());
+        let requests = app_server.requests.lock().unwrap().clone();
+        let turn_start = requests
+            .iter()
+            .find(|(method, _)| method == "turn/start")
+            .expect("now delivery must use native start-or-steer");
+        assert_eq!(turn_start.1["threadId"], "thread-1");
+        assert_eq!(turn_start.1["input"], input);
+        assert!(requests
+            .iter()
+            .all(|(method, _)| method != "thread/queue/add" && method != "turn/steer"));
+        let client_id = turn_start.1["clientUserMessageId"].as_str().unwrap();
+        let projection = recv_event_kind(&mut observing_tab, "thread_view.patch").await;
+        let patch: crate::thread_view_patch::ThreadViewPatch =
+            serde_json::from_value(projection.payload).unwrap();
+        assert!(patch
+            .rows
+            .unwrap()
+            .iter()
+            .filter_map(|row| row.item.as_ref())
+            .any(|item| item.payload.client_id.as_deref() == Some(client_id)));
+        // A tab that missed the live patch converges from the authoritative
+        // canonical snapshot without needing browser-local routing state.
+        let snapshot = crate::thread_view::patch_for_thread(&state.thread_views, "thread-1")
+            .await
+            .unwrap();
+        assert!(snapshot
+            .items
+            .iter()
+            .any(|item| item.payload.client_id.as_deref() == Some(client_id)));
+        let audit = state
+            .store
+            .replay_events(None, None, Some("thread-1".into()))
+            .await
+            .unwrap();
+        let accepted = audit
+            .iter()
+            .find(|event| {
+                event.kind == "self_control.thread_input"
+                    && event.payload["source"]["sourceToolCallId"] == "tool-now"
+            })
+            .unwrap();
+        assert_eq!(accepted.payload["action"], "submitted");
+    }
+
+    #[tokio::test]
+    async fn self_control_now_input_starts_an_idle_thread_without_queue_fallback() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({"thread":thread_summary("thread-1")}),
+            json!({"turn":{"id":"new-native-turn"}}),
+        ]);
+
+        let response = build_router(state)
+            .oneshot(
+                Request::post("/v1/self-control/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "delivery":"now",
+                            "input":[{"type":"text","text":"start now"}],
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["action"], "submitted");
+        assert_eq!(body["turn"]["payload"]["turn"]["id"], "new-native-turn");
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(
+            requests
+                .iter()
+                .map(|(method, _)| method.as_str())
+                .collect::<Vec<_>>(),
+            vec!["thread/read", "turn/start"]
+        );
+    }
+
+    #[tokio::test]
+    async fn self_control_now_input_rejections_never_retry_or_fall_back_to_queue() {
+        for (failure, expected_status) in [
+            (TurnStartFailure::Rejected, StatusCode::BAD_REQUEST),
+            (TurnStartFailure::Uncertain, StatusCode::BAD_GATEWAY),
+        ] {
+            let app_server = Arc::new(FailingTurnStartAppServer {
+                failure,
+                requests: StdMutex::new(Vec::new()),
+            });
+            let state = AppState::new(
+                Config::default(),
+                Store::in_memory().await.unwrap(),
+                app_server.clone(),
+            );
+            let response = build_router(state)
+                .oneshot(
+                    Request::post("/v1/self-control/threads/thread-1/input")
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            json!({
+                                "delivery":"now",
+                                "input":[{"type":"text","text":"one attempt"}],
+                            })
+                            .to_string(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), expected_status);
+            let requests = app_server.requests.lock().unwrap();
+            assert_eq!(
+                requests
+                    .iter()
+                    .map(|(method, _)| method.as_str())
+                    .collect::<Vec<_>>(),
+                vec!["thread/read", "turn/start"]
+            );
+            assert_eq!(
+                requests
+                    .iter()
+                    .filter(|(method, _)| method == "turn/start")
+                    .count(),
+                1
+            );
+            assert!(requests
+                .iter()
+                .all(|(method, _)| method != "thread/queue/add"));
+        }
+    }
+
+    #[tokio::test]
+    async fn self_control_thread_input_requires_explicit_delivery() {
+        let (state, app_server) = test_state().await;
+        let response = build_router(state)
+            .oneshot(
+                Request::post("/v1/self-control/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"input":[{"type":"text","text":"ambiguous"}]}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(app_server.requests.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn self_control_thread_input_returns_stale_thread_errors() {
         let (state, app_server) = test_state().await;
         app_server
@@ -1862,7 +2054,8 @@ mod tests {
                 Request::post("/v1/self-control/threads/stale-thread/input")
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        json!({"input": [{"type": "text", "text": "hi"}]}).to_string(),
+                        json!({"delivery":"queue","input": [{"type": "text", "text": "hi"}]})
+                            .to_string(),
                     ))
                     .unwrap(),
             )
@@ -1880,6 +2073,7 @@ mod tests {
                     .header("content-type", "application/json")
                     .body(Body::from(
                         json!({
+                            "delivery":"queue",
                             "input":[{"type":"text","text":"first message"}],
                         })
                         .to_string(),
@@ -1931,7 +2125,7 @@ mod tests {
                 Request::post("/v1/self-control/threads/thread-1/input")
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        json!({"input":[{"type":"text","text":"cold admission"}]}).to_string(),
+                        json!({"delivery":"queue","input":[{"type":"text","text":"cold admission"}]}).to_string(),
                     ))
                     .unwrap(),
             )
@@ -1968,6 +2162,7 @@ mod tests {
             json!({"permissions":"full-access","sandboxPolicy":{"type":"dangerFullAccess"}}),
         ] {
             let mut body = extra;
+            body["delivery"] = json!("queue");
             body["input"] = json!([{"type":"text","text":"invalid"}]);
             let response = build_router(state.clone())
                 .oneshot(
@@ -8622,6 +8817,55 @@ mod tests {
         )
         .await
         .unwrap();
+    }
+
+    #[derive(Clone, Copy)]
+    enum TurnStartFailure {
+        Rejected,
+        Uncertain,
+    }
+
+    struct FailingTurnStartAppServer {
+        failure: TurnStartFailure,
+        requests: StdMutex<Vec<(String, Value)>>,
+    }
+
+    #[async_trait]
+    impl AppServer for FailingTurnStartAppServer {
+        fn is_ready(&self) -> bool {
+            true
+        }
+
+        fn readiness_error(&self) -> Option<String> {
+            None
+        }
+
+        async fn request(&self, method: &str, params: Value) -> ApiResult<Value> {
+            self.requests
+                .lock()
+                .unwrap()
+                .push((method.to_string(), params));
+            match method {
+                "thread/read" => Ok(json!({"thread":thread_summary("thread-1")})),
+                "turn/start" => Err(match self.failure {
+                    TurnStartFailure::Rejected => {
+                        ApiError::BadRequest("native rejected Control input".into())
+                    }
+                    TurnStartFailure::Uncertain => {
+                        ApiError::BadGateway("native acknowledgment lost".into())
+                    }
+                }),
+                _ => Err(ApiError::BadGateway(format!(
+                    "unexpected Control input RPC {method}"
+                ))),
+            }
+        }
+
+        async fn respond(&self, _: &str, _: Value) -> ApiResult<()> {
+            Err(ApiError::BadGateway(
+                "unexpected Control approval response".into(),
+            ))
+        }
     }
 
     fn notification_thread_summary_response(
