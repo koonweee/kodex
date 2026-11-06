@@ -83,7 +83,7 @@ pub async fn set_thread_pinned(
     app_server_api::client(&state.app_server)
         .thread_set_pinned(thread_id, request.pinned, request.before_thread_id)
         .await?;
-    // Native 0.160.0 has no section notification; clients refill native pin reads.
+    // Native 0.164.0 has no section notification; clients refill native pin reads.
     let event = state
         .store
         .append_event(NewEvent {

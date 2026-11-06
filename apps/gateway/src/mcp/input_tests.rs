@@ -222,7 +222,7 @@ async fn spawn_rejection_can_follow_creation_and_must_not_authorize_a_new_attemp
 #[test]
 fn openapi_and_mcp_input_contracts_preserve_native_text_and_media_acceptance() {
     let native: Value = serde_json::from_str(include_str!(
-        "../../app-server-schema/0.160.0/json/v2/ThreadQueueAddParams.json"
+        "../../app-server-schema/0.164.0/json/v2/ThreadQueueAddParams.json"
     ))
     .unwrap();
     let native = JSONSchema::compile(&native).unwrap();

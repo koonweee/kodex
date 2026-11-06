@@ -8,10 +8,7 @@ use kodex_gateway::{
     store::QueueTransferPhase,
 };
 use serde_json::{json, Value};
-use tokio::{
-    sync::oneshot,
-    time::{timeout, Duration},
-};
+use tokio::time::{timeout, Duration};
 
 use super::fixture::{api, Fixture, ModelResponse, NativeSession};
 
@@ -32,7 +29,7 @@ async fn real_native_promotion_uses_fresh_receipt_and_does_not_replay_on_restart
     .await;
     session.shutdown().await?;
     drop(session);
-    let (thread_id, retained, transfer_id, native_item_id) = result??;
+    let (thread_id, retained, transfer_id) = result??;
 
     let reopened = NativeSession::start(&fixture).await?;
     let result = timeout(Duration::from_secs(25), async {
@@ -53,7 +50,9 @@ async fn real_native_promotion_uses_fresh_receipt_and_does_not_replay_on_restart
         )
         .await?;
         anyhow::ensure!(detail["thread"]["status"] == "notLoaded");
-        assert_user_projection(&detail["timeline"], &transfer_id, &native_item_id)?;
+        // Native reconstructs the interrupted turn's persisted item identity on
+        // cold history reads; correlation remains the opaque client ID.
+        assert_user_projection(&detail["timeline"], &transfer_id, None)?;
         // Longer than the native ten-second watcher: a transient lack of
         // dispatch cannot masquerade as the selected unloaded restart behavior.
         fixture
@@ -73,7 +72,7 @@ async fn real_native_promotion_uses_fresh_receipt_and_does_not_replay_on_restart
 async fn exercise(
     fixture: &mut Fixture,
     session: &mut NativeSession,
-) -> anyhow::Result<(String, NativeQueuedSubmission, String, String)> {
+) -> anyhow::Result<(String, NativeQueuedSubmission, String)> {
     let project = api(
         &session.app,
         "POST",
@@ -95,17 +94,7 @@ async fn exercise(
         .as_str()
         .context("native thread ID missing")?
         .to_owned();
-    let (release, wait) = oneshot::channel();
-    fixture.enqueue([
-        ModelResponse::GatedItems(
-            vec![json!({
-                "type":"message", "role":"assistant", "id":"promotion-boundary-answer",
-                "content":[{"type":"output_text", "text":"Consume pending correction next"}],
-            })],
-            wait,
-        ),
-        ModelResponse::Hold,
-    ]);
+    fixture.enqueue([ModelResponse::Hold, ModelResponse::Hold]);
     let started = api(
         &session.app,
         "POST",
@@ -161,7 +150,8 @@ async fn exercise(
     anyhow::ensure!(saved.phase == QueueTransferPhase::Accepted);
     assert_native_queue(session, &thread_id, std::slice::from_ref(&retained)).await?;
     // The acknowledged steer is already visible through the canonical detail
-    // read while native consumption is held at the model-response boundary.
+    // read. Native 0.164 may materialize its native item before this GET, so
+    // correlation—not a transient synthetic row ID—is the stable assertion.
     let pending_detail = api(
         &session.app,
         "GET",
@@ -169,15 +159,10 @@ async fn exercise(
         None,
     )
     .await?;
-    assert_user_projection(
-        &pending_detail["timeline"],
-        &transfer.id,
-        &format!("pending-user-{}", transfer.id),
-    )?;
+    assert_user_projection(&pending_detail["timeline"], &transfer.id, None)?;
 
-    release
-        .send(())
-        .map_err(|_| anyhow::anyhow!("first model response disconnected before release"))?;
+    // Native 0.164 cancels the in-flight request when the promoted row steers
+    // the active turn, then starts a replacement request with that input.
     let followup = fixture.next_model_request().await?;
     let consumed = followup["input"]
         .as_array()
@@ -206,7 +191,7 @@ async fn exercise(
     assert_user_projection(
         &session.canonical_view(&thread_id).await?,
         &transfer.id,
-        &native_item_id,
+        Some(&native_item_id),
     )?;
     assert_native_queue(session, &thread_id, std::slice::from_ref(&retained)).await?;
 
@@ -222,7 +207,7 @@ async fn exercise(
     anyhow::ensure!(stopped["interruptedTurnId"] == turn_id);
     anyhow::ensure!(session.completed_turn(&thread_id, "interrupted").await?["id"] == turn_id);
     assert_native_queue(session, &thread_id, std::slice::from_ref(&retained)).await?;
-    Ok((thread_id, retained, transfer.id, native_item_id))
+    Ok((thread_id, retained, transfer.id))
 }
 
 fn queued_input() -> Vec<Value> {
@@ -270,7 +255,7 @@ async fn user_receipt(
 fn assert_user_projection(
     view: &Value,
     transfer_id: &str,
-    native_item_id: &str,
+    native_item_id: Option<&str>,
 ) -> anyhow::Result<()> {
     let users = view["rows"]
         .as_array()
@@ -286,19 +271,25 @@ fn assert_user_projection(
     anyhow::ensure!(
         users
             .iter()
-            .filter(|item| item["payload"]["item"]["clientId"] == INITIAL_CLIENT)
+            .filter(|item| item["payload"]["clientId"] == INITIAL_CLIENT)
             .count()
             == 1
     );
     let promoted = users
         .iter()
-        .filter(|item| item["payload"]["item"]["clientId"] == transfer_id)
+        .filter(|item| item["payload"]["clientId"] == transfer_id)
         .collect::<Vec<_>>();
     anyhow::ensure!(
         promoted.len() == 1,
         "promoted correction must have one canonical receipt"
     );
-    anyhow::ensure!(promoted[0]["itemId"] == native_item_id);
+    if let Some(native_item_id) = native_item_id {
+        anyhow::ensure!(promoted[0]["itemId"] == native_item_id);
+    } else {
+        anyhow::ensure!(promoted[0]["itemId"]
+            .as_str()
+            .is_some_and(|id| !id.is_empty()));
+    }
     anyhow::ensure!(promoted[0]["payload"]["item"]["content"] == json!(queued_input()));
     Ok(())
 }
@@ -345,9 +336,7 @@ async fn exercise_cross_turn(
         .context("native thread ID missing")?
         .to_owned();
     let (initial_response, release_initial) = ModelResponse::gated_message("Initial turn finished");
-    let (queued_response, release_queued) =
-        ModelResponse::gated_message("Consume the older queued correction next");
-    fixture.enqueue([initial_response, queued_response, ModelResponse::Hold]);
+    fixture.enqueue([initial_response, ModelResponse::Hold, ModelResponse::Hold]);
     let started = api(
         &session.app,
         "POST",
@@ -438,9 +427,7 @@ async fn exercise_cross_turn(
     );
     assert_native_queue(session, &thread_id, std::slice::from_ref(&retained)).await?;
 
-    release_queued
-        .send(())
-        .map_err(|_| anyhow::anyhow!("queued model response disconnected"))?;
+    // Steering the queued turn cancels its held request and starts the next one.
     let followup = fixture.next_model_request().await?;
     let consumed = followup["input"]
         .as_array()
@@ -484,14 +471,14 @@ async fn exercise_cross_turn(
         anyhow::ensure!(
             users
                 .iter()
-                .filter(|item| item["payload"]["item"]["clientId"] == client_id)
+                .filter(|item| item["payload"]["clientId"] == client_id)
                 .count()
                 == 1
         );
     }
     let promoted = users
         .iter()
-        .find(|item| item["payload"]["item"]["clientId"] == transfer.id)
+        .find(|item| item["payload"]["clientId"] == transfer.id)
         .context("promoted canonical receipt missing")?;
     anyhow::ensure!(promoted["itemId"] == native_item_id && promoted["turnId"] == current_turn);
     anyhow::ensure!(promoted["payload"]["item"]["content"] == json!(queued_input()));

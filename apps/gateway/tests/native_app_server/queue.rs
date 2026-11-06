@@ -1,4 +1,4 @@
-//! Native 0.160 queue semantics, before replacing Kodex's legacy queue adapter.
+//! Native 0.164 queue semantics, after replacing Kodex's legacy queue adapter.
 //! Requests follow the checked-in ThreadQueue* schemas. Dispatch/pause assertions
 //! exercise app-server/thread_queue_processor and ext/queue/src/service.rs.
 

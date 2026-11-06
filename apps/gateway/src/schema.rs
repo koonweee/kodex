@@ -5,54 +5,54 @@ use serde_json::{json, Value};
 
 use crate::error::{ApiError, ApiResult};
 
-pub const APP_SERVER_SCHEMA_VERSION: &str = "0.160.0";
+pub const APP_SERVER_SCHEMA_VERSION: &str = "0.164.0";
 
 static CLIENT_REQUEST_SCHEMA: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../app-server-schema/0.160.0/json/ClientRequest.json"
+        "../app-server-schema/0.164.0/json/ClientRequest.json"
     ))
 });
 
 static CLIENT_NOTIFICATION_SCHEMA: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../app-server-schema/0.160.0/json/ClientNotification.json"
+        "../app-server-schema/0.164.0/json/ClientNotification.json"
     ))
 });
 
 #[cfg(test)]
 static SERVER_NOTIFICATION_SCHEMA: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../app-server-schema/0.160.0/json/ServerNotification.json"
+        "../app-server-schema/0.164.0/json/ServerNotification.json"
     ))
 });
 
 static COMMAND_APPROVAL_RESPONSE_SCHEMA: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../app-server-schema/0.160.0/json/CommandExecutionRequestApprovalResponse.json"
+        "../app-server-schema/0.164.0/json/CommandExecutionRequestApprovalResponse.json"
     ))
 });
 
 static FILE_CHANGE_APPROVAL_RESPONSE_SCHEMA: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../app-server-schema/0.160.0/json/FileChangeRequestApprovalResponse.json"
+        "../app-server-schema/0.164.0/json/FileChangeRequestApprovalResponse.json"
     ))
 });
 
 static PERMISSIONS_APPROVAL_RESPONSE_SCHEMA: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../app-server-schema/0.160.0/json/PermissionsRequestApprovalResponse.json"
+        "../app-server-schema/0.164.0/json/PermissionsRequestApprovalResponse.json"
     ))
 });
 
 static MCP_ELICITATION_RESPONSE_SCHEMA: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../app-server-schema/0.160.0/json/McpServerElicitationRequestResponse.json"
+        "../app-server-schema/0.164.0/json/McpServerElicitationRequestResponse.json"
     ))
 });
 
 static TOOL_USER_INPUT_RESPONSE_SCHEMA: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../app-server-schema/0.160.0/json/ToolRequestUserInputResponse.json"
+        "../app-server-schema/0.164.0/json/ToolRequestUserInputResponse.json"
     ))
 });
 

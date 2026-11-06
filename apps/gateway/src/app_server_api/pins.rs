@@ -2,7 +2,7 @@ use super::{CodexClient, ThreadListResponse};
 use crate::error::ApiResult;
 use serde_json::json;
 
-/// Built-in native Pinned identity in the checked-in 0.160.0 contract.
+/// Built-in native Pinned identity in the checked-in 0.164.0 contract.
 pub const PINNED_THREAD_SECTION_ID: &str = "01984de2-8f74-7c91-a3b2-5c5e937cf318";
 
 impl CodexClient {

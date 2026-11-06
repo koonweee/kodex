@@ -54,7 +54,7 @@ impl OAuthService {
             base_url: format!("http://{}", listener.local_addr()?),
             observations: Arc::default(),
         };
-        // These metadata paths and the JSON MCP responses follow pinned 0.160
+        // These metadata paths and the JSON MCP responses follow pinned 0.164
         // app-server/tests/suite/v2/mcp_server_status.rs. The native process,
         // callback listener, token exchange, credential store and client are real.
         let app = Router::new()

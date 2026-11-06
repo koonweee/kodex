@@ -17,7 +17,7 @@ async fn gateway_binds_owned_control_before_starting_native_child() -> anyhow::R
     std::fs::write(
         &fake,
         r#"#!/bin/bash
-if [[ ${1:-} == --version ]]; then printf 'codex-cli 0.160.0\n'; exit 0; fi
+if [[ ${1:-} == --version ]]; then printf 'codex-cli 0.164.0\n'; exit 0; fi
 printf '%s\n%s\n%s\n' "${KODEX_GATEWAY_URL:-unset}" "${KODEX_GATEWAY_BINARY:-unset}" "${KODEX_ALLOW_REMOTE_SELF_CONTROL:-unset}" > "$KODEX_CONTROL_CAPTURE"
 IFS= read -r line
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{}}'

@@ -54,7 +54,7 @@ The installation layout is:
 ~/Library/LaunchAgents/dev.kodex.gateway.plist  # present when autostart is enabled
 ```
 
-Each release downloads the complete official [OpenAI Codex package](https://github.com/openai/codex/releases/tag/rust-v0.160.0) matching the checkout's `APP_SERVER_SCHEMA_VERSION` and Mac architecture. The controller pins the official archive SHA256 for each supported version/architecture; an unknown version, checksum mismatch, unsafe archive, missing helper, or failed native startup check aborts staging. Updating the schema version requires reviewing and adding the new package digests in `tools/kodex-service`.
+Each release downloads the complete official [OpenAI Codex package](https://github.com/openai/codex/releases/tag/rust-v0.164.0) matching the checkout's `APP_SERVER_SCHEMA_VERSION` and Mac architecture. The controller pins the official archive SHA256 for each supported version/architecture; an unknown version, checksum mismatch, unsafe archive, missing helper, or failed native startup check aborts staging. Updating the schema version requires reviewing and adding the new package digests in `tools/kodex-service`.
 
 The extracted `native/` directory retains upstream `bin/codex`, `bin/codex-code-mode-host`, `codex-package.json`, `codex-resources`, and `codex-path`; the release's `codex` symlink names its native entrypoint. Staging checks the executable's version and runs the helper's `--help` using temporary dedicated homes. Production still uses the gateway's dedicated Kodex `CODEX_HOME`. Each release owns its native package so rollback has no shared cache or desktop-app dependency. Plugin sources are packaged too; existing installed plugin caches still follow native plugin update semantics.
 

@@ -29,8 +29,10 @@ Defaults:
 | Database | `<instance root>/gateway.db` |
 | Native home | `<instance root>/codex-home/` |
 | Image uploads | `${TMPDIR:-/tmp}/kodex/uploads/images` |
-| Codex command | Codex **0.160.0** `app-server --listen stdio://` |
+| Codex command | Codex **0.164.0** `app-server --listen stdio://` |
 | Static frontend | Disabled until `KODEX_FRONTEND_DIST` is set |
+
+The gateway adds `features.async_compaction.enabled=true` to every owned app-server launch. Async compaction remains an upstream experimental feature in 0.164.0; its default threshold is native-owned. Compaction converges through canonical context-compaction items and ordinary turn lifecycle events rather than a Kodex-specific event.
 
 Supported environment overrides include:
 
@@ -52,7 +54,7 @@ Start from `apps/gateway/config/production.env.example` for a production-style l
 
 The native redesign is validated for the intended personal-account deployment. Its startup selects a fresh instance root with a persisted identity and an exclusive process lock. `KODEX_DATA_DIR` selects that root; a `KODEX_DATABASE_PATH` override must resolve to its `gateway.db`. Do not copy old databases or desktop credentials into it. Wrong executable versions and failed native initialization stop startup. Existing production remains a separate operational deployment until an explicit replacement restart is requested.
 
-Managed launches discard inherited `CODEX_*` variables and ambient OpenAI API credentials, set the instance's real `CODEX_HOME`, and request home-local SQLite, logs and file credential storage. Configure providers deliberately inside the new home. Local managed Codex configuration is currently refused because policy can override those paths. Organization-managed deployments are unsupported by the current isolation validation in 0.160.0: policy may override SQLite/log paths before client initialization, and the supported stdio contract has no pre-storage refusal or confinement option. A post-initialization check cannot prevent those writes. Do not bypass policy or treat command-line path pins as proof of managed-account isolation. Fresh native sign-in, authenticated operation and cold credential/history reuse have been verified for the user-confirmed personal account. This does not establish managed-account confinement. Dedicated runtime state also does not isolate shared project files, repository configuration, ambient skill discovery or same-account usage quotas. Native MCP credentials must use supported app-server operations; CLI MCP logout can affect shared keyring entries even in file-store mode.
+Managed launches discard inherited `CODEX_*` variables and ambient OpenAI API credentials, set the instance's real `CODEX_HOME`, and request home-local SQLite, logs and file credential storage. Configure providers deliberately inside the new home. Local managed Codex configuration is currently refused because policy can override those paths. Organization-managed deployments are unsupported by the current isolation validation in 0.164.0: policy may override SQLite/log paths before client initialization, and the supported stdio contract has no pre-storage refusal or confinement option. A post-initialization check cannot prevent those writes. Do not bypass policy or treat command-line path pins as proof of managed-account isolation. Fresh native sign-in, authenticated operation and cold credential/history reuse have been verified for the user-confirmed personal account. This does not establish managed-account confinement. Dedicated runtime state also does not isolate shared project files, repository configuration, ambient skill discovery or same-account usage quotas. Native MCP credentials must use supported app-server operations; CLI MCP logout can affect shared keyring entries even in file-store mode.
 
 Image uploads default to the system temporary directory so app-server can read `localImage` paths from its sandbox. If you override `KODEX_UPLOADS_DIR`, choose a location readable by the active app-server sandbox profile, such as a project root or `/tmp`.
 

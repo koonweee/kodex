@@ -38,32 +38,32 @@ struct DeleteResponse {
 
 static ADD_RESPONSE: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../../app-server-schema/0.160.0/json/v2/ThreadQueueAddResponse.json"
+        "../../app-server-schema/0.164.0/json/v2/ThreadQueueAddResponse.json"
     ))
 });
 static LIST_RESPONSE: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../../app-server-schema/0.160.0/json/v2/ThreadQueueListResponse.json"
+        "../../app-server-schema/0.164.0/json/v2/ThreadQueueListResponse.json"
     ))
 });
 static UPDATE_RESPONSE: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../../app-server-schema/0.160.0/json/v2/ThreadQueueUpdateResponse.json"
+        "../../app-server-schema/0.164.0/json/v2/ThreadQueueUpdateResponse.json"
     ))
 });
 static DELETE_RESPONSE: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../../app-server-schema/0.160.0/json/v2/ThreadQueueDeleteResponse.json"
+        "../../app-server-schema/0.164.0/json/v2/ThreadQueueDeleteResponse.json"
     ))
 });
 static REORDER_RESPONSE: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../../app-server-schema/0.160.0/json/v2/ThreadQueueReorderResponse.json"
+        "../../app-server-schema/0.164.0/json/v2/ThreadQueueReorderResponse.json"
     ))
 });
 static START_RESPONSE: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../../app-server-schema/0.160.0/json/v2/ThreadQueueStartResponse.json"
+        "../../app-server-schema/0.164.0/json/v2/ThreadQueueStartResponse.json"
     ))
 });
 

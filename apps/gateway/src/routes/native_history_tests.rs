@@ -41,7 +41,7 @@ fn resume_response(active: bool, include_live_receipt: bool) -> Value {
     }
     json!({
         "thread": {
-            "id": THREAD, "sessionId": "native-session", "cliVersion": "0.160.0",
+            "id": THREAD, "sessionId": "native-session", "cliVersion": "0.164.0",
             "cwd": "/workspace", "projectId": null, "ephemeral": false,
             "name": "Native history", "preview": "Identical message 🧪",
             "createdAt": 10, "updatedAt": 30, "source": "cli",
@@ -95,7 +95,7 @@ impl AppServer for AttachNative {
                 let index = self.resumes.fetch_add(1, Ordering::SeqCst);
                 let mut response = resume_response(self.active, index > 0);
                 if self.active {
-                    // Native 0.160 reconstructs active resume items with aliases;
+                    // Native 0.164 reconstructs active resume items with aliases;
                     // only the separate persisted page carries stable item IDs.
                     for (index, item) in response["initialTurnsPage"]["data"][0]["items"]
                         .as_array_mut()

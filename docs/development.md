@@ -5,7 +5,8 @@ This guide covers local setup, common workflows, tests, and generated contracts.
 ## Prerequisites
 
 - Rust stable with `cargo` and `rustfmt`.
-- Codex **0.160.0**, selected with `KODEX_CODEX_BINARY` or that exact version on `PATH`. Missing/unknown versions and failed initialization stop gateway startup.
+- Codex **0.164.0**, selected with `KODEX_CODEX_BINARY` or that exact version on `PATH`. Missing/unknown versions and failed initialization stop gateway startup.
+- Kodex-owned app-server launches explicitly enable 0.164.0's experimental async compaction. The native runtime reports resulting compaction through the existing turn/item lifecycle; Kodex does not add a parallel compaction event or durable execution mirror.
 - Node.js and npm.
 - A C toolchain/linker, `bash`, `curl`, and `jq` for backend builds and smoke checks.
 - Optional: `sqlite3` for inspecting local databases and `tmux` for running both development servers.
@@ -53,7 +54,7 @@ Projects use native IDs, ordered roots and metadata. Roots organize a project; t
 
 Pinned membership and order are native state. The UI exposes pin/unpin and pinned ordering, with no custom section management or section caches. Existing native custom-section membership does not filter chats out of normal project/chat lists. Pin operations preserve project membership and working directory. Successful gateway mutations emit a refill marker; browser reconnect and foreground checks recover changes missed by another tab.
 
-Existing-chat controls edit shared native settings for the next turn using only the selected field. Send and Queue submit input and attachments without replaying browser settings. Native update acceptance is not application confirmation. Fresh chats expose full settings after their first native turn starts; unavailable reads refill at the canonical turn-start boundary. The pinned 0.160.0 native runtime restores model, reasoning effort and permission profile after restart, while service tier returns to the configured default. Kodex accepts that native behavior rather than preserving a duplicate settings record.
+Existing-chat controls edit shared native settings for the next turn using only the selected field. Send and Queue submit input and attachments without replaying browser settings. Native update acceptance is not application confirmation. Fresh chats expose full settings after their first native turn starts; unavailable reads refill at the canonical turn-start boundary. The pinned 0.164.0 native runtime restores model, reasoning effort, permission profile and service tier after restart. Kodex accepts that native behavior rather than preserving a duplicate settings record.
 
 Execution defaults and MCP setup read the native config layers and expose only the active writable user target and opaque native version within the dedicated home. Forms capture that target when opened; writes use native `expectedVersion` with sparse edits. A conflict keeps the draft until explicit review replaces it with current native values. Secret replacement/deletion is an individual leaf edit; unchanged masks are never submitted. Unknown policies remain native-owned. Null removes a user-layer value, which can expose inherited configuration. Saved values overridden by higher layers are reported separately from effective values.
 
@@ -184,7 +185,7 @@ The output lives at `apps/web/src/api/generated/schema.ts`. Do not hand-write du
 The checked-in schema is generated from the exact Codex binary used for compatibility testing, with experimental API output enabled. After changing Codex versions, run:
 
 ```bash
-bash apps/gateway/scripts/generate-app-server-schema.sh 0.160.0 /absolute/path/to/codex
+bash apps/gateway/scripts/generate-app-server-schema.sh 0.164.0 /absolute/path/to/codex
 ```
 
 Keep the configured Codex binary version aligned with `apps/gateway/app-server-schema/<version>/VERSION`.

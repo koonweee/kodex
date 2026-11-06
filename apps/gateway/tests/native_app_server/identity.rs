@@ -100,9 +100,11 @@ async fn exercise(
         assert_native_messages(&session.canonical_view(&thread_id).await?, &expected)?;
     }
 
-    let (first_response, release_first) = ModelResponse::gated_message("boundary reached");
-    let (second_response, release_second) = ModelResponse::gated_message("steering completed");
-    fixture.enqueue([first_response, second_response]);
+    fixture.enqueue([
+        ModelResponse::Hold,
+        ModelResponse::Hold,
+        ModelResponse::message("steering completed"),
+    ]);
     let accepted = submit(
         session,
         &thread_id,
@@ -133,6 +135,13 @@ async fn exercise(
         atomic["payload"]["turn"]["id"] == turn_id,
         "native turn/start must select the already-active turn"
     );
+    let atomic_followup = fixture.next_model_request().await?;
+    anyhow::ensure!(
+        user_text_count(&atomic_followup, steer_text)? == 1,
+        "first replacement request did not consume exactly the atomic steer: {atomic_followup}"
+    );
+    expected.push(user_echo(session, &thread_id, &turn_id, "atomic-steer", steer_text).await?);
+
     let explicit = submit(
         session,
         &thread_id,
@@ -147,34 +156,18 @@ async fn exercise(
         .iter()
         .map(|item| item.client_id.as_str())
         .collect::<Vec<_>>();
-    accepted_ids.extend(["atomic-steer", "explicit-steer"]);
+    accepted_ids.push("explicit-steer");
     assert_client_ids(&session.canonical_view(&thread_id).await?, accepted_ids)?;
 
-    // Acceptance is distinct from native materialization. Releasing the first
-    // response lets native ingest both pending inputs into the same active turn.
-    release_first
-        .send(())
-        .map_err(|_| anyhow::anyhow!("first model response disconnected before release"))?;
-    let followup = fixture.next_model_request().await?;
+    // Native 0.164 cancels each in-flight request and starts a replacement for
+    // a later steer. The second replacement contains both accepted inputs.
+    let explicit_followup = fixture.next_model_request().await?;
     anyhow::ensure!(
-        followup["input"]
-            .as_array()
-            .context("model request input missing")?
-            .iter()
-            .filter(
-                |item| item["role"] == "user" && item["content"].to_string().contains(steer_text)
-            )
-            .count()
-            == 2,
-        "native model boundary did not consume both accepted steering messages"
+        user_text_count(&explicit_followup, steer_text)? == 2,
+        "second replacement request did not retain both steering messages: {explicit_followup}"
     );
-    for client_id in ["atomic-steer", "explicit-steer"] {
-        expected.push(user_echo(session, &thread_id, &turn_id, client_id, steer_text).await?);
-    }
+    expected.push(user_echo(session, &thread_id, &turn_id, "explicit-steer", steer_text).await?);
     assert_native_messages(&session.canonical_view(&thread_id).await?, &expected)?;
-    release_second
-        .send(())
-        .map_err(|_| anyhow::anyhow!("second model response disconnected before release"))?;
     let completed = session.completed_turn(&thread_id, "completed").await?;
     anyhow::ensure!(completed["id"] == turn_id);
     assert_native_messages(&session.canonical_view(&thread_id).await?, &expected)?;
@@ -188,6 +181,15 @@ async fn exercise(
     .await?;
     assert_native_messages(&detail["timeline"], &expected)?;
     Ok((thread_id, expected))
+}
+
+fn user_text_count(request: &Value, text: &str) -> anyhow::Result<usize> {
+    Ok(request["input"]
+        .as_array()
+        .context("model request input missing")?
+        .iter()
+        .filter(|item| item["role"] == "user" && item["content"].to_string().contains(text))
+        .count())
 }
 
 async fn submit(
@@ -259,11 +261,7 @@ fn assert_client_ids(view: &Value, mut expected: Vec<&str>) -> anyhow::Result<()
     let items = user_items(view)?;
     let mut actual = items
         .iter()
-        .map(|item| {
-            item["payload"]["item"]["clientId"]
-                .as_str()
-                .unwrap_or("<missing>")
-        })
+        .map(|item| item["payload"]["clientId"].as_str().unwrap_or("<missing>"))
         .collect::<Vec<_>>();
     actual.sort_unstable();
     expected.sort_unstable();
@@ -303,7 +301,10 @@ fn assert_native_messages(view: &Value, expected: &[NativeMessage]) -> anyhow::R
         );
         let item = matches[0];
         anyhow::ensure!(item["turnId"] == native.turn_id);
-        anyhow::ensure!(item["payload"]["item"]["clientId"] == native.client_id);
+        anyhow::ensure!(
+            item["payload"]["clientId"] == native.client_id,
+            "canonical native item lost client identity: {item}"
+        );
         anyhow::ensure!(item["payload"]["item"]["content"][0]["text"] == native.text);
     }
     Ok(())

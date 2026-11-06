@@ -254,7 +254,7 @@ fn assert_receipts(view: &Value, expected: &[&Receipt]) -> anyhow::Result<()> {
     for (item, receipt) in items.iter().zip(expected) {
         anyhow::ensure!(item["turnId"] == receipt.turn_id);
         anyhow::ensure!(item["itemId"] == receipt.item_id);
-        anyhow::ensure!(item["payload"]["item"]["clientId"] == receipt.client_id);
+        anyhow::ensure!(item["payload"]["clientId"] == receipt.client_id);
         anyhow::ensure!(item["payload"]["item"]["content"][0]["text"] == receipt.client_id);
     }
     Ok(())

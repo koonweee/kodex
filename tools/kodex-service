@@ -117,6 +117,10 @@ OFFICIAL_PACKAGE_SHA256 = {
         'aarch64-apple-darwin': '007df41b607dbbc8d204b9746ce7fed2d4ce6c813f44c32ceee54175ca796525',
         'x86_64-apple-darwin': '4d50514b2d8acd81ca8cfee55b667b3dc4f7681b65bf3299ff06b11a064f8861',
     },
+    '0.164.0': {
+        'aarch64-apple-darwin': 'dd99e9092270691a67bdde7be04ac283dea9da8e86cbde356c2cc851a79205fa',
+        'x86_64-apple-darwin': 'cfb2a9988d7ea448511166a35789af07a0065d1117db54350b17d46cf03d0294',
+    },
 }
 
 

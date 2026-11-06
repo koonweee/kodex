@@ -1,0 +1,2 @@
+codex-cli 0.164.0
+generated with: "/private/tmp/kodex-0164.jL642N/package/bin/codex" app-server generate-json-schema --experimental --out apps/gateway/app-server-schema/0.164.0/json

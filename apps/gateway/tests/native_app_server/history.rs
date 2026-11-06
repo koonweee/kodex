@@ -105,7 +105,7 @@ async fn seed_history(
         .context("native thread ID missing")?
         .to_owned();
 
-    // 0.160 cannot resume this loaded shell before its first message. The
+    // 0.164 cannot resume this loaded shell before its first message. The
     // gateway must validate it with native history reads, not invent a chat or
     // interpret every missing-rollout error as an empty transcript.
     let empty = attach(session, &thread_id).await?;
@@ -199,9 +199,8 @@ async fn cold_and_live_history(
     anyhow::ensure!(settings["effort"] == "high");
     anyhow::ensure!(settings["serviceTier"] == "priority");
 
-    let (first, release_first) = ModelResponse::gated_message("Native live boundary");
     let (second, release_second) = ModelResponse::gated_message("Native live input completed");
-    fixture.enqueue([first, second]);
+    fixture.enqueue([ModelResponse::Hold, second]);
     let turn_id = submit(session, thread_id, "history-active").await?;
     receipts.push(receipt(session, thread_id, &turn_id, "history-active").await?);
     fixture.next_model_request().await?;
@@ -224,7 +223,7 @@ async fn cold_and_live_history(
                     .iter()
                     .map(|item| json!({
                         "turnId":item["turnId"], "itemId":item["itemId"],
-                        "clientId":item["payload"]["item"]["clientId"], "status":item["status"],
+                        "clientId":item["payload"]["clientId"], "status":item["status"],
                     }))
                     .collect::<Vec<_>>()
             )?
@@ -233,16 +232,15 @@ async fn cold_and_live_history(
             anyhow::ensure!(
                 items
                     .iter()
-                    .filter(|item| item["payload"]["item"]["clientId"] == client_id)
+                    .filter(|item| item["payload"]["clientId"] == client_id)
                     .count()
                     == 1
             );
         }
         anyhow::ensure!(read_settings(session, thread_id).await? == settings);
     }
-    release_first
-        .send(())
-        .map_err(|_| anyhow::anyhow!("first held response disconnected"))?;
+    // Native 0.164 cancels the first held request when the pending input
+    // steers, while the replacement request remains gated for this proof.
     fixture.next_model_request().await?;
     receipts.push(receipt(session, thread_id, &turn_id, "history-pending").await?);
     release_second
@@ -273,7 +271,7 @@ async fn cold_and_live_history(
     let mut fork_receipts = Vec::new();
     for (item, original) in fork_items.iter().zip(&receipts[..2]) {
         anyhow::ensure!(item["threadId"] == fork_id);
-        anyhow::ensure!(item["payload"]["item"]["clientId"] == original.client_id);
+        anyhow::ensure!(item["payload"]["clientId"] == original.client_id);
         anyhow::ensure!(item["payload"]["item"]["content"][0]["text"] == MESSAGE);
         fork_receipts.push(Receipt {
             turn_id: item["turnId"]
@@ -453,7 +451,7 @@ fn assert_receipts(view: &Value, expected: &[Receipt]) -> anyhow::Result<()> {
             "native chronological item identity changed: {item}"
         );
         anyhow::ensure!(item["turnId"] == receipt.turn_id);
-        anyhow::ensure!(item["payload"]["item"]["clientId"] == receipt.client_id);
+        anyhow::ensure!(item["payload"]["clientId"] == receipt.client_id);
         anyhow::ensure!(item["payload"]["item"]["content"][0]["text"] == MESSAGE);
     }
     Ok(())

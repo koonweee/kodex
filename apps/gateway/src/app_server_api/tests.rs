@@ -81,7 +81,7 @@ impl AppServer for NotMaterializedHistoryServer {
         Ok(json!({
             "thread": {
                 "id": "thread-1",
-                "cliVersion": "0.160.0",
+                "cliVersion": "0.164.0",
                 "cwd": "/workspace",
                 "ephemeral": false,
                 "historyMode": "paginated",

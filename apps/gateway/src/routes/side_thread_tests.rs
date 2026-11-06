@@ -30,7 +30,7 @@ async fn state() -> (AppState, Arc<RecordingAppServer>) {
 fn thread(id: &str, name: &str, ephemeral: bool, forked_from_id: Option<&str>) -> Value {
     json!({
         "id": id,
-        "cliVersion": "0.160.0",
+        "cliVersion": "0.164.0",
         "cwd": "/workspace",
         "ephemeral": ephemeral,
         "forkedFromId": forked_from_id,

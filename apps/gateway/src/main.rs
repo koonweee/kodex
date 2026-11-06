@@ -119,7 +119,7 @@ mod tests {
         std::fs::write(
             &script,
             r#"#!/bin/bash
-if [[ ${1:-} == --version ]]; then printf 'codex-cli 0.160.0\n'; exit 0; fi
+if [[ ${1:-} == --version ]]; then printf 'codex-cli 0.164.0\n'; exit 0; fi
 IFS= read -r line
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{}}'
 while IFS= read -r line; do :; done

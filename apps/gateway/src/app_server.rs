@@ -168,6 +168,8 @@ impl JsonRpcAppServer {
             "cli_auth_credentials_store=\"file\"",
             "-c",
             "mcp_oauth_credentials_store=\"file\"",
+            "-c",
+            "features.async_compaction.enabled=true",
         ]);
         let mut child = command
             .kill_on_drop(true)
@@ -780,6 +782,15 @@ pub mod tests {
         server.shutdown().await.unwrap();
         assert!(!server.is_ready());
 
+        let arguments = std::fs::read_to_string(format!("{}.args", log.display())).unwrap();
+        assert!(
+            arguments
+                .lines()
+                .collect::<Vec<_>>()
+                .windows(2)
+                .any(|pair| pair == ["-c", "features.async_compaction.enabled=true"]),
+            "Kodex-owned app-server did not enable async compaction: {arguments}"
+        );
         let messages = std::fs::read_to_string(log).unwrap();
         let mut lines = messages
             .lines()
@@ -824,7 +835,7 @@ pub mod tests {
             &script,
             format!(
                 r#"#!/bin/bash
-if [[ ${{1:-}} == --version ]]; then printf 'codex-cli 0.160.0\n'; exit 0; fi
+if [[ ${{1:-}} == --version ]]; then printf 'codex-cli 0.164.0\n'; exit 0; fi
 printf '%s' "$$" > '{}'
 IFS= read -r line
 printf '%s\n' '{{"id":1,"error":{{"code":-32603,"message":"fixture initialization failure"}}}}'
@@ -993,9 +1004,10 @@ while true; do :; done
             path,
             format!(
                 r#"#!/bin/bash
-if [[ ${{1:-}} == --version ]]; then printf 'codex-cli 0.160.0\n'; exit 0; fi
+if [[ ${{1:-}} == --version ]]; then printf 'codex-cli 0.164.0\n'; exit 0; fi
 set -euo pipefail
 log="$1"
+printf '%s\n' "$@" > "$log.args"
 IFS= read -r line
 printf '%s\n' "$line" >> "$log"
 printf '%s\n' '{{"jsonrpc":"2.0","id":1,"result":{{"initialized":true}}}}'

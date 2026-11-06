@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 
 static INPUT_SCHEMA: LazyLock<Value> = LazyLock::new(|| {
     let native: Value = serde_json::from_str(include_str!(
-        "../../app-server-schema/0.160.0/json/v2/ThreadQueueAddParams.json"
+        "../../app-server-schema/0.164.0/json/v2/ThreadQueueAddParams.json"
     ))
     .expect("pinned native input schema");
     inline_refs(&native["properties"]["input"], &native)

@@ -723,7 +723,7 @@ fn reject_external_thread_import(payload: &Value) -> ApiResult<()> {
     Ok(())
 }
 
-// These exact messages belong to the pinned 0.160.0 runtime. The generic
+// These exact messages belong to the pinned 0.164.0 runtime. The generic
 // invalid-request code also covers unrelated failures and is never sufficient
 // evidence to retry input, activate a chat, or fabricate empty history.
 pub(crate) fn is_thread_not_loaded_error(error: &ApiError, thread_id: &str) -> bool {
@@ -744,7 +744,7 @@ fn is_thread_rollout_missing_error(error: &ApiError, thread_id: &str) -> bool {
 }
 
 fn is_thread_archived_error(error: &ApiError, thread_id: &str) -> bool {
-    // Upstream app-server 0.160.0 reports archived resume attempts through the
+    // Upstream app-server 0.164.0 reports archived resume attempts through the
     // generic -32600 code with no structured discriminator. Keep this exact
     // pinned string match at the native boundary until upstream distinguishes it.
     native_invalid_request_matches(

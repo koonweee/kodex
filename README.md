@@ -61,7 +61,7 @@ See [Architecture](docs/architecture.md) for component boundaries and state owne
 
 You will need:
 
-- Codex **0.160.0**, selected explicitly with `KODEX_CODEX_BINARY` (or that exact version on `PATH`).
+- Codex **0.164.0**, selected explicitly with `KODEX_CODEX_BINARY` (or that exact version on `PATH`). Kodex-owned launches enable its experimental async compaction feature.
 - The stable Rust toolchain.
 - Node.js and npm.
 
@@ -93,7 +93,7 @@ When the latest turn was interrupted, the empty composer shows a filled **Resume
 
 In compact panes, an empty inactive existing-chat composer becomes one rounded footer-height row with the input beside “+”. Focus restores normal inline height; touch opening in a narrow browser expands the same input fullscreen. New chats keep their greeting and normal composer. Compact model pickers use a brain icon with the full model/effort label in the tooltip and accessible name.
 
-Chat model and speed controls edit native settings for the next turn. Send and Queue use the effective native settings rather than repeating a browser snapshot. Changes appear after native application is confirmed; new-chat choices apply at creation. Full settings are readable after the first native turn starts. In Codex 0.160.0, speed returns to the configured default after an app-server restart.
+Chat model and speed controls edit native settings for the next turn. Send and Queue use the effective native settings rather than repeating a browser snapshot. Changes appear after native application is confirmed; new-chat choices apply at creation. Full settings are readable after the first native turn starts. Codex 0.164.0 preserves the applied speed setting across app-server restarts.
 
 Existing chats expose native goals, including goals the model creates when asked. Desktop shows the objective above the composer; narrow layouts show an unfilled bullseye beside the model picker. Open either to edit the objective or optional token budget, inspect usage, pause/resume, or clear with the trash icon. Use **Set goal** in the composer’s “+” menu when none exists, `/goal <objective>` to set and activate a goal directly, or bare `/goal` to open management. Goal commands require an existing chat and plain text; attachments, annotations, skill mentions and Queue are rejected with the draft preserved. Native goal changes converge across tabs and reconnects. Starting or resuming a goal can start work; pausing or clearing it stops automatic continuation without interrupting an already running turn. Use Stop for the current turn. Goals have token budgets, not duration budgets.
 

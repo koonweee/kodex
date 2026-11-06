@@ -319,7 +319,7 @@ async fn assert_raw_history(
         .context("missing native user content")?;
     anyhow::ensure!(content.len() == 1 && content[0]["type"] == "text");
     anyhow::ensure!(content[0]["text"] == format!("Use ${}", skill.name));
-    anyhow::ensure!(item["payload"]["itemSnapshot"]["skillMentions"].is_null());
+    anyhow::ensure!(item["payload"]["skillMentions"].is_null());
     Ok(())
 }
 
@@ -335,7 +335,7 @@ async fn assert_structured_history(
         "native structured input/spans changed in history"
     );
     anyhow::ensure!(
-        item["payload"]["itemSnapshot"]["skillMentions"] == json!([mention]),
+        item["payload"]["skillMentions"] == json!([mention]),
         "canonical binding should preserve only supplied name/path/range"
     );
     Ok(())

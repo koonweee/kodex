@@ -37,13 +37,12 @@ async fn real_native_settings_apply_sparse_edits_and_resume_native_persistence(
         anyhow::ensure!(
             after_restart["activePermissionProfile"] == before_restart["activePermissionProfile"]
         );
-        // In 0.160.0, resume restores model/effort from native metadata, while
-        // service tier starts from config (unset in this disposable home).
-        // A saved ThreadSettingsApplied tier does not make it a resume default.
+        // Native 0.164.0 persists the applied service tier alongside the other
+        // thread settings instead of falling back to the process config.
         anyhow::ensure!(before_restart["serviceTier"] == "priority");
         anyhow::ensure!(
-            after_restart["serviceTier"].is_null(),
-            "cold resume service tier differed from the native config default: {after_restart}"
+            after_restart["serviceTier"] == before_restart["serviceTier"],
+            "cold resume lost the native service tier: {after_restart}"
         );
         complete_settings_free_turn(&mut fixture, &mut reopened, &thread_id, &after_restart)
             .await?;
@@ -89,7 +88,7 @@ async fn exercise(
         .as_str()
         .context("native thread start omitted ID")?
         .to_owned();
-    // Native 0.160.0 resume requires a rollout even for an already loaded chat.
+    // Native 0.164.0 resume requires a rollout even for an already loaded chat.
     // Preserve this fresh-shell limitation explicitly instead of inventing a
     // settings snapshot, forcing unrelated metadata writes, or hiding a retry.
     let response = session

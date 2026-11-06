@@ -226,7 +226,7 @@ fn assert_one_user_receipt(view: &Value, client_id: &str, echo: &Value) -> anyho
         .iter()
         .filter_map(|row| row.get("item"))
         .filter(|item| {
-            item["itemType"] == "userMessage" && item["payload"]["item"]["clientId"] == client_id
+            item["itemType"] == "userMessage" && item["payload"]["clientId"] == client_id
         })
         .collect::<Vec<_>>();
     anyhow::ensure!(

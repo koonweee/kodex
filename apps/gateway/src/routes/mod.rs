@@ -1317,7 +1317,7 @@ mod tests {
         let capabilities_body = response_json(capabilities).await;
         assert_eq!(capabilities_body["gateway"]["sse"], true);
         assert_eq!(capabilities_body["appServer"]["ready"], false);
-        assert_eq!(capabilities_body["appServer"]["schemaVersion"], "0.160.0");
+        assert_eq!(capabilities_body["appServer"]["schemaVersion"], "0.164.0");
         assert_eq!(
             capabilities_body["appServer"]["detectedVersionMatchesSchema"],
             Value::Null
@@ -1529,7 +1529,7 @@ mod tests {
     async fn readyz_reports_app_server_incompatibility() {
         let (state, app_server) = test_state().await;
         *app_server.readiness_error.lock().unwrap() = Some(
-            "configured Codex executable reports 0.159.0; required version is 0.160.0".to_string(),
+            "configured Codex executable reports 0.159.0; required version is 0.164.0".to_string(),
         );
         let app = build_router(state.clone());
 
@@ -1543,7 +1543,7 @@ mod tests {
         assert_eq!(body["ready"], false);
         assert_eq!(
             body["message"],
-            "configured Codex executable reports 0.159.0; required version is 0.160.0"
+            "configured Codex executable reports 0.159.0; required version is 0.164.0"
         );
     }
 

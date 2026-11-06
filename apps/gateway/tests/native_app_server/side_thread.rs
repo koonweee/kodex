@@ -277,11 +277,10 @@ async fn exercise(
     })
     .await??;
 
-    let (initial_response, release_initial) =
-        ModelResponse::gated_message("side active boundary reached");
-    let (followup_response, release_followup) =
-        ModelResponse::gated_message("side steering completed");
-    fixture.enqueue([initial_response, followup_response]);
+    fixture.enqueue([
+        ModelResponse::Hold,
+        ModelResponse::message("side steering completed"),
+    ]);
     let active = api(
         &session.app,
         "POST",
@@ -312,16 +311,11 @@ async fn exercise(
     .await?;
     anyhow::ensure!(steered["disposition"] == "submitted");
     anyhow::ensure!(steered["payload"]["turn"]["id"] == active_turn_id);
-    release_initial
-        .send(())
-        .map_err(|_| anyhow::anyhow!("side initial response disconnected before release"))?;
+    // Native 0.164 cancels the in-flight request and replaces it when steering.
     let followup_request = fixture.next_model_request().await?;
     anyhow::ensure!(followup_request
         .to_string()
         .contains("Steer this active side turn"));
-    release_followup
-        .send(())
-        .map_err(|_| anyhow::anyhow!("side follow-up response disconnected before release"))?;
     let completed = session.completed_turn(&side_id, "completed").await?;
     anyhow::ensure!(completed["id"] == active_turn_id);
 
