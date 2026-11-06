@@ -633,16 +633,16 @@ class LifecycleTests(unittest.TestCase):
              patch.object(service.urllib.request, 'build_opener', return_value=opener):
             self.app.health(release)
 
-    def official_archive(self, missing_host=False, unsafe=False):
+    def official_archive(self, missing_host=False, unsafe=False, version='0.160.0', include_zsh=True):
         stream = io.BytesIO()
         with tarfile.open(fileobj=stream, mode='w:gz') as archive:
             files = {
-                'codex-package.json': json.dumps({'layoutVersion':1,'version':'0.160.0',
+                'codex-package.json': json.dumps({'layoutVersion':1,'version':version,
                     'target':'aarch64-apple-darwin','variant':'codex','entrypoint':'bin/codex',
                     'resourcesDir':'codex-resources','pathDir':'codex-path'}),
                 'bin/codex':'native executable', 'codex-path/rg':'search',
-                'codex-resources/zsh/bin/zsh':'shell',
             }
+            if include_zsh: files['codex-resources/zsh/bin/zsh'] = 'shell'
             if not missing_host: files['bin/codex-code-mode-host'] = 'helper'
             if unsafe: files['../escape'] = 'escape'
             for name, content in files.items():
@@ -651,15 +651,15 @@ class LifecycleTests(unittest.TestCase):
                 archive.addfile(info, io.BytesIO(data))
         return stream.getvalue()
 
-    def acquire_fixture(self, data, digest=None):
+    def acquire_fixture(self, data, digest=None, version='0.160.0'):
         stage = self.root / 'stage'; stage.mkdir()
         expected = digest or hashlib.sha256(data).hexdigest()
         with patch.object(service.platform, 'machine', return_value='arm64'), \
-             patch.dict(service.OFFICIAL_PACKAGE_SHA256, {'0.160.0': {'aarch64-apple-darwin': expected}}), \
+             patch.dict(service.OFFICIAL_PACKAGE_SHA256, {version: {'aarch64-apple-darwin': expected}}), \
              patch.object(service.urllib.request, 'urlopen', return_value=io.BytesIO(data)) as download, \
-             patch.object(service, 'native_version', return_value='0.160.0'), \
+             patch.object(service, 'native_version', return_value=version), \
              patch.object(service, 'run') as run:
-            provenance = service.acquire_native('0.160.0', stage)
+            provenance = service.acquire_native(version, stage)
         return stage, provenance, download, run
 
     def test_official_pinned_distribution_includes_helper_and_native_resources(self):
@@ -674,6 +674,14 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn('/openai/codex/releases/download/rust-v0.160.0/', download.call_args.args[0])
         self.assertEqual(run.call_args.args[0], [stage / 'native/bin/codex-code-mode-host', '--help'])
         self.assertEqual(run.call_args.kwargs['env']['CODEX_HOME'].startswith(str(stage)), False)
+
+    def test_0164_official_package_does_not_require_retired_bundled_zsh(self):
+        data = self.official_archive(version='0.164.0', include_zsh=False)
+        stage, provenance, download, _ = self.acquire_fixture(data, version='0.164.0')
+        self.assertEqual((stage / 'codex').resolve(), stage / 'native/bin/codex')
+        self.assertFalse((stage / 'native/codex-resources/zsh/bin/zsh').exists())
+        self.assertIn('/openai/codex/releases/download/rust-v0.164.0/', download.call_args.args[0])
+        self.assertEqual(provenance['sha256'], hashlib.sha256(data).hexdigest())
 
     def test_corrupt_download_is_rejected_before_extraction_or_execution(self):
         with self.assertRaisesRegex(service.ServiceError, 'checksum'):
